@@ -116,9 +116,10 @@ export function unescapePartialJsonString(raw: string): string {
  * The result is shaped like the real arguments, not like a bag of fragments, so
  * everything downstream reads a streaming call and a settled one the same way.
  */
-const PREVIEW_FIELDS = [
+// Small, whole-or-nothing string fields. `content` is handled apart from these
+// because it is the one field that grows without bound.
+const HEADER_FIELDS = [
   'path',
-  'content',
   'command',
   'query',
   'url',
@@ -130,15 +131,87 @@ const PREVIEW_FIELDS = [
 
 export type PartialEdit = { old_string: string; new_string?: string }
 
+/**
+ * A `write`'s body is unbounded and streams to the end of the buffer, so
+ * unescaping the whole of it on every frame is O(n) work that grows with the
+ * file -- O(n^2) over the write, which is what froze the card. Only the last
+ * `CONTENT_PREVIEW_BUDGET` raw chars are read; the preview windows onto the tail
+ * anyway (`writeTail`), so nothing shown is lost. The trade: past the budget the
+ * streaming line numbers count from the window, not the file. The settled diff,
+ * which is exact, supersedes the preview the moment the call lands.
+ */
+const CONTENT_PREVIEW_BUDGET = 16 * 1024
+
+const isJsonWs = (c: string): boolean =>
+  c === ' ' || c === '\t' || c === '\n' || c === '\r'
+
+/**
+ * Index of the first char of a `content` value, or -1 while it has not opened.
+ * Skips a `"content"` occurring inside an earlier value (it is not followed by
+ * `:` and a quote), the same guard `scanJsonStrings` uses.
+ */
+function contentValueStart(raw: string): number {
+  const needle = '"content"'
+  let from = 0
+  for (;;) {
+    const at = raw.indexOf(needle, from)
+    if (at === -1) return -1
+    let j = at + needle.length
+    while (j < raw.length && isJsonWs(raw[j])) j++
+    if (raw[j] !== ':') {
+      from = at + 1
+      continue
+    }
+    j++
+    while (j < raw.length && isJsonWs(raw[j])) j++
+    if (j >= raw.length) return -1
+    if (raw[j] !== '"') {
+      from = at + 1
+      continue
+    }
+    return j + 1
+  }
+}
+
+/** The tail of the content value, unescaped, capped at the preview budget. */
+function boundedContentTail(raw: string, valueStart: number): string {
+  let start = Math.max(valueStart, raw.length - CONTENT_PREVIEW_BUDGET)
+  // A cut landing after an odd run of backslashes is inside an escape; drop the
+  // escaped payload char so the tail starts on a clean boundary.
+  if (start > valueStart) {
+    let b = start - 1
+    let slashes = 0
+    while (b >= valueStart && raw[b] === '\\') {
+      slashes++
+      b--
+    }
+    if (slashes % 2 === 1) start++
+  }
+  return unescapePartialJsonString(raw.slice(start))
+}
+
 export function partialToolInput(raw: string): Record<string, unknown> {
   const out: Record<string, unknown> = {}
-  for (const field of PREVIEW_FIELDS) {
-    const value = partialJsonField(raw, field)
-    if (value !== undefined) out[field] = unescapePartialJsonString(value)
+  const cut = contentValueStart(raw)
+  if (cut >= 0) {
+    // `write`: read the header fields off the small prefix, then the body off
+    // its tail, so neither scan walks the whole growing buffer.
+    scanHeaderFields(raw.slice(0, cut), out)
+    out.content = boundedContentTail(raw, cut)
+    return out
   }
+  const editsAt = raw.indexOf('"edits"')
+  scanHeaderFields(editsAt >= 0 ? raw.slice(0, editsAt) : raw, out)
   const edits = partialEdits(raw)
   if (edits.length > 0) out.edits = edits
   return out
+}
+
+function scanHeaderFields(header: string, out: Record<string, unknown>): void {
+  for (const field of HEADER_FIELDS) {
+    const value = partialJsonField(header, field)
+    if (value !== undefined) out[field] = unescapePartialJsonString(value)
+  }
 }
 
 /**

@@ -108,4 +108,32 @@ describe('partialToolInput', () => {
   it('has no edits before the first pair opens', () => {
     expect(partialToolInput('{"path":"a.ts","edi')).toEqual({ path: 'a.ts' })
   })
+
+  /// A large streaming body is windowed to its tail rather than unescaped whole
+  /// on every frame -- the whole-body unescape grew with the file and froze the
+  /// card. The tail always covers what the preview shows (the last few lines).
+  it('windows a large body to its tail, keeping the path exact', () => {
+    const body = 'x'.repeat(200 * 1024) + 'THE-END'
+    const raw = `{"path":"big.txt","content":"${body}`
+    const out = partialToolInput(raw) as { path: string; content: string }
+    expect(out.path).toBe('big.txt')
+    expect(out.content.length).toBeLessThan(body.length)
+    expect(out.content.endsWith('THE-END')).toBe(true)
+  })
+
+  /// The tail is taken from the raw buffer, which can be cut mid-escape; the
+  /// window must still unescape cleanly rather than mistaking a `\n` payload for
+  /// a literal `n`.
+  it('keeps the tail clean when the body is cut inside escapes', () => {
+    const body = 'line\\n'.repeat(20 * 1024) + 'TAIL'
+    const raw = `{"path":"big.txt","content":"${body}`
+    const out = partialToolInput(raw) as { content: string }
+    const lines = out.content.split('\n')
+    expect(lines.at(-1)).toBe('TAIL')
+    // Every whole line is a real 'line': a split "\\n" mistaken for a literal
+    // 'n' would show up as 'nline' here.
+    expect(lines.slice(1, -1).every((l) => l === 'line')).toBe(true)
+    // The first line is a clean suffix of 'line', never corrupted by the cut.
+    expect('line'.endsWith(lines[0])).toBe(true)
+  })
 })
