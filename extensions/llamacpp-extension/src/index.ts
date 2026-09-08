@@ -1403,6 +1403,16 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     } as modelInfo
   }
 
+  async getModelContextLimit(modelId: string): Promise<number | undefined> {
+    const config = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
+    })
+    const path = await joinPath([await getJanDataFolderPath(), config.model_path])
+    const { metadata } = await readGgufMetadata(path)
+    const limit = Number(metadata?.[`${metadata?.['general.architecture']}.context_length`])
+    return Number.isInteger(limit) && limit > 0 ? limit : undefined
+  }
+
   /**
    * Checks if embedding status is known. If not, reads GGUF, detects it,
    * and updates the model.yml for future performance.
