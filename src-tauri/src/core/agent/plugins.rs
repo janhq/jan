@@ -225,19 +225,22 @@ pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
         .collect()
 }
 
-/// Find an installed plugin by directory name or manifest name. Used by the
-/// cli `/plugin` popup; the desktop lists plugins through `installed`.
+/// Find an installed plugin by directory name, falling back to manifest name.
+/// Directory identity wins when another plugin uses it as a display name.
 #[cfg(feature = "cli")]
 pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, InstalledPlugin)> {
     let query = skills::safe_stem(query).ok()?;
-    installed_entries(root)
-        .into_iter()
-        .find(|(directory, plugin)| directory == &query || plugin.name == query)
+    let mut entries = installed_entries(root);
+    let index = entries.iter().position(|(directory, _)| directory == &query)
+        .or_else(|| entries.iter().position(|(_, plugin)| plugin.name == query))?;
+    Some(entries.swap_remove(index))
 }
 
-/// `~/.jan/agent/plugin-env/` — where the setup prompt stores plugin API keys.
+/// `~/.jan/agent/plugin-env/`, shared by CLI setup and desktop discovery.
 fn plugin_env_dir() -> Result<PathBuf, String> {
-    crate::core::agent::global_config::global_jan_dir().map(|jan| jan.join("agent").join("plugin-env"))
+    dirs::home_dir()
+        .map(|home| home.join(".jan").join("agent").join("plugin-env"))
+        .ok_or_else(|| "could not resolve the user's home directory".to_string())
 }
 
 /// `plugin-env/<plugin>.toml` under `dir`.
@@ -318,7 +321,14 @@ pub(crate) fn save_plugin_env_in(
         .truncate(true)
         .open(&path);
     perms
-        .and_then(|mut f| f.write_all(serialized.as_bytes()))
+        .and_then(|mut f| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            }
+            f.write_all(serialized.as_bytes())
+        })
         .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
@@ -372,6 +382,8 @@ fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, St
 pub(crate) fn sync_env_registry(root: &Path) {
     if let Ok(dir) = plugin_env_dir() {
         sync_env_registry_in(root, &dir);
+    } else {
+        tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, Default::default());
     }
 }
 
@@ -389,10 +401,10 @@ fn sync_env_registry_in(root: &Path, env_dir: &Path) {
             }
         }
     }
-    tauri_plugin_agent_tools::tools::proc::set_plugin_env(values);
+    tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, values);
 }
 
-fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
+pub(crate) fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
     // A linked git worktree also sees the main worktree's plugins, the
     // project-local one shadowing a same-named shared one. Counts come from
     // the merged discovery above, so shared plugins report real payloads.
@@ -2056,6 +2068,71 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn saving_plugin_keys_restricts_existing_files_and_preserves_other_keys() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acme.toml");
+        std::fs::write(&path, "OTHER_TOKEN = \"keep\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_plugin_env_in(dir.path(), "acme", "ACME_TOKEN", "secret").unwrap();
+
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let values = stored_plugin_env_in(dir.path(), "acme");
+        assert_eq!(values.get("OTHER_TOKEN").map(String::as_str), Some("keep"));
+        assert_eq!(values.get("ACME_TOKEN").map(String::as_str), Some("secret"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn plugin_keys_do_not_cross_project_boundaries() {
+        use tauri_plugin_agent_tools::tools::proc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let unrelated = temp.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).unwrap();
+        for (root, value) in [(&first, "first-secret"), (&second, "second-secret")] {
+            let plugin = root.join(".jan/agent/plugins/acme");
+            std::fs::create_dir_all(&plugin).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                "[setup.env]\nJAN_PLUGIN_ISOLATION_TOKEN = \"\"\n",
+            ).unwrap();
+            let store = root.join("key-store");
+            save_plugin_env_in(&store, "acme", "JAN_PLUGIN_ISOLATION_TOKEN", value).unwrap();
+            sync_env_registry_in(root, &store);
+        }
+        // Both projects are registered before either launches a shell.
+        for (root, expected) in [
+            (&first, "first-secret"), (&second, "second-secret"), (&unrelated, "unset"),
+        ] {
+            let child = proc::spawn(
+                proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", root, None,
+            ).await.unwrap();
+            let pid = child.id().unwrap();
+            let output = child.wait_with_output().await.unwrap();
+            proc::unregister(pid);
+            assert!(output.status.success());
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+        }
+        // Dropping a manifest requirement must revoke the next shell's key.
+        std::fs::write(first.join(".jan/agent/plugins/acme/plugin.toml"), "name = \"acme\"\n").unwrap();
+        sync_env_registry_in(&first, &first.join("key-store"));
+        let child = proc::spawn(
+            proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", &first, None,
+        ).await.unwrap();
+        let pid = child.id().unwrap();
+        let output = child.wait_with_output().await.unwrap();
+        proc::unregister(pid);
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "unset");
+    }
+
     #[test]
     fn save_store_and_missing_report_roundtrip() {
         let (root, env_dir) = plugin_with_env_requirement("envstore", "ACME_TOKEN", "https://x");
@@ -2075,12 +2152,6 @@ mod tests {
         );
         assert!(missing_plugin_env_in(&root, &env_dir).is_empty());
         assert!(plugin_env_path(&env_dir, "acme").unwrap().exists());
-
-        // Sync registers exactly the declared+stored variable.
-        sync_env_registry_in(&root, &env_dir);
-        let snapshot =
-            tauri_plugin_agent_tools::tools::proc::plugin_env_snapshot();
-        assert_eq!(snapshot.get("ACME_TOKEN").map(String::as_str), Some("secret"));
 
         let _ = std::fs::remove_dir_all(&root);
     }
