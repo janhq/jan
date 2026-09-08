@@ -382,8 +382,10 @@ function CoworkPage() {
     [displayedTurns]
   )
   const artifacts = useMemo(
-    () => artifactsFromTurns(displayedTurns, workspacePath),
-    [displayedTurns, workspacePath]
+    // The attached folder is the workspace root (#8882), so a relative tool path
+    // resolves against it; fall back to the sandbox when nothing is attached.
+    () => artifactsFromTurns(displayedTurns, folder ?? workspacePath),
+    [displayedTurns, folder, workspacePath]
   )
 
   const awaitingModel = useMemo(
@@ -1268,7 +1270,7 @@ function CoworkPage() {
                           <CoworkArtifactCard
                             key={artifact.path}
                             artifact={artifact}
-                            roots={[workspacePath, folder]}
+                            roots={[folder, workspacePath]}
                             onPreview={showPreview}
                             className="my-3"
                           />
@@ -1439,7 +1441,7 @@ function CoworkPage() {
 
         {rail?.kind === 'preview' && (
           <CoworkPreviewPanel
-            roots={[workspacePath, folder]}
+            roots={[folder, workspacePath]}
             path={rail.path}
             onClose={() => setRail(null)}
           />

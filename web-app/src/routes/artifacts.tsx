@@ -97,11 +97,14 @@ function ArtifactsPage() {
   const rows = useMemo<Row[]>(
     () =>
       sessions.flatMap((session) => {
-        const root = workspaces[session.id] ?? null
+        const sandbox = workspaces[session.id] ?? null
+        // The attached folder is the workspace root (#8882), so it comes first:
+        // a relative tool path resolves against it, the sandbox is the fallback.
+        const root = session.folder ?? sandbox
         return artifactsFromTurns(session.turns, root).map((artifact) => ({
           ...artifact,
           sessionId: session.id,
-          roots: [root, session.folder],
+          roots: [session.folder, sandbox],
         }))
       }),
     [sessions, workspaces]

@@ -516,24 +516,21 @@ pub async fn start_monitor(
         ));
     }
     let spec = monitor::parse_start_args(&args).map_err(AgentToolsError::from)?;
-    let root = scope
+    let sandbox = scope
         .unwrap_or_default()
         .ensure(Path::new(&data_folder), &thread_id)
         .await?;
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
-    let read_roots: Vec<PathBuf> = match read_only_project.as_deref() {
+    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
         Some(path) => vec![workspace::validate_read_root(
             Path::new(path),
-            &root,
+            &sandbox,
             Some(Path::new(&data_folder)),
         )?],
         None => Vec::new(),
     };
-    let write_roots = if project_writable.unwrap_or(false) {
-        read_roots.clone()
-    } else {
-        Vec::new()
-    };
+    let (root, read_roots, write_roots) =
+        resolve_workspace_root(sandbox, attached, project_writable.unwrap_or(false));
     let ctx = monitor::MonitorCtx {
         project_root: root,
         scratch_root: Some(scratch),
@@ -605,6 +602,34 @@ pub async fn stop_session_monitors(thread_id: String) -> Result<(), AgentToolsEr
         entry.set.stop_all();
     }
     Ok(())
+}
+
+/// Pick the workspace root a tool call resolves relative paths against, plus the
+/// side roots it may read and write.
+///
+/// A writable attached folder (Cowork's shared folder) is the workspace root
+/// itself, not merely a reachable side root: relative paths resolve against the
+/// root, so with the ephemeral sandbox as the root a bare `deck.html` lands in
+/// the Jan data folder instead of the directory the user selected (#8882).
+///
+/// Promoting the folder changes only where an unqualified path resolves, never
+/// what is reachable: the sandbox stays a read+write side root, so the agent's
+/// own scratch and the user attachments Cowork stages there
+/// (`attachment_import`) remain readable and writable by their absolute path.
+/// The set of writable locations -- folder, sandbox, scratch -- is exactly what
+/// it was before, with the folder as the base rather than the sandbox.
+///
+/// A read-only attach (chat) or no attach keeps the sandbox as the root, with
+/// the attached folder as a read-only side root.
+fn resolve_workspace_root(
+    sandbox: PathBuf,
+    attached: Vec<PathBuf>,
+    writable: bool,
+) -> (PathBuf, Vec<PathBuf>, Vec<PathBuf>) {
+    match (writable, attached.first()) {
+        (true, Some(folder)) => (folder.clone(), vec![sandbox.clone()], vec![sandbox]),
+        _ => (sandbox, attached, Vec::new()),
+    }
 }
 
 /// Execute one built-in tool.
@@ -706,7 +731,7 @@ async fn execute_tool_inner(
     // the sandbox root and treats a missing one as an escape, so every tool call
     // would be refused if the thread's first tool call arrived before any UI
     // surface had ensured it.
-    let root = scope
+    let sandbox = scope
         .unwrap_or_default()
         .ensure(Path::new(&data_folder), &thread_id)
         .await?;
@@ -714,21 +739,19 @@ async fn execute_tool_inner(
     let store = resolve_store(&data_folder, project.as_deref());
     // Plural from the outset so attaching a second folder later is not another
     // signature change.
-    let read_roots: Vec<PathBuf> = match read_only_project.as_deref() {
+    let attached: Vec<PathBuf> = match read_only_project.as_deref() {
         Some(path) => vec![workspace::validate_read_root(
             Path::new(path),
-            &root,
+            &sandbox,
             Some(Path::new(&data_folder)),
         )?],
         None => Vec::new(),
     };
-    // Writable attach: the same validated roots, so the two lists cannot name
-    // different places. Read containment still comes from `read_roots`.
-    let write_roots: Vec<PathBuf> = if project_writable.unwrap_or(false) {
-        read_roots.clone()
-    } else {
-        Vec::new()
-    };
+    let (root, read_roots, write_roots) = resolve_workspace_root(
+        sandbox,
+        attached,
+        project_writable.unwrap_or(false),
+    );
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
 
@@ -785,22 +808,28 @@ async fn execute_tool_inner(
         // The message matters as much as the refusal: told only "refused", a
         // model retries the same write until the step budget runs out.
         Decision::Prompt(PromptKind::WriteEscape) => {
+            // Branch on `write_roots`, not `read_roots`: a writable attach keeps
+            // the sandbox in `read_roots`, so keying the read-only advice off
+            // `read_roots.first()` would misname the sandbox as an unwritable
+            // user folder.
             return Err(match read_roots.first() {
-                // With a writable attach the gate only lands here for a path
-                // outside both roots, so the read-only advice would be wrong.
+                // Chat's read-only attach: the folder is a readable side root but
+                // never the write target, so point the model back at the
+                // workspace rather than the folder.
                 Some(attached) if write_roots.is_empty() => format!(
-                    "tool '{name}' cannot write outside the agent workspace. The attached \
+                    "tool '{name}' cannot write outside the agent workspace {}. The attached \
                      folder {} is mounted read-only; copy the file into the workspace and \
                      edit it there.",
+                    root.display(),
                     attached.display()
                 ),
-                Some(attached) => format!(
-                    "tool '{name}' cannot write outside the agent workspace or the attached \
-                     folder {}.",
-                    attached.display()
-                ),
-                None => format!(
-                    "tool '{name}' tried to write outside the agent workspace and was refused"
+                // A writable attach makes the folder the workspace root (#8882),
+                // and a run with no attach has only the sandbox: either way the
+                // workspace is the one writable place, so naming it tells the
+                // model exactly where its writes must land.
+                _ => format!(
+                    "tool '{name}' cannot write outside the agent workspace {} and was refused.",
+                    root.display()
                 ),
             }
             .into());
@@ -1810,8 +1839,9 @@ mod tests {
         .expect("an edit inside a writable attachment is allowed");
         assert!(!edit.is_error, "{}", edit.content);
 
-        // Outside both roots is still refused, and the message no longer gives
-        // the read-only copy-it advice that would now be wrong.
+        // Outside the workspace is still refused. The folder is the workspace
+        // root now, so the message names it and does not give the read-only
+        // copy-it advice that would be wrong for a writable attach.
         let outside = repo_outside_tmp("rw_writable_outside");
         let err = execute_tool(
             df.clone(),
@@ -1829,13 +1859,136 @@ mod tests {
         .await
         .expect_err("a write outside both roots is refused");
         let msg = format!("{err:?}");
-        assert!(msg.contains("or the attached"), "{msg}");
+        assert!(msg.contains("outside the agent workspace"), "{msg}");
         assert!(!msg.contains("read-only"), "{msg}");
         assert!(!outside.join("evil.txt").exists());
 
         let _ = std::fs::remove_dir_all(&data);
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&outside);
+    }
+
+    /// #8882: a writable attached folder is the workspace root, so a *relative*
+    /// path resolves into the directory the user selected -- not the ephemeral
+    /// sandbox under the Jan data folder.
+    #[tokio::test]
+    async fn a_writable_attachment_is_the_root_for_relative_paths() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("rw_root_relative");
+        let attached = Some(repo.to_string_lossy().to_string());
+
+        let write = execute_tool(
+            df.clone(),
+            "thread-rw-root-relative".into(),
+            None,
+            "write".into(),
+            json!({"path": "deck.html", "content": "<h1>hi</h1>"}),
+            None,
+            None,
+            attached,
+            Some(true),
+            Some(WorkspaceScope::Session),
+            None,
+        )
+        .await
+        .expect("a relative write with a writable attachment is allowed");
+        assert!(!write.is_error, "{}", write.content);
+        assert_eq!(
+            std::fs::read_to_string(repo.join("deck.html")).ok(),
+            Some("<h1>hi</h1>".to_string()),
+            "the bare path resolved into the attached folder, not the sandbox"
+        );
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The promotion does not widen the write surface: a `..` escape out of the
+    /// attached-folder root is still refused.
+    #[tokio::test]
+    async fn a_writable_attachment_root_still_refuses_an_escape() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("rw_root_escape");
+        let attached = Some(repo.to_string_lossy().to_string());
+
+        let err = execute_tool(
+            df.clone(),
+            "thread-rw-root-escape".into(),
+            None,
+            "write".into(),
+            json!({"path": "../escape.txt", "content": "x"}),
+            None,
+            None,
+            attached,
+            Some(true),
+            Some(WorkspaceScope::Session),
+            None,
+        )
+        .await
+        .expect_err("a write escaping the attached-folder root is refused");
+        assert!(!repo.parent().unwrap().join("escape.txt").exists());
+        let _ = format!("{err:?}");
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Promoting the folder keeps the sandbox reachable by absolute path: the
+    /// user attachments Cowork stages into the session workspace
+    /// (`attachment_import`) and the agent's own scratch must stay readable and
+    /// writable after the folder becomes the root (#8882).
+    #[tokio::test]
+    async fn a_writable_attachment_keeps_the_sandbox_reachable() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("rw_root_sandbox");
+        let attached = Some(repo.to_string_lossy().to_string());
+        let session = "thread-rw-root-sandbox";
+
+        let sandbox = workspace::ensure_session_workspace(&data, session)
+            .await
+            .unwrap();
+        let staged = sandbox.join("attachment.txt").to_string_lossy().into_owned();
+
+        let write = execute_tool(
+            df.clone(),
+            session.into(),
+            None,
+            "write".into(),
+            json!({"path": staged, "content": "doc"}),
+            None,
+            None,
+            attached.clone(),
+            Some(true),
+            Some(WorkspaceScope::Session),
+            None,
+        )
+        .await
+        .expect("a write into the sandbox is allowed with a folder attached");
+        assert!(!write.is_error, "{}", write.content);
+
+        let read = execute_tool(
+            df.clone(),
+            session.into(),
+            None,
+            "read".into(),
+            json!({"path": staged}),
+            None,
+            None,
+            attached,
+            Some(true),
+            Some(WorkspaceScope::Session),
+            None,
+        )
+        .await
+        .expect("reading the staged attachment back is allowed");
+        assert!(!read.is_error, "{}", read.content);
+        assert!(read.content.contains("doc"), "{}", read.content);
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
 
     /// Without an attached folder nothing outside the sandbox is readable, so
