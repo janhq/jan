@@ -1,8 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { toast } from 'sonner'
-import { CoworkModelControls } from '../CoworkModelControls'
 import { EngineManager } from '@janhq/core'
 import type { AIEngine } from '@janhq/core'
 import { DefaultModelsService } from '@/services/models/default'
@@ -25,23 +21,6 @@ vi.mock('@/lib/backendStorage', () => ({
 }))
 
 const models = new DefaultModelsService()
-const providerSettings = { updateSettings: vi.fn() }
-const navigate = vi.fn()
-
-vi.mock('@/hooks/useServiceHub', () => ({
-  useServiceHub: () => ({
-    models: () => models,
-    providers: () => providerSettings,
-  }),
-}))
-vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({
-    t: (key: string, values?: Record<string, unknown>) =>
-      values ? `${key}:${JSON.stringify(values)}` : key,
-  }),
-}))
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
-vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
 function providerFixture(name = 'llamacpp'): ModelProvider {
   return {
@@ -94,7 +73,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.spyOn(models, 'updateModelSettings').mockResolvedValue(undefined)
   vi.spyOn(models, 'getModelContextLimit').mockResolvedValue(undefined)
-  providerSettings.updateSettings.mockReset().mockResolvedValue(undefined)
   vi.spyOn(models, 'getActiveModels').mockResolvedValue(['local-model'])
   vi.spyOn(models, 'stopModel').mockResolvedValue({ success: true })
   selectProvider(providerFixture())
@@ -280,93 +258,3 @@ describe('Cowork context overflow recovery', () => {
   )
 })
 
-describe('Cowork quick controls', () => {
-  async function openControls() {
-    await userEvent.click(
-      screen.getByRole('button', { name: /common:modelControls.label/ })
-    )
-  }
-
-  it('uses metadata limits and waits for context application before publishing', async () => {
-    const provider = providerFixture()
-    delete provider.models[0].settings!.ctx_len.controller_props.max
-    selectProvider(provider)
-    vi.mocked(models.getModelContextLimit).mockResolvedValue(6000)
-    const applying = Promise.withResolvers<void>()
-    vi.mocked(models.updateModelSettings).mockReturnValueOnce(applying.promise)
-    await act(async () => {
-      render(<CoworkModelControls />)
-    })
-    await openControls()
-    expect(screen.getByRole('menuitem')).toHaveTextContent('6,000')
-    await userEvent.click(screen.getByRole('menuitem'))
-    expect(currentContext()).toBe(4096)
-    expect(
-      screen.getByRole('button', { name: /common:modelControls.label/ })
-    ).toBeDisabled()
-    await act(async () => applying.resolve())
-    expect(currentContext()).toBe(6000)
-    expect(screen.getByRole('button', { name: /6,000/ })).toBeEnabled()
-  })
-
-  it('keeps fit disabled and reports failure when engine application rejects', async () => {
-    const applying = Promise.withResolvers<void>()
-    providerSettings.updateSettings.mockReturnValueOnce(applying.promise)
-    render(<CoworkModelControls />)
-    await openControls()
-    await userEvent.click(screen.getByRole('menuitemcheckbox'))
-    expect(
-      useModelProvider.getState().providers[0].settings[0].controller_props
-        .value
-    ).toBe(false)
-    await act(async () => applying.reject(new Error('reload failed')))
-    await openControls()
-    expect(screen.getByRole('menuitemcheckbox')).toHaveAttribute(
-      'aria-checked',
-      'false'
-    )
-    expect(toast.error).toHaveBeenCalledWith(
-      'common:modelControls.updateFailed',
-      expect.objectContaining({ description: 'reload failed' })
-    )
-  })
-
-  it('reflects successful and external provider fit updates', async () => {
-    render(<CoworkModelControls />)
-    await openControls()
-    await userEvent.click(screen.getByRole('menuitemcheckbox'))
-    await openControls()
-    expect(screen.getByRole('menuitemcheckbox')).toHaveAttribute(
-      'aria-checked',
-      'true'
-    )
-    act(() =>
-      useModelProvider
-        .getState()
-        .updateProvider('llamacpp', { settings: providerFixture().settings })
-    )
-    expect(screen.getByRole('menuitemcheckbox')).toHaveAttribute(
-      'aria-checked',
-      'false'
-    )
-  })
-
-  it('opens MLX settings after a failed MLX context change', async () => {
-    selectProvider(providerFixture('mlx'))
-    vi.mocked(models.stopModel).mockResolvedValueOnce({
-      success: false,
-      error: 'busy',
-    })
-    render(<CoworkModelControls />)
-    await openControls()
-    expect(screen.queryByRole('menuitemcheckbox')).toBeNull()
-    await userEvent.click(screen.getByRole('menuitem'))
-    const action = vi.mocked(toast.error).mock.calls[0]?.[1]?.action
-    if (!action || typeof action !== 'object' || !('onClick' in action))
-      throw new Error('Missing recovery action')
-    Reflect.apply(action.onClick, undefined, [])
-    expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ params: { providerName: 'mlx' } })
-    )
-  })
-})

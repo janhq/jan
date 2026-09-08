@@ -64,7 +64,6 @@ import {
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
 import { CoworkWorkspacePill } from '@/containers/CoworkWorkspacePill'
-import { CoworkModelControls } from '@/containers/CoworkModelControls'
 import { CoworkPlanToggle } from '@/containers/CoworkPlanToggle'
 import { CoworkEmptyState } from '@/containers/CoworkEmptyState'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -1546,7 +1545,6 @@ function CoworkPage() {
                               .setPlanMode(session.id, next)
                         }}
                       />
-                      <CoworkModelControls />
                       <CoworkWorkspacePill
                         folder={folder}
                         gitBranch={gitBranch}
