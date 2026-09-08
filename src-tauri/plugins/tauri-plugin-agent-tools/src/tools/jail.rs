@@ -1203,13 +1203,14 @@ mod enforcement_tests {
             ws,
             tmp.as_deref(),
             super::super::proc::ShellEnv::default(),
+            None,
         )
         .await
         .expect("spawn");
         let pid = child.id();
         let out = child.wait_with_output().await.expect("wait");
         if let Some(pid) = pid {
-            super::super::proc::unregister(pid);
+            super::super::proc::unregister(None, pid);
         }
         let mut text = String::from_utf8_lossy(&out.stdout).to_string();
         text.push_str(&String::from_utf8_lossy(&out.stderr));

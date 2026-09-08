@@ -13,6 +13,7 @@ import {
   stopMonitor,
   listMonitors,
   stopSessionMonitors,
+  cancelThreadBash,
   type MemoryCatalogEntry,
   type MonitorUpdate,
   type SandboxStatus,
@@ -367,6 +368,19 @@ export async function stopAgentSessionMonitors(sessionId: string): Promise<void>
     await stopSessionMonitors(sessionId)
   } catch (e) {
     console.warn('[agentTools] Failed to stop session monitors:', messageOf(e))
+  }
+}
+
+/**
+ * Kill every `bash` tree this session started when the user presses Stop.
+ * Best-effort: aborting the JS run already unwinds the turn, so a failure here
+ * only means a shell keeps running, not user-visible damage.
+ */
+export async function cancelAgentThreadBash(sessionId: string): Promise<void> {
+  try {
+    await cancelThreadBash(sessionId)
+  } catch (e) {
+    console.warn('[agentTools] Failed to cancel session bash:', messageOf(e))
   }
 }
 

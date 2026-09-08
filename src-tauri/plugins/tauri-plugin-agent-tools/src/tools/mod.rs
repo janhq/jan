@@ -129,6 +129,12 @@ pub struct ToolContext<'a> {
     /// frontend's tool-call id) rather than inside `bash`, so the sink can carry
     /// it from the first chunk.
     pub call_id: Option<&'a str>,
+    /// The session (thread) this call belongs to, so a `bash` child is
+    /// registered under it and a per-session Stop (`proc::kill_thread`) reaps
+    /// exactly this session's shells. `None` on run-owned callers with no
+    /// session identity (the CLI, monitor poll children), which share the
+    /// process-wide bucket only `kill_all` reaps.
+    pub thread_id: Option<&'a str>,
     /// Host env-var names (exact or `*`-glob) the shell may inherit on top of the
     /// fixed base allowlist. Empty on every surface that has not configured any,
     /// so the shell env is unchanged by default. Resolved once per run from
@@ -159,6 +165,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("read_roots", &self.read_roots)
             .field("write_roots", &self.write_roots)
             .field("call_id", &self.call_id)
+            .field("thread_id", &self.thread_id)
             .field("env_passthrough", &self.env_passthrough)
             .field("env_set", &self.env_set)
             .finish()
@@ -186,9 +193,16 @@ impl<'a> ToolContext<'a> {
             read_roots: &[],
             write_roots: &[],
             call_id: None,
+            thread_id: None,
             env_passthrough: &[],
             env_set: &[],
         }
+    }
+
+    /// The session (thread) this call belongs to. See [`Self::thread_id`].
+    pub fn with_thread_id(mut self, thread_id: Option<&'a str>) -> Self {
+        self.thread_id = thread_id;
+        self
     }
 
     /// Host env-var names the shell may inherit beyond the base allowlist. See

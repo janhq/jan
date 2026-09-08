@@ -65,6 +65,7 @@ import {
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
 import { defaultModel } from '@/lib/models'
+import { cancelAgentThreadBash } from '@/lib/agentTools'
 import { useAssistant } from '@/hooks/useAssistant'
 import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -794,6 +795,10 @@ const ChatInput = memo(function ChatInput({
         abortControllers[threadId]?.abort()
       }
       cancelToolCall?.()
+      // Aborting the stream/loop only discards a pending tool result; a running
+      // or backgrounded bash keeps executing until its session's shells are
+      // killed. Chat's tool thread_id is the chat thread id.
+      void cancelAgentThreadBash(threadId)
     },
     [abortControllers, cancelToolCall, onStop]
   )
