@@ -2,6 +2,8 @@
 export interface SkillMeta {
   name: string
   description: string
+  user_invocable?: boolean
+  model_invocable?: boolean
 }
 
 /** An image a tool returned, as a `data:` URL plus its display name. */

@@ -224,6 +224,22 @@ pub async fn skill_delete(
 ) -> Result<(), AgentToolsError> {
     skills::delete(&resolve_store(&data_folder, project.as_deref()), &name).map_err(Into::into)
 }
+/// Build a user prompt for an installed skill, including its body and arguments.
+#[tauri::command]
+pub async fn skill_invoke(
+    data_folder: String,
+    project: Option<String>,
+    name: String,
+    args: String,
+) -> Result<String, AgentToolsError> {
+    skills::build_invocation_message(
+        &resolve_store(&data_folder, project.as_deref()),
+        &name,
+        &args,
+    )
+    .map(|(message, _)| message)
+    .map_err(Into::into)
+}
 
 /// Memory note names (stems), sorted.
 #[tauri::command]

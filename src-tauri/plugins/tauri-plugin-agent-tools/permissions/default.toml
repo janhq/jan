@@ -12,6 +12,7 @@ permissions = [
     "allow-skill-read",
     "allow-skill-write",
     "allow-skill-delete",
+    "allow-skill-invoke",
     "allow-memory-list",
     "allow-memory-read",
     "allow-memory-write",
