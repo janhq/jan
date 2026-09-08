@@ -19,12 +19,18 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
   const { t } = useTranslation()
   const { skills, enabled, setEnabled } = useSkills(folder)
 
-  if (!folder || skills.length === 0) return null
+  if (skills.length === 0) return null
 
   const allNames = skills.map((s) => s.name)
   const effective = effectiveEnabled(enabled, allNames)
+  // #8878: the global store is what the Cowork agent actually reads, so its
+  // skills are shown and active even with no folder. The `[skills].enabled`
+  // whitelist lives in a project's agent.toml, so with no folder it has nowhere
+  // to persist -- every global skill is active and the toggle is informational.
+  const scoped = folder !== null
 
   const toggle = (name: string) => {
+    if (!scoped) return
     const next = new Set(effective)
     if (next.has(name)) next.delete(name)
     else next.add(name)
@@ -58,6 +64,11 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           {t('common:skillsInContext')}
         </div>
+        {!scoped && (
+          <div className="px-2 pb-1.5 text-xs text-muted-foreground">
+            {t('common:skillsScopeGlobal')}
+          </div>
+        )}
         <div className="max-h-64 overflow-y-auto">
           {skills.map((s) => (
             <label
@@ -74,6 +85,7 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
               </div>
               <Switch
                 checked={effective.has(s.name)}
+                disabled={!scoped}
                 onCheckedChange={() => toggle(s.name)}
               />
             </label>
