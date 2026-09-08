@@ -9,7 +9,7 @@ import {
 import { Card } from '@/components/ui/card'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { previewKindFor, resolveInRoot } from '@/lib/coworkPreview'
+import { previewKindFor, resolveInRoots } from '@/lib/coworkPreview'
 import { ARTIFACT_ICON, type CoworkArtifact } from '@/lib/coworkArtifacts'
 import { cn } from '@/lib/utils'
 
@@ -35,13 +35,15 @@ const GROUP_TINT: Record<CoworkArtifact['group'], string> = {
  */
 export function CoworkArtifactCard({
   artifact,
-  root,
+  roots,
   onPreview,
   showPath = false,
   className,
 }: {
   artifact: CoworkArtifact
-  root: string | null
+  /** Every place a session may have written the file: its sandbox and, when
+   * attached, the writable project folder. Resolved in order. */
+  roots: Array<string | null>
   onPreview: (path: string) => void
   /** The library sets this: many sessions' files need the disambiguating path. */
   showPath?: boolean
@@ -50,7 +52,7 @@ export function CoworkArtifactCard({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const Icon = ARTIFACT_ICON[artifact.group]
-  const abs = root ? resolveInRoot(root, artifact.path) : null
+  const abs = resolveInRoots(roots, artifact.path)?.abs ?? null
   const kind = previewKindFor(artifact.path)
   // A real thumbnail only where the browser renders the file on its own; HTML
   // would need executing the page.
