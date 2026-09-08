@@ -260,7 +260,15 @@ export async function executeAgentTool(
   allowNetwork = false,
   /** Opt the attached folder into writes and edits in place (Cowork's shared
    * folder). Off by default, so chat's attachment stays read-only. */
-  projectWritable = false
+  projectWritable = false,
+  /**
+   * A project folder whose co-located skills (`<folder>/.jan/agent/skills`)
+   * layer on top of the permanent store for `skill_list`/`skill_read`, so an
+   * attached folder's skills reach the agent alongside the global ones (#8879).
+   * Cowork passes its attached folder; chat leaves it unset, keeping its skills
+   * global-only. Memory and skill writes stay on the permanent store regardless.
+   */
+  skillProject?: string | null
 ): Promise<AgentToolResult> {
   try {
     const dataFolder = await getServiceHub().app().getJanDataFolder()
@@ -274,7 +282,7 @@ export async function executeAgentTool(
       threadId,
       toolName,
       args,
-      undefined,
+      skillProject ?? undefined,
       undefined,
       allowNetwork,
       readOnlyProject ?? undefined,

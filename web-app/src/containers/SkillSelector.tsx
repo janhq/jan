@@ -76,7 +76,18 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
             >
               <div className="flex-1 min-w-0">
-                <div className="truncate text-sm font-medium">{s.name}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  {scoped && s.origin && (
+                    <span className="shrink-0 rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">
+                      {t(
+                        s.origin === 'project'
+                          ? 'common:skillOriginFolder'
+                          : 'common:skillOriginGlobal'
+                      )}
+                    </span>
+                  )}
+                </div>
                 {s.description && (
                   <div className="truncate text-xs text-muted-foreground">
                     {s.description}

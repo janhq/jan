@@ -63,6 +63,12 @@ pub struct ImageContentPart {
 pub struct ToolContext<'a> {
     pub project_root: &'a Path,
     pub store_root: &'a Path,
+    /// A project's co-located store whose `skills/` layer on top of `store_root`
+    /// for discovery and `skill_read`, so the desktop/Cowork agent sees an
+    /// attached folder's skills alongside the permanent ones (#8879). `None` on
+    /// every surface with no folder attached. Skill *writes* and all memory ops
+    /// still target `store_root`; only skill reads consult this overlay.
+    pub skill_project_root: Option<&'a Path>,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
     /// When set, `write`/`edit` re-canonicalize the target and refuse a path
@@ -141,6 +147,7 @@ impl std::fmt::Debug for ToolContext<'_> {
         f.debug_struct("ToolContext")
             .field("project_root", &self.project_root)
             .field("store_root", &self.store_root)
+            .field("skill_project_root", &self.skill_project_root)
             .field("enabled_skills", &self.enabled_skills)
             .field("allow_network", &self.allow_network)
             .field("confine_writes", &self.confine_writes)
@@ -167,6 +174,7 @@ impl<'a> ToolContext<'a> {
         Self {
             project_root,
             store_root,
+            skill_project_root: None,
             enabled_skills,
             allow_network: false,
             confine_writes: false,
@@ -194,6 +202,22 @@ impl<'a> ToolContext<'a> {
     pub fn with_env_set(mut self, set: &'a [(String, String)]) -> Self {
         self.env_set = set;
         self
+    }
+
+    /// Overlay a project's co-located skill store on top of the permanent one.
+    /// See [`Self::skill_project_root`].
+    pub fn with_skill_project_root(mut self, root: &'a Path) -> Self {
+        self.skill_project_root = Some(root);
+        self
+    }
+
+    /// Skill stores in precedence order for discovery and `skill_read`: the
+    /// project overlay (when attached) on top of the permanent store.
+    pub fn skill_roots(&self) -> Vec<&Path> {
+        match self.skill_project_root {
+            Some(project) => vec![project, self.store_root],
+            None => vec![self.store_root],
+        }
     }
 
     /// The shell env policy this context carries, for [`crate::tools::proc::spawn`].

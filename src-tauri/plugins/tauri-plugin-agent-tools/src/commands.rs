@@ -752,7 +752,18 @@ async fn execute_tool_inner(
         .ensure(Path::new(&data_folder), &thread_id)
         .await?;
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
-    let store = resolve_store(&data_folder, project.as_deref());
+    // Base store for memory and skill *writes*: always the permanent store,
+    // independent of `project`. `project` only overlays its co-located skills on
+    // top for `skill_list`/`skill_read` (#8879), so an attached folder's skills
+    // reach the model without moving memory or authored skills off the permanent
+    // store. (Equivalent to the old `resolve_store(.., None)`, which is what every
+    // caller passed.)
+    let store = workspace::permanent_store(Path::new(&data_folder));
+    let skill_project: Option<PathBuf> = project
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .map(|p| workspace::project_store(Path::new(p)));
     // Plural from the outset so attaching a second folder later is not another
     // signature change.
     let attached: Vec<PathBuf> = match read_only_project.as_deref() {
@@ -866,6 +877,9 @@ async fn execute_tool_inner(
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
         .with_write_roots(&write_roots);
+    if let Some(sp) = skill_project.as_deref() {
+        ctx = ctx.with_skill_project_root(sp);
+    }
     if let Some(id) = call_id.as_deref() {
         ctx = ctx.with_call_id(id);
     }
@@ -1746,6 +1760,71 @@ mod tests {
         .unwrap();
         assert_eq!(out.content, "run it");
         let _ = std::fs::remove_dir_all(&data);
+    }
+
+    /// A folder passed as `project` layers its co-located skills on top of the
+    /// permanent store: both reach `skill_list`, `skill_read` loads the folder's
+    /// own skill, and memory/skill-writes stay on the permanent store (#8879).
+    #[tokio::test]
+    async fn an_attached_project_layers_skills_over_the_permanent_store() {
+        let data = unique_data_folder();
+        let df = data.to_string_lossy().to_string();
+        let repo = repo_outside_tmp("skilllayer");
+        let project = repo.to_string_lossy().to_string();
+
+        skills::write(
+            &workspace::permanent_store(&data),
+            "global_skill",
+            "---\ndescription: from global\n---\nglobal body",
+        )
+        .unwrap();
+        skills::write(
+            &workspace::project_store(&repo),
+            "folder_skill",
+            "---\ndescription: from folder\n---\nfolder body",
+        )
+        .unwrap();
+
+        let listed = execute_tool(
+            df.clone(),
+            T1.into(),
+            Some(project.clone()),
+            "skill_list".into(),
+            json!({}),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(
+            listed.content.contains("global_skill") && listed.content.contains("folder_skill"),
+            "both stores must appear, got: {}",
+            listed.content
+        );
+
+        let body = execute_tool(
+            df.clone(),
+            T2.into(),
+            Some(project.clone()),
+            "skill_read".into(),
+            json!({"name": "folder_skill"}),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(body.content, "folder body");
+
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&repo);
     }
     // ---- read-only attached folder, end to end ------------------------------
 

@@ -151,6 +151,8 @@ export async function dispatchCoworkTool(
     // the next command; chat's shell stays network-closed regardless.
     // The attached folder is writable on this surface: Cowork's shared folder
     // takes writes and edits in place, unlike chat's read-only attachment.
+    // The attached folder is also the skill-overlay project, so the folder's
+    // own skills reach the agent on top of the permanent store (#8879).
     const result = await executeAgentTool(
       toolName,
       call.input,
@@ -158,7 +160,8 @@ export async function dispatchCoworkTool(
       ctx.readOnlyFolder,
       'session',
       useCoworkConfig.getState().networkEnabled,
-      true
+      true,
+      ctx.readOnlyFolder
     )
     if (result.error) return { output: result.error, isError: true }
     return {

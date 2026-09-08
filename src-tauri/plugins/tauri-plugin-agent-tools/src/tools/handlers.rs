@@ -426,7 +426,7 @@ fn render_write_diff(prior: Option<&str>, content: &str) -> String {
 /// `skill_list` tool: catalog of `name — description` lines for ENABLED skills
 /// only (disabled skills must stay invisible to the model). Empty if none.
 fn skill_list(ctx: &ToolContext<'_>) -> String {
-    skills::catalog(ctx.store_root, ctx.enabled_skills)
+    skills::catalog_layered(&ctx.skill_roots(), ctx.enabled_skills)
         .iter()
         .map(|m| {
             if m.description.is_empty() {
@@ -449,7 +449,7 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' not found");
     }
-    let raw = match skills::read_raw(ctx.store_root, name) {
+    let raw = match skills::read_raw_layered(&ctx.skill_roots(), name) {
         Ok(raw) => raw,
         Err(e) => return e,
     };
