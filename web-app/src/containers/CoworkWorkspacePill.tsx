@@ -1,4 +1,5 @@
 import { Folder, FolderPlus, GitBranch, PencilLine } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -40,6 +41,33 @@ export function CoworkWorkspacePill({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const folderName = folder ? basenameOf(folder) : null
+
+  const notifyMissingWorkspace = () => {
+    toast.error(t('common:workspace.missing'), {
+      action: {
+        label: t('common:workspace.change'),
+        onClick: onAttach,
+      },
+    })
+  }
+
+  const handleOpen = async () => {
+    if (!folder) return
+    try {
+      await serviceHub.opener().openPath(folder)
+    } catch {
+      notifyMissingWorkspace()
+    }
+  }
+
+  const handleReveal = async () => {
+    if (!folder) return
+    try {
+      await serviceHub.opener().revealItemInDir(folder)
+    } catch {
+      notifyMissingWorkspace()
+    }
+  }
 
   return (
     <Popover>
@@ -99,7 +127,7 @@ export function CoworkWorkspacePill({
                 variant="ghost"
                 size="sm"
                 className="ml-auto h-7"
-                onClick={() => void serviceHub.opener().openPath(folder)}
+                onClick={handleOpen}
               >
                 {t('common:workspace.open')}
               </Button>
@@ -107,7 +135,7 @@ export function CoworkWorkspacePill({
                 variant="ghost"
                 size="sm"
                 className="h-7"
-                onClick={() => void serviceHub.opener().revealItemInDir(folder)}
+                onClick={handleReveal}
               >
                 {t('common:workspace.reveal')}
               </Button>
