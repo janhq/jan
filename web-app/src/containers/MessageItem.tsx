@@ -64,6 +64,9 @@ export type MessageItemProps = {
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
   isAnimating?: boolean
+  /** Suppress the per-message action buttons (regenerate/continue/edit/...),
+   * e.g. while a continue is pending and re-running would be ambiguous. */
+  hideActions?: boolean
   highlightedPrefix?: string | null
 }
 
@@ -85,6 +88,7 @@ export const MessageItem = memo(
     onDelete,
     onRetry,
     versionInfo,
+    onSwitchVersion,
     highlightedPrefix,
   }: MessageItemProps) => {
     const { t } = useTranslation()
