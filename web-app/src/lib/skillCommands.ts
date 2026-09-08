@@ -46,3 +46,14 @@ export function resolveSkillCommand(
   })
   return matches.length === 1 ? matches[0] : null
 }
+
+export function skillCommandPrefix(
+  text: string,
+  skills: SkillCommandMeta[]
+): string | null {
+  const match = text.match(/^\/(?:skill:)?([^\s/]+)/)
+  if (!match) return null
+  const parsed = parseSkillCommand(text)
+  if (!parsed || !resolveSkillCommand(skills, parsed)) return null
+  return match[0]
+}

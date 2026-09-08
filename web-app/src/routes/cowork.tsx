@@ -135,6 +135,7 @@ import {
   filterSkillCommands,
   parseSkillCommand,
   resolveSkillCommand,
+  skillCommandPrefix,
 } from '@/lib/skillCommands'
 
 export const Route = createFileRoute(route.cowork as any)({
@@ -1470,6 +1471,7 @@ function CoworkPage() {
                   initialMessage={true}
                   scopeKey={session?.id}
                   ownsToolSet={false}
+                  highlightedPrefix={skillCommandPrefix(prompt, skillCommands)}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}
