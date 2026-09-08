@@ -835,7 +835,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
+    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref(), ctx.shell_env()).await
+    {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };

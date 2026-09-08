@@ -25,6 +25,18 @@ pub struct ShellConfig {
     pub description: &'static str,
 }
 
+/// User-configured additions to the shell's environment, layered on top of the
+/// fixed [`SANDBOX_ENV_ALLOW`] base. Empty by default, so an unconfigured run is
+/// byte-for-byte unchanged. `passthrough` copies host vars by exact name or
+/// `*`-glob; `set` injects explicit key=value pairs and wins per key. Secret-
+/// looking names (`*KEY*`, `*TOKEN*`, ...) are never copied by `passthrough` --
+/// only an explicit `set` can inject one, which names it on purpose.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ShellEnv<'a> {
+    pub passthrough: &'a [String],
+    pub set: &'a [(String, String)],
+}
+
 /// Resolved shell for this process, computed once. Prefers a real `bash`
 /// (matching the tool's name and documented guidance) and falls back to a
 /// POSIX `sh`/`cmd` only when no bash is found.
@@ -223,11 +235,81 @@ fn confine_limits(cmd: &mut Command) {
     }
 }
 
+/// Case-insensitive markers a `passthrough` glob must never copy, so a broad
+/// pattern (`GIT_*`, `*`) cannot leak a credential into the shell. To inject one
+/// on purpose, name it in [`ShellEnv::set`], which is not scrubbed.
+fn is_secret_name(name: &str) -> bool {
+    const MARKERS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];
+    let upper = name.to_ascii_uppercase();
+    MARKERS.iter().any(|m| upper.contains(m))
+}
+
+/// Minimal case-insensitive `*`-glob, the one wildcard an env-var allowlist
+/// needs. `*` matches any run (including empty); every other character is
+/// literal. No `?`/`[]` -- env-var names do not use them.
+fn glob_match(pattern: &str, name: &str) -> bool {
+    let p = pattern.to_ascii_uppercase();
+    let n = name.to_ascii_uppercase();
+    if !p.contains('*') {
+        return p == n;
+    }
+    let parts: Vec<&str> = p.split('*').collect();
+    let last = parts.len() - 1;
+    let mut pos = 0usize;
+    for (i, part) in parts.iter().enumerate() {
+        if part.is_empty() {
+            continue;
+        }
+        if i == 0 {
+            if !n[pos..].starts_with(part) {
+                return false;
+            }
+            pos += part.len();
+        } else if i == last {
+            if !n[pos..].ends_with(part) {
+                return false;
+            }
+        } else {
+            match n[pos..].find(part) {
+                Some(idx) => pos += idx + part.len(),
+                None => return false,
+            }
+        }
+    }
+    true
+}
+
+/// The env additions for a run: host vars matched by `passthrough` (minus
+/// secret-looking names) followed by `set`, which wins per key. Pure over its
+/// `host` input so it is unit-tested without spawning a shell.
+pub(crate) fn resolve_env_overrides<I>(host: I, env: ShellEnv<'_>) -> Vec<(String, String)>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut out: Vec<(String, String)> = Vec::new();
+    if !env.passthrough.is_empty() {
+        for (name, val) in host {
+            if is_secret_name(&name) {
+                continue;
+            }
+            if env.passthrough.iter().any(|p| glob_match(p, &name)) {
+                out.push((name, val));
+            }
+        }
+    }
+    for (key, val) in env.set {
+        out.retain(|(n, _)| n != key);
+        out.push((key.clone(), val.clone()));
+    }
+    out
+}
+
 pub async fn spawn(
     cfg: &ShellConfig,
     command: &str,
     cwd: &Path,
     scratch: Option<&Path>,
+    env: ShellEnv<'_>,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
@@ -242,6 +324,13 @@ pub async fn spawn(
         if let Some(val) = std::env::var_os(key) {
             cmd.env(key, val);
         }
+    }
+    // Layer the run's configured pass-through and explicit overrides on top of
+    // the base allowlist. Deny-by-default is preserved: nothing here is copied
+    // unless the config named it, and a secret-looking host var is never copied
+    // by a glob (see [`resolve_env_overrides`]).
+    for (key, val) in resolve_env_overrides(std::env::vars(), env) {
+        cmd.env(key, val);
     }
     // Point the shell's temp env at the session scratch, overriding the host
     // values the allowlist just copied in. Without this a command that writes
@@ -380,7 +469,7 @@ mod tests {
 
     #[tokio::test]
     async fn runs_a_command_and_captures_stdout() {
-        let child = spawn(shell(), "echo hello", &tmp(), None).await.unwrap();
+        let child = spawn(shell(), "echo hello", &tmp(), None, ShellEnv::default()).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
@@ -399,6 +488,7 @@ mod tests {
             "echo \"$TMPDIR $TMP $TEMP\"",
             &tmp(),
             Some(&scratch),
+            ShellEnv::default(),
         )
         .await
         .unwrap();
@@ -417,7 +507,7 @@ mod tests {
     /// through, rather than being handed an empty temp dir.
     #[tokio::test]
     async fn temp_env_is_left_alone_without_a_scratch() {
-        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None)
+        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None, ShellEnv::default())
             .await
             .unwrap();
         let pid = child.id().unwrap();
@@ -431,7 +521,7 @@ mod tests {
     async fn kill_tree_reaps_backgrounded_grandchild() {
         // The shell backgrounds a long sleeper, prints its pid, then waits on
         // it. Killing the group must take down that grandchild too.
-        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None)
+        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None, ShellEnv::default())
             .await
             .unwrap();
         let leader = child.id().unwrap();
@@ -476,18 +566,92 @@ mod tests {
     async fn confine_limits_caps_the_child_process_count() {
         // The rlimit mounting must actually reach the spawned child: with NPROC
         // clamped we still run up to the cap, but a fork-bomb past it fails.
-        let child = spawn(shell(), "exit 0", &tmp(), None).await.unwrap();
+        let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default()).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
         unregister(pid);
 
         // Spawn a shell that reports its own soft NOFILE limit; confine_limits
         // sets it to 1024, which should be visible inside the sandbox.
-        let child = spawn(shell(), "ulimit -n", &tmp(), None).await.unwrap();
+        let child = spawn(shell(), "ulimit -n", &tmp(), None, ShellEnv::default()).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
         unregister(pid);
         let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
         assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
+    }
+}
+
+#[cfg(test)]
+mod env_policy_tests {
+    use super::*;
+
+    fn host(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn glob_matches_prefix_suffix_and_infix_case_insensitively() {
+        assert!(glob_match("GIT_*", "GIT_AUTHOR_NAME"));
+        assert!(glob_match("git_*", "GIT_AUTHOR_NAME"));
+        assert!(glob_match("*_PROXY", "http_proxy".to_ascii_uppercase().as_str()));
+        assert!(glob_match("*PROXY*", "HTTPS_PROXY_HOST"));
+        assert!(glob_match("*", "ANYTHING"));
+        assert!(glob_match("PATH", "PATH"));
+        assert!(!glob_match("GIT_*", "CARGO_HOME"));
+        assert!(!glob_match("PATH", "PATHEXT"));
+    }
+
+    #[test]
+    fn secret_names_are_recognized() {
+        for name in ["OPENAI_API_KEY", "MY_SECRET", "GH_TOKEN", "DB_PASSWORD", "aws_credential"] {
+            assert!(is_secret_name(name), "{name} should read as secret");
+        }
+        for name in ["PATH", "HOME", "GIT_AUTHOR_NAME", "RUST_LOG"] {
+            assert!(!is_secret_name(name), "{name} should not read as secret");
+        }
+    }
+
+    #[test]
+    fn empty_policy_copies_nothing() {
+        let out = resolve_env_overrides(host(&[("PATH", "/bin"), ("FOO", "bar")]), ShellEnv::default());
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn passthrough_copies_matches_and_skips_secret_named_vars() {
+        let pats = vec!["GIT_*".to_string(), "CARGO_HOME".to_string()];
+        let env = ShellEnv { passthrough: &pats, set: &[] };
+        let out = resolve_env_overrides(
+            host(&[
+                ("GIT_AUTHOR_NAME", "Ada"),
+                ("GIT_TOKEN", "leak"), // matches GIT_* but is secret-named
+                ("CARGO_HOME", "/c"),
+                ("UNRELATED", "x"),
+            ]),
+            env,
+        );
+        assert!(out.contains(&("GIT_AUTHOR_NAME".into(), "Ada".into())));
+        assert!(out.contains(&("CARGO_HOME".into(), "/c".into())));
+        assert!(!out.iter().any(|(k, _)| k == "GIT_TOKEN"), "secret-named var must not leak");
+        assert!(!out.iter().any(|(k, _)| k == "UNRELATED"));
+    }
+
+    #[test]
+    fn set_wins_over_passthrough_and_injects_verbatim() {
+        let pats = vec!["RUST_LOG".to_string()];
+        let set = vec![
+            ("RUST_LOG".to_string(), "debug".to_string()),
+            ("GH_TOKEN".to_string(), "explicit".to_string()), // secret-named but user-named
+        ];
+        let env = ShellEnv { passthrough: &pats, set: &set };
+        let out = resolve_env_overrides(host(&[("RUST_LOG", "info")]), env);
+        // Only one RUST_LOG, and it is the set value.
+        assert_eq!(out.iter().filter(|(k, _)| k == "RUST_LOG").count(), 1);
+        assert!(out.contains(&("RUST_LOG".into(), "debug".into())));
+        assert!(out.contains(&("GH_TOKEN".into(), "explicit".into())));
     }
 }

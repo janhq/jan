@@ -478,10 +478,15 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
 async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
     let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
-    let mut child =
-        crate::tools::proc::spawn(&shell, script, &ctx.project_root, sandbox_tmp.as_deref())
-            .await
-            .ok()?;
+    let mut child = crate::tools::proc::spawn(
+        &shell,
+        script,
+        &ctx.project_root,
+        sandbox_tmp.as_deref(),
+        tool_ctx.shell_env(),
+    )
+    .await
+    .ok()?;
     let pid = child.id();
     let result = tokio::time::timeout(EVAL_TIMEOUT, async {
         let stdout = child.stdout.take();
