@@ -160,6 +160,19 @@
     "empty": "Files the agent writes or edits will show up here.",
     "a11y": "Agent changes: {{files}} files, {{additions}} added, {{deletions}} removed"
   },
+  "modelPanel": {
+    "title": "Model settings",
+    "a11y": "Open model settings",
+    "contextTooltip": "Context window: {{value}} of {{max}} tokens"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Skill '{{name}}' is not available",
+    "kind": {
+      "skill": "Skill",
+      "command": "Command",
+      "model": "Model"
+    }
+  },
   "compactWidth": "Compact Width",
   "fullWidth": "Full Width",
   "dark": "Dark",

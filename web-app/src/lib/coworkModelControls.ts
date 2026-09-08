@@ -34,6 +34,13 @@ export function coworkModelContext(
   return { value, max, next: nextCoworkContextSize(value, max) }
 }
 
+/** Compact context readout for chips/rail headers: 8192 -> "8K". */
+export function formatContextSize(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '-'
+  if (value < 1024) return String(value)
+  return `${Math.round(value / 1024)}K`
+}
+
 export function nextCoworkContextSize(
   current: number,
   max: number

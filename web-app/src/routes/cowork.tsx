@@ -80,6 +80,8 @@ import { CoworkFilesChip } from '@/containers/CoworkFilesChip'
 import { CoworkFilesPanel } from '@/containers/CoworkFilesPanel'
 import { CoworkTodoChip } from '@/containers/CoworkTodoChip'
 import { CoworkTasksChip } from '@/containers/CoworkTasksChip'
+import { CoworkModelChip } from '@/containers/CoworkModelChip'
+import { CoworkModelPanel } from '@/containers/CoworkModelPanel'
 import { collectCodeFileDiffs } from '@/lib/coworkDiffs'
 import { CoworkSandboxChip } from '@/containers/CoworkSandboxChip'
 import { CoworkBudgetNotice } from '@/containers/CoworkBudgetNotice'
@@ -263,6 +265,12 @@ function CoworkPage() {
       : undefined
   const overflowModel = coworkLocalModel(overflowProvider, selectedModel?.id)
   const overflowContext = coworkModelContext(overflowProvider, selectedModel?.id)
+  // The selected provider's own model entry (with settings) drives the model
+  // rail; undefined for remote/inactive providers, which hides its chip.
+  const modelProvider = providers.find(
+    (provider) => provider.provider === selectedProvider
+  )
+  const localModel = coworkLocalModel(modelProvider, selectedModel?.id)
   const [gitBranch, setGitBranch] = useState<string | null>(null)
   const [subagentDefs, setSubagentDefs] = useState<SubagentDefinition[]>([])
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
@@ -277,6 +285,7 @@ function CoworkPage() {
     | { kind: 'files' }
     | { kind: 'todos' }
     | { kind: 'tasks' }
+    | { kind: 'model' }
     | null
   >(null)
   const showPreview = useCallback(
@@ -988,7 +997,9 @@ function CoworkPage() {
         ? resolveSkillCommand(skillCommands, skillCommand)
         : null
     if (skillCommand?.explicit && !skill) {
-      toast.error(`Skill '${skillCommand.name}' is not available`)
+      toast.error(
+        t('common:coworkSlash.skillUnavailable', { name: skillCommand.name })
+      )
       return
     }
 
@@ -1513,7 +1524,7 @@ function CoworkPage() {
                           <span className="flex items-center gap-2">
                             <span className="font-mono font-medium">{item.label}</span>
                             <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                              {item.kind}
+                              {t(`common:coworkSlash.kind.${item.kind}`)}
                             </span>
                           </span>
                           <span className="block truncate text-xs text-muted-foreground">
@@ -1589,6 +1600,16 @@ function CoworkPage() {
                           )
                         }
                       />
+                      <CoworkModelChip
+                        model={localModel}
+                        provider={modelProvider}
+                        open={rail?.kind === 'model'}
+                        onToggle={() =>
+                          setRail((r) =>
+                            r?.kind === 'model' ? null : { kind: 'model' }
+                          )
+                        }
+                      />
                       <div className="ml-auto flex items-center">
                         <SkillSelector folder={folder} />
                       </div>
@@ -1628,6 +1649,13 @@ function CoworkPage() {
           <CoworkTasksPanel
             subagents={subagents}
             monitors={monitors}
+            onClose={() => setRail(null)}
+          />
+        )}
+        {rail?.kind === 'model' && localModel && modelProvider && (
+          <CoworkModelPanel
+            model={localModel}
+            provider={modelProvider}
             onClose={() => setRail(null)}
           />
         )}
