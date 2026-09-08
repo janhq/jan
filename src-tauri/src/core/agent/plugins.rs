@@ -269,7 +269,7 @@ pub(crate) fn save_plugin_env(plugin: &str, key: &str, value: &str) -> Result<()
 }
 
 /// [`save_plugin_env`] against an explicit directory (tests).
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 pub(crate) fn save_plugin_env_in(
     dir: &Path,
     plugin: &str,
@@ -357,7 +357,7 @@ pub(crate) fn missing_plugin_env(root: &Path) -> Vec<(String, String, String)> {
 }
 
 /// [`missing_plugin_env`] against an explicit store directory (tests).
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     for (directory, _) in installed_entries(root) {
@@ -506,7 +506,7 @@ pub(crate) fn plugin_mcp_servers(
     resolved_mcp_servers(&dir, &stored)
 }
 
-#[cfg(any(feature = "cli", test))]
+#[cfg(feature = "cli")]
 fn resolved_mcp_servers(
     dir: &Path,
     stored: &std::collections::BTreeMap<String, String>,
