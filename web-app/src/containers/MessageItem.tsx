@@ -64,7 +64,7 @@ export type MessageItemProps = {
   versionInfo?: { index: number; count: number }
   onSwitchVersion?: (messageId: string, dir: -1 | 1) => void
   isAnimating?: boolean
-  hideActions?: boolean
+  highlightedPrefix?: string | null
 }
 
 export const MessageItem = memo(
@@ -85,7 +85,7 @@ export const MessageItem = memo(
     onDelete,
     onRetry,
     versionInfo,
-    onSwitchVersion,
+    highlightedPrefix,
   }: MessageItemProps) => {
     const { t } = useTranslation()
     const selectedModel = useModelProvider((state) => state.selectedModel)
@@ -321,7 +321,19 @@ export const MessageItem = memo(
                 )}
                 {displayText && (
                   <div dir="auto" className="select-text whitespace-pre-wrap">
-                    {displayText}
+                    {highlightedPrefix && displayText.startsWith(highlightedPrefix) ? (
+                      <>
+                        <span
+                          data-testid="skill-command-prefix"
+                          className="rounded-sm bg-primary-foreground/20 px-1 font-medium"
+                        >
+                          {highlightedPrefix}
+                        </span>
+                        {displayText.slice(highlightedPrefix.length)}
+                      </>
+                    ) : (
+                      displayText
+                    )}
                   </div>
                 )}
               </div>

@@ -155,6 +155,7 @@ describe('MessageItem', () => {
     render(
       <MessageItem
         message={makeMsg({ role: 'user', parts: [{ type: 'text', text: 'Hi there' }] }) as any}
+        highlightedPrefix={null}
         isFirstMessage
         isLastMessage
         status={'ready' as any}
@@ -162,6 +163,27 @@ describe('MessageItem', () => {
     )
     expect(screen.getByText('Hi there')).toBeInTheDocument()
     expect(screen.queryByTestId('render-markdown')).not.toBeInTheDocument()
+  })
+  it('highlights a recognized skill prefix in a submitted user message', () => {
+    render(
+      <MessageItem
+        message={
+          makeMsg({
+            role: 'user',
+            parts: [{ type: 'text', text: '/code-review inspect this change' }],
+          }) as any
+        }
+        highlightedPrefix="/code-review"
+        isFirstMessage
+        isLastMessage
+        status={'ready' as any}
+      />
+    )
+
+    expect(screen.getByTestId('skill-command-prefix')).toHaveTextContent(
+      '/code-review'
+    )
+    expect(screen.getByText(/inspect this change/)).toBeInTheDocument()
   })
 
   it('renders attached files from user text metadata', () => {
