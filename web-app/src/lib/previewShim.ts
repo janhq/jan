@@ -61,6 +61,39 @@ export const PREVIEW_SHIM_SCRIPT = `(function () {
   shimStorage('localStorage')
   shimStorage('sessionStorage')
 
+  // pushState/replaceState with a URL run a same-origin check the opaque
+  // sandbox origin always fails, throwing SecurityError and aborting whatever
+  // called it -- a deep-linked slideshow or client router then looks dead
+  // because its own click handler never gets past the navigation. Retry
+  // without the URL, a state change the sandbox does allow, so the page's
+  // navigation still runs; only the address it cannot touch is dropped.
+  function shimHistory() {
+    var h = window.history
+    if (!h) return
+    function wrap(name) {
+      var native = h[name]
+      if (typeof native !== 'function') return
+      try {
+        h[name] = function (state, title, url) {
+          try {
+            return native.call(h, state, title, url)
+          } catch (e) {
+            try {
+              return native.call(h, state, title)
+            } catch (e2) {
+              /* even the URL-less form failed; swallow so the caller runs on */
+            }
+          }
+        }
+      } catch (e) {
+        /* history method not writable on this engine */
+      }
+    }
+    wrap('pushState')
+    wrap('replaceState')
+  }
+  shimHistory()
+
   function report(message) {
     try {
       window.parent.postMessage(
