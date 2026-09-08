@@ -6,9 +6,9 @@
 <title>Flappy Bird</title>
 <style>
   html,body{height:100%;margin:0;background:#1a1a2e;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;}
-  #wrap{position:relative;width:min(400px,calc(100vw - 24px),calc((100vh - 56px)*2/3));}
-  canvas{display:block;width:100%;height:auto;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);touch-action:none;}
-  #hint{position:absolute;left:0;right:0;bottom:-28px;text-align:center;color:#8a8aa3;font-size:clamp(10px,3.2vw,13px);line-height:16px;}
+  #wrap{position:relative;}
+  canvas{display:block;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);touch-action:none;}
+  #hint{position:absolute;left:0;right:0;bottom:-28px;text-align:center;color:#8a8aa3;font-size:13px;}
 </style>
 </head>
 <body>
@@ -19,15 +19,13 @@
 <script>
 const c = document.getElementById('c'), x = c.getContext('2d');
 const W = c.width, H = c.height;
-const GROUND = 80, GRAV = 0.45, FLAP = -7.6, GAP = 150, PIPE_W = 62, PIPE_LIP = 16, PIPE_OVERHANG = 5, SPEED = 2.4;
-const STEP_MS = 1000/60, MAX_FRAME_MS = 100;
+const GROUND = 80, GRAV = 0.45, FLAP = -7.6, GAP = 150, PIPE_W = 62, SPEED = 2.4;
 
-let bird, pipes, score, state, frame, groundX, lastTime = 0, accumulator = 0;
+let bird, pipes, score, best = +(localStorage.getItem('flappyBest')||0), state, frame, groundX;
 
 function reset(){
   bird = {x:110, y:H/2-40, v:0, r:13, rot:0};
   pipes = []; score = 0; frame = 0; groundX = 0; state = 'ready';
-  lastTime = 0; accumulator = 0;
 }
 reset();
 
@@ -38,7 +36,7 @@ function spawnPipe(){
 }
 
 function flap(){
-  if(state==='ready'){ state='play'; frame = 0; }
+  if(state==='ready'){ state='play'; }
   if(state==='play'){ bird.v = FLAP; }
   else if(state==='over'){ reset(); }
 }
@@ -55,52 +53,39 @@ function update(){
   bird.v += GRAV; bird.y += bird.v;
   bird.rot = Math.max(-0.5, Math.min(bird.v/12, 1.6));
 
-  if(frame === 1 || (frame > 1 && (frame - 1) % 95 === 0)) spawnPipe();
+  if(frame % 95 === 0 || pipes.length===0) spawnPipe();
   for(const p of pipes) p.x -= SPEED;
-  pipes = pipes.filter(p => p.x + PIPE_W + PIPE_OVERHANG > -10);
+  pipes = pipes.filter(p => p.x + PIPE_W > -10);
 
   for(const p of pipes){
-    const birdLeft = bird.x - bird.r, birdRight = bird.x + bird.r;
-    const birdTop = bird.y - bird.r, birdBottom = bird.y + bird.r;
-    const by = p.top + GAP;
-    const bodyX = birdRight >= p.x && birdLeft <= p.x + PIPE_W;
-    const lipX = birdRight >= p.x - PIPE_OVERHANG && birdLeft <= p.x + PIPE_W + PIPE_OVERHANG;
-    const hitTopBody = bodyX && birdTop <= p.top - PIPE_LIP && birdBottom >= 0;
-    const hitTopLip = lipX && birdTop <= p.top && birdBottom >= p.top - PIPE_LIP;
-    const hitBottomLip = lipX && birdTop <= by + PIPE_LIP && birdBottom >= by;
-    const hitBottomBody = bodyX && birdTop <= H - GROUND && birdBottom >= by + PIPE_LIP;
-    if(hitTopBody || hitTopLip || hitBottomLip || hitBottomBody){
-      die();
-      return;
-    }
+    if(!p.scored && p.x + PIPE_W < bird.x){ p.scored = true; score++; }
+    const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W;
+    if(inX && (bird.y - bird.r < p.top || bird.y + bird.r > p.top + GAP)) die();
   }
-  if(bird.y + bird.r >= H-GROUND){ bird.y = H-GROUND-bird.r; die(); return; }
-  if(bird.y - bird.r <= 0){ bird.y = bird.r; bird.v = 0; die(); return; }
-
-  for(const p of pipes){
-    if(!p.scored && p.x + PIPE_W + PIPE_OVERHANG < bird.x){ p.scored = true; score++; }
-  }
+  if(bird.y + bird.r >= H-GROUND){ bird.y = H-GROUND-bird.r; die(); }
+  if(bird.y - bird.r < 0){ bird.y = bird.r; bird.v = 0; }
 }
 
 function die(){
   if(state!=='play') return;
   state='over';
+  if(score > best){ best = score; localStorage.setItem('flappyBest', best); }
 }
 
 function pipe(p){
   const g = x.createLinearGradient(p.x,0,p.x+PIPE_W,0);
   g.addColorStop(0,'#4ea832'); g.addColorStop(.35,'#7ed957'); g.addColorStop(1,'#3d8226');
   x.fillStyle = g; x.strokeStyle='#2c5c1c'; x.lineWidth=2;
-  const lip = PIPE_LIP, overhang = PIPE_OVERHANG;
+  const lip = 16;
   // top
   x.fillRect(p.x, 0, PIPE_W, p.top - lip);
   x.strokeRect(p.x, 0, PIPE_W, p.top - lip);
-  x.fillRect(p.x-overhang, p.top-lip, PIPE_W+overhang*2, lip);
-  x.strokeRect(p.x-overhang, p.top-lip, PIPE_W+overhang*2, lip);
+  x.fillRect(p.x-5, p.top-lip, PIPE_W+10, lip);
+  x.strokeRect(p.x-5, p.top-lip, PIPE_W+10, lip);
   // bottom
   const by = p.top + GAP;
-  x.fillRect(p.x-overhang, by, PIPE_W+overhang*2, lip);
-  x.strokeRect(p.x-overhang, by, PIPE_W+overhang*2, lip);
+  x.fillRect(p.x-5, by, PIPE_W+10, lip);
+  x.strokeRect(p.x-5, by, PIPE_W+10, lip);
   x.fillRect(p.x, by+lip, PIPE_W, H-GROUND-by-lip);
   x.strokeRect(p.x, by+lip, PIPE_W, H-GROUND-by-lip);
 }
@@ -158,41 +143,20 @@ function draw(){
     x.fillStyle='rgba(0,0,0,.35)'; x.fillRect(0,0,W,H);
     text('GAME OVER', H/2-60, 40, '#ffd93b');
     text('Score: '+score, H/2-10, 24, '#fff');
-    text('click or press R to retry', H/2+34, 16, '#fff');
+    text('Best: '+best, H/2+24, 24, '#fff');
+    text('click or press R to retry', H/2+70, 16, '#fff');
   }
 }
 
-function loop(now){
-  if(lastTime === 0){
-    lastTime = now;
-  } else {
-    accumulator += Math.min(now - lastTime, MAX_FRAME_MS);
-    lastTime = now;
-    while(accumulator >= STEP_MS){
-      update();
-      accumulator -= STEP_MS;
-    }
-  }
-  draw();
-  requestAnimationFrame(loop);
-}
-loop(performance.now());
-
-document.addEventListener('visibilitychange', () => {
-  lastTime = 0;
-  accumulator = 0;
-});
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
 
 addEventListener('keydown', e => {
-  if(e.repeat) return;
   if(e.code==='Space' || e.code==='ArrowUp'){ e.preventDefault(); flap(); }
   if(e.key==='r' || e.key==='R') reset();
 });
-c.addEventListener('pointerdown', e => {
-  if(!e.isPrimary || e.button !== 0) return;
-  e.preventDefault();
-  flap();
-});
+c.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
+c.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, {passive:false});
 </script>
 </body>
 </html>
