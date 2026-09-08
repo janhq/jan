@@ -8,6 +8,7 @@ import {
   externalRefs,
   previewUrlFor,
   resolveInRoot,
+  resolveInRoots,
 } from '@/lib/coworkPreview'
 
 describe('previewKindFor', () => {
@@ -161,5 +162,29 @@ describe('resolveInRoot', () => {
   it('is null on empty input', () => {
     expect(resolveInRoot(root, '')).toBeNull()
     expect(resolveInRoot('', 'a.md')).toBeNull()
+  })
+})
+
+describe('resolveInRoots', () => {
+  const sandbox = '/data/agent-workspace/sessions/s1'
+  const folder = '/home/me/My Slides'
+
+  it('resolves against the sandbox and returns the matching root', () => {
+    expect(resolveInRoots([sandbox, folder], 'deck.html')).toEqual({
+      abs: `${sandbox}/deck.html`,
+      root: sandbox,
+    })
+  })
+
+  it('resolves a file that lives in the attached folder (#8875)', () => {
+    expect(resolveInRoots([sandbox, folder], `${folder}/deck.html`)).toEqual({
+      abs: `${folder}/deck.html`,
+      root: folder,
+    })
+  })
+
+  it('skips null roots and returns null when nothing contains the path', () => {
+    expect(resolveInRoots([null, sandbox], '/etc/passwd')).toBeNull()
+    expect(resolveInRoots([null, null], 'a.md')).toBeNull()
   })
 })

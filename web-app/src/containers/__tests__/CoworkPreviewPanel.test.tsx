@@ -50,8 +50,8 @@ const respondWith = (body: string) => {
   )
 }
 
-const view = (path: string) =>
-  render(<CoworkPreviewPanel root={ROOT} path={path} onClose={vi.fn()} />)
+const view = (path: string, roots: Array<string | null> = [ROOT]) =>
+  render(<CoworkPreviewPanel roots={roots} path={path} onClose={vi.fn()} />)
 
 describe('CoworkPreviewPanel', () => {
   beforeEach(() => {
@@ -210,6 +210,34 @@ describe('CoworkPreviewPanel', () => {
 
     unmount()
     expect(previewUnregisterRoot).toHaveBeenCalledWith(ROOT)
+  })
+
+  // Regression for #8875: the writable shared folder is a second root, so a
+  // slide the agent wrote there previews instead of reporting "outside".
+  it('previews a file that lives in the attached folder, not the sandbox', async () => {
+    const folder = '/home/me/My Slides'
+    respondWith('<h1>Deck</h1>')
+    view(`${folder}/deck.html`, [ROOT, folder])
+
+    const frame = (await screen.findByTitle(
+      `${folder}/deck.html`
+    )) as HTMLIFrameElement
+    expect(frame.srcdoc).toContain('<h1>Deck</h1>')
+    expect(screen.queryByText('common:preview.outside')).toBeNull()
+  })
+
+  // The unsandboxed mode must register the directory the file actually lives
+  // in, which is the folder here, not the sandbox.
+  it('registers the attached folder for a file served from it', async () => {
+    const folder = '/home/me/My Slides'
+    respondWith('<canvas></canvas><script>run()</script>')
+    view(`${folder}/game.html`, [ROOT, folder])
+    await screen.findByTitle(`${folder}/game.html`)
+
+    fireEvent.click(screen.getByLabelText('common:preview.unsandboxed'))
+    await waitFor(() =>
+      expect(previewRegisterRoot).toHaveBeenLastCalledWith(folder, false)
+    )
   })
 
   it('registers nothing while the sandbox is in use', async () => {
