@@ -45,6 +45,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::skill_read,
             commands::skill_write,
             commands::skill_delete,
+            commands::skill_invoke,
             commands::memory_list,
             commands::memory_read,
             commands::memory_write,
@@ -107,10 +108,7 @@ mod permission_tests {
         let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
         assert!(!handlers.is_empty(), "failed to parse generate_handler!");
         assert!(!declared.is_empty(), "failed to parse build.rs COMMANDS");
-        let missing: Vec<_> = handlers
-            .iter()
-            .filter(|c| !declared.contains(c))
-            .collect();
+        let missing: Vec<_> = handlers.iter().filter(|c| !declared.contains(c)).collect();
         assert!(
             missing.is_empty(),
             "commands registered but absent from build.rs COMMANDS: {missing:?}"

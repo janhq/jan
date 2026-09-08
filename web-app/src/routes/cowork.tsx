@@ -15,9 +15,11 @@ import {
 } from 'react'
 import { toast } from 'sonner'
 import { invoke } from '@tauri-apps/api/core'
+import { Bot, Command, Sparkles } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { sessionWorkspacePath } from '@janhq/tauri-plugin-agent-tools-api'
-import { cn, getModelDisplayName, getProviderTitle } from '@/lib/utils'
+import { getModelDisplayName, getProviderTitle } from '@/lib/utils'
 import { predefinedProviders } from '@/constants/providers'
 import { providerHasRemoteApiKeys } from '@/lib/provider-api-keys'
 import { runSlashCommand, SLASH_COMMANDS } from '@/lib/coworkCommands'
@@ -121,17 +123,33 @@ import {
   subagentCompletionNotice,
   SubagentInbox,
 } from '@/lib/coworkSubagent'
+import {
+  invokeSkill,
+  listSkills,
+  projectScope,
+  storeScope,
+  type SkillMeta,
+  type SkillScope,
+} from '@/lib/skillStore'
+import {
+  filterSkillCommands,
+  parseSkillCommand,
+  resolveSkillCommand,
+  skillCommandPrefix,
+} from '@/lib/skillCommands'
 
 export const Route = createFileRoute(route.cowork as any)({
   component: CoworkPage,
 })
 
-// A row in the slash menu — commands and model options share one shape so the
-// keyboard navigation works uniformly across both.
+// Slash-menu rows share keyboard behavior but expose their category visually.
+type MenuItemKind = 'skill' | 'command' | 'model'
+
 type MenuItem = {
   key: string
   label: string
   description: string
+  kind: MenuItemKind
   onSelect: () => void
 }
 
@@ -172,6 +190,25 @@ function CoworkPage() {
     [sessions, currentId]
   )
   const folder = session?.folder ?? null
+
+  const skillScope = useMemo<SkillScope>(
+    () => (folder ? projectScope(folder) : storeScope),
+    [folder]
+  )
+  const [skillCommands, setSkillCommands] = useState<SkillMeta[]>([])
+  useEffect(() => {
+    let alive = true
+    void listSkills(skillScope)
+      .then((skills) => {
+        if (alive) setSkillCommands(skills)
+      })
+      .catch(() => {
+        if (alive) setSkillCommands([])
+      })
+    return () => {
+      alive = false
+    }
+  }, [skillScope])
   const planMode = session?.planMode ?? false
 
   const [running, setRunning] = useState(false)
@@ -927,6 +964,38 @@ function CoworkPage() {
     files?: CoworkMediaPart[],
     documents?: Attachment[]
   ) => {
+    const skillCommand = parseSkillCommand(text)
+    const isBuiltInCommand = skillCommand
+      ? SLASH_COMMANDS.some((command) => command.name === `/${skillCommand.name}`)
+      : false
+    const skill =
+      skillCommand && (skillCommand.explicit || !isBuiltInCommand)
+        ? resolveSkillCommand(skillCommands, skillCommand)
+        : null
+    if (skillCommand?.explicit && !skill) {
+      toast.error(`Skill '${skillCommand.name}' is not available`)
+      return
+    }
+
+    // Explicit skill syntax must never fall through to the model or a normal
+    // slash command when the skill is unavailable.
+    if (skill && skillCommand) {
+      const attachedFiles = documents
+        ?.filter((d): d is Attachment & { path: string } => !!d.path)
+        .map((d) => ({
+          name: d.name,
+          path: d.path,
+          fileType: d.fileType,
+          size: d.size,
+        }))
+      void invokeSkill(skillScope, skill.name, skillCommand.args)
+        .then((expanded) =>
+          runRequest(expanded, { media: files, files: attachedFiles })
+        )
+        .catch((error) => toast.error(String(error)))
+      return
+    }
+
     // Slash commands are client-side actions; they never reach the agent.
     if (text.trim().startsWith('/')) {
       runSlashCommand(text, {
@@ -951,6 +1020,7 @@ function CoworkPage() {
         })),
     })
   }
+
 
   // Slash-command menu: the input text lives in the shared usePrompt store, so
   // the menu (and its keyboard nav) works without touching ChatInput.
@@ -995,7 +1065,7 @@ function CoworkPage() {
   )
 
   // Build the current menu: model picker when the text is `/models[ filter]`,
-  // otherwise the command list filtered by the typed `/token`.
+  // otherwise installed skills and built-in commands filtered by `/token`.
   const menuItems: MenuItem[] = useMemo(() => {
     const inModelMode = prompt === '/models' || prompt.startsWith('/models ')
     if (inModelMode) {
@@ -1007,31 +1077,50 @@ function CoworkPage() {
           key: `${m.providerName}/${m.id}`,
           label: m.label,
           description: getProviderTitle(m.providerName),
+          kind: 'model' as const,
           onSelect: () => switchModel(m.providerName, m.id),
         }))
     }
     if (prompt.startsWith('/') && !prompt.includes(' ')) {
-      const q = prompt.slice(1)
-      return SLASH_COMMANDS.filter((c) => c.name.slice(1).startsWith(q)).map(
-        (c) => ({
-          key: c.name,
-          label: c.name,
-          description: t(c.descKey),
-          onSelect: () => {
-            if (c.mode === 'args') {
-              usePrompt.getState().setPrompt(`${c.name} `)
-            } else {
-              usePrompt.getState().setPrompt('')
-              handleSubmit(c.name)
-            }
-          },
-        })
-      )
+      const rawQuery = prompt.slice(1)
+      const explicit = rawQuery.startsWith('skill:')
+      const skillQuery = explicit ? rawQuery.slice('skill:'.length) : rawQuery
+      const skills = filterSkillCommands(skillCommands, skillQuery)
+        .slice(0, 50)
+        .map((skill) => ({
+          key: `skill:${skill.name}`,
+          label: `/${explicit ? 'skill:' : ''}${skill.name}`,
+          description: skill.description,
+          kind: 'skill' as const,
+          onSelect: () =>
+            usePrompt
+              .getState()
+              .setPrompt(`/${explicit ? 'skill:' : ''}${skill.name} `),
+        }))
+      const commands = explicit
+        ? []
+        : SLASH_COMMANDS.filter((c) => c.name.slice(1).startsWith(rawQuery)).map(
+            (c) => ({
+              key: c.name,
+              label: c.name,
+              description: t(c.descKey),
+              kind: 'command' as const,
+              onSelect: () => {
+                if (c.mode === 'args') {
+                  usePrompt.getState().setPrompt(`${c.name} `)
+                } else {
+                  usePrompt.getState().setPrompt('')
+                  handleSubmit(c.name)
+                }
+              },
+            })
+          )
+      return [...skills, ...commands]
     }
     return []
     // handleSubmit is recreated every render but only reads refs/stores.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt, allModels, switchModel, t])
+  }, [prompt, allModels, skillCommands, switchModel, t])
 
   // Reset the highlighted row whenever the menu contents change.
   useEffect(() => setMenuIndex(0), [prompt])
@@ -1259,6 +1348,20 @@ function CoworkPage() {
                         isReasoningAtBottom={isReasoningAtBottom}
                         onReasoningScroll={handleReasoningScroll}
                         onReasoningScrollToBottom={forceScrollReasoningToBottom}
+                        highlightedPrefix={
+                          message.role === 'user'
+                            ? skillCommandPrefix(
+                                message.parts
+                                  .filter(
+                                    (part): part is { type: 'text'; text: string } =>
+                                      part.type === 'text'
+                                  )
+                                  .map((part) => part.text)
+                                  .join('\n'),
+                                skillCommands
+                              )
+                            : null
+                        }
                       />
                       {/* Derived from the message's own write parts, so nothing
                         shared with the chat surface needs to know artifacts
@@ -1354,11 +1457,24 @@ function CoworkPage() {
                           i === menuIndex ? 'bg-accent' : 'hover:bg-accent'
                         )}
                       >
-                        <span className="font-mono font-medium">
-                          {item.label}
+                        <span
+                          className="flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+                          aria-hidden="true"
+                        >
+                          {item.kind === 'skill' ? <Sparkles className="size-4" strokeWidth={1.8} /> : null}
+                          {item.kind === 'command' ? <Command className="size-4" strokeWidth={1.8} /> : null}
+                          {item.kind === 'model' ? <Bot className="size-4" strokeWidth={1.8} /> : null}
                         </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {item.description}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono font-medium">{item.label}</span>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                              {item.kind}
+                            </span>
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {item.description}
+                          </span>
                         </span>
                       </button>
                     ))}
@@ -1369,6 +1485,7 @@ function CoworkPage() {
                   initialMessage={true}
                   scopeKey={session?.id}
                   ownsToolSet={false}
+                  highlightedPrefix={skillCommandPrefix(prompt, skillCommands)}
                   onSubmit={handleSubmit}
                   onStop={handleStop}
                   chatStatus={running ? 'streaming' : 'ready'}

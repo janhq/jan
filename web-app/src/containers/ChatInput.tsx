@@ -155,6 +155,7 @@ type ChatInputProps = {
    * across surfaces.
    */
   tokenSource?: TokenUsageSource
+  highlightedPrefix?: string | null
 }
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
@@ -187,8 +188,10 @@ const ChatInput = memo(function ChatInput({
   ownsToolSet = true,
   surfaceControls,
   tokenSource,
+  highlightedPrefix,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
@@ -2101,6 +2104,18 @@ const ChatInput = memo(function ChatInput({
                 ))}
               </div>
             )}
+            <div className="relative">
+              {highlightedPrefix && prompt.startsWith(highlightedPrefix) && (
+                <div
+                  ref={highlightRef}
+                  aria-hidden="true"
+                  className={cn('pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-4 text-transparent', className)}
+                  style={{ overflowWrap: 'break-word' }}
+                >
+                  <mark className="rounded-sm bg-primary/20 text-transparent">{highlightedPrefix}</mark>
+                  {prompt.slice(highlightedPrefix.length)}
+                </div>
+              )}
             <TextareaAutosize
               dir="auto"
               ref={textareaRef}
@@ -2109,6 +2124,12 @@ const ChatInput = memo(function ChatInput({
               maxRows={10}
               value={prompt}
               data-testid={'chat-input'}
+              onScroll={(event) => {
+                if (highlightRef.current) {
+                  highlightRef.current.scrollTop = event.currentTarget.scrollTop
+                  highlightRef.current.scrollLeft = event.currentTarget.scrollLeft
+                }
+              }}
               onChange={(e) => {
                 const value = e.target.value
                 const cursorIdx = e.target.selectionStart
@@ -2192,6 +2213,7 @@ const ChatInput = memo(function ChatInput({
                 className
               )}
             />
+            </div>
             {/* @path file reference picker popover */}
             {filePickerOpen && effectiveAgentMode && (
               <div className="relative">

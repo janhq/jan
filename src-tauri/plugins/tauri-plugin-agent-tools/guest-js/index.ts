@@ -183,6 +183,20 @@ export async function skillDelete(
     name,
   })
 }
+/** Build a user prompt for an installed skill, including its body and arguments. */
+export async function skillInvoke(
+  dataFolder: string,
+  name: string,
+  args: string,
+  project?: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|skill_invoke', {
+    dataFolder,
+    project,
+    name,
+    args,
+  })
+}
 
 /** Memory note names (stems), sorted. */
 export async function memoryList(

@@ -10,6 +10,7 @@ const COMMANDS: &[&str] = &[
     "skill_read",
     "skill_write",
     "skill_delete",
+    "skill_invoke",
     "memory_list",
     "memory_read",
     "memory_write",
