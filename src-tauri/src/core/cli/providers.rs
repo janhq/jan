@@ -474,7 +474,12 @@ pub async fn fetch_provider_model_entries(
     project_root: Option<&std::path::Path>,
 ) -> Result<ProviderModelRefresh, String> {
     let global = load_global_config()?;
-    let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
+    let mut configs = global.clone();
+    let project_provider = layer_provider_configs(
+        &mut configs,
+        project_root,
+        &ProviderOverrides::default().with_env(),
+    )?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
         .build()
@@ -514,7 +519,9 @@ pub async fn fetch_provider_model_entries(
             }
         };
         let effective_ids = merge_model_ids(&config.models, &fetched);
-        if catalog_ok {
+        // A project catalog must never be written into a same-named global
+        // provider, even when both happen to use the same endpoint.
+        if catalog_ok && project_provider.as_deref() != Some(config.provider.as_str()) {
             if let Some(stored) = global.get(&config.provider) {
                 let persisted_ids = merge_model_ids(&stored.models, &fetched);
                 if stored.models != persisted_ids {
@@ -566,16 +573,25 @@ pub fn load_provider_configs(
     overrides: &ProviderOverrides,
 ) -> Result<HashMap<String, ProviderConfig>, String> {
     let mut configs = load_global_config()?;
-
-    inherit_desktop_providers(&mut configs);
-
-    if let Some(root) = project_root {
-        apply_local_override(&mut configs, root)?;
-    }
-
-    apply_overrides(&mut configs, overrides);
-    seed_from_credential_store(&mut configs);
+    layer_provider_configs(&mut configs, project_root, overrides)?;
     Ok(configs)
+}
+
+/// Return the project-owned provider from the same snapshot used for loading,
+/// so catalog persistence cannot accidentally promote project state to global.
+fn layer_provider_configs(
+    configs: &mut HashMap<String, ProviderConfig>,
+    project_root: Option<&std::path::Path>,
+    overrides: &ProviderOverrides,
+) -> Result<Option<String>, String> {
+    inherit_desktop_providers(configs);
+    let project_provider = match project_root {
+        Some(root) => apply_local_override(configs, root)?,
+        None => None,
+    };
+    apply_overrides(configs, overrides);
+    seed_from_credential_store(configs);
+    Ok(project_provider)
 }
 
 /// Fill a login-created provider's key chain from the auth credential store
@@ -628,15 +644,17 @@ fn inherit_desktop_providers(configs: &mut HashMap<String, ProviderConfig>) {
 fn apply_local_override(
     configs: &mut HashMap<String, ProviderConfig>,
     project_root: &std::path::Path,
-) -> Result<(), String> {
+) -> Result<Option<String>, String> {
     let cfg = match crate::core::agent::project::load_agent_config(project_root) {
         Ok(cfg) => cfg,
-        Err(_) => return Ok(()),
+        Err(_) => return Ok(None),
     };
     if let Some(section) = cfg.provider {
-        configs.insert(section.name.clone(), provider_config_from_section(section));
+        let name = section.name.clone();
+        configs.insert(name.clone(), provider_config_from_section(section));
+        return Ok(Some(name));
     }
-    Ok(())
+    Ok(None)
 }
 
 fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
@@ -1706,6 +1724,53 @@ mod tests {
             assert_eq!(refresh.failures, vec!["empty-mock: empty model catalog"]);
             assert_eq!(refresh.entries.iter().map(|entry| entry.model.id.as_str()).collect::<Vec<_>>(), vec!["keep-me"]);
             assert_eq!(load_global_config().unwrap().get("empty-mock").unwrap().models, vec!["keep-me"]);
+        });
+    }
+
+    #[test]
+    fn fetch_provider_entries_keeps_project_catalog_out_of_same_named_global() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            for same_endpoint in [false, true] {
+                let addr = models_stub(
+                    serde_json::json!({"data": [{"id": "project-discovered"}]}).to_string(),
+                    1,
+                );
+                let project_url = format!("http://{addr}/v1");
+                crate::core::agent::global_config::set_provider(
+                    "shared",
+                    crate::core::agent::global_config::ProviderUpdate {
+                        base_url: Some(if same_endpoint {
+                            project_url.clone()
+                        } else {
+                            "http://127.0.0.1:1/v1".into()
+                        }),
+                        models: Some(vec!["global-model".into()]),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                let root = home.join("project");
+                let agent_dir = root.join(".jan/agent");
+                std::fs::create_dir_all(&agent_dir).unwrap();
+                std::fs::write(
+                    agent_dir.join("agent.toml"),
+                    format!("[provider]\nname = \"shared\"\nbase_url = \"{project_url}\"\nmodels = [\"project-model\"]\n"),
+                )
+                .unwrap();
+                let before = std::fs::read(home.join(".jan/config.toml")).unwrap();
+                let refresh = rt.block_on(fetch_provider_model_entries(Some(&root))).unwrap();
+                let ids: Vec<_> = refresh.entries.iter()
+                    .filter(|entry| entry.provider == "shared")
+                    .map(|entry| entry.model.id.as_str())
+                    .collect();
+                assert_eq!(ids, ["project-discovered", "project-model"]);
+                assert_eq!(
+                    std::fs::read(home.join(".jan/config.toml")).unwrap(),
+                    before,
+                    "a project catalog must not modify global config, even at the same endpoint"
+                );
+            }
         });
     }
 
