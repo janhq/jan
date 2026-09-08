@@ -4661,15 +4661,42 @@ impl App {
                 // Grouped calls are already represented by the group row; retain
                 // their result on the group so an expand can show it later.
                 if self.grouped_ids.contains(&id) {
-                    if let Some(group) = self.tool_group.as_mut() {
+                    // A group can be finalized (closed) before a folded call's
+                    // result lands - committing reasoning above a later call
+                    // closes the open group, then a new one opens. The result
+                    // must reach whichever group owns the id; routing it only
+                    // into the open group would drop it (and leave a stale
+                    // `✓` on the closed group).
+                    let open_owns = self
+                        .tool_group
+                        .as_ref()
+                        .is_some_and(|g| g.calls.iter().any(|c| c.id == id));
+                    if open_owns {
+                        let group = self.tool_group.as_mut().expect("checked above");
                         if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
                             call.is_error = is_error;
                             call.diff = diff;
                             call.content = Some(content);
                             group.last_result_error = Some(is_error);
                         }
+                        self.refresh_group_row();
+                    } else {
+                        // Owned by a group already closed (e.g. by the reasoning
+                        // flush above): update its retained call and rewrite the
+                        // row so a late error reads as `✗`, not `✓`.
+                        for group in self.groups.iter_mut() {
+                            if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                                call.is_error = is_error;
+                                call.diff = diff;
+                                call.content = Some(content);
+                                group.last_result_error = Some(is_error);
+                                let idx = group.idx;
+                                let row = group.row(GroupRow::Closed);
+                                self.transcript[idx] = row;
+                                break;
+                            }
+                        }
                     }
-                    self.refresh_group_row();
                     return;
                 }
                 self.flush_assistant();
@@ -24881,6 +24908,42 @@ mod tests {
             .iter()
             .map(line_text)
             .any(|l| l.contains("let me look")));
+    }
+
+    #[test]
+    fn native_reasoning_before_next_tool_keeps_prior_result_paired() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "first" }),
+        });
+        app.apply(StreamEvent::Reasoning {
+            text: "deciding on the next call".into(),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "second.rs" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "first result".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "second result".into(),
+            is_error: false,
+            diff: None,
+        });
+
+        assert_eq!(app.groups.len(), 1, "the first group should be closed by reasoning");
+        assert_eq!(app.groups[0].calls[0].content.as_deref(), Some("first result"));
+        let current = app.tool_group.as_ref().expect("second group remains open");
+        assert_eq!(current.calls[0].id, "c2");
+        assert_eq!(current.calls[0].content.as_deref(), Some("second result"));
     }
 
     #[test]
