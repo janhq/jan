@@ -354,6 +354,9 @@
       "remove": "Remove"
     }
   },
+  "modelControls": {
+    "updateFailed": "Could not update model settings"
+  },
   "dialogs": {
     "changeDataFolder": {
       "title": "Change Data Folder Location",

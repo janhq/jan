@@ -108,6 +108,7 @@ export type PreflightReason =
 
 export interface ModelsService {
   getModel(modelId: string): Promise<modelInfo | undefined>
+  getModelContextLimit(modelId: string, provider: string): Promise<number | undefined>
   fetchModels(): Promise<modelInfo[]>
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchLatestJanModel(): Promise<CatalogModel | null>
