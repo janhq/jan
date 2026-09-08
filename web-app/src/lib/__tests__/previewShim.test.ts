@@ -4,6 +4,8 @@ import { PREVIEW_SHIM_SCRIPT, previewShimError } from '../previewShim'
 describe('PREVIEW_SHIM_SCRIPT', () => {
   const posted: unknown[] = []
   const sessionBefore = window.sessionStorage
+  // What the wrapped history call reached the native method with.
+  const historyCalls: Array<unknown[]> = []
 
   // One run for the file: the shim guards against a second install, and a
   // fresh install per test would stack listeners and double every report.
@@ -14,6 +16,21 @@ describe('PREVIEW_SHIM_SCRIPT', () => {
         throw new DOMException('sandboxed', 'SecurityError')
       },
     })
+    // Stand in for the sandbox: any history call carrying a URL is rejected,
+    // exactly as an opaque origin rejects it. Installed before the shim so the
+    // shim wraps this throwing version.
+    for (const name of ['pushState', 'replaceState'] as const) {
+      Object.defineProperty(window.history, name, {
+        configurable: true,
+        writable: true,
+        value(...args: unknown[]) {
+          if (args[2] != null) {
+            throw new DOMException('sandboxed', 'SecurityError')
+          }
+          historyCalls.push(args)
+        },
+      })
+    }
     // jsdom's window.parent is the window itself.
     vi.spyOn(window, 'postMessage').mockImplementation((data: unknown) => {
       posted.push(data)
@@ -46,6 +63,31 @@ describe('PREVIEW_SHIM_SCRIPT', () => {
 
   it('leaves a working storage alone', () => {
     expect(window.sessionStorage).toBe(sessionBefore)
+  })
+
+  // A deep-linked slideshow calls pushState on every slide change; a thrown
+  // SecurityError there aborts the click handler, so the button looks dead.
+  it('keeps a URL-bearing history call from throwing', () => {
+    historyCalls.length = 0
+    expect(() =>
+      window.history.pushState({ slide: 3 }, '', '#slide-3')
+    ).not.toThrow()
+    expect(() =>
+      window.history.replaceState({ slide: 4 }, '', '?s=4')
+    ).not.toThrow()
+    // The state change survives; only the URL the sandbox forbids is dropped.
+    expect(historyCalls).toEqual([
+      [{ slide: 3 }, ''],
+      [{ slide: 4 }, ''],
+    ])
+  })
+
+  it('passes an already-safe history call straight through', () => {
+    historyCalls.length = 0
+    window.history.pushState({ ok: 1 }, '')
+    // The wrapper forwards its three params; a URL-less call carries undefined,
+    // which the native stand-in accepts without throwing.
+    expect(historyCalls).toEqual([[{ ok: 1 }, '', undefined]])
   })
 
   it('reports uncaught errors and failed resources to the parent', () => {
