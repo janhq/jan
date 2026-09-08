@@ -502,10 +502,9 @@ struct ModelItem {
     provider: String,
     /// Bare model id, kept for the searchable text and the row label.
     model: String,
-    /// Effective context window for this row, resolved from provider metadata
-    /// (falling back to the catalog), before any explicit override. Used to
-    /// render the compact `ctx` column; the override stays authoritative in
-    /// `App::configured_context_window`.
+    /// Last-known provider context, kept separate from the project override.
+    provider_context: Option<u64>,
+    /// Effective context used by the row, including the live project override.
     context: Option<u64>,
     /// Input price per token (provider metadata), for the pricing column.
     input_price: Option<f64>,
@@ -596,6 +595,7 @@ impl ModelPicker {
                 value: entry.model.id.clone(),
                 provider: entry.provider,
                 model: entry.model.id,
+                provider_context: entry.model.context_length,
                 context,
                 input_price: entry.model.input_price,
                 output_price: entry.model.output_price,
@@ -656,32 +656,47 @@ impl ModelPicker {
     /// leaving the current list intact.
     fn apply_entries(
         &mut self,
-        entries: Vec<crate::core::cli::providers::ProviderModelEntry>,
+        mut entries: Vec<crate::core::cli::providers::ProviderModelEntry>,
         configured_context_window: Option<u64>,
     ) -> bool {
+        // Missing metadata is not a revocation. Keep known provider values,
+        // but never cache a resolved project override as provider metadata.
+        let previous: HashMap<_, _> = self.all_items.iter()
+            .map(|item| ((item.provider.as_str(), item.model.as_str()), item))
+            .collect();
+        for entry in &mut entries {
+            if let Some(old) = previous.get(&(entry.provider.as_str(), entry.model.id.as_str())) {
+                entry.model.context_length = entry.model.context_length.or(old.provider_context);
+                entry.model.input_price = entry.model.input_price.or(old.input_price);
+                entry.model.output_price = entry.model.output_price.or(old.output_price);
+            }
+        }
         let Some(mut replacement) =
             Self::from_entries(entries, "", configured_context_window)
         else {
             return false;
         };
-        let selected_value = self.items.get(self.selected).map(|item| item.value.clone());
+        let selected = self.items.get(self.selected);
         let active_provider = self
             .scopes
             .get(self.active_scope)
-            .and_then(|scope| scope.provider.clone());
-        replacement.query = self.query.clone();
+            .and_then(|scope| scope.provider.as_deref());
+        replacement.query = std::mem::take(&mut self.query);
+        replacement.focus = self.focus;
         replacement.active_scope = active_provider
             .and_then(|provider| {
                 replacement
                     .scopes
                     .iter()
-                    .position(|scope| scope.provider.as_deref() == Some(provider.as_str()))
+                    .position(|scope| scope.provider.as_deref() == Some(provider))
             })
             .unwrap_or(0);
         replacement.refresh_items();
-        replacement.selected = selected_value
-            .and_then(|value| replacement.items.iter().position(|item| item.value == value))
-            .unwrap_or_else(|| replacement.selected.min(replacement.items.len().saturating_sub(1)));
+        replacement.selected = selected
+            .and_then(|old| replacement.items.iter().position(|item| {
+                item.provider == old.provider && item.model == old.model
+            }))
+            .unwrap_or_else(|| self.selected.min(replacement.items.len().saturating_sub(1)));
         *self = replacement;
         true
     }
@@ -15755,51 +15770,42 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     );
 
     let model_width = right_rows[2].width.saturating_sub(2) as usize;
-    // Reserve the metadata columns from the widest rendered cell, so `ctx=1.1m`,
-    // `ctx=272k`, `ctx=-` and their pricing partners all align. A safe minimum
-    // keeps the columns visible even when every row lacks metadata. Cells are
-    // never truncated here; the final `truncate` clips only a label that would
-    // otherwise push the row past the panel.
-    let (ctx_width, price_width) = picker.items.iter().fold((6usize, 8usize), |(cw, pw), item| {
-        let ctx = item
-            .context
-            .map(format_context_length)
-            .unwrap_or_else(|| "-".to_string());
-        let ctx_cell = format!("ctx={ctx}");
-        let price_cell = format!("price={}", format_pricing(item.input_price, item.output_price));
-        (cw.max(ctx_cell.chars().count()), pw.max(price_cell.chars().count()))
+    // Format once per row. Context and price cells are ASCII; model labels use
+    // terminal display widths through clamp_line/wrap_text below.
+    let metadata: Vec<_> = picker.items.iter().map(|item| {
+        let ctx = item.context.map(format_context_length).unwrap_or_else(|| "-".into());
+        (
+            format!("ctx={ctx}"),
+            format!("price={}", format_pricing(item.input_price, item.output_price)),
+        )
+    }).collect();
+    let (ctx_width, price_width) = metadata.iter().fold((6usize, 8usize), |(cw, pw), (ctx, price)| {
+        (cw.max(ctx.len()), pw.max(price.len()))
     });
-    // Two separators are emitted below: one before context and one before
-    // pricing. Reserve both so the final truncate never clips a metadata cell.
     let metadata_width = ctx_width + 2 + price_width;
     let label_width = model_width.saturating_sub(metadata_width);
-    let model_items: Vec<ListItem> = picker
-        .items
-        .iter()
-        .map(|item| {
-            let ctx = item
-                .context
-                .map(format_context_length)
-                .unwrap_or_else(|| "-".to_string());
-            let price = format_pricing(item.input_price, item.output_price);
-            // Fixed right-aligned metadata columns: context then pricing. The
-            // provider/model label truncates to reserve both columns, while the
-            // raw `item.value` remains untouched for Enter/routing.
-            let label = truncate(
-                &format!("{} / {}", item.provider, item.model),
-                label_width,
+    let model_items: Vec<ListItem> = picker.items.iter().zip(metadata).map(|(item, (ctx, price))| {
+        let label = format!("{} / {}", item.provider, item.model);
+        if label_width < 12 {
+            // On narrow terminals, give identity and metadata their own lines
+            // instead of dropping the model name or clipping the price.
+            let mut lines: Vec<Line<'static>> = wrap_text(&label, Style::new(), model_width.max(1))
+                .into_iter().map(Line::from).collect();
+            lines.extend(
+                wrap_text(&format!("{ctx} {price}"), Style::new().dim(), model_width.max(1))
+                    .into_iter().map(Line::from),
             );
-            let ctx_cell = format!("ctx={ctx}");
-            let price_cell = format!("price={price}");
-            let line = format!(
-                "{label:<label_width$} {ctx_cell:<ctx_width$} {price_cell:<price_width$}",
-                label_width = label_width,
-                ctx_width = ctx_width,
-                price_width = price_width,
-            );
-            ListItem::new(Line::raw(truncate(&line, model_width)))
-        })
-        .collect();
+            ListItem::new(lines)
+        } else {
+            let mut line = clamp_line(Line::raw(label), (label_width + 2) as u16);
+            let padding = label_width.saturating_sub(line.width());
+            line.spans.push(Span::raw(format!(
+                "{} {ctx:<ctx_width$} {price:<price_width$}",
+                " ".repeat(padding),
+            )));
+            ListItem::new(line)
+        }
+    }).collect();
     let models = List::new(model_items)
         .highlight_style(if picker.focus == ModelPickerFocus::Models {
             Style::new().reversed().bold()
@@ -32075,6 +32081,87 @@ mod tests {
         assert!(picker.items.iter().any(|item| item.value == "gpt-new"));
     }
 
+    fn picker_entry(
+        provider: &str,
+        id: &str,
+        context_length: Option<u64>,
+        input_price: Option<f64>,
+        output_price: Option<f64>,
+    ) -> crate::core::cli::providers::ProviderModelEntry {
+        crate::core::cli::providers::ProviderModelEntry {
+            provider: provider.into(),
+            model: crate::core::cli::providers::ProviderModel {
+                id: id.into(),
+                context_length,
+                input_price,
+                output_price,
+            },
+        }
+    }
+
+    #[test]
+    fn model_picker_refresh_preserves_scope_keyboard_navigation() {
+        let entries = vec![
+            picker_entry("alpha", "one", None, None, None),
+            picker_entry("beta", "two", None, None, None),
+        ];
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_entries(entries.clone(), "one", None);
+        super::handle_model_picker_key(&mut app, key(KeyCode::Left), false);
+        app.model_picker.as_mut().unwrap().apply_entries(entries, None);
+        super::handle_model_picker_key(&mut app, key(KeyCode::Down), false);
+        let picker = app.model_picker.as_ref().unwrap();
+        assert_eq!(picker.scopes[picker.active_scope].provider.as_deref(), Some("alpha"));
+        super::handle_model_picker_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.model_picker.is_some(), "Enter in scopes must not choose a model");
+    }
+
+    #[test]
+    fn model_picker_refresh_preserves_selected_provider_with_duplicate_ids() {
+        let entries = vec![
+            picker_entry("alpha", "shared", None, None, None),
+            picker_entry("beta", "shared", None, None, None),
+        ];
+        let mut picker = super::ModelPicker::from_entries(entries.clone(), "", None).unwrap();
+        picker.move_selection(1);
+        picker.apply_entries(entries, None);
+        assert_eq!(picker.items[picker.selected].provider, "beta");
+        assert_eq!(picker.items[picker.selected].value, "shared");
+    }
+
+    #[test]
+    fn model_picker_refresh_clamps_previous_selection_when_model_disappears() {
+        let mut entries = vec![
+            picker_entry("alpha", "one", None, None, None),
+            picker_entry("alpha", "three", None, None, None),
+            picker_entry("alpha", "two", None, None, None),
+        ];
+        let mut picker = super::ModelPicker::from_entries(entries.clone(), "two", None).unwrap();
+        entries.pop();
+        picker.apply_entries(entries, None);
+        assert_eq!(picker.items[picker.selected].value, "three");
+    }
+
+    #[test]
+    fn model_picker_refresh_retains_metadata_without_retaining_context_override() {
+        let mut picker = super::ModelPicker::from_entries(
+            vec![picker_entry("alpha", "model", Some(272_000), Some(0.15), Some(0.6))],
+            "model",
+            Some(1_100_000),
+        ).unwrap();
+        assert_eq!(picker.items[0].context, Some(1_100_000));
+        picker.apply_entries(vec![picker_entry("alpha", "model", None, None, None)], None);
+        assert_eq!(picker.items[0].context, Some(272_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "$0.15/0.6");
+        // New values, including an explicit zero, replace only the known fields.
+        picker.apply_entries(vec![picker_entry("alpha", "model", Some(512_000), Some(0.0), None)], None);
+        assert_eq!(picker.items[0].context, Some(512_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "$0/0.6");
+        picker.apply_entries(vec![picker_entry("beta", "model", None, None, None)], None);
+        assert_eq!(picker.items[0].context, Some(128_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "-");
+    }
+
     #[test]
     fn model_picker_formats_context_and_pricing_without_changing_value() {
         assert_eq!(super::format_context_length(1_100_000), "1.1m");
@@ -32172,21 +32259,20 @@ mod tests {
     }
 
     #[test]
-    fn model_picker_narrow_layout_retains_model_pane() {
+    fn model_picker_narrow_layout_retains_names_and_decimal_pricing() {
         let mut app = test_app();
-        app.model_picker = Some(
-            super::ModelPicker::from_pairs(
-                vec![("openai".into(), "gpt-narrow".into())],
-                "gpt-narrow",
-            )
-            .unwrap(),
+        app.model_picker = super::ModelPicker::from_entries(
+            vec![
+                picker_entry("openai", "gpt-alpha", Some(272_000), Some(0.15), Some(0.6)),
+                picker_entry("openai", "gpt-beta", Some(1_100_000), Some(15.0), Some(75.0)),
+            ],
+            "gpt-alpha",
+            None,
         );
-        let rows = render_rows(&mut app, 30, 10);
-        let model_row = rows.iter().find(|row| row.contains("ctx=")).unwrap();
-        assert!(
-            model_row.contains("ctx=128k") && model_row.contains("price=-"),
-            "narrow model metadata was clipped: {rows:?}"
-        );
+        let rows = render_rows(&mut app, 30, 20);
+        for expected in ["gpt-alpha", "gpt-beta", "ctx=272k", "ctx=1.1m", "price=$0.15/0.6", "price=$15/75"] {
+            assert!(rows.iter().any(|row| row.contains(expected)), "{expected} missing: {rows:?}");
+        }
     }
     #[test]
     fn refresh_apply_hot_agent_toml_context_override() {
