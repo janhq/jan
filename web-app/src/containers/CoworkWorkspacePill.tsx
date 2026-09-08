@@ -42,8 +42,24 @@ export function CoworkWorkspacePill({
   const serviceHub = useServiceHub()
   const folderName = folder ? basenameOf(folder) : null
 
-  const notifyMissingWorkspace = () => {
-    toast.error(t('common:workspace.missing'), {
+  const notifyWorkspaceActionError = (
+    action: 'open' | 'reveal',
+    error: unknown
+  ) => {
+    const detail = error instanceof Error ? error.message : String(error)
+    const missing = /ENOENT|no such file|does not exist|not found|path not found/i.test(detail)
+    const title = missing
+      ? t('common:workspace.unavailable')
+      : t(
+          action === 'open'
+            ? 'common:workspace.openFailed'
+            : 'common:workspace.revealFailed'
+        )
+
+    toast.error(title, {
+      description: missing
+        ? t('common:workspace.missing', { folder: folderName })
+        : detail,
       action: {
         label: t('common:workspace.change'),
         onClick: onAttach,
@@ -55,8 +71,8 @@ export function CoworkWorkspacePill({
     if (!folder) return
     try {
       await serviceHub.opener().openPath(folder)
-    } catch {
-      notifyMissingWorkspace()
+    } catch (error) {
+      notifyWorkspaceActionError('open', error)
     }
   }
 
@@ -64,8 +80,8 @@ export function CoworkWorkspacePill({
     if (!folder) return
     try {
       await serviceHub.opener().revealItemInDir(folder)
-    } catch {
-      notifyMissingWorkspace()
+    } catch (error) {
+      notifyWorkspaceActionError('reveal', error)
     }
   }
 
