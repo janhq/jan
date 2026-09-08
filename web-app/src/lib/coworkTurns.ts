@@ -189,3 +189,20 @@ export function appendLiveMessages(
   const joined = { ...last, parts: [...last.parts, ...live[0].parts] }
   return [...committed.slice(0, -1), joined, ...live.slice(1)]
 }
+
+/**
+ * The index into `appendLiveMessages(committed, live)` where the live tail
+ * begins -- the first message that is still mid-run. When the first live
+ * message is joined onto the last committed assistant (the same rule
+ * `appendLiveMessages` uses), that joined message is mid-run too, so the
+ * boundary steps back onto it.
+ */
+export function liveTailStart(
+  committed: UIMessage[],
+  live: UIMessage[]
+): number {
+  if (live.length === 0) return committed.length
+  const last = committed.at(-1)
+  const joined = last?.role === 'assistant' && live[0]?.role === 'assistant'
+  return committed.length - (joined ? 1 : 0)
+}
