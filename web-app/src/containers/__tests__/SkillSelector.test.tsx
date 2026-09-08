@@ -74,4 +74,23 @@ describe('SkillSelector', () => {
     expect(setEnabled).toHaveBeenCalled()
     expect(screen.queryByText('common:skillsScopeGlobal')).toBeNull()
   })
+
+  // #8879: with a folder attached the list is the union of global and folder
+  // skills, and each row is labelled with the store it came from.
+  it('labels each skill origin when a folder is attached', async () => {
+    useSkills.mockReturnValue({
+      skills: [
+        { ...skill('git'), origin: 'store' },
+        { ...skill('deploy'), origin: 'project' },
+      ],
+      enabled: [],
+      setEnabled: vi.fn(),
+    })
+    render(<SkillSelector folder="/home/u/repo" />)
+    await userEvent.click(await screen.findByRole('button'))
+    expect(screen.getByText('git')).toBeInTheDocument()
+    expect(screen.getByText('deploy')).toBeInTheDocument()
+    expect(screen.getByText('common:skillOriginGlobal')).toBeInTheDocument()
+    expect(screen.getByText('common:skillOriginFolder')).toBeInTheDocument()
+  })
 })

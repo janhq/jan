@@ -53,7 +53,8 @@ describe('dispatchCoworkTool', () => {
       null,
       'session',
       true,
-      true
+      true,
+      null
     )
   })
 
@@ -68,7 +69,8 @@ describe('dispatchCoworkTool', () => {
       null,
       'session',
       true,
-      true
+      true,
+      null
     )
     coworkConfig.networkEnabled = false
     try {
@@ -80,7 +82,8 @@ describe('dispatchCoworkTool', () => {
         null,
         'session',
         false,
-        true
+        true,
+        null
       )
     } finally {
       coworkConfig.networkEnabled = true
@@ -111,7 +114,10 @@ describe('dispatchCoworkTool', () => {
     expect(executeAgentTool).toHaveBeenCalled()
   })
 
-  it('passes the attached folder through', async () => {
+  // The attached folder is passed twice: as the read-only filesystem root and
+  // as the skill-overlay project (last arg), so the folder's skills reach the
+  // agent on top of the permanent store (#8879).
+  it('passes the attached folder through as both read root and skill overlay', async () => {
     await dispatchCoworkTool(call('grep'), ctx({ readOnlyFolder: '/repo' }))
     expect(executeAgentTool).toHaveBeenCalledWith(
       'grep',
@@ -120,7 +126,8 @@ describe('dispatchCoworkTool', () => {
       '/repo',
       'session',
       true,
-      true
+      true,
+      '/repo'
     )
   })
 

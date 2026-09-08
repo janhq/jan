@@ -143,7 +143,22 @@ pub fn safe_stem(name: &str) -> Result<String, String> {
     Ok(file.trim_end_matches(".md").to_string())
 }
 
-/// All skills in the store, sorted by name. Folder skills (`<name>/SKILL.md`)
+/// All skills across `roots` in precedence order, sorted by name. An earlier
+/// root shadows a later one on a name collision, so a project's co-located
+/// skills layer on top of the permanent store (#8879) without either set
+/// vanishing. Within one root, the folder form wins over a legacy flat file.
+pub fn discover_layered(roots: &[&Path]) -> Vec<SkillEntry> {
+    let mut by_name: std::collections::BTreeMap<String, SkillEntry> =
+        std::collections::BTreeMap::new();
+    for root in roots {
+        for entry in discover(root) {
+            by_name.entry(entry.name.clone()).or_insert(entry);
+        }
+    }
+    by_name.into_values().collect()
+}
+
+/// All skills in one store, sorted by name. Folder skills (`<name>/SKILL.md`)
 /// and legacy flat skills (`<name>.md`) are both discovered. When both forms
 /// share a name, the folder form wins so a skill is never listed/injected twice.
 pub fn discover(store: &Path) -> Vec<SkillEntry> {
@@ -286,13 +301,13 @@ pub fn list_meta(store: &Path) -> Vec<SkillMeta> {
 /// invocation side. Skills with neither a description nor a body are skipped
 /// (nothing to advertise or invoke).
 fn side_catalog(
-    root: &Path,
+    roots: &[&Path],
     enabled: &[String],
     side: impl Fn(&ParsedSkill) -> bool,
 ) -> Vec<SkillMeta> {
     let allow: Option<std::collections::HashSet<&str>> =
         (!enabled.is_empty()).then(|| enabled.iter().map(String::as_str).collect());
-    let mut skills = discover(root)
+    let mut skills = discover_layered(roots)
         .into_iter()
         .filter_map(|e| {
             if let Some(allow) = &allow {
@@ -331,17 +346,30 @@ fn side_catalog(
 ///
 /// `enabled` is a whitelist of skill names; an empty list means "all skills"
 /// (backward-compatible with the agent.toml scaffold, which ships `enabled = []`).
-pub(crate) fn catalog(root: &Path, enabled: &[String]) -> Vec<SkillMeta> {
-    side_catalog(root, enabled, |p| p.model_invocable)
+///
+/// `roots` are skill stores in precedence order: a project's co-located skills
+/// layer on top of the permanent store, both reaching the model (#8879).
+pub(crate) fn catalog_layered(roots: &[&Path], enabled: &[String]) -> Vec<SkillMeta> {
+    side_catalog(roots, enabled, |p| p.model_invocable)
 }
 
 /// Raw SKILL.md text (frontmatter included) for the editor.
 pub fn read_raw(store: &Path, name: &str) -> Result<String, String> {
+    read_raw_layered(&[store], name)
+}
+
+/// `read_raw` across `roots` in precedence order: the first root holding the
+/// skill wins, so a project skill shadows a same-named permanent one (#8879).
+pub fn read_raw_layered(roots: &[&Path], name: &str) -> Result<String, String> {
     if is_default_jan_skill(name) {
         return Ok(parse(DEFAULT_JAN_SKILL).body);
     }
-    let entry = resolve(store, name)?;
-    std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"))
+    for root in roots {
+        if let Ok(entry) = resolve(root, name) {
+            return std::fs::read_to_string(&entry.file).map_err(|e| format!("ERROR: {e}"));
+        }
+    }
+    Err(format!("ERROR: skill '{name}' not found"))
 }
 
 /// A skill's markdown body with the frontmatter fence stripped — what the
@@ -584,12 +612,11 @@ mod tests {
         write("model_only", "user-invocable: false\n");
         write("user_only", "disable-model-invocation: true\n");
 
-        let model: Vec<_> = catalog(&root, &[]).into_iter().map(|m| m.name).collect();
-        assert_eq!(
-            model,
-            vec!["both", "model_only", "jan"],
-            "model side: {model:?}"
-        );
+        let model: Vec<_> = catalog_layered(&[root.as_path()], &[])
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert_eq!(model, vec!["both", "model_only", "jan"], "model side: {model:?}");
 
         // Both flags still visible to the management list.
         let all = list_meta(&root);
@@ -622,10 +649,10 @@ mod tests {
         write(&root, "b", "body b").unwrap();
 
         // Empty whitelist = all skills.
-        assert_eq!(catalog(&root, &[]).len(), 3);
+        assert_eq!(catalog_layered(&[root.as_path()], &[]).len(), 3);
 
         // Non-empty whitelist restricts to the listed names.
-        let only_a = catalog(&root, &["a".to_string()]);
+        let only_a = catalog_layered(&[root.as_path()], &["a".to_string()]);
         assert_eq!(only_a.len(), 1);
         assert_eq!(only_a[0].name, "a");
         let _ = std::fs::remove_dir_all(&root);
@@ -682,5 +709,66 @@ mod tests {
             "the stale flat form must be left untouched"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn scratch(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "jan_skills_{tag}_{}",
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ))
+    }
+
+    #[test]
+    fn discover_layered_unions_roots_and_earlier_root_shadows() {
+        let project = scratch("layer_p");
+        let permanent = scratch("layer_g");
+        write(&project, "shared", "project body").unwrap();
+        write(&project, "only_project", "p").unwrap();
+        write(&permanent, "shared", "permanent body").unwrap();
+        write(&permanent, "only_global", "g").unwrap();
+
+        let entries = discover_layered(&[project.as_path(), permanent.as_path()]);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, vec!["only_global", "only_project", "shared"]);
+        // The project root wins the name collision.
+        let shared = entries.iter().find(|e| e.name == "shared").unwrap();
+        assert!(shared.file.starts_with(&project));
+
+        let _ = std::fs::remove_dir_all(&project);
+        let _ = std::fs::remove_dir_all(&permanent);
+    }
+
+    #[test]
+    fn catalog_layered_merges_both_stores_with_one_jan() {
+        let project = scratch("catp");
+        let permanent = scratch("catg");
+        write(&project, "p_skill", "p body").unwrap();
+        write(&permanent, "g_skill", "g body").unwrap();
+
+        let names: Vec<_> = catalog_layered(&[project.as_path(), permanent.as_path()], &[])
+            .into_iter()
+            .map(|m| m.name)
+            .collect();
+        assert_eq!(names, vec!["g_skill", "p_skill", "jan"], "got {names:?}");
+
+        let _ = std::fs::remove_dir_all(&project);
+        let _ = std::fs::remove_dir_all(&permanent);
+    }
+
+    #[test]
+    fn read_raw_layered_shadows_then_falls_back() {
+        let project = scratch("readp");
+        let permanent = scratch("readg");
+        write(&project, "shared", "project text").unwrap();
+        write(&permanent, "shared", "permanent text").unwrap();
+        write(&permanent, "only_global", "global text").unwrap();
+
+        let roots = [project.as_path(), permanent.as_path()];
+        assert!(read_raw_layered(&roots, "shared").unwrap().contains("project text"));
+        assert!(read_raw_layered(&roots, "only_global").unwrap().contains("global text"));
+        assert!(read_raw_layered(&roots, "missing").is_err());
+
+        let _ = std::fs::remove_dir_all(&project);
+        let _ = std::fs::remove_dir_all(&permanent);
     }
 }

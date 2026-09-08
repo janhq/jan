@@ -274,6 +274,52 @@ describe('agentTools', () => {
     expect(vi.mocked(executeTool).mock.calls.at(-1)?.[7]).toBeUndefined()
   })
 
+  // Cowork layers the attached folder's skills over the permanent store, so the
+  // folder is forwarded as the plugin's skill-overlay `project` (arg 5) as well
+  // as the read-only filesystem root (arg 8) -- #8879.
+  it('forwards a skill-overlay project as the plugin project arg', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool(
+      'skill_list',
+      {},
+      'sess-1',
+      '/repo',
+      'session',
+      true,
+      true,
+      '/repo'
+    )
+    expect(executeTool).toHaveBeenLastCalledWith(
+      '/data',
+      'sess-1',
+      'skill_list',
+      {},
+      '/repo',
+      undefined,
+      true,
+      '/repo',
+      true,
+      'session'
+    )
+  })
+
+  // Chat never passes a skill overlay, so its skills stay global-only.
+  it('leaves the skill-overlay project undefined by default', async () => {
+    vi.mocked(executeTool).mockResolvedValue({
+      content: 'ok',
+      isError: false,
+      diff: null,
+    } as never)
+    const { executeAgentTool } = await import('../agentTools')
+    await executeAgentTool('skill_list', {}, 'thread-1', '/home/u/repo')
+    expect(vi.mocked(executeTool).mock.calls.at(-1)?.[4]).toBeUndefined()
+  })
+
   it('maps a gate refusal to an error rather than content', async () => {
     executeTool.mockResolvedValue({
       content: "tool 'write' needs user approval",
