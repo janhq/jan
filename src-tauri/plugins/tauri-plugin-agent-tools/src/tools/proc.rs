@@ -4,7 +4,7 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
@@ -310,6 +310,7 @@ pub async fn spawn(
     cwd: &Path,
     scratch: Option<&Path>,
     env: ShellEnv<'_>,
+    thread: Option<&str>,
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
@@ -368,7 +369,7 @@ pub async fn spawn(
     }
 
     if let Some(pid) = child.id() {
-        register(pid);
+        register(thread, pid);
     }
     Ok(child)
 }
@@ -404,23 +405,63 @@ pub fn kill_tree(pid: u32) {
         .output();
 }
 
-fn running() -> &'static Mutex<HashSet<u32>> {
-    static RUNNING: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
-    RUNNING.get_or_init(|| Mutex::new(HashSet::new()))
+/// Running bash pids, bucketed by the session (thread id) that spawned them, so
+/// a per-session cancel (`kill_thread`) reaps exactly that session's shells
+/// without touching a concurrently-running one. Callers with no session (the
+/// monitor poll children, tests) share the [`NO_THREAD`] bucket, which only
+/// `kill_all` reaps.
+fn running() -> &'static Mutex<HashMap<String, HashSet<u32>>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, HashSet<u32>>>> = OnceLock::new();
+    RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-pub fn register(pid: u32) {
-    running().lock().unwrap().insert(pid);
+/// Bucket for pids spawned outside any session.
+const NO_THREAD: &str = "";
+
+pub fn register(thread: Option<&str>, pid: u32) {
+    running()
+        .lock()
+        .unwrap()
+        .entry(thread.unwrap_or(NO_THREAD).to_string())
+        .or_default()
+        .insert(pid);
 }
 
-pub fn unregister(pid: u32) {
-    running().lock().unwrap().remove(&pid);
+pub fn unregister(thread: Option<&str>, pid: u32) {
+    let key = thread.unwrap_or(NO_THREAD);
+    let mut map = running().lock().unwrap();
+    if let Some(set) = map.get_mut(key) {
+        set.remove(&pid);
+        if set.is_empty() {
+            map.remove(key);
+        }
+    }
 }
 
-/// Reap every still-running bash command. Called on app shutdown so no shell
-/// tree outlives the process that spawned it.
+/// Reap every bash tree a session started. The per-session counterpart of
+/// [`kill_all`]: the Stop button drives this so a running or backgrounded shell
+/// is terminated with the run rather than left to finish on the host.
+pub fn kill_thread(thread: &str) {
+    let pids: Vec<u32> = running()
+        .lock()
+        .unwrap()
+        .remove(thread)
+        .map(|set| set.into_iter().collect())
+        .unwrap_or_default();
+    for pid in pids {
+        kill_tree(pid);
+    }
+}
+
+/// Reap every still-running bash command across all sessions. Called on app
+/// shutdown so no shell tree outlives the process that spawned it.
 pub fn kill_all() {
-    let pids: Vec<u32> = running().lock().unwrap().drain().collect();
+    let pids: Vec<u32> = running()
+        .lock()
+        .unwrap()
+        .drain()
+        .flat_map(|(_, set)| set)
+        .collect();
     for pid in pids {
         kill_tree(pid);
     }
@@ -469,10 +510,10 @@ mod tests {
 
     #[tokio::test]
     async fn runs_a_command_and_captures_stdout() {
-        let child = spawn(shell(), "echo hello", &tmp(), None, ShellEnv::default()).await.unwrap();
+        let child = spawn(shell(), "echo hello", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hello");
     }
 
@@ -489,12 +530,13 @@ mod tests {
             &tmp(),
             Some(&scratch),
             ShellEnv::default(),
+            None,
         )
         .await
         .unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         let s = scratch.to_string_lossy();
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
@@ -507,12 +549,12 @@ mod tests {
     /// through, rather than being handed an empty temp dir.
     #[tokio::test]
     async fn temp_env_is_left_alone_without_a_scratch() {
-        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None, ShellEnv::default())
+        let child = spawn(shell(), "echo ${TMPDIR:-unset}", &tmp(), None, ShellEnv::default(), None)
             .await
             .unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         let expected = std::env::var("TMPDIR").unwrap_or_else(|_| "unset".to_string());
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), expected);
     }
@@ -521,7 +563,7 @@ mod tests {
     async fn kill_tree_reaps_backgrounded_grandchild() {
         // The shell backgrounds a long sleeper, prints its pid, then waits on
         // it. Killing the group must take down that grandchild too.
-        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None, ShellEnv::default())
+        let mut child = spawn(shell(), "sleep 300 & echo $! ; wait", &tmp(), None, ShellEnv::default(), None)
             .await
             .unwrap();
         let leader = child.id().unwrap();
@@ -537,7 +579,7 @@ mod tests {
 
         kill_tree(leader);
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await;
-        unregister(leader);
+        unregister(None, leader);
 
         // Give the kernel a moment to tear the group down.
         for _ in 0..50 {
@@ -549,16 +591,39 @@ mod tests {
         assert!(!alive(grandchild), "grandchild must be reaped by group kill");
     }
 
+    fn is_registered(thread: Option<&str>, pid: u32) -> bool {
+        running()
+            .lock()
+            .unwrap()
+            .get(thread.unwrap_or(NO_THREAD))
+            .map(|set| set.contains(&pid))
+            .unwrap_or(false)
+    }
+
     #[test]
     fn register_and_unregister_track_pids() {
         // A pid outside any real range: exercising the registry only, never
         // signalling a live process (kill_all is shutdown-only and would reap
         // other tests' children if called under the parallel harness).
         let fake = u32::MAX - 1;
-        register(fake);
-        assert!(running().lock().unwrap().contains(&fake));
-        unregister(fake);
-        assert!(!running().lock().unwrap().contains(&fake));
+        register(Some("thread-a"), fake);
+        assert!(is_registered(Some("thread-a"), fake));
+        unregister(Some("thread-a"), fake);
+        assert!(!is_registered(Some("thread-a"), fake));
+    }
+
+    /// `kill_thread` reaps only its own session's pids and leaves another
+    /// session's registrations intact, so Stop in one run cannot tear down a
+    /// concurrent run's shell. Fake pids: exercising bucketing, never signalling.
+    #[test]
+    fn kill_thread_is_scoped_to_its_session() {
+        let (a, b) = (u32::MAX - 2, u32::MAX - 3);
+        register(Some("sess-a"), a);
+        register(Some("sess-b"), b);
+        kill_thread("sess-a");
+        assert!(!is_registered(Some("sess-a"), a), "own session must be reaped");
+        assert!(is_registered(Some("sess-b"), b), "other session must survive");
+        unregister(Some("sess-b"), b);
     }
 
     #[cfg(unix)]
@@ -566,17 +631,17 @@ mod tests {
     async fn confine_limits_caps_the_child_process_count() {
         // The rlimit mounting must actually reach the spawned child: with NPROC
         // clamped we still run up to the cap, but a fork-bomb past it fails.
-        let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default()).await.unwrap();
+        let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
 
         // Spawn a shell that reports its own soft NOFILE limit; confine_limits
         // sets it to 1024, which should be visible inside the sandbox.
-        let child = spawn(shell(), "ulimit -n", &tmp(), None, ShellEnv::default()).await.unwrap();
+        let child = spawn(shell(), "ulimit -n", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         let out = child.wait_with_output().await.unwrap();
-        unregister(pid);
+        unregister(None, pid);
         let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
         assert_eq!(val, "1024", "NOFILE soft limit should be capped, got: {val}");
     }

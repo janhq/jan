@@ -496,3 +496,12 @@ export async function listMonitors(threadId: string): Promise<string> {
 export async function stopSessionMonitors(threadId: string): Promise<void> {
   await invoke('plugin:agent-tools|stop_session_monitors', { threadId })
 }
+
+/**
+ * Kill every `bash` tree this session started, running or backgrounded. Driven
+ * by the Stop button: aborting the JS run only discards a tool result, so a
+ * long or backgrounded shell would otherwise keep executing on the host.
+ */
+export async function cancelThreadBash(threadId: string): Promise<void> {
+  await invoke('plugin:agent-tools|cancel_thread_bash', { threadId })
+}

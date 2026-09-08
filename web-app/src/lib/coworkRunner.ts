@@ -93,9 +93,9 @@ function createHandle(sid: string, runId: string): RunHandle {
  * Stop a session's run: the model stream, the tool dispatch loop, every nested
  * subagent, and any question the user was being asked.
  *
- * An in-flight `bash` cannot be cancelled — `execute_tool` is a plain `invoke`
- * with no cancellation token — so its result is discarded and the process runs
- * to completion.
+ * `abortRun` unwinds only the JS side; a running or backgrounded `bash` child
+ * is killed separately by the Stop handler via `cancelAgentThreadBash`, which
+ * reaps the session's shells in Rust (`proc::kill_thread`).
  */
 export function abortRun(sid: string, reason = 'cancelled'): void {
   const handle = handles.get(sid)

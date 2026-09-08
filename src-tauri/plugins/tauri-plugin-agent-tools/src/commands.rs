@@ -620,6 +620,17 @@ pub async fn stop_session_monitors(thread_id: String) -> Result<(), AgentToolsEr
     Ok(())
 }
 
+/// Kill every `bash` tree this session started, running or backgrounded. Driven
+/// by the Stop button: aborting the JS run only discards a tool result, so
+/// without this a long or backgrounded shell keeps executing on the host until
+/// app shutdown. Scoped to `thread_id`, so a concurrent session's shells are
+/// untouched.
+#[tauri::command]
+pub async fn cancel_thread_bash(thread_id: String) -> Result<(), AgentToolsError> {
+    crate::tools::proc::kill_thread(&thread_id);
+    Ok(())
+}
+
 /// Pick the workspace root a tool call resolves relative paths against, plus the
 /// side roots it may read and write.
 ///
@@ -876,7 +887,8 @@ async fn execute_tool_inner(
         .with_mask_root(Path::new(&data_folder))
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
-        .with_write_roots(&write_roots);
+        .with_write_roots(&write_roots)
+        .with_thread_id(Some(&thread_id));
     if let Some(sp) = skill_project.as_deref() {
         ctx = ctx.with_skill_project_root(sp);
     }

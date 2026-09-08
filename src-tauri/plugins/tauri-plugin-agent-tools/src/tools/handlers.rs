@@ -835,7 +835,15 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref(), ctx.shell_env()).await
+    let child = match proc::spawn(
+        &shell,
+        command,
+        root,
+        sandbox_tmp.as_deref(),
+        ctx.shell_env(),
+        ctx.thread_id,
+    )
+    .await
     {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
@@ -849,6 +857,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
+    // Owned for the detached task, which unregisters from the same session
+    // bucket the child was registered under.
+    let thread_owned = ctx.thread_id.map(str::to_string);
     // Cloned into the detached task, which is what keeps a backgrounded command
     // reporting after this call has already returned its `job_id`.
     let sink = ctx.on_output.clone();
@@ -876,7 +887,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             );
         }
         if let Some(pid) = pid {
-            proc::unregister(pid);
+            proc::unregister(thread_owned.as_deref(), pid);
         }
         let _ = tx.send(out);
     });

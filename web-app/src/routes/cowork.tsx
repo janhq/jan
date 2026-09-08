@@ -98,6 +98,7 @@ import {
   fillSubagentResult,
   importAttachment,
   reserveSubagentResult,
+  cancelAgentThreadBash,
 } from '@/lib/agentTools'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
@@ -1286,7 +1287,12 @@ function CoworkPage() {
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort('cancelled')
-    if (session?.id) abortRun(session.id)
+    // Aborting the JS run only discards the pending tool result; a running or
+    // backgrounded bash keeps executing until this kills the session's shells.
+    if (session?.id) {
+      abortRun(session.id)
+      void cancelAgentThreadBash(session.id)
+    }
     for (const resolve of askResolvers.current.values()) resolve(null)
     askResolvers.current.clear()
   }, [session?.id])

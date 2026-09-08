@@ -29,6 +29,7 @@ permissions = [
     "allow-stop-monitor",
     "allow-list-monitors",
     "allow-stop-session-monitors",
+    "allow-cancel-thread-bash",
     "allow-preview-register-root",
     "allow-preview-unregister-root",
 ]

@@ -478,12 +478,15 @@ fn match_update(monitor_id: &str, name: &str, content: &str) -> MonitorUpdate {
 async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     let tool_ctx = ctx.as_tool_context();
     let (shell, sandbox_tmp, _policy) = crate::tools::handlers::confined_shell(&tool_ctx).ok()?;
+    // A poll child is short-lived and re-spawned each interval; it is not tied
+    // to a session's Stop, so it registers in the process-wide bucket.
     let mut child = crate::tools::proc::spawn(
         &shell,
         script,
         &ctx.project_root,
         sandbox_tmp.as_deref(),
         tool_ctx.shell_env(),
+        None,
     )
     .await
     .ok()?;
@@ -523,7 +526,7 @@ async fn eval_script(ctx: &MonitorCtx, script: &str) -> Option<String> {
     })
     .await;
     if let Some(pid) = pid {
-        crate::tools::proc::unregister(pid);
+        crate::tools::proc::unregister(None, pid);
     }
     match result {
         Ok((Ok(exit), head)) if exit.success() => {
