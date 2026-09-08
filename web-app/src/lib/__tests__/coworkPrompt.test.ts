@@ -36,6 +36,17 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).not.toContain('READ-ONLY')
   })
 
+  // #8882: an attached folder is the working directory, so the prompt names it
+  // as the root relative paths resolve against -- not the sandbox, which would
+  // send bare-named artifacts into Jan's data folder.
+  it('makes the attached folder the working directory relative paths resolve against', () => {
+    const p = buildCoworkSystemPrompt(opts({ readOnlyFolder: '/home/u/repo' }))
+    expect(p).toMatch(/working directory[^]*\/home\/u\/repo/)
+    expect(p).toMatch(/[Rr]elative paths resolve against it/)
+    // The sandbox path is not presented as the workspace when a folder is set.
+    expect(p).not.toContain('/data/agent-workspace/sessions/s1')
+  })
+
   it('explains a missing shell rather than staying silent about it', () => {
     const p = buildCoworkSystemPrompt(opts({ bashAvailable: false }))
     expect(p).toMatch(/Shell commands are unavailable/i)
@@ -143,10 +154,14 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).toContain('You review Rust.')
     // The Rust `system_prompt_override` replaces the whole prompt, which works
     // for the CLI (cwd is the project) but leaves a desktop child unable to
-    // guess its sandbox path.
-    expect(out).toContain('/ws/s1')
+    // guess its working directory -- the attached folder here (#8882).
     expect(out).toContain('/home/me/repo')
     expect(out).toMatch(/writable/i)
+  })
+
+  it('names the sandbox as the child workspace when no folder is attached', () => {
+    const out = buildSubagentSystemPrompt('p', { ...opts, readOnlyFolder: null })
+    expect(out).toContain('/ws/s1')
   })
 
   it('states the three things a child cannot do', () => {

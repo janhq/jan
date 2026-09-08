@@ -57,7 +57,8 @@ export type CoworkPromptOptions = {
   /** The sandbox directory: the only writable location. */
   workspacePath: string | null
   /** An attached project folder. Despite the historical name (it is the
-   * plugin's validated read root), Cowork mounts it writable. */
+   * plugin's validated read root), Cowork mounts it writable and, when set, it
+   * is the workspace root that relative paths resolve against (#8882). */
   readOnlyFolder: string | null
   planMode: boolean
   /** False when no OS sandbox enforces, in which case `bash` is not offered. */
@@ -120,26 +121,32 @@ function environmentBlock(env: CoworkEnvironment): string {
 
 function workspaceBlock(opts: CoworkPromptOptions): string {
   const lines = ['# Workspace', '']
-  if (opts.workspacePath) {
+  if (opts.readOnlyFolder) {
+    // #8882: the attached folder is the working directory itself, so relative
+    // paths resolve into it -- a file created by a bare name lands where the
+    // user selected it, not in Jan's data folder. Real user data, so the
+    // sandbox's anything-goes norms no longer apply.
+    lines.push(
+      `Your working directory is the shared project folder the user attached: \`${opts.readOnlyFolder}\`.`,
+      'Relative paths resolve against it, so a file you create with a bare name',
+      'lands there, in the directory the user selected. It is writable: read,',
+      'search, and edit its files IN PLACE with targeted edits, and put everything',
+      'that belongs to the project directly inside it. This is real user data with',
+      'no undo, so re-read a file before editing it and keep changes minimal.'
+    )
+  } else if (opts.workspacePath) {
     lines.push(
       `You have one writable directory, your workspace: \`${opts.workspacePath}\`.`,
-      'Relative paths resolve against it. Everything you create must live here.'
-    )
-  } else {
-    lines.push('You have a private writable workspace. Relative paths resolve against it.')
-  }
-  if (opts.readOnlyFolder) {
-    lines.push(
+      'Relative paths resolve against it. Everything you create must live here.',
       '',
-      `The user attached a shared project folder: \`${opts.readOnlyFolder}\`.`,
-      'It is writable: read, search, and edit its files IN PLACE with targeted',
-      'edits, and put files that belong to the project directly inside it. Use',
-      'your workspace for scratch work and intermediate files. This is real user',
-      'data with no undo, so re-read a file before editing it and keep changes',
-      'minimal.'
+      'No project folder is attached, so there is nothing outside the workspace to read.'
     )
   } else {
-    lines.push('', 'No project folder is attached, so there is nothing outside the workspace to read.')
+    lines.push(
+      'You have a private writable workspace. Relative paths resolve against it.',
+      '',
+      'No project folder is attached, so there is nothing outside the workspace to read.'
+    )
   }
   if (!opts.bashAvailable) {
     lines.push(
@@ -182,8 +189,8 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
  *
  * The Rust loop replaces the whole system prompt with the definition's
  * (`system_prompt_override`), which works there because the CLI's project root
- * is the shell's working directory. Here it is a sandbox path the child has no
- * way to guess, and an attached folder is read-only — so the workspace block
+ * is the shell's working directory. Here the working directory is a sandbox path
+ * or an attached folder the child has no way to guess, so the workspace block
  * travels with the definition rather than replacing it.
  */
 export function buildSubagentSystemPrompt(
