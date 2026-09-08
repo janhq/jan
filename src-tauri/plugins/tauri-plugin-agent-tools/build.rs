@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "start_monitor",
     "stop_monitor",
     "list_monitors",
+    "session_monitor_ids",
     "stop_session_monitors",
     "cancel_thread_bash",
     "preview_register_root",

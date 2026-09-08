@@ -61,6 +61,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::start_monitor,
             commands::stop_monitor,
             commands::list_monitors,
+            commands::session_monitor_ids,
             commands::stop_session_monitors,
             commands::cancel_thread_bash,
             commands::preview_register_root,

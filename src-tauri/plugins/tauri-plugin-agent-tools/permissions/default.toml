@@ -28,6 +28,7 @@ permissions = [
     "allow-start-monitor",
     "allow-stop-monitor",
     "allow-list-monitors",
+    "allow-session-monitor-ids",
     "allow-stop-session-monitors",
     "allow-cancel-thread-bash",
     "allow-preview-register-root",

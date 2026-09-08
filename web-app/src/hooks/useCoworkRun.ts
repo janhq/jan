@@ -202,6 +202,10 @@ type CoworkRunState = {
   updateMonitor: (sid: string, update: MonitorUpdate) => void
   /** An explicit `stop`: closed with the progress it had. */
   stopMonitor: (sid: string, monitorId: string) => void
+  /** Settle any rail row still marked running that Rust no longer lists as
+   * active (its terminal update went undelivered), so a matched monitor cannot
+   * be left spinning. `activeIds` is Rust's authoritative active set. */
+  reconcileMonitors: (sid: string, activeIds: string[]) => void
   /** Session teardown: the watchers are stopped in Rust alongside. */
   clearMonitors: (sid: string) => void
   setParked: (sid: string, parked: boolean) => void
@@ -401,6 +405,25 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
         ),
       },
     })),
+
+  reconcileMonitors: (sid, activeIds) =>
+    set((s) => {
+      const rows = s.monitors[sid]
+      if (!rows?.length) return {}
+      const active = new Set(activeIds)
+      let changed = false
+      const next = rows.map((m) => {
+        if (m.status !== 'running' || active.has(m.monitorId)) return m
+        changed = true
+        return {
+          ...m,
+          status: 'done' as const,
+          outcome: 'ended' as const,
+          endedAt: Date.now(),
+        }
+      })
+      return changed ? { monitors: { ...s.monitors, [sid]: next } } : {}
+    }),
 
   clearMonitors: (sid) => set((s) => ({ monitors: omitKey(s.monitors, sid) })),
 

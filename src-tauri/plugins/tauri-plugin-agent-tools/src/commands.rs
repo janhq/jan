@@ -610,6 +610,23 @@ pub async fn list_monitors(thread_id: String) -> Result<String, AgentToolsError>
     })
 }
 
+/// The ids of a session's still-active monitors, for the UI to reconcile its
+/// rail against. Every monitor is one-shot and retires (match, timeout, or an
+/// explicit stop) after emitting its terminal update, so a monitor Rust no
+/// longer lists has ended; a rail row still marked running for it is stale
+/// (a dropped terminal update) and the UI can settle it.
+#[tauri::command]
+pub async fn session_monitor_ids(thread_id: String) -> Result<Vec<String>, AgentToolsError> {
+    let set = session_monitors()
+        .lock()
+        .unwrap()
+        .get(&thread_id)
+        .map(|entry| entry.set.clone());
+    Ok(set
+        .map(|s| s.snapshot().into_iter().map(|m| m.monitor_id).collect())
+        .unwrap_or_default())
+}
+
 /// Abort every monitor a session still has. Called at run end (and session
 /// teardown), the Cowork counterpart of the run-scoped drop on the CLI.
 #[tauri::command]

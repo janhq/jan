@@ -12,6 +12,7 @@ import {
   startMonitor,
   stopMonitor,
   listMonitors,
+  sessionMonitorIds,
   stopSessionMonitors,
   cancelThreadBash,
   type MemoryCatalogEntry,
@@ -355,6 +356,20 @@ export async function listAgentMonitors(sessionId: string): Promise<string> {
     return await listMonitors(sessionId)
   } catch (e) {
     return `ERROR: ${messageOf(e)}`
+  }
+}
+
+/**
+ * The ids of a session's still-active monitors, for the rail to reconcile
+ * against. Best-effort: on failure the caller keeps its current rail rather
+ * than clearing them, so a transient error never wrongly settles a live watcher.
+ */
+export async function activeAgentMonitorIds(sessionId: string): Promise<string[] | null> {
+  try {
+    return await sessionMonitorIds(sessionId)
+  } catch (e) {
+    console.warn('[agentTools] Failed to list active monitors:', messageOf(e))
+    return null
   }
 }
 
