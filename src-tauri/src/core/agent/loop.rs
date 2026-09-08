@@ -335,6 +335,11 @@ struct CompositeToolInvoker {
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// Host env-var names/globs the shell may inherit beyond the base allowlist,
+    /// and explicit key=value overrides. Resolved once per run by merging
+    /// `~/.jan/config.toml` with the project's `[tools]` section.
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -461,6 +466,8 @@ struct ResolvedSettings {
     allow_network: bool,
     allow_home_read: bool,
     sandbox: bool,
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -476,6 +483,72 @@ fn resolve_run_settings(
         allow_network: resolve_allow_network(settings.allow_network),
         allow_home_read: resolve_allow_home_read(settings.allow_home_read),
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
+        env_passthrough: resolve_env_passthrough(settings.env_passthrough),
+        env_set: resolve_env_set(settings.env_set),
+    }
+}
+
+/// Merge the global `env_passthrough` with the project's: the union of both
+/// name lists (order-preserving, global first), since each entry is only a name
+/// to match against the host env. The global scope is the CLI's
+/// `~/.jan/config.toml`; the desktop has none, so it contributes nothing there.
+fn resolve_env_passthrough(project: Vec<String>) -> Vec<String> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_passthrough_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_passthrough(global, project)
+}
+
+/// Merge the global `env_set` with the project's, the project winning per key.
+/// Global scope is CLI-only (see [`resolve_env_passthrough`]).
+fn resolve_env_set(project: Vec<(String, String)>) -> Vec<(String, String)> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_set_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_set(global, project)
+}
+
+fn merge_env_passthrough(mut global: Vec<String>, project: Vec<String>) -> Vec<String> {
+    global.extend(project);
+    global
+}
+
+fn merge_env_set(
+    mut global: Vec<(String, String)>,
+    project: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+    for (key, val) in project {
+        global.retain(|(existing, _)| existing != &key);
+        global.push((key, val));
+    }
+    global
+}
+
+#[cfg(test)]
+mod env_merge_tests {
+    use super::{merge_env_passthrough, merge_env_set};
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn passthrough_is_the_union_global_first() {
+        let out = merge_env_passthrough(vec![s("GIT_*")], vec![s("CARGO_HOME")]);
+        assert_eq!(out, vec![s("GIT_*"), s("CARGO_HOME")]);
+    }
+
+    #[test]
+    fn env_set_project_wins_per_key() {
+        let global = vec![(s("RUST_LOG"), s("info")), (s("A"), s("g"))];
+        let project = vec![(s("RUST_LOG"), s("debug")), (s("B"), s("p"))];
+        let out = merge_env_set(global, project);
+        assert!(out.contains(&(s("A"), s("g"))));
+        assert!(out.contains(&(s("B"), s("p"))));
+        assert!(out.contains(&(s("RUST_LOG"), s("debug"))));
+        assert_eq!(out.iter().filter(|(k, _)| k == "RUST_LOG").count(), 1);
     }
 }
 
@@ -527,6 +600,8 @@ impl CompositeToolInvoker {
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
+        .with_env_passthrough(&self.env_passthrough)
+        .with_env_set(&self.env_set)
     }
 
     /// A tool context whose output streams to the run's event channel as
@@ -2118,6 +2193,8 @@ async fn orchestrate_inner(
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
             scratch_root: scratch_root.clone(),
+            env_passthrough: settings.env_passthrough,
+            env_set: settings.env_set,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -5095,6 +5172,8 @@ mod tests {
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
             scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            env_passthrough: Vec::new(),
+            env_set: Vec::new(),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),

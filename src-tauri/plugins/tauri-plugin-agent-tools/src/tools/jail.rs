@@ -1197,9 +1197,15 @@ mod enforcement_tests {
         let wrapped = wrap(super::super::proc::shell(), &policy).expect("backend");
         // Mirrors the bash handler: the temp env follows what the backend mounts.
         let tmp = scratch_env_path(backend(), &policy);
-        let child = super::super::proc::spawn(&wrapped, command, ws, tmp.as_deref())
-            .await
-            .expect("spawn");
+        let child = super::super::proc::spawn(
+            &wrapped,
+            command,
+            ws,
+            tmp.as_deref(),
+            super::super::proc::ShellEnv::default(),
+        )
+        .await
+        .expect("spawn");
         let pid = child.id();
         let out = child.wait_with_output().await.expect("wait");
         if let Some(pid) = pid {

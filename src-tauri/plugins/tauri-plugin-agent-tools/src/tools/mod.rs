@@ -123,6 +123,15 @@ pub struct ToolContext<'a> {
     /// frontend's tool-call id) rather than inside `bash`, so the sink can carry
     /// it from the first chunk.
     pub call_id: Option<&'a str>,
+    /// Host env-var names (exact or `*`-glob) the shell may inherit on top of the
+    /// fixed base allowlist. Empty on every surface that has not configured any,
+    /// so the shell env is unchanged by default. Resolved once per run from
+    /// `[tools].env_passthrough`; secret-looking names are never copied by a glob.
+    pub env_passthrough: &'a [String],
+    /// Explicit key=value pairs injected into the shell env, from
+    /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
+    /// the one way to inject a secret-named variable on purpose.
+    pub env_set: &'a [(String, String)],
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -143,6 +152,8 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("read_roots", &self.read_roots)
             .field("write_roots", &self.write_roots)
             .field("call_id", &self.call_id)
+            .field("env_passthrough", &self.env_passthrough)
+            .field("env_set", &self.env_set)
             .finish()
     }
 }
@@ -167,6 +178,29 @@ impl<'a> ToolContext<'a> {
             read_roots: &[],
             write_roots: &[],
             call_id: None,
+            env_passthrough: &[],
+            env_set: &[],
+        }
+    }
+
+    /// Host env-var names the shell may inherit beyond the base allowlist. See
+    /// [`Self::env_passthrough`].
+    pub fn with_env_passthrough(mut self, names: &'a [String]) -> Self {
+        self.env_passthrough = names;
+        self
+    }
+
+    /// Explicit key=value pairs injected into the shell env. See [`Self::env_set`].
+    pub fn with_env_set(mut self, set: &'a [(String, String)]) -> Self {
+        self.env_set = set;
+        self
+    }
+
+    /// The shell env policy this context carries, for [`crate::tools::proc::spawn`].
+    pub fn shell_env(&self) -> crate::tools::proc::ShellEnv<'a> {
+        crate::tools::proc::ShellEnv {
+            passthrough: self.env_passthrough,
+            set: self.env_set,
         }
     }
 
