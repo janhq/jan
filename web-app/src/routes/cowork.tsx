@@ -1392,7 +1392,14 @@ function CoworkPage() {
                     "Working..." indicator -- rests flush against the input and
                     reads as tucked behind it. */}
                 <ConversationContent
-                  className={cn('mx-auto w-full pb-4 md:w-4/5 xl:w-4/6')}
+                  className={cn(
+                    'mx-auto w-full pb-4',
+                    // The centering fractions assume the transcript owns the
+                    // width; with a side panel open the column is already
+                    // narrow, so keeping them crushes the message and composer
+                    // into an unreadable sliver.
+                    !rail && 'md:w-4/5 xl:w-4/6'
+                  )}
                 >
                   {uiMessages.map((message, i) => (
                     <Fragment key={message.id}>
@@ -1515,7 +1522,7 @@ function CoworkPage() {
           </div>
 
           <div className="py-4 shrink-0">
-            <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
+            <div className={cn('mx-auto w-full', !rail && 'md:w-4/5 xl:w-4/6')}>
               {ask && typeof ask.request !== 'string' && (
                 <div className="px-1 pb-2">
                   <CoworkAskCard
