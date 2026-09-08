@@ -695,15 +695,18 @@ describe('MessageItem', () => {
     expect(headers).toContain('beta')
   })
 
-  it('still truncates a non-pending earlier tool step while streaming', () => {
-    // No pending approval: streaming truncation keeps only the latest step.
+  it('still truncates a non-pending earlier tool step outside the frontier while streaming', () => {
+    // No pending approval, and reasoning splits the two calls so they are not
+    // one trailing batch: streaming truncation keeps only the current step
+    // (the trailing tool), dropping the earlier tool that a step has moved past.
     pendingApprovalsRef.current = {}
     render(
       <MessageItem
         message={
           makeMsg({
             parts: [
-              { type: 'tool-alpha', state: 'input-available', toolCallId: 'tc-alpha', input: {} },
+              { type: 'tool-alpha', state: 'output-available', toolCallId: 'tc-alpha', input: {}, output: 'done' },
+              { type: 'reasoning', text: 'now the next thing' },
               { type: 'tool-beta', state: 'input-available', toolCallId: 'tc-beta', input: {} },
             ],
           }) as any

@@ -26,8 +26,9 @@ import {
   IconAlertTriangle,
   IconChevronLeft,
   IconChevronRight,
-  IconSparkles,
+  IconBellRinging,
 } from '@tabler/icons-react'
+import { PING_OPEN, PING_CLOSE } from '@/lib/coworkPing'
 import { EditMessageDialog } from '@/containers/dialogs/EditMessageDialog'
 import { DeleteMessageDialog } from '@/containers/dialogs/DeleteMessageDialog'
 import TokenSpeedIndicator from '@/containers/TokenSpeedIndicator'
@@ -536,12 +537,16 @@ export const MessageItem = memo(
     // what the next turn is replying to -- a turn that reacts to a subagent
     // finishing reads as a non sequitur without it.
     if (message.role === 'system') {
+      const note = getFullTextContent()
+        .split(PING_OPEN)
+        .join('')
+        .split(PING_CLOSE)
+        .join('')
+        .trim()
       return (
-        <div className="mb-4 flex items-start gap-2 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-          <IconSparkles size={14} className="mt-0.5 shrink-0 text-primary" />
-          <span className="min-w-0 whitespace-pre-wrap">
-            {getFullTextContent()}
-          </span>
+        <div className="mb-4 inline-flex w-fit max-w-full items-center gap-2 self-start rounded-full border border-border/50 bg-main-view-fg/2 px-2.5 py-1 text-xs text-muted-foreground">
+          <IconBellRinging size={14} className="shrink-0" />
+          <span className="min-w-0 truncate">{note}</span>
         </div>
       )
     }
