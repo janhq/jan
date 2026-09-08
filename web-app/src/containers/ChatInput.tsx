@@ -2787,7 +2787,7 @@ const ChatInput = memo(function ChatInput({
                   })()}
               </div>
               {surfaceControls && (
-                <div className="flex min-w-0 flex-1 items-center gap-1">
+                <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-hide">
                   <Separator
                     orientation="vertical"
                     className="mx-1 h-4 shrink-0"

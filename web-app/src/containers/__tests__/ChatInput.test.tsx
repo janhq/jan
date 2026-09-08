@@ -705,4 +705,19 @@ describe('ChatInput', () => {
       expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
     })
   })
-})
+  it('contains surface controls within the composer control row', () => {
+    renderInput({
+      surfaceControls: (
+        <>
+          <button>folder</button>
+          <button>terminal</button>
+          <button>changes</button>
+        </>
+      ),
+    })
+
+    const controls = screen.getByText('folder').parentElement
+    expect(controls).toHaveClass('overflow-x-auto', 'scrollbar-hide')
+    expect(controls).toHaveClass('min-w-0', 'flex-1')
+  })
+ })
