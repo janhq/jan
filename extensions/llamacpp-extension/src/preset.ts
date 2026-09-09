@@ -554,10 +554,9 @@ export async function generatePreset(
     // Per-model overrides -- same default-skipping rules as the [*] block.
     // An explicit 0 means "native" (load the model's own trained context).
     //
-    // Emitted even with auto-fit on, unlike n-gpu-layers below: upstream's fit
-    // explicitly leaves a user-set context alone (common/fit.cpp: "context size
-    // set by user -> no change") and only bails on an explicit n_gpu_layers. The
-    // old gate is why "Increase Context Size" did nothing while Fit was on.
+    // Emitted even with auto-fit on: upstream's fit leaves a user-set context
+    // alone (common/fit.cpp: "context size set by user -> no change"). The old
+    // gate is why "Increase Context Size" did nothing while Fit was on.
     let ctxEmitted = false
     if (
       typeof mc.ctx_size === 'number' &&
@@ -567,11 +566,14 @@ export async function generatePreset(
       lines.push(`ctx-size = ${mc.ctx_size}`)
       ctxEmitted = true
     }
-    // Skipped when auto-fit is on: an explicit n-gpu-layers makes fit abort its
-    // layer-offload computation. -1 is auto and -2 or below means all layers,
-    // so the floor is -2 rather than 0.
+    // Emitted even with auto-fit on, same as ctx-size. Fit only auto-fills
+    // *unset* n_gpu_layers; an explicit value is left alone (common/fit.cpp:
+    // "n_gpu_layers already set by user -> abort" the layer-offload search,
+    // after context has already been fitted). Gating this on Fit made GPU
+    // Layers a silent no-op whenever Fit was on. Leave the key out when the
+    // user did not set it, so Fit can still choose offload. -1 is auto and
+    // -2 or below means all layers, so the floor is -2 rather than 0.
     if (
-      !fitEnabled &&
       typeof mc.n_gpu_layers === 'number' &&
       mc.n_gpu_layers >= -2
     ) {

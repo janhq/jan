@@ -15,7 +15,7 @@ export const modelSettings = {
     key: 'ngl',
     title: 'GPU Layers',
     description:
-      'Model layers to keep in VRAM. Leave empty for automatic (VRAM-aware) offload; -1 is auto, -2 offloads all layers, 0 is CPU only.',
+      'Model layers to keep in VRAM. Leave empty for automatic (VRAM-aware) offload, including when Auto-fit is on. A set value is used as-is and overrides Auto-fit\'s layer choice; -1 is auto, -2 offloads all layers, 0 is CPU only.',
     controller_type: 'input',
     controller_props: {
       // Empty, not 100: a value here pins offload and defeats llama.cpp's own
