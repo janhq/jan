@@ -4667,9 +4667,22 @@ impl App {
                             call.diff = diff;
                             call.content = Some(content);
                             group.last_result_error = Some(is_error);
+                            self.refresh_group_row();
+                            return;
                         }
                     }
-                    self.refresh_group_row();
+                    // A standalone edit/write or intervening display block can
+                    // close a group before its batch's results arrive.
+                    for group in &mut self.groups {
+                        if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                            call.is_error = is_error;
+                            call.diff = diff;
+                            call.content = Some(content);
+                            group.last_result_error = Some(is_error);
+                            self.transcript[group.idx] = group.row(GroupRow::Closed);
+                            break;
+                        }
+                    }
                     return;
                 }
                 self.flush_assistant();
@@ -24881,6 +24894,131 @@ mod tests {
             .iter()
             .map(line_text)
             .any(|l| l.contains("let me look")));
+    }
+
+    #[tokio::test]
+    async fn streamed_reasoning_before_mixed_tool_batch_keeps_results_paired() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Exercise the real HTTP normalizer, including started/argument events.
+        // The loop emits all authoritative calls before executing the batch.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 8192];
+            let mut used = 0;
+            loop {
+                let n = socket.read(&mut request[used..]).await.unwrap();
+                assert_ne!(n, 0);
+                used += n;
+                if request[..used].windows(4).any(|w| w == b"\r\n\r\n") {
+                    break;
+                }
+                request.resize(request.len() * 2, 0);
+            }
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n").await.unwrap();
+            for delta in [
+                json!({"reasoning_content": "inspect before changing"}),
+                json!({"tool_calls": [{"index": 0, "id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\":\"first\"}"}}]}),
+                json!({"tool_calls": [{"index": 1, "id": "c2", "type": "function", "function": {"name": "write", "arguments": "{\"path\":\"second.rs\",\"content\":\"new\"}"}}]}),
+                json!({"tool_calls": [{"index": 2, "id": "c3", "type": "function", "function": {"name": "read", "arguments": "{\"path\":\"third.rs\"}"}}]}),
+            ] {
+                let chunk = json!({"choices": [{"index": 0, "delta": delta}]});
+                socket
+                    .write_all(format!("data: {chunk}\n\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
+            socket.write_all(b"data: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n").await.unwrap();
+            socket.shutdown().await.unwrap();
+        });
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let completion = tokio::time::timeout(
+            Duration::from_secs(10),
+            crate::core::agent::genai_bridge::stream_chat_completions(
+                &reqwest13::Client::new(),
+                &format!("http://{addr}/v1/chat/completions"),
+                &[],
+                None,
+                &json!({"model": "m", "messages": [{"role": "user", "content": "go"}]}),
+                &tx,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        server.await.unwrap();
+        drop(tx);
+
+        let mut app = test_app();
+        while let Some(event) = rx.recv().await {
+            app.apply(event);
+        }
+        // The real streamed reasoning precedes the in-progress tool display.
+        app.toggle_regions();
+        let live = render_rows(&mut app, 120, 50).join("\n");
+        assert!(live.contains("inspect before changing"), "{live}");
+        assert!(live.contains("Preparing bash"), "{live}");
+        assert!(
+            live.find("inspect before changing").unwrap() < live.find("Preparing bash").unwrap(),
+            "{live}"
+        );
+        app.toggle_regions();
+
+        for call in completion["choices"][0]["message"]["tool_calls"]
+            .as_array()
+            .unwrap()
+        {
+            app.apply(StreamEvent::ToolCall {
+                id: call["id"].as_str().unwrap().into(),
+                name: call["function"]["name"].as_str().unwrap().into(),
+                args: serde_json::from_str(call["function"]["arguments"].as_str().unwrap())
+                    .unwrap(),
+            });
+        }
+        // A standalone write closes c1's group before any batch result arrives.
+        // Resolve the later group first to detect attaching to the wrong owner.
+        for (id, content, is_error) in [
+            ("c3", "third result", false),
+            ("c1", "first failed", true),
+            ("c2", "second result", false),
+        ] {
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: content.into(),
+                is_error,
+                diff: None,
+            });
+        }
+        let closed = &app.groups[0];
+        assert!(row_text(&app.transcript[closed.idx]).contains('✗'));
+        let first = group_detail_lines(closed, 120)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let third = group_detail_lines(app.tool_group.as_ref().unwrap(), 120)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            first.contains("first failed") && !first.contains("third result"),
+            "{first}"
+        );
+        assert!(
+            third.contains("third result") && !third.contains("first failed"),
+            "{third}"
+        );
+        app.toggle_regions();
+        let open_idx = app.tool_group.as_ref().unwrap().idx;
+        app.toggle_region(open_idx);
+        let rendered = render_rows(&mut app, 120, 50).join("\n");
+        let reasoning = rendered.find("inspect before changing").unwrap();
+        let first = rendered.find("first failed").unwrap();
+        let third = rendered.find("third result").unwrap();
+        assert!(reasoning < first && first < third, "{rendered}");
     }
 
     #[test]
