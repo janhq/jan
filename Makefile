@@ -77,7 +77,6 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	$(MAKE) build-mlx-server-if-exists
-	$(MAKE) build-cli-dev
 	$(MAKE) build-engine-dev-if-possible
 	yarn dev
 
@@ -174,7 +173,7 @@ test: test-prepare install-rust-targets
 # sh.exe is on PATH, so it takes the script.
 stub-resources:
 ifeq ($(RECIPE_SHELL_IS_CMD),yes)
-	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-cli.exe','jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
+	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
 else
 	@./scripts/stub-tauri-resources.sh
 endif
@@ -182,8 +181,8 @@ endif
 test-ci: test-prepare
 	$(MAKE) test-rust
 
-# Cheap compile guard for the CLI feature set, covering what test-ci no longer
-# builds. `make build` still builds the real binary on every platform.
+# Cheap compile guard for the CLI feature set. The `jan` CLI is no longer
+# bundled with the app; `make test` still builds the real binary via build-cli.
 check-cli:
 	cd src-tauri && cargo check --locked --no-default-features --features cli --bin jan
 
@@ -522,16 +521,6 @@ ifeq ($(DETECTED_OS),Windows)
 else
 	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker)
 	bash src-tauri/build-utils/stage-engine.sh debug
-endif
-
-# Debug build for local dev (faster, native arch only)
-build-cli-dev:
-	$(call MKDIR,'src-tauri/resources/bin')	
-	cd src-tauri && cargo build --no-default-features --features cli --bin jan
-ifeq ($(DETECTED_OS),Windows)
-	copy src-tauri\target\debug\jan.exe src-tauri\resources\bin\jan.exe
-else
-	install -m755 src-tauri/target/debug/jan src-tauri/resources/bin/jan
 endif
 
 # Build the Jan agent CLI (the `jan` binary with the `cli` feature)
