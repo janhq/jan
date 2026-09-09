@@ -46,6 +46,17 @@ describe('startNewSession', () => {
     expect(useCoworkSessions.getState().sessions).toHaveLength(1)
   })
 
+  it('opens a different session while the current first response is still streaming', () => {
+    const running = useCoworkSessions.getState().createSession()
+    const fresh = startNewSession([running])
+    expect(fresh).not.toBe(running)
+    expect(useCoworkSessions.getState().currentId).toBe(fresh)
+    expect(useCoworkSessions.getState().sessions.map((s) => s.id)).toEqual([
+      fresh,
+      running,
+    ])
+  })
+
   it('sweeps abandoned empties but keeps one whose first run is streaming', () => {
     const store = useCoworkSessions.getState()
     const used = store.createSession()

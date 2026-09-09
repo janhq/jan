@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
+  onModelChange?: (model: ThreadModel) => void
 }
 
 interface SearchableModel {
@@ -55,6 +56,7 @@ const setLastUsedModel = (provider: string, model: string) => {
 const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
   useLastUsedModel = false,
+  onModelChange,
 }: DropdownModelProviderProps) {
   const {
     providers,
@@ -406,7 +408,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         searchableModel.provider.provider,
         searchableModel.model.id
       )
-      updateCurrentThreadModel({
+      ;(onModelChange ?? updateCurrentThreadModel)({
         id: searchableModel.model.id,
         provider: searchableModel.provider.provider,
       })
@@ -450,6 +452,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     [
       selectModelProvider,
       updateCurrentThreadModel,
+      onModelChange,
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,

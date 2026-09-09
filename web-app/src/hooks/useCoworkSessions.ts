@@ -41,6 +41,8 @@ export type CoworkMessage = {
 export type CoworkSession = {
   id: string
   title: string
+  /** The selected provider/model pair, matching normal chat threads. */
+  model?: ThreadModel
   /** An attached project folder, mounted read-only. Writes always land in the
    * session's own sandbox, never here. */
   folder: string | null
@@ -69,6 +71,7 @@ type CoworkSessionsState = {
   selectSession: (id: string) => void
   deleteSession: (id: string) => void
   setFolder: (id: string, folder: string | null) => void
+  setModel: (id: string, model: ThreadModel) => void
   setPlanMode: (id: string, planMode: boolean) => void
   setTitle: (id: string, title: string) => void
   setMessages: (id: string, messages: UIMessage[]) => void
@@ -164,6 +167,13 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
       },
 
       selectSession: (id) => set({ currentId: id }),
+
+      setModel: (id, model) =>
+        set((s) => ({
+          sessions: s.sessions.map((session) =>
+            session.id === id ? { ...session, model, updated: now() } : session
+          ),
+        })),
 
       deleteSession: (id) =>
         set((s) => {
@@ -351,6 +361,11 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
  */
 export function startNewSession(runningIds: string[]): string {
   const store = useCoworkSessions.getState()
+  // A first response has no committed turns yet, but its session is not
+  // untouched. Do not let createSession reuse the in-flight conversation.
+  if (store.currentId && runningIds.includes(store.currentId)) {
+    useCoworkSessions.setState({ currentId: null })
+  }
   const id = store.createSession()
   store.pruneEmptySessions(runningIds)
   return id

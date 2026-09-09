@@ -833,6 +833,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
   }
 
+  protected getModelSelection(): { selectedProvider: string; selectedModel: Model | null } {
+    return useModelProvider.getState()
+  }
+
   setLastUserMessage(message: string): void {
     this.lastUserMessage = message
   }
@@ -974,7 +978,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    const selectedModel = this.getModelSelection().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -1280,8 +1284,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
+    const { selectedModel, selectedProvider: providerId } = this.getModelSelection()
+    const modelId = selectedModel?.id
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
     if (!this.serviceHub || !modelId || !provider) {
@@ -1297,7 +1301,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       const inferenceParams = this.getActiveInferenceParams()
 
-      const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
         effectiveProviderName,
         selectedModel?.settings?.reasoning?.controller_props?.value as
@@ -1384,7 +1387,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const inferenceParams = this.getActiveInferenceParams()
 
-    const selectedModel = useModelProvider.getState().selectedModel
 
     const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
 
@@ -1524,7 +1526,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // providerOptions (native thinking config), not the raw body.
     const reasoningProviderOptions = buildReasoningProviderOptions(
       providerId,
-      useModelProvider.getState().selectedModel
+      selectedModel
     )
 
     let streamStartTime: number | undefined

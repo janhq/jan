@@ -8,7 +8,15 @@ import type * as CoworkRunner from '@/lib/coworkRunner'
 const backend = vi.hoisted(() => ({
   skills: new Map<string, string>(),
   projectSkills: new Map<string, string>(),
+  storage: new Map<string, string>(),
   received: [] as UIMessage[][],
+  hold: false,
+  preparationError: false,
+  runs: [] as {
+    signal: AbortSignal
+    sink: CoworkRunner.StreamSink
+    finish: () => void
+  }[],
 }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: unknown) => options,
@@ -39,31 +47,38 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 vi.mock('@/lib/backendStorage', () => ({
   backendStorage: {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
+    getItem: (key: string) => backend.storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      backend.storage.set(key, value)
+    },
+    removeItem: (key: string) => {
+      backend.storage.delete(key)
+    },
   },
-}))
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: () => ({
-    selectedModel: { id: 'test-model', capabilities: ['tools'] },
-    selectedProvider: 'test',
-    providers: [
-      { provider: 'test', active: true, api_key: 'test', models: [] },
-    ],
-  }),
 }))
 vi.mock('@/lib/coworkTransport', () => ({
   CoworkChatTransport: class {
-    async refreshTools() {}
+    async refreshTools() {
+      if (backend.preparationError) throw new Error('Tool preparation failed')
+    }
   },
 }))
 vi.mock('@/lib/coworkEnv', () => ({ getCoworkEnvironment: async () => ({}) }))
 vi.mock('@/lib/coworkRunner', async (original) => ({
   ...(await original<typeof CoworkRunner>()),
-  runTurn: async ({ messages }: { messages: UIMessage[] }) => {
+  runTurn: async ({
+    messages,
+    signal,
+    deps,
+  }: Parameters<typeof CoworkRunner.runTurn>[0]) => {
     backend.received.push(messages)
-    return { messages, stoppedBy: 'done' }
+    if (backend.hold) {
+      await new Promise<void>((resolve) => {
+        backend.runs.push({ signal, sink: deps.sink, finish: resolve })
+        signal.addEventListener('abort', () => resolve(), { once: true })
+      })
+    }
+    return { messages, stoppedBy: signal.aborted ? 'aborted' : 'done' }
   },
 }))
 vi.mock('@/lib/agentTools', () => ({
@@ -81,8 +96,35 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   sessionWorkspacePath: async () => '/sandbox',
 }))
 vi.mock('@/containers/ChatInput', () => ({
-  default: ({ onSubmit }: { onSubmit: (text: string) => void }) => (
-    <button onClick={() => onSubmit(usePrompt.getState().prompt)}>Send</button>
+  default: ({
+    onSubmit,
+    onStop,
+    chatStatus,
+    scopeKey,
+  }: {
+    onSubmit: (text: string) => void
+    onStop: () => void
+    chatStatus: string
+    scopeKey: string
+  }) => (
+    <>
+      <output aria-label="Composer status">{chatStatus}</output>
+      <button
+        onClick={() => {
+          const text = usePrompt.getState().prompt
+          if (chatStatus === 'streaming')
+            useMessageQueue.getState().enqueue(scopeKey, {
+              id: crypto.randomUUID(),
+              text,
+              createdAt: Date.now(),
+            })
+          else onSubmit(text)
+        }}
+      >
+        Send
+      </button>
+      <button onClick={onStop}>Stop</button>
+    </>
   ),
 }))
 vi.mock('@/containers/MessageItem', () => ({
@@ -110,7 +152,6 @@ vi.mock('@/containers/HeaderPage', () => ({
     <header>{children}</header>
   ),
 }))
-vi.mock('@/containers/DropdownModelProvider', () => ({ default: () => null }))
 vi.mock('@/containers/SkillSelector', () => ({ default: () => null }))
 vi.mock('@/components/ai-elements/conversation', () => ({
   Conversation: ({ children }: { children: ReactNode }) => (
@@ -161,7 +202,10 @@ vi.mock('@/containers/CoworkSandboxChip', () => ({
 vi.mock('@/containers/CoworkBudgetNotice', () => ({
   CoworkBudgetNotice: () => null,
 }))
-vi.mock('@/containers/CoworkRunNotice', () => ({ CoworkRunNotice: () => null }))
+vi.mock('@/containers/CoworkRunNotice', () => ({
+  CoworkRunNotice: ({ onRetry }: { onRetry?: () => void }) =>
+    onRetry ? <button onClick={onRetry}>Retry failed run</button> : null,
+}))
 vi.mock('@/containers/CoworkAskCard', () => ({ CoworkAskCard: () => null }))
 vi.mock('@/containers/CoworkParkedNotice', () => ({
   CoworkParkedNotice: () => null,
@@ -170,7 +214,11 @@ vi.mock('@/containers/CoworkParkedNotice', () => ({
 import { Route } from '../cowork'
 import { useSkills } from '@/hooks/useSkills'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { useMessageQueue } from '@/stores/message-queue-store'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
 const routeOptions = Route as unknown as { component: () => ReactNode }
 const CoworkPage = routeOptions.component
@@ -188,7 +236,34 @@ function Manager() {
 beforeEach(() => {
   backend.skills.clear()
   backend.projectSkills.clear()
+  backend.storage.clear()
   backend.received = []
+  backend.hold = false
+  backend.preparationError = false
+  backend.runs = []
+  const browserStorage = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => browserStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => browserStorage.set(key, value),
+    removeItem: (key: string) => browserStorage.delete(key),
+  })
+  const models = [
+    { id: 'test-model', capabilities: ['tools'] },
+    { id: 'second-model', capabilities: ['tools'] },
+  ]
+  useModelProvider.setState({
+    providers: [
+      { provider: 'test', active: true, api_key: 'test', models, settings: [] },
+    ],
+    selectedProvider: 'test',
+    selectedModel: models[0],
+  })
+  localStorage.setItem(
+    localStorageKey.lastUsedModel,
+    JSON.stringify({ provider: 'test', model: 'test-model' })
+  )
+  useCoworkRun.setState(useCoworkRun.getInitialState())
+  useMessageQueue.setState(useMessageQueue.getInitialState())
   useCoworkSessions.setState({ sessions: [], currentId: null })
   usePrompt.setState({ prompt: '' })
   Element.prototype.scrollIntoView = vi.fn()
@@ -263,5 +338,139 @@ it('invokes the project skill when it shadows a global skill', async () => {
   })
   expect(document.querySelector('article')).not.toHaveTextContent(
     'Project instructions'
+  )
+})
+
+it('isolates concurrent session streams and stops only the viewed session', async () => {
+  backend.hold = true
+  const a = useCoworkSessions.getState().createSession()
+  const view = render(<CoworkPage />)
+  act(() => usePrompt.getState().setPrompt('Question A'))
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() => expect(backend.runs).toHaveLength(1))
+  let b = ''
+  act(() => {
+    b = startNewSession(Object.keys(useCoworkRun.getState().runId))
+  })
+  expect(screen.getByLabelText('Composer status')).toHaveTextContent('ready')
+  act(() => usePrompt.getState().setPrompt('Question B'))
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() => expect(backend.runs).toHaveLength(2))
+  act(() => {
+    backend.runs[0].sink.onText('Answer A')
+    backend.runs[1].sink.onText('Answer B')
+  })
+  expect(screen.getByText('Answer B')).toBeInTheDocument()
+  expect(screen.queryByText('Answer A')).not.toBeInTheDocument()
+  view.unmount()
+  render(<CoworkPage />)
+  expect(screen.getByText('Answer B')).toBeInTheDocument()
+  fireEvent.click(screen.getByText('Stop'))
+  await waitFor(() =>
+    expect(screen.getByLabelText('Composer status')).toHaveTextContent('ready')
+  )
+  expect(backend.runs[0].signal.aborted).toBe(false)
+  expect(backend.runs[1].signal.aborted).toBe(true)
+  act(() => useCoworkSessions.getState().selectSession(a))
+  expect(screen.getByLabelText('Composer status')).toHaveTextContent(
+    'streaming'
+  )
+  expect(screen.getByText('Answer A')).toBeInTheDocument()
+  await act(async () => backend.runs[0].finish())
+  const sessions = useCoworkSessions.getState().sessions
+  expect(sessions.find((s) => s.id === a)?.turns.map((t) => t.content)).toEqual(
+    ['Question A', 'Answer A']
+  )
+  expect(sessions.find((s) => s.id === b)?.turns.map((t) => t.content)).toEqual(
+    ['Question B', 'Answer B']
+  )
+})
+
+it('continues a background session queue without redirecting it into the viewed run', async () => {
+  backend.hold = true
+  const b = useCoworkSessions.getState().createSession()
+  useCoworkSessions.setState({ currentId: null })
+  const a = useCoworkSessions.getState().createSession()
+  render(<CoworkPage />)
+  act(() => usePrompt.getState().setPrompt('First A'))
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() => expect(backend.runs).toHaveLength(1))
+  act(() => usePrompt.getState().setPrompt('Follow-up A'))
+  fireEvent.click(screen.getByText('Send'))
+  act(() => useCoworkSessions.getState().selectSession(b))
+  act(() => usePrompt.getState().setPrompt('First B'))
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() => expect(backend.runs).toHaveLength(2))
+  await act(async () => backend.runs[0].finish())
+  await waitFor(() => expect(backend.runs).toHaveLength(3))
+  expect(backend.received[2].map((m) => m.parts)).toEqual([
+    [{ type: 'text', text: 'First A' }],
+    [{ type: 'text', text: 'Follow-up A' }],
+  ])
+  expect(useMessageQueue.getState().getQueue(a)).toEqual([])
+  expect(screen.getByLabelText('Composer status')).toHaveTextContent(
+    'streaming'
+  )
+  expect(screen.queryByText('Follow-up A')).not.toBeInTheDocument()
+  await act(async () => {
+    backend.runs[1].finish()
+    backend.runs[2].finish()
+  })
+  expect(
+    useCoworkSessions
+      .getState()
+      .sessions.find((s) => s.id === b)
+      ?.turns.map((t) => t.content)
+  ).toEqual(['First B'])
+})
+
+it('retries the original question after request preparation fails', async () => {
+  backend.preparationError = true
+  render(<CoworkPage />)
+  act(() => usePrompt.getState().setPrompt('Keep this question'))
+  fireEvent.click(screen.getByText('Send'))
+  const retry = await screen.findByText('Retry failed run')
+  backend.preparationError = false
+  fireEvent.click(retry)
+  await waitFor(() => expect(backend.received).toHaveLength(1))
+  expect(backend.received[0].at(-1)?.parts).toEqual([
+    { type: 'text', text: 'Keep this question' },
+  ])
+})
+
+it('restores each session model after switching and persisted-store rehydration', async () => {
+  const a = useCoworkSessions.getState().createSession()
+  useCoworkSessions
+    .getState()
+    .commitTurns(a, [{ role: 'user', content: 'Session A' }], [], [])
+  const b = useCoworkSessions.getState().createSession()
+  useCoworkSessions
+    .getState()
+    .commitTurns(b, [{ role: 'user', content: 'Session B' }], [], [])
+  useCoworkSessions.getState().selectSession(a)
+  const view = render(<CoworkPage />)
+  const choose = async (name: string) => {
+    fireEvent.click(document.querySelector('header button')!)
+    fireEvent.click(await screen.findByText(name))
+  }
+  await choose('second-model')
+  act(() => useCoworkSessions.getState().selectSession(b))
+  await choose('test-model')
+  act(() => useCoworkSessions.getState().selectSession(a))
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('second-model')
+  )
+  view.unmount()
+  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  useCoworkSessions.setState({ sessions: [], currentId: null })
+  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
+  await useCoworkSessions.persist.rehydrate()
+  render(<CoworkPage />)
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('second-model')
+  )
+  act(() => useCoworkSessions.getState().selectSession(b))
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('test-model')
   )
 })
