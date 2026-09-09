@@ -167,6 +167,44 @@ describe('dispatchCoworkTool', () => {
   })
 })
 
+it('pauses repeated failed reads for review without swallowing the read error', async () => {
+  const error = 'ERROR: No such file or directory (os error 2)'
+  executeAgentTool.mockResolvedValue({ error })
+  let review: unknown
+  let answer!: (result: { output: string }) => void
+  const context = ctx({
+    planMode: true,
+    failedReadPaths: new Set<string>(),
+    onAsk: async (_id: string, input: unknown) => {
+      review = input
+      return new Promise<{ output: string }>((resolve) => {
+        answer = resolve
+      })
+    },
+  })
+  const first = await dispatchCoworkTool(
+    call('read', { path: 'index.html' }),
+    context
+  )
+  expect(first.isError).toBe(true)
+  expect(review).toBeUndefined()
+  let finished = false
+  const second = dispatchCoworkTool(
+    call('read', { path: 'index.html' }),
+    context
+  ).then((result) => {
+    finished = true
+    return result
+  })
+  await vi.waitFor(() => expect(review).toBeDefined())
+  expect(finished).toBe(false)
+  answer({ output: 'Keep planning' })
+  const result = await second
+  expect(result.isError).toBe(true)
+  expect(result.output).toContain(error)
+  expect(result.output).toContain('Keep planning')
+})
+
 describe('web tools', () => {
   beforeEach(() => executeWebTool.mockReset())
 
