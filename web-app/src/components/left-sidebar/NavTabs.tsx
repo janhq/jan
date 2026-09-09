@@ -19,16 +19,16 @@ type TabItem = {
 const openCoworkStart = () =>
   startNewSession(Object.keys(useCoworkRun.getState().runId))
 
-export function NavTabs() {
+export function NavTabs({ surfacePath }: { surfacePath: string }) {
   const { t } = useTranslation()
   const { pathname } = useLocation()
 
-  const isCowork = isCoworkRoute(pathname)
+  const isCowork = isCoworkRoute(surfacePath)
   // Home owns the chat surfaces (new chat, threads, projects); Cowork owns /cowork.
   const isHome =
-    pathname === route.home ||
-    pathname.startsWith('/threads') ||
-    pathname.startsWith('/project')
+    surfacePath === route.home ||
+    surfacePath.startsWith('/threads') ||
+    surfacePath.startsWith('/project')
 
   const tabs: TabItem[] = [
     { label: t('common:home'), to: route.home, icon: HomeIcon, isActive: isHome },
@@ -37,7 +37,9 @@ export function NavTabs() {
       to: route.cowork,
       icon: Handshake,
       isActive: isCowork,
-      onClick: openCoworkStart,
+      onClick: isCowork && pathname.startsWith('/settings')
+        ? undefined
+        : openCoworkStart,
     },
   ]
 
@@ -50,6 +52,7 @@ export function NavTabs() {
             key={tab.to}
             to={tab.to}
             onClick={tab.onClick}
+            aria-current={tab.isActive ? 'page' : undefined}
             className={cn(
               'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium transition-colors',
               tab.isActive
