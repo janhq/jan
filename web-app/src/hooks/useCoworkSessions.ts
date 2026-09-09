@@ -351,6 +351,11 @@ export const useCoworkSessions = create<CoworkSessionsState>()(
  */
 export function startNewSession(runningIds: string[]): string {
   const store = useCoworkSessions.getState()
+  // A first response has no committed turns yet, but its session is not
+  // untouched. Do not let createSession reuse the in-flight conversation.
+  if (store.currentId && runningIds.includes(store.currentId)) {
+    useCoworkSessions.setState({ currentId: null })
+  }
   const id = store.createSession()
   store.pruneEmptySessions(runningIds)
   return id

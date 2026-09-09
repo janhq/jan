@@ -77,7 +77,7 @@ export function isRunning(sid: string): boolean {
   return handles.has(sid)
 }
 
-function createHandle(sid: string, runId: string): RunHandle {
+export function createHandle(sid: string, runId: string): RunHandle {
   const handle: RunHandle = {
     runId,
     outer: new AbortController(),
@@ -87,6 +87,10 @@ function createHandle(sid: string, runId: string): RunHandle {
   }
   handles.set(sid, handle)
   return handle
+}
+
+export function releaseHandle(sid: string, handle: RunHandle): void {
+  if (handles.get(sid) === handle) handles.delete(sid)
 }
 
 /**

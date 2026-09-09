@@ -11,6 +11,7 @@ import type {
 import type { MonitorUpdate } from '@/lib/agentTools'
 import { userTurn } from '@/lib/coworkTurns'
 import type { ModelLoadProgress } from '@/hooks/useAppState'
+import type { RunOutcome } from '@/lib/coworkRunner'
 
 // The ask shapes live in the store-free types module; re-exported here because
 // this store is where the pending-ask queue lives.
@@ -30,7 +31,13 @@ export type StreamEvent =
   | { type: 'tool_call_started'; id: string; name: string }
   | { type: 'tool_call_args_delta'; id: string; delta: string }
   | { type: 'tool_call'; id: string; name: string; args: unknown }
-  | { type: 'tool_result'; id: string; content: string; is_error: boolean; diff?: string }
+  | {
+      type: 'tool_result'
+      id: string
+      content: string
+      is_error: boolean
+      diff?: string
+    }
   | { type: 'done'; stop_reason: string; usage: Usage | null }
   | { type: 'error'; code: string; message: string }
   | { type: 'todo_update'; list: TodoList }
@@ -76,14 +83,23 @@ function mergeToolResult(
   callId: string,
   patch: Partial<CoworkTurn>
 ): CoworkTurn[] {
-  const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === callId)
+  const idx = turns.findIndex(
+    (tn) => tn.role === 'tool' && tn.callId === callId
+  )
   if (idx === -1) return turns
-  return [...turns.slice(0, idx), { ...turns[idx], ...patch }, ...turns.slice(idx + 1)]
+  return [
+    ...turns.slice(0, idx),
+    { ...turns[idx], ...patch },
+    ...turns.slice(idx + 1),
+  ]
 }
 
 // Apply one wrapped inner subagent event to that subagent's own turn lane
 // (token append / tool_call push / tool_result merge). Pure.
-function applyInnerToTurns(turns: CoworkTurn[], inner: StreamEvent): CoworkTurn[] {
+function applyInnerToTurns(
+  turns: CoworkTurn[],
+  inner: StreamEvent
+): CoworkTurn[] {
   switch (inner.type) {
     case 'token':
       return appendAssistantToken(turns, inner.text)
@@ -97,20 +113,38 @@ function applyInnerToTurns(turns: CoworkTurn[], inner: StreamEvent): CoworkTurn[
           ...turns.slice(0, -1),
           { ...last, reasoning: (last.reasoning ?? '') + inner.text },
         ]
-      return [...turns, { role: 'assistant', content: '', reasoning: inner.text }]
-    }
-    case 'tool_call_started': {
-      if (turns.some((tn) => tn.role === 'tool' && tn.callId === inner.id)) return turns
       return [
         ...turns,
-        { role: 'tool', content: '', callId: inner.id, name: inner.name, args: null, argsLive: '', status: 'running' },
+        { role: 'assistant', content: '', reasoning: inner.text },
+      ]
+    }
+    case 'tool_call_started': {
+      if (turns.some((tn) => tn.role === 'tool' && tn.callId === inner.id))
+        return turns
+      return [
+        ...turns,
+        {
+          role: 'tool',
+          content: '',
+          callId: inner.id,
+          name: inner.name,
+          args: null,
+          argsLive: '',
+          status: 'running',
+        },
       ]
     }
     case 'tool_call_args_delta': {
-      const idx = turns.findIndex((tn) => tn.role === 'tool' && tn.callId === inner.id)
+      const idx = turns.findIndex(
+        (tn) => tn.role === 'tool' && tn.callId === inner.id
+      )
       if (idx === -1) return turns
       const prev = turns[idx].argsLive ?? ''
-      return [...turns.slice(0, idx), { ...turns[idx], argsLive: prev + inner.delta }, ...turns.slice(idx + 1)]
+      return [
+        ...turns.slice(0, idx),
+        { ...turns[idx], argsLive: prev + inner.delta },
+        ...turns.slice(idx + 1),
+      ]
     }
     case 'tool_call':
       return [...turns, makeToolCallTurn(inner)]
@@ -143,6 +177,12 @@ function omitKey<T>(map: Record<string, T>, key: string): Record<string, T> {
 // would need to be kept in sync with it.
 type CoworkRunState = {
   liveTurns: Record<string, CoworkTurn[]>
+  outcomes: Record<string, Pick<RunOutcome, 'stoppedBy' | 'errorText'>>
+  setOutcome: (
+    sid: string,
+    outcome: Pick<RunOutcome, 'stoppedBy' | 'errorText'>
+  ) => void
+  setLiveTurns: (sid: string, turns: CoworkTurn[]) => void
   subagents: Record<string, SubagentRun[]>
   // The session's file monitors. Unlike the subagent lanes they survive the
   // run: a watcher keeps going after the model has answered, and a later
@@ -154,7 +194,10 @@ type CoworkRunState = {
   runId: Record<string, string>
   // In-flight `ask` tool questions per session. A subagent's wrapped ask is
   // attributed to the parent session the same way.
-  pendingAsks: Record<string, { requestId: string; request: AskRequestPayload }[]>
+  pendingAsks: Record<
+    string,
+    { requestId: string; request: AskRequestPayload }[]
+  >
   // Usage from the latest `done` event, per session. Set once per run (the
   // terminal event); untouched by a `null` usage so a provider that doesn't
   // report it on a given turn doesn't blank out the last known value.
@@ -184,16 +227,30 @@ type CoworkRunState = {
   loadingModels: Record<string, boolean>
   modelLoadProgress: Record<string, ModelLoadProgress>
 
-  beginRun: (sid: string, runId: string, userText: string, media?: CoworkMediaPart[]) => void
+  beginRun: (
+    sid: string,
+    runId: string,
+    userText: string,
+    media?: CoworkMediaPart[]
+  ) => void
   appendToken: (sid: string, text: string) => void
   pushToolTurn: (sid: string, turn: CoworkTurn) => void
-  updateToolTurn: (sid: string, callId: string, patch: Partial<CoworkTurn>) => void
+  updateToolTurn: (
+    sid: string,
+    callId: string,
+    patch: Partial<CoworkTurn>
+  ) => void
   /** Empty a session's subagent lanes at the start of a run, so the panel shows
    * this run's children rather than every child the session ever had. */
   resetSubagents: (sid: string) => void
   startSubagent: (sid: string, runId: string, name: string) => void
   // `subagent_queued`: mark a child as waiting for a concurrency slot.
-  queueSubagent: (sid: string, runId: string, name: string, waiting: number) => void
+  queueSubagent: (
+    sid: string,
+    runId: string,
+    name: string,
+    waiting: number
+  ) => void
   endSubagent: (sid: string, runId: string, usage?: Usage | null) => void
   routeIntoSubagent: (sid: string, runId: string, inner: StreamEvent) => void
   attachSubagentOutput: (sid: string, runId: string, content: string) => void
@@ -222,19 +279,31 @@ type CoworkRunState = {
     sid: string,
     progress: ModelLoadProgress | undefined
   ) => void
-  addPendingAsk: (sid: string, requestId: string, request: AskRequestPayload) => void
+  addPendingAsk: (
+    sid: string,
+    requestId: string,
+    request: AskRequestPayload
+  ) => void
   removePendingAsk: (sid: string, requestId: string) => void
   // Mark running tool turns + subagents done (interrupted). Leaves
   // liveTurns/subagents in place and returns the final values so the caller
   // can commit them before clearCodeRun without a second round of store
   // reads. Run-level failure is surfaced separately via `useMessageErrors`,
   // not through this function.
-  finalizeRun: (sid: string) => { turns: CoworkTurn[]; subagents: SubagentRun[] }
+  finalizeRun: (sid: string) => {
+    turns: CoworkTurn[]
+    subagents: SubagentRun[]
+  }
   clearCodeRun: (sid: string) => void
 }
 
 export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   liveTurns: {},
+  outcomes: {},
+  setOutcome: (sid, outcome) =>
+    set((s) => ({ outcomes: { ...s.outcomes, [sid]: outcome } })),
+  setLiveTurns: (sid, turns) =>
+    set((s) => ({ liveTurns: { ...s.liveTurns, [sid]: turns } })),
   subagents: {},
   monitors: {},
   parked: {},
@@ -250,6 +319,8 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   beginRun: (sid, runId, userText, media) =>
     set((s) => ({
       runId: { ...s.runId, [sid]: runId },
+      outcomes: omitKey(s.outcomes, sid),
+      usage: omitKey(s.usage, sid),
       liveTurns: {
         ...s.liveTurns,
         [sid]: [userTurn(userText, media)],
@@ -276,7 +347,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     set((s) => {
       const turns = s.liveTurns[sid] ?? []
       const next = mergeToolResult(turns, callId, patch)
-      return next === turns ? {} : { liveTurns: { ...s.liveTurns, [sid]: next } }
+      return next === turns
+        ? {}
+        : { liveTurns: { ...s.liveTurns, [sid]: next } }
     }),
 
   resetSubagents: (sid) =>
@@ -295,7 +368,12 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
               ...s.subagents,
               [sid]: [
                 ...runs.slice(0, idx),
-                { ...existing, status: 'running' as const, waiting: undefined, startedAt: Date.now() },
+                {
+                  ...existing,
+                  status: 'running' as const,
+                  waiting: undefined,
+                  startedAt: Date.now(),
+                },
                 ...runs.slice(idx + 1),
               ],
             },
@@ -308,7 +386,13 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
           ...s.subagents,
           [sid]: [
             ...runs,
-            { runId, name, status: 'running', startedAt: Date.now(), turns: [] },
+            {
+              runId,
+              name,
+              status: 'running',
+              startedAt: Date.now(),
+              turns: [],
+            },
           ],
         },
       }
@@ -323,12 +407,18 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
           ...s.subagents,
           [sid]: [
             ...runs,
-            { runId, name, status: 'queued', waiting, startedAt: Date.now(), turns: [] },
+            {
+              runId,
+              name,
+              status: 'queued',
+              waiting,
+              startedAt: Date.now(),
+              turns: [],
+            },
           ],
         },
       }
     }),
-
 
   endSubagent: (sid, runId, usage) =>
     set((s) => ({
@@ -352,7 +442,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
       subagents: {
         ...s.subagents,
         [sid]: (s.subagents[sid] ?? []).map((r) =>
-          r.runId === runId ? { ...r, turns: applyInnerToTurns(r.turns, inner) } : r
+          r.runId === runId
+            ? { ...r, turns: applyInnerToTurns(r.turns, inner) }
+            : r
         ),
       },
     })),
@@ -362,7 +454,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
       subagents: {
         ...s.subagents,
         [sid]: (s.subagents[sid] ?? []).map((r) =>
-          r.runId === runId && r.finalOutput == null ? { ...r, finalOutput: content } : r
+          r.runId === runId && r.finalOutput == null
+            ? { ...r, finalOutput: content }
+            : r
         ),
       },
     })),
@@ -381,7 +475,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
             ? {
                 ...m,
                 status: 'done' as const,
-                outcome: update.matched ? ('matched' as const) : ('timeout' as const),
+                outcome: update.matched
+                  ? ('matched' as const)
+                  : ('timeout' as const),
                 endedAt: Date.now(),
               }
             : m
@@ -435,7 +531,8 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   setUsage: (sid, usage) =>
     set((s) => (usage ? { usage: { ...s.usage, [sid]: usage } } : {})),
 
-  requestPreview: (sessionId, path) => set({ pendingPreview: { sessionId, path } }),
+  requestPreview: (sessionId, path) =>
+    set({ pendingPreview: { sessionId, path } }),
   clearPendingPreview: () => set({ pendingPreview: null }),
 
   setLlamacppRun: (sid, modelId) =>
@@ -449,7 +546,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   takePendingLlamacppError: (sid) => {
     const message = get().pendingLlamacppError[sid]
     if (message !== undefined) {
-      set((s) => ({ pendingLlamacppError: omitKey(s.pendingLlamacppError, sid) }))
+      set((s) => ({
+        pendingLlamacppError: omitKey(s.pendingLlamacppError, sid),
+      }))
     }
     return message
   },
@@ -480,7 +579,9 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     set((s) => ({
       pendingAsks: {
         ...s.pendingAsks,
-        [sid]: (s.pendingAsks[sid] ?? []).filter((a) => a.requestId !== requestId),
+        [sid]: (s.pendingAsks[sid] ?? []).filter(
+          (a) => a.requestId !== requestId
+        ),
       },
     })),
 
@@ -490,11 +591,18 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     // misleading error-styled tool card even though no tool call failed.
     const turns: CoworkTurn[] = (get().liveTurns[sid] ?? []).map((tn) =>
       tn.role === 'tool' && tn.status === 'running'
-        ? { ...tn, status: 'done' as const, isError: true, result: tn.result || '(interrupted)' }
+        ? {
+            ...tn,
+            status: 'done' as const,
+            isError: true,
+            result: tn.result || '(interrupted)',
+          }
         : tn
     )
     const subs = (get().subagents[sid] ?? []).map((r) =>
-      r.status !== 'done' ? { ...r, status: 'done' as const, endedAt: Date.now() } : r
+      r.status !== 'done'
+        ? { ...r, status: 'done' as const, endedAt: Date.now() }
+        : r
     )
     set((s) => ({
       liveTurns: { ...s.liveTurns, [sid]: turns },
@@ -507,6 +615,7 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
   clearCodeRun: (sid) =>
     set((s) => ({
       liveTurns: omitKey(s.liveTurns, sid),
+      outcomes: omitKey(s.outcomes, sid),
       subagents: omitKey(s.subagents, sid),
       parked: omitKey(s.parked, sid),
       runId: omitKey(s.runId, sid),
@@ -524,4 +633,3 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
 // changes, not on every other session's.
 export const useIsSessionActive = (sid: string | undefined) =>
   useCoworkRun((s) => (sid ? s.runId[sid] != null : false))
-
