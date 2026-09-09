@@ -130,14 +130,7 @@ import {
   subagentCompletionNotice,
   SubagentInbox,
 } from '@/lib/coworkSubagent'
-import {
-  invokeSkill,
-  listSkills,
-  projectScope,
-  storeScope,
-  type SkillMeta,
-  type SkillScope,
-} from '@/lib/skillStore'
+import { useSkills } from '@/hooks/useSkills'
 import {
   filterSkillCommands,
   parseSkillCommand,
@@ -199,24 +192,7 @@ function CoworkPage() {
   )
   const folder = session?.folder ?? null
 
-  const skillScope = useMemo<SkillScope>(
-    () => (folder ? projectScope(folder) : storeScope),
-    [folder]
-  )
-  const [skillCommands, setSkillCommands] = useState<SkillMeta[]>([])
-  useEffect(() => {
-    let alive = true
-    void listSkills(skillScope)
-      .then((skills) => {
-        if (alive) setSkillCommands(skills)
-      })
-      .catch(() => {
-        if (alive) setSkillCommands([])
-      })
-    return () => {
-      alive = false
-    }
-  }, [skillScope])
+  const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(folder)
   const planMode = session?.planMode ?? false
 
   const [running, setRunning] = useState(false)
@@ -502,6 +478,30 @@ function CoworkPage() {
       toast.error(t('common:modelNoTools', { model: selectedModel.id }))
       return
     }
+    // Display the invocation, but expand it only in the model's history. Keep
+    // this in the shared request path so edits, retries and queued turns also
+    // invoke skills instead of sending the slash text as an ordinary prompt.
+    let modelText = text
+    const parsedSkill = text ? parseSkillCommand(text) : null
+    const builtIn = parsedSkill
+      ? SLASH_COMMANDS.some((command) => command.name === `/${parsedSkill.name}`)
+      : false
+    const skill =
+      parsedSkill && (parsedSkill.explicit || !builtIn)
+        ? resolveSkillCommand(skillCommands, parsedSkill)
+        : null
+    if (parsedSkill?.explicit && !skill) {
+      toast.error(t('common:coworkSlash.skillUnavailable', { name: parsedSkill.name }))
+      return
+    }
+    if (skill && parsedSkill) {
+      try {
+        modelText = await invokeSkillCommand(skill.name, parsedSkill.args)
+      } catch (error) {
+        toast.error(String(error))
+        return
+      }
+    }
     if (text && current?.title === 'New session')
       // Collapse newlines/runs of whitespace so a pasted multi-line prompt
       // doesn't become an unreadable sidebar title.
@@ -641,7 +641,7 @@ function CoworkPage() {
             id: `${sid}-user-${baseMessages.length}`,
             role: 'user',
             parts: [
-              { type: 'text', text: withAttachedFiles(text, files) },
+              { type: 'text', text: withAttachedFiles(modelText ?? text, files) },
               ...(attachments?.media ?? []),
             ],
           } as any,
@@ -1013,27 +1013,8 @@ function CoworkPage() {
       return
     }
 
-    // Explicit skill syntax must never fall through to the model or a normal
-    // slash command when the skill is unavailable.
-    if (skill && skillCommand) {
-      const attachedFiles = documents
-        ?.filter((d): d is Attachment & { path: string } => !!d.path)
-        .map((d) => ({
-          name: d.name,
-          path: d.path,
-          fileType: d.fileType,
-          size: d.size,
-        }))
-      void invokeSkill(skillScope, skill.name, skillCommand.args)
-        .then((expanded) =>
-          runRequest(expanded, { media: files, files: attachedFiles })
-        )
-        .catch((error) => toast.error(String(error)))
-      return
-    }
-
-    // Slash commands are client-side actions; they never reach the agent.
-    if (text.trim().startsWith('/')) {
+    // Non-skill slash commands are client-side actions.
+    if (!skill && text.trim().startsWith('/')) {
       runSlashCommand(text, {
         t,
         running,

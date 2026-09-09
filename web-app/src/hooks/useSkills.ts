@@ -159,6 +159,12 @@ export function useSkills(folder: string | null) {
     [scopeOf]
   )
 
+  const invokeCommand = useCallback(
+    (name: string, args: string) =>
+      skillStore.invokeSkill(scopeOf(name), name, args),
+    [scopeOf]
+  )
+
   const write = useCallback(
     async (name: string, content: string) => {
       await skillStore.writeSkill(scopeOf(name), name, content)
@@ -205,6 +211,7 @@ export function useSkills(folder: string | null) {
     loading,
     refresh,
     read,
+    invoke: invokeCommand,
     write,
     remove,
     hubList,
