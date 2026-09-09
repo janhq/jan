@@ -8,6 +8,7 @@ import type * as CoworkRunner from '@/lib/coworkRunner'
 const backend = vi.hoisted(() => ({
   skills: new Map<string, string>(),
   projectSkills: new Map<string, string>(),
+  storage: new Map<string, string>(),
   received: [] as UIMessage[][],
   hold: false,
   preparationError: false,
@@ -46,19 +47,14 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 vi.mock('@/lib/backendStorage', () => ({
   backendStorage: {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
+    getItem: (key: string) => backend.storage.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      backend.storage.set(key, value)
+    },
+    removeItem: (key: string) => {
+      backend.storage.delete(key)
+    },
   },
-}))
-vi.mock('@/hooks/useModelProvider', () => ({
-  useModelProvider: () => ({
-    selectedModel: { id: 'test-model', capabilities: ['tools'] },
-    selectedProvider: 'test',
-    providers: [
-      { provider: 'test', active: true, api_key: 'test', models: [] },
-    ],
-  }),
 }))
 vi.mock('@/lib/coworkTransport', () => ({
   CoworkChatTransport: class {
@@ -117,13 +113,11 @@ vi.mock('@/containers/ChatInput', () => ({
         onClick={() => {
           const text = usePrompt.getState().prompt
           if (chatStatus === 'streaming')
-            useMessageQueue
-              .getState()
-              .enqueue(scopeKey, {
-                id: crypto.randomUUID(),
-                text,
-                createdAt: Date.now(),
-              })
+            useMessageQueue.getState().enqueue(scopeKey, {
+              id: crypto.randomUUID(),
+              text,
+              createdAt: Date.now(),
+            })
           else onSubmit(text)
         }}
       >
@@ -158,7 +152,6 @@ vi.mock('@/containers/HeaderPage', () => ({
     <header>{children}</header>
   ),
 }))
-vi.mock('@/containers/DropdownModelProvider', () => ({ default: () => null }))
 vi.mock('@/containers/SkillSelector', () => ({ default: () => null }))
 vi.mock('@/components/ai-elements/conversation', () => ({
   Conversation: ({ children }: { children: ReactNode }) => (
@@ -224,6 +217,8 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
 const routeOptions = Route as unknown as { component: () => ReactNode }
 const CoworkPage = routeOptions.component
@@ -241,10 +236,32 @@ function Manager() {
 beforeEach(() => {
   backend.skills.clear()
   backend.projectSkills.clear()
+  backend.storage.clear()
   backend.received = []
   backend.hold = false
   backend.preparationError = false
   backend.runs = []
+  const browserStorage = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => browserStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => browserStorage.set(key, value),
+    removeItem: (key: string) => browserStorage.delete(key),
+  })
+  const models = [
+    { id: 'test-model', capabilities: ['tools'] },
+    { id: 'second-model', capabilities: ['tools'] },
+  ]
+  useModelProvider.setState({
+    providers: [
+      { provider: 'test', active: true, api_key: 'test', models, settings: [] },
+    ],
+    selectedProvider: 'test',
+    selectedModel: models[0],
+  })
+  localStorage.setItem(
+    localStorageKey.lastUsedModel,
+    JSON.stringify({ provider: 'test', model: 'test-model' })
+  )
   useCoworkRun.setState(useCoworkRun.getInitialState())
   useMessageQueue.setState(useMessageQueue.getInitialState())
   useCoworkSessions.setState({ sessions: [], currentId: null })
@@ -419,4 +436,41 @@ it('retries the original question after request preparation fails', async () => 
   expect(backend.received[0].at(-1)?.parts).toEqual([
     { type: 'text', text: 'Keep this question' },
   ])
+})
+
+it('restores each session model after switching and persisted-store rehydration', async () => {
+  const a = useCoworkSessions.getState().createSession()
+  useCoworkSessions
+    .getState()
+    .commitTurns(a, [{ role: 'user', content: 'Session A' }], [], [])
+  const b = useCoworkSessions.getState().createSession()
+  useCoworkSessions
+    .getState()
+    .commitTurns(b, [{ role: 'user', content: 'Session B' }], [], [])
+  useCoworkSessions.getState().selectSession(a)
+  const view = render(<CoworkPage />)
+  const choose = async (name: string) => {
+    fireEvent.click(document.querySelector('header button')!)
+    fireEvent.click(await screen.findByText(name))
+  }
+  await choose('second-model')
+  act(() => useCoworkSessions.getState().selectSession(b))
+  await choose('test-model')
+  act(() => useCoworkSessions.getState().selectSession(a))
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('second-model')
+  )
+  view.unmount()
+  const savedSessions = backend.storage.get(localStorageKey.coworkSessions)!
+  useCoworkSessions.setState({ sessions: [], currentId: null })
+  backend.storage.set(localStorageKey.coworkSessions, savedSessions)
+  await useCoworkSessions.persist.rehydrate()
+  render(<CoworkPage />)
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('second-model')
+  )
+  act(() => useCoworkSessions.getState().selectSession(b))
+  await waitFor(() =>
+    expect(document.querySelector('header')).toHaveTextContent('test-model')
+  )
 })

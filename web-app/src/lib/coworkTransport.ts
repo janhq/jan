@@ -18,8 +18,10 @@ import {
   type CoworkEnvironment,
 } from '@/lib/coworkPrompt'
 import { getCoworkEnvironment } from '@/lib/coworkEnv'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 export type CoworkRunConfig = CoworkToolOptions & {
+  model: ThreadModel
   workspacePath: string | null
   readOnlyFolder: string | null
 }
@@ -29,11 +31,12 @@ export type CoworkRunConfig = CoworkToolOptions & {
  *
  * Everything expensive is inherited: model creation and its abort-during-load
  * unload, the sampling/reasoning merge, attachment encoding, tool-call repair,
- * and the usage metadata. Only four things differ, and each is a seam on the
- * parent.
+ * and the usage metadata. Cowork-specific behavior uses protected overrides,
+ * including the model selection captured for the run.
  */
 export class CoworkChatTransport extends CustomChatTransport {
   private config: CoworkRunConfig
+  private runModel: ThreadModel
   /**
    * The advertised tool set, frozen for a run's lifetime.
    *
@@ -59,6 +62,20 @@ export class CoworkChatTransport extends CustomChatTransport {
   constructor(sessionId: string, config: CoworkRunConfig) {
     super(undefined, sessionId)
     this.config = config
+    this.runModel = { ...config.model }
+  }
+
+  protected override getModelSelection() {
+    const provider = useModelProvider
+      .getState()
+      .getProviderByName(this.runModel.provider)
+    return {
+      selectedProvider: this.runModel.provider,
+      selectedModel: provider?.active
+        ? (provider.models.find((model) => model.id === this.runModel.id) ??
+          null)
+        : null,
+    }
   }
 
   /** Applied at the next run: changing it mid-run would invalidate the prefix. */
@@ -91,6 +108,7 @@ export class CoworkChatTransport extends CustomChatTransport {
   /** Drop the freeze so the next run re-reads the config. */
   unfreezeTools() {
     this.frozenTools = null
+    this.runModel = { ...this.config.model }
   }
 
   /**
@@ -123,7 +141,9 @@ export class CoworkChatTransport extends CustomChatTransport {
       readOnlyFolder: this.config.readOnlyFolder,
       planMode: this.config.planMode,
       bashAvailable: sandboxEnforces(),
-      subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
+      subagentNames: this.config.allowSubagents
+        ? this.config.subagentNames
+        : [],
       webSearch: this.config.webSearch,
       memoryCatalog: this.memoryCatalog,
       environment: this.environment,
