@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { NavChats } from './NavChats'
 import { NavCowork } from './NavCowork'
@@ -16,12 +17,17 @@ import {
 import { cn } from '@/lib/utils'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
 import { useLocation } from '@tanstack/react-router'
-import { isCoworkRoute } from '@/constants/routes'
+import { isCoworkRoute, route } from '@/constants/routes'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
   const { pathname } = useLocation()
-  const isCowork = isCoworkRoute(pathname)
+  const inSettings =
+    pathname === route.settings.index || pathname.startsWith('/settings/')
+  const [lastSurfacePath, setLastSurfacePath] = useState(pathname)
+  if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
+  const surfacePath = inSettings ? lastSurfacePath : pathname
+  const isCowork = isCoworkRoute(surfacePath)
   // Right-align the header when native controls own the top-left (macOS, or a Linux
   // DE placing buttons left); "Jan" moves into the right cluster except on macOS.
   const leftButtons = useTitlebarLayout((s) => s.layout.left.length)
@@ -41,7 +47,7 @@ export function LeftSidebar() {
               <SidebarTrigger className="text-muted-foreground rounded-full hover:bg-sidebar-foreground/8! -mt-0.5 relative z-50 ml-0.5" />
             </div>
           </div>
-          <NavTabs />
+          <NavTabs surfacePath={surfacePath} />
           {isCowork ? <NavCowork /> : <NavMain />}
         </SidebarHeader>
         <SidebarContent className="mask-b-from-95% mask-t-from-98%">
