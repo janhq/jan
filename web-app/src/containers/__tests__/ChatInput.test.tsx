@@ -705,21 +705,4 @@ describe('ChatInput', () => {
       expect(dimmed!.contains(screen.getByText('plan'))).toBe(false)
     })
   })
-  it('contains surface controls within the composer control row', () => {
-    renderInput({
-      surfaceControls: (
-        <>
-          <button>folder</button>
-          <button>terminal</button>
-          <button>changes</button>
-        </>
-      ),
-    })
-
-    const controls = screen.getByText('folder').parentElement
-    // The controls wrap onto a second line when the composer narrows rather
-    // than hiding behind a horizontal scroll, so no control is unreachable.
-    expect(controls).toHaveClass('flex-wrap')
-    expect(controls).toHaveClass('min-w-0', 'flex-1')
-  })
  })

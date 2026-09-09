@@ -1971,7 +1971,7 @@ const ChatInput = memo(function ChatInput({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+              'relative z-20 px-0 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
@@ -2236,15 +2236,13 @@ const ChatInput = memo(function ChatInput({
                 />
               </div>
             )}
-          </div>
-        </div>
 
-        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+        <div className="relative z-20 w-full p-2">
+          <div className="flex items-end justify-between gap-2 w-full">
+            <div className="px-1 flex flex-wrap items-center gap-1 flex-1 min-w-0">
               <div
                 className={cn(
-                  'px-1 flex items-center gap-1',
+                  'px-1 flex flex-wrap items-center gap-1',
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -2817,10 +2815,8 @@ const ChatInput = memo(function ChatInput({
                   })()}
               </div>
               {surfaceControls && (
-                // Wrap on narrow widths instead of scrolling behind a hidden
-                // scrollbar: a control strip that overflows off-screen reads as
-                // clipped, and the scroll is undiscoverable on desktop.
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-y-1 gap-x-1">
+                // Keep controls in normal flow so wrapped rows grow the composer.
+                <div className="flex min-w-0 flex-[1_1_12rem] flex-wrap items-center gap-1">
                   <Separator
                     orientation="vertical"
                     className="mx-1 h-4 shrink-0"
@@ -2830,7 +2826,7 @@ const ChatInput = memo(function ChatInput({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {tokenCounterVisible && tokenCounterCompact && (
                 <div className="flex-1 flex justify-center">
                   <TokenCounter
@@ -2885,6 +2881,8 @@ const ChatInput = memo(function ChatInput({
                 </Button>
               )}
             </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>
