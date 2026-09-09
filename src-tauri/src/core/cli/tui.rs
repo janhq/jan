@@ -633,6 +633,25 @@ struct McpDetail {
     tools: ToolsState,
 }
 
+/// An OAuth sign-in in flight for one server, so the `/mcp` screen can show its
+/// progress in place -- a spinning status, the consent URL, and a cancel hint --
+/// instead of scattering transient notes into the transcript behind the picker.
+/// Lives on `App` (not `McpDetail`) so it survives leaving and reopening the
+/// screen and is reachable from the header badge.
+struct McpAuthFlow {
+    server: String,
+    stage: McpAuthStage,
+}
+
+enum McpAuthStage {
+    /// `BeginAuth` is running: discovering the provider and minting the url.
+    Discovering,
+    /// The consent url is out; waiting on the loopback redirect (up to
+    /// `CALLBACK_TIMEOUT`). `url` is kept so the screen can display it and a
+    /// user with no browser can open it by hand.
+    AwaitingRedirect { url: String },
+}
+
 /// Where the detail screen's tool list is. Split from `Option<Vec<_>>` so the
 /// screen can say *why* there is no list -- "not connected" and "the listing
 /// failed" are different problems.
@@ -1863,6 +1882,13 @@ struct App {
     mcp_detail: Option<McpDetail>,
     /// MCP work handed to the loop to run off the render loop. Taken once.
     mcp_job_request: Option<McpJob>,
+    /// An OAuth sign-in in flight, shown in place on the `/mcp` screen and as a
+    /// header badge. `None` when no sign-in is running.
+    mcp_auth: Option<McpAuthFlow>,
+    /// Set when the user asks to cancel the in-flight sign-in. The loop owns the
+    /// job handle, so it reads this to abort the wait and drop the loopback
+    /// listener; `handle_key` cannot reach the handle itself.
+    mcp_auth_cancel: bool,
     /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
     provider_prompt: Option<ProviderPrompt>,
     /// Providers already probed for a missing model list this session
@@ -2387,6 +2413,8 @@ impl App {
             mcp_prompt: None,
             mcp_detail: None,
             mcp_job_request: None,
+            mcp_auth: None,
+            mcp_auth_cancel: false,
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
@@ -8091,6 +8119,19 @@ async fn chat_loop<B: Backend>(
         // The slot holds the latest request only -- a newer one replaces it, and
         // a request whose server the screen has since left is discarded on
         // arrival by `finish_mcp_job`.
+        // The user cancelled the in-flight sign-in. Abort the job (dropping the
+        // bound loopback listener that `PendingAuth` holds), so the wait ends now
+        // instead of running out its `CALLBACK_TIMEOUT`.
+        if app.mcp_auth_cancel {
+            app.mcp_auth_cancel = false;
+            if let Some(job) = mcp_job.take() {
+                job.abort();
+            }
+            app.browser_confirm = None;
+            if let Some(flow) = app.mcp_auth.take() {
+                app.note(&format!("sign-in for '{}' cancelled", flow.server));
+            }
+        }
         if mcp_job.is_none() {
             if let Some(job) = app.mcp_job_request.take() {
                 let servers = mcp_servers.clone();
@@ -9524,8 +9565,20 @@ async fn handle_key(
             // Esc on the detail screen steps back to the server list rather
             // than closing outright: the detail is one level *inside* `/mcp`,
             // and dropping the user to the prompt loses the place they were at.
+            // When a sign-in is in flight for this server, Esc cancels it first
+            // (the loop owns the job handle, so it does the actual abort) and
+            // keeps the screen open.
             KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::McpServer => {
-                open_mcp_picker(app, mcp_servers).await;
+                let signing_in = app
+                    .mcp_detail
+                    .as_ref()
+                    .zip(app.mcp_auth.as_ref())
+                    .is_some_and(|(d, f)| d.server.name == f.server);
+                if signing_in {
+                    app.mcp_auth_cancel = true;
+                } else {
+                    open_mcp_picker(app, mcp_servers).await;
+                }
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.plugin_collection_url = None;
@@ -12489,13 +12542,23 @@ fn mcp_action_items(server: &super::mcp::ServerDetail) -> Vec<PickerItem> {
 /// The info block above the detail screen's actions: aligned labels, the state
 /// in colour, and the config path so "where do I edit this" is answerable
 /// without leaving the screen.
-fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
+fn mcp_detail_lines(
+    detail: &McpDetail,
+    auth_flow: Option<&McpAuthFlow>,
+    spinner: &str,
+    width: u16,
+) -> Vec<Line<'static>> {
     use crate::core::mcp::oauth::AuthStatus;
     let server = &detail.server;
     let dim = Style::new().dark_gray();
     let good = Style::new().green();
     let bad = Style::new().red();
     let warn = Style::new().yellow();
+    let busy = Style::new().cyan().bold();
+
+    // A sign-in in flight for *this* server takes over the Auth row and pins the
+    // consent url below, so its progress is on the screen the user is looking at.
+    let signing_in = auth_flow.filter(|f| f.server == server.name);
 
     let mut rows: Vec<(&str, Vec<Span<'static>>)> = Vec::new();
 
@@ -12508,7 +12571,16 @@ fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
     };
     rows.push(("Status", status));
 
-    let auth = match &server.auth {
+    let auth = if let Some(flow) = signing_in {
+        let label = match &flow.stage {
+            McpAuthStage::Discovering => "signing in - contacting the provider...",
+            McpAuthStage::AwaitingRedirect { .. } => {
+                "signing in - waiting for you to finish in the browser"
+            }
+        };
+        vec![Span::styled(format!("{spinner} {label}"), busy)]
+    } else {
+        match &server.auth {
         AuthStatus::NotApplicable => vec![Span::styled("- not required (stdio)", dim)],
         AuthStatus::StaticHeader => {
             vec![Span::styled("✓ Authorization header (configured)", good)]
@@ -12536,6 +12608,7 @@ fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
             warn,
         )],
         AuthStatus::Unauthenticated => vec![Span::styled("✗ not authenticated", bad)],
+        }
     };
     rows.push(("Auth", auth));
 
@@ -12581,6 +12654,27 @@ fn mcp_detail_lines(detail: &McpDetail, width: u16) -> Vec<Line<'static>> {
         spans.extend(value);
         out.push(clamp_line(Line::from(spans), width));
     }
+
+    // While the redirect is pending, pin the full consent url (wrapped, not
+    // clamped, so it can be read and copied) plus a cancel hint.
+    if let Some(McpAuthStage::AwaitingRedirect { url }) = signing_in.map(|f| &f.stage) {
+        out.push(Line::raw(""));
+        out.push(Line::from(Span::styled(
+            "Open this URL to sign in:",
+            Style::new().bold(),
+        )));
+        for line in wrap_spans_hard(
+            vec![Span::styled(url.clone(), Style::new().cyan())],
+            width.max(1) as usize,
+        ) {
+            out.push(Line::from(line));
+        }
+        out.push(Line::from(Span::styled(
+            "Esc cancels the sign-in.",
+            dim,
+        )));
+    }
+
     out.push(Line::raw(""));
     out
 }
@@ -12784,7 +12878,18 @@ fn resolve_mcp_browser(app: &mut App, open: bool) {
     let Some(confirm) = app.browser_confirm.take() else {
         return;
     };
-    open_browser_reporting(app, &confirm.url, open);
+    if open {
+        open_browser_reporting(app, &confirm.url, true);
+    } else {
+        // The url is pinned on the `/mcp` screen, but a session that can't open
+        // a browser also gets a durable transcript copy so it survives leaving
+        // the screen and can be copied on a remote host.
+        app.note("open this URL to finish signing in:");
+        app.system_detail(vec![Span::styled(
+            confirm.url.clone(),
+            Style::new().cyan(),
+        )]);
+    }
 }
 
 fn open_account_login(app: &mut App, provider: &str) {
@@ -13201,13 +13306,15 @@ async fn finish_mcp_job(
         }
         McpJobDone::AuthStarted { server, result } => match result {
             Ok(pending) => {
-                // The url reaches the transcript before anything waits on the
-                // redirect, so a headless or remote session can finish by hand.
-                app.note(&format!("sign in to authorize '{server}':"));
-                app.system_detail(vec![Span::styled(
-                    pending.authorization_url.clone(),
-                    Style::new().cyan(),
-                )]);
+                // The consent url and the waiting state are pinned on the `/mcp`
+                // screen (`mcp_detail_lines`) rather than dumped into the
+                // transcript, so the URL cannot scroll away and the screen shows
+                // a spinning "waiting for sign-in" with a cancel hint.
+                if let Some(flow) = app.mcp_auth.as_mut().filter(|f| f.server == server) {
+                    flow.stage = McpAuthStage::AwaitingRedirect {
+                        url: pending.authorization_url.clone(),
+                    };
+                }
                 // Ask before launching anything. The authorization is spawned
                 // regardless: its listener is already bound, so the redirect
                 // completes the sign-in whether the page is opened here or by
@@ -13222,12 +13329,17 @@ async fn finish_mcp_job(
                     servers,
                 )));
             }
-            Err(e) => app.note(&format!("could not start sign-in for '{server}': {e}")),
+            Err(e) => {
+                app.mcp_auth = None;
+                app.note(&format!("could not start sign-in for '{server}': {e}"));
+            }
         },
         McpJobDone::Authorized { server, result } => match result {
             Ok(()) => {
-                // Answered or not, there is nothing left to open.
+                // Answered or not, there is nothing left to open, and the
+                // sign-in is done.
                 app.browser_confirm = None;
+                app.mcp_auth = None;
                 app.note(&format!("authorized '{server}' - reconnecting..."));
                 // The live connection (if any) predates the token, so it is
                 // replaced rather than left unauthorized.
@@ -13237,6 +13349,7 @@ async fn finish_mcp_job(
             }
             Err(e) => {
                 app.browser_confirm = None;
+                app.mcp_auth = None;
                 app.note(&format!("sign-in for '{server}' failed: {e}"));
             }
         },
@@ -13310,7 +13423,10 @@ async fn run_mcp_action(
     match action {
         MCP_ACTION_TOOLS => show_mcp_tools(app),
         MCP_ACTION_AUTH => {
-            app.note(&format!("starting sign-in for '{name}'..."));
+            app.mcp_auth = Some(McpAuthFlow {
+                server: name.clone(),
+                stage: McpAuthStage::Discovering,
+            });
             app.mcp_job_request = Some(McpJob::BeginAuth(name));
         }
         MCP_ACTION_CLEAR_AUTH => {
@@ -14228,7 +14344,15 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
-        draw_picker(f, chunks[1], picker, &toml_path, app.mcp_detail.as_ref());
+        draw_picker(
+            f,
+            chunks[1],
+            picker,
+            &toml_path,
+            app.mcp_detail.as_ref(),
+            app.mcp_auth.as_ref(),
+            app.spinner(),
+        );
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         return;
@@ -15601,6 +15725,8 @@ fn draw_picker(
     picker: &Picker,
     toml_path: &std::path::Path,
     mcp_detail: Option<&McpDetail>,
+    mcp_auth: Option<&McpAuthFlow>,
+    spinner: &str,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
 
@@ -15693,7 +15819,7 @@ fn draw_picker(
         let inner = block.inner(area);
         f.render_widget(block, area);
 
-        let info = mcp_detail_lines(detail, inner.width);
+        let info = mcp_detail_lines(detail, mcp_auth, spinner, inner.width);
         // A frame too short for the whole block gives its rows to the actions:
         // an info line the user cannot act on is worth less than the action row
         // it would displace.
@@ -15991,6 +16117,10 @@ fn header(app: &App) -> Paragraph<'static> {
 fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.mcp_auth.is_some() {
+        // A sign-in runs while the model is otherwise idle; the badge stands in
+        // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
+        (format!("{} signing in", app.spinner()), Style::new().cyan().bold())
     } else if app.status == Status::Idle {
         ("ready".to_string(), Style::new().green())
     } else if app.parked {
@@ -32390,7 +32520,7 @@ mod tests {
 
             assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::McpServer);
             let detail = app.mcp_detail.as_ref().expect("detail is held on App");
-            let text: String = super::mcp_detail_lines(detail, 120)
+            let text: String = super::mcp_detail_lines(detail, None, "⠋", 120)
                 .iter()
                 .map(|l| {
                     l.spans
@@ -32411,6 +32541,92 @@ mod tests {
             assert!(text.contains("Config location:"), "{text}");
             assert!(text.contains("mcp_config.json"), "{text}");
             assert!(text.contains("Tools:"), "{text}");
+        });
+    }
+
+    /// A sign-in in flight for the open server takes over the Auth row with a
+    /// spinning status and pins the consent url plus a cancel hint, in place of
+    /// the static auth state.
+    #[test]
+    fn the_detail_screen_pins_the_signin_url_while_authorizing() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+            let detail = app.mcp_detail.as_ref().expect("detail is held on App");
+            let flow = super::McpAuthFlow {
+                server: "remote".to_string(),
+                stage: super::McpAuthStage::AwaitingRedirect {
+                    url: "https://provider/oauth?code_challenge=abc".to_string(),
+                },
+            };
+            let text: String = super::mcp_detail_lines(detail, Some(&flow), "⠹", 120)
+                .iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            assert!(text.contains("signing in"), "{text}");
+            assert!(text.contains("waiting for you"), "{text}");
+            assert!(text.contains('⠹'), "spinner is shown: {text}");
+            assert!(
+                text.contains("https://provider/oauth?code_challenge=abc"),
+                "{text}"
+            );
+            assert!(text.contains("Esc cancels"), "{text}");
+            // The static state is replaced, not shown alongside.
+            assert!(!text.contains("not authenticated"), "{text}");
+        });
+    }
+
+    /// Esc during an in-flight sign-in asks the loop to cancel it and keeps the
+    /// detail screen open, rather than stepping back to the server list.
+    #[test]
+    fn esc_cancels_an_in_flight_signin() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let registry: PermissionRegistry =
+                std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new()));
+            let mut current: Option<CurrentRun> = None;
+            let mut app = test_app();
+            let servers = no_mcp();
+            rt().block_on(async {
+                super::open_mcp_detail(&mut app, "remote", &servers).await;
+                app.mcp_auth = Some(super::McpAuthFlow {
+                    server: "remote".to_string(),
+                    stage: super::McpAuthStage::Discovering,
+                });
+                handle_key(
+                    &mut app,
+                    KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+                    &registry,
+                    &mut current,
+                    &servers,
+                )
+                .await;
+                assert!(app.mcp_auth_cancel, "Esc requests cancel");
+                assert_eq!(
+                    app.picker.as_ref().map(|p| p.kind),
+                    Some(PickerKind::McpServer),
+                    "still on the detail screen"
+                );
+                assert!(app.mcp_detail.is_some());
+            });
         });
     }
 
