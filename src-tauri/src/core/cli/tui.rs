@@ -647,9 +647,10 @@ enum McpAuthStage {
     /// `BeginAuth` is running: discovering the provider and minting the url.
     Discovering,
     /// The consent url is out; waiting on the loopback redirect (up to
-    /// `CALLBACK_TIMEOUT`). `url` is kept so the screen can display it and a
-    /// user with no browser can open it by hand.
-    AwaitingRedirect { url: String },
+    /// `CALLBACK_TIMEOUT`). The url itself lives on `browser_confirm` (to open)
+    /// and, if skipped, in the transcript -- not on this screen, where a wrapped
+    /// url would be click-truncated and fail PKCE.
+    AwaitingRedirect,
 }
 
 /// Where the detail screen's tool list is. Split from `Option<Vec<_>>` so the
@@ -12629,7 +12630,7 @@ fn mcp_detail_lines(
     let auth = if let Some(flow) = signing_in {
         let label = match &flow.stage {
             McpAuthStage::Discovering => "signing in - contacting the provider...",
-            McpAuthStage::AwaitingRedirect { .. } => {
+            McpAuthStage::AwaitingRedirect => {
                 "signing in - waiting for you to finish in the browser"
             }
         };
@@ -12710,20 +12711,17 @@ fn mcp_detail_lines(
         out.push(clamp_line(Line::from(spans), width));
     }
 
-    // While the redirect is pending, pin the full consent url (wrapped, not
-    // clamped, so it can be read and copied) plus a cancel hint.
-    if let Some(McpAuthStage::AwaitingRedirect { url }) = signing_in.map(|f| &f.stage) {
+    // While the redirect is pending, point at the browser prompt rather than
+    // printing the consent url here: a wrapped url is click-truncated by the
+    // terminal past its first line, which drops `code_challenge` and fails PKCE.
+    // The confirm popup opens the full url, and skipping it copies the url into
+    // the transcript instead.
+    if let Some(McpAuthStage::AwaitingRedirect) = signing_in.map(|f| &f.stage) {
         out.push(Line::raw(""));
         out.push(Line::from(Span::styled(
-            "Open this URL to sign in:",
+            "Answer the browser prompt to finish signing in.",
             Style::new().bold(),
         )));
-        for line in wrap_spans_hard(
-            vec![Span::styled(url.clone(), Style::new().cyan())],
-            width.max(1) as usize,
-        ) {
-            out.push(Line::from(line));
-        }
         out.push(Line::from(Span::styled(
             "Esc cancels the sign-in.",
             dim,
@@ -13361,14 +13359,12 @@ async fn finish_mcp_job(
         }
         McpJobDone::AuthStarted { server, result } => match result {
             Ok(pending) => {
-                // The consent url and the waiting state are pinned on the `/mcp`
-                // screen (`mcp_detail_lines`) rather than dumped into the
-                // transcript, so the URL cannot scroll away and the screen shows
-                // a spinning "waiting for sign-in" with a cancel hint.
+                // The `/mcp` screen shows a spinning "waiting for sign-in" with a
+                // cancel hint; the consent url is carried on `browser_confirm`
+                // (below) to open, never printed on this screen where it would
+                // wrap and be click-truncated.
                 if let Some(flow) = app.mcp_auth.as_mut().filter(|f| f.server == server) {
-                    flow.stage = McpAuthStage::AwaitingRedirect {
-                        url: pending.authorization_url.clone(),
-                    };
+                    flow.stage = McpAuthStage::AwaitingRedirect;
                 }
                 // Ask before launching anything. The authorization is spawned
                 // regardless: its listener is already bound, so the redirect
@@ -14410,6 +14406,12 @@ fn draw(f: &mut Frame, app: &mut App) {
         );
         f.render_widget(input_box(app), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
+        // The `/mcp` sign-in confirm lives here too: the picker path returns
+        // before the overlay chain below, so without this the "open a browser?"
+        // prompt never shows on the one screen that raises it.
+        if let Some(confirm) = &app.browser_confirm {
+            draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
+        }
         return;
     }
 
@@ -14716,17 +14718,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_login(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
-        let height =
-            (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
-                .min(chunks[1].height);
-        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
-        let rect = ratatui::layout::Rect {
-            x: chunks[2].x,
-            y,
-            width: chunks[2].width,
-            height,
-        };
-        draw_browser_confirm(f, rect, confirm);
+        draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
         let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
@@ -15128,6 +15120,28 @@ fn browser_confirm_lines(confirm: &BrowserConfirm, width: u16) -> Vec<Line<'stat
         dim,
     ));
     lines
+}
+
+/// Draw the "open a browser?" popup above the input. Shared by the normal
+/// transcript view and the picker view (the `/mcp` screen), which returns early
+/// from `draw` and would otherwise never render it -- leaving the user to click a
+/// wrapped, click-truncated consent url instead of pressing Enter here.
+fn draw_browser_confirm_overlay(
+    f: &mut Frame,
+    confirm: &BrowserConfirm,
+    input: ratatui::layout::Rect,
+    body: ratatui::layout::Rect,
+) {
+    let height = (browser_confirm_lines(confirm, input.width.saturating_sub(2)).len() as u16 + 2)
+        .min(body.height);
+    let y = input.y.saturating_sub(height).max(body.y);
+    let rect = ratatui::layout::Rect {
+        x: input.x,
+        y,
+        width: input.width,
+        height,
+    };
+    draw_browser_confirm(f, rect, confirm);
 }
 
 fn draw_browser_confirm(f: &mut Frame, area: ratatui::layout::Rect, confirm: &BrowserConfirm) {
@@ -32620,8 +32634,10 @@ mod tests {
     }
 
     /// A sign-in in flight for the open server takes over the Auth row with a
-    /// spinning status and pins the consent url plus a cancel hint, in place of
-    /// the static auth state.
+    /// spinning status and a cancel hint, in place of the static auth state. The
+    /// consent url is deliberately *not* printed here -- a wrapped url is
+    /// click-truncated by the terminal and loses `code_challenge` (PKCE); the
+    /// browser prompt opens the full url instead.
     #[test]
     fn the_detail_screen_pins_the_signin_url_while_authorizing() {
         crate::core::app::commands::with_temp_data_folder(|folder| {
@@ -32636,9 +32652,7 @@ mod tests {
             let detail = app.mcp_detail.as_ref().expect("detail is held on App");
             let flow = super::McpAuthFlow {
                 server: "remote".to_string(),
-                stage: super::McpAuthStage::AwaitingRedirect {
-                    url: "https://provider/oauth?code_challenge=abc".to_string(),
-                },
+                stage: super::McpAuthStage::AwaitingRedirect,
             };
             let text: String = super::mcp_detail_lines(detail, Some(&flow), "⠹", 120)
                 .iter()
@@ -32654,13 +32668,42 @@ mod tests {
             assert!(text.contains("signing in"), "{text}");
             assert!(text.contains("waiting for you"), "{text}");
             assert!(text.contains('⠹'), "spinner is shown: {text}");
+            assert!(text.contains("Answer the browser prompt"), "{text}");
+            // The raw consent url is never rendered on this screen: it would be
+            // click-truncated and fail PKCE.
             assert!(
-                text.contains("https://provider/oauth?code_challenge=abc"),
+                !text.contains("https://provider/oauth?code_challenge=abc"),
                 "{text}"
             );
             assert!(text.contains("Esc cancels"), "{text}");
             // The static state is replaced, not shown alongside.
             assert!(!text.contains("not authenticated"), "{text}");
+        });
+    }
+
+    /// The "open a browser?" confirm must render on the `/mcp` picker screen.
+    /// `draw` returns early for pickers, so a regression here leaves the user
+    /// with only the wrapped consent url to click -- which terminals truncate
+    /// past the first line, dropping `code_challenge` and failing PKCE.
+    #[test]
+    fn the_mcp_screen_shows_the_browser_confirm() {
+        crate::core::app::commands::with_temp_data_folder(|folder| {
+            write_mcp_config(
+                folder,
+                serde_json::json!({
+                    "remote": { "type": "http", "url": "https://x/mcp", "active": true },
+                }),
+            );
+            let mut app = test_app();
+            rt().block_on(super::open_mcp_detail(&mut app, "remote", &no_mcp()));
+            assert!(app.picker.is_some(), "the /mcp detail screen is a picker");
+            app.browser_confirm = Some(super::BrowserConfirm {
+                url: "https://provider/oauth?code_challenge=abc".to_string(),
+                purpose: "authorize 'remote'".to_string(),
+            });
+            let screen = render_rows(&mut app, 100, 24).join("\n");
+            assert!(screen.contains("open a browser?"), "{screen}");
+            assert!(screen.contains("Enter open"), "{screen}");
         });
     }
 
