@@ -38,7 +38,7 @@ import {
   refreshMemoryDigest,
   sandboxEnforces,
 } from '@/lib/agentTools'
-import { useAppState } from '@/hooks/useAppState'
+import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
 import { ExtensionManager } from '@/lib/extension'
@@ -837,6 +837,32 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.lastUserMessage = message
   }
 
+  /**
+   * Whether this transport's load state and its `llamacpp-model-load-progress`
+   * events belong to a Cowork run. Cowork overrides the two writers below and
+   * this flag so the load card is fed from useCoworkRun's session mirror,
+   * keeping session ids out of useAppState's thread-keyed slots (which drive
+   * chat-thread active detection).
+   */
+  protected get streamRoutesToCowork(): boolean {
+    return false
+  }
+
+  /** Route the model-loading flag. Base writes useAppState (global + thread). */
+  protected setLoadingModel(threadId: string, loading: boolean): void {
+    useAppState.getState().updateLoadingModel(loading)
+    useAppState.getState().updateThreadLoadingModel(threadId, loading)
+  }
+
+  /** Route model-load progress. Base writes useAppState (global + thread). */
+  protected setModelLoadProgress(
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ): void {
+    useAppState.getState().updateModelLoadProgress(progress)
+    useAppState.getState().updateThreadModelLoadProgress(threadId, progress)
+  }
+
   updateSystemMessage(systemMessage: string | undefined) {
     this.systemMessage = systemMessage
   }
@@ -1248,7 +1274,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
     const myGeneration = ++this.streamGeneration
-    useAppState.getState().setCurrentStreamThreadId(threadId)
+    useAppState
+      .getState()
+      .setCurrentStreamThreadId(threadId, this.streamRoutesToCowork)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
@@ -1284,10 +1312,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         try {
           const loaded = await getLoadedModels()
           if (!loaded.includes(modelId)) {
-            useAppState.getState().updateLoadingModel(true)
-            useAppState.getState().updateThreadLoadingModel(threadId, true)
-            useAppState.getState().updateModelLoadProgress(undefined)
-            useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+            this.setLoadingModel(threadId, true)
+            this.setModelLoadProgress(threadId, undefined)
           }
         } catch {
           // Ignore probe failures; the router will still load on demand
@@ -1336,15 +1362,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         providerId,
         options.abortSignal
       )
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
     } catch (error) {
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
       console.error('Failed to create model:', error)
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
@@ -1604,9 +1626,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // state the newer request already owns.
         if (this.streamGeneration === myGeneration) {
           useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          this.setLoadingModel(threadId, false)
           useAppState.getState().updateLiveTokenStats(undefined)
           useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {
@@ -1632,9 +1653,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       onFinish: ({ responseMessage }) => {
         if (this.streamGeneration === myGeneration) {
           useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          this.setLoadingModel(threadId, false)
           useAppState.getState().updateLiveTokenStats(undefined)
           useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {

@@ -3,6 +3,7 @@ import { render } from '@testing-library/react'
 import { act } from '@testing-library/react'
 import LlamacppOomListener from '../LlamacppOomListener'
 import { useAppState } from '@/hooks/useAppState'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
 
 let loadProgressHandler: ((event: { payload: unknown }) => void) | undefined
 let unloadHandler: ((event: { payload: unknown }) => void) | undefined
@@ -31,7 +32,9 @@ describe('LlamacppOomListener - model load progress', () => {
         modelLoadProgress: undefined,
         modelLoadProgressByThread: {},
         currentStreamThreadId: undefined,
+        currentStreamIsCowork: false,
       })
+      useCoworkRun.setState({ modelLoadProgress: {} })
     })
   })
 
@@ -81,6 +84,35 @@ describe('LlamacppOomListener - model load progress', () => {
       stage: undefined,
       value: 0.3,
     })
+  })
+
+  it('routes to the cowork mirror (not useAppState) for a cowork stream', async () => {
+    act(() => {
+      useAppState.setState({
+        currentStreamThreadId: 'session-1',
+        currentStreamIsCowork: true,
+      })
+    })
+    render(<LlamacppOomListener />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    act(() => {
+      loadProgressHandler?.({
+        payload: { model: 'model-1', value: 0.6 },
+      })
+    })
+
+    expect(useCoworkRun.getState().modelLoadProgress['session-1']).toEqual({
+      modelId: 'model-1',
+      stage: undefined,
+      value: 0.6,
+    })
+    expect(useAppState.getState().modelLoadProgress).toBeUndefined()
+    expect(
+      useAppState.getState().modelLoadProgressByThread['session-1']
+    ).toBeUndefined()
   })
 })
 
