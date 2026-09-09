@@ -57,8 +57,6 @@ and in the **Files** panel.
 1. **Artifact card**: Click the card to preview a generated file. **Open** opens it in an external application.
 2. **Session controls**: Open Progress, Agent changes, Files, or model settings beside the message input.
 
-The screenshots show a local macOS development build of Cowork.
-
 ## Choosing a Working Folder
 
 Click the folder control beside the message input, then **Attach a folder**.
@@ -87,10 +85,10 @@ you can choose:
 - **Keep planning**: Continue refining the plan.
 - **Exit plan mode**: Return to normal execution without carrying out the plan.
 
-![Plan control and an earlier approval question highlighted](./_assets/cowork-plan-mode.png)
+![Plan mode with an approval question highlighted](./_assets/cowork-plan-mode.png)
 
-1. **Plan**: The highlighted control shows that Plan mode is enabled.
-2. **Approval question**: In this example, Jan asked for confirmation before creating the file.
+1. **Plan**: Turn on planning before making changes.
+2. **Approval question**: Answer Jan's questions to clarify the task before proceeding.
 
 ## Reviewing Progress and Changes
 
@@ -104,10 +102,12 @@ steps and statuses recorded by the agent.
 
 ![Progress panel with the task checklist highlighted](./_assets/cowork-progress-todos.png)
 
-1. **Task checklist**: Review the recorded steps and their current status.
+1. **Task checklist**: Track planned, in-progress, and completed steps.
 
-Check the panel as well as the final response. In this example, the response
-says the work is complete, but the recorded checklist still shows **0/6**.
+<Callout type="tip">
+Smaller models may not use or update the checklist reliably. If this happens,
+try a larger or newer model with stronger tool-use capabilities.
+</Callout>
 
 ### Agent Changes
 
@@ -150,11 +150,6 @@ Leave network access and unsandboxed mode off for untrusted content. Preview
 network access is separate from the shell network setting in **Settings > Cowork**.
 </Callout>
 
-To browse generated files across sessions, click **Artifacts** in the sidebar.
-The library groups created files by type, including Code, Image, Document,
-Video, and Audio. Files the agent only edited are not added to the library;
-review those in **Agent changes**.
-
 ### Browsing the Artifacts Library
 
 Click **Artifacts** in the sidebar to browse files created across sessions.
@@ -162,9 +157,12 @@ Use **Search artifacts** to find a file by name, and the type filter to narrow
 the results to Code, Image, Document, Video, or Audio. Choose **All** to include
 every type.
 
+Files the agent only edited are not added to the library; review those in
+**Agent changes**.
+
 ![Artifacts library filtered to the dashboard example](./_assets/cowork-artifacts-library.png)
 
-1. **Search**: This example filters the library to `dashboard`. Filtering does not delete files.
+1. **Search**: Find an artifact by name, such as `dashboard`.
 2. **Artifact**: Click the card to preview it, or **Open** to use an external application.
 
 ## Background Work
@@ -244,8 +242,8 @@ conventions.
 ## Using Skills
 
 Skills give Jan reusable instructions for a task. Click **Customize** in the
-Cowork sidebar to open **Manage skills**. Check the scope shown below the
-heading; the examples here use global skills available to every session.
+Cowork sidebar to open **Manage skills**. Global skills are available to every
+session.
 
 ### Creating a Skill
 
