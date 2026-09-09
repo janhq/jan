@@ -12,6 +12,10 @@ const backend = vi.hoisted(() => ({
   received: [] as UIMessage[][],
   hold: false,
   preparationError: false,
+  exercise: null as
+    | null
+    | ((deps: CoworkRunner.RunDeps, signal: AbortSignal) => Promise<void>),
+  files: new Map<string, string>(),
   runs: [] as {
     signal: AbortSignal
     sink: CoworkRunner.StreamSink
@@ -58,6 +62,8 @@ vi.mock('@/lib/backendStorage', () => ({
 }))
 vi.mock('@/lib/coworkTransport', () => ({
   CoworkChatTransport: class {
+    setConfig() {}
+    unfreezeTools() {}
     async refreshTools() {
       if (backend.preparationError) throw new Error('Tool preparation failed')
     }
@@ -72,6 +78,7 @@ vi.mock('@/lib/coworkRunner', async (original) => ({
     deps,
   }: Parameters<typeof CoworkRunner.runTurn>[0]) => {
     backend.received.push(messages)
+    if (backend.exercise) await backend.exercise(deps, signal)
     if (backend.hold) {
       await new Promise<void>((resolve) => {
         backend.runs.push({ signal, sink: deps.sink, finish: resolve })
@@ -82,6 +89,19 @@ vi.mock('@/lib/coworkRunner', async (original) => ({
   },
 }))
 vi.mock('@/lib/agentTools', () => ({
+  executeAgentTool: async (
+    name: string,
+    input: { path: string; content?: string }
+  ) => {
+    if (name === 'write') {
+      backend.files.set(input.path, input.content ?? '')
+      return { content: 'created' }
+    }
+    const content = backend.files.get(input.path)
+    return content === undefined
+      ? { error: 'ERROR: No such file or directory (os error 2)' }
+      : { content }
+  },
   getSandboxStatus: async () => ({}),
   sandboxEnforces: () => false,
   activeAgentMonitorIds: async () => [],
@@ -90,7 +110,6 @@ vi.mock('@/lib/agentTools', () => ({
 vi.mock('@/lib/coworkSubagentRegistry', () => ({
   listSubagents: async () => [],
 }))
-vi.mock('@/lib/coworkDispatch', () => ({ dispatchCoworkTool: vi.fn() }))
 vi.mock('@/lib/model-factory', () => ({ ModelFactory: {} }))
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   sessionWorkspacePath: async () => '/sandbox',
@@ -218,6 +237,7 @@ import { startNewSession, useCoworkSessions } from '@/hooks/useCoworkSessions'
 import { useCoworkRun } from '@/hooks/useCoworkRun'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { answerAsk } from '@/lib/coworkRunner'
 import { localStorageKey } from '@/constants/localStorage'
 // The router mock returns the supplied component options directly.
 const routeOptions = Route as unknown as { component: () => ReactNode }
@@ -241,6 +261,8 @@ beforeEach(() => {
   backend.hold = false
   backend.preparationError = false
   backend.runs = []
+  backend.exercise = null
+  backend.files.clear()
   const browserStorage = new Map<string, string>()
   vi.stubGlobal('localStorage', {
     getItem: (key: string) => browserStorage.get(key) ?? null,
@@ -474,3 +496,124 @@ it('restores each session model after switching and persisted-store rehydration'
     expect(document.querySelector('header')).toHaveTextContent('test-model')
   )
 })
+
+it('requires plan approval before a failed-read loop can create the requested file', async () => {
+  const sid = useCoworkSessions.getState().createSession()
+  useCoworkSessions.getState().setPlanMode(sid, true)
+  let writeResult: CoworkRunner.ToolOutcome | undefined
+  backend.exercise = async (deps, signal) => {
+    await deps.dispatch(
+      { toolCallId: 'r1', toolName: 'read', input: { path: 'cat.html' } },
+      signal
+    )
+    await deps.dispatch(
+      { toolCallId: 'r2', toolName: 'read', input: { path: 'cat.html' } },
+      signal
+    )
+    writeResult = await deps.dispatch(
+      {
+        toolCallId: 'w1',
+        toolName: 'write',
+        input: { path: 'cat.html', content: '<h1>Cat</h1>' },
+      },
+      signal
+    )
+  }
+  render(<CoworkPage />)
+  act(() => usePrompt.getState().setPrompt('make cat html'))
+  fireEvent.click(screen.getByText('Send'))
+  await waitFor(() =>
+    expect(useCoworkRun.getState().pendingAsks[sid]?.length).toBe(1)
+  )
+  expect(backend.files.has('cat.html')).toBe(false)
+  expect(
+    useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.planMode
+  ).toBe(true)
+  let other = ''
+  act(() => {
+    other = startNewSession(Object.keys(useCoworkRun.getState().runId))
+    useCoworkSessions.getState().setPlanMode(other, true)
+  })
+  act(() => {
+    answerAsk(sid, 'r2', [{ id: 'plan_review', selected: ['Execute plan'] }])
+  })
+  await waitFor(() =>
+    expect(backend.files.get('cat.html')).toBe('<h1>Cat</h1>')
+  )
+  expect(writeResult?.isError).not.toBe(true)
+  expect(
+    useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.planMode
+  ).toBe(false)
+  expect(
+    useCoworkSessions.getState().sessions.find((s) => s.id === other)?.planMode
+  ).toBe(true)
+})
+
+it.each([
+  { selection: 'Keep planning', planMode: true, aborted: false },
+  { selection: 'Exit plan mode', planMode: false, aborted: true },
+  { selection: null, planMode: true, aborted: true },
+])(
+  'does not execute when plan review receives $selection',
+  async ({ selection, planMode, aborted }) => {
+    const sid = useCoworkSessions.getState().createSession()
+    useCoworkSessions.getState().setPlanMode(sid, true)
+    let ended = false
+    let wasAborted: boolean | undefined
+    backend.exercise = async (deps, signal) => {
+      await deps.dispatch(
+        {
+          toolCallId: 'review',
+          toolName: 'ask',
+          input: {
+            questions: [
+              {
+                id: 'plan_review',
+                question: 'Create cat.html?',
+                options: [
+                  { label: 'Execute plan' },
+                  { label: 'Keep planning' },
+                  { label: 'Exit plan mode' },
+                ],
+              },
+            ],
+          },
+        },
+        signal
+      )
+      wasAborted = signal.aborted
+      if (!signal.aborted) {
+        await deps.dispatch(
+          {
+            toolCallId: 'write',
+            toolName: 'write',
+            input: { path: 'cat.html', content: '<h1>Cat</h1>' },
+          },
+          signal
+        )
+      }
+      ended = true
+    }
+    render(<CoworkPage />)
+    act(() => usePrompt.getState().setPrompt('make cat html'))
+    fireEvent.click(screen.getByText('Send'))
+    await waitFor(() =>
+      expect(useCoworkRun.getState().pendingAsks[sid]?.length).toBe(1)
+    )
+    act(() => {
+      answerAsk(
+        sid,
+        'review',
+        selection === null
+          ? null
+          : [{ id: 'plan_review', selected: [selection] }]
+      )
+    })
+    await waitFor(() => expect(ended).toBe(true))
+    expect(backend.files.has('cat.html')).toBe(false)
+    expect(wasAborted).toBe(aborted)
+    expect(
+      useCoworkSessions.getState().sessions.find((s) => s.id === sid)?.planMode
+    ).toBe(planMode)
+  }
+)
