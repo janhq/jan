@@ -1,5 +1,7 @@
 import type { Tool } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
+import type { ModelLoadProgress } from '@/hooks/useAppState'
 import { CHAT_SLOT_ID, coworkThreadId } from '@/constants/models'
 import {
   getMemoryCatalog,
@@ -62,6 +64,28 @@ export class CoworkChatTransport extends CustomChatTransport {
   /** Applied at the next run: changing it mid-run would invalidate the prefix. */
   setConfig(config: CoworkRunConfig) {
     this.config = config
+  }
+
+  /**
+   * Load state (and the `llamacpp-model-load-progress` events keyed off
+   * `currentStreamThreadId`) route to useCoworkRun's session mirror, keyed by
+   * session id — never into useAppState's thread-keyed slots, which drive
+   * chat-thread active detection. `threadId` here is the session id (the value
+   * passed to the base constructor).
+   */
+  protected override get streamRoutesToCowork(): boolean {
+    return true
+  }
+
+  protected override setLoadingModel(threadId: string, loading: boolean): void {
+    useCoworkRun.getState().setSessionLoadingModel(threadId, loading)
+  }
+
+  protected override setModelLoadProgress(
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ): void {
+    useCoworkRun.getState().setSessionModelLoadProgress(threadId, progress)
   }
 
   /** Drop the freeze so the next run re-reads the config. */

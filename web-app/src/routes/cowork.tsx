@@ -57,7 +57,6 @@ import { isContextOverflowMessage } from '@/utils/error'
 import { importAttachedFiles, withAttachedFiles } from '@/lib/coworkAttachments'
 import { useToolCallRuntime, withToolTiming } from '@/hooks/useToolCallRuntime'
 import { PromptProgress } from '@/components/PromptProgress'
-import { useAppState } from '@/hooks/useAppState'
 import { useAutoScroll } from '@/hooks/useAutoScroll'
 import {
   Conversation,
@@ -529,8 +528,8 @@ function CoworkPage() {
       try {
         const loaded = await getLoadedModels()
         if (!loaded.includes(selectedModel.id)) {
-          useAppState.getState().updateModelLoadProgress(undefined)
-          useAppState.getState().updateLoadingModel(true)
+          useCoworkRun.getState().setSessionModelLoadProgress(sid, undefined)
+          useCoworkRun.getState().setSessionLoadingModel(sid, true)
         }
       } catch {
         // Probe failed; skip the card rather than flash it every run.
@@ -905,7 +904,9 @@ function CoworkPage() {
             errorText: e instanceof Error ? e.message : String(e),
           }
     } finally {
-      useAppState.getState().updateLoadingModel(false)
+      // clearCodeRun below also drops the session's load state; this makes the
+      // card disappear the instant the run ends, before that broader reset.
+      useCoworkRun.getState().setSessionLoadingModel(sid, false)
       useCoworkSessions
         .getState()
         .commitTurns(
