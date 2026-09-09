@@ -35,6 +35,7 @@ import {
   IconLoader2,
   IconWorldSearch,
   IconBrandChrome,
+  IconDots,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
@@ -112,6 +113,12 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { useElementWidth } from '@/hooks/useElementWidth'
 
 type ChatInputProps = {
   className?: string
@@ -159,6 +166,10 @@ type ChatInputProps = {
   highlightedPrefix?: string | null
 }
 
+// Below this control-row width the toolbar wraps into several rows on busy
+// surfaces (Cowork), so it collapses behind a single overflow button instead.
+const CONTROL_ROW_COLLAPSE_WIDTH = 480
+
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
 const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v']
 const videoMimeForExt = (ext: string | undefined): string => {
@@ -176,6 +187,55 @@ const videoMimeForExt = (ext: string | undefined): string => {
   }
 }
 
+
+// Renders the composer's control cluster inline, or behind a single overflow
+// button whose popover holds the same controls, when the surface is too narrow.
+function CollapsibleControls({
+  collapsed,
+  label,
+  children,
+}: {
+  collapsed: boolean
+  label: string
+  children: ReactNode
+}) {
+  if (!collapsed) return <>{children}</>
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          className="rounded-full mb-1"
+          aria-label={label}
+        >
+          <IconDots size={18} className="text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        className="w-auto max-w-[min(20rem,80vw)] p-2"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => {
+          // Keep the overflow popover open while the user drives a nested
+          // dropdown/popover/menu that portals its content elsewhere.
+          const target = e.target as HTMLElement | null
+          if (
+            target?.closest(
+              '[data-radix-popper-content-wrapper],[role="menu"],[role="dialog"],[role="listbox"]'
+            )
+          ) {
+            e.preventDefault()
+          }
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-1">{children}</div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 const ChatInput = memo(function ChatInput({
   className,
@@ -195,6 +255,15 @@ const ChatInput = memo(function ChatInput({
   const highlightRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  // Collapse the composer's control row into a single overflow button when the
+  // surface is too narrow to lay the controls out on one line (e.g. Cowork's
+  // side panel). Gated on a positive measured width so layout-less test
+  // environments (width 0) keep the controls inline.
+  const [controlRowRef, controlRowWidth] = useElementWidth<HTMLDivElement>()
+  const collapseControls =
+    controlRowWidth != null &&
+    controlRowWidth > 0 &&
+    controlRowWidth < CONTROL_ROW_COLLAPSE_WIDTH
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const tools = useAppState((state) => state.tools)
@@ -2238,8 +2307,15 @@ const ChatInput = memo(function ChatInput({
             )}
 
         <div className="relative z-20 w-full p-2">
-          <div className="flex items-end justify-between gap-2 w-full">
+          <div
+            ref={controlRowRef}
+            className="flex items-end justify-between gap-2 w-full"
+          >
             <div className="px-1 flex flex-wrap items-center gap-1 flex-1 min-w-0">
+              <CollapsibleControls
+                collapsed={collapseControls}
+                label={t('common:moreControls')}
+              >
               <div
                 className={cn(
                   'px-1 flex flex-wrap items-center gap-1',
@@ -2824,6 +2900,7 @@ const ChatInput = memo(function ChatInput({
                   {surfaceControls}
                 </div>
               )}
+              </CollapsibleControls>
             </div>
 
             <div className="flex shrink-0 items-center gap-2">
