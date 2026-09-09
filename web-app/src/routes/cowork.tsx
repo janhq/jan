@@ -38,7 +38,6 @@ import type {
   CoworkAttachedFile,
   CoworkMediaPart,
   CoworkTurn,
-  Usage,
 } from '@/types/coworkSession'
 import type { Attachment } from '@/types/attachment'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
@@ -108,6 +107,8 @@ import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
 import { MAX_AGENT_STEPS } from '@/lib/coworkBudget'
 import {
   abortRun,
+  createHandle,
+  releaseHandle,
   isAbortLike,
   answerAsk,
   runTurn,
@@ -167,6 +168,7 @@ const MANUAL_COMPACT_CONFIG: ContextManagerConfig = {
 // Stable empty set, so a session with no monitors does not re-render on every
 // store write the way a fresh `[]` from the selector would.
 const NO_MONITORS: MonitorView[] = []
+const NO_TURNS: CoworkTurn[] = []
 
 /** The session's monitor lane, mirrored into the run store for the rail. */
 function sessionMonitorLane(sid: string): MonitorLane {
@@ -194,49 +196,21 @@ function CoworkPage() {
   const { skills: skillCommands, invoke: invokeSkillCommand } = useSkills(folder)
   const planMode = session?.planMode ?? false
 
-  const [running, setRunning] = useState(false)
+  const running = useCoworkRun((s) => !!(currentId && s.runId[currentId]))
   const contextRecovery = useRef({ mounted: true, pending: false })
   useEffect(() => {
     const recovery = contextRecovery.current
     recovery.mounted = true
     return () => { recovery.mounted = false }
   }, [])
-  // The session the in-flight run belongs to. The live rows are appended to
-  // that session's transcript only — without this, switching sessions mid-run
-  // rendered the running session's live turns under the viewed one.
-  const [runSid, setRunSid] = useState<string | null>(null)
-  const [liveTurns, setLiveTurns] = useState<CoworkTurn[]>([])
-  const liveTurnsRef = useRef<CoworkTurn[]>([])
-  const liveFrameRef = useRef<number | null>(null)
-  // Every stream delta mutates `liveTurnsRef` in place; the state behind the
-  // transcript is refreshed from it at most once per frame. A large `write`
-  // arrives as thousands of deltas, and re-rendering the transcript for each
-  // one is what made the card lag behind the model.
-  const syncLive = useCallback(() => {
-    if (liveFrameRef.current != null) {
-      cancelAnimationFrame(liveFrameRef.current)
-      liveFrameRef.current = null
-    }
-    setLiveTurns([...liveTurnsRef.current])
-  }, [])
-  const scheduleLiveSync = useCallback(() => {
-    if (liveFrameRef.current != null) return
-    liveFrameRef.current = requestAnimationFrame(() => {
-      liveFrameRef.current = null
-      setLiveTurns([...liveTurnsRef.current])
-    })
-  }, [])
-  useEffect(
-    () => () => {
-      if (liveFrameRef.current != null)
-        cancelAnimationFrame(liveFrameRef.current)
-    },
-    []
+  const liveTurns = useCoworkRun(
+    (s) => (currentId ? s.liveTurns[currentId] : undefined) ?? NO_TURNS
   )
-  const [stoppedBy, setStoppedBy] = useState<RunOutcome['stoppedBy'] | null>(
-    null
+  const runOutcome = useCoworkRun((s) =>
+    currentId ? s.outcomes[currentId] : undefined
   )
-  const [runError, setRunError] = useState<string | undefined>(undefined)
+  const stoppedBy = runOutcome?.stoppedBy ?? null
+  const runError = runOutcome?.errorText
   const overflowProvider =
     stoppedBy === 'error' && runError && isContextOverflowMessage(runError)
       ? providers.find((provider) => provider.provider === selectedProvider)
@@ -254,7 +228,9 @@ function CoworkPage() {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null)
   // The step just finished, so the counter tracks a run instead of jumping once
   // at the end. Falls back to the committed usage between runs.
-  const [liveUsage, setLiveUsage] = useState<Usage | null>(null)
+  const liveUsage = useCoworkRun((s) =>
+    currentId ? s.usage[currentId] : undefined
+  )
   // The rail holds one panel at a time: they all want the width, so showing
   // two together starves the transcript (C7).
   const [rail, setRail] = useState<
@@ -270,10 +246,9 @@ function CoworkPage() {
     (path: string) => setRail({ kind: 'preview', path }),
     []
   )
-  const [ask, setAsk] = useState<{
-    requestId: string
-    request: ReturnType<typeof parseAskRequest>
-  } | null>(null)
+  const ask = useCoworkRun((s) =>
+    currentId ? s.pendingAsks[currentId]?.[0] : undefined
+  )
 
   const {
     containerRef: reasoningContainerRef,
@@ -338,7 +313,7 @@ function CoworkPage() {
   // `liveTurns` holds only the rows this run has produced — `commitTurns`
   // appends them — so the committed transcript has to be shown alongside it or
   // the conversation disappears the moment a follow-up run starts.
-  const viewingRun = running && runSid === session?.id
+  const viewingRun = running
   const displayedTurns = useMemo(
     () =>
       viewingRun
@@ -439,13 +414,6 @@ function CoworkPage() {
     [running, displayedTurns]
   )
 
-  const pushLive = useCallback(
-    (turns: CoworkTurn[]) => {
-      liveTurnsRef.current = [...liveTurnsRef.current, ...turns]
-      syncLive()
-    },
-    [syncLive]
-  )
 
   /**
    * Drive one request. `text` is null for a resume — a retry after a failure
@@ -459,13 +427,28 @@ function CoworkPage() {
 
   const runRequest = async (
     text: string | null,
-    attachments?: CoworkAttachments
+    attachments?: CoworkAttachments,
+    sid = ensureCurrentSession()
   ) => {
-    if (running) return
-    const sid = ensureCurrentSession()
     const store = useCoworkSessions.getState()
     const current = store.sessions.find((s) => s.id === sid)
+    if (!current || useCoworkRun.getState().runId[sid]) return
     if (!text && !(current?.messages?.length ?? 0)) return
+    const modelState = useModelProvider.getState()
+    const modelChoice =
+      current.model ??
+      (modelState.selectedModel
+        ? {
+            provider: modelState.selectedProvider,
+            id: modelState.selectedModel.id,
+          }
+        : undefined)
+    const selectedProvider = modelChoice?.provider ?? ''
+    const selectedModel = modelState.providers
+      .find(
+        (provider) => provider.provider === selectedProvider && provider.active
+      )
+      ?.models.find((model) => model.id === modelChoice?.id)
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
       return
@@ -477,179 +460,205 @@ function CoworkPage() {
       toast.error(t('common:modelNoTools', { model: selectedModel.id }))
       return
     }
-    // Display the invocation, but expand it only in the model's history. Keep
-    // this in the shared request path so edits, retries and queued turns also
-    // invoke skills instead of sending the slash text as an ordinary prompt.
-    let modelText = text
-    const parsedSkill = text ? parseSkillCommand(text) : null
-    const builtIn = parsedSkill
-      ? SLASH_COMMANDS.some((command) => command.name === `/${parsedSkill.name}`)
-      : false
-    const skill =
-      parsedSkill && (parsedSkill.explicit || !builtIn)
-        ? resolveSkillCommand(skillCommands, parsedSkill)
-        : null
-    if (parsedSkill?.explicit && !skill) {
-      toast.error(t('common:coworkSlash.skillUnavailable', { name: parsedSkill.name }))
-      return
-    }
-    if (skill && parsedSkill) {
-      try {
-        modelText = await invokeSkillCommand(skill.name, parsedSkill.args)
-      } catch (error) {
-        toast.error(String(error))
-        return
-      }
-    }
-    if (text && current?.title === 'New session')
-      // Collapse newlines/runs of whitespace so a pasted multi-line prompt
-      // doesn't become an unreadable sidebar title.
-      store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
-
-    setStoppedBy(null)
-    setRunError(undefined)
-    setLiveUsage(null)
-    liveTurnsRef.current = text
-      ? [userTurn(text, attachments?.media, attachments?.files)]
-      : []
-    syncLive()
-    // Marks the session running in the store (and resets its subagent lanes),
-    // so surfaces outside this component — the sidebar's per-session spinner
-    // and its empty-session filter — can see a run this component owns.
+    if (!current.model && modelChoice) store.setModel(sid, modelChoice)
+    // Claim this session before asynchronous preparation. Another session may
+    // submit immediately, but a second request in this one must wait.
+    const handle = createHandle(sid, crypto.randomUUID())
+    const controller = handle.outer
     useCoworkRun
       .getState()
-      .beginRun(sid, crypto.randomUUID(), text ?? '', attachments?.media)
-    setRunSid(sid)
-    setRunning(true)
-
-    // Local models load before the first token, but only on a cold start. Probe
-    // the engine so the load card shows on a real load, not on every warm run.
-    if (selectedProvider === 'llamacpp') {
-      try {
-        const loaded = await getLoadedModels()
-        if (!loaded.includes(selectedModel.id)) {
-          useCoworkRun.getState().setSessionModelLoadProgress(sid, undefined)
-          useCoworkRun.getState().setSessionLoadingModel(sid, true)
-        }
-      } catch {
-        // Probe failed; skip the card rather than flash it every run.
+      .beginRun(sid, handle.runId, text ?? '', attachments?.media)
+    let runTurns: CoworkTurn[] = []
+    let liveFrame: number | null = null
+    const syncLive = () => {
+      if (liveFrame != null) {
+        cancelAnimationFrame(liveFrame)
+        liveFrame = null
       }
+      useCoworkRun.getState().setLiveTurns(sid, [...runTurns])
     }
-
-    // Documents go into the workspace before the question is sent, so the
-    // paths the question names exist by the time the agent reads them. The
-    // row was shown first: parsing a large PDF takes a moment.
-    let files = attachments?.files
-    if (text && files?.length) {
-      files = await importAttachedFiles(files, {
-        parse: async (path, fileType) =>
-          (await serviceHub.rag().parseDocument?.(path, fileType)) ?? '',
-        importFile: (path, parsed) => importAttachment(sid, path, parsed),
+    const scheduleLiveSync = () => {
+      if (liveFrame != null) return
+      liveFrame = requestAnimationFrame(() => {
+        liveFrame = null
+        useCoworkRun.getState().setLiveTurns(sid, [...runTurns])
       })
-      liveTurnsRef.current = [userTurn(text, attachments?.media, files)]
+    }
+    const pushLive = (turns: CoworkTurn[]) => {
+      runTurns.push(...turns)
       syncLive()
     }
-
-    // Warm the sandbox probe: the transport's prompt and tool set read it
-    // synchronously via sandboxEnforces().
-    await getSandboxStatus()
-    // Read once per run, not subscribed: the advertised set is frozen for the
-    // run anyway, so a mid-run flip in Settings would only desync the prompt.
-    const webSearch = useWebSearchConfig.getState().webSearchEnabled
-    // One snapshot per run, shared with every child this run dispatches.
-    const environment = await getCoworkEnvironment()
-    const transport = new CoworkChatTransport(sid, {
-      planMode: current?.planMode ?? false,
-      subagentNames: subagentDefs.map((d) => d.name),
-      // Always on at depth 0, even with nothing saved: a one-off subagent with
-      // an inline `system_prompt` is first-class, as it is in Rust.
-      allowSubagents: true,
-      webSearch,
-      workspacePath,
-      readOnlyFolder: current?.folder ?? null,
-    })
-    await transport.refreshTools()
-
-    const controller = new AbortController()
-    abortRef.current = controller
-    // Owned by this request: children cannot outlive the run whose signal
-    // aborts them, so a fresh inbox per run can never hold a stale ping.
-    const inbox = new SubagentInbox()
-    // The session's, not the run's: a watcher keeps going after this run has
-    // answered, and its pings are drained by whichever run is up next.
-    const monitorLane = sessionMonitorLane(sid)
-
-    const sink: StreamSink = {
-      onText: (delta) => {
-        const last = liveTurnsRef.current[liveTurnsRef.current.length - 1]
-        if (last && last.role === 'assistant') {
-          last.content += delta
-          scheduleLiveSync()
-        } else {
-          pushLive([{ role: 'assistant', content: delta }])
-        }
-      },
-      // Native reasoning streams beside the content, so the collapsible
-      // thinking block fills in live instead of the transcript sitting silent
-      // for the whole chain of thought.
-      onReasoning: (delta) => {
-        const last = liveTurnsRef.current[liveTurnsRef.current.length - 1]
-        if (last && last.role === 'assistant') {
-          last.reasoning = (last.reasoning ?? '') + delta
-          scheduleLiveSync()
-        } else {
-          pushLive([{ role: 'assistant', content: '', reasoning: delta }])
-        }
-      },
-      onToolStart: (callId, name) =>
-        pushLive([
-          {
-            role: 'tool',
-            content: '',
-            callId,
-            name,
-            status: 'running',
-            argsLive: '',
-          },
-        ]),
-      // Raw JSON, appended as it arrives. The transcript reads a `write`'s
-      // destination and body straight out of this fragment, so the card fills
-      // in as the model types rather than waiting for the closing brace.
-      onToolArgsDelta: (callId, delta) => {
-        const row = liveTurnsRef.current.find((turn) => turn.callId === callId)
-        if (!row) return
-        row.argsLive = (row.argsLive ?? '') + delta
-        scheduleLiveSync()
-      },
-      onToolCall: (call) => {
-        const row = liveTurnsRef.current.find(
-          (turn) => turn.callId === call.toolCallId
-        )
-        if (row) {
-          row.args = call.input
-          syncLive()
-        }
-      },
-    }
-
-    const baseMessages = current?.messages ?? []
-    const messages = text
-      ? [
-          ...baseMessages,
-          {
-            id: `${sid}-user-${baseMessages.length}`,
-            role: 'user',
-            parts: [
-              { type: 'text', text: withAttachedFiles(modelText ?? text, files) },
-              ...(attachments?.media ?? []),
-            ],
-          } as any,
-        ]
-      : [...baseMessages]
-
+    let messages = current.messages ?? []
     let outcome: RunOutcome | null = null
     let thrown: Pick<RunOutcome, 'stoppedBy' | 'errorText'> | null = null
     try {
+      // Display the invocation, but expand it only in the model's history. Keep
+      // this in the shared request path so edits, retries and queued turns also
+      // invoke skills instead of sending the slash text as an ordinary prompt.
+      let modelText = text
+      const parsedSkill = text ? parseSkillCommand(text) : null
+      const builtIn = parsedSkill
+        ? SLASH_COMMANDS.some(
+            (command) => command.name === `/${parsedSkill.name}`
+          )
+        : false
+      const skill =
+        parsedSkill && (parsedSkill.explicit || !builtIn)
+          ? resolveSkillCommand(skillCommands, parsedSkill)
+          : null
+      if (parsedSkill?.explicit && !skill) {
+        toast.error(
+          t('common:coworkSlash.skillUnavailable', { name: parsedSkill.name })
+        )
+        return
+      }
+      if (skill && parsedSkill) {
+        try {
+          modelText = await invokeSkillCommand(skill.name, parsedSkill.args)
+        } catch (error) {
+          toast.error(String(error))
+          return
+        }
+      }
+      if (text && current?.title === 'New session')
+        // Collapse newlines/runs of whitespace so a pasted multi-line prompt
+        // doesn't become an unreadable sidebar title.
+        store.setTitle(sid, text.trim().replace(/\s+/g, ' ').slice(0, 40))
+
+      runTurns = text
+        ? [userTurn(text, attachments?.media, attachments?.files)]
+        : []
+      syncLive()
+
+      let files = attachments?.files
+      const baseMessages = current?.messages ?? []
+      messages = text
+        ? [
+            ...baseMessages,
+            {
+              id: `${sid}-user-${baseMessages.length}`,
+              role: 'user',
+              parts: [
+                {
+                  type: 'text',
+                  text: withAttachedFiles(modelText ?? text, files),
+                },
+                ...(attachments?.media ?? []),
+              ],
+            } as any,
+          ]
+        : [...baseMessages]
+      // Local models load before the first token, but only on a cold start. Probe
+      // the engine so the load card shows on a real load, not on every warm run.
+      if (selectedProvider === 'llamacpp') {
+        try {
+          const loaded = await getLoadedModels()
+          if (!loaded.includes(selectedModel.id)) {
+            useCoworkRun.getState().setSessionModelLoadProgress(sid, undefined)
+            useCoworkRun.getState().setSessionLoadingModel(sid, true)
+          }
+        } catch {
+          // Probe failed; skip the card rather than flash it every run.
+        }
+      }
+
+      // Documents go into the workspace before the question is sent, so the
+      // paths the question names exist by the time the agent reads them. The
+      // row was shown first: parsing a large PDF takes a moment.
+      if (text && files?.length) {
+        files = await importAttachedFiles(files, {
+          parse: async (path, fileType) =>
+            (await serviceHub.rag().parseDocument?.(path, fileType)) ?? '',
+          importFile: (path, parsed) => importAttachment(sid, path, parsed),
+        })
+        runTurns = [userTurn(text, attachments?.media, files)]
+        messages[messages.length - 1].parts[0] = {
+          type: 'text',
+          text: withAttachedFiles(modelText ?? text, files),
+        }
+        syncLive()
+      }
+
+      // Warm the sandbox probe: the transport's prompt and tool set read it
+      // synchronously via sandboxEnforces().
+      await getSandboxStatus()
+      // Read once per run, not subscribed: the advertised set is frozen for the
+      // run anyway, so a mid-run flip in Settings would only desync the prompt.
+      const webSearch = useWebSearchConfig.getState().webSearchEnabled
+      // One snapshot per run, shared with every child this run dispatches.
+      const environment = await getCoworkEnvironment()
+      const transport = new CoworkChatTransport(sid, {
+        model: { provider: selectedProvider, id: selectedModel.id },
+        planMode: current?.planMode ?? false,
+        subagentNames: subagentDefs.map((d) => d.name),
+        // Always on at depth 0, even with nothing saved: a one-off subagent with
+        // an inline `system_prompt` is first-class, as it is in Rust.
+        allowSubagents: true,
+        webSearch,
+        workspacePath,
+        readOnlyFolder: current?.folder ?? null,
+      })
+      await transport.refreshTools()
+
+      // Owned by this request: children cannot outlive the run whose signal
+      // aborts them, so a fresh inbox per run can never hold a stale ping.
+      const inbox = new SubagentInbox()
+      // The session's, not the run's: a watcher keeps going after this run has
+      // answered, and its pings are drained by whichever run is up next.
+      const monitorLane = sessionMonitorLane(sid)
+
+      const sink: StreamSink = {
+        onText: (delta) => {
+          const last = runTurns[runTurns.length - 1]
+          if (last && last.role === 'assistant') {
+            last.content += delta
+            scheduleLiveSync()
+          } else {
+            pushLive([{ role: 'assistant', content: delta }])
+          }
+        },
+        // Native reasoning streams beside the content, so the collapsible
+        // thinking block fills in live instead of the transcript sitting silent
+        // for the whole chain of thought.
+        onReasoning: (delta) => {
+          const last = runTurns[runTurns.length - 1]
+          if (last && last.role === 'assistant') {
+            last.reasoning = (last.reasoning ?? '') + delta
+            scheduleLiveSync()
+          } else {
+            pushLive([{ role: 'assistant', content: '', reasoning: delta }])
+          }
+        },
+        onToolStart: (callId, name) =>
+          pushLive([
+            {
+              role: 'tool',
+              content: '',
+              callId,
+              name,
+              status: 'running',
+              argsLive: '',
+            },
+          ]),
+        // Raw JSON, appended as it arrives. The transcript reads a `write`'s
+        // destination and body straight out of this fragment, so the card fills
+        // in as the model types rather than waiting for the closing brace.
+        onToolArgsDelta: (callId, delta) => {
+          const row = runTurns.find((turn) => turn.callId === callId)
+          if (!row) return
+          row.argsLive = (row.argsLive ?? '') + delta
+          scheduleLiveSync()
+        },
+        onToolCall: (call) => {
+          const row = runTurns.find((turn) => turn.callId === call.toolCallId)
+          if (row) {
+            row.args = call.input
+            syncLive()
+          }
+        },
+      }
+
+
       outcome = await runTurn({
         messages,
         signal: controller.signal,
@@ -698,9 +707,9 @@ function CoworkPage() {
                       resolve({ output: `ERROR: ${parsed}`, isError: true })
                       return
                     }
-                    setAsk({ requestId: callId, request: parsed })
-                    askResolvers.current.set(callId, (answers) => {
-                      setAsk(null)
+                    useCoworkRun.getState().addPendingAsk(sid, callId, parsed)
+                    handle.pendingAsks.set(callId, (answers) => {
+                      useCoworkRun.getState().removePendingAsk(sid, callId)
                       resolve(renderAskResult(answers))
                     })
                   }),
@@ -843,10 +852,11 @@ function CoworkPage() {
             ),
           sink,
           onStep: ({ result, turns, outcomes }) => {
-            if (result.usage) setLiveUsage(result.usage)
+            if (result.usage)
+              useCoworkRun.getState().setUsage(sid, result.usage)
             // Replace the optimistic running rows with the settled ones so the
             // transcript shows results, not spinners.
-            liveTurnsRef.current = liveTurnsRef.current.filter(
+            runTurns = runTurns.filter(
               (turn) =>
                 !(turn.role === 'tool' && outcomes.has(turn.callId ?? '')) &&
                 !(turn.role === 'assistant' && turn.content === result.text)
@@ -911,22 +921,22 @@ function CoworkPage() {
         .getState()
         .commitTurns(
           sid,
-          liveTurnsRef.current,
+          runTurns,
           outcome?.messages ?? messages,
           useCoworkRun.getState().subagents[sid] ?? [],
           outcome?.usage ?? undefined
         )
+      if (liveFrame != null) cancelAnimationFrame(liveFrame)
+      for (const resolve of handle.pendingAsks.values()) resolve(null)
+      handle.pendingAsks.clear()
+      releaseHandle(sid, handle)
       useCoworkRun.getState().clearCodeRun(sid)
-      liveTurnsRef.current = []
-      syncLive()
-      setRunning(false)
-      setRunSid(null)
-      abortRef.current = null
-      askResolvers.current.clear()
-      setAsk(null)
       const stop = thrown?.stoppedBy ?? outcome?.stoppedBy ?? null
-      setStoppedBy(stop)
-      setRunError(thrown?.errorText ?? outcome?.errorText)
+      if (stop)
+        useCoworkRun.getState().setOutcome(sid, {
+          stoppedBy: stop,
+          errorText: thrown?.errorText ?? outcome?.errorText,
+        })
 
       // Message queue (ChatInput enqueues while chatStatus is 'streaming',
       // scoped to this session): a clean finish sends the next queued message;
@@ -936,13 +946,14 @@ function CoworkPage() {
       if (stop === 'error') {
         useMessageQueue.getState().clearQueue(sid)
       } else if (stop === 'done') {
-        // Deferred past the re-render so the next runRequest closure sees
-        // running=false; skipped if the user has since switched sessions, since
-        // runRequest always targets the current one.
+        // Continue the originating session with its captured model and skill
+        // context, even when a different session is now being viewed.
         setTimeout(() => {
-          if (useCoworkSessions.getState().currentId !== sid) return
+          if (!useCoworkSessions.getState().sessions.some((s) => s.id === sid))
+            return
+          if (useCoworkRun.getState().runId[sid]) return
           const next = useMessageQueue.getState().dequeue(sid)
-          if (next) void runRequestRef.current(next.text)
+          if (next) void runRequest(next.text, undefined, sid)
         }, 0)
       }
     }
@@ -1076,6 +1087,10 @@ function CoworkPage() {
   const switchModel = useCallback(
     (providerName: string, modelId: string) => {
       useModelProvider.getState().selectModelProvider(providerName, modelId)
+      useCoworkSessions.getState().setModel(ensureCurrentSession(), {
+        provider: providerName,
+        id: modelId,
+      })
       usePrompt.getState().setPrompt('')
       toast.success(t('common:cmdModelSwitched', { name: modelId }))
     },
@@ -1271,29 +1286,19 @@ function CoworkPage() {
     [running, session?.id, questionTurnIndex]
   )
 
-  const abortRef = useRef<AbortController | null>(null)
-  const askResolvers = useRef(
-    new Map<string, (answers: AskAnswer[] | null) => void>()
-  )
 
   const handleStop = useCallback(() => {
-    abortRef.current?.abort('cancelled')
     // Aborting the JS run only discards the pending tool result; a running or
     // backgrounded bash keeps executing until this kills the session's shells.
     if (session?.id) {
       abortRun(session.id)
       void cancelAgentThreadBash(session.id)
     }
-    for (const resolve of askResolvers.current.values()) resolve(null)
-    askResolvers.current.clear()
   }, [session?.id])
 
   const respondAsk = useCallback(
     (requestId: string, answers: AskAnswer[] | null) => {
-      const resolve = askResolvers.current.get(requestId)
-      askResolvers.current.delete(requestId)
-      if (resolve) resolve(answers)
-      else if (session?.id) answerAsk(session.id, requestId, answers)
+      if (session?.id) answerAsk(session.id, requestId, answers)
     },
     [session?.id]
   )
@@ -1355,7 +1360,14 @@ function CoworkPage() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider useLastUsedModel />
+          <DropdownModelProvider
+            key={session?.id ?? 'new'}
+            model={session?.model}
+            useLastUsedModel={!session?.model}
+            onModelChange={(model) =>
+              useCoworkSessions.getState().setModel(ensureCurrentSession(), model)
+            }
+          />
         </div>
       </HeaderPage>
 
