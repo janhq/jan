@@ -8561,17 +8561,72 @@ fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
     sel.spans(area.width)
         .into_iter()
         .filter(|(row, _, _)| *row < area.height)
-        .map(|(row, c0, c1)| {
+        .filter_map(|(row, c0, c1)| {
             // Wide glyphs park an empty symbol in their second cell, so plain
             // concatenation already reconstructs them.
             let line: String = (c0..=c1)
                 .filter_map(|col| buf.cell((col, row)))
                 .map(|cell| cell.symbol())
                 .collect();
-            line.trim_end().to_string()
+            strip_row_chrome(&line)
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Drop the box-drawing chrome the transcript draws around content -- the tool
+/// (`│`) and reasoning (`┊`) gutters, the image gutter, and the diff/exec panel
+/// frame (`┌─┐└┘│`) -- so a copied selection is the text, not the furniture.
+/// A leading gutter/border owns exactly one padding space (the frame's single
+/// fill space); code indentation past that is content and is kept. A line that
+/// was pure chrome (a panel's top/bottom rule, a horizontal separator) yields
+/// `None` and drops out, while a genuinely blank content line (no box glyph)
+/// stays. ASCII markers like the `> ` user prompt are left alone: they are
+/// indistinguishable from a `>` in copied content.
+fn strip_row_chrome(line: &str) -> Option<String> {
+    let is_box = |c: char| ('\u{2500}'..='\u{257f}').contains(&c);
+    let chars: Vec<char> = line.chars().collect();
+    let had_box = chars.iter().copied().any(is_box);
+
+    let mut last_box = None;
+    let mut i = 0;
+    while i < chars.len() && (is_box(chars[i]) || chars[i] == ' ') {
+        if is_box(chars[i]) {
+            last_box = Some(i);
+        }
+        i += 1;
+    }
+    let start = match last_box {
+        Some(idx) => {
+            let after = idx + 1;
+            if chars.get(after) == Some(&' ') {
+                after + 1
+            } else {
+                after
+            }
+        }
+        None => 0,
+    };
+
+    let mut end = chars.len();
+    let mut saw_box = false;
+    while end > start && (is_box(chars[end - 1]) || chars[end - 1] == ' ') {
+        if is_box(chars[end - 1]) {
+            saw_box = true;
+        }
+        end -= 1;
+    }
+    if !saw_box {
+        end = chars.len();
+    }
+
+    let content: String = chars[start..end].iter().collect();
+    let content = content.trim_end().to_string();
+    if had_box && content.is_empty() {
+        None
+    } else {
+        Some(content)
+    }
 }
 
 /// Put a selection on the system clipboard by both routes available to a TUI:
@@ -26474,6 +26529,26 @@ mod tests {
             moved: true,
         };
         assert_eq!(selection_text(&buf, padded, area), "alpha   one");
+    }
+
+    #[test]
+    fn selection_text_strips_gutters_and_panel_frame() {
+        let area = Rect::new(0, 0, 14, 3);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "\u{2502} tool output", Style::new());
+        buf.set_string(0, 1, "\u{2502} \u{250c}\u{2500}\u{2500}\u{2500}\u{2500}\u{2510}", Style::new());
+        buf.set_string(0, 2, "\u{2502} \u{2502}   code \u{2502}", Style::new());
+
+        let all = Selection {
+            anchor: (0, 0),
+            head: (13, 2),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        // Gutters and the panel border are gone, the pure-frame row drops out,
+        // and the two-space indent past the frame's fill space survives.
+        assert_eq!(selection_text(&buf, all, area), "tool output\n  code");
     }
 
     #[test]
