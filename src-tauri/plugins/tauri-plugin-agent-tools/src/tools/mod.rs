@@ -144,6 +144,10 @@ pub struct ToolContext<'a> {
     /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
     /// the one way to inject a secret-named variable on purpose.
     pub env_set: &'a [(String, String)],
+    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` falls back to
+    /// headless Chrome; the desktop injects a webview-backed renderer. See
+    /// [`ScreenshotBackend`].
+    pub screenshot_backend: Option<ScreenshotBackend>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -168,6 +172,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("thread_id", &self.thread_id)
             .field("env_passthrough", &self.env_passthrough)
             .field("env_set", &self.env_set)
+            .field("screenshot_backend", &self.screenshot_backend.is_some())
             .finish()
     }
 }
@@ -175,6 +180,24 @@ impl std::fmt::Debug for ToolContext<'_> {
 /// A tool's live-output channel: called with each chunk as it arrives, in order.
 /// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
 pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
+
+/// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
+///
+/// Injected by the desktop so `screenshot` can capture through the app's own
+/// webview instead of shelling out to Chrome. A boxed closure so this module
+/// stays Tauri-free: the webview implementation lives behind the `tauri` feature
+/// (`crate::webview_shot`). `None` keeps the Chrome-only path.
+pub type ScreenshotBackend = std::sync::Arc<
+    dyn Fn(
+            std::path::PathBuf,
+            u64,
+            u64,
+            f64,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + Send>,
+        > + Send
+        + Sync,
+>;
 
 impl<'a> ToolContext<'a> {
     pub fn new(project_root: &'a Path, store_root: &'a Path, enabled_skills: &'a [String]) -> Self {
@@ -196,7 +219,14 @@ impl<'a> ToolContext<'a> {
             thread_id: None,
             env_passthrough: &[],
             env_set: &[],
+            screenshot_backend: None,
         }
+    }
+
+    /// Inject the `screenshot` PNG renderer. See [`Self::screenshot_backend`].
+    pub fn with_screenshot_backend(mut self, backend: Option<ScreenshotBackend>) -> Self {
+        self.screenshot_backend = backend;
+        self
     }
 
     /// The session (thread) this call belongs to. See [`Self::thread_id`].
@@ -359,6 +389,9 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         path_args: &["path"],
     },
     // Read: it renders a file that is already reachable and writes nothing back.
+    // Desktop-only: the headless CLI has no webview/window, so it is not built
+    // with `feature = "tauri"` and never advertises or dispatches `screenshot`.
+    #[cfg(feature = "tauri")]
     BuiltinTool {
         name: "screenshot",
         capability: Capability::Read,
@@ -477,7 +510,10 @@ mod tests {
     #[test]
     fn builtin_count_matches_expected() {
         // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 16);
+        // `screenshot` (one of the coding tools) is desktop-only, so the headless
+        // CLI build (`feature = "tauri"` off) has one fewer.
+        let expected = if cfg!(feature = "tauri") { 16 } else { 15 };
+        assert_eq!(BUILTIN_TOOLS.len(), expected);
     }
 
     #[test]

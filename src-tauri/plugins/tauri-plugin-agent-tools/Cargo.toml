@@ -15,10 +15,37 @@ links = "tauri-plugin-agent-tools"
 # keep the whole GUI stack out of the graph.
 [features]
 default = ["tauri"]
-tauri = ["dep:tauri", "dep:tauri-plugin"]
+# The Linux GUI crates back the webview `screenshot` renderer and only exist on
+# that target, so they are enabled by the `tauri` feature but stay absent from
+# the CLI graph (which never turns `tauri` on).
+tauri = [
+  "dep:tauri",
+  "dep:tauri-plugin",
+  # `wry` gives `WebviewWindow::with_webview`, which the screenshot renderer needs
+  # to reach the platform webview. The desktop enables it anyway; the CLI never
+  # turns on `tauri`, so this stays out of the CLI graph.
+  "tauri/wry",
+  # Linux screenshot backend (webkit2gtk snapshot -> cairo -> PNG).
+  "dep:webkit2gtk",
+  "dep:cairo-rs",
+  "dep:gio",
+  "dep:glib",
+  # macOS screenshot backend (WKWebView snapshot -> NSImage -> PNG).
+  "dep:objc2",
+  "dep:objc2-web-kit",
+  "dep:objc2-app-kit",
+  "dep:objc2-foundation",
+  "dep:block2",
+  # Windows screenshot backend (WebView2 CapturePreview -> IStream PNG).
+  "dep:webview2-com",
+  "dep:windows",
+]
 
 [dependencies]
 base64 = "0.22"
+# Pure Rust, no GUI linkage; used by the webview screenshot path and harmless in
+# the CLI graph.
+png = "0.17"
 glob = "0.3"
 percent-encoding = "2"
 ignore = "0.4"
@@ -39,6 +66,52 @@ tauri-plugin = { version = "2.3.1", features = ["build"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 nix = { version = "=0.30.1", features = ["signal", "process"] }
+
+# Webview `screenshot` backend (see `webview_shot.rs`). All optional and enabled
+# by the `tauri` feature, so the headless CLI never pulls a GUI stack in.
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2.0", features = ["v2_8"], optional = true }
+cairo-rs = { version = "0.18", optional = true }
+gio = { version = "0.18", optional = true }
+glib = { version = "0.18", optional = true }
+
+# macOS webview `screenshot` backend. Versions pinned to the workspace lockfile
+# so linkage does not duplicate the objc2 stack tauri/wry already pulls.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-web-kit = { version = "0.3", features = [
+  "WKWebView",
+  "WKSnapshotConfiguration",
+  "block2",
+  "objc2-app-kit",
+  "objc2-core-foundation",
+], optional = true }
+objc2-app-kit = { version = "0.3", features = [
+  "NSImage",
+  "NSImageRep",
+  "NSBitmapImageRep",
+], optional = true }
+objc2-foundation = { version = "0.3", features = [
+  "NSData",
+  "NSDictionary",
+  "NSError",
+  "NSGeometry",
+  "NSString",
+  "NSValue",
+], optional = true }
+block2 = { version = "0.6", optional = true }
+
+# Windows webview `screenshot` backend. `windows` (0.61) matches the version
+# `webview2-com` / `tauri-runtime-wry` resolve to, so the `IStream` handed to
+# `CapturePreview` is the same type. Separate from the `windows-sys` crate used
+# by the bash sandbox below.
+[target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = { version = "0.38", optional = true }
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+], optional = true }
 
 # AppContainer confinement for the `bash` tool: profile creation, workspace ACLs
 # and the `STARTUPINFOEX` spawn that carries the lowbox token.
