@@ -82,6 +82,13 @@ std::mutex               g_capture_mu;
 std::vector<std::string> g_captured;
 bool                     g_capturing = false;
 
+// Metal's device-init probe logs an ERROR when the Metal 4 tensor API is
+// unavailable, then disables it and continues -- benign, so keep it out of the
+// captured cause instead of surfacing it as a load failure.
+bool is_benign_probe_error(const std::string & line) {
+    return line.find("ggml_metal_library_init_from_source") != std::string::npos;
+}
+
 void capture_log_callback(ggml_log_level level, const char * text, void * user_data) {
     if (level == GGML_LOG_LEVEL_ERROR && text != nullptr) {
         std::lock_guard<std::mutex> lock(g_capture_mu);
@@ -90,7 +97,7 @@ void capture_log_callback(ggml_log_level level, const char * text, void * user_d
             while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
                 line.pop_back();
             }
-            if (!line.empty()) {
+            if (!line.empty() && !is_benign_probe_error(line)) {
                 g_captured.push_back(std::move(line));
             }
         }
