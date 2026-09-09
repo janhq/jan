@@ -8,10 +8,13 @@ repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.85"
 
-# Split out of the desktop crate so the Tauri bundler never enumerates it as a
-# bin target of the app (tauri-cli ignores required-features and would try to
-# copy a `jan` binary the desktop build never produces). Shares the workspace
-# target dir, so `target/release/jan` is unchanged.
+# A standalone crate (NOT a workspace member of ../Cargo.toml) so the Tauri
+# bundler never enumerates it as a bin target of the desktop app -- tauri-cli
+# ignores required-features and would otherwise try to copy a `jan` binary the
+# desktop build never produces. Standalone also keeps it clear of the desktop
+# build's `ctoml package.name "Jan-<channel>"` rename, which a member could not
+# resolve its `package = "Jan"` dep against. `.cargo/config.toml` redirects
+# output to ../target so `target/release/jan` is unchanged.
 [[bin]]
 name = "jan"
 path = "src/main.rs"
@@ -28,3 +31,18 @@ console = "0.15"
 env_logger = "0.11"
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
+
+# Mirror the desktop crate's release profile: the CLI inherited it while it was a
+# bin of ../Cargo.toml, and a standalone crate would otherwise fall back to the
+# default (opt-level 3, no LTO) and ship a differently sized binary.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+strip = "symbols"
+codegen-units = 1
+panic = "unwind"
+overflow-checks = false
+debug = false
+debug-assertions = false
+incremental = false
+rpath = false

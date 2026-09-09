@@ -91,9 +91,9 @@ jobs:
       # which is also a pass.
       - name: Assert no GUI or D-Bus crates in the CLI dependency graph
         run: |
-          cd src-tauri
+          cd src-tauri/jan-cli
           for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service onig onig_sys; do
-            out=$(cargo tree -p jan-cli --no-default-features --features cli -e normal \
+            out=$(cargo tree --no-default-features --features cli -e normal \
               --target x86_64-unknown-linux-gnu -i "$crate" 2>&1) || continue
             case "$out" in *"nothing to print"*) continue ;; esac
             echo "::error::$crate is back in the jan CLI dependency graph"
@@ -107,8 +107,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build -p jan-cli --no-default-features --features cli --release
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release
 
       # The crate blocklist above only catches names somebody thought to list.
       # This catches any new dynamic dependency whatever its source: a NEEDED

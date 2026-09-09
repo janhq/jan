@@ -184,7 +184,7 @@ test-ci: test-prepare
 # Cheap compile guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
 check-cli:
-	cd src-tauri && cargo check --locked -p jan-cli --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo check --locked --no-default-features --features cli
 
 # Build MLX server (macOS Apple Silicon only) - always builds
 build-mlx-server:
@@ -249,8 +249,8 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli --target x86_64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target aarch64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target x86_64-apple-darwin
 	lipo -create \
 		src-tauri/target/aarch64-apple-darwin/release/jan \
 		src-tauri/target/x86_64-apple-darwin/release/jan \
@@ -270,10 +270,10 @@ ifeq ($(DETECTED_OS),Darwin)
 
 	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
 else
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
 endif
 
@@ -534,13 +534,13 @@ agent: build-agent
 # and then installed to src-tauri/resources/bin/jan[.exe] for bundling.
 build-agent:
 ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	copy src-tauri\target\release\jan.exe src-tauri\resources\bin\jan.exe
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan.exe"
 	@echo "  src-tauri/target/release/jan.exe"
 else
-	cd src-tauri && cargo build --release -p jan-cli --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	install -m755 src-tauri/target/release/jan src-tauri/resources/bin/jan
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan"

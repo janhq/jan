@@ -62,8 +62,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build -p jan-cli --no-default-features --features cli --release
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release
 
       - name: Package zip
         id: package
