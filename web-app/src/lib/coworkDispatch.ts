@@ -18,11 +18,19 @@ import {
 } from '@/lib/coworkMonitor'
 import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import {
+  EXECUTE_PLAN_LABEL,
+  EXIT_PLAN_LABEL,
+  KEEP_PLANNING_LABEL,
+  PLAN_REVIEW_QUESTION_ID,
+} from '@/lib/coworkPrompt'
 
 export type DispatchContext = {
   sessionId: string
   readOnlyFolder: string | null
   planMode: boolean
+  /** Request-owned failure history. Omitted by children, which cannot plan. */
+  failedReadPaths?: Set<string>
   /** Mirrors the advertised set. Refused when off, so a call to a tool that was
    * never advertised cannot reach the network the user switched off. */
   webSearch: boolean
@@ -53,6 +61,60 @@ function planRefusal(toolName: string): ToolOutcome {
       '`ask` for plan review.',
     isError: true,
   }
+}
+
+// A model may try to create a missing file through `read` when write is
+// withheld. Keep the filesystem error, but explain the approval path at the
+// failure itself so the next step can recover instead of repeating the read.
+const PLAN_READ_FAILURE_GUIDANCE =
+  'Plan mode is enabled: file creation and editing are disabled. ' +
+  'The read tool only reads existing files; it cannot create a missing output file. ' +
+  'Do not retry the same failed read or try to write through a read-only tool. ' +
+  'If this is a file you intend to create, stage its creation with todo ' +
+  `(or keep the existing plan), then call ask with question id ${PLAN_REVIEW_QUESTION_ID} ` +
+  `and options ${EXECUTE_PLAN_LABEL}, ${KEEP_PLANNING_LABEL}, ${EXIT_PLAN_LABEL}. ` +
+  'Wait for approval before implementation.'
+
+async function toolFailure(
+  call: PendingToolCall,
+  error: string,
+  ctx: DispatchContext
+): Promise<ToolOutcome> {
+  let output = error
+  if (ctx.planMode && call.toolName === 'read') {
+    output += `\n\n${PLAN_READ_FAILURE_GUIDANCE}`
+    const path = readPath(call.input)
+    if (path && ctx.failedReadPaths) {
+      if (ctx.failedReadPaths.has(path)) {
+        // User review is an enforced pause, not another instruction the model
+        // can ignore. Keep planning grants a fresh attempt at this path.
+        ctx.failedReadPaths.delete(path)
+        const review = await ctx.onAsk(call.toolCallId, {
+          questions: [
+            {
+              id: PLAN_REVIEW_QUESTION_ID,
+              question: `Reading "${path}" failed again: ${error}. Review the plan before continuing.`,
+              options: [
+                { label: EXECUTE_PLAN_LABEL },
+                { label: KEEP_PLANNING_LABEL },
+                { label: EXIT_PLAN_LABEL },
+              ],
+            },
+          ],
+        })
+        output += `\n\nPlan review response: ${review.output}`
+      } else {
+        ctx.failedReadPaths.add(path)
+      }
+    }
+  }
+  return { output, isError: true }
+}
+
+function readPath(input: unknown): string | undefined {
+  if (!input || typeof input !== 'object') return undefined
+  const path = (input as { path?: unknown }).path
+  return typeof path === 'string' ? path : undefined
 }
 
 /**
@@ -163,7 +225,11 @@ export async function dispatchCoworkTool(
       true,
       ctx.readOnlyFolder
     )
-    if (result.error) return { output: result.error, isError: true }
+    if (result.error) return await toolFailure(call, result.error, ctx)
+    if (toolName === 'read') {
+      const path = readPath(call.input)
+      if (path) ctx.failedReadPaths?.delete(path)
+    }
     return {
       output:
         typeof result.content === 'string'
@@ -173,9 +239,6 @@ export async function dispatchCoworkTool(
       images: result.images,
     }
   } catch (e) {
-    return {
-      output: e instanceof Error ? e.message : String(e),
-      isError: true,
-    }
+    return toolFailure(call, e instanceof Error ? e.message : String(e), ctx)
   }
 }

@@ -92,6 +92,11 @@ import { dispatchCoworkTool } from '@/lib/coworkDispatch'
 import { applyTodoOp, renderTodoResult } from '@/lib/coworkTodo'
 import { parseAskRequest, renderAskResult } from '@/lib/coworkAsk'
 import {
+  EXECUTE_PLAN_LABEL,
+  EXIT_PLAN_LABEL,
+  PLAN_REVIEW_QUESTION_ID,
+} from '@/lib/coworkPrompt'
+import {
   getSandboxStatus,
   sandboxEnforces,
   fillSubagentResult,
@@ -587,7 +592,8 @@ function CoworkPage() {
       const webSearch = useWebSearchConfig.getState().webSearchEnabled
       // One snapshot per run, shared with every child this run dispatches.
       const environment = await getCoworkEnvironment()
-      const transport = new CoworkChatTransport(sid, {
+      const failedReadPaths = current?.planMode ? new Set<string>() : undefined
+      const runConfig = {
         model: { provider: selectedProvider, id: selectedModel.id },
         planMode: current?.planMode ?? false,
         subagentNames: subagentDefs.map((d) => d.name),
@@ -597,7 +603,8 @@ function CoworkPage() {
         webSearch,
         workspacePath,
         readOnlyFolder: current?.folder ?? null,
-      })
+      }
+      const transport = new CoworkChatTransport(sid, runConfig)
       await transport.refreshTools()
 
       // Owned by this request: children cannot outlive the run whose signal
@@ -658,7 +665,6 @@ function CoworkPage() {
         },
       }
 
-
       outcome = await runTurn({
         messages,
         signal: controller.signal,
@@ -684,7 +690,8 @@ function CoworkPage() {
               dispatchCoworkTool(call, {
                 sessionId: sid,
                 readOnlyFolder: current?.folder ?? null,
-                planMode: current?.planMode ?? false,
+                planMode: runConfig.planMode,
+                failedReadPaths,
                 webSearch,
                 monitors: monitorLane,
                 onTodo: async (input) => {
@@ -710,7 +717,37 @@ function CoworkPage() {
                     useCoworkRun.getState().addPendingAsk(sid, callId, parsed)
                     handle.pendingAsks.set(callId, (answers) => {
                       useCoworkRun.getState().removePendingAsk(sid, callId)
+                      const planReview =
+                        runConfig.planMode &&
+                        parsed.questions.length === 1 &&
+                        parsed.questions[0].id === PLAN_REVIEW_QUESTION_ID
+                      const selection =
+                        answers?.length === 1 &&
+                        answers[0].id === PLAN_REVIEW_QUESTION_ID &&
+                        answers[0].selected.length === 1
+                          ? answers[0].selected[0]
+                          : undefined
+                      if (
+                        planReview &&
+                        (selection === EXECUTE_PLAN_LABEL ||
+                          selection === EXIT_PLAN_LABEL)
+                      ) {
+                        runConfig.planMode = false
+                        useCoworkSessions.getState().setPlanMode(sid, false)
+                        // Approval is a deliberate run boundary: refresh the
+                        // prompt and tools together before the next model step.
+                        transport.setConfig(runConfig)
+                        transport.unfreezeTools()
+                        failedReadPaths?.clear()
+                      }
                       resolve(renderAskResult(answers))
+                      if (
+                        planReview &&
+                        (answers === null || selection === EXIT_PLAN_LABEL) &&
+                        !controller.signal.aborted
+                      ) {
+                        abortRun(sid)
+                      }
                     })
                   }),
                 onTask: async (callId, input) => {
