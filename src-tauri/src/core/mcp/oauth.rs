@@ -21,7 +21,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rmcp::transport::auth::{AuthClient, OAuthState, OAuthTokenResponse};
+use rmcp::transport::auth::{AuthClient, AuthorizationRequest, OAuthState, OAuthTokenResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -286,7 +286,7 @@ pub async fn advertises_oauth(url: &str) -> bool {
     let OAuthState::Unauthorized(manager) = state else {
         return false;
     };
-    manager.discover_metadata().await.is_ok()
+    manager.resolve_metadata().await.is_ok()
 }
 
 /// An authorization in flight: the browser has somewhere to go and the loopback
@@ -325,7 +325,9 @@ pub async fn begin(server: &str, url: &str) -> Result<PendingAuth, String> {
         .await
         .map_err(|e| format!("could not reach '{url}' for OAuth discovery: {e}"))?;
     state
-        .start_authorization(&[], &redirect_uri, Some(CLIENT_NAME))
+        .start_authorization(
+            AuthorizationRequest::new(redirect_uri.clone()).with_client_name(CLIENT_NAME),
+        )
         .await
         .map_err(|e| format!("'{server}' does not offer OAuth we can use: {e}"))?;
     let authorization_url = state
@@ -532,8 +534,8 @@ pub async fn authorized_client(
     name: &str,
     url: &str,
     config: &Value,
-    base: reqwest::Client,
-) -> Result<Option<AuthClient<reqwest::Client>>, String> {
+    base: reqwest13::Client,
+) -> Result<Option<AuthClient<reqwest13::Client>>, String> {
     if has_static_authorization(config) {
         return Ok(None);
     }
@@ -588,14 +590,15 @@ pub async fn authorized_client(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use oauth2::{AccessToken, EmptyExtraTokenFields, RefreshToken, TokenResponse};
+    use oauth2::{AccessToken, RefreshToken, TokenResponse};
+    use rmcp::transport::auth::VendorExtraTokenFields;
     use serde_json::json;
 
     fn tokens(expires_in: Option<u64>, refresh: bool) -> OAuthTokenResponse {
         let mut t = OAuthTokenResponse::new(
             AccessToken::new("at-1".to_string()),
             oauth2::basic::BasicTokenType::Bearer,
-            EmptyExtraTokenFields {},
+            VendorExtraTokenFields::default(),
         );
         if let Some(secs) = expires_in {
             t.set_expires_in(Some(&Duration::from_secs(secs)));
@@ -769,7 +772,7 @@ mod tests {
                 "s",
                 "https://x/mcp",
                 &config,
-                reqwest::Client::new(),
+                reqwest13::Client::new(),
             ));
         assert!(matches!(got, Ok(None)));
     }
@@ -788,7 +791,7 @@ mod tests {
                 "s",
                 "https://new/mcp",
                 &config,
-                reqwest::Client::new(),
+                reqwest13::Client::new(),
             ));
         let err = got.expect_err("stale resource is an error, not a silent skip");
         assert!(err.contains("https://old/mcp"), "{err}");
