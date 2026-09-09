@@ -9,7 +9,6 @@ edition = "2021"
 # 1.85 is the floor: `genai` (the OpenAI upstream client) is edition 2024.
 # Below that the previous floor was 1.82, for `Option::is_none_or` in agent/loop.rs.
 rust-version = "1.85"
-resolver = "2"
 default-run = "Jan-Desktop"
 
 [lib]
@@ -21,10 +20,19 @@ name = "Jan-Desktop"
 path = "src/main.rs"
 required-features = ["desktop"]
 
-[[bin]]
-name = "jan"
-path = "src/bin/jan.rs"
-required-features = ["cli"]
+# The headless `jan` CLI is a separate workspace member (jan-cli/) rather than a
+# bin target here: tauri-cli bundles every [[bin]] regardless of
+# required-features, so a `jan` target would make the desktop bundler try to
+# copy a binary the desktop build never compiles.
+[workspace]
+members = ["jan-cli"]
+# The engine worker and the other plugins are path dependencies under this
+# directory, so cargo would auto-adopt them as workspace members and force the
+# app's size-tuned [profile.release] (opt-level "z", fat LTO) onto their own
+# standalone builds -- a speed/build-time regression for jan-llama-worker in
+# particular. Exclude them so they keep building as their own roots.
+exclude = ["plugins", "utils"]
+resolver = "2"
 
 [features]
 default = [

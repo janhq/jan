@@ -185,7 +185,6 @@ Var LockedFile
 ; be running and is not ours to kill, so those rely on the rename alone.
 !macro FreeBundledFiles
   !insertmacro StopBundledProcess "jan-llama-worker.exe"
-  !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan.exe"
   !insertmacro UnlockBundledBinary "$INSTDIR\resources\bin\jan-llama-worker.exe"
   !insertmacro UnlockBundledPattern "$INSTDIR\resources\bin" "ggml*.dll"
   !insertmacro UnlockBundledPattern "$INSTDIR\resources\bin" "cudart64_*.dll"
@@ -835,7 +834,6 @@ Section Install
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "jan_workspace\src-tauri\resources\pre-install\"
     SetOutPath "$INSTDIR\resources\bin"
-    File /a "/oname=jan.exe" "jan_workspace\src-tauri\resources\bin\jan.exe"
     ; The engine. This block is a hand-maintained snapshot of
     ; tauri.windows.conf.json's `bundle.resources`, which the NSIS bundler does
     ; not read once CI points it at this template, so anything added there has

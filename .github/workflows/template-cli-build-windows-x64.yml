@@ -63,7 +63,7 @@ jobs:
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
           cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release
+          cargo build -p jan-cli --no-default-features --features cli --release
 
       - name: Package zip
         id: package

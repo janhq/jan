@@ -72,7 +72,7 @@ jobs:
         run: |
           cd src-tauri
           for crate in tauri gtk gdk muda wry webkit2gtk dbus libdbus-sys dbus-secret-service; do
-            out=$(cargo tree --no-default-features --features cli -e normal \
+            out=$(cargo tree -p jan-cli --no-default-features --features cli -e normal \
               --target aarch64-unknown-linux-gnu -i "$crate" 2>&1) || continue
             case "$out" in *"nothing to print"*) continue ;; esac
             echo "::error::$crate is back in the jan CLI dependency graph"
@@ -87,7 +87,7 @@ jobs:
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
           cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release
+          cargo build -p jan-cli --no-default-features --features cli --release
 
       # See template-cli-build-linux-x64.yml for why this check exists.
       - name: Assert the CLI binary links no unexpected shared libraries
