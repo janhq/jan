@@ -434,6 +434,21 @@ function CoworkPage() {
     const current = store.sessions.find((s) => s.id === sid)
     if (!current || useCoworkRun.getState().runId[sid]) return
     if (!text && !(current?.messages?.length ?? 0)) return
+    const modelState = useModelProvider.getState()
+    const modelChoice =
+      current.model ??
+      (modelState.selectedModel
+        ? {
+            provider: modelState.selectedProvider,
+            id: modelState.selectedModel.id,
+          }
+        : undefined)
+    const selectedProvider = modelChoice?.provider ?? ''
+    const selectedModel = modelState.providers
+      .find(
+        (provider) => provider.provider === selectedProvider && provider.active
+      )
+      ?.models.find((model) => model.id === modelChoice?.id)
     if (!selectedModel?.id) {
       toast.error(t('common:selectModel'))
       return
@@ -445,6 +460,7 @@ function CoworkPage() {
       toast.error(t('common:modelNoTools', { model: selectedModel.id }))
       return
     }
+    if (!current.model && modelChoice) store.setModel(sid, modelChoice)
     // Claim this session before asynchronous preparation. Another session may
     // submit immediately, but a second request in this one must wait.
     const handle = createHandle(sid, crypto.randomUUID())
@@ -572,6 +588,7 @@ function CoworkPage() {
       // One snapshot per run, shared with every child this run dispatches.
       const environment = await getCoworkEnvironment()
       const transport = new CoworkChatTransport(sid, {
+        model: { provider: selectedProvider, id: selectedModel.id },
         planMode: current?.planMode ?? false,
         subagentNames: subagentDefs.map((d) => d.name),
         // Always on at depth 0, even with nothing saved: a one-off subagent with
@@ -1070,6 +1087,10 @@ function CoworkPage() {
   const switchModel = useCallback(
     (providerName: string, modelId: string) => {
       useModelProvider.getState().selectModelProvider(providerName, modelId)
+      useCoworkSessions.getState().setModel(ensureCurrentSession(), {
+        provider: providerName,
+        id: modelId,
+      })
       usePrompt.getState().setPrompt('')
       toast.success(t('common:cmdModelSwitched', { name: modelId }))
     },
@@ -1339,7 +1360,14 @@ function CoworkPage() {
     <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
-          <DropdownModelProvider useLastUsedModel />
+          <DropdownModelProvider
+            key={session?.id ?? 'new'}
+            model={session?.model}
+            useLastUsedModel={!session?.model}
+            onModelChange={(model) =>
+              useCoworkSessions.getState().setModel(ensureCurrentSession(), model)
+            }
+          />
         </div>
       </HeaderPage>
 
