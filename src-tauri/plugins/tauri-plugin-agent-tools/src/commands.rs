@@ -687,7 +687,8 @@ fn resolve_workspace_root(
 // here rather than trusted: an unusable one is an error, never a silent drop,
 // or the agent would work against a folder it believes is attached and is not.
 #[allow(clippy::too_many_arguments)]
-pub async fn execute_tool(
+pub async fn execute_tool<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     data_folder: String,
     thread_id: String,
     project: Option<String>,
@@ -701,6 +702,7 @@ pub async fn execute_tool(
     call_id: Option<String>,
 ) -> Result<ToolResult, AgentToolsError> {
     execute_tool_inner(
+        screenshot_backend(&app),
         data_folder,
         thread_id,
         project,
@@ -717,6 +719,28 @@ pub async fn execute_tool(
     .await
 }
 
+/// The webview-backed `screenshot` renderer on the desktop (Linux, macOS,
+/// Windows); `None` everywhere else, keeping the Chrome fallback.
+#[cfg(all(
+    feature = "tauri",
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
+fn screenshot_backend<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Option<crate::tools::ScreenshotBackend> {
+    Some(crate::webview_shot::make_backend(app))
+}
+
+#[cfg(not(all(
+    feature = "tauri",
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+)))]
+fn screenshot_backend<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+) -> Option<crate::tools::ScreenshotBackend> {
+    None
+}
+
 /// `execute_tool`, plus a channel that receives the tool's output as it is
 /// produced. A separate command rather than an optional argument because
 /// `tauri::ipc::Channel` is a `CommandArg`, not a `Deserialize`, so it cannot be
@@ -724,7 +748,8 @@ pub async fn execute_tool(
 #[cfg(feature = "tauri")]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
-pub async fn execute_tool_streaming(
+pub async fn execute_tool_streaming<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
     data_folder: String,
     thread_id: String,
     project: Option<String>,
@@ -740,6 +765,7 @@ pub async fn execute_tool_streaming(
 ) -> Result<ToolResult, AgentToolsError> {
     let sink = output_sink(on_output, call_id.clone());
     execute_tool_inner(
+        screenshot_backend(&app),
         data_folder,
         thread_id,
         project,
@@ -758,6 +784,7 @@ pub async fn execute_tool_streaming(
 
 #[allow(clippy::too_many_arguments)]
 async fn execute_tool_inner(
+    screenshot_backend: Option<crate::tools::ScreenshotBackend>,
     data_folder: String,
     thread_id: String,
     project: Option<String>,
@@ -905,7 +932,8 @@ async fn execute_tool_inner(
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
         .with_write_roots(&write_roots)
-        .with_thread_id(Some(&thread_id));
+        .with_thread_id(Some(&thread_id))
+        .with_screenshot_backend(screenshot_backend);
     if let Some(sp) = skill_project.as_deref() {
         ctx = ctx.with_skill_project_root(sp);
     }
@@ -1047,6 +1075,41 @@ mod tests {
             .join(format!("{tag}_{}_{}", std::process::id(), n));
         std::fs::create_dir_all(&dir).expect("create test repo");
         dir
+    }
+
+    /// Test shim: `execute_tool` is now a generic Tauri command taking an
+    /// `AppHandle`, which the tests have no runtime to build. This drives the
+    /// same path with no webview backend (Chrome only) and no output sink.
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_tool(
+        data_folder: String,
+        thread_id: String,
+        project: Option<String>,
+        name: String,
+        args: serde_json::Value,
+        enabled_skills: Option<Vec<String>>,
+        allow_network: Option<bool>,
+        read_only_project: Option<String>,
+        project_writable: Option<bool>,
+        scope: Option<WorkspaceScope>,
+        call_id: Option<String>,
+    ) -> Result<ToolResult, AgentToolsError> {
+        execute_tool_inner(
+            None,
+            data_folder,
+            thread_id,
+            project,
+            name,
+            args,
+            enabled_skills,
+            allow_network,
+            read_only_project,
+            project_writable,
+            scope,
+            call_id,
+            None,
+        )
+        .await
     }
 
     const T1: &str = "thread-one";

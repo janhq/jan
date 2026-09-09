@@ -19,7 +19,7 @@ use crate::tools::sandbox::{
     escapes_write_roots, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
     scratch_display_path, symlink_escapes_any_root,
 };
-use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
+use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
@@ -144,7 +144,17 @@ pub async fn execute_builtin(
     let scratch = ctx.scratch_root;
     let (content, images) = match tool.name {
         "read" => read(args, project_root, scratch, ctx.read_roots).await,
-        "screenshot" => screenshot(args, project_root, scratch, ctx.read_roots).await,
+        #[cfg(feature = "tauri")]
+        "screenshot" => {
+            screenshot(
+                args,
+                project_root,
+                scratch,
+                ctx.read_roots,
+                ctx.screenshot_backend.as_ref(),
+            )
+            .await
+        }
         _ => (execute_text(tool, args, ctx).await, None),
     };
     (content, images)
@@ -1241,22 +1251,22 @@ fn chrome_binary() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+/// Render a local HTML/SVG file to PNG bytes.
 ///
-/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
-/// command the annotation overlay calls, so both agree on Chrome discovery,
-/// viewport clamping and the output cap. `width`/`height` are the viewport in
-/// CSS pixels; the caller picks them (the overlay passes its own stage size so
-/// the PNG lines up pixel-for-pixel with what the user drew on).
+/// `backend`, when present, renders through the desktop's own webview (no Chrome
+/// needed); on any backend failure this falls back to headless Chrome so nothing
+/// regresses. `None` goes straight to Chrome. Either way the viewport clamping
+/// and output cap are identical.
 ///
-/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
-/// wide with the layout unchanged. The overlay passes the webview's own ratio
-/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+/// `width`/`height` are the viewport in CSS pixels; `scale` is the device pixel
+/// ratio, so the PNG comes out `width*scale` pixels wide with the layout
+/// unchanged.
 pub async fn render_html_png(
     target: &Path,
     width: u64,
     height: u64,
     scale: f64,
+    backend: Option<&ScreenshotBackend>,
 ) -> Result<Vec<u8>, String> {
     let ext = target
         .extension()
@@ -1272,12 +1282,6 @@ pub async fn render_html_png(
         return Err(format!("file not found: {}", target.display()));
     }
 
-    let Some(chrome) = chrome_binary() else {
-        return Err(
-            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
-        );
-    };
-
     let width = width.clamp(320, 4096);
     let height = height.clamp(240, 4096);
     let scale = if scale.is_finite() {
@@ -1285,6 +1289,23 @@ pub async fn render_html_png(
     } else {
         1.0
     };
+
+    // Try the injected backend (the desktop's webview capture) first, so the tool
+    // works without Chrome; on any failure fall through to Chrome so nothing
+    // regresses.
+    if let Some(backend) = backend {
+        match backend(target.to_path_buf(), width, height, scale).await {
+            Ok(png) => return finalize_screenshot_png(png),
+            Err(_) => { /* fall through to Chrome */ }
+        }
+    }
+
+    let Some(chrome) = chrome_binary() else {
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
+    };
+
     // A per-call profile (pid + nanos) keeps headless Chrome from colliding
     // with a running browser or a leftover from a previous call; `--screenshot`
     // exits after writing, but the wait below is bounded in case it lingers.
@@ -1351,8 +1372,13 @@ pub async fn render_html_png(
     };
     let _ = tokio::fs::remove_file(&shot).await;
 
+    finalize_screenshot_png(png)
+}
+
+/// Shared empty-check and size cap for a rendered PNG, whatever produced it.
+fn finalize_screenshot_png(png: Vec<u8>) -> Result<Vec<u8>, String> {
     if png.is_empty() {
-        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
+        return Err("screenshot came out empty (page may be blank)".to_string());
     }
     if png.len() > SCREENSHOT_MAX_PNG_BYTES {
         return Err(format!(
@@ -1369,11 +1395,17 @@ pub async fn render_html_png(
 /// Returns an `ImageContentPart` rather than a data URL pasted into the text,
 /// matching what `read` does for images: that is the form a vision model
 /// actually consumes, and it keeps a megabyte of base64 out of the transcript.
+///
+/// Desktop-only (`feature = "tauri"`): the headless CLI has no webview to render
+/// through and no window to show a Chrome fallback, so `screenshot` is not
+/// advertised there. See `BUILTIN_TOOLS` and `builtin_tool_schemas`.
+#[cfg(feature = "tauri")]
 async fn screenshot(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    backend: Option<&ScreenshotBackend>,
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
         return ("ERROR: missing required argument 'path'".to_string(), None);
@@ -1387,7 +1419,7 @@ async fn screenshot(
             None,
         );
     }
-    let png = match render_html_png(&target, width, height, 1.0).await {
+    let png = match render_html_png(&target, width, height, 1.0, backend).await {
         Ok(b) => b,
         Err(e) => return (format!("ERROR: {e}"), None),
     };
@@ -3521,37 +3553,41 @@ mod tests {
     /// Two headless Chromes racing for the same profile dir collide, so the
     /// tests that actually launch one are serialised. An async mutex so the test
     /// can hold it across the awaited screenshot without `await_holding_lock`.
+    #[cfg(feature = "tauri")]
     static CHROME_TEST_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
         std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_rejects_a_non_html_file() {
         let root = unique_root();
         std::fs::write(root.join("a.txt"), b"nope").unwrap();
-        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[], None).await;
         assert!(out.contains("only renders"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_rejects_a_missing_file() {
         let root = unique_root();
-        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[], None).await;
         assert!(out.contains("file not found"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_requires_a_path() {
         let root = unique_root();
-        let (out, _) = screenshot(&json!({}), &root, None, &[]).await;
+        let (out, _) = screenshot(&json!({}), &root, None, &[], None).await;
         assert!(out.contains("missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "tauri"))]
     #[tokio::test]
     async fn screenshot_refuses_a_symlink_out_of_the_workspace() {
         let root = unique_root();
@@ -3561,7 +3597,7 @@ mod tests {
         let link = root.join("innocent.html");
         std::os::unix::fs::symlink(&secret, &link).unwrap();
 
-        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[], None).await;
         assert!(out.contains("symlink"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -3570,6 +3606,7 @@ mod tests {
 
     /// Renders for real when a browser is present, and returns an image part
     /// rather than a data URL buried in the text.
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn screenshot_returns_an_image_part_when_chrome_is_present() {
@@ -3589,6 +3626,7 @@ mod tests {
             &root,
             None,
             &[],
+            None,
         )
         .await;
         assert!(!out.starts_with("ERROR"), "{out}");

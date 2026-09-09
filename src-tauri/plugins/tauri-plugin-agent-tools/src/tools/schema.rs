@@ -4,9 +4,11 @@
 
 use serde_json::{json, Value};
 
-/// OpenAI function schemas for the 7 built-in tools.
+/// OpenAI function schemas for the built-in tools, one per `BUILTIN_TOOLS`
+/// entry. `screenshot` is desktop-only (`feature = "tauri"`), so the headless
+/// CLI advertises one fewer.
 pub fn builtin_tool_schemas() -> Vec<Value> {
-    vec![
+    [
         json!({
             "type": "function",
             "function": {
@@ -74,6 +76,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
+        #[cfg(feature = "tauri")]
         json!({
             "type": "function",
             "function": {
@@ -251,6 +254,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             }
         }),
     ]
+    .to_vec()
 }
 
 #[cfg(test)]
@@ -261,7 +265,8 @@ mod tests {
     #[test]
     fn schemas_match_builtin_tools() {
         let schemas = builtin_tool_schemas();
-        assert_eq!(schemas.len(), 16);
+        let expected_len = if cfg!(feature = "tauri") { 16 } else { 15 };
+        assert_eq!(schemas.len(), expected_len);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }

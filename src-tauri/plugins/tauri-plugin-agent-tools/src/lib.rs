@@ -19,6 +19,14 @@ pub mod workspace;
 #[cfg(feature = "tauri")]
 mod commands;
 
+/// Webview-backed `screenshot` renderer, so the tool works without Chrome, on
+/// all three desktop platforms; other targets keep the Chrome path.
+#[cfg(all(
+    feature = "tauri",
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
+mod webview_shot;
+
 /// Runs the confined-spawn helper and exits, when this process was re-exec'd as
 /// one by the Windows sandbox backend. A no-op on every other platform and on a
 /// normal launch, but it must be called before anything else in `main`: the
