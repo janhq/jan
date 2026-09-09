@@ -120,11 +120,9 @@ log = "0.4"
 # accessors on the persisted token record (`core::mcp::oauth`).
 oauth2 = "5.0"
 rand = "0.8"
-rmcp = { version = "0.8.5", features = [
+rmcp = { version = "3.2.0", features = [
     "auth",
     "client",
-    "transport-sse-client",
-    "transport-sse-client-reqwest",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",
     "transport-child-process",

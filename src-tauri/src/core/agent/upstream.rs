@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use reqwest::Client;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
@@ -709,10 +709,9 @@ pub(crate) async fn execute_mcp_tool_calls(
             continue;
         };
 
-        let tool_call = service.call_tool(CallToolRequestParam {
-            name: tool_name.clone().into(),
-            arguments: Some(args_map),
-        });
+        let tool_call = service.call_tool(
+            CallToolRequestParams::new(tool_name.clone()).with_arguments(args_map),
+        );
 
         let result = match tokio::time::timeout(timeout_duration, tool_call).await {
             Ok(call_result) => call_result.map_err(|e| e.to_string()),
