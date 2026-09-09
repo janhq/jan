@@ -425,6 +425,10 @@ enum PickerKind {
     /// `/plugin install <collection>`: choose which plugins inside a collection
     /// repo to install. Space toggles a row, Enter installs everything checked.
     PluginSelect,
+    /// `/plugin setup`: choose one installed plugin without starting setup.
+    PluginSetup,
+    /// Review a plugin-provided MCP server before enabling or executing it.
+    PluginConnect,
     /// One MCP server's detail screen: the info block plus the actions that
     /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
     McpServer,
@@ -436,13 +440,40 @@ struct Picker {
     kind: PickerKind,
     items: Vec<PickerItem>,
     selected: usize,
+    search: Option<PickerSearch>,
     /// Index of the provider row a first `d` armed for deletion, so a second
     /// `d` on the same row confirms it. `None` = nothing armed. Resets on
     /// navigation so an unrelated keypress can never delete by accident.
     armed_delete: Option<usize>,
 }
 
+/// Preserve the source rows while typing narrows the visible selection.
+struct PickerSearch {
+    all_items: Vec<PickerItem>,
+    query: String,
+}
+
 impl Picker {
+    fn with_search(mut self) -> Self {
+        self.search = Some(PickerSearch {
+            all_items: self.items.clone(),
+            query: String::new(),
+        });
+        self
+    }
+
+    fn refresh_search(&mut self) {
+        let Some(search) = &self.search else { return };
+        let query = search.query.to_lowercase();
+        let terms: Vec<&str> = query.split_whitespace().collect();
+        self.items = search.all_items.iter().filter(|item| {
+            let searchable = format!("{} {}", item.label, item.hint.as_deref().unwrap_or(""))
+                .to_lowercase();
+            terms.iter().all(|term| searchable.contains(term))
+        }).cloned().collect();
+        self.selected = 0;
+    }
+
     fn title(&self) -> &'static str {
         match self.kind {
             PickerKind::ResumeThread => " resume thread ",
@@ -455,6 +486,8 @@ impl Picker {
             PickerKind::ProviderSettings => " providers ",
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
+            PickerKind::PluginSetup => " set up plugin ",
+            PickerKind::PluginConnect => " plugin connection ",
             PickerKind::McpServer => " mcp server ",
         }
     }
@@ -475,6 +508,8 @@ impl Picker {
             }
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
             PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
+            PickerKind::PluginSetup => " Type to search   Up/Down select   Enter set up   Esc cancel",
+            PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
         }
     }
@@ -674,6 +709,8 @@ enum McpJob {
     /// screen is open, so the screen refreshes when the connect lands instead of
     /// sitting on `not connected` until the user navigates away and back.
     Connect(String),
+    /// First connection during plugin setup; an OAuth challenge starts sign-in.
+    PluginConnect(String),
 }
 
 /// What an `McpJob` came back with.
@@ -693,6 +730,10 @@ enum McpJobDone {
     Connected {
         server: String,
         result: Result<(), String>,
+    },
+    PluginConnected {
+        server: String,
+        result: Result<(), super::mcp::ConnectError>,
     },
 }
 
@@ -817,6 +858,53 @@ impl LoginPrompt {
         if self.editable() {
             self.input.push_str(super::secret_input::pasted(text));
         }
+    }
+}
+
+/// One required environment variable of a plugin: its name and, when the
+/// manifest declares it, the URL the user can obtain the value from.
+struct PluginEnvEntry {
+    key: String,
+    url: String,
+}
+
+/// `/plugin setup`: a docked, `/login`-styled prompt collecting the API keys a
+/// plugin declares it needs. One entry per variable; the field is masked (the
+/// value never reaches the screen, scrollback, or transcript), Enter saves and
+/// advances, `s` skips, Esc abandons the remaining entries. Values go to
+/// `~/.jan/agent/plugin-env/<plugin>.toml` (0600) and are injected into the
+/// sandboxed shell on the next run.
+struct PluginSetupPrompt {
+    plugin: String,
+    entries: Vec<PluginEnvEntry>,
+    current: usize,
+    input: String,
+    error: Option<String>,
+}
+
+impl PluginSetupPrompt {
+    fn entry(&self) -> Option<&PluginEnvEntry> {
+        self.entries.get(self.current)
+    }
+
+    fn masked(&self) -> String {
+        super::secret_input::mask(self.input.chars().count())
+    }
+
+    fn paste(&mut self, text: &str) {
+        self.input.push_str(super::secret_input::pasted(text));
+    }
+
+    /// Advance past the current entry, clearing the field and any error.
+    fn advance(&mut self) {
+        self.current += 1;
+        self.input.clear();
+        self.error = None;
+    }
+
+    /// Whether every entry has been visited.
+    fn done(&self) -> bool {
+        self.current >= self.entries.len()
     }
 }
 
@@ -1844,6 +1932,13 @@ struct App {
     model_picker: Option<ModelPicker>,
     /// Active `/login` prompt; owns the keyboard while open.
     login: Option<LoginPrompt>,
+    /// Active `/plugin setup` prompt (docked like `/login`); owns the keyboard
+    /// while open and collects the plugin's required API keys, masked.
+    plugin_setup: Option<PluginSetupPrompt>,
+    /// Remaining plugins/connections in the current install or setup flow.
+    plugin_setup_queue: std::collections::VecDeque<String>,
+    plugin_mcp_pending: std::collections::VecDeque<(String, serde_json::Value)>,
+    plugin_mcp_connecting: Option<String>,
     /// Active `/settings` edit prompt (docked like `/login`); owns the
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
@@ -2361,6 +2456,10 @@ impl App {
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
             login_submit: None,
+            plugin_setup: None,
+            plugin_setup_queue: Default::default(),
+            plugin_mcp_pending: Default::default(),
+            plugin_mcp_connecting: None,
             account_login: None,
             account_login_submit: None,
             account_login_manual_tx: None,
@@ -7451,12 +7550,14 @@ fn finish_plugin_install(
             if plugins.is_empty() {
                 app.note("nothing installed");
             }
-            for p in plugins {
+            for p in &plugins {
                 app.note(&format!(
                     "installed plugin '{}' ({} skills)",
                     p.name, p.skills
                 ));
             }
+            app.plugin_setup_queue = plugins.into_iter().map(|p| p.name).collect();
+            next_plugin_setup(app);
         }
         Ok(GitInstall::Collection(candidates)) => {
             let Some(url) = url else {
@@ -7470,6 +7571,7 @@ fn finish_plugin_install(
             ));
             app.picker = Some(Picker {
                 kind: PickerKind::PluginSelect,
+                search: None,
                 items: candidates
                     .into_iter()
                     .map(|c| PickerItem {
@@ -8547,6 +8649,14 @@ fn route_paste_event(app: &mut App, event: Event) {
         // A pasted API key belongs to the login field, not the chat composer
         // (where it would echo).
         prompt.paste(&text);
+    } else if let Some(prompt) = app.plugin_setup.as_mut() {
+        // A pasted plugin API key belongs to the setup field.
+        prompt.paste(&text);
+    } else if let Some(picker) = app.picker.as_mut().filter(|picker| picker.search.is_some()) {
+        if let Some(search) = picker.search.as_mut() {
+            search.query.extend(text.chars().filter(|c| !c.is_control()));
+        }
+        picker.refresh_search();
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -8675,18 +8785,7 @@ fn handle_account_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         return;
     }
     if ctrl && key.code == KeyCode::Char('v') {
-        match clipboard_text() {
-            Ok(text) => {
-                if let Some(prompt) = app.account_login.as_mut() {
-                    prompt.paste(&text);
-                }
-            }
-            Err(e) => {
-                if let Some(prompt) = app.account_login.as_mut() {
-                    prompt.error = Some(format!("could not read the clipboard: {e}"));
-                }
-            }
-        }
+        paste_clipboard_into(app, |app| &mut app.account_login);
         return;
     }
 
@@ -8771,18 +8870,7 @@ fn handle_login_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         if !app.login.as_ref().is_some_and(LoginPrompt::editable) {
             return;
         }
-        match super::secret_input::clipboard_text() {
-            Ok(text) => {
-                if let Some(prompt) = app.login.as_mut() {
-                    prompt.paste(&text);
-                }
-            }
-            Err(e) => {
-                if let Some(prompt) = app.login.as_mut() {
-                    prompt.error = Some(format!("could not read the clipboard: {e}"));
-                }
-            }
-        }
+        paste_clipboard_into(app, |app| &mut app.login);
         return;
     }
 
@@ -8820,6 +8908,299 @@ fn clipboard_text() -> Result<String, String> {
     super::secret_input::clipboard_text()
 }
 
+/// Input handling the three masked prompts (`/login`, account login,
+/// `/plugin setup`) share for Ctrl-V routing.
+trait MaskedPrompt {
+    /// Store the pasted text (each impl applies its own masking/editability
+    /// rules).
+    fn paste_text(&mut self, text: &str);
+    /// Surface a failure on the prompt's error line.
+    fn set_error(&mut self, message: String);
+}
+
+/// Some terminals deliver a paste as a key rather than an `Event::Paste`, so
+/// the masked prompts' key handlers route Ctrl-V here: read the clipboard,
+/// feed the text to the prompt, or record the failure on its error line.
+/// `prompt` selects the docked prompt from the app state.
+fn paste_clipboard_into<P: MaskedPrompt>(app: &mut App, prompt: fn(&mut App) -> &mut Option<P>) {
+    match clipboard_text() {
+        Ok(text) => {
+            if let Some(p) = prompt(app) {
+                p.paste_text(&text);
+            }
+        }
+        Err(e) => {
+            if let Some(p) = prompt(app) {
+                p.set_error(format!("could not read the clipboard: {e}"));
+            }
+        }
+    }
+}
+
+impl MaskedPrompt for LoginPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
+}
+
+impl MaskedPrompt for AccountLoginPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
+}
+
+impl MaskedPrompt for PluginSetupPrompt {
+    fn paste_text(&mut self, text: &str) {
+        self.paste(text);
+    }
+    fn set_error(&mut self, message: String) {
+        self.error = Some(message);
+    }
+}
+
+/// Choose one installed plugin; opening setup must not run the whole catalog.
+fn open_plugin_setup(app: &mut App) -> bool {
+    let plugins = crate::core::agent::plugins::installed_entries(&app.project_root);
+    if plugins.is_empty() {
+        app.note("no plugins installed - use /plugin install <git-url> first");
+        return false;
+    }
+    app.picker = Some(Picker {
+        kind: PickerKind::PluginSetup,
+        search: None,
+        items: plugins.into_iter().map(|(directory, plugin)| PickerItem {
+            label: if directory == plugin.name {
+                directory.clone()
+            } else {
+                format!("{directory} ({})", plugin.name)
+            },
+            value: directory,
+            hint: (!plugin.description.is_empty()).then_some(plugin.description),
+            checkbox: None,
+        }).collect(),
+        selected: 0,
+        armed_delete: None,
+    }.with_search());
+    true
+}
+
+fn next_plugin_setup(app: &mut App) -> bool {
+    while let Some(plugin) = app.plugin_setup_queue.pop_front() {
+        if open_plugin_setup_for(app, &plugin) {
+            return true;
+        }
+    }
+    false
+}
+
+fn open_plugin_setup_for(app: &mut App, plugin: &str) -> bool {
+    let Some((directory, _)) = crate::core::agent::plugins::find_installed(&app.project_root, plugin) else {
+        app.note(&format!("plugin '{plugin}' is not installed - use /plugin install <git-url> first"));
+        return false;
+    };
+    let entries = crate::core::agent::plugins::declared_plugin_env(&app.project_root, &directory)
+        .into_iter()
+        .map(|(key, url)| PluginEnvEntry { key, url })
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return open_plugin_mcp_setup(app, &directory);
+    }
+    start_plugin_setup(app, &directory, entries)
+}
+
+fn open_plugin_mcp_setup(app: &mut App, plugin: &str) -> bool {
+    match crate::core::agent::plugins::plugin_mcp_servers(&app.project_root, plugin) {
+        Ok(servers) if servers.is_empty() => {
+            app.note(&format!("plugin '{plugin}' is ready - no connection required"));
+            false
+        }
+        Ok(servers) => {
+            app.plugin_mcp_pending = servers.into_iter()
+                .map(|(name, config)| (format!("{plugin}:{name}"), config)).collect();
+            show_next_plugin_connection(app);
+            true
+        }
+        Err(e) => {
+            app.note(&format!("plugin '{plugin}' setup: {e}"));
+            false
+        }
+    }
+}
+
+fn show_next_plugin_connection(app: &mut App) {
+    let Some((name, config)) = app.plugin_mcp_pending.front() else {
+        next_plugin_setup(app);
+        return;
+    };
+    let target = if let Some(url) = config.get("url").and_then(serde_json::Value::as_str) {
+        // Do not put URL credentials, query strings or headers in the transcript.
+        reqwest::Url::parse(url).ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+            .unwrap_or_else(|| "remote MCP server".to_string())
+    } else {
+        config.get("command").and_then(serde_json::Value::as_str)
+            .unwrap_or("local MCP process").to_string()
+    };
+    app.picker = Some(Picker {
+        kind: PickerKind::PluginConnect,
+        search: None,
+        items: vec![
+            PickerItem {
+                value: "connect".into(),
+                label: format!("Enable and connect {name}"),
+                hint: Some(format!("{target} - allow this plugin's MCP server")),
+                checkbox: None,
+            },
+            PickerItem {
+                value: "skip".into(),
+                label: "Not now".into(),
+                hint: Some("Keep installed; resume with /plugin setup <name>".into()),
+                checkbox: None,
+            },
+        ],
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+fn confirm_plugin_connection(app: &mut App, connect: bool) {
+    app.picker = None;
+    let Some((name, mut config)) = app.plugin_mcp_pending.pop_front() else { return };
+    if !connect {
+        show_next_plugin_connection(app);
+        return;
+    }
+    // The shared MCP config is user-owned. Never replace an unrelated server.
+    let result = (|| {
+        super::mcp::validate_server_name(&name)?;
+        super::mcp::validate_config(&config)?;
+        if let Some(existing) = super::mcp::get_server(&name) {
+            let mut existing = existing.config;
+            existing.as_object_mut().map(|o| o.remove("active"));
+            config.as_object_mut().map(|o| o.remove("active"));
+            if existing != config {
+                return Err(format!("MCP server '{name}' already has different settings; review it in /mcp"));
+            }
+        }
+        config["active"] = true.into();
+        super::mcp::upsert_server(&name, &config)
+    })();
+    if let Err(e) = result {
+        app.note(&e);
+        show_next_plugin_connection(app);
+        return;
+    }
+    app.note(&format!("connecting '{name}' - sign-in will open if required..."));
+    app.plugin_mcp_connecting = Some(name.clone());
+    app.mcp_job_request = Some(McpJob::PluginConnect(name));
+}
+
+fn finish_plugin_connection(app: &mut App, server: &str) {
+    if app.plugin_mcp_connecting.as_deref() == Some(server) {
+        app.plugin_mcp_connecting = None;
+        show_next_plugin_connection(app);
+    }
+}
+
+/// Install the dock state for `plugin` with `entries`, after announcing it.
+fn start_plugin_setup(app: &mut App, plugin: &str, entries: Vec<PluginEnvEntry>) -> bool {
+    app.note(&format!(
+        "◈ plugin setup · {} needs {} API key{} - paste them below",
+        plugin,
+        entries.len(),
+        if entries.len() == 1 { "" } else { "s" }
+    ));
+    app.plugin_setup = Some(PluginSetupPrompt {
+        plugin: plugin.to_string(),
+        entries,
+        current: 0,
+        input: String::new(),
+        error: None,
+    });
+    true
+}
+
+/// Keys for the `/plugin setup` prompt: Enter saves the value and advances,
+/// `s` skips the current entry when the field is still empty (once something
+/// is typed, `s` is just a character of the secret), Esc/Ctrl-C abandons the
+/// rest. Same masked-entry rules as the `/login` paste field.
+fn handle_plugin_setup_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    let cancel = key.code == KeyCode::Esc
+        || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')));
+    if cancel {
+        app.plugin_setup = None;
+        app.plugin_setup_queue.clear();
+        app.plugin_mcp_pending.clear();
+        app.note("plugin setup cancelled - resume with /plugin setup <name>");
+        return;
+    }
+    // Ctrl-V: some terminals send a paste as a key rather than Event::Paste.
+    if ctrl && key.code == KeyCode::Char('v') {
+        paste_clipboard_into(app, |app| &mut app.plugin_setup);
+        return;
+    }
+    let Some(prompt) = app.plugin_setup.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let plugin = prompt.plugin.clone();
+            let Some(entry) = prompt.entry() else { return };
+            let value = prompt.input.trim().to_string();
+            if value.is_empty() {
+                prompt.error = Some("nothing pasted - paste the key or press s to skip".into());
+                return;
+            }
+            if let Err(e) = crate::core::agent::plugins::save_plugin_env(&plugin, &entry.key, &value)
+            {
+                prompt.error = Some(e);
+                return;
+            }
+            let key_name = entry.key.clone();
+            prompt.advance();
+            let done = prompt.done();
+            // Sync on every save, not just at completion: a cancel after key
+            // 1 must still leave the live registry holding key 1.
+            crate::core::agent::plugins::sync_env_registry(&app.project_root);
+            app.note(&format!("plugin setup · {plugin} · {key_name} saved"));
+            if done {
+                app.plugin_setup = None;
+                if !open_plugin_mcp_setup(app, &plugin) {
+                    next_plugin_setup(app);
+                }
+            }
+        }
+        KeyCode::Char('s') | KeyCode::Char('S') if !ctrl && prompt.input.is_empty() => {
+            let plugin = prompt.plugin.clone();
+            let key_name = prompt
+                .entry()
+                .map(|e| e.key.clone())
+                .unwrap_or_default();
+            prompt.advance();
+            let done = prompt.done();
+            if done {
+                app.plugin_setup = None;
+                app.note(&format!("plugin setup · {plugin} · skipped {key_name}"));
+                if !open_plugin_mcp_setup(app, &plugin) {
+                    next_plugin_setup(app);
+                }
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => {
+            prompt.input.push(ch);
+        }
+        _ => {}
+    }
+}
 fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
@@ -8933,6 +9314,12 @@ async fn handle_key(
     // transcript shortcuts.
     if app.login.is_some() {
         handle_login_key(app, key, ctrl);
+        return;
+    }
+
+    // Same for `/plugin setup`: it is collecting masked API keys.
+    if app.plugin_setup.is_some() {
+        handle_plugin_setup_key(app, key, ctrl);
         return;
     }
 
@@ -9057,6 +9444,19 @@ async fn handle_key(
     // act and close; the `/mcp` picker toggles the selected row in place.
     if let Some(picker) = app.picker.as_mut() {
         match key.code {
+            KeyCode::Char(ch) if picker.search.is_some() && !ctrl && !alt && !sup => {
+                if let Some(search) = picker.search.as_mut() {
+                    search.query.push(ch);
+                }
+                picker.refresh_search();
+            }
+            KeyCode::Backspace if picker.search.is_some() => {
+                if let Some(search) = picker.search.as_mut() {
+                    search.query.pop();
+                }
+                picker.refresh_search();
+            }
+            KeyCode::Enter if picker.items.is_empty() => {}
             KeyCode::Up | KeyCode::Char('k') => {
                 picker.armed_delete = None;
                 picker.selected = picker.selected.saturating_sub(1);
@@ -9095,6 +9495,10 @@ async fn handle_key(
             KeyCode::Enter if picker.kind == PickerKind::McpServer => {
                 let action = picker.items[picker.selected].value.clone();
                 run_mcp_action(app, &action, mcp_servers).await;
+            }
+            KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
+                let connect = picker.items[picker.selected].value == "connect";
+                confirm_plugin_connection(app, connect);
             }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
             // wizard prefilled from the selected row, `d` removes the selected
@@ -9351,8 +9755,12 @@ async fn handle_key(
                     PickerKind::Todo => {}
                     // PluginSelect Enter is handled by the guarded arm above.
                     PickerKind::PluginSelect => {}
+                    PickerKind::PluginSetup => {
+                        open_plugin_setup_for(app, &value);
+                    }
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
+                    PickerKind::PluginConnect => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -9362,11 +9770,15 @@ async fn handle_key(
                 open_mcp_picker(app, mcp_servers).await;
             }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.plugin_setup_queue.clear();
+                app.plugin_mcp_pending.clear();
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
             }
             _ if ctrl_c || ctrl_d => {
+                app.plugin_setup_queue.clear();
+                app.plugin_mcp_pending.clear();
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
@@ -9649,10 +10061,18 @@ struct SlashCommand {
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
-/// Plugin installation and removal explicitly refresh this snapshot.
+/// Plugin installation and removal explicitly refresh this snapshot — as does
+/// `/reload`, which diffs a fresh scan against it to report what changed.
 struct SlashCatalog {
     commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
     skills: Vec<crate::core::agent::skills::SkillMeta>,
+    /// Installed plugin summaries from the same scan, for `/reload plugin`'s
+    /// added/removed/updated report.
+    plugins: Vec<crate::core::agent::plugins::InstalledPlugin>,
+    /// Every discovered skill, both invocation sides — the full disk truth
+    /// `/reload skills` diffs against (the popup list above is only the
+    /// user-invocable subset).
+    all_skills: Vec<crate::core::agent::skills::SkillMeta>,
 }
 
 impl SlashCatalog {
@@ -9662,6 +10082,8 @@ impl SlashCatalog {
             // Keep every user-invocable skill here. The enabled whitelist is
             // re-read below so edits to agent.toml take effect immediately.
             skills: crate::core::agent::skills::user_catalog(root, &[]),
+            plugins: crate::core::agent::plugins::installed(root),
+            all_skills: crate::core::agent::skills::full_catalog(root),
         }
     }
 
@@ -9962,8 +10384,14 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/plugin",
-        hint: "[list|install <spec>|remove <name>|search [query]]",
-        description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        hint: "[list|install <spec>|remove <name>|search [query]|setup [name]]",
+        description: "Manage plugins: install, list/remove, search, or choose a plugin to set up its API keys and MCP connections",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/reload",
+        hint: "[plugin|skills|system-prompt]",
+        description: "Re-scan skills/plugins from disk and rebuild the catalog mid-session (bare: plugin)",
         alias_of: None,
     },
     SlashCommand {
@@ -10196,6 +10624,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
+        "reload" => reload_command(app, arg),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -11223,6 +11652,7 @@ fn open_settings_screen(app: &mut App) {
     let toml_path = app.agent_dir.join("agent.toml");
     app.picker = Some(Picker {
         kind: PickerKind::AgentSettings,
+        search: None,
         items: build_agent_settings_items(&toml_path),
         selected: 0,
         armed_delete: None,
@@ -11269,6 +11699,7 @@ fn open_provider_settings(app: &mut App) {
     };
     app.picker = Some(Picker {
         kind: PickerKind::ProviderSettings,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -11783,6 +12214,7 @@ fn open_todo_picker(app: &mut App) {
     }
     app.picker = Some(Picker {
         kind: PickerKind::Todo,
+        search: None,
         items: build_todo_items(&app.todos),
         selected: 0,
         armed_delete: None,
@@ -11922,6 +12354,14 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 for p in &plugins {
                     app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
                 }
+                // Surface unsatisfied setup requirements right in the list:
+                // a plugin whose key is missing explains itself here.
+                for (plugin, var, _) in crate::core::agent::plugins::missing_plugin_env(&root) {
+                    app.push(Line::styled(
+                        format!("  {plugin}: key missing ({var}) - /plugin setup {plugin}"),
+                        Style::new().yellow(),
+                    ));
+                }
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
                     Some((directory, p)) => {
@@ -11986,6 +12426,19 @@ async fn plugin_command(app: &mut App, arg: &str) {
             app.plugin_install_request = Some(rest);
             app.note("installing plugin...");
         }
+        "setup" => {
+            if app.plugin_mcp_connecting.is_some() {
+                app.note("plugin connection is in progress");
+                return;
+            }
+            app.plugin_setup_queue.clear();
+            app.plugin_mcp_pending.clear();
+            if rest.is_empty() {
+                open_plugin_setup(app);
+            } else {
+                open_plugin_setup_for(app, &rest);
+            }
+        }
         "remove" => {
             if rest.is_empty() {
                 app.note("usage: /plugin remove <name>");
@@ -12021,6 +12474,152 @@ async fn plugin_command(app: &mut App, arg: &str) {
         other => app.note(&format!(
             "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
         )),
+    }
+}
+
+/// One diffable catalog entry for `/reload`: `key` is the stable identity,
+/// `label` the display line, `state` everything whose change marks the entry
+/// as updated (version/description/counts for plugins, description and
+/// invocation flags for skills).
+struct ReloadEntry {
+    key: String,
+    label: String,
+    state: String,
+}
+
+/// Snapshot the installed-plugin summaries for `/reload plugin`'s diff.
+fn reload_plugin_entries(plugins: &[crate::core::agent::plugins::InstalledPlugin]) -> Vec<ReloadEntry> {
+    plugins
+        .iter()
+        .map(|p| ReloadEntry {
+            key: p.name.clone(),
+            label: format!("plugin {} (v{})", p.name, p.version),
+            state: format!(
+                "v{} · {} skill(s) · {} command(s) · {} agent(s) · {}",
+                p.version, p.skills, p.commands, p.agents, p.description
+            ),
+        })
+        .collect()
+}
+
+/// Snapshot the full skill catalog for `/reload skills`'s diff, keyed by
+/// qualified name (`<plugin>:<skill>` for plugin skills).
+fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec<ReloadEntry> {
+    skills
+        .iter()
+        .map(|m| {
+            let name = m
+                .plugin
+                .as_ref()
+                .map_or_else(|| m.name.clone(), |p| format!("{p}:{}", m.name));
+            ReloadEntry {
+                key: name.clone(),
+                label: name,
+                state: format!(
+                    "{} [user:{} model:{}]",
+                    m.description, m.user_invocable, m.model_invocable
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Diff two catalog snapshots by identity, returning display lines for
+/// added, removed, and updated entries in scan order.
+fn diff_reload_entries(
+    before: &[ReloadEntry],
+    after: &[ReloadEntry],
+) -> (Vec<String>, Vec<String>, Vec<String>) {
+    fn keyed(items: &[ReloadEntry]) -> std::collections::BTreeMap<String, &ReloadEntry> {
+        items.iter().map(|e| (e.key.clone(), e)).collect()
+    }
+    let (old, new) = (keyed(before), keyed(after));
+    let mut added = Vec::new();
+    let mut removed = Vec::new();
+    let mut updated = Vec::new();
+    for (key, entry) in &new {
+        match old.get(key) {
+            None => added.push(entry.label.clone()),
+            Some(prev) if prev.state != entry.state => updated.push(format!(
+                "{} ({} → {})",
+                entry.label, prev.state, entry.state
+            )),
+            Some(_) => {}
+        }
+    }
+    for (key, entry) in &old {
+        if !new.contains_key(key) {
+            removed.push(entry.label.clone());
+        }
+    }
+    (added, removed, updated)
+}
+
+/// `/reload [plugin|skills|system-prompt]`: re-run skill/plugin discovery and
+/// rebuild the slash catalog mid-session, reporting added/removed/changed
+/// entries. Bare `/reload` targets plugins — the payload an install most
+/// often changes. The model-facing system prompt (JAN.md instructions, the
+/// skills catalog) is rebuilt from disk on every run, so the `system-prompt`
+/// target re-reads and reports what the next run picks up.
+fn reload_command(app: &mut App, arg: &str) {
+    let root = app.project_root.clone();
+    match arg.trim() {
+        "" | "plugin" | "plugins" => {
+            let before = reload_plugin_entries(&app.slash_catalog.plugins);
+            app.refresh_slash_catalog();
+            let after = reload_plugin_entries(&app.slash_catalog.plugins);
+            app.note("◈ reload · plugin · re-scanned installed plugins");
+            report_reload_diff(app, diff_reload_entries(&before, &after));
+        }
+        "skill" | "skills" => {
+            let before = reload_skill_entries(&app.slash_catalog.all_skills);
+            app.refresh_slash_catalog();
+            let after = reload_skill_entries(&app.slash_catalog.all_skills);
+            app.note("◈ reload · skills · re-scanned project and plugin skills");
+            report_reload_diff(app, diff_reload_entries(&before, &after));
+        }
+        "system-prompt" => {
+            // Nothing caches the instructions across runs: the system prompt
+            // (including this block and the skills catalog) is rebuilt from
+            // disk at the start of every run. Re-read now to confirm what the
+            // next run will pick up.
+            let files = crate::core::agent::context::context_files(&root);
+            if files.is_empty() {
+                app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+                return;
+            }
+            app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
+            for (path, content) in &files {
+                app.system_detail_text(&format!(
+                    "  {} ({} bytes)",
+                    path.display(),
+                    content.len()
+                ));
+            }
+        }
+        other => app.note(&format!(
+            "unknown /reload target '{other}' (try plugin | skills | system-prompt)"
+        )),
+    }
+}
+
+/// Print a reload diff, or the unchanged note when the scan found nothing new.
+fn report_reload_diff(
+    app: &mut App,
+    (added, removed, updated): (Vec<String>, Vec<String>, Vec<String>),
+) {
+    if added.is_empty() && removed.is_empty() && updated.is_empty() {
+        app.system_detail_text("  no changes since the last scan");
+        return;
+    }
+    for line in added {
+        app.system_detail_text(&format!("  + {line}"));
+    }
+    for line in removed {
+        app.system_detail_text(&format!("  - {line}"));
+    }
+    for line in updated {
+        app.system_detail_text(&format!("  ~ {line}"));
     }
 }
 
@@ -12135,6 +12734,7 @@ fn open_thread_picker(app: &mut App) {
             } else {
                 app.picker = Some(Picker {
                     kind: PickerKind::ResumeThread,
+                    search: None,
                     items,
                     selected: 0,
                     armed_delete: None,
@@ -12234,6 +12834,7 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
     app.mcp_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::ToggleMcp,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -12264,6 +12865,7 @@ async fn open_mcp_detail(
     };
     app.picker = Some(Picker {
         kind: PickerKind::McpServer,
+        search: None,
         items: mcp_action_items(&server),
         selected: 0,
         armed_delete: None,
@@ -12525,6 +13127,7 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
         .unwrap_or(0);
     app.picker = Some(Picker {
         kind: PickerKind::LoginProvider,
+        search: None,
         items,
         selected,
         armed_delete: None,
@@ -12979,6 +13582,7 @@ fn open_config_screen(app: &mut App) {
     };
     app.picker = Some(Picker {
         kind: PickerKind::ViewConfig,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -13002,8 +13606,13 @@ async fn run_mcp_job(job: McpJob, servers: crate::core::state::SharedMcpServers)
             McpJobDone::Authorized { server, result }
         }
         McpJob::Connect(server) => {
-            let result = connect_mcp_server(&server, &servers).await;
+            let result = connect_mcp_server(&server, &servers).await.map_err(|e| e.to_string());
             McpJobDone::Connected { server, result }
+        }
+        McpJob::PluginConnect(server) => {
+            super::mcp::disconnect(&server, &servers).await;
+            let result = connect_mcp_server(&server, &servers).await;
+            McpJobDone::PluginConnected { server, result }
         }
     }
 }
@@ -13056,7 +13665,10 @@ async fn finish_mcp_job(
                     servers,
                 )));
             }
-            Err(e) => app.note(&format!("could not start sign-in for '{server}': {e}")),
+            Err(e) => {
+                app.note(&format!("could not start sign-in for '{server}': {e}"));
+                finish_plugin_connection(app, &server);
+            }
         },
         McpJobDone::Authorized { server, result } => match result {
             Ok(()) => {
@@ -13072,6 +13684,7 @@ async fn finish_mcp_job(
             Err(e) => {
                 app.browser_confirm = None;
                 app.note(&format!("sign-in for '{server}' failed: {e}"));
+                finish_plugin_connection(app, &server);
             }
         },
         McpJobDone::Connected { server, result } => {
@@ -13079,12 +13692,30 @@ async fn finish_mcp_job(
                 Ok(()) => app.note(&format!("'{server}' connected")),
                 Err(e) => app.note(&format!("MCP: {e}")),
             }
+            finish_plugin_connection(app, &server);
             if app
                 .mcp_detail
                 .as_ref()
                 .is_some_and(|d| d.server.name == server)
             {
                 open_mcp_detail(app, &server, mcp_servers).await;
+            }
+        }
+        McpJobDone::PluginConnected { server, result } => {
+            match result {
+                Err(super::mcp::ConnectError::NeedsAuth { .. }) => {
+                    app.note(&format!("'{server}' requires sign-in - preparing authorization..."));
+                    *job = Some(tokio::spawn(run_mcp_job(
+                        McpJob::BeginAuth(server), mcp_servers.clone(),
+                    )));
+                }
+                result => {
+                    match result {
+                        Ok(()) => app.note(&format!("'{server}' connected - tools are ready")),
+                        Err(e) => app.note(&format!("could not connect '{server}': {e}; retry from /plugin setup")),
+                    }
+                    finish_plugin_connection(app, &server);
+                }
             }
         }
     }
@@ -13220,7 +13851,7 @@ fn show_mcp_tools(app: &mut App) {
 async fn connect_mcp_server(
     name: &str,
     servers: &crate::core::state::SharedMcpServers,
-) -> Result<(), String> {
+) -> Result<(), super::mcp::ConnectError> {
     let cfg = super::mcp::list_servers()
         .into_iter()
         .find(|s| s.name == name)
@@ -13228,7 +13859,6 @@ async fn connect_mcp_server(
         .ok_or_else(|| format!("'{name}' is no longer in mcp_config.json"))?;
     super::mcp::connect(name, &cfg, servers)
         .await
-        .map_err(|e| e.to_string())
 }
 
 /// `connect_mcp_server`, detached: for the paths with no screen waiting on the
@@ -13368,6 +13998,7 @@ fn open_rewind_picker(app: &mut App) {
     let selected = items.len() - 1;
     app.picker = Some(Picker {
         kind: PickerKind::RewindMessage,
+        search: None,
         items,
         selected,
         armed_delete: None,
@@ -13394,6 +14025,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
     }
     app.picker = Some(Picker {
         kind: PickerKind::RewindScope,
+        search: None,
         items,
         selected: 0,
         armed_delete: None,
@@ -14346,6 +14978,18 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_login(f, rect, prompt);
+    } else if let Some(prompt) = &app.plugin_setup {
+        let height =
+            (plugin_setup_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+                .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        draw_plugin_setup(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
         let height =
             (browser_confirm_lines(confirm, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
@@ -14803,6 +15447,82 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
         Paragraph::new(login_prompt_lines(prompt, inner.width)),
         inner,
     );
+}
+
+/// Docked `/plugin setup` prompt, styled like the `/login` dock: which plugin,
+/// which variable, the URL to obtain the key at, a masked field, and keys.
+fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &PluginSetupPrompt) {
+    use ratatui::widgets::Clear;
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" plugin setup: {} ", prompt.plugin),
+            Style::new().on_cyan().black().bold(),
+        ));
+
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(
+        Paragraph::new(plugin_setup_lines(prompt, inner.width)),
+        inner,
+    );
+}
+
+/// The `/plugin setup` box's contents. The width parameter mirrors the other
+/// prompt-line builders (call sites size the dock from the row count).
+fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let total = prompt.entries.len();
+    match prompt.entry() {
+        Some(entry) => {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} needs {} ({}/{})",
+                    prompt.plugin,
+                    entry.key,
+                    prompt.current + 1,
+                    total
+                ),
+                Style::new().cyan().bold(),
+            )));
+            if entry.url.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "ask the plugin author where to obtain this key".to_string(),
+                    dim,
+                )));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("get it at: ", dim),
+                    Span::styled(entry.url.clone(), Style::new().cyan()),
+                ]));
+            }
+        }
+        None => {
+            lines.push(Line::from(Span::styled(
+                format!("{} setup complete", prompt.plugin),
+                Style::new().cyan().bold(),
+            )));
+        }
+    }
+    if let Some(error) = &prompt.error {
+        lines.push(Line::from(Span::styled(
+            error.clone(),
+            Style::new().red(),
+        )));
+    }
+    lines.push(Line::from(vec![
+        Span::styled(prompt.masked(), Style::new().bold()),
+        Span::styled("  ← paste here", dim),
+    ]));
+    lines.push(Line::from(Span::styled(
+        "Enter save · s skip · Esc cancel - the key is masked and never echoed",
+        dim,
+    )));
+    lines
 }
 
 /// Docked `/settings` edit prompt, styled like the `/login` dock: description,
@@ -15427,10 +16147,17 @@ fn draw_picker(
                 };
                 spans.push(Span::styled(mark, style));
             }
-            if let Some(hint) = &it.hint {
-                spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
+            if picker.kind == PickerKind::PluginSetup {
+                spans.push(Span::raw(it.label.clone()));
+                if let Some(hint) = &it.hint {
+                    spans.push(Span::styled(format!("  {hint}"), Style::new().dark_gray()));
+                }
+            } else {
+                if let Some(hint) = &it.hint {
+                    spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
+                }
+                spans.push(Span::raw(it.label.clone()));
             }
-            spans.push(Span::raw(it.label.clone()));
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -15445,7 +16172,27 @@ fn draw_picker(
     // setting's description, default, valid range, and current value - the
     // rows themselves stay terse (`key  = value`) because the detail footer
     // explains what each knob does.
-    if picker.kind == PickerKind::AgentSettings {
+    if let Some(search) = &picker.search {
+        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
+        f.render_widget(
+            Paragraph::new(truncate(
+                &format!(" Search: {}|", search.query),
+                rows[0].width as usize,
+            )),
+            rows[0],
+        );
+        if picker.items.is_empty() {
+            f.render_widget(
+                Paragraph::new(" No plugins match").style(Style::new().dark_gray()),
+                rows[1],
+            );
+        } else {
+            f.render_stateful_widget(list.block(Block::default()), rows[1], &mut state);
+        }
+    } else if picker.kind == PickerKind::AgentSettings {
         let list_area = Rect {
             height: area.height.saturating_sub(2),
             ..area
@@ -16472,24 +17219,25 @@ mod tests {
     use tokio::sync::mpsc;
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
-        apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
-        assistant_runs, autoscroll_selection, await_branch_poll, backgrounded_job_id, brand,
-        build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
-        drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
-        finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
-        finish_update_install, format_tokens, group_detail_lines, group_summary,
-        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
-        image_mime_of, input_content_lines, load_first_file_image, load_image_file,
-        message_text, note_update, open_config_screen, open_rewind_picker, pairs_to_str,
-        parse_command, partial_json_field, provider_label_for_model, rebuild_recall,
-        replay_display_log, restore_goal, restore_run_mode, restore_todos, resume_hint,
-        rewind_to, route_paste_event, row_width, run_command,
-        running_group_rows, selection_text, spans_width, spawn_branch_poll, split_reasoning,
-        starting_call_lines, startup_modes, strip_system_xml_tags, subagent_activity,
-        subagent_name_from_run_id, summarize_result, sync_output_for, thinking_open,
-        tilde_path, tokens_per_second, tool_activity, tool_finished, transcript_top_padding,
-        unescape_partial_json_string, user_content_parts, wave_sweep_line, with_wave_glyph,
-        without_think_tags, App, CompactKind, ContextReport, ContextSegment,
+        apply_repaint,
+        apply_resume, apply_stream_event, assistant_is_awaiting_user_answer, assistant_runs,
+        autoscroll_selection, await_branch_poll, backgrounded_job_id, brand, build_user_message,
+        clipboard_path, compact_tokens, context_lines, diff_lines, drain_stream_events,
+        estimate_token_count, finish_account_login, finish_compaction, finish_context_report,
+        finish_login, finish_plugin_install, finish_tokamak_login, finish_update_install,
+        format_tokens, group_detail_lines, group_summary, handle_ask_key, handle_ask_mouse,
+        handle_key, handle_mouse, handle_plugin_setup_key,
+        header_spans, image_mime, image_mime_of, input_content_lines,
+        load_first_file_image, load_image_file, message_text, note_update, open_config_screen,
+        open_rewind_picker, pairs_to_str, parse_command, partial_json_field,
+        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
+        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
+        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
+        thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
+        with_wave_glyph, without_think_tags, App, CompactKind, ContextReport, ContextSegment,
         ContextView, CurrentRun, McpField, McpPrompt, Pending, PendingImage, PickerKind,
         ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind, Selection, SelectionMode,
         SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE,
@@ -29655,11 +30403,15 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        // Both `/resume` and `/reasoning` start with `re`; catalog order
-        // (stable sort on equal prefix score) keeps resume first.
+        // `/resume`, `/reasoning`, and `/reload` start with `re`; catalog
+        // order (stable sort on equal prefix score) keeps resume first.
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/reasoning".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/reload".to_string()
+            ]
         );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
@@ -30155,6 +30907,382 @@ mod tests {
         app.input = "/skill:rel".into();
         assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin summary manifest on disk, so `/reload plugin` has a version
+    /// to report.
+    fn plugin_manifest_in_app(root: &std::path::Path, plugin: &str, version: &str) {
+        std::fs::write(
+            root.join(".jan/agent/plugins")
+                .join(plugin)
+                .join("plugin.toml"),
+            format!("name = \"{plugin}\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_bare_defaults_to_plugin_and_reports_changes() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Bare /reload targets plugins; nothing installed, nothing changed.
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("re-scanned installed plugins"),
+            "note: {out}"
+        );
+        assert!(
+            out.contains("no changes since the last scan"),
+            "diff: {out}"
+        );
+
+        // Install a plugin payload on disk; the next reload reports it and
+        // the rebuilt catalog serves its command immediately.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .commands
+                .iter()
+                .any(|c| c.plugin == "acme" && c.name == "ship"),
+            "command must be live after reload"
+        );
+
+        // A second reload has an up-to-date snapshot: nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_skills_reports_added_changed_and_removed() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+
+        let skills = root.join(".jan/agent/skills");
+
+        // Added: a new skill shows up and joins the popup catalog.
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ audit"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .skills
+                .iter()
+                .any(|m| m.name == "audit"),
+            "skill must be live after reload"
+        );
+
+        // Changed: an edited description is reported as an update.
+        std::fs::write(
+            skills.join("deploy").join("SKILL.md"),
+            "---\ndescription: How to ship\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("~ deploy (How to deploy."),
+            "diff: {out}"
+        );
+        assert!(out.contains("→ How to ship"), "diff: {out}");
+
+        // Removed: a deleted skill leaves the catalog.
+        std::fs::remove_dir_all(skills.join("audit")).unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("- audit"), "diff: {out}");
+        assert!(
+            !app.slash_catalog.skills.iter().any(|m| m.name == "audit"),
+            "removed skill must drop from the catalog"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_system_prompt_reads_jan_md() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("no JAN.md in this project"),
+            "empty project: {}",
+            transcript_text(&app)
+        );
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n\nRun the tests.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("re-read project instructions"), "{out}");
+        assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_commands_include_reload() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/reload"));
+    }
+
+    #[tokio::test]
+    async fn reload_unknown_target_notes_usage() {
+        let mut app = test_app();
+        run_command(&mut app, "reload bogus", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("unknown /reload target 'bogus'"),
+            "{}",
+            transcript_text(&app)
+        );
+    }
+
+    /// A plugin whose manifest declares one required env var.
+    fn plugin_with_setup_requirement(root: &std::path::Path, var: &str, url: &str) {
+        let dir = root.join(".jan/agent/plugins/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+    }
+    #[tokio::test]
+    async fn plugin_setup_selection_preserves_directory_identity() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for (directory, name, description) in [
+            ("alpha", "shared", "First"),
+            ("beta", "shared", "Second"),
+            ("gamma", "beta", "Third"),
+        ] {
+            let dir = root.join(".jan/agent/plugins").join(directory);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{description}\"\n"),
+            ).unwrap();
+        }
+        for (directory, query) in [("alpha", "First"), ("beta", "Second"), ("gamma", "Third")] {
+            run_command(&mut app, "plugin setup", &no_mcp()).await;
+            route_paste_event(&mut app, Event::Paste(query.into()));
+            handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ).await;
+            let last = transcript_text(&app);
+            assert!(
+                last.ends_with(&format!("plugin '{directory}' is ready - no connection required")),
+                "selection must use the installation directory: {last}",
+            );
+        }
+        run_command(&mut app, "plugin setup beta", &no_mcp()).await;
+        assert!(transcript_text(&app).ends_with("plugin 'beta' is ready - no connection required"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_setup_search_filters_without_leaking_or_selecting_empty_results() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for (name, description) in [
+            ("alpha", "General development tools"),
+            ("figma", "Canvas design tools with a long description that must not hide the plugin name"),
+            ("qjk-tools", "Keyboard tools"),
+        ] {
+            let dir = root.join(".jan/agent/plugins").join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{description}\"\n"),
+            ).unwrap();
+        }
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        let screen = render_rows(&mut app, 50, 20).join("\n");
+        assert!(screen.contains("figma"), "name must remain visible: {screen}");
+
+        // q/j/k are search text here, not the generic picker's shortcuts.
+        for ch in "qjk".chars() {
+            handle_key(
+                &mut app, key(KeyCode::Char(ch)), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ).await;
+        }
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("qjk-tools") && !screen.contains("alpha"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+
+        // Paste matches descriptions case-insensitively and stays out of chat.
+        route_paste_event(&mut app, Event::Paste("CANVAS".into()));
+        assert!(app.input.is_empty(), "search paste leaked into chat");
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("figma") && !screen.contains("alpha"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Char('é')), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        let screen = render_rows(&mut app, 70, 20).join("\n");
+        assert!(screen.contains("No plugins match"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_some(), "Enter with no matches must keep search open");
+        handle_key(
+            &mut app, key(KeyCode::Backspace), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none());
+        let transcript = transcript_text(&app);
+        assert!(transcript.contains("plugin 'figma' is ready"), "{transcript}");
+        assert!(!transcript.contains("alpha") && !transcript.contains("qjk-tools"), "{transcript}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+
+    #[tokio::test]
+    async fn plugin_setup_without_name_waits_for_one_selection() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        for name in ["alpha", "example-plugin", "figma"] {
+            let dir = root.join(".jan/agent/plugins").join(name);
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
+            if name != "alpha" {
+                std::fs::write(
+                    dir.join(".mcp.json"),
+                    r#"{"mcpServers":{"remote":{"url":"https://mcp.example.com/api"}}}"#,
+                ).unwrap();
+            }
+        }
+        let before = transcript_text(&app);
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        assert_eq!(transcript_text(&app), before, "opening setup must not run every plugin");
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("alpha") && screen.contains("figma"), "{screen}");
+        assert!(!screen.contains("Enable and connect"), "{screen}");
+        handle_key(
+            &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none());
+        assert!(app.mcp_job_request.is_none());
+        assert_eq!(transcript_text(&app), before);
+
+        run_command(&mut app, "plugin setup", &no_mcp()).await;
+        let picker = app.picker.as_mut().unwrap();
+        picker.selected = picker.items.iter().position(|p| p.value == "figma").unwrap();
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("Enable and connect figma:remote"), "{screen}");
+        assert!(app.mcp_job_request.is_none(), "selection still requires connection consent");
+        handle_key(
+            &mut app, key(KeyCode::Down), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        handle_key(
+            &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+        ).await;
+        assert!(app.picker.is_none(), "skipping the selected plugin must not start another");
+        assert!(app.mcp_job_request.is_none());
+        assert_eq!(transcript_text(&app), before);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_setup_dock_masks_input_and_skips() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        plugin_with_setup_requirement(&root, "ACME_TOKEN", "https://example.com/keys");
+
+        // The dock opens for the named plugin and shows the URL and a masked
+        // field; the hint row appears in `/plugin list` too.
+        run_command(&mut app, "plugin setup acme", &no_mcp()).await;
+        assert!(app.plugin_setup.is_some(), "dock must open");
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(rendered.contains("ACME_TOKEN"), "{rendered}");
+        assert!(rendered.contains("https://example.com/keys"), "{rendered}");
+
+        // Once input starts, s/S are secret characters, not skip shortcuts.
+        for ch in "a-superSecret123".chars() {
+            handle_plugin_setup_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        assert_eq!(app.plugin_setup.as_ref().unwrap().input, "a-superSecret123");
+        let rows = render_rows(&mut app, 100, 30);
+        let rendered = rows.join("\n");
+        assert!(!rendered.contains("a-superSecret123"), "{rendered}");
+        assert!(rendered.contains('*'), "mask row: {rendered}");
+
+        // Esc cancels the dock.
+        handle_plugin_setup_key(&mut app, key(KeyCode::Esc), false);
+        assert!(app.plugin_setup.is_none());
+        assert!(transcript_text(&app).contains("plugin setup cancelled"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_setup_offers_mcp_connection_without_manual_configuration() {
+        crate::core::app::commands::with_temp_data_folder(|_| {
+            let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            assert!(transcript_text(&app).contains("is not installed"));
+            assert!(app.plugin_setup.is_none());
+            let dir = root.join(".jan/agent/plugins/design");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("plugin.toml"), "name = \"design\"\n").unwrap();
+            std::fs::write(
+                dir.join(".mcp.json"),
+                r#"{"mcpServers":{"remote":{"url":"https://example.com/mcp"}}}"#,
+            )
+            .unwrap();
+            finish_plugin_install(
+                &mut app,
+                None,
+                Ok(crate::core::agent::plugins::GitInstall::Installed(
+                    crate::core::agent::plugins::installed(&root),
+                )),
+            );
+            let screen = render_rows(&mut app, 100, 30).join("\n");
+            assert!(screen.contains("Enable and connect"), "{screen}");
+            assert!(screen.contains("example.com"), "{screen}");
+            assert!(super::super::mcp::get_server("design:remote").is_none());
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Esc), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            assert!(super::super::mcp::get_server("design:remote").is_none());
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            let configured = super::super::mcp::get_server("design:remote").unwrap();
+            assert!(configured.active);
+            assert_eq!(configured.config["url"], "https://example.com/mcp");
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(super::super::mcp::config_file_path())
+                    .unwrap().permissions().mode();
+                assert_eq!(mode & 0o777, 0o600);
+            }
+            // An existing user-owned server must not be silently replaced.
+            app.plugin_mcp_connecting = None;
+            super::super::mcp::upsert_server("design:remote", &serde_json::json!({
+                "type": "http", "url": "https://other.example/mcp",
+            })).unwrap();
+            rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
+            rt().block_on(handle_key(
+                &mut app, key(KeyCode::Enter), &PermissionRegistry::default(), &mut None, &no_mcp(),
+            ));
+            assert_eq!(
+                super::super::mcp::get_server("design:remote").unwrap().config["url"],
+                "https://other.example/mcp",
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        });
     }
 
     #[tokio::test]

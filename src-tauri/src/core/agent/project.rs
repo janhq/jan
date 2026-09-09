@@ -294,6 +294,10 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
 /// scaffolded: an empty placeholder costs prompt space and teaches nothing, so
 /// it is written by `/init` or by hand.
 pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
+    // Refresh the plugin env registry first: this is the one choke point
+    // every run path calls, so a stored API key reaches the sandboxed shells
+    // of the run about to start.
+    super::plugins::sync_env_registry(project_root);
     if !project_root.is_dir() {
         return Err(format!(
             "project directory does not exist: {}. Pass --project with a path to an existing directory (paths are case-sensitive).",

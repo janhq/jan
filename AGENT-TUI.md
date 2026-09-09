@@ -247,6 +247,7 @@ Defined in the `SLASH_COMMANDS` const array and handled by `run_command()`:
 | `/resume [id]` | Resume a thread |
 | `/model [id]` | Switch model |
 | `/mcp` | Manage MCP servers |
+| `/reload [plugin\|skills\|system-prompt]` | Re-scan skills/plugins from disk and rebuild the catalog mid-session (bare: plugin), reporting what changed |
 | `/cancel [N]` | Cancel queued messages |
 | `/config` | View provider config |
 | `/quit` | Exit the TUI |

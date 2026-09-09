@@ -4,12 +4,41 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 
 use tokio::process::{Child, Command};
+
+/// User-supplied, plugin-declared credentials, scoped to the project that
+/// registered them. Concurrent projects must never replace each other's keys.
+static PLUGIN_ENV: RwLock<BTreeMap<PathBuf, BTreeMap<String, String>>> =
+    RwLock::new(BTreeMap::new());
+
+/// Replace one project's plugin credentials, or revoke them with an empty map.
+pub fn set_plugin_env(root: &Path, vars: BTreeMap<String, String>) {
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut projects = PLUGIN_ENV.write().unwrap();
+    if vars.is_empty() {
+        projects.remove(&root);
+    } else {
+        projects.insert(root, vars);
+    }
+}
+
+/// True for variable names the sandbox owns itself: the static allowlist, the
+/// scratch temp keys, and the classic dynamic-linker/loader injection
+/// prefixes. The host refuses to store or inject plugin-declared values under
+/// these names -- a plugin declaring `PATH` or `LD_PRELOAD` would otherwise
+/// let one pasted value clobber (or escape) the sandbox environment wholesale.
+pub fn is_reserved_env_key(key: &str) -> bool {
+    SANDBOX_ENV_ALLOW.contains(&key)
+        || TEMP_ENV_KEYS.contains(&key)
+        || key.starts_with("LD_")
+        || key.starts_with("DYLD_")
+        || key.starts_with("SUDO_")
+}
 
 /// How to invoke the host shell. `program` + `args` are fixed; the command
 /// string is appended as the final argv element, or piped to stdin when
@@ -241,6 +270,15 @@ pub async fn spawn(
     for key in SANDBOX_ENV_ALLOW {
         if let Some(val) = std::env::var_os(key) {
             cmd.env(key, val);
+        }
+    }
+    // `cwd` is the tool context's project root, not a shell-selected subdirectory.
+    // Borrow the matching map instead of copying all registered credentials.
+    {
+        let root = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+        let projects = PLUGIN_ENV.read().unwrap();
+        if let Some(vars) = projects.get(&root) {
+            cmd.envs(vars);
         }
     }
     // Point the shell's temp env at the session scratch, overriding the host

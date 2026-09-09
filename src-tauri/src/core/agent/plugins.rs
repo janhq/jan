@@ -124,6 +124,80 @@ struct Manifest {
     version: Option<String>,
     #[serde(default)]
     repo: Option<String>,
+    /// Optional setup requirements: environment variables the plugin needs
+    /// (typically API keys). `plugin.toml`:
+    ///
+    /// ```toml
+    /// [setup.env]
+    /// GITHUB_TOKEN = "https://github.com/settings/tokens"
+    /// ```
+    ///
+    /// The value is the URL the user can obtain the key from (empty when the
+    /// plugin author has no link to share).
+    #[serde(default)]
+    setup: Option<SetupSection>,
+    /// Inline MCP declarations; `.mcp.json` declarations are merged on read.
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+}
+
+/// The `[setup]` manifest section.
+#[derive(Debug, Default, Deserialize)]
+struct SetupSection {
+    #[serde(default)]
+    env: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl Manifest {
+    /// Environment variables this plugin requires, as `(var, url)` pairs —
+    /// the URL the user can obtain the value from, empty when unknown.
+    /// Variables the sandbox owns (`PATH`, temp keys, loader injection
+    /// prefixes) are refused: a pasted value under one of those names could
+    /// clobber or escape the sandbox environment wholesale.
+    fn required_env(&self) -> std::collections::BTreeMap<String, String> {
+        use tauri_plugin_agent_tools::tools::proc::is_reserved_env_key;
+        let mut out = std::collections::BTreeMap::new();
+        if let Some(setup) = &self.setup {
+            for (key, url) in setup.env.iter().flatten() {
+                if is_env_name(key) && !is_reserved_env_key(key) {
+                    out.insert(key.clone(), url.trim().to_string());
+                }
+            }
+        }
+        for server in self.mcp_servers.iter().flat_map(|m| m.values()) {
+            for var in mcp_template_refs(server) {
+                if var != "CLAUDE_PLUGIN_ROOT" && is_env_name(&var) && !is_reserved_env_key(&var) {
+                    out.entry(var).or_default();
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A plausible environment-variable name (used as a file stem and registry
+/// key, so it must not contain path separators or control characters).
+fn is_env_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_ascii_digit()
+}
+
+/// Every `${VAR}` reference in a manifest value.
+fn template_refs(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        if let Some(len) = rest[start + 2..].find('}') {
+            out.push(rest[start + 2..start + 2 + len].to_string());
+            rest = &rest[start + 2 + len + 1..];
+        } else {
+            break;
+        }
+    }
+    out
 }
 
 fn client() -> Result<reqwest::Client, String> {
@@ -151,65 +225,229 @@ pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
         .collect()
 }
 
-/// Find an installed plugin by directory name or manifest name. Used by the
-/// cli `/plugin` popup; the desktop lists plugins through `installed`.
+/// Find an installed plugin by directory name, falling back to manifest name.
+/// Directory identity wins when another plugin uses it as a display name.
 #[cfg(feature = "cli")]
 pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, InstalledPlugin)> {
     let query = skills::safe_stem(query).ok()?;
-    installed_entries(root)
-        .into_iter()
-        .find(|(directory, plugin)| directory == &query || plugin.name == query)
+    let mut entries = installed_entries(root);
+    let index = entries.iter().position(|(directory, _)| directory == &query)
+        .or_else(|| entries.iter().position(|(_, plugin)| plugin.name == query))?;
+    Some(entries.swap_remove(index))
 }
 
-fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
-    let dir = skills::plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
+/// `~/.jan/agent/plugin-env/`, shared by CLI setup and desktop discovery.
+fn plugin_env_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|home| home.join(".jan").join("agent").join("plugin-env"))
+        .ok_or_else(|| "could not resolve the user's home directory".to_string())
+}
+
+/// `plugin-env/<plugin>.toml` under `dir`.
+fn plugin_env_path(dir: &Path, plugin: &str) -> Result<PathBuf, String> {
+    let stem = crate::core::agent::skills::safe_stem(plugin)?;
+    Ok(dir.join(format!("{stem}.toml")))
+}
+
+/// The stored env values for one plugin, resolved against the real plugin-env
+/// store directory. Missing or malformed file -> empty.
+fn stored_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+) -> std::collections::BTreeMap<String, String> {
+    plugin_env_path(dir, plugin)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Persist one env value for a plugin, merging with what is already stored.
+#[cfg(feature = "cli")]
+pub(crate) fn save_plugin_env(plugin: &str, key: &str, value: &str) -> Result<(), String> {
+    save_plugin_env_in(&plugin_env_dir()?, plugin, key, value)
+}
+
+/// [`save_plugin_env`] against an explicit directory (tests).
+#[cfg(feature = "cli")]
+pub(crate) fn save_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if !is_env_name(key) {
+        return Err(format!("invalid environment variable name '{key}'"));
+    }
+    if tauri_plugin_agent_tools::tools::proc::is_reserved_env_key(key) {
+        return Err(format!("'{key}' is reserved by the sandbox and cannot be set for a plugin"));
+    }
+    let path = plugin_env_path(dir, plugin)?;
+    let mut values: std::collections::BTreeMap<String, String> = match
+        std::fs::read_to_string(&path)
+    {
+        Ok(raw) => match toml::from_str(&raw) {
+            Ok(v) => v,
+            // Refuse to merge into a file we cannot parse: saving would
+            // silently destroy the other stored keys for this plugin.
+            Err(_) => {
+                return Err(format!(
+                    "stored env file {} is malformed - delete it and re-run setup",
+                    path.display()
+                ))
+            }
+        },
+        Err(_) => Default::default(),
     };
-    // Scan each artifact kind once; per-plugin counts filter the shared lists
-    // rather than re-walking the whole plugin tree per plugin.
+    values.insert(key.to_string(), value.to_string());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("could not create {parent:?}: {e}"))?;
+    }
+    let serialized = toml::to_string(&values).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    let perms = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+    };
+    #[cfg(not(unix))]
+    let perms = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path);
+    perms
+        .and_then(|mut f| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            }
+            f.write_all(serialized.as_bytes())
+        })
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Every env variable one plugin declares as required, as `(var, url)` in
+/// manifest order. Unlike [`missing_plugin_env`] this includes satisfied
+/// entries: an explicit `/plugin setup <name>` re-runs the whole prompt.
+#[cfg(feature = "cli")]
+pub(crate) fn declared_plugin_env(root: &Path, plugin: &str) -> Vec<(String, String)> {
+    skills::find_plugin_dir(root, plugin)
+        .map(|dir| read_manifest(&dir).required_env().into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// Setup requirements that are not yet satisfied: `(plugin, var, url)` in
+/// scan order. A var is satisfied only when the user stored a value via the
+/// setup prompt: the sandboxed shell drops every host variable except the
+/// static allowlist, so a var provided by the host environment would never
+/// reach the plugin's commands even though the prompt claimed it was
+/// satisfied.
+#[cfg(feature = "cli")]
+pub(crate) fn missing_plugin_env(root: &Path) -> Vec<(String, String, String)> {
+    match plugin_env_dir() {
+        Ok(dir) => missing_plugin_env_in(root, &dir),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// [`missing_plugin_env`] against an explicit store directory (tests).
+#[cfg(feature = "cli")]
+fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for (var, url) in read_manifest(&dir).required_env() {
+            if stored.get(&var).is_none_or(|v| v.is_empty()) {
+                out.push((directory.clone(), var, url));
+            }
+        }
+    }
+    out
+}
+
+/// Hand the sandboxed shells their plugin-declared credentials: values stored
+/// via the setup prompt, intersected with the variables the installed
+/// plugins' manifests still declare (a plugin that dropped a requirement
+/// stops receiving it). Runs on every run start via `ensure_project` and
+/// after `/reload`, so install/remove/setup changes are picked up live.
+pub(crate) fn sync_env_registry(root: &Path) {
+    if let Ok(dir) = plugin_env_dir() {
+        sync_env_registry_in(root, &dir);
+    } else {
+        tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, Default::default());
+    }
+}
+
+/// [`sync_env_registry`] against an explicit store directory (tests).
+fn sync_env_registry_in(root: &Path, env_dir: &Path) {
+    let mut values: std::collections::BTreeMap<String, String> = Default::default();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for var in read_manifest(&dir).required_env().into_keys() {
+            if let Some(value) = stored.get(&var).filter(|v| !v.is_empty()) {
+                values.insert(var, value.clone());
+            }
+        }
+    }
+    tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, values);
+}
+
+pub(crate) fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
+    // A linked git worktree also sees the main worktree's plugins, the
+    // project-local one shadowing a same-named shared one. Counts come from
+    // the merged discovery above, so shared plugins report real payloads.
     let all_skills = skills::discover_plugins(root);
     let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(directory) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if directory.starts_with(".installing-") {
-            continue;
-        }
-        let manifest = read_manifest(&path);
-        let plugin_skills = all_skills
-            .iter()
-            .filter(|e| e.plugin.as_deref() == Some(directory))
-            .count();
-        let plugin_commands = all_commands
-            .iter()
-            .filter(|e| e.plugin == directory)
-            .count();
-        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
-        out.push((
-            directory.to_string(),
-            InstalledPlugin {
-                name: manifest.name.unwrap_or_else(|| directory.to_string()),
-                description: manifest.description.unwrap_or_default(),
-                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-                repo: manifest.repo.unwrap_or_default(),
-                skills: plugin_skills,
-                commands: plugin_commands,
-                agents: plugin_agents,
-            },
-        ));
-    }
+    skills::plugin_dirs_across_roots(root, |directory, path| {
+        let manifest = read_manifest(path);
+            let plugin_skills = all_skills
+                .iter()
+                .filter(|e| e.plugin.as_deref() == Some(directory))
+                .count();
+            let plugin_commands = all_commands
+                .iter()
+                .filter(|e| e.plugin == directory)
+                .count();
+            let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+            out.push((
+                directory.to_string(),
+                InstalledPlugin {
+                    name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                    description: manifest.description.unwrap_or_default(),
+                    version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                    repo: manifest.repo.unwrap_or_default(),
+                    skills: plugin_skills,
+                    commands: plugin_commands,
+                    agents: plugin_agents,
+                },
+            ));
+    });
     out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out
 }
 
 fn read_manifest(root: &Path) -> Manifest {
+    let mut manifest = read_manifest_metadata(root);
+    if let Ok(servers) = read_mcp_declarations(root, manifest.mcp_servers.take()) {
+        manifest.mcp_servers = Some(servers);
+    }
+    manifest
+}
+
+fn read_manifest_metadata(root: &Path) -> Manifest {
     std::fs::read_to_string(root.join("plugin.toml"))
         .ok()
         .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
@@ -219,6 +457,115 @@ fn read_manifest(root: &Path) -> Manifest {
                 .and_then(|raw| serde_json::from_str::<Manifest>(&raw).ok())
         })
         .unwrap_or_default()
+}
+
+fn read_mcp_declarations(
+    root: &Path,
+    inline: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, String> {
+    let mut servers = inline.unwrap_or_default();
+    let path = root.join(".mcp.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => {
+            let mut document: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|_| format!("invalid MCP JSON in {}", path.display()))?;
+            let entries = document.get_mut("mcpServers")
+                .map(serde_json::Value::take)
+                .unwrap_or(document);
+            let entries: std::collections::BTreeMap<String, serde_json::Value> =
+                serde_json::from_value(entries)
+                    .map_err(|_| format!("{} must contain an MCP server map", path.display()))?;
+            servers.extend(entries);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("could not read {}: {e}", path.display())),
+    }
+    Ok(servers)
+}
+
+fn mcp_template_refs(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(text) => template_refs(text),
+        serde_json::Value::Array(items) => items.iter().flat_map(mcp_template_refs).collect(),
+        serde_json::Value::Object(fields) => fields.values().flat_map(mcp_template_refs).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Installed MCP declarations, ready for the user to review before activation.
+/// Reads the plugin's own key store, never unrelated host credentials.
+#[cfg(feature = "cli")]
+pub(crate) fn plugin_mcp_servers(
+    root: &Path,
+    plugin: &str,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    let plugin = skills::safe_stem(plugin)?;
+    let dir = skills::find_plugin_dir(root, &plugin)
+        .ok_or_else(|| format!("plugin '{plugin}' is not installed"))?;
+    let stored = stored_plugin_env_in(&plugin_env_dir()?, &plugin);
+    resolved_mcp_servers(&dir, &stored)
+}
+
+#[cfg(feature = "cli")]
+fn resolved_mcp_servers(
+    dir: &Path,
+    stored: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    fn expand(
+        value: &mut serde_json::Value,
+        dir: &Path,
+        stored: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), String> {
+        match value {
+            serde_json::Value::String(text) => {
+                let original = std::mem::take(text);
+                let mut rest = original.as_str();
+                while let Some(start) = rest.find("${") {
+                    text.push_str(&rest[..start]);
+                    let end = rest[start + 2..].find('}')
+                        .ok_or("unterminated variable in plugin MCP configuration")? + start + 2;
+                    let var = &rest[start + 2..end];
+                    if var == "CLAUDE_PLUGIN_ROOT" {
+                        text.push_str(&dir.to_string_lossy());
+                    } else {
+                        let value = stored.get(var).filter(|v| !v.is_empty())
+                            .ok_or_else(|| format!("missing plugin key '{var}' - complete plugin setup first"))?;
+                        text.push_str(value);
+                    }
+                    rest = &rest[end + 1..];
+                }
+                text.push_str(rest);
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    expand(item, dir, stored)?;
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for item in fields.values_mut() {
+                    expand(item, dir, stored)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let metadata = read_manifest_metadata(dir);
+    let declarations = read_mcp_declarations(dir, metadata.mcp_servers)?;
+    let mut out = Vec::new();
+    for (name, mut config) in declarations {
+        let fields = config.as_object_mut()
+            .ok_or_else(|| format!("MCP server '{name}' must be an object"))?;
+        // Claude permits URL-only remote entries and omitted stdio args.
+        let transport = if fields.contains_key("url") { "http" } else { "stdio" };
+        fields.entry("type").or_insert_with(|| transport.into());
+        if fields.get("type").and_then(serde_json::Value::as_str) == Some("stdio") {
+            fields.entry("args").or_insert_with(|| serde_json::json!([]));
+        }
+        expand(&mut config, dir, stored)?;
+        out.push((name, config));
+    }
+    Ok(out)
 }
 
 /// Reject specs that could inject shell commands. The spec is later passed as
@@ -855,7 +1202,18 @@ pub(crate) fn remove(root: &Path, name: &str) -> Result<(), String> {
     if !target.is_dir() {
         return Err(format!("ERROR: plugin '{name}' is not installed"));
     }
-    std::fs::remove_dir_all(&target).map_err(|e| format!("ERROR: {e}"))
+    std::fs::remove_dir_all(&target).map_err(|e| format!("ERROR: {e}"))?;
+    // Drop the stored credentials too: they live outside the plugin
+    // directory (a reinstall must not silently reactivate them), so removing
+    // the plugin has to clean them up here. Then refresh the live registry so
+    // the sandboxed shells of the current session stop receiving the values.
+    if let Ok(dir) = plugin_env_dir() {
+        if let Ok(path) = plugin_env_path(&dir, name) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    sync_env_registry(root);
+    Ok(())
 }
 
 /// List marketplace plugins matching `query` (name or description, case
@@ -1628,5 +1986,173 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// An installed plugin (by directory convention) whose manifest declares
+    /// one required env var, plus the store dir tests use instead of `~/.jan`.
+    fn plugin_with_env_requirement(tag: &str, var: &str, url: &str) -> (PathBuf, PathBuf) {
+        let root = unique_root(tag);
+        let dir = root.join(".jan/agent/plugins/acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+        let env_dir = root.join("plugin-env-store");
+        std::fs::create_dir_all(&env_dir).unwrap();
+        (root, env_dir)
+    }
+
+    #[test]
+    fn required_env_reads_setup_section_and_claude_mcp_refs() {
+        let root = unique_root("reqenv");
+        std::fs::create_dir_all(root.join("acme")).unwrap();
+        std::fs::write(
+            root.join("acme/plugin.toml"),
+            "name = \"acme\"\n\n[setup.env]\nACME_TOKEN = \"https://example.com/keys\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("acme")).required_env();
+        assert_eq!(
+            req.get("ACME_TOKEN").map(String::as_str),
+            Some("https://example.com/keys")
+        );
+
+        // The Claude convention declares needs indirectly: ${VAR} references
+        // inside an mcpServers env block, with no URL to show.
+        std::fs::create_dir_all(root.join("claude").join(".claude-plugin")).unwrap();
+        std::fs::write(
+            root.join("claude/.claude-plugin/plugin.json"),
+            r#"{"name":"claude","mcpServers":{"gh":{"command":"x","env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}}}"#,
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("claude")).required_env();
+        assert_eq!(req.get("GITHUB_TOKEN").map(String::as_str), Some(""));
+
+        // Malformed names are filtered, not propagated.
+        std::fs::create_dir_all(root.join("bad")).unwrap();
+        std::fs::write(
+            root.join("bad/plugin.toml"),
+            "[setup.env]\n\"../evil\" = \"https://x\"\n\"HAS SPACE\" = \"https://y\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("bad")).required_env();
+        assert!(req.is_empty(), "{req:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn required_env_reads_mcp_file_headers_without_prompting_for_plugin_root() {
+        let root = unique_root("mcp-env");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${ACME_TOKEN}"}},"local":{"command":"node","args":["${CLAUDE_PLUGIN_ROOT}/server.js"]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_manifest(&root).required_env(),
+            std::collections::BTreeMap::from([("ACME_TOKEN".to_string(), String::new())])
+        );
+        assert!(resolved_mcp_servers(&root, &Default::default()).is_err());
+        let stored = std::collections::BTreeMap::from([
+            ("ACME_TOKEN".to_string(), "secret-${NOT_A_TEMPLATE}".to_string()),
+        ]);
+        let servers: std::collections::BTreeMap<_, _> =
+            resolved_mcp_servers(&root, &stored).unwrap().into_iter().collect();
+        assert_eq!(servers["remote"]["headers"]["Authorization"], "Bearer secret-${NOT_A_TEMPLATE}");
+        assert_eq!(servers["local"]["args"][0], format!("{}/server.js", root.display()));
+        std::fs::write(root.join(".mcp.json"), "{broken").unwrap();
+        assert!(resolved_mcp_servers(&root, &stored).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_plugin_keys_restricts_existing_files_and_preserves_other_keys() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acme.toml");
+        std::fs::write(&path, "OTHER_TOKEN = \"keep\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_plugin_env_in(dir.path(), "acme", "ACME_TOKEN", "secret").unwrap();
+
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let values = stored_plugin_env_in(dir.path(), "acme");
+        assert_eq!(values.get("OTHER_TOKEN").map(String::as_str), Some("keep"));
+        assert_eq!(values.get("ACME_TOKEN").map(String::as_str), Some("secret"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn plugin_keys_do_not_cross_project_boundaries() {
+        use tauri_plugin_agent_tools::tools::proc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let unrelated = temp.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).unwrap();
+        for (root, value) in [(&first, "first-secret"), (&second, "second-secret")] {
+            let plugin = root.join(".jan/agent/plugins/acme");
+            std::fs::create_dir_all(&plugin).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                "[setup.env]\nJAN_PLUGIN_ISOLATION_TOKEN = \"\"\n",
+            ).unwrap();
+            let store = root.join("key-store");
+            save_plugin_env_in(&store, "acme", "JAN_PLUGIN_ISOLATION_TOKEN", value).unwrap();
+            sync_env_registry_in(root, &store);
+        }
+        // Both projects are registered before either launches a shell.
+        for (root, expected) in [
+            (&first, "first-secret"), (&second, "second-secret"), (&unrelated, "unset"),
+        ] {
+            let child = proc::spawn(
+                proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", root, None,
+            ).await.unwrap();
+            let pid = child.id().unwrap();
+            let output = child.wait_with_output().await.unwrap();
+            proc::unregister(pid);
+            assert!(output.status.success());
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+        }
+        // Dropping a manifest requirement must revoke the next shell's key.
+        std::fs::write(first.join(".jan/agent/plugins/acme/plugin.toml"), "name = \"acme\"\n").unwrap();
+        sync_env_registry_in(&first, &first.join("key-store"));
+        let child = proc::spawn(
+            proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", &first, None,
+        ).await.unwrap();
+        let pid = child.id().unwrap();
+        let output = child.wait_with_output().await.unwrap();
+        proc::unregister(pid);
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "unset");
+    }
+
+    #[test]
+    fn save_store_and_missing_report_roundtrip() {
+        let (root, env_dir) = plugin_with_env_requirement("envstore", "ACME_TOKEN", "https://x");
+
+        // Nothing stored: the requirement is reported as missing.
+        let missing = missing_plugin_env_in(&root, &env_dir);
+        assert_eq!(
+            missing,
+            vec![("acme".to_string(), "ACME_TOKEN".to_string(), "https://x".to_string())]
+        );
+
+        // Store a value: the requirement is satisfied.
+        save_plugin_env_in(&env_dir, "acme", "ACME_TOKEN", "secret").unwrap();
+        assert_eq!(
+            stored_plugin_env_in(&env_dir, "acme").get("ACME_TOKEN"),
+            Some(&"secret".to_string())
+        );
+        assert!(missing_plugin_env_in(&root, &env_dir).is_empty());
+        assert!(plugin_env_path(&env_dir, "acme").unwrap().exists());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

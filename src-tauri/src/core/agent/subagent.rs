@@ -258,23 +258,9 @@ impl SubagentRegistry {
 /// metadata and ignored (the parent's model runs the child); `tools` maps
 /// Claude tool names onto Jan tool names, dropping names with no equivalent.
 fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
-    let dir = crate::core::agent::skills::plugins_dir(project_root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return;
-    };
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
+    crate::core::agent::skills::plugin_dirs_across_roots(project_root, |_, path| {
         scan_agent_dir(&path.join("agents"), out);
-    }
+    });
 }
 
 /// Number of agent markdown files one plugin ships, for the plugin listing.
@@ -282,10 +268,9 @@ fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
 /// skipping READMEs and dotfiles.
 pub(crate) fn count_plugin_agents(root: &Path, plugin: &str) -> usize {
     let mut count = 0;
-    let base = crate::core::agent::skills::plugins_dir(root)
-        .join(plugin)
-        .join("agents");
-    scan_agent_files(&base, &mut |_, _| count += 1);
+    if let Some(dir) = crate::core::agent::skills::find_plugin_dir(root, plugin) {
+        scan_agent_files(&dir.join("agents"), &mut |_, _| count += 1);
+    }
     count
 }
 
@@ -381,9 +366,10 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
 #[cfg(feature = "cli")]
 pub(crate) fn plugin_agent_metas(root: &Path, plugin: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
-    let base = crate::core::agent::skills::plugins_dir(root)
-        .join(plugin)
-        .join("agents");
+    let Some(base) = crate::core::agent::skills::find_plugin_dir(root, plugin) else {
+        return out;
+    };
+    let base = base.join("agents");
     scan_agent_files(&base, &mut |_, raw| {
         if let Some((name, description, _, _)) = parse_plugin_agent(raw) {
             out.push((name, description));
