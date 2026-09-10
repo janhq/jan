@@ -29,14 +29,8 @@ type StreamPart = {
 const round2 = (n: number) => Math.round(n * 100) / 100
 
 /**
- * Assembles the metadata a streamed step stamps on its message.
- *
- * One implementation for every surface that streams a step -- the chat
- * transport and a subagent's own stream -- so the speed a Cowork lane shows is
- * computed exactly as chat computes it. Generation speed is the engine's own
- * when the provider reports timings (llama.cpp, MLX) and the observed output
- * rate otherwise. The clock starts at the first content part, so prompt
- * processing is not counted against generation.
+ * Shared chat/subagent finish metadata. Prefer engine timings; otherwise measure
+ * from the first content part to exclude prompt processing.
  */
 export function createStepMetadata() {
   let startedAt: number | undefined

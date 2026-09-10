@@ -33,7 +33,7 @@ describe('createStepMetadata', () => {
       type: 'finish-step',
       providerMetadata: { providerMetadata: { tokensPerSecond: 30, promptPerSecond: 120 } },
     })
-    vi.advanceTimersByTime(2000)
+    vi.advanceTimersByTime(4000) // Observed rate is 15; provider rate is 30.
 
     const out = meta.onPart(
       finish({ inputTokens: 900, outputTokens: 60, totalTokens: 960 })

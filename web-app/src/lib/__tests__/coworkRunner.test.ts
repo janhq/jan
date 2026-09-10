@@ -17,6 +17,7 @@ import {
 } from '../coworkRunner'
 import { MAX_SESSION_TOKENS } from '../coworkBudget'
 import { encodeToolImageSentinel } from '../tool-image-sentinel'
+import { coworkTurnsToUIMessages } from '../coworkTurns'
 
 const streamOf = (chunks: UIMessageChunk[]): ReadableStream<UIMessageChunk> =>
   new ReadableStream({
@@ -124,9 +125,7 @@ describe('consumeStep', () => {
     expect(r.errorText).toBe('boom')
   })
 
-  // The transcript renders chat's token-speed popover from this block, so the
-  // whole finish metadata has to survive the fold, not just the usage fields.
-  it('keeps the finish metadata the transport stamped on the step', async () => {
+  it('preserves finish metadata through the rendered transcript', async () => {
     const tokenSpeed = {
       tokenSpeed: 42.5,
       promptSpeed: 120,
@@ -148,7 +147,11 @@ describe('consumeStep', () => {
       noopSink()
     )
     expect(r.usage?.total_tokens).toBe(310)
-    expect(r.metadata).toMatchObject({ finishReason: 'stop', tokenSpeed })
+    const messages = coworkTurnsToUIMessages(turnsFor(r, new Map()))
+    expect(messages[0].metadata).toMatchObject({
+      finishReason: 'stop',
+      tokenSpeed,
+    })
   })
 })
 
@@ -431,50 +434,6 @@ describe('reasoning placement', () => {
       content: '',
       reasoning: 'weigh options',
     })
-  })
-})
-
-describe('step metadata', () => {
-  const tokenSpeed = {
-    tokenSpeed: 42.5,
-    promptSpeed: 120,
-    tokenCount: 300,
-    durationMs: 7000,
-  }
-  const step: StepResult = {
-    text: 'answer',
-    reasoning: '',
-    toolCalls: [],
-    usage: null,
-    metadata: { usage: { totalTokens: 310 }, tokenSpeed },
-    aborted: false,
-  }
-
-  // The row is what `coworkTurnsToUIMessages` turns into the assistant message
-  // `MessageItem` reads its metadata from.
-  it('rides the row that opens the step, not every row of it', () => {
-    const rows = turnsFor(
-      {
-        ...step,
-        toolCalls: [
-          { toolCallId: 'c1', toolName: 'read', input: {} } as PendingToolCall,
-        ],
-      },
-      new Map()
-    )
-    expect(rows[0].metadata).toEqual(step.metadata)
-    expect(rows[1].metadata).toBeUndefined()
-  })
-
-  // A step that answers nothing produces no rows, so there is nothing to hang
-  // the metadata on -- and no message for it to describe.
-  it('has nothing to attach to when the step produced no rows', () => {
-    expect(
-      turnsFor(
-        { ...step, text: '', reasoning: '', toolCalls: [] },
-        new Map()
-      )
-    ).toEqual([])
   })
 })
 
