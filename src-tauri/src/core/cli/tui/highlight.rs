@@ -56,13 +56,27 @@ fn syntaxes() -> &'static SyntaxSet {
     SET.get_or_init(SyntaxSet::load_defaults_newlines)
 }
 
+/// syntect theme name for the resolved terminal background. Both are bundled
+/// with syntect and are the light/dark pair of the same palette, so a code block
+/// keeps the same token colours and only its contrast flips.
+fn theme_name(light: bool) -> &'static str {
+    if light {
+        "base16-ocean.light"
+    } else {
+        "base16-ocean.dark"
+    }
+}
+
 fn theme() -> &'static Theme {
     static THEME: OnceLock<Theme> = OnceLock::new();
+    // Cached once: the terminal theme is resolved at startup before the first
+    // highlight warms this, so it never changes within a process.
     THEME.get_or_init(|| {
+        let name = theme_name(super::theme::is_light());
         let mut set = ThemeSet::load_defaults();
         set.themes
-            .remove("base16-ocean.dark")
-            .expect("base16-ocean.dark is bundled with syntect")
+            .remove(name)
+            .unwrap_or_else(|| panic!("{name} is bundled with syntect"))
     })
 }
 
@@ -239,6 +253,16 @@ mod tests {
         let rows = block(&["fn a() {}", "", "fn b() {}"], "rust");
         assert_eq!(rows.len(), 3);
         assert_eq!(text(&rows[1]), "");
+    }
+
+    #[test]
+    fn both_theme_variants_are_bundled() {
+        use syntect::highlighting::ThemeSet;
+        let set = ThemeSet::load_defaults();
+        for light in [false, true] {
+            let name = super::theme_name(light);
+            assert!(set.themes.contains_key(name), "{name} is not bundled");
+        }
     }
 
     #[test]
