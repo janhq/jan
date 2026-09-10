@@ -44,6 +44,11 @@ import {
   type SettingsIconHandle,
 } from '@/components/animated-icon/settings'
 import {
+  AnimatedLucideIcon,
+  type AnimatedLucideIconHandle,
+  type AnimatedLucidePreset,
+} from '@/components/animated-icon/animated-lucide'
+import {
   startNewSession,
   useCoworkSessions,
   type CoworkSession,
@@ -55,6 +60,7 @@ import SkillsManagerDialog from '@/containers/dialogs/SkillsManagerDialog'
 type CoworkNavItem = {
   title: string
   icon: LucideIcon
+  preset: AnimatedLucidePreset
   onClick: () => void
 }
 
@@ -128,6 +134,31 @@ const SessionItem = memo(function SessionItem({
   )
 })
 
+function CoworkNavItemRow({ item }: { item: CoworkNavItem }) {
+  const iconRef = useRef<AnimatedLucideIconHandle>(null)
+
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        onBlur={() => iconRef.current?.stopAnimation()}
+        onClick={item.onClick}
+        onFocus={() => iconRef.current?.startAnimation()}
+        onMouseEnter={() => iconRef.current?.startAnimation()}
+        onMouseLeave={() => iconRef.current?.stopAnimation()}
+      >
+        <AnimatedLucideIcon
+          ref={iconRef}
+          icon={item.icon}
+          preset={item.preset}
+          className="text-foreground/70"
+          size={16}
+        />
+        <span>{item.title}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  )
+}
+
 export function NavCowork() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -170,11 +201,13 @@ export function NavCowork() {
     {
       title: t('common:artifacts'),
       icon: Box,
+      preset: 'box',
       onClick: () => navigate({ to: route.artifacts }),
     },
     {
       title: t('common:customize'),
       icon: SlidersHorizontal,
+      preset: 'sliders',
       onClick: () => setSkillsOpen(true),
     },
   ]
@@ -209,17 +242,9 @@ export function NavCowork() {
             <span>{t('common:newSession')}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
-        {items.map((item) => {
-          const Icon = item.icon
-          return (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton onClick={item.onClick}>
-                <Icon className="text-foreground/70" size={16} />
-                <span>{item.title}</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )
-        })}
+        {items.map((item) => (
+          <CoworkNavItemRow key={item.title} item={item} />
+        ))}
         <SidebarMenuItem>
           <SidebarMenuButton
             onClick={() => navigate({ to: route.settings.general })}
