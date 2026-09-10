@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { createRef, type HTMLAttributes, type ReactNode } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LucideIcon } from 'lucide-react'
 
@@ -63,6 +63,22 @@ describe('AnimatedLucideIcon', () => {
 
     act(() => ref.current?.startAnimation())
     act(() => ref.current?.stopAnimation())
+
+    expect(motionState.start).toHaveBeenNthCalledWith(1, 'animate')
+    expect(motionState.start).toHaveBeenNthCalledWith(2, 'normal')
+  })
+
+  it('self-animates on hover when the caller supplies no ref', () => {
+    render(
+      <AnimatedLucideIcon
+        icon={MockIcon}
+        preset="home"
+        data-testid="icon-wrapper"
+      />
+    )
+
+    fireEvent.mouseEnter(screen.getByTestId('icon-wrapper'))
+    fireEvent.mouseLeave(screen.getByTestId('icon-wrapper'))
 
     expect(motionState.start).toHaveBeenNthCalledWith(1, 'animate')
     expect(motionState.start).toHaveBeenNthCalledWith(2, 'normal')
