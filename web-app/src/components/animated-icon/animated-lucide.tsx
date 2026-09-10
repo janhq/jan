@@ -114,10 +114,7 @@ export const AnimatedLucideIcon = forwardRef<
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <motion.div
-        animate={controls}
-        variants={PRESETS[preset]}
-      >
+      <motion.div animate={controls} variants={PRESETS[preset]}>
         <Icon aria-hidden="true" size={size} />
       </motion.div>
     </div>
