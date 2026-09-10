@@ -249,13 +249,33 @@ jobs:
             'cuda_profiler_api-windows-arm64-13.4.46-archive'
           )
 
+          # curl.exe rather than Invoke-WebRequest, which has neither retry nor
+          # resume: three runs inside nine minutes saw two of them cut off about
+          # two seconds into the first archive with "the response ended
+          # prematurely", the pool throttling concurrent pulls. IWR turns that
+          # into a hard failure three minutes into a three-hour job. curl ships
+          # in System32, so this adds no dependency -- checked once here anyway,
+          # because a missing one would otherwise surface as a parse-time
+          # "command not found" rather than something legible.
+          if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+            throw 'curl.exe not found; it is expected in System32 on this image'
+          }
+
           $sw = [Diagnostics.Stopwatch]::StartNew()
           $tmp = Join-Path $env:RUNNER_TEMP 'cuda'
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
           $total = 0
           foreach ($a in $archives) {
             $zip = Join-Path $tmp "$a.zip"
-            Invoke-WebRequest -Uri "$env:CUDA_POOL/$a.zip" -OutFile $zip
+            # --retry-all-errors is what covers this: plain --retry ignores a
+            # connection dropped mid-body, which is the failure seen here.
+            curl.exe -sS --fail --location --retry 5 --retry-all-errors `
+                     --retry-delay 5 --connect-timeout 30 --max-time 900 `
+                     -o $zip "$env:CUDA_POOL/$a.zip"
+            # Native exes do not trip $ErrorActionPreference; check by hand.
+            if ($LASTEXITCODE -ne 0) {
+              throw "$a.zip failed after 5 retries (curl exit $LASTEXITCODE)"
+            }
             $total += (Get-Item $zip).Length
             Expand-Archive -Path $zip -DestinationPath $tmp -Force
             # Each unpacks to <name>/{bin,lib,include}; merge into one root,
@@ -292,7 +312,9 @@ jobs:
         if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
         shell: bash
         run: |
-          curl -fL -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+          curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 900 \
+            -o "$RUNNER_TEMP/vulkan-sdk.exe" \
             https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
           "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
             --accept-licenses --default-answer --confirm-command install
