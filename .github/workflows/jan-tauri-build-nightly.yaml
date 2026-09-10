@@ -140,10 +140,17 @@ jobs:
     runs-on: ubuntu-22.04
     # build-windows-arm64 is in `needs` for its outputs, not as a gate: while
     # ARM64 is being stabilised a failed leg must not withhold the manifest
-    # from x64, linux and macOS users. The three legs people actually update
-    # from are still required, so a broken one still stops publication.
+    # from x64, linux and macOS users.
+    #
+    # Every other dependency is then re-asserted by hand, because a status
+    # function anywhere in `if` drops the implicit success() gate for the whole
+    # `needs` set, not just for the job being excused. Without the first two a
+    # failed get-update-version would publish latest.json with an empty version
+    # and empty urls -- which every platform's updater then fails to parse.
     if: >-
       !cancelled()
+      && needs.get-update-version.result == 'success'
+      && needs.set-public-provider.result == 'success'
       && needs.build-windows-x64.result == 'success'
       && needs.build-linux-x64.result == 'success'
       && needs.build-macos.result == 'success'

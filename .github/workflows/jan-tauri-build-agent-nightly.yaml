@@ -83,10 +83,13 @@ jobs:
       ]
     runs-on: ubuntu-22.04
     # build-windows-arm64 is here for its outputs, not as a gate -- see the
-    # ARM_SHA branch below. The four legs the published CLI updates from stay
-    # required.
+    # ARM_SHA branch below. Every other dependency is re-asserted by hand: a
+    # status function anywhere in `if` drops the implicit success() gate for the
+    # whole `needs` set, so without get-update-version a failed version job
+    # would publish a manifest with an empty version and empty urls.
     if: >-
       !cancelled()
+      && needs.get-update-version.result == 'success'
       && needs.build-linux-x64.result == 'success'
       && needs.build-macos.result == 'success'
       && needs.build-windows-x64.result == 'success'
