@@ -122,6 +122,16 @@ on:
   push:
     branches: ['feat/windows-arm64']
 
+# Superseding a run supersedes its build: three hours of ARM runner is not worth
+# spending on a commit that has already been replaced, and two runs pulling the
+# CUDA pool at once is what got them throttled. Keyed on the caller's ref, so a
+# nightly on main and a push on a feature branch do not evict each other. The
+# x64 template has none of this because its caller already serialises it; this
+# one is also reachable by push.
+concurrency:
+  group: tauri-win-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # `||` defaults because a push carries no inputs at all.
   CHANNEL: ${{ inputs.channel || 'nightly' }}
