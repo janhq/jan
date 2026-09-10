@@ -84,9 +84,7 @@ jobs:
     runs-on: ubuntu-22.04
     # build-windows-arm64 is here for its outputs, not as a gate -- see the
     # ARM_SHA branch below. Every other dependency is re-asserted by hand: a
-    # status function anywhere in `if` drops the implicit success() gate for the
-    # whole `needs` set, so without get-update-version a failed version job
-    # would publish a manifest with an empty version and empty urls.
+    # status function in `if` drops the implicit success() gate for all of `needs`.
     if: >-
       !cancelled()
       && needs.get-update-version.result == 'success'
@@ -130,9 +128,8 @@ jobs:
           }
           MANIFEST
 
-          # Appended rather than inlined above: empty when the ARM64 leg failed
-          # or was skipped, and an entry with a blank url is one the CLI finds
-          # and then fails to download.
+          # Appended, not inlined: empty when the ARM64 leg failed, and a blank url
+          # is one the CLI finds and then fails to download.
           ARM_SHA="${{ needs.build-windows-arm64.outputs.SHA256 }}"
           if [ -n "$ARM_SHA" ]; then
             jq --arg url "https://delta.jan.ai/agent-nightly/${{ needs.build-windows-arm64.outputs.FILE_NAME }}" \

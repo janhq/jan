@@ -96,10 +96,8 @@ function matchSqliteVecAsset(assets, platform, arch) {
         : ['linux']
 
   const archHints = arch === 'arm64' ? ['arm64', 'aarch64'] : ['x86_64', 'x64', 'amd64']
-  // The two fallbacks below drop the arch hint, so without this an arch with no
-  // asset takes another one's: windows-arm64 has no sqlite-vec build, and would
-  // otherwise land the windows-x86_64 dll, which then fails to load at runtime
-  // and silently costs ANN acceleration. Skipping the extension entirely is the
+  // The fallbacks below drop the arch hint: windows-arm64 has no sqlite-vec
+  // build and would take the x86_64 dll, which cannot load. Skipping is the
   // supported outcome -- the caller falls back to linear search.
   const foreignArchHints =
     arch === 'arm64'
@@ -116,13 +114,12 @@ function matchSqliteVecAsset(assets, platform, arch) {
   // Prefer exact OS + arch matches
   let matches = candidates.filter((c) => osHints.some((o) => c.name.includes(o)) && archHints.some((h) => c.name.includes(h)) && extHints.some((e) => c.name.endsWith(e)))
   if (matches.length) return matches[0].url
-  // Fallback: OS only. Safe because foreign architectures are already filtered
-  // out above, so this can only relax the arch *spelling*, not the arch.
+  // OS only. Safe: foreign arches are filtered above, so this relaxes the arch
+  // spelling, not the arch.
   matches = candidates.filter((c) => osHints.some((o) => c.name.includes(o)) && extHints.some((e) => c.name.endsWith(e)))
   if (matches.length) return matches[0].url
-  // No OS-only-last-resort: it could fire solely when nothing matches this OS,
-  // which means there is no build for the platform, and any archive it picked
-  // would be for a different one. Returning null skips the optional extension.
+  // No last resort: it would fire only when nothing matches this OS, so any
+  // archive it picked would be for another platform.
   return null
 }
 
@@ -263,9 +260,8 @@ async function main() {
     if (platform === 'win32') {
       copyFile(
         path.join(binDir, 'bun.exe'),
-        // uvPlatform, not bunPlatform: tauri resolves an externalBin by rust
-        // target triple, which is the spelling uv happens to use and bun does
-        // not (bun ships windows-aarch64, tauri wants aarch64-pc-windows-msvc).
+        // uvPlatform, not bunPlatform: tauri names externalBin by rust target
+        // triple, which is uv's spelling and not bun's.
         path.join(binDir, `bun-${uvPlatform}.exe`),
         (err) => {
           if (err) {

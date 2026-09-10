@@ -36,10 +36,8 @@ $BinaryName = 'jan.exe'
 # ARCHITEW6432 is what an emulated process sees; PROCESSOR_ARCHITECTURE alone
 # would report AMD64 for an x64 PowerShell on an ARM64 machine.
 $NativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
-# Native first, then x86_64 under emulation. ARM64 Windows runs the x64 build
-# fine, and it is all that any version predating ARM64 -- or any nightly whose
-# ARM leg failed -- has to offer. Hard-failing there would be a downgrade from
-# the emulated install these users already had.
+# Native first, then x86_64 under emulation: it is all that pre-ARM64 versions,
+# or a nightly whose ARM leg failed, have to offer.
 $PlatformKeys = if ($NativeArch -eq 'ARM64') { @('windows-aarch64', 'windows-x86_64') }
                 else { @('windows-x86_64') }
 

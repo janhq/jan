@@ -1,12 +1,10 @@
 # Windows ARM64 desktop build.
 #
-# Separate from the x64 template on purpose: the arm64 CUDA pool, the vswhere
-# MSVC resolution and the NSIS retarget below are ~200 lines x64 has no use for,
-# so folding the two behind an `arch` input would buy a conditional maze. That
-# merge waits until ARM64 has a few green releases behind it.
+# Kept separate from the x64 template: the CUDA pool, MSVC resolution and NSIS
+# retarget below are ~200 lines x64 has no use for. Merge once ARM64 is green.
 #
-# Publishes the same way x64 does -- release asset, S3, and the `windows-aarch64`
-# key its FILE_NAME/WIN_SIG outputs feed into latest.json.
+# Publishes like x64 -- release asset, S3, and the windows-aarch64 key its
+# FILE_NAME/WIN_SIG outputs feed into latest.json.
 name: tauri-build-windows-arm64
 
 on:
@@ -84,9 +82,8 @@ on:
       FILE_NAME:
         value: ${{ jobs.build-windows-arm64.outputs.FILE_NAME }}
 
-  # Standalone entry point, kept because a 3-hour build wants an iteration loop
-  # that is not a full nightly. `ref` and `public_provider` are deliberately not
-  # declared here: unset, checkout takes the dispatched branch and every publish
+  # Standalone loop for a 3-hour build. `ref` and `public_provider` are left
+  # undeclared: unset, checkout takes the dispatched branch and every publish
   # step's `if:` is false, so a manual run builds without publishing.
   workflow_dispatch:
     inputs:
@@ -122,12 +119,9 @@ on:
   push:
     branches: ['feat/windows-arm64']
 
-# Superseding a run supersedes its build: three hours of ARM runner is not worth
-# spending on a commit that has already been replaced, and two runs pulling the
-# CUDA pool at once is what got them throttled. Keyed on the caller's ref, so a
-# nightly on main and a push on a feature branch do not evict each other. The
-# x64 template has none of this because its caller already serialises it; this
-# one is also reachable by push.
+# Don't spend 3h of ARM runner on a superseded commit, and concurrent CUDA pulls
+# get throttled. Keyed on the caller's ref so nightly and a feature branch don't
+# evict each other. x64 needs none of this; only this one takes pushes.
 concurrency:
   group: tauri-win-arm64-${{ github.ref }}
   cancel-in-progress: true
@@ -259,14 +253,10 @@ jobs:
             'cuda_profiler_api-windows-arm64-13.4.46-archive'
           )
 
-          # curl.exe rather than Invoke-WebRequest, which has neither retry nor
-          # resume: three runs inside nine minutes saw two of them cut off about
-          # two seconds into the first archive with "the response ended
-          # prematurely", the pool throttling concurrent pulls. IWR turns that
-          # into a hard failure three minutes into a three-hour job. curl ships
-          # in System32, so this adds no dependency -- checked once here anyway,
-          # because a missing one would otherwise surface as a parse-time
-          # "command not found" rather than something legible.
+          # curl.exe over Invoke-WebRequest, which has no retry or resume: the pool
+          # throttles concurrent pulls and drops the connection mid-body, killing a
+          # 3h job at minute 3. curl is in System32; checked anyway so a missing one
+          # fails legibly.
           if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
             throw 'curl.exe not found; it is expected in System32 on this image'
           }
@@ -277,8 +267,7 @@ jobs:
           $total = 0
           foreach ($a in $archives) {
             $zip = Join-Path $tmp "$a.zip"
-            # --retry-all-errors is what covers this: plain --retry ignores a
-            # connection dropped mid-body, which is the failure seen here.
+            # --retry-all-errors: plain --retry ignores a mid-body drop.
             curl.exe -sS --fail --location --retry 5 --retry-all-errors `
                      --retry-delay 5 --connect-timeout 30 --max-time 900 `
                      -o $zip "$env:CUDA_POOL/$a.zip"
@@ -349,10 +338,9 @@ jobs:
           }
           echo "signtool -> $TAURI_WINDOWS_SIGNTOOL_PATH"
 
-          # scripts/download-bin.mjs names the bun/uv sidecars from node's
-          # os.arch(), while the NSIS retarget below rewrites them to aarch64
-          # unconditionally. An emulated x64 node would name them x86_64-* and
-          # the mismatch would not surface until bundling, after the engine.
+          # download-bin.mjs names the sidecars from node's os.arch() while the NSIS
+          # retarget below assumes aarch64. An x64 node would mismatch, and not
+          # surface until bundling -- after the engine.
           node_arch=$(node -p 'process.arch')
           echo "node -> $node_arch"
           [ "$node_arch" = "arm64" ] || {
@@ -385,8 +373,8 @@ jobs:
           ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
 
           if [ "$CHANNEL" != "stable" ]; then
-            # Without this an arm64 nightly keeps the stable endpoints baked into
-            # tauri.conf.json and checks the wrong manifest.
+            # Without this an arm64 nightly keeps tauri.conf.json's stable
+            # endpoints and checks the wrong manifest.
             if [ "$CHANNEL" = "nightly" ]; then
               jq --arg fallback "https://delta.jan.ai/$CHANNEL/latest.json" \
                  '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", $fallback]' \
@@ -428,13 +416,10 @@ jobs:
           # Left unpatched, an ARM64 install fetches and runs the x64 redist.
           $c = $c.Replace('vc_redist.x64.exe', 'vc_redist.arm64.exe')
 
-          # And the matching detection, which is the half that actually bites:
-          # the VC runtime registers per architecture, and an ARM64 machine
-          # almost always carries the x64 redist for emulated apps. Probing the
-          # x64 keys therefore finds it, concludes the runtime is present, and
-          # skips installing the ARM64 one the app links against. Guessing wrong
-          # the other way merely re-runs an idempotent installer -- it exits 1638
-          # and the script already treats that as success.
+          # And the detection, the half that bites: an ARM64 machine usually has
+          # the x64 redist, so probing x64 keys skips installing the ARM64 one the
+          # app links against. Guessing wrong the other way just re-runs an
+          # idempotent installer (exit 1638, already handled).
           $c = $c.Replace('\VC\Runtimes\x64', '\VC\Runtimes\arm64')
           $c = $c.Replace('VC_RuntimeMinimumVSU_amd64', 'VC_RuntimeMinimumVSU_arm64')
 

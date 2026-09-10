@@ -139,21 +139,14 @@ jobs:
         build-macos,
       ]
     runs-on: ubuntu-22.04
-    # build-windows-arm64 does not gate *success*: while ARM64 is being
-    # stabilised, a failed leg still publishes a manifest for x64, linux and
-    # macOS rather than withholding it.
+    # build-windows-arm64 does not gate success: a failed ARM leg still publishes
+    # for x64, linux and macOS. It does still gate *scheduling* -- `needs` waits
+    # regardless of `if` -- so a hung ARM build delays the manifest by its 180m
+    # timeout.
     #
-    # It does still gate *scheduling* -- `needs` waits for the job to reach a
-    # terminal state whatever `if` says -- so a hung ARM build can delay the
-    # manifest by up to its 180-minute timeout. Accepted for now: the fix is a
-    # follow-up job that patches the key in after publishing, and that is only
-    # worth its second S3 sync once ARM64 runs on every nightly.
-    #
-    # Every other dependency is then re-asserted by hand, because a status
-    # function anywhere in `if` drops the implicit success() gate for the whole
-    # `needs` set, not just for the job being excused. Without the first two a
-    # failed get-update-version would publish latest.json with an empty version
-    # and empty urls -- which every platform's updater then fails to parse.
+    # Every other dependency is re-asserted by hand: a status function anywhere in
+    # `if` drops the implicit success() gate for the whole `needs` set, not just
+    # for the job being excused.
     if: >-
       !cancelled()
       && needs.get-update-version.result == 'success'
@@ -176,9 +169,8 @@ jobs:
           LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
           WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
-          # Empty when that leg failed or was skipped. The key is then left out
-          # of the manifest rather than written empty: an entry with a blank url
-          # is one the updater finds and then fails to download.
+          # Empty when that leg failed or was skipped; the key is then left out
+          # rather than written blank, which the updater would find and fail on.
           WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.outputs.WIN_SIG }}"
           WINDOWS_ARM_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-arm64.outputs.FILE_NAME }}"
           [ -n "$WINDOWS_ARM_SIGNATURE" ] || echo "::warning::no ARM64 build this run -- publishing latest.json without windows-aarch64"
