@@ -159,6 +159,10 @@ struct HttpModelInvoker {
     /// this converter translates the request and decodes the upstream stream
     /// back into chat shape. `None` keeps the verbatim chat/completions path.
     converter: Option<Box<dyn UpstreamConverter>>,
+    /// Enable Codex priority service tier for this resolved OpenAI Responses
+    /// OAuth transport. This is deliberately transport-derived, not model-name
+    /// matching, and is false for auxiliary compaction/goal invokers.
+    codex_fast: bool,
     /// Native provider converters still use reqwest 0.12 while the default
     /// agent path uses genai's reqwest 0.13 client.
     converter_client: reqwest::Client,
@@ -181,12 +185,22 @@ impl ModelInvoker for HttpModelInvoker {
         // the body must carry the bare model id - providers like OpenCode GO
         // reject a provider-qualified id with "model not supported".
         let mut normalized = request.clone();
+        // This is an internal orchestration hint. Consume it here so it can
+        // never reach any provider's wire body.
+        let fast_mode = normalized
+            .as_object_mut()
+            .and_then(|obj| obj.remove("fast_mode"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if let Some(model) = normalized.get("model").and_then(|m| m.as_str()) {
             let pc = self.provider_configs.lock().await;
             let bare = crate::core::agent::upstream::strip_provider_prefix(model, &pc);
             if bare != model {
                 normalized["model"] = serde_json::json!(bare);
             }
+        }
+        if self.codex_fast && fast_mode {
+            normalized["service_tier"] = serde_json::json!("priority");
         }
         if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
@@ -1786,14 +1800,23 @@ async fn orchestrate_inner(
 
     let max_turns = body_turn_cap(json_body);
 
+    let resolved_api = resolve_api_type_for_model(&model_id, provider_configs.clone()).await;
+    let codex_fast = json_body
+        .get("fast_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        && resolved_api
+            .as_ref()
+            .is_some_and(|(api_type, oauth)| api_type == "openai-responses" && *oauth);
     let http_model = HttpModelInvoker {
         client: client.clone(),
         upstream_url,
         api_keys: session_api_keys,
         provider_configs: provider_configs.clone(),
-        converter: resolve_api_type_for_model(&model_id, provider_configs.clone())
-            .await
-            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter: resolved_api
+            .as_ref()
+            .and_then(|(api_type, oauth)| converter_for(Some(api_type), *oauth)),
+        codex_fast,
         converter_client: converter_http_client(),
     };
     let mcp_tools = McpToolInvoker {
@@ -1981,6 +2004,15 @@ fn build_completion_request(
         );
     }
     copy_optional_chat_params(json_body, &mut completion_map);
+    // Carry the internal session hint to HttpModelInvoker, which consumes it
+    // before conversion. It is intentionally not part of copy_optional_chat_params.
+    if json_body
+        .get("fast_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        completion_map.insert("fast_mode".to_string(), serde_json::json!(true));
+    }
     serde_json::Value::Object(completion_map)
 }
 
@@ -2012,6 +2044,7 @@ pub(crate) async fn compact_history(
         converter: resolve_api_type_for_model(model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        codex_fast: false,
         converter_client: converter_http_client(),
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
@@ -2046,6 +2079,7 @@ pub(crate) async fn evaluate_goal(
         converter: resolve_api_type_for_model(smol_model_id, args.provider_configs.clone())
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        codex_fast: false,
         converter_client: converter_http_client(),
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
@@ -3377,6 +3411,19 @@ mod tests {
             todo_request["tool_choice"],
             json!({ "type": "function", "function": { "name": "todo" } })
         );
+    }
+
+    #[test]
+    fn fast_mode_is_internal_request_hint_only() {
+        let request = build_completion_request(
+            "m",
+            &[json!({"role": "user", "content": "hi"})],
+            &[],
+            &json!({"fast_mode": true}),
+            None,
+        );
+        assert_eq!(request["fast_mode"], json!(true));
+        assert!(request.get("service_tier").is_none());
     }
 
     fn mutating_tool_call_completion(id: &str, name: &str) -> serde_json::Value {

@@ -493,11 +493,51 @@ struct ModelScope {
     count: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct ModelItem {
-    provider: String,
-    model: String,
+    /// Provider-qualified or raw identifier used by routing and by `/model`
+    /// Enter. Never re-formatted: this is the value handed to `set_model`.
     value: String,
+    /// Bare provider name (the scope label), kept for search/scope filtering.
+    provider: String,
+    /// Bare model id, kept for the searchable text and the row label.
+    model: String,
+    /// Last-known provider context, kept separate from the project override.
+    provider_context: Option<u64>,
+    /// Effective context used by the row, including the live project override.
+    context: Option<u64>,
+    /// Input price per token (provider metadata), for the pricing column.
+    input_price: Option<f64>,
+    /// Output price per token (provider metadata), for the pricing column.
+    output_price: Option<f64>,
+}
+
+/// Compact context window label, e.g. `1.1m`, `1m`, `272k`, `234k`.
+fn format_context_length(tokens: u64) -> String {
+    if tokens >= 1_000_000 {
+        let m = tokens as f64 / 1_000_000.0;
+        if (m * 10.0).round() / 10.0 == m.round() {
+            return format!("{}m", m.round() as u64);
+        }
+        return format!("{:.1}m", m);
+    }
+    if tokens >= 1_000 {
+        return format!("{}k", (tokens as f64 / 1_000.0).round() as u64);
+    }
+    format!("{tokens}")
+}
+
+/// Compact pricing label for a row: `$in/out` using whichever provider values
+/// are available, `free` only for explicit zero/zero, and `-/-` when neither
+/// side is available.
+fn format_pricing(input: Option<f64>, output: Option<f64>) -> String {
+    match (input, output) {
+        (Some(i), Some(o)) if i == 0.0 && o == 0.0 => "free".to_string(),
+        (Some(i), Some(o)) => format!("${i}/{o}"),
+        (Some(i), None) => format!("${i}/-"),
+        (None, Some(o)) => format!("-/${o}"),
+        (None, None) => "-".to_string(),
+    }
 }
 
 struct ModelPicker {
@@ -511,6 +551,7 @@ struct ModelPicker {
 }
 
 impl ModelPicker {
+    #[cfg(test)]
     fn from_pairs(mut pairs: Vec<(String, String)>, current_model: &str) -> Option<Self> {
         pairs.sort_by(|a, b| match (a.0 == "tokamak", b.0 == "tokamak") {
             (true, false) => std::cmp::Ordering::Less,
@@ -518,37 +559,57 @@ impl ModelPicker {
             _ => a.cmp(b),
         });
         pairs.dedup();
-        if pairs.is_empty() {
-            return None;
-        }
-
-        let all_items: Vec<ModelItem> = pairs
+        let entries = pairs
             .into_iter()
-            .map(|(provider, model)| ModelItem {
-                value: model.clone(),
+            .map(|(provider, model)| crate::core::cli::providers::ProviderModelEntry {
                 provider,
-                model,
+                model: crate::core::cli::providers::ProviderModel {
+                    id: model,
+                    context_length: None,
+                    input_price: None,
+                    output_price: None,
+                },
             })
             .collect();
-        let mut scopes = vec![ModelScope {
-            provider: None,
-            label: "All models".to_string(),
-            count: all_items.len(),
-        }];
-        for item in &all_items {
-            if let Some(scope) = scopes
-                .last_mut()
-                .filter(|scope| scope.provider.as_deref() == Some(item.provider.as_str()))
-            {
-                scope.count += 1;
-            } else {
-                scopes.push(ModelScope {
-                    provider: Some(item.provider.clone()),
-                    label: item.provider.clone(),
-                    count: 1,
-                });
+        Self::from_entries(entries, current_model, None)
+    }
+
+    fn from_entries(
+        entries: Vec<crate::core::cli::providers::ProviderModelEntry>,
+        current_model: &str,
+        configured_context_window: Option<u64>,
+    ) -> Option<Self> {
+        let mut all_items = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for entry in entries {
+            if !seen.insert((entry.provider.clone(), entry.model.id.clone())) {
+                continue;
             }
+            let context = configured_context_window.or(entry.model.context_length).or_else(|| {
+                Some(crate::core::cli::model_capabilities::resolve_context_window(
+                    &entry.model.id,
+                    None,
+                ).tokens)
+            });
+            all_items.push(ModelItem {
+                value: entry.model.id.clone(),
+                provider: entry.provider,
+                model: entry.model.id,
+                provider_context: entry.model.context_length,
+                context,
+                input_price: entry.model.input_price,
+                output_price: entry.model.output_price,
+            });
         }
+        all_items.sort_by(|a, b| match (a.provider == "tokamak", b.provider == "tokamak") {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => (a.provider.as_str(), a.model.as_str()).cmp(&(b.provider.as_str(), b.model.as_str())),
+        });
+        if all_items.is_empty() {
+            return None;
+        }
+        let scopes = Self::scopes_for(&all_items);
         let selected = all_items
             .iter()
             .position(|item| item.value == current_model)
@@ -562,6 +623,82 @@ impl ModelPicker {
             query: String::new(),
             selected,
         })
+    }
+
+    fn scopes_for(items: &[ModelItem]) -> Vec<ModelScope> {
+        let mut scopes = vec![ModelScope {
+            provider: None,
+            label: "All models".to_string(),
+            count: items.len(),
+        }];
+        for item in items {
+            if let Some(scope) = scopes
+                .last_mut()
+                .filter(|scope| scope.provider.as_deref() == Some(item.provider.as_str()))
+            {
+                scope.count += 1;
+            } else {
+                scopes.push(ModelScope {
+                    provider: Some(item.provider.clone()),
+                    label: item.provider.clone(),
+                    count: 1,
+                });
+            }
+        }
+        scopes
+    }
+
+    /// Replace rows from a successful provider refresh while preserving the
+    /// search query, provider scope, and selected raw model where possible.
+    /// `configured_context_window` is the live project override applied to
+    /// every row (authoritative); when `None`, provider metadata then the
+    /// catalog resolve per-model context. Returns false for an empty response,
+    /// leaving the current list intact.
+    fn apply_entries(
+        &mut self,
+        mut entries: Vec<crate::core::cli::providers::ProviderModelEntry>,
+        configured_context_window: Option<u64>,
+    ) -> bool {
+        // Missing metadata is not a revocation. Keep known provider values,
+        // but never cache a resolved project override as provider metadata.
+        let previous: HashMap<_, _> = self.all_items.iter()
+            .map(|item| ((item.provider.as_str(), item.model.as_str()), item))
+            .collect();
+        for entry in &mut entries {
+            if let Some(old) = previous.get(&(entry.provider.as_str(), entry.model.id.as_str())) {
+                entry.model.context_length = entry.model.context_length.or(old.provider_context);
+                entry.model.input_price = entry.model.input_price.or(old.input_price);
+                entry.model.output_price = entry.model.output_price.or(old.output_price);
+            }
+        }
+        let Some(mut replacement) =
+            Self::from_entries(entries, "", configured_context_window)
+        else {
+            return false;
+        };
+        let selected = self.items.get(self.selected);
+        let active_provider = self
+            .scopes
+            .get(self.active_scope)
+            .and_then(|scope| scope.provider.as_deref());
+        replacement.query = std::mem::take(&mut self.query);
+        replacement.focus = self.focus;
+        replacement.active_scope = active_provider
+            .and_then(|provider| {
+                replacement
+                    .scopes
+                    .iter()
+                    .position(|scope| scope.provider.as_deref() == Some(provider))
+            })
+            .unwrap_or(0);
+        replacement.refresh_items();
+        replacement.selected = selected
+            .and_then(|old| replacement.items.iter().position(|item| {
+                item.provider == old.provider && item.model == old.model
+            }))
+            .unwrap_or_else(|| self.selected.min(replacement.items.len().saturating_sub(1)));
+        *self = replacement;
+        true
     }
 
     fn refresh_items(&mut self) {
@@ -1658,6 +1795,8 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
+    /// Persisted preference for Codex priority processing; other providers ignore it.
+    fast_mode: bool,
     /// Token-spend ceiling for one message's run; `0` is unbounded. The only
     /// cap on run length -- there is no turn limit.
     max_session_tokens: u64,
@@ -1864,11 +2003,10 @@ struct App {
     mcp_job_request: Option<McpJob>,
     /// Active OpenAI-compatible provider wizard (docked); owns the keyboard.
     provider_prompt: Option<ProviderPrompt>,
-    /// Providers already probed for a missing model list this session
-    /// (success or failure). A dead/unreachable upstream must not be re-contacted
-    /// on every bare `/model` -- that would freeze the render loop for the whole
-    /// request timeout -- so only unprobed providers are fetched once.
-    probed_models: std::collections::HashSet<String>,
+    /// Set by an open `/model` picker to ask the loop to spawn a provider
+    /// catalog refresh off the render loop. Taken once; the loop only honors
+    /// it while a picker is actually open, mirroring `context_request`.
+    model_refresh_requested: bool,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<(String, String)>,
     /// Active OAuth account prompt; owns the keyboard while open.
@@ -2288,6 +2426,7 @@ impl App {
             },
             reserve_tokens: limits.reserve_tokens,
             max_tokens: limits.max_tokens,
+            fast_mode: false,
             max_session_tokens: limits.max_session_tokens,
             repo_root,
             git_branch: git::current_branch(&project_root),
@@ -2355,11 +2494,11 @@ impl App {
             settings_prompt: None,
             context_view: None,
             context_request: false,
+            model_refresh_requested: false,
             mcp_prompt: None,
             mcp_detail: None,
-            mcp_job_request: None,
             provider_prompt: None,
-            probed_models: std::collections::HashSet::new(),
+            mcp_job_request: None,
             login_submit: None,
             account_login: None,
             account_login_submit: None,
@@ -4041,6 +4180,9 @@ impl App {
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        if self.fast_mode {
+            body["fast_mode"] = serde_json::json!(true);
+        }
         // Live plan-mode toggle: the backend reads this per turn and falls back
         // to the session default when absent. Only forwarded in Plan so normal
         // turns keep an unchanged body.
@@ -4247,6 +4389,80 @@ impl App {
         }
     }
 
+    /// Re-read this project's `agent.toml` and apply the settings it now names
+    /// to the live session. Called on every picker refresh completion so an
+    /// edit made outside the TUI (or in `/settings`) takes effect without a
+    /// restart. Each key follows the existing setting semantics:
+    ///
+    /// - `context_window`: sets the authoritative override; the effective
+    ///   window re-resolves, and if it shrank below current usage a target
+    ///   compaction is queued via the existing auto-compaction path.
+    /// - `compaction_reserve_tokens`, `max_tokens`, `fast_mode`,
+    ///   `show_reasoning`, `send_reasoning`: applied only when the key is
+    ///   present, so an unset key keeps its prior/default value (never
+    ///   clobbering an explicit in-memory change).
+    ///
+    /// A malformed or unreadable file is non-fatal: it leaves every setting as
+    /// it was (never clobbering an explicit in-memory change) and records the
+    /// error without disrupting the picker. `false` means nothing changed.
+    fn hot_reload_agent_settings(&mut self) -> bool {
+        let cfg = match std::fs::read_to_string(self.agent_dir.join("agent.toml"))
+            .map_err(|e| e.to_string())
+            .and_then(|raw| toml::from_str::<crate::core::agent::project::AgentToml>(&raw).map_err(|e| e.to_string()))
+        {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                self.note(&format!("could not reload agent.toml: {e}"));
+                return false;
+            }
+        };
+        let mut changed = false;
+        if let Some(window) = cfg.agent.context_window {
+            if self.configured_context_window != Some(window) {
+                self.configured_context_window = Some(window);
+                if self.refresh_context_window() && self.should_auto_compact() {
+                    self.compact_request = Some(CompactKind::Auto);
+                    self.detail = format!("compacting for {}", self.model);
+                }
+                changed = true;
+            }
+        } else if self.configured_context_window.is_some() {
+            self.configured_context_window = None;
+            if self.refresh_context_window() && self.should_auto_compact() {
+                self.compact_request = Some(CompactKind::Auto);
+            }
+            changed = true;
+        }
+        let reserve = cfg.agent.compaction_reserve_tokens.unwrap_or(16_384);
+        if self.reserve_tokens != reserve {
+            self.reserve_tokens = reserve;
+            changed = true;
+            if self.should_auto_compact() {
+                self.compact_request = Some(CompactKind::Auto);
+            }
+        }
+        let max = cfg.agent.max_tokens;
+        if self.max_tokens != max {
+            self.max_tokens = max;
+            changed = true;
+        }
+        let fast = cfg.agent.fast_mode.unwrap_or(false);
+        if self.fast_mode != fast {
+            self.fast_mode = fast;
+            changed = true;
+        }
+        let show = cfg.agent.show_reasoning.unwrap_or(false);
+        if self.show_reasoning != show {
+            self.show_reasoning = show;
+            changed = true;
+        }
+        let send = cfg.agent.send_reasoning.unwrap_or(true);
+        if self.send_reasoning != send {
+            self.send_reasoning = send;
+            changed = true;
+        }
+        changed
+    }
     /// Re-resolve the effective context window from the current model and the
     /// configured override. Returns whether the effective limit changed, so a
     /// caller can decide whether a compaction is now warranted. The catalog
@@ -7233,6 +7449,73 @@ async fn await_context(
     joined.ok()
 }
 
+/// How often an open `/model` picker refreshes provider catalogs. This is kept
+/// short enough for newly published ids to appear during a selection, while
+/// still ensuring the network work is never on the render loop.
+const MODEL_PICKER_POLL_INTERVAL: Duration = Duration::from_secs(10);
+
+type ModelPickerRefresh = crate::core::cli::providers::ProviderModelRefresh;
+
+fn spawn_model_picker_refresh(
+    project_root: &std::path::Path,
+) -> tokio::task::JoinHandle<Result<ModelPickerRefresh, String>> {
+    let root = project_root.to_path_buf();
+    tokio::spawn(async move {
+        crate::core::cli::providers::fetch_provider_model_entries(Some(&root)).await
+    })
+}
+
+/// Await one provider refresh, clearing the one-task slot. Like the other
+/// `await_*` helpers this parks forever when no refresh is in flight, so it can
+/// remain in `select!` without a readiness branch.
+async fn await_model_picker_refresh(
+    task: &mut Option<tokio::task::JoinHandle<Result<ModelPickerRefresh, String>>>,
+) -> Result<ModelPickerRefresh, String> {
+    let joined = match task.as_mut() {
+        Some(handle) => handle.await,
+        None => return pending().await,
+    };
+    *task = None;
+    joined.map_err(|e| e.to_string())?
+}
+
+async fn finish_model_picker_refresh(app: &mut App, result: Result<ModelPickerRefresh, String>) {
+    // A completion is only valid for a picker that is still open. Never reopen
+    // a picker after Esc/Enter closed it, and never let a late response mutate
+    // the ordinary chat surface.
+    if app.model_picker.is_none() {
+        app.model_refresh_requested = false;
+        return;
+    }
+    app.hot_reload_agent_settings();
+    match result {
+        Ok(refresh) => {
+            let ModelPickerRefresh { entries, failures } = refresh;
+            if !failures.is_empty() {
+                app.note(&format!(
+                    "model refresh warning: {}",
+                    failures.join("; ")
+                ));
+            }
+            if entries.is_empty() {
+                app.note("model refresh returned no models; keeping the current list");
+            } else {
+                // Successful providers update the in-memory config before a
+                // newly discovered model can be submitted via Enter.
+                reload_provider_configs(app).await;
+                if let Some(picker) = app.model_picker.as_mut() {
+                    if !picker.apply_entries(entries, app.configured_context_window) {
+                        app.note("model refresh returned no models; keeping the current list");
+                    }
+                }
+            }
+        }
+        Err(error) => {
+            app.note(&format!("model refresh failed; keeping the current list ({error})"));
+        }
+    }
+    app.model_refresh_requested = false;
+}
 /// Await an in-flight `/login` verification, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
 async fn await_login(
@@ -7502,6 +7785,7 @@ pub async fn run(
         model,
         smol_model,
         limits,
+        fast_mode,
         show_reasoning,
         stream_reasoning,
         send_reasoning,
@@ -7553,6 +7837,7 @@ pub async fn run(
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
+    app.fast_mode = fast_mode;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -7840,7 +8125,15 @@ async fn chat_loop<B: Backend>(
     let mut branch_task: Option<tokio::task::JoinHandle<Option<String>>> = None;
     let mut branch_poll = tokio::time::interval(BRANCH_POLL_INTERVAL);
     branch_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-
+    // `/model` provider catalog refresh: picker-scoped, one task in flight, and
+    // canceled as soon as the picker closes. No catalog polling happens while
+    // the user is in the ordinary chat surface. The first tick is intentionally
+    // left pending so a picker opened later gets an immediate refresh.
+    let mut model_picker_task: Option<
+        tokio::task::JoinHandle<Result<ModelPickerRefresh, String>>,
+    > = None;
+    let mut model_picker_poll = tokio::time::interval(MODEL_PICKER_POLL_INTERVAL);
+    model_picker_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Nothing to say when there is no seed message: the splash already invites
     // the first one (`Banner::awaiting_first_message`).
     if let Some(task) = initial_task.filter(|t| !t.trim().is_empty()) {
@@ -7879,10 +8172,14 @@ async fn chat_loop<B: Backend>(
             }
             app.login_device_request = false;
         }
-        if app.account_login.is_none() {
-            app.account_login_pending_manual_input = None;
-            app.account_login_manual_tx = None;
-            if let Some(task) = account_login_task.take() {
+        // The picker closed while a catalog refresh was in flight: drop it so a
+        // late reply can't mutate a picker the user walked away from, and clear
+        // the latch so a picker opened later starts fresh. `Esc`/Enter already
+        // set the latch false; this is the belt-and-suspenders path for any
+        // other close.
+        if app.model_picker.is_none() {
+            app.model_refresh_requested = false;
+            if let Some(task) = model_picker_task.take() {
                 task.abort();
             }
         }
@@ -7934,10 +8231,17 @@ async fn chat_loop<B: Backend>(
                 mcp_job = Some(tokio::spawn(run_mcp_job(job, servers)));
             }
         }
-        // `/context` asked for a report. Compute it off the render loop (it
-        // takes the MCP server lock), one at a time. The snapshot carries the
-        // state the computation needs, so nothing borrows `App` across the
-        // spawn.
+        // `/model` requested a catalog refresh: spawn it off-loop the moment the
+        // flag is set, and only while no refresh is already in flight. A later
+        // interval tick keeps polling on `MODEL_PICKER_POLL_INTERVAL`. The
+        // flag is cleared by `finish_model_picker_refresh` after applying.
+        if app.model_picker.is_some()
+            && model_picker_task.is_none()
+            && app.model_refresh_requested
+        {
+            app.model_refresh_requested = false;
+            model_picker_task = Some(spawn_model_picker_refresh(&app.project_root));
+        }
         if context_task.is_none() && app.context_request {
             app.context_request = false;
             let snapshot = app.context_snapshot();
@@ -8126,6 +8430,18 @@ async fn chat_loop<B: Backend>(
             }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
+            }
+            _ = model_picker_poll.tick() => {
+                // One refresh in flight at a time. `Delay` behavior means a
+                // slow catalog fetch never stacks catch-up ticks, and the
+                // one-task invariant keeps key handling and ordinary agent runs
+                // unstarved. Only poll while the picker is open.
+                if app.model_picker.is_some() && model_picker_task.is_none() {
+                    model_picker_task = Some(spawn_model_picker_refresh(&app.project_root));
+                }
+            }
+            entries = await_model_picker_refresh(&mut model_picker_task) => {
+                finish_model_picker_refresh(app, entries).await;
             }
             outcome = await_mcp(&mut mcp_task) => {
                 mcp_ready = true;
@@ -8825,6 +9141,7 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
     {
         app.model_picker = None;
+        app.model_refresh_requested = false;
         return;
     }
 
@@ -8879,6 +9196,7 @@ fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if let Some(value) = chosen {
         app.set_model(value);
         app.model_picker = None;
+        app.model_refresh_requested = false;
     }
 }
 /// The copyable continuation command shown when a session closes, mirroring
@@ -9223,7 +9541,7 @@ async fn handle_key(
                         // `None`, not `""`: this removed the key, so a `Glyph`
                         // goes back to its default rather than to off, which
                         // is what a cleared edit field means.
-                        let when = if apply_live_unset(def) {
+                        let when = if apply_live_unset(app, def) {
                             "in effect now"
                         } else {
                             "takes effect on the next run"
@@ -9931,6 +10249,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/fast",
+        hint: "[on|off]",
+        description: "Toggle Codex priority processing (bare: toggle; persisted per project)",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/effort",
         hint: "[low|medium|high]",
         description: "Set reasoning effort (bare: show current; low: faster, high: deeper thinking)",
@@ -10194,6 +10518,7 @@ async fn run_command(
                 app.set_model(arg.to_string());
             }
         }
+        "fast" => fast_command(app, arg),
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
@@ -10511,11 +10836,18 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
     AgentSettingDef {
         key: "context_window",
         label: "context_window",
-        desc: "context limit in tokens",
+        desc: "context override; unset uses the model default",
         kind: AgentSettingKind::Int {
-            default: Some(128000),
+            default: None,
             min: 1,
         },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
+        key: "fast_mode",
+        label: "fast_mode",
+        desc: "Codex priority processing",
+        kind: AgentSettingKind::Bool { default: false },
         scope: SettingScope::Project,
     },
     AgentSettingDef {
@@ -11122,8 +11454,30 @@ fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
 /// the code does not have to tell. `entered` is the trimmed field; empty is an
 /// unset for most kinds and a written "off" for a `Glyph`, which is why this
 /// passes `Some` either way and lets the setter read it.
-fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
+fn apply_live_setting(app: &mut App, def: &AgentSettingDef, entered: &str) -> bool {
     match def.key {
+        "context_window" => {
+            app.configured_context_window = if entered.is_empty() {
+                None
+            } else {
+                match entered.parse::<u64>() {
+                    Ok(tokens) => Some(tokens),
+                    Err(_) => return false,
+                }
+            };
+            if app.refresh_context_window() && app.should_auto_compact() {
+                app.compact_request = Some(CompactKind::Auto);
+            }
+            true
+        }
+        "fast_mode" => {
+            app.fast_mode = match entered {
+                "" | "false" => false,
+                "true" => true,
+                _ => return false,
+            };
+            true
+        }
         "wave" => {
             set_wave_glyph(Some(entered));
             true
@@ -11136,8 +11490,9 @@ fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
 /// took. Separate from `apply_live_setting` because removing a key and saving
 /// an empty one are different outcomes for a `Glyph`: the first restores the
 /// default, the second is the off switch.
-fn apply_live_unset(def: &AgentSettingDef) -> bool {
+fn apply_live_unset(app: &mut App, def: &AgentSettingDef) -> bool {
     match def.key {
+        "context_window" | "fast_mode" => apply_live_setting(app, def, ""),
         "wave" => {
             set_wave_glyph(None);
             true
@@ -11373,7 +11728,8 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                         (true, false) => format!("{} unset (default applies)", prompt.key),
                         (false, _) => format!("{} = {entered} written", prompt.key),
                     };
-                    let when = if apply_live_setting(prompt.def(), &entered) {
+                    let def = prompt.def();
+                    let when = if apply_live_setting(app, def, &entered) {
                         "in effect now"
                     } else {
                         "takes effect on the next run"
@@ -11623,6 +11979,32 @@ fn plan_command(app: &mut App, arg: &str) {
 }
 
 const EFFORT_LEVELS: &[&str] = &["low", "medium", "high"];
+
+/// Toggle Codex priority processing and persist the project preference.
+fn fast_command(app: &mut App, arg: &str) {
+    let enabled = match arg.trim() {
+        "" => !app.fast_mode,
+        "on" => true,
+        "off" => false,
+        _ => return app.note("usage: /fast [on|off]"),
+    };
+    let path = app.agent_dir.join("agent.toml");
+    match crate::core::agent::project::set_agent_key(
+        &path,
+        "fast_mode",
+        Some(toml_edit::value(enabled)),
+    ) {
+        Ok(()) => {
+            app.fast_mode = enabled;
+            app.note(if enabled {
+                "Codex fast mode on (priority tier)"
+            } else {
+                "Codex fast mode off"
+            });
+        }
+        Err(error) => app.note(&format!("could not save fast mode: {error}")),
+    }
+}
 
 /// `/effort` -- report or change the reasoning effort level for subsequent model
 /// requests. Without arguments, shows the current level. With a level argument,
@@ -12147,29 +12529,58 @@ fn open_thread_picker(app: &mut App) {
 
 /// Open the `/model` hub listing the `provider / model` pairs this build can
 /// actually run, with the current raw model pre-highlighted.
+///
+/// This never blocks the render/key path on the network: the picker is built
+/// synchronously from the persisted/layered provider list, and a background
+/// provider catalog refresh is requested (via `model_refresh_requested`) which
+/// the chat loop spawns off-loop. The first completed refresh rebuilds the
+/// picker with metadata rows, applies hot agent config, and reloads provider
+/// configs the same as any later poll tick.
 async fn open_model_picker(app: &mut App) {
     let project_root = app.project_root.clone();
-    match super::providers::fetch_missing_models(Some(&project_root), &mut app.probed_models).await
-    {
-        Ok(true) => {
-            // The discovered ids now live on disk; refresh the session's
-            // in-memory provider snapshot so a picked model resolves on the
-            // next run without a restart (#8688 parallels the /login reload).
-            reload_provider_configs(app).await;
-            app.note("fetched models for provider(s) with no configured list");
-        }
-        Ok(_) => {}
-        Err(e) => app.note(&format!("could not fetch models: {e}")),
-    }
     let pairs = super::providers::list_provider_models(Some(&project_root));
-    match ModelPicker::from_pairs(pairs, &app.model) {
+    let entries = pairs
+        .into_iter()
+        .map(|(provider, model)| crate::core::cli::providers::ProviderModelEntry {
+            provider,
+            model: crate::core::cli::providers::ProviderModel {
+                id: model,
+                context_length: None,
+                input_price: None,
+                output_price: None,
+            },
+        })
+        .collect();
+    match ModelPicker::from_entries(entries, &app.model, app.configured_context_window) {
         Some(picker) => {
             app.picker = None;
             app.model_picker = Some(picker);
+            // Ask the loop to fetch fresh entries off-loop; the first completed
+            // refresh rebuilds the picker (metadata rows) without blocking.
+            app.model_refresh_requested = true;
         }
-        None => app.note(
-            "no models available (add a provider with `jan config set`, or configure one in the desktop app)",
-        ),
+        None => {
+            // Keep the picker visible even when no persisted ids exist yet.
+            // The first catalog completion replaces this empty shell; keeping
+            // it open lets users see the loading/empty state and preserves the
+            // same picker-scoped refresh lifecycle as non-empty lists.
+            app.picker = None;
+            app.model_picker = Some(ModelPicker {
+                scopes: vec![ModelScope {
+                    provider: None,
+                    label: "All models".to_string(),
+                    count: 0,
+                }],
+                active_scope: 0,
+                focus: ModelPickerFocus::Models,
+                all_items: Vec::new(),
+                items: Vec::new(),
+                query: String::new(),
+                selected: 0,
+            });
+            app.model_refresh_requested = true;
+            app.note("no models available yet — fetching provider catalogs");
+        }
     }
 }
 
@@ -12873,6 +13284,7 @@ fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult)
     }
     if let Some(model) = login.models.first() {
         app.model = model.clone();
+        app.refresh_context_window();
         let _ = super::cli_set_project_model(&app.agent_dir, &app.model);
     }
 }
@@ -13662,6 +14074,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         .and_then(|v| v.as_str())
     {
         app.model = model.to_string();
+        app.refresh_context_window();
     }
 
     // The journal holds what was rendered (reasoning, tool rows, diffs); the
@@ -15266,15 +15679,15 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         return;
     }
 
-    let scope_w = body
-        .width
-        .saturating_sub(1)
-        .min(28)
-        .max(body.width.saturating_sub(1).min(14));
+    // Metadata needs a minimum model pane wide enough for both compact columns.
+    // Prefer the readable scope width, but let it shrink before metadata does.
+    let model_min = body.width.min(24);
+    let scope_max = body.width.saturating_sub(1).saturating_sub(model_min);
+    let scope_w = body.width.saturating_sub(1).min(28).min(scope_max.max(1));
     let panes = Layout::horizontal([
         Constraint::Length(scope_w),
         Constraint::Length(1),
-        Constraint::Min(0),
+        Constraint::Min(model_min),
     ])
     .split(body);
 
@@ -15357,16 +15770,42 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     );
 
     let model_width = right_rows[2].width.saturating_sub(2) as usize;
-    let model_items: Vec<ListItem> = picker
-        .items
-        .iter()
-        .map(|item| {
-            ListItem::new(Line::raw(truncate(
-                &format!("{} / {}", item.provider, item.model),
-                model_width,
-            )))
-        })
-        .collect();
+    // Format once per row. Context and price cells are ASCII; model labels use
+    // terminal display widths through clamp_line/wrap_text below.
+    let metadata: Vec<_> = picker.items.iter().map(|item| {
+        let ctx = item.context.map(format_context_length).unwrap_or_else(|| "-".into());
+        (
+            format!("ctx={ctx}"),
+            format!("price={}", format_pricing(item.input_price, item.output_price)),
+        )
+    }).collect();
+    let (ctx_width, price_width) = metadata.iter().fold((6usize, 8usize), |(cw, pw), (ctx, price)| {
+        (cw.max(ctx.len()), pw.max(price.len()))
+    });
+    let metadata_width = ctx_width + 2 + price_width;
+    let label_width = model_width.saturating_sub(metadata_width);
+    let model_items: Vec<ListItem> = picker.items.iter().zip(metadata).map(|(item, (ctx, price))| {
+        let label = format!("{} / {}", item.provider, item.model);
+        if label_width < 12 {
+            // On narrow terminals, give identity and metadata their own lines
+            // instead of dropping the model name or clipping the price.
+            let mut lines: Vec<Line<'static>> = wrap_text(&label, Style::new(), model_width.max(1))
+                .into_iter().map(Line::from).collect();
+            lines.extend(
+                wrap_text(&format!("{ctx} {price}"), Style::new().dim(), model_width.max(1))
+                    .into_iter().map(Line::from),
+            );
+            ListItem::new(lines)
+        } else {
+            let mut line = clamp_line(Line::raw(label), (label_width + 2) as u16);
+            let padding = label_width.saturating_sub(line.width());
+            line.spans.push(Span::raw(format!(
+                "{} {ctx:<ctx_width$} {price:<price_width$}",
+                " ".repeat(padding),
+            )));
+            ListItem::new(line)
+        }
+    }).collect();
     let models = List::new(model_items)
         .highlight_style(if picker.focus == ModelPickerFocus::Models {
             Style::new().reversed().bold()
@@ -15393,7 +15832,12 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
             } else {
                 "default"
             };
-            format!("{}/{} · {state}", item.provider, item.model)
+            let ctx = item
+                .context
+                .map(format_context_length)
+                .unwrap_or_else(|| "-".to_string());
+            let price = format_pricing(item.input_price, item.output_price);
+            format!("{}/{} · {state} · ctx {ctx} · {price}", item.provider, item.model)
         })
         .unwrap_or_else(|| "no models match".to_string());
     f.render_widget(
@@ -20571,7 +21015,7 @@ mod tests {
                     api_key: None,
                     clear_api_key: true,
                     base_url: Some("https://api.openai.com/v1".into()),
-                    models: Some(vec!["gpt-4o-mini".into()]),
+                    models: Some(vec!["gpt-6-astra".into()]),
                     api_type: None,
                     ..Default::default()
                 },
@@ -20587,7 +21031,8 @@ mod tests {
                 "{text}"
             );
             assert!(app.account_login.is_none());
-            assert_eq!(app.model, "gpt-4o-mini");
+            assert_eq!(app.model, "gpt-6-astra");
+            assert_eq!(app.context_window, 272_000);
         });
 
         let mut app = test_app();
@@ -23077,8 +23522,9 @@ mod tests {
 
     /// A provider added through the wizard with no model list would otherwise
     /// vanish from `/model`, since the picker only offers explicitly configured
-    /// ids. Opening the picker must fetch that provider's `GET /models` and
-    /// populate the list so a bare provider is usable immediately.
+    /// ids. Opening the picker now builds from the persisted list (no blocking
+    /// network) and signals a catalog refresh; when that refresh lands it opens
+    /// the picker and populates the list so a bare provider is usable.
     #[test]
     fn model_picker_autofetches_models_for_empty_provider() {
         crate::core::agent::global_config::with_temp_home(|_| {
@@ -23118,6 +23564,20 @@ mod tests {
             // `with_temp_home` is sync; drive the async command on a dedicated runtime.
             let rt = tokio::runtime::Runtime::new().unwrap();
             rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
+
+            // The open is non-blocking: it builds from the persisted list and
+            // requests a catalog refresh rather than fetching inline.
+            assert!(
+                app.model_refresh_requested,
+                "opening /model must request a background catalog refresh"
+            );
+
+            // Simulate the loop applying the refresh that discovered the model.
+            let project_root = app.project_root.clone();
+            let refresh = rt
+                .block_on(crate::core::cli::providers::fetch_provider_model_entries(Some(&project_root)))
+                .expect("mock /models reachable");
+            rt.block_on(super::finish_model_picker_refresh(&mut app, Ok(refresh)));
 
             let picker = app.model_picker.as_ref().expect("model picker opened");
             assert!(
@@ -25502,7 +25962,7 @@ mod tests {
             json!({ "role": "user", "content": "first" }),
             json!({ "role": "assistant", "content": "reply" }),
         ];
-        let id = super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None)
+        let id = super::super::cli_save_thread(&app.agent_dir, None, "claude-fable-5-1", &history, None)
             .unwrap();
 
         let mut fresh = test_app();
@@ -25511,7 +25971,8 @@ mod tests {
 
         assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
         assert_eq!(fresh.history, history);
-        assert_eq!(fresh.model, "saved-model");
+        assert_eq!(fresh.model, "claude-fable-5-1");
+        assert_eq!(fresh.context_window, 1_000_000);
         let joined: String = fresh
             .transcript
             .iter()
@@ -25528,7 +25989,7 @@ mod tests {
         let same = super::super::cli_save_thread(
             &app.agent_dir,
             Some(&id),
-            "saved-model",
+            "claude-fable-5-1",
             &fresh.history,
             None,
         )
@@ -25538,6 +25999,9 @@ mod tests {
             super::super::list_threads_in(&app.agent_dir).unwrap().len(),
             1
         );
+        fresh.configured_context_window = Some(1_100_000);
+        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        assert_eq!(fresh.context_window, 1_100_000);
     }
 
     #[tokio::test]
@@ -28196,6 +28660,65 @@ mod tests {
         run_command(&mut app, "goal", &no_mcp()).await;
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
+    }
+
+    #[tokio::test]
+    async fn fast_command_persists_mode_and_rejects_invalid_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        app.agent_dir = dir.path().to_path_buf();
+        let path = app.agent_dir.join("agent.toml");
+        std::fs::write(&path, "[agent]\ncontext_window = 1100000\n").unwrap();
+
+        run_command(&mut app, "fast on", &no_mcp()).await;
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let config: toml::Value = toml::from_str(&saved).unwrap();
+        assert_eq!(config["agent"].get("fast_mode").and_then(toml::Value::as_bool), Some(true));
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+
+        run_command(&mut app, "fast nonsense", &no_mcp()).await;
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), saved);
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+        std::fs::write(&path, "[agent\n").unwrap();
+        run_command(&mut app, "fast off", &no_mcp()).await;
+        assert_eq!(app.body()["fast_mode"].as_bool(), Some(true));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "[agent\n");
+        std::fs::write(&path, &saved).unwrap();
+
+        run_command(&mut app, "fast", &no_mcp()).await;
+        let config: toml::Value =
+            toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(config["agent"]["fast_mode"].as_bool(), Some(false));
+        assert!(app.body().get("fast_mode").is_none());
+        assert_eq!(config["agent"]["context_window"].as_integer(), Some(1_100_000));
+    }
+
+    #[test]
+    fn context_setting_applies_1_1m_live_and_survives_model_switches() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        app.agent_dir = dir.path().to_path_buf();
+        std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
+        let def = AGENT_SETTINGS.iter().find(|def| def.key == "context_window").unwrap();
+        let mut prompt = super::SettingsPrompt::new(def, None);
+        prompt.input = "1100000".to_string();
+        app.settings_prompt = Some(prompt);
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+
+        assert_eq!(app.context_window, 1_100_000);
+        for model in ["gpt-5.6-luna", "gpt-6-astra", "claude-fable-5-1"] {
+            app.set_model(model.to_string());
+            assert_eq!(app.context_window, 1_100_000);
+            assert!(app.body().get("context_window").is_none());
+            assert!(app.body().get("max_tokens").is_none());
+        }
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert_eq!(app.configured_context_window, None);
+        assert_eq!(
+            app.context_window,
+            crate::core::cli::model_capabilities::resolve_context_window(&app.model, None).tokens
+        );
     }
 
     #[tokio::test]
@@ -31498,6 +32021,311 @@ mod tests {
         assert_eq!(picker.scopes[picker.active_scope].label, "anthropic");
         assert!(picker.items.iter().all(|item| item.provider == "anthropic"));
     }
+    #[test]
+    fn model_picker_refresh_preserves_query_scope_and_selection() {
+        let entries = vec![
+            crate::core::cli::providers::ProviderModelEntry {
+                provider: "openai".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "gpt-old".into(),
+                    context_length: Some(272_000),
+                    input_price: Some(1.0),
+                    output_price: Some(2.0),
+                },
+            },
+            crate::core::cli::providers::ProviderModelEntry {
+                provider: "anthropic".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "claude-old".into(),
+                    context_length: None,
+                    input_price: None,
+                    output_price: None,
+                },
+            },
+        ];
+        let mut picker = super::ModelPicker::from_entries(entries, "gpt-old", None).unwrap();
+        picker.query = "gpt".into();
+        picker.select_scope(2);
+        picker.query.clear();
+        picker.refresh_items();
+        picker.selected = picker
+            .items
+            .iter()
+            .position(|item| item.value == "gpt-old")
+            .unwrap();
+
+        let refreshed = vec![
+            crate::core::cli::providers::ProviderModelEntry {
+                provider: "openai".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "gpt-old".into(),
+                    context_length: Some(272_000),
+                    input_price: Some(1.0),
+                    output_price: Some(2.0),
+                },
+            },
+            crate::core::cli::providers::ProviderModelEntry {
+                provider: "openai".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "gpt-new".into(),
+                    context_length: Some(1_100_000),
+                    input_price: Some(0.0),
+                    output_price: Some(0.0),
+                },
+            },
+        ];
+        picker.apply_entries(refreshed, None);
+        assert_eq!(picker.query, "");
+        assert_eq!(picker.scopes[picker.active_scope].provider.as_deref(), Some("openai"));
+        assert_eq!(picker.items[picker.selected].value, "gpt-old");
+        assert!(picker.items.iter().any(|item| item.value == "gpt-new"));
+    }
+
+    fn picker_entry(
+        provider: &str,
+        id: &str,
+        context_length: Option<u64>,
+        input_price: Option<f64>,
+        output_price: Option<f64>,
+    ) -> crate::core::cli::providers::ProviderModelEntry {
+        crate::core::cli::providers::ProviderModelEntry {
+            provider: provider.into(),
+            model: crate::core::cli::providers::ProviderModel {
+                id: id.into(),
+                context_length,
+                input_price,
+                output_price,
+            },
+        }
+    }
+
+    #[test]
+    fn model_picker_refresh_preserves_scope_keyboard_navigation() {
+        let entries = vec![
+            picker_entry("alpha", "one", None, None, None),
+            picker_entry("beta", "two", None, None, None),
+        ];
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_entries(entries.clone(), "one", None);
+        super::handle_model_picker_key(&mut app, key(KeyCode::Left), false);
+        app.model_picker.as_mut().unwrap().apply_entries(entries, None);
+        super::handle_model_picker_key(&mut app, key(KeyCode::Down), false);
+        let picker = app.model_picker.as_ref().unwrap();
+        assert_eq!(picker.scopes[picker.active_scope].provider.as_deref(), Some("alpha"));
+        super::handle_model_picker_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.model_picker.is_some(), "Enter in scopes must not choose a model");
+    }
+
+    #[test]
+    fn model_picker_refresh_preserves_selected_provider_with_duplicate_ids() {
+        let entries = vec![
+            picker_entry("alpha", "shared", None, None, None),
+            picker_entry("beta", "shared", None, None, None),
+        ];
+        let mut picker = super::ModelPicker::from_entries(entries.clone(), "", None).unwrap();
+        picker.move_selection(1);
+        picker.apply_entries(entries, None);
+        assert_eq!(picker.items[picker.selected].provider, "beta");
+        assert_eq!(picker.items[picker.selected].value, "shared");
+    }
+
+    #[test]
+    fn model_picker_refresh_clamps_previous_selection_when_model_disappears() {
+        let mut entries = vec![
+            picker_entry("alpha", "one", None, None, None),
+            picker_entry("alpha", "three", None, None, None),
+            picker_entry("alpha", "two", None, None, None),
+        ];
+        let mut picker = super::ModelPicker::from_entries(entries.clone(), "two", None).unwrap();
+        entries.pop();
+        picker.apply_entries(entries, None);
+        assert_eq!(picker.items[picker.selected].value, "three");
+    }
+
+    #[test]
+    fn model_picker_refresh_retains_metadata_without_retaining_context_override() {
+        let mut picker = super::ModelPicker::from_entries(
+            vec![picker_entry("alpha", "model", Some(272_000), Some(0.15), Some(0.6))],
+            "model",
+            Some(1_100_000),
+        ).unwrap();
+        assert_eq!(picker.items[0].context, Some(1_100_000));
+        picker.apply_entries(vec![picker_entry("alpha", "model", None, None, None)], None);
+        assert_eq!(picker.items[0].context, Some(272_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "$0.15/0.6");
+        // New values, including an explicit zero, replace only the known fields.
+        picker.apply_entries(vec![picker_entry("alpha", "model", Some(512_000), Some(0.0), None)], None);
+        assert_eq!(picker.items[0].context, Some(512_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "$0/0.6");
+        picker.apply_entries(vec![picker_entry("beta", "model", None, None, None)], None);
+        assert_eq!(picker.items[0].context, Some(128_000));
+        assert_eq!(super::format_pricing(picker.items[0].input_price, picker.items[0].output_price), "-");
+    }
+
+    #[test]
+    fn model_picker_formats_context_and_pricing_without_changing_value() {
+        assert_eq!(super::format_context_length(1_100_000), "1.1m");
+        assert_eq!(super::format_context_length(1_000_000), "1m");
+        assert_eq!(super::format_context_length(272_000), "272k");
+        assert_eq!(super::format_context_length(234_000), "234k");
+        assert_eq!(super::format_pricing(Some(1.0), Some(2.0)), "$1/2");
+        assert_eq!(super::format_pricing(Some(0.0), Some(0.0)), "free");
+        assert_eq!(super::format_pricing(None, None), "-");
+        // One-sided metadata keeps the available side rather than dropping it.
+        assert_eq!(super::format_pricing(Some(1.0), None), "$1/-");
+        assert_eq!(super::format_pricing(None, Some(2.0)), "-/$2");
+    }
+
+    #[test]
+    fn model_picker_keeps_price_column_aligned_with_mixed_contexts() {
+        let mut app = test_app();
+        app.model_picker = Some(
+            super::ModelPicker::from_entries(
+                vec![
+                    crate::core::cli::providers::ProviderModelEntry {
+                        provider: "openai".into(),
+                        model: crate::core::cli::providers::ProviderModel {
+                            id: "gpt-1.1m".into(),
+                            context_length: Some(1_100_000),
+                            input_price: Some(1.0),
+                            output_price: Some(2.0),
+                        },
+                    },
+                    crate::core::cli::providers::ProviderModelEntry {
+                        provider: "openai".into(),
+                        model: crate::core::cli::providers::ProviderModel {
+                            id: "gpt-noctx".into(),
+                            context_length: None,
+                            input_price: None,
+                            output_price: None,
+                        },
+                    },
+                ],
+                "gpt-1.1m",
+                None,
+            )
+            .unwrap(),
+        );
+        let rows = render_rows(&mut app, 100, 12);
+        // Both rows carry `price=` at the same column even though one has a
+        // wider `ctx=1.1m` cell and the other renders `ctx=-`.
+        // Compare character columns, not UTF-8 byte offsets: the highlighted
+        // row begins with a multi-byte `▶` symbol.
+        let prices: Vec<(usize, String)> = rows
+            .iter()
+            .filter_map(|r| {
+                r.find("price=")
+                    .map(|i| (r[..i].chars().count(), r.clone()))
+            })
+            .collect();
+        assert_eq!(prices.len(), 2, "both rows must render a price column: {rows:?}");
+        let (first, second) = (prices[0].0, prices[1].0);
+        assert_eq!(
+            first, second,
+            "price column must stay aligned across mixed context cells: {rows:?}"
+        );
+        assert!(prices[0].1.contains("ctx=1.1m price=$1/2"), "first metadata cell was clipped: {rows:?}");
+        assert!(prices[1].1.contains("ctx=128k price=-"), "second metadata cell was clipped: {rows:?}");
+    }
+
+    #[tokio::test]
+    async fn model_picker_partial_refresh_notes_failure_and_keeps_rows() {
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_pairs(
+            vec![("bad".into(), "bad-old".into())],
+            "bad-old",
+        );
+        let refresh = crate::core::cli::providers::ProviderModelRefresh {
+            entries: vec![crate::core::cli::providers::ProviderModelEntry {
+                provider: "good".into(),
+                model: crate::core::cli::providers::ProviderModel {
+                    id: "good-new".into(),
+                    context_length: None,
+                    input_price: None,
+                    output_price: None,
+                },
+            }],
+            failures: vec!["bad: connection refused".into()],
+        };
+        super::finish_model_picker_refresh(&mut app, Ok(refresh)).await;
+        let picker = app.model_picker.as_ref().unwrap();
+        assert!(picker.all_items.iter().any(|item| item.value == "good-new"));
+        let note = last_row(&app)
+            .into_iter()
+            .map(|(text, _)| text)
+            .collect::<String>();
+        assert!(note.contains("model refresh warning"), "missing failure note: {note}");
+        assert!(note.contains("bad: connection refused"), "missing provider detail: {note}");
+    }
+
+    #[test]
+    fn model_picker_narrow_layout_retains_names_and_decimal_pricing() {
+        let mut app = test_app();
+        app.model_picker = super::ModelPicker::from_entries(
+            vec![
+                picker_entry("openai", "gpt-alpha", Some(272_000), Some(0.15), Some(0.6)),
+                picker_entry("openai", "gpt-beta", Some(1_100_000), Some(15.0), Some(75.0)),
+            ],
+            "gpt-alpha",
+            None,
+        );
+        let rows = render_rows(&mut app, 30, 20);
+        for expected in ["gpt-alpha", "gpt-beta", "ctx=272k", "ctx=1.1m", "price=$0.15/0.6", "price=$15/75"] {
+            assert!(rows.iter().any(|row| row.contains(expected)), "{expected} missing: {rows:?}");
+        }
+    }
+    #[test]
+    fn refresh_apply_hot_agent_toml_context_override() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let path = app.agent_dir.join("agent.toml");
+        std::fs::write(&path, "[agent]\ncontext_window = 1100000\n").unwrap();
+
+        app.hot_reload_agent_settings();
+        assert_eq!(app.configured_context_window, Some(1_100_000));
+        assert_eq!(app.context_window, 1_100_000);
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured
+        );
+    }
+
+    #[test]
+    fn refresh_hot_reload_kicks_compaction_when_window_shrinks() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let path = app.agent_dir.join("agent.toml");
+        std::fs::write(&path, "[agent]\ncontext_window = 200000\n").unwrap();
+        // Simulate heavy usage + a large reserve, so the new smaller window
+        // falls below the current usage threshold.
+        app.tokens = 190_000;
+        app.history = vec![serde_json::json!({"role": "user", "content": "x"})];
+        app.history.push(serde_json::json!({"role": "assistant", "content": "y"}));
+        app.history.push(serde_json::json!({"role": "user", "content": "z"}));
+        app.history.push(serde_json::json!({"role": "assistant", "content": "w"}));
+        app.history.push(serde_json::json!({"role": "user", "content": "q"}));
+
+        app.hot_reload_agent_settings();
+        assert_eq!(app.context_window, 200_000);
+        assert_eq!(app.compact_request, Some(CompactKind::Auto));
+    }
+
+    #[test]
+    fn refresh_hot_reload_malformed_toml_keeps_current_settings() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let path = app.agent_dir.join("agent.toml");
+        app.configured_context_window = Some(300_000);
+        app.context_window = 300_000;
+        app.context_window_source =
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured;
+        std::fs::write(&path, "[agent\n").unwrap();
+
+        app.hot_reload_agent_settings();
+        assert_eq!(app.configured_context_window, Some(300_000));
+        assert_eq!(app.context_window, 300_000);
+        assert_eq!(app.context_window_source, crate::core::cli::model_capabilities::ContextWindowSource::Configured);
+    }
 
     #[tokio::test]
     async fn model_picker_enter_uses_raw_value_while_label_is_provider_scoped() {
@@ -31516,6 +32344,31 @@ mod tests {
 
         assert_eq!(app.model, "gpt-5-codex");
         assert!(app.model_picker.is_none());
+    }
+
+    #[test]
+    fn refresh_hot_reload_restores_defaults_when_keys_removed() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let path = app.agent_dir.join("agent.toml");
+        // Seed stale in-memory values, then an agent.toml with the keys removed.
+        app.configured_context_window = Some(300_000);
+        app.context_window = 300_000;
+        app.max_tokens = Some(4096);
+        app.fast_mode = true;
+        app.show_reasoning = true;
+        app.send_reasoning = false;
+        app.reserve_tokens = 32_768;
+        std::fs::write(&path, "[agent]\nmodel = \"m\"\n").unwrap();
+
+        app.hot_reload_agent_settings();
+        // Removed keys fall back to their defaults, not stale in-memory values.
+        assert_eq!(app.configured_context_window, None);
+        assert_eq!(app.max_tokens, None);
+        assert!(!app.fast_mode);
+        assert!(!app.show_reasoning);
+        assert!(app.send_reasoning);
+        assert_eq!(app.reserve_tokens, 16_384);
     }
 
     #[test]

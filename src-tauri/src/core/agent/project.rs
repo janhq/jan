@@ -120,6 +120,10 @@ pub(crate) struct AgentSection {
     /// out of the context budget.
     #[serde(default)]
     pub send_reasoning: Option<bool>,
+    /// Request Codex's priority service tier when this project resolves to
+    /// OpenAI Responses with an OAuth account credential. Defaults to false.
+    #[serde(default)]
+    pub fast_mode: Option<bool>,
 }
 
 // `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
@@ -160,6 +164,7 @@ pub(crate) struct ToolsSection {
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
+# fast_mode = false  # use Codex's priority service tier when supported
 # context_window = 128000  # tokens; defaults to 128K if unset
 # compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
@@ -705,6 +710,20 @@ mod tests {
         std::fs::write(&path, raw).unwrap();
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.context_window, Some(32000));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn fast_mode_parses_when_enabled() {
+        let root = unique_root("fast_mode");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let raw = raw.replace("[agent]", "[agent]\nfast_mode = true");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.fast_mode, Some(true));
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -155,10 +155,10 @@ pub(crate) async fn discover_codex_models(
         // Only the Codex route is marked with the Codex client identifiers.
         if path == "/codex/models" {
             request = request
-                .query(&[("client_version", "0.144.1")])
+                .query(&[("client_version", "0.153.4")])
                 .header("OpenAI-Beta", "responses=experimental")
                 .header("originator", "jan")
-                .header("version", "0.144.1");
+                .header("version", "0.153.4");
             if let Some(account_id) = account_id {
                 request = request.header("chatgpt-account-id", account_id);
             }

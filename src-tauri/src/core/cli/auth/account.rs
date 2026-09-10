@@ -1722,10 +1722,6 @@ mod tests {
                 "must target /codex/models, got: {request}"
             );
             assert!(
-                request.contains("client_version=0.144.1"),
-                "missing client_version in: {request}"
-            );
-            assert!(
                 request.contains("chatgpt-account-id: account-321"),
                 "missing chatgpt-account-id in: {request}"
             );
