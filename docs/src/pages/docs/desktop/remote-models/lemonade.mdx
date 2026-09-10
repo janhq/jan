@@ -1,0 +1,77 @@
+---
+title: Lemonade
+description: Learn how to use Lemonade with Jan for local AI inference.
+keywords:
+  [
+    Lemonade,
+    Jan,
+    Jan AI,
+    local AI,
+    local inference,
+    Lemonade integration,
+    AMD,
+    llama.cpp
+  ]
+---
+
+import { Callout, Steps } from 'nextra/components'
+import { Settings } from 'lucide-react'
+
+# Lemonade
+
+Jan supports [Lemonade](https://lemonade-server.ai/), a local AI inference server that runs models on your own hardware. No API key or internet connection is required.
+
+## Integrate Lemonade with Jan
+
+<Steps>
+### Step 1: Start Lemonade
+
+Download and launch [Lemonade](https://lemonade-server.ai/) on your machine. It runs on port **13305** by default.
+
+<Callout type='info'>
+Lemonade must be running before Jan can connect to it.
+</Callout>
+
+### Step 2: Configure Jan
+
+1. Navigate to **Settings** (<Settings width={16} height={16} style={{display:"inline"}}/>)
+2. Under **Model Providers**, select **Lemonade**
+3. The **Base URL** is pre-filled — leave it as-is if Lemonade is running locally
+
+### Step 3: Fetch Your Models
+
+Jan will automatically fetch models the first time you open the Lemonade settings page. You can also click the refresh icon at any time to sync the latest model list from your server.
+
+<Callout type='info'>
+Models are fetched on demand when you visit the Lemonade settings page, not at app startup. If the model picker is empty, open **Settings → Lemonade** once to trigger the fetch.
+</Callout>
+
+### Step 4: Start Chatting
+
+1. Open a **Chat**
+2. Select a Lemonade model from the model selector
+3. Start chatting
+</Steps>
+
+## API Format
+
+Lemonade supports both the OpenAI and Anthropic wire formats. Switch between them in the provider settings — use **OpenAI** for standard chat completions, **Anthropic** for the `/v1/messages` endpoint.
+
+## MCP Server
+
+Lemonade includes an MCP gateway. Enable **Enable MCP Server** in the provider settings to register it with Jan. Once enabled, individual projects can activate it via their MCP settings panel.
+
+## Troubleshooting
+
+**Models not appearing**
+- Confirm Lemonade is running: open `http://localhost:13305/v1/health` in a browser
+- Click the refresh icon on the Lemonade provider page in Jan
+
+**Connection refused**
+- Verify Lemonade is running and listening on port 13305
+- Check the Base URL in Jan's Lemonade settings matches your server address
+
+**API key prompt**
+- A key is only needed if your Lemonade server has authentication enabled (`LEMONADE_API_KEY` environment variable)
+
+Need more help? Visit the [Lemonade documentation](https://lemonade-server.ai/) or join the [Jan Discord](https://discord.gg/FTk2MvZwJH).
