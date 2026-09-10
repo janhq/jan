@@ -186,6 +186,8 @@ export const getProviderTitle = (provider: string) => {
       return 'MiniMax'
     case 'nvidia':
       return 'NVIDIA NIM'
+    case 'llmman':
+      return 'llmman'
     default:
       return provider.charAt(0).toUpperCase() + provider.slice(1)
   }
