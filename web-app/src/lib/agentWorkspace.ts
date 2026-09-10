@@ -6,6 +6,7 @@ import {
   memoryDelete,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { invalidateMemory } from '@/lib/agentTools'
 import * as skillStore from '@/lib/skillStore'
 import type { SkillMeta } from '@/lib/skillStore'
 
@@ -51,10 +52,58 @@ export async function readMemory(name: string): Promise<string> {
 
 export async function writeMemory(name: string, content: string): Promise<void> {
   await memoryWrite(await dataFolder(), name, content)
+  invalidateMemory()
 }
 
 export async function deleteMemory(name: string): Promise<void> {
   await memoryDelete(await dataFolder(), name)
+  invalidateMemory()
+}
+
+/**
+ * A filesystem-safe note name from a thread title. The store's names are file
+ * stems, so everything but `[a-z0-9-]` collapses to hyphens; an unusable title
+ * falls back to a generic stem rather than failing the save.
+ */
+export function slugifyMemoryName(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+    .replace(/-+$/, '')
+  return slug || 'memory'
+}
+
+export type RememberResult = {
+  name: string
+  /** True when a note with this exact content already existed; nothing was written. */
+  duplicate: boolean
+}
+
+/**
+ * The chat surface's "Remember" action: save `content` as a note named after
+ * the thread title. `memory_write` replaces a note by name, and this is a new
+ * fact rather than a curated topic, so an existing name gets a `-2`, `-3`, ...
+ * suffix instead of silently overwriting it. A sibling that already holds this
+ * exact content is returned instead of being copied again, so a second click
+ * on the same message is a no-op. A sibling that cannot be read counts as
+ * different: the save must not fail over one unreadable note.
+ */
+export async function rememberNote(
+  title: string,
+  content: string
+): Promise<RememberResult> {
+  const base = slugifyMemoryName(title)
+  const taken = new Set(await listMemories())
+  let name = base
+  for (let n = 2; taken.has(name); n++) {
+    const existing = await readMemory(name).catch(() => null)
+    if (existing === content) return { name, duplicate: true }
+    name = `${base}-${n}`
+  }
+  await writeMemory(name, content)
+  return { name, duplicate: false }
 }
 
 /** Open the store in the OS file manager. */

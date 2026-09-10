@@ -72,17 +72,39 @@ fn describe(content: &str) -> String {
         .unwrap_or_default()
 }
 
+/// One catalog row: enough to advertise a note without shipping its body.
+///
+/// `mtime_ms` (Unix millis, 0 when the filesystem withholds it) lets callers
+/// rank notes by recency - the desktop's chat digest and Cowork's catalog cap
+/// both keep the newest notes when they cannot keep them all.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogEntry {
+    pub name: String,
+    pub summary: String,
+    pub mtime_ms: u64,
+}
+
+fn mtime_ms(path: &Path) -> u64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 /// Memory notes worth advertising in the system prompt: name + summary line, in
-/// sorted order, skipping notes with neither a name nor a summary. This is the
-/// progressive-disclosure catalog - the model calls `memory_read` to load a
+/// name-sorted order, skipping notes with neither a name nor a summary. This is
+/// the progressive-disclosure catalog - the model calls `memory_read` to load a
 /// note on demand. Sync (std::fs) so the sync `context::load_memory_catalog`
 /// can call it directly; the async `memory_*` tools share the same store.
-pub fn catalog(store: &Path) -> Vec<(String, String)> {
+pub fn catalog(store: &Path) -> Vec<CatalogEntry> {
     let dir = memory_dir(store);
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut notes: Vec<(String, String)> = rd
+    let mut notes: Vec<CatalogEntry> = rd
         .filter_map(|e| e.ok())
         .filter_map(|e| {
             let path = e.path();
@@ -93,18 +115,22 @@ pub fn catalog(store: &Path) -> Vec<(String, String)> {
             let body = std::fs::read_to_string(&path).ok();
             match (name, body) {
                 (Some(name), Some(body)) => {
-                    let description = describe(&body);
-                    if name.is_empty() && description.is_empty() {
+                    let summary = describe(&body);
+                    if name.is_empty() && summary.is_empty() {
                         None
                     } else {
-                        Some((name.to_string(), description))
+                        Some(CatalogEntry {
+                            name: name.to_string(),
+                            summary,
+                            mtime_ms: mtime_ms(&path),
+                        })
                     }
                 }
                 _ => None,
             }
         })
         .collect();
-    notes.sort_by(|a, b| a.0.cmp(&b.0));
+    notes.sort_by(|a, b| a.name.cmp(&b.name));
     notes
 }
 
@@ -201,12 +227,20 @@ mod tests {
         std::fs::write(memory_dir(&root).join("notes.txt"), "ignored").unwrap();
 
         let notes = catalog(&root);
+        let named: Vec<(&str, &str)> = notes
+            .iter()
+            .map(|n| (n.name.as_str(), n.summary.as_str()))
+            .collect();
         assert_eq!(
-            notes,
+            named,
             vec![
-                ("decisions".to_string(), "We use Yarn not npm.".to_string()),
-                ("prefs".to_string(), "Keep it minimal.".to_string()),
+                ("decisions", "We use Yarn not npm."),
+                ("prefs", "Keep it minimal."),
             ]
+        );
+        assert!(
+            notes.iter().all(|n| n.mtime_ms > 0),
+            "freshly written notes carry a real mtime: {notes:?}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -218,7 +252,10 @@ mod tests {
         std::fs::write(memory_dir(&root).join("empty.md"), "   \n# Only headings\n").unwrap();
 
         // A curated note is worth advertising by name even if it has no prose.
-        assert_eq!(catalog(&root), vec![("empty".to_string(), String::new())]);
+        let notes = catalog(&root);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].name, "empty");
+        assert_eq!(notes[0].summary, "");
         let _ = std::fs::remove_dir_all(&root);
     }
 

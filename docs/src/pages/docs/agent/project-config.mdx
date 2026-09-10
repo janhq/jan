@@ -84,6 +84,9 @@ allow = []
 deny = []
 allow_write = []
 # sandbox = true
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*"]
+# [tools.env_set]
+# RUST_LOG = "info"
 
 [skills]
 enabled = []
@@ -122,6 +125,11 @@ marginal token spend (replayed context is not recharged each turn).
 See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
 [shell confinement](/docs/agent/permissions#the-shell-sandbox) for everyone who checks it out; it is
 off by default on the CLI.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `env_passthrough` | `[]` | Host environment variables the shell may inherit beyond the minimal base (exact names or a `*` wildcard). Merged with `~/.jan/config.toml`. A secret-looking name is never copied by a wildcard - see [The shell environment](/docs/agent/permissions#the-shell-environment) |
+| `env_set` | `{}` | Explicit `key = "value"` pairs for the shell env, as a `[tools.env_set]` table. Wins over `env_passthrough` and the global value; the way to inject a secret-named variable on purpose |
 
 ### `[skills]`
 

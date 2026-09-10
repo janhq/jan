@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { cleanTitle, generateThreadTitle } from '../thread-title-summarizer'
-import { BACKGROUND_SLOT_ID } from '@/constants/models'
+import { BACKGROUND_THREAD_ID, CHAT_SLOT_ID } from '@/constants/models'
 
 // Mock AI SDK generateText
 const mockGenerateText = vi.fn()
@@ -151,9 +151,11 @@ describe('generateThreadTitle', () => {
     expect(mockCreateModel).toHaveBeenCalledWith(
       'test-model',
       expect.anything(),
-      expect.objectContaining({ id_slot: BACKGROUND_SLOT_ID })
+      expect.objectContaining({
+        id_slot: CHAT_SLOT_ID,
+        thread_id: BACKGROUND_THREAD_ID,
+      })
     )
-    expect(BACKGROUND_SLOT_ID).toBe(1)
   })
 
   it('returns null when aborted', async () => {

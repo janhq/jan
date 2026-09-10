@@ -21,6 +21,18 @@ export interface EngineInfo {
   models: string[]
 }
 
+/** Mirrors `engine::commands::EngineVersion`. */
+export interface EngineVersion {
+  /** llama.cpp's own version, e.g. "0.4.0". */
+  version: string
+  /** Upstream build tag the source was taken from, e.g. "b10809". */
+  tag: string
+  /** The tag's build number, as a string. */
+  build_number: string
+  /** Full commit sha -- the tag is mutable upstream, this is the real pin. */
+  commit: string
+}
+
 /**
  * Mirrors `engine::commands::ReloadReport`. Every model in the preset appears
  * in exactly one list, so an empty `changed`/`removed` proves the reload left
@@ -70,6 +82,7 @@ export type LlamacppConfig = {
   batch_size: number
   ubatch_size: number
   n_cpu_moe: number
+  n_cpu_ffn: number
   no_kv_offload: boolean
   device: string
   split_mode: string
@@ -96,6 +109,12 @@ export type LlamacppConfig = {
   checkpoint_min_step: number
   swa_full: boolean
   kv_unified: string
+  /** Per-slot cap on the shared KV pool, in tokens. 0 = unset. */
+  kv_unified_per_slot: number
+  /** Keep reasoning for the whole history, not just the last assistant turn. */
+  reasoning_preserve: boolean
+  /** On-demand reading of arch-marked tensors: `auto` | `on` | `off`. */
+  lazy_mode: string
   keep: number
 }
 

@@ -12,6 +12,10 @@ import {
   InvalidToolInputError,
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
+import {
+  hasToolImageSentinel,
+  stripToolImageSentinels,
+} from './tool-image-sentinel'
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { ModelFactory } from './model-factory'
@@ -27,9 +31,14 @@ import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
 } from '@/lib/webSearchTool'
-import { useAgentToolsConfig } from '@/hooks/useAgentToolsConfig'
-import { getAgentToolSchemas, sandboxEnforces } from '@/lib/agentTools'
-import { useAppState } from '@/hooks/useAppState'
+import {
+  CHAT_AGENT_TOOL_NAMES,
+  getAgentToolSchemas,
+  memoryDigestNow,
+  refreshMemoryDigest,
+  sandboxEnforces,
+} from '@/lib/agentTools'
+import { useAppState, type ModelLoadProgress } from '@/hooks/useAppState'
 import { unloadLlamaModel, getLoadedModels } from '@janhq/tauri-plugin-llamacpp-api'
 import { engineFailure } from '@/lib/engineError'
 import { ExtensionManager } from '@/lib/extension'
@@ -488,25 +497,41 @@ export function stripUnsupportedImageParts(
       return message
     }
     let touched = false
-    const nextParts = message.parts.filter((part) => {
-      const type = (part as { type?: string }).type
-      if (type === 'image') {
-        touched = true
-        return false
-      }
-      if (type === 'file') {
-        const mediaType = (part as { mediaType?: string }).mediaType
-        if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+    const nextParts = message.parts
+      .filter((part) => {
+        const type = (part as { type?: string }).type
+        if (type === 'image') {
           touched = true
           return false
         }
-      }
-      return true
-    })
+        if (type === 'file') {
+          const mediaType = (part as { mediaType?: string }).mediaType
+          if (typeof mediaType === 'string' && mediaType.startsWith('image/')) {
+            touched = true
+            return false
+          }
+        }
+        return true
+      })
+      .map((part) => {
+        // A tool image (see tool-image-sentinel.ts) would decode into an
+        // image_url part on the tool message; a text-only model rejects that.
+        const output = (part as { output?: unknown }).output
+        if (typeof output !== 'string' || !hasToolImageSentinel(output)) {
+          return part
+        }
+        touched = true
+        return {
+          ...part,
+          output: stripToolImageSentinels(output, TOOL_IMAGE_OMITTED),
+        } as typeof part
+      })
     if (!touched) return message
     return { ...message, parts: nextParts } as UIMessage
   })
 }
+
+const TOOL_IMAGE_OMITTED = ' (image omitted: the model has no vision)'
 
 const RESOLVED_TOOL_STATES = new Set([
   'output-available',
@@ -808,8 +833,38 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Tools will be loaded when updateRagToolsAvailability is called with model capabilities
   }
 
+  protected getModelSelection(): { selectedProvider: string; selectedModel: Model | null } {
+    return useModelProvider.getState()
+  }
+
   setLastUserMessage(message: string): void {
     this.lastUserMessage = message
+  }
+
+  /**
+   * Whether this transport's load state and its `llamacpp-model-load-progress`
+   * events belong to a Cowork run. Cowork overrides the two writers below and
+   * this flag so the load card is fed from useCoworkRun's session mirror,
+   * keeping session ids out of useAppState's thread-keyed slots (which drive
+   * chat-thread active detection).
+   */
+  protected get streamRoutesToCowork(): boolean {
+    return false
+  }
+
+  /** Route the model-loading flag. Base writes useAppState (global + thread). */
+  protected setLoadingModel(threadId: string, loading: boolean): void {
+    useAppState.getState().updateLoadingModel(loading)
+    useAppState.getState().updateThreadLoadingModel(threadId, loading)
+  }
+
+  /** Route model-load progress. Base writes useAppState (global + thread). */
+  protected setModelLoadProgress(
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ): void {
+    useAppState.getState().updateModelLoadProgress(progress)
+    useAppState.getState().updateThreadModelLoadProgress(threadId, progress)
   }
 
   updateSystemMessage(systemMessage: string | undefined) {
@@ -864,9 +919,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * @private
    */
   /**
-   * llama.cpp slot pin for this surface. Chat reuses one slot per thread so its
-   * KV prefix survives across turns; other surfaces override to claim their own
-   * and avoid evicting it. See CHAT_SLOT_ID.
+   * llama.cpp slot pin for this surface. Every surface shares slot 0 -- the one
+   * index guaranteed to exist -- and overrides only `thread_id`, which is what
+   * the engine parks and restores the slot's KV cache by. See CHAT_SLOT_ID.
    */
   protected slotParams(threadId?: string): Record<string, unknown> {
     return { id_slot: CHAT_SLOT_ID, thread_id: threadId }
@@ -881,6 +936,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const raw =
       [
         this.systemMessage,
+        this.buildMemorySystemInstruction(),
         this.buildFilesSystemInstruction(messages),
         this.buildWebSearchSystemInstruction(),
         this.buildAgentToolsSystemInstruction(),
@@ -904,6 +960,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   async refreshTools(abortSignal?: AbortSignal) {
+    // Resolve the memory digest before the prompt is built: the builder is
+    // sync, so it reads the snapshot this await guarantees. Error-safe and
+    // cached inside agentTools, so this is one IPC round-trip per store change.
+    await refreshMemoryDigest()
     if (!this.serviceHub) {
       this.tools = {}
       return
@@ -918,7 +978,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       return disabledToolKeys.includes(toolKey)
     }
 
-    const selectedModel = useModelProvider.getState().selectedModel
+    const selectedModel = this.getModelSelection().selectedModel
     const modelSupportsTools = selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
 
     // Only load tools if model supports them
@@ -1063,20 +1123,20 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         } as Tool
       }
 
-      // Built-in agent tools (filesystem reads plus skills/memory), provided by
-      // the agent-tools plugin. Schemas come from Rust so they are never
-      // re-typed here.
-      if (useAgentToolsConfig.getState().agentToolsEnabled) {
-        try {
-          for (const schema of await getAgentToolSchemas()) {
-            toolsRecord[schema.function.name] = {
-              description: schema.function.description,
-              inputSchema: jsonSchema(schema.function.parameters),
-            } as Tool
-          }
-        } catch (error) {
-          console.warn('Failed to load agent tools:', error)
+      // The main chat offers exactly one built-in agent tool: the sandboxed
+      // shell, with no network. The full toolset lives in Cowork. Schemas come
+      // from Rust so they are never re-typed here, and `getAgentToolSchemas`
+      // already withholds bash when no sandbox backend can confine it.
+      try {
+        for (const schema of await getAgentToolSchemas()) {
+          if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
+          toolsRecord[schema.function.name] = {
+            description: schema.function.description,
+            inputSchema: jsonSchema(schema.function.parameters),
+          } as Tool
         }
+      } catch (error) {
+        console.warn('Failed to load agent tools:', error)
       }
     }
 
@@ -1218,12 +1278,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   ): Promise<ReadableStream<UIMessageChunk>> {
     const threadId = this.threadId ?? options.chatId
     const myGeneration = ++this.streamGeneration
-    useAppState.getState().setCurrentStreamThreadId(threadId)
+    useAppState
+      .getState()
+      .setCurrentStreamThreadId(threadId, this.streamRoutesToCowork)
     // Capture the effective provider name early so the Anthropic serial
     // tool-use repair later uses the same value that was used to create the
     // model, even if the user switches provider mid-request.
-    const modelId = useModelProvider.getState().selectedModel?.id
-    const providerId = useModelProvider.getState().selectedProvider
+    const { selectedModel, selectedProvider: providerId } = this.getModelSelection()
+    const modelId = selectedModel?.id
     const effectiveProviderName = providerId
     const provider = useModelProvider.getState().getProviderByName(providerId)
     if (!this.serviceHub || !modelId || !provider) {
@@ -1239,7 +1301,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
       const inferenceParams = this.getActiveInferenceParams()
 
-      const selectedModel = useModelProvider.getState().selectedModel
       const reasoningParams = buildLlamacppReasoningParams(
         effectiveProviderName,
         selectedModel?.settings?.reasoning?.controller_props?.value as
@@ -1254,10 +1315,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         try {
           const loaded = await getLoadedModels()
           if (!loaded.includes(modelId)) {
-            useAppState.getState().updateLoadingModel(true)
-            useAppState.getState().updateThreadLoadingModel(threadId, true)
-            useAppState.getState().updateModelLoadProgress(undefined)
-            useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+            this.setLoadingModel(threadId, true)
+            this.setModelLoadProgress(threadId, undefined)
           }
         } catch {
           // Ignore probe failures; the router will still load on demand
@@ -1288,9 +1347,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (isPredefinedRemoteProvider(effectiveProviderName)) {
         for (const key of Object.keys(paramsSettings)) delete mergedParams[key]
       }
-      // Pin chat to the chat slot so llama-server reuses this thread's cached
-      // KV prefix across turns; background tasks use BACKGROUND_SLOT_ID and
-      // can't evict it.
+      // Pin chat to slot 0 so llama-server reuses this thread's cached KV
+      // prefix across turns. Cowork and background tasks share the same slot;
+      // what keeps them from destroying this prefix is thread_id below.
       //
       // thread_id names whose cache that is, which is what lets the engine
       // park it when another thread takes the slot and pick it back up later,
@@ -1306,15 +1365,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         providerId,
         options.abortSignal
       )
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
     } catch (error) {
-      useAppState.getState().updateLoadingModel(false)
-      useAppState.getState().updateThreadLoadingModel(threadId, false)
-      useAppState.getState().updateModelLoadProgress(undefined)
-      useAppState.getState().updateThreadModelLoadProgress(threadId, undefined)
+      this.setLoadingModel(threadId, false)
+      this.setModelLoadProgress(threadId, undefined)
       console.error('Failed to create model:', error)
       // Preserve AbortError identity so callers/UI can tell a user-initiated
       // Stop from an actual model-load failure.
@@ -1332,7 +1387,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const inferenceParams = this.getActiveInferenceParams()
 
-    const selectedModel = useModelProvider.getState().selectedModel
 
     const effectiveSystem = this.buildSystemPrompt(messagesToConvert)
 
@@ -1472,7 +1526,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // providerOptions (native thinking config), not the raw body.
     const reasoningProviderOptions = buildReasoningProviderOptions(
       providerId,
-      useModelProvider.getState().selectedModel
+      selectedModel
     )
 
     let streamStartTime: number | undefined
@@ -1574,9 +1628,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // state the newer request already owns.
         if (this.streamGeneration === myGeneration) {
           useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          this.setLoadingModel(threadId, false)
           useAppState.getState().updateLiveTokenStats(undefined)
           useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {
@@ -1602,9 +1655,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       onFinish: ({ responseMessage }) => {
         if (this.streamGeneration === myGeneration) {
           useAppState.getState().updatePromptProgress(undefined)
-          useAppState.getState().updateLoadingModel(false)
           useAppState.getState().updateThreadPromptProgress(threadId, undefined)
-          useAppState.getState().updateThreadLoadingModel(threadId, false)
+          this.setLoadingModel(threadId, false)
           useAppState.getState().updateLiveTokenStats(undefined)
           useAppState.getState().updateThreadLiveTokenStats(threadId, undefined)
           if (useAppState.getState().currentStreamThreadId === threadId) {
@@ -1749,38 +1801,42 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   }
 
   /**
-   * Static instruction describing the isolated agent workspace the built-in
-   * tools operate in. Only added when the toolset is enabled so it doesn't
-   * affect prompt caching for users who keep it off.
+   * Static instruction for the one built-in tool chat offers: the sandboxed
+   * shell. Empty when no sandbox backend enforces, because bash is then
+   * withheld too — stating limits for a tool that is not offered would only
+   * confuse the model, and an empty string keeps the prompt prefix stable.
    */
+  /**
+   * A self-contained digest of the newest memory notes. Chat advertises no
+   * memory tools, so a catalog it cannot dereference would be useless; whole
+   * notes under a strict budget are what fit a conversation surface. Empty when
+   * no note fits, keeping the prompt prefix unchanged for users without memory.
+   */
+  buildMemorySystemInstruction(): string {
+    const digest = memoryDigestNow()
+    if (!digest) return ''
+    return [
+      '# Background Memory',
+      'Notes the user previously chose to keep, from earlier conversations.',
+      'They may be stale; prefer what this conversation itself establishes.',
+      '',
+      digest,
+    ].join('\n')
+  }
+
   buildAgentToolsSystemInstruction(): string {
-    if (!useAgentToolsConfig.getState().agentToolsEnabled) return ''
-    const parts = [
-      '# Workspace',
-      'read, ls, find, grep, write and edit operate on an isolated agent',
-      "workspace, not the user's whole filesystem. Paths are relative to that",
-      'workspace root and cannot escape it. The workspace is scratch space for',
-      'this conversation only and is deleted with it, so do not keep anything',
-      'there that should last. Use memory_write to persist facts worth remembering',
-      'across conversations, and memory_list/memory_read to recall them. Skills',
-      'are reusable instructions: list and read them before a task they cover,',
-      'and record a repeatable procedure with skill_write.',
-    ]
+    if (!sandboxEnforces()) return ''
     // Stating the limits up front is cheaper than letting the model discover
-    // them by having a command refused. Only when bash is actually offered.
-    if (sandboxEnforces()) {
-      parts.push(
-        'bash runs commands in that workspace under an OS sandbox: it starts',
-        'there, can only write there, and cannot read files in the',
-        "user's home directory."
-      )
-      parts.push(
-        useAgentToolsConfig.getState().bashNetworkEnabled
-          ? 'It has network access.'
-          : 'It has no network access, so commands that download or upload will fail.'
-      )
-    }
-    return parts.join(' ')
+    // them by having a command refused.
+    return [
+      '# Shell',
+      'bash runs commands in an isolated scratch workspace under an OS',
+      'sandbox: it starts there, can only write there, and cannot read files',
+      "in the user's home directory. The workspace belongs to this",
+      'conversation alone and is deleted with it, so do not keep anything',
+      'there that should last. It has no network access, so commands that',
+      'download or upload will fail.',
+    ].join(' ')
   }
 
   mapUserInlineAttachments(messages: UIMessage[]): UIMessage[] {

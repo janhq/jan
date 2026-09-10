@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
+use tauri_plugin_agent_tools::tools::spill::{fill_subagent_result, reserve_subagent_result};
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
@@ -561,7 +563,8 @@ fn resolve_dispatch(
 /// Child stream events are folded into the parent's own stream, except the
 /// child's terminal `Done`/`Error`: the parent must not see the child terminate
 /// its stream. Dispatch turns the child's result into a synthetic tool result
-/// instead, bracketed by `SubagentStart`/`SubagentEnd`.
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child's monitor set
+/// and its parked state describe the child alone, so they stay with it too.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
     !matches!(
@@ -569,6 +572,8 @@ fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
         StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
             | StreamEvent::MessagesUpdated { .. }
+            | StreamEvent::Monitors { .. }
+            | StreamEvent::Parked
     )
 }
 
@@ -604,6 +609,32 @@ struct BackgroundEntry {
     run_id: String,
     name: String,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    /// Model-visible path this child's answer is written to, reserved at
+    /// dispatch so the parent is told where to look before there is an answer.
+    /// `None` with no scratch in force (the unconfined CLI, by design).
+    display_path: Option<String>,
+    /// Set by the child's own task the moment it finishes, so teardown can tell
+    /// a run that ended on its own from one it is aborting. Without it every
+    /// uncollected-but-finished child got a second `SubagentEnd` at teardown --
+    /// which used to be rare and, now that collection is optional, would be the
+    /// common case.
+    finished: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
+/// text, plus the run it belongs to so an explicit `await_subagent` can drop it
+/// rather than reporting the same completion twice.
+struct Notice {
+    run_id: String,
+    text: String,
+}
+
+/// What an `await_subagent` collects: the child's final text plus the file its
+/// full answer was already written to (the same path `dispatch_subagent`
+/// reported), so collecting never writes a second copy.
+pub(crate) struct Collected {
+    pub(crate) text: String,
+    pub(crate) display_path: Option<String>,
 }
 
 /// Registry of a single parent run's background subagents, keyed by `run_id`.
@@ -622,6 +653,16 @@ pub(crate) struct BackgroundSubagents {
     /// Used to report each queued child's 1-based position; decremented by the
     /// task itself the moment it acquires its permit.
     queued: std::sync::atomic::AtomicUsize,
+    /// Completions the parent has not been pinged about yet. Drained into the
+    /// conversation as a `<SYSTEM>` reminder at the top of the next turn.
+    notices: std::sync::Mutex<Vec<Notice>>,
+    /// Raised whenever a notice lands, so a parent that has run out of work can
+    /// park until a child finishes instead of ending the run under it.
+    wake: tokio::sync::Notify,
+    /// Children dispatched and not yet finished. Incremented at dispatch and
+    /// decremented only *after* the notice is queued, so `has_pending_work`
+    /// never reads false in the window between the two.
+    running: std::sync::atomic::AtomicUsize,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -643,7 +684,58 @@ impl BackgroundSubagents {
             inner: std::sync::Mutex::new(std::collections::HashMap::new()),
             semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(cap.max(1) as usize)),
             queued: std::sync::atomic::AtomicUsize::new(0),
+            notices: std::sync::Mutex::new(Vec::new()),
+            wake: tokio::sync::Notify::new(),
+            running: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// Take every queued completion ping, oldest first.
+    pub(crate) fn take_notices(&self) -> Vec<String> {
+        std::mem::take(&mut *self.notices.lock().unwrap())
+            .into_iter()
+            .map(|n| n.text)
+            .collect()
+    }
+
+    /// Whether anything could still ping the parent: a child still running, or
+    /// one that finished and whose ping has not been delivered.
+    pub(crate) fn has_pending_work(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
+            || self.running.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// Park until a ping is available, or until nothing is left to wait for.
+    ///
+    /// The waiter is registered *before* the state is re-read (`enable`), so a
+    /// child finishing in between wakes this call rather than being missed --
+    /// `notify_waiters` only reaches waiters already registered.
+    pub(crate) async fn wait_for_notice(&self) {
+        loop {
+            let waiter = self.wake.notified();
+            tokio::pin!(waiter);
+            waiter.as_mut().enable();
+            if !self.notices.lock().unwrap().is_empty()
+                || self.running.load(std::sync::atomic::Ordering::SeqCst) == 0
+            {
+                return;
+            }
+            waiter.await;
+        }
+    }
+
+    fn push_notice(&self, run_id: &str, text: String) {
+        self.notices.lock().unwrap().push(Notice {
+            run_id: run_id.to_string(),
+            text,
+        });
+        self.wake.notify_waiters();
+    }
+
+    /// Drop a queued ping for a run the parent collected explicitly: it already
+    /// has the answer, and telling it again would spend context on nothing.
+    fn drop_notice(&self, run_id: &str) {
+        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
     }
     /// Abort and forget every registered child. Called on parent teardown when
     /// the run is cancelled. Emits a closing `SubagentEnd` for each aborted
@@ -654,11 +746,18 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            // A child that ran to completion already emitted its own end event;
+            // this is only closing the bracket for one cut off mid-run.
+            if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
+                continue;
+            }
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
+                error: None,
             });
         }
+        self.notices.lock().unwrap().clear();
     }
 
     /// Wait for every still-registered child to finish on its own, rather than
@@ -756,6 +855,9 @@ async fn run_subagent(
     // Subagents cannot read or mutate the parent's todo list (isolated child
     // context, matching ask_requests above).
     child_args.todo_registry = None;
+    // A child's monitors are its own and die with it; nothing would pick up a
+    // match left in the session set once the child has returned.
+    child_args.monitors = None;
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -785,12 +887,16 @@ async fn run_subagent(
     drop(child_tx);
     let _ = forwarder.await;
 
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
-
-    match result {
+    let outcome = match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
-    }
+    };
+    let _ = events.send(StreamEvent::SubagentEnd {
+        run_id,
+        name,
+        error: outcome.as_ref().err().map(|e| e.to_string()),
+    });
+    outcome
 }
 
 /// Resolve and start a subagent on a background task, returning its `run_id`
@@ -804,13 +910,19 @@ async fn run_subagent(
 /// until a running child finishes. A queued dispatch still returns its `run_id`
 /// right away, and `await_subagent` on a queued run blocks until it gets a slot
 /// and runs to completion -- never errors, never starts out of turn.
+///
+/// `scratch` is where the child's answer is spilled. The file is reserved here,
+/// before the child has produced a word, so the dispatch can report the path the
+/// parent will read it from; the child's own task fills it in and queues the
+/// `<SYSTEM>` ping that tells the parent it is there.
 pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
-) -> Result<String, SubagentError> {
+    scratch: Option<&Path>,
+) -> Result<Dispatched, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use std::sync::atomic::Ordering;
 
@@ -829,6 +941,10 @@ pub(crate) fn spawn_subagent(
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let result_file = scratch.and_then(|s| {
+        reserve_subagent_result(s, &run_id).map(|path| (scratch_display_path(Some(s), &path), path))
+    });
+    let display_path = result_file.as_ref().map(|(display, _)| display.clone());
 
     // Try to grab a permit at dispatch time. On success the child is admitted
     // immediately; on exhaustion it joins the semaphore waitlist (FIFO) and is
@@ -857,7 +973,12 @@ pub(crate) fn spawn_subagent(
     let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
-    let queued_counter = bg.clone();
+    let name_task = name.clone();
+    let registry = bg.clone();
+    let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let finished_task = finished.clone();
+    let notice_path = display_path.clone();
+    registry.running.fetch_add(1, Ordering::SeqCst);
     let handle = tokio::spawn(async move {
         let permit = match admitted {
             Ok(p) => p,
@@ -866,7 +987,7 @@ pub(crate) fn spawn_subagent(
                     .acquire_owned()
                     .await
                     .expect("subagent semaphore is never closed");
-                queued_counter.queued.fetch_sub(1, Ordering::SeqCst);
+                registry.queued.fetch_sub(1, Ordering::SeqCst);
                 p
             }
         };
@@ -877,9 +998,21 @@ pub(crate) fn spawn_subagent(
             description,
             inherited,
             task_events,
-            run_id_task,
+            run_id_task.clone(),
         )
         .await;
+        if let Some((_, path)) = &result_file {
+            fill_subagent_result(path, &spilled_text(&result));
+        }
+        finished_task.store(true, Ordering::SeqCst);
+        // Queue the ping before releasing the run count, so a parent asking
+        // "is anything still owed to me?" can never see neither.
+        registry.push_notice(
+            &run_id_task,
+            completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
+        );
+        registry.running.fetch_sub(1, Ordering::SeqCst);
+        registry.wake.notify_waiters();
         let _ = tx.send(result);
     });
 
@@ -891,9 +1024,51 @@ pub(crate) fn spawn_subagent(
             run_id: run_id.clone(),
             name,
             events: entry_events,
+            display_path: display_path.clone(),
+            finished,
         },
     );
-    Ok(run_id)
+    Ok(Dispatched {
+        run_id,
+        display_path,
+    })
+}
+
+/// What goes in the spill file. A failed child writes its failure there rather
+/// than leaving the reserved file empty: the parent was told to read that path,
+/// and an empty file reads as "the child had nothing to say".
+fn spilled_text(result: &Result<String, SubagentError>) -> String {
+    match result {
+        Ok(text) => text.clone(),
+        Err(e) => format!("ERROR: {e}"),
+    }
+}
+
+/// The `<SYSTEM>` ping delivered to the parent when a child finishes.
+fn completion_notice(
+    name: &str,
+    run_id: &str,
+    display_path: Option<&str>,
+    result: &Result<String, SubagentError>,
+) -> String {
+    match (result, display_path) {
+        (Err(e), _) => format!("Subagent '{name}' ({run_id}) failed: {e}"),
+        (Ok(_), Some(path)) => format!(
+            "Subagent '{name}' ({run_id}) finished. Its full answer is in {path} -- read that file \
+             when you need it. Do not call await_subagent for this run."
+        ),
+        (Ok(_), None) => format!(
+            "Subagent '{name}' ({run_id}) finished. Call await_subagent with that run_id to read \
+             its answer."
+        ),
+    }
+}
+
+/// What a dispatch reports back: the id to await on, and the file the answer
+/// will be in when the child is done.
+pub(crate) struct Dispatched {
+    pub(crate) run_id: String,
+    pub(crate) display_path: Option<String>,
 }
 
 /// Block until the background subagent `run_id` finishes and return its final
@@ -902,17 +1077,18 @@ pub(crate) fn spawn_subagent(
 pub(crate) async fn await_subagent(
     bg: &Arc<BackgroundSubagents>,
     run_id: &str,
-) -> Result<String, SubagentError> {
-    let rx = {
+) -> Result<Collected, SubagentError> {
+    let taken = {
         let mut guard = bg.inner.lock().unwrap();
-        match guard.get_mut(run_id).and_then(|e| e.result.take()) {
-            Some(rx) => rx,
-            None => {
-                return Err(SubagentError::Upstream(format!(
-                    "unknown or already-collected subagent run '{run_id}'"
-                )))
-            }
-        }
+        guard.get_mut(run_id).and_then(|e| {
+            let rx = e.result.take()?;
+            Some((rx, e.display_path.clone()))
+        })
+    };
+    let Some((rx, display_path)) = taken else {
+        return Err(SubagentError::Upstream(format!(
+            "unknown or already-collected subagent run '{run_id}'"
+        )));
     };
     // Keep the entry (and its abort handle) in the registry while awaiting, so a
     // parent cancellation mid-await can still reach this child via `abort_all`.
@@ -920,7 +1096,9 @@ pub(crate) async fn await_subagent(
     // now-spent entry once the await resolves (a no-op if teardown drained it).
     let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
     bg.inner.lock().unwrap().remove(run_id);
-    outcome
+    // Collected explicitly, so the queued ping for this run is redundant.
+    bg.drop_notice(run_id);
+    outcome.map(|text| Collected { text, display_path })
 }
 
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
@@ -966,7 +1144,7 @@ pub fn subagent_tool_schemas(
         names
     };
     let one_off = " For a one-off subagent, pass system_prompt inline (with a descriptive subagent_name); use create_subagent only to save a reusable definition.";
-    let bg = format!(" Runs in the BACKGROUND and returns a run_id immediately; keep working, dispatch more, then call await_subagent(run_id) to collect each result. Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
+    let bg = format!(" Runs in the BACKGROUND and returns immediately with a run_id and the file its answer will be written to; keep working, dispatch more, and a note tells you the moment each one finishes. Awaiting is optional: call await_subagent(run_id) only to block until a specific child is done. Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
     let dispatch_desc = if available.is_empty() {
         format!("Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} No saved subagents yet.")
     } else {
@@ -1001,7 +1179,7 @@ pub fn subagent_tool_schemas(
             "type": "function",
             "function": {
                 "name": "await_subagent",
-                "description": "Block until a backgrounded subagent (started by dispatch_subagent) finishes, and return its final answer. Pass the run_id that dispatch_subagent returned. Each run_id can be awaited once.",
+                "description": "Block until a backgrounded subagent (started by dispatch_subagent) finishes, and return its final answer. Only worth calling when you have nothing else to do: you are notified as each child finishes, and its answer is on disk either way. Pass the run_id that dispatch_subagent returned. Each run_id can be awaited once.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1162,6 +1340,27 @@ mod tests {
             "name = \"{name}\"\ndescription = \"desc for {name}\"\nsystem_prompt = \"You are {name}.\"\n{extra}"
         );
         std::fs::write(dir.join(format!("{name}.toml")), body).unwrap();
+    }
+
+    /// The ping is what the parent gets when it never awaits, so it has to name
+    /// the file -- and say plainly that awaiting is not the way to read it.
+    #[test]
+    fn the_completion_ping_names_the_reserved_file() {
+        let ok = Ok("the findings".to_string());
+        let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &ok);
+        assert!(note.contains("/tmp/x.md"), "{note}");
+        assert!(note.contains("Do not call await_subagent"), "{note}");
+
+        // Unconfined: no file, so collecting is the only way to read it.
+        let note = completion_notice("researcher", "sub-researcher-1", None, &ok);
+        assert!(note.contains("await_subagent"), "{note}");
+
+        let failed = Err(SubagentError::Upstream("upstream refused".to_string()));
+        let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &failed);
+        assert!(note.contains("failed: "), "{note}");
+        // A failure is written to the reserved file too: the parent was told to
+        // read that path, and an empty file reads as an empty answer.
+        assert!(spilled_text(&failed).starts_with("ERROR: "));
     }
 
     #[test]
@@ -1669,6 +1868,24 @@ mod tests {
 
     // ── background registry (spawn/await/abort) ─────────────────────────────
 
+    /// A registry entry for the run these tests all call "r1", standing in for
+    /// one `spawn_subagent` would have built.
+    fn test_entry(
+        rx: tokio::sync::oneshot::Receiver<Result<String, SubagentError>>,
+        abort: tokio::task::AbortHandle,
+        events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> BackgroundEntry {
+        BackgroundEntry {
+            result: Some(rx),
+            abort,
+            run_id: "r1".to_string(),
+            name: "reviewer".to_string(),
+            events,
+            display_path: None,
+            finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
     #[tokio::test]
     async fn await_unknown_run_errors() {
         let bg = Arc::new(BackgroundSubagents::default());
@@ -1683,16 +1900,10 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         tx.send(Ok("done".to_string())).unwrap();
-        assert_eq!(await_subagent(&bg, "r1").await.unwrap(), "done");
+        assert_eq!(await_subagent(&bg, "r1").await.unwrap().text, "done");
         assert!(await_subagent(&bg, "r1").await.is_err(), "run is consumed");
         handle.abort();
     }
@@ -1705,20 +1916,14 @@ mod tests {
         let (ev_tx, mut ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         let guard = AbortOnDrop(bg.clone());
         drop(guard);
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, .. }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
             }
@@ -1738,13 +1943,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
 
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
@@ -1775,13 +1974,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         bg.join_all().await;
         assert!(bg.inner.lock().unwrap().is_empty(), "join_all drains the map");
@@ -1804,13 +1997,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
 
         let bg_await = bg.clone();
@@ -1864,10 +2051,24 @@ mod tests {
             subagents_enabled: true,
             max_parallel_subagents: 1,
             auto_approve: false,
+            monitors: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
         }
+    }
+
+    /// One queue-test dispatch, with no scratch: these assert admission order,
+    /// not spilling, and a child that fails fast has nothing to write anyway.
+    #[cfg(feature = "cli")]
+    fn dispatch_reviewer(
+        bg: &Arc<BackgroundSubagents>,
+        args: &crate::core::agent::r#loop::OrchestrationArgs,
+        events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> String {
+        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None)
+            .unwrap()
+            .run_id
     }
 
     #[test]
@@ -1935,9 +2136,9 @@ mod tests {
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut starts = Vec::new();
 
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
         assert_ne!(r1, r2);
         assert_ne!(r2, r3);
 
@@ -1990,8 +2191,8 @@ mod tests {
         // Occupy the only slot BEFORE dispatching, so every dispatch queues and
         // the await below is deterministic: nothing can start while held.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
 
         // r2 is queued (not started), and awaiting it must NOT start it: the
         // slot is still held, so the await parks. Assert via the events: no
@@ -2032,9 +2233,9 @@ mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
 
         AbortOnDrop(bg.clone()); // teardown with queued children parked
 

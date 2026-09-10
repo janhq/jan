@@ -48,8 +48,9 @@ vi.mock('ai', async () => {
 
 const provider = {
   provider: 'openai',
+  active: true,
   api_key: 'k',
-  models: [],
+  models: [{ id: 'gpt', capabilities: ['tools'] }],
   settings: [] as Array<{ key: string; controller_props: { value: boolean } }>,
 }
 const selectedModel = { id: 'gpt', capabilities: ['tools'] }
@@ -130,6 +131,8 @@ vi.mock('../model-factory', () => ({
 }))
 
 import { CustomChatTransport } from '../custom-chat-transport'
+import { CoworkChatTransport } from '../coworkTransport'
+import { ModelFactory } from '../model-factory'
 
 const user = (id: string, text: string): UIMessage =>
   ({ id, role: 'user', parts: [{ type: 'text', text }] }) as UIMessage
@@ -373,4 +376,24 @@ describe('CustomChatTransport assistant completion (continuation prefill)', () =
     }).role
     expect(last).toBe('user')
   })
+})
+
+it('keeps a Cowork run on its chosen model when the viewed model changes between steps', async () => {
+  provider.provider = 'openai'
+  h.providerId = 'openai'
+  selectedModel.id = 'gpt'
+  const transport = new CoworkChatTransport('session-a', {
+    model: { provider: 'openai', id: 'gpt' },
+    workspacePath: null,
+    readOnlyFolder: null,
+    planMode: false,
+    webSearch: false,
+    allowSubagents: false,
+    subagentNames: [],
+  })
+  vi.mocked(ModelFactory.createModel).mockClear()
+  await drain(await send(transport, [user('first', 'First step')]))
+  selectedModel.id = 'other-session-model'
+  await drain(await send(transport, [user('next', 'Next step')]))
+  expect(vi.mocked(ModelFactory.createModel).mock.calls.map(([id]) => id)).toEqual(['gpt', 'gpt'])
 })

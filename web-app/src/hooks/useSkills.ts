@@ -3,10 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import * as skillStore from '@/lib/skillStore'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import type { SkillMeta } from '@/lib/skillStore'
 
 export type { SkillMeta }
 export type HubSkill = { name: string; description: string }
+
+/** Which store a listed skill came from. `project` shadows `store` on a name
+ * collision, matching the agent's runtime precedence (#8879). */
+export type SkillOrigin = 'store' | 'project'
+export type ScopedSkill = SkillMeta & { origin: SkillOrigin }
 
 // The `[skills].enabled` whitelist uses three shapes:
 //   []          -> all skills enabled (scaffold default; backward compatible)
@@ -45,14 +51,18 @@ const useSkillsVersion = create<{ v: number; bump: () => void }>((set) => ({
 }))
 
 /**
- * CRUD over the agent's per-project skills (`<folder>/.jan/agent/skills/*.md`).
- * Storage is shared with the settings page's permanent store via `skillStore`;
- * only the root differs. The `[skills].enabled` whitelist and the skill hub stay
- * on their own commands -- both are project concerns with no store equivalent.
- * All operations are scoped to `folder`; with no folder there are no skills.
+ * CRUD over the agent's skills. The permanent store in the Jan data folder is
+ * always listed -- it is what the Cowork agent's `skill_*` tools read by
+ * default -- and with a `folder` its co-located store
+ * (`<folder>/.jan/agent/skills`) layers on top, a project skill shadowing a
+ * same-named global one (#8879). Each returned skill carries its `origin` so
+ * `read`/`write`/`remove` target the store it lives in; a brand-new skill lands
+ * in the folder's store when one is attached, else the permanent store. The
+ * `[skills].enabled` whitelist stays a project concern: with no folder it has
+ * nowhere to live, so everything reads as enabled and `setEnabled` is a no-op.
  */
 export function useSkills(folder: string | null) {
-  const [skills, setSkills] = useState<SkillMeta[]>([])
+  const [skills, setSkills] = useState<ScopedSkill[]>([])
   // Enabled-skill whitelist from `[skills].enabled`; empty = all skills enabled.
   const [enabled, setEnabledState] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
@@ -61,32 +71,58 @@ export function useSkills(folder: string | null) {
   // Mirrors `enabled` so `setEnabled` can roll back to the last known value after
   // an await without depending on (and being recreated by) the state itself.
   const enabledRef = useRef<string[]>([])
+  // name -> origin, so the CRUD callbacks route each skill to its own store
+  // without depending on (and being recreated by) the `skills` state.
+  const originRef = useRef<Map<string, SkillOrigin>>(new Map())
 
-  const scope = useMemo(
-    () => (folder ? skillStore.projectScope(folder) : null),
+  // Where a NEW skill is written: the folder's store when attached, else global.
+  const newScope = useMemo(
+    () => (folder ? skillStore.projectScope(folder) : skillStore.storeScope),
     [folder]
+  )
+  const scopeOf = useCallback(
+    (name: string) => {
+      const origin = originRef.current.get(name)
+      if (origin === 'project' && folder) return skillStore.projectScope(folder)
+      if (origin === 'store') return skillStore.storeScope
+      return newScope
+    },
+    [folder, newScope]
   )
 
   const refresh = useCallback(async () => {
-    if (!folder || !scope) {
-      setSkills([])
-      setEnabledState([])
-      enabledRef.current = []
-      return
-    }
     setLoading(true)
     try {
-      const [list, en] = await Promise.all([
-        skillStore.listSkills(scope),
-        invoke<string[]>('agent_skill_enabled_get', { project: folder }),
+      const [storeList, projectList, en] = await Promise.all([
+        skillStore.listSkills(skillStore.storeScope),
+        folder
+          ? skillStore.listSkills(skillStore.projectScope(folder))
+          : Promise.resolve([]),
+        // The whitelist lives in the project's agent.toml; the permanent
+        // store has none, so everything it holds is enabled.
+        folder
+          ? invoke<string[]>('agent_skill_enabled_get', { project: folder })
+          : Promise.resolve([]),
       ])
+      // Folder skills layer on top: a project skill shadows a same-named global
+      // one, matching the agent's runtime precedence (#8879).
+      const merged = new Map<string, ScopedSkill>()
+      for (const s of storeList) merged.set(s.name, { ...s, origin: 'store' })
+      for (const s of projectList) merged.set(s.name, { ...s, origin: 'project' })
+      const list = [...merged.values()].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      )
       setSkills(list)
+      originRef.current = new Map(list.map((s) => [s.name, s.origin]))
       setEnabledState(en)
       enabledRef.current = en
+    } catch (e) {
+      // A discovery failure must be actionable, not a silently empty list (#8878).
+      toast.error(String(e))
     } finally {
       setLoading(false)
     }
-  }, [folder, scope])
+  }, [folder])
 
   // Persist the enabled whitelist (empty = all). Optimistic local update; on a
   // write failure, roll back so the UI never diverges from the on-disk config.
@@ -94,6 +130,7 @@ export function useSkills(folder: string | null) {
   // SkillSelector toggle) don't produce unhandled rejections.
   const setEnabled = useCallback(
     async (names: string[]) => {
+      if (!folder) return
       const prev = enabledRef.current
       setEnabledState(names)
       enabledRef.current = names
@@ -117,37 +154,36 @@ export function useSkills(folder: string | null) {
     refresh()
   }, [refresh, version])
 
-  // Callers reach these only from surfaces that already require a folder; the
-  // guard keeps that an explicit failure rather than a silent write to the
-  // wrong root.
-  const requireScope = useCallback(() => {
-    if (!scope) throw new Error('No project folder selected')
-    return scope
-  }, [scope])
-
   const read = useCallback(
-    (name: string) => skillStore.readSkill(requireScope(), name),
-    [requireScope]
+    (name: string) => skillStore.readSkill(scopeOf(name), name),
+    [scopeOf]
+  )
+
+  const invokeCommand = useCallback(
+    (name: string, args: string) =>
+      skillStore.invokeSkill(scopeOf(name), name, args),
+    [scopeOf]
   )
 
   const write = useCallback(
     async (name: string, content: string) => {
-      await skillStore.writeSkill(requireScope(), name, content)
+      await skillStore.writeSkill(scopeOf(name), name, content)
       bump()
     },
-    [requireScope, bump]
+    [scopeOf, bump]
   )
 
   const remove = useCallback(
     async (name: string) => {
-      await skillStore.deleteSkill(requireScope(), name)
+      await skillStore.deleteSkill(scopeOf(name), name)
       bump()
     },
-    [requireScope, bump]
+    [scopeOf, bump]
   )
 
   // Anthropic skill hub. `hubList` is project-independent; `hubImport` downloads
-  // into the current folder, then bumps so all instances re-fetch.
+  // into the current folder (or, with none, the permanent store, which needs
+  // the data folder to locate), then bumps so all instances re-fetch.
   const hubList = useCallback(
     () => invoke<HubSkill[]>('agent_skill_hub_list'),
     []
@@ -155,7 +191,14 @@ export function useSkills(folder: string | null) {
 
   const hubImport = useCallback(
     async (name: string) => {
-      await invoke('agent_skill_hub_import', { project: folder, name })
+      const dataFolder = folder
+        ? undefined
+        : ((await getServiceHub().app().getJanDataFolder()) ?? undefined)
+      await invoke('agent_skill_hub_import', {
+        project: folder ?? undefined,
+        dataFolder,
+        name,
+      })
       bump()
     },
     [folder, bump]
@@ -168,6 +211,7 @@ export function useSkills(folder: string | null) {
     loading,
     refresh,
     read,
+    invoke: invokeCommand,
     write,
     remove,
     hubList,

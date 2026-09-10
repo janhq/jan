@@ -75,9 +75,6 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
@@ -93,6 +90,7 @@ macro_rules! invoke_commands_with_extras {
         core::agent::commands::agent_skill_hub_import,
         core::agent::commands::agent_skill_enabled_get,
         core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_skill_invoke,
         core::agent::commands::agent_plugin_list,
         core::agent::commands::agent_plugin_install,
         core::agent::commands::agent_plugin_remove,
@@ -354,10 +352,6 @@ pub fn run() {
                 .handle()
                 .store(store_path)
                 .expect("Store not initialized");
-            let stored_version = store
-                .get("version")
-                .and_then(|v| v.as_str().map(String::from))
-                .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
 
             // Migrate MCP servers
@@ -394,8 +388,6 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
-            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())
         })

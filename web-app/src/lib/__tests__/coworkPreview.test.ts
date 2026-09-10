@@ -5,7 +5,10 @@ import {
   basenameOf,
   isAssetKind,
   unresolvedRefs,
+  externalRefs,
+  previewUrlFor,
   resolveInRoot,
+  resolveInRoots,
 } from '@/lib/coworkPreview'
 
 describe('previewKindFor', () => {
@@ -63,7 +66,6 @@ describe('unresolvedRefs', () => {
   it('does not count anything that resolves on its own', () => {
     expect(unresolvedRefs('<img src="data:image/png;base64,AAA">')).toBe(0)
     expect(unresolvedRefs('<script src="https://cdn.example/x.js">')).toBe(0)
-    expect(unresolvedRefs('<img src="//cdn.example/x.png">')).toBe(0)
     expect(unresolvedRefs('<a href="#section">x</a>')).toBe(0)
     expect(unresolvedRefs('<img src="blob:abc">')).toBe(0)
   })
@@ -75,6 +77,42 @@ describe('unresolvedRefs', () => {
 
   it('ignores empty values', () => {
     expect(unresolvedRefs('<img src="">')).toBe(0)
+  })
+
+  // about:srcdoc has no scheme or host to inherit, so `//cdn` is as dead as
+  // `./x.png`.
+  it('counts protocol-relative refs, which have nothing to inherit from', () => {
+    expect(unresolvedRefs('<img src="//cdn.example/x.png">')).toBe(1)
+  })
+})
+
+describe('externalRefs', () => {
+  it('counts http(s) refs and nothing else', () => {
+    expect(
+      externalRefs(
+        '<script src="https://cdn.example/phaser.js"></script>' +
+          '<link href="http://x.dev/a.css"><img src="data:image/png;base64,AA">' +
+          '<img src="./local.png"><a href="#top">x</a>'
+      )
+    ).toBe(2)
+    expect(externalRefs('<canvas></canvas><script>run()</script>')).toBe(0)
+  })
+})
+
+describe('previewUrlFor', () => {
+  it('keeps the directory structure so relative assets resolve', () => {
+    expect(
+      previewUrlFor('/home/me/proj/index.html', 'http://preview.localhost/%2F')
+    ).toBe('http://preview.localhost/home/me/proj/index.html')
+    expect(previewUrlFor('/a/b.html', 'preview://localhost/%2F')).toBe(
+      'preview://localhost/a/b.html'
+    )
+  })
+
+  it('encodes segments and normalizes a windows path', () => {
+    expect(
+      previewUrlFor('C:\\Users\\me\\my game\\index.html', 'http://preview.localhost/x')
+    ).toBe('http://preview.localhost/C%3A/Users/me/my%20game/index.html')
   })
 })
 
@@ -124,5 +162,29 @@ describe('resolveInRoot', () => {
   it('is null on empty input', () => {
     expect(resolveInRoot(root, '')).toBeNull()
     expect(resolveInRoot('', 'a.md')).toBeNull()
+  })
+})
+
+describe('resolveInRoots', () => {
+  const sandbox = '/data/agent-workspace/sessions/s1'
+  const folder = '/home/me/My Slides'
+
+  it('resolves against the sandbox and returns the matching root', () => {
+    expect(resolveInRoots([sandbox, folder], 'deck.html')).toEqual({
+      abs: `${sandbox}/deck.html`,
+      root: sandbox,
+    })
+  })
+
+  it('resolves a file that lives in the attached folder (#8875)', () => {
+    expect(resolveInRoots([sandbox, folder], `${folder}/deck.html`)).toEqual({
+      abs: `${folder}/deck.html`,
+      root: folder,
+    })
+  })
+
+  it('skips null roots and returns null when nothing contains the path', () => {
+    expect(resolveInRoots([null, sandbox], '/etc/passwd')).toBeNull()
+    expect(resolveInRoots([null, null], 'a.md')).toBeNull()
   })
 })

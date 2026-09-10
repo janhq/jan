@@ -101,6 +101,9 @@ const h = vi.hoisted(() => {
     stopModel: vi.fn().mockResolvedValue(undefined),
     stopAllModels: vi.fn().mockResolvedValue(undefined),
     checkMmprojExists: vi.fn().mockResolvedValue(false),
+    // Null: the engine panel is the llamacpp page's own concern and has its
+    // own test, so it renders nothing here.
+    getEngineVersion: vi.fn().mockResolvedValue(null),
   }
   const dialogSvc = {
     open: vi.fn().mockResolvedValue(null),
@@ -434,6 +437,19 @@ describe('ProviderDetail route', () => {
       h.params.providerName = 'llamacpp'
       renderComponent()
       expect(screen.getByTestId('import-vision')).toBeInTheDocument()
+    })
+
+    // The engine belongs to llamacpp alone: a remote provider runs no engine
+    // of ours, so the panel must not follow the page.
+    it('asks for the engine version only on the llamacpp page', async () => {
+      const asked = h.serviceHub.models().getEngineVersion
+      asked.mockClear()
+      renderComponent()
+      expect(asked).not.toHaveBeenCalled()
+
+      h.params.providerName = 'llamacpp'
+      renderComponent()
+      await waitFor(() => expect(asked).toHaveBeenCalled())
     })
   })
 

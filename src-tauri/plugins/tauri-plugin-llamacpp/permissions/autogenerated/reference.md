@@ -14,6 +14,7 @@ Default permissions for the llamacpp plugin
 - `allow-start-engine`
 - `allow-stop-engine`
 - `allow-get-engine-info`
+- `allow-get-engine-version`
 - `allow-reload-engine-models`
 - `allow-engine-devices`
 - `allow-force-stop-engine`
@@ -288,6 +289,32 @@ Enables the get_engine_info command without any pre-configured scope.
 <td>
 
 Denies the get_engine_info command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:allow-get-engine-version`
+
+</td>
+<td>
+
+Enables the get_engine_version command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`llamacpp:deny-get-engine-version`
+
+</td>
+<td>
+
+Denies the get_engine_version command without any pre-configured scope.
 
 </td>
 </tr>

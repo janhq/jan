@@ -1,15 +1,27 @@
-import type { Tool, UIMessage } from 'ai'
+import type { Tool } from 'ai'
 import { CustomChatTransport } from '@/lib/custom-chat-transport'
-import { COWORK_SLOT_ID } from '@/constants/models'
-import { sandboxEnforces } from '@/lib/agentTools'
+import { useCoworkRun } from '@/hooks/useCoworkRun'
+import type { ModelLoadProgress } from '@/hooks/useAppState'
+import { CHAT_SLOT_ID, coworkThreadId } from '@/constants/models'
+import {
+  getMemoryCatalog,
+  sandboxEnforces,
+  type MemoryCatalogEntry,
+} from '@/lib/agentTools'
 import {
   buildCoworkTools,
   coworkToolSignature,
   type CoworkToolOptions,
 } from '@/lib/coworkTools'
-import { buildCoworkSystemPrompt } from '@/lib/coworkPrompt'
+import {
+  buildCoworkSystemPrompt,
+  type CoworkEnvironment,
+} from '@/lib/coworkPrompt'
+import { getCoworkEnvironment } from '@/lib/coworkEnv'
+import { useModelProvider } from '@/hooks/useModelProvider'
 
 export type CoworkRunConfig = CoworkToolOptions & {
+  model: ThreadModel
   workspacePath: string | null
   readOnlyFolder: string | null
 }
@@ -19,11 +31,12 @@ export type CoworkRunConfig = CoworkToolOptions & {
  *
  * Everything expensive is inherited: model creation and its abort-during-load
  * unload, the sampling/reasoning merge, attachment encoding, tool-call repair,
- * and the usage metadata. Only four things differ, and each is a seam on the
- * parent.
+ * and the usage metadata. Cowork-specific behavior uses protected overrides,
+ * including the model selection captured for the run.
  */
 export class CoworkChatTransport extends CustomChatTransport {
   private config: CoworkRunConfig
+  private runModel: ThreadModel
   /**
    * The advertised tool set, frozen for a run's lifetime.
    *
@@ -36,10 +49,33 @@ export class CoworkChatTransport extends CustomChatTransport {
    * pay for a rebuild at every run boundary. */
   private builtTools: Record<string, Tool> | null = null
   private builtSig = ''
+  /**
+   * The memory catalog advertised this run. Snapshotted with the tool freeze,
+   * for the same reason: a mid-run change to the prompt prefix discards the KV
+   * cache on every step. A note written mid-run appears at the next run.
+   */
+  private memoryCatalog: MemoryCatalogEntry[] = []
+  /** Snapshotted with the tool freeze: the date line changing mid-run would
+   * discard the prompt prefix on every step, exactly like a catalog change. */
+  private environment: CoworkEnvironment | null = null
 
   constructor(sessionId: string, config: CoworkRunConfig) {
     super(undefined, sessionId)
     this.config = config
+    this.runModel = { ...config.model }
+  }
+
+  protected override getModelSelection() {
+    const provider = useModelProvider
+      .getState()
+      .getProviderByName(this.runModel.provider)
+    return {
+      selectedProvider: this.runModel.provider,
+      selectedModel: provider?.active
+        ? (provider.models.find((model) => model.id === this.runModel.id) ??
+          null)
+        : null,
+    }
   }
 
   /** Applied at the next run: changing it mid-run would invalidate the prefix. */
@@ -47,9 +83,32 @@ export class CoworkChatTransport extends CustomChatTransport {
     this.config = config
   }
 
+  /**
+   * Load state (and the `llamacpp-model-load-progress` events keyed off
+   * `currentStreamThreadId`) route to useCoworkRun's session mirror, keyed by
+   * session id — never into useAppState's thread-keyed slots, which drive
+   * chat-thread active detection. `threadId` here is the session id (the value
+   * passed to the base constructor).
+   */
+  protected override get streamRoutesToCowork(): boolean {
+    return true
+  }
+
+  protected override setLoadingModel(threadId: string, loading: boolean): void {
+    useCoworkRun.getState().setSessionLoadingModel(threadId, loading)
+  }
+
+  protected override setModelLoadProgress(
+    threadId: string,
+    progress: ModelLoadProgress | undefined
+  ): void {
+    useCoworkRun.getState().setSessionModelLoadProgress(threadId, progress)
+  }
+
   /** Drop the freeze so the next run re-reads the config. */
   unfreezeTools() {
     this.frozenTools = null
+    this.runModel = { ...this.config.model }
   }
 
   /**
@@ -62,29 +121,33 @@ export class CoworkChatTransport extends CustomChatTransport {
     return this.frozenTools ?? this.tools
   }
 
-  /** Cowork gets its own llama.cpp slot: sharing chat's would evict the viewed
-   * thread's prefix on every one of this turn's many prefills, and vice versa. */
+  /** Cowork shares slot 0 with the main chat, under a thread identity of its
+   * own: the engine parks the outgoing thread's KV prefix when the identity on
+   * the slot changes, so neither surface loses its cache to the other. */
   protected override slotParams(threadId?: string): Record<string, unknown> {
-    return { id_slot: COWORK_SLOT_ID, thread_id: `cowork:${threadId ?? ''}` }
+    return { id_slot: CHAT_SLOT_ID, thread_id: coworkThreadId(threadId) }
   }
 
   /**
    * Cowork's own prompt replaces the chat one wholesale — the agent-tools and
    * web-search blurbs are written for a chat that occasionally reaches for a
-   * tool, not for a run whose whole purpose is tool use. The attached-files
-   * instruction is kept: a pasted document is otherwise never explained.
+   * tool, not for a run whose whole purpose is tool use. Attached documents
+   * need no instruction here either: they are copied into the workspace and
+   * named in the question itself (`withAttachedFiles`).
    */
-  protected override buildSystemPrompt(messages: UIMessage[]): string {
-    const base = buildCoworkSystemPrompt({
+  protected override buildSystemPrompt(): string {
+    return buildCoworkSystemPrompt({
       workspacePath: this.config.workspacePath,
       readOnlyFolder: this.config.readOnlyFolder,
       planMode: this.config.planMode,
       bashAvailable: sandboxEnforces(),
-      subagentNames: this.config.allowSubagents ? this.config.subagentNames : [],
+      subagentNames: this.config.allowSubagents
+        ? this.config.subagentNames
+        : [],
       webSearch: this.config.webSearch,
+      memoryCatalog: this.memoryCatalog,
+      environment: this.environment,
     })
-    const files = this.buildFilesSystemInstruction(messages)
-    return files.trim().length > 0 ? `${base}\n\n${files}` : base
   }
 
   /**
@@ -104,6 +167,10 @@ export class CoworkChatTransport extends CustomChatTransport {
       this.tools = this.frozenTools
       return
     }
+    // Run boundary: re-snapshot the catalog even when the tool set is reused,
+    // since memory moves independently of the tool config.
+    this.memoryCatalog = await getMemoryCatalog()
+    this.environment = await getCoworkEnvironment()
     const sig = coworkToolSignature(this.config, sandboxEnforces())
     // Between runs, skip the rebuild when nothing that shapes the set changed.
     if (this.builtTools && this.builtSig === sig) {

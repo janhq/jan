@@ -717,6 +717,9 @@ fn build_cli_orchestration_args(
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
         session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // Run-owned here, so a headless run parks on its watchers: nobody is
+        // there to talk to meanwhile. The TUI installs its session set itself.
+        monitors: None,
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
@@ -1380,8 +1383,18 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
-        StreamEvent::SubagentEnd { name, .. } => {
-            eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m")
+        StreamEvent::SubagentEnd { name, error, .. } => match error {
+            Some(e) => eprintln!("\x1b[2m[subagent:{name}] failed: {e}\x1b[0m"),
+            None => eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m"),
+        },
+        StreamEvent::Notice { text } => {
+            eprintln!("\x1b[2m[notice] {text}\x1b[0m")
+        }
+        // The snapshot backs a live panel the headless printer has no room
+        // for; `Notice` already reports each match as it lands.
+        StreamEvent::Monitors { .. } => {}
+        StreamEvent::Parked => {
+            eprintln!("\x1b[2m[parked] waiting on background work\x1b[0m")
         }
         StreamEvent::Subagent { name, event, .. } => {
             if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
