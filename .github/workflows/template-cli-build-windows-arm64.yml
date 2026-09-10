@@ -64,8 +64,8 @@ jobs:
           JAN_CLI_BUILD_VERSION: ${{ inputs.new_version }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
         run: |
-          cd src-tauri
-          cargo build --no-default-features --features cli --bin jan --release
+          cd src-tauri/jan-cli
+          cargo build --no-default-features --features cli --release
 
       # The binary must be ARM64: the runner can run x64 under emulation, so a
       # toolchain mix-up would produce a working but emulated build that this
