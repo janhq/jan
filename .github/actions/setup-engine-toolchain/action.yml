@@ -136,8 +136,11 @@ runs:
           case "$token" in cuda*) major="${token#cuda}" ;; esac
         done
         # Pinned: the redist tree has no "latest" alias. Add a line per major.
+        # 13.2 is the floor on Windows, not a preference: windows-2025 resolves
+        # to the vs2026 image, and crt/host_config.h rejects _MSC_VER >= 1950
+        # until then.
         case "$major" in
-        13) release='13.0.3' ;;
+        13) release='13.2.2' ;;
         12) release='12.4.1' ;;
         *)
           echo "error: no pinned CUDA redist release for cuda$major" >&2
@@ -219,6 +222,14 @@ runs:
           rm -rf "$archive" "$dir"
         done
         rm -rf "$tmp"
+
+        # nvcc looks for the runtime in `<nvcc>/../lib64` on Linux; the archives
+        # ship it as lib, and it is the installer that makes the other name.
+        # Without this, cmake's compiler-id link fails on -lcudadevrt.
+        if [ "$RUNNER_OS" = 'Linux' ] && [ ! -e "$root/lib64" ]; then
+          ln -s lib "$root/lib64"
+        fi
+
         echo "engine toolchain: fetched $((bytes / 1024 / 1024)) MB of CUDA $release in $((SECONDS - sw))s"
 
         # nvcc is under bin, or bin/x64 on some Windows releases while the DLLs
