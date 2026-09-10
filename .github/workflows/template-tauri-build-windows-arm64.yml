@@ -116,11 +116,18 @@ on:
           the vulkan feature -- and the SDK requirement -- to any vendor build
           whether or not the variant named it. Set to 1 with cuda13-vulkan.
 
+  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
+  # default branch, so until this merges a push is the only way to exercise it.
+  # Drop this once it lands there.
+  push:
+    branches: ['feat/windows-arm64']
+
 env:
-  CHANNEL: ${{ inputs.channel }}
-  NEW_VERSION: ${{ inputs.new_version }}
-  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant }}
-  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback }}
+  # `||` defaults because a push carries no inputs at all.
+  CHANNEL: ${{ inputs.channel || 'nightly' }}
+  NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
+  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
+  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
   CUDA_SHORT: '13.4'
   # Redistributable archives, as upstream llama.cpp provisions this same
   # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
