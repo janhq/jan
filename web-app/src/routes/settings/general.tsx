@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { invoke } from '@tauri-apps/api/core'
 import { route } from '@/constants/routes'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
@@ -66,9 +65,6 @@ function General() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
   const [isValidatingToken, setIsValidatingToken] = useState(false)
-  const [cliInstalled, setCliInstalled] = useState<boolean | null>(null)
-  const [cliPath, setCliPath] = useState<string | null>(null)
-  const [isCliLoading, setIsCliLoading] = useState(false)
 
   useEffect(() => {
     const fetchDataFolder = async () => {
@@ -78,41 +74,6 @@ function General() {
 
     fetchDataFolder()
   }, [serviceHub])
-
-  useEffect(() => {
-    if (!IS_TAURI) return
-    invoke<{ installed: boolean; path: string | null }>('check_jan_cli_installed')
-      .then((s) => { setCliInstalled(s.installed); setCliPath(s.path) })
-      .catch(() => setCliInstalled(false))
-  }, [])
-
-  const handleInstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      const s = await invoke<{ installed: boolean; path: string | null }>('install_jan_cli')
-      setCliInstalled(s.installed)
-      setCliPath(s.path)
-      toast.success(`Jan CLI installed to ${s.path}`)
-    } catch (e) {
-      toast.error('Install failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
-
-  const handleUninstallCli = async () => {
-    setIsCliLoading(true)
-    try {
-      await invoke('uninstall_jan_cli')
-      setCliInstalled(false)
-      setCliPath(null)
-      toast.success('Jan CLI uninstalled')
-    } catch (e) {
-      toast.error('Uninstall failed', { description: String(e) })
-    } finally {
-      setIsCliLoading(false)
-    }
-  }
 
   const resetApp = async (options: FactoryResetOptions) => {
     if (isRootDir(janDataFolder ?? '/')) {
@@ -408,32 +369,19 @@ function General() {
             <Card title="Advanced">
               {IS_TAURI && (
                 <CardItem
-                  title="Jan CLI"
-                  description={
-                    cliInstalled && cliPath
-                      ? `Installed at ${cliPath} — use jan from your terminal to serve models.`
-                      : 'Use jan from your terminal to serve models without opening the app.'
-                  }
+                  title={t('settings:general.janCli')}
+                  description={t('settings:general.janCliDesc')}
                   actions={
-                    cliInstalled ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleUninstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Uninstalling…' : 'Uninstall'}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleInstallCli}
-                        disabled={isCliLoading || cliInstalled === null}
-                      >
-                        {isCliLoading ? 'Installing…' : 'Install'}
-                      </Button>
-                    )
+                    <a
+                      href="https://www.jan.ai/docs/agent/quickstart"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span>{t('settings:general.janCliSetupGuide')}</span>
+                        <IconExternalLink size={14} />
+                      </div>
+                    </a>
                   }
                 />
               )}

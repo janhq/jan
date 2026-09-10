@@ -19,8 +19,26 @@ export type ToolCallBar =
    * The workspace tools. `target` is whatever the call is really about -- a path
    * for read/ls, the pattern for find/grep, the entry name for memory/skill --
    * with `detail` carrying the secondary argument when there is one.
+   *
+   * `body` (a `write`'s file content) and `edits` (an `edit`'s replacement
+   * pairs) are the arguments worth showing while they stream: for those two
+   * tools the arguments are the work itself, and a large one takes long enough
+   * that a spinner says nothing about it.
    */
-  | { variant: 'workspace'; tool: string; target: string; detail?: string }
+  | {
+      variant: 'workspace'
+      tool: string
+      target: string
+      detail?: string
+      body?: string
+      edits?: { old_string: string; new_string?: string }[]
+    }
+  /**
+   * `task`. The card answers "which subagent, and what did it just get asked
+   * to do" -- how it is getting on belongs to the tasks panel, which follows
+   * the child for as long as it runs.
+   */
+  | { variant: 'subagent'; name: string; task: string }
 
 /**
  * Owned by the RAG extension (extensions/rag-extension/src/tools.ts) and not
@@ -31,6 +49,27 @@ export const RAG_RETRIEVE_TOOL = 'retrieve'
 
 const asString = (value: unknown): string =>
   typeof value === 'string' ? value : ''
+
+/** `edit`'s replacement pairs, from settled arguments or a streaming fragment
+ * -- both carry the tool's own shape. A pair whose `new_string` has not arrived
+ * is the one being written, and is kept. */
+const asEdits = (
+  value: unknown
+): { old_string: string; new_string?: string }[] | undefined => {
+  if (!Array.isArray(value)) return undefined
+  const edits = value.flatMap((entry) => {
+    const old = (entry as { old_string?: unknown })?.old_string
+    if (typeof old !== 'string') return []
+    const next = (entry as { new_string?: unknown })?.new_string
+    return [
+      {
+        old_string: old,
+        new_string: typeof next === 'string' ? next : undefined,
+      },
+    ]
+  })
+  return edits.length > 0 ? edits : undefined
+}
 
 /**
  * Build the bar for a native tool call from its arguments. Arguments stream in,
@@ -48,17 +87,30 @@ export function describeNativeToolCall(
     typeof value === 'number' ? value : undefined
 
   if (origin.kind === 'web-search') {
-    return { variant: 'search', query: asString(args.query), count: asCount(args.count) }
+    return {
+      variant: 'search',
+      query: asString(args.query),
+      count: asCount(args.count),
+    }
   }
   if (origin.kind === 'web-fetch') {
     return { variant: 'address', url: asString(args.url) }
+  }
+  if (origin.kind === 'subagent') {
+    return {
+      variant: 'subagent',
+      name: asString(args.subagent_name),
+      task: asString(args.description),
+    }
   }
   if (origin.kind === 'rag' && toolName === RAG_RETRIEVE_TOOL) {
     return {
       variant: 'documents',
       query: asString(args.query),
       count: asCount(args.top_k),
-      fileCount: Array.isArray(args.file_ids) ? args.file_ids.length : undefined,
+      fileCount: Array.isArray(args.file_ids)
+        ? args.file_ids.length
+        : undefined,
     }
   }
   if (origin.kind === 'agent') {
@@ -85,6 +137,8 @@ export function describeNativeToolCall(
       variant: 'workspace',
       tool: toolName,
       target: asString(args.path) || asString(args.name),
+      body: toolName === 'write' ? asString(args.content) : undefined,
+      edits: toolName === 'edit' ? asEdits(args.edits) : undefined,
     }
   }
   return undefined
@@ -168,7 +222,7 @@ export function parseWebFetchOutput(output: unknown): WebFetchPage | undefined {
     typeof output === 'string'
       ? output
       : typeof (output as { content?: unknown })?.content === 'string'
-        ? ((output as { content: string }).content)
+        ? (output as { content: string }).content
         : undefined
   if (text === undefined) return undefined
 

@@ -16,10 +16,10 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
-    escapes_project, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_any_root, symlink_escapes_root,
+    escapes_write_roots, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
+    scratch_display_path, symlink_escapes_any_root,
 };
-use crate::tools::{BuiltinTool, ImageContentPart, ToolContext};
+use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
 const MAX_BYTES: usize = 64 * 1024;
 const MAX_LINES: usize = 2000;
@@ -144,7 +144,17 @@ pub async fn execute_builtin(
     let scratch = ctx.scratch_root;
     let (content, images) = match tool.name {
         "read" => read(args, project_root, scratch, ctx.read_roots).await,
-        "screenshot" => screenshot(args, project_root, scratch, ctx.read_roots).await,
+        #[cfg(feature = "tauri")]
+        "screenshot" => {
+            screenshot(
+                args,
+                project_root,
+                scratch,
+                ctx.read_roots,
+                ctx.screenshot_backend.as_ref(),
+            )
+            .await
+        }
         _ => (execute_text(tool, args, ctx).await, None),
     };
     (content, images)
@@ -165,8 +175,26 @@ async fn execute_text(
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
         "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
-        "write" => write(args, project_root, scratch, ctx.confine_writes).await,
-        "edit" => edit(args, project_root, scratch, ctx.confine_writes).await,
+        "write" => {
+            write(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
+        "edit" => {
+            edit(
+                args,
+                project_root,
+                scratch,
+                ctx.confine_writes,
+                ctx.write_roots,
+            )
+            .await
+        }
         "bash" => bash(args, ctx).await,
         "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
         "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
@@ -408,7 +436,7 @@ fn render_write_diff(prior: Option<&str>, content: &str) -> String {
 /// `skill_list` tool: catalog of `name — description` lines for ENABLED skills
 /// only (disabled skills must stay invisible to the model). Empty if none.
 fn skill_list(ctx: &ToolContext<'_>) -> String {
-    skills::catalog(ctx.store_root, ctx.enabled_skills)
+    skills::catalog_layered(&ctx.skill_roots(), ctx.enabled_skills)
         .iter()
         .map(|m| {
             if m.description.is_empty() {
@@ -431,7 +459,7 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' not found");
     }
-    let raw = match skills::read_raw(ctx.store_root, name) {
+    let raw = match skills::read_raw_layered(&ctx.skill_roots(), name) {
         Ok(raw) => raw,
         Err(e) => return e,
     };
@@ -632,6 +660,7 @@ async fn write(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -642,8 +671,9 @@ async fn write(
     // Defense in depth: when the caller confines writes, re-canonicalize on the
     // canonical root (not the raw argument) so `..` and absolute paths are
     // caught even if the gate's decision was made against a stale view.
+    // `write_roots` widen the confinement exactly as they widened the gate.
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to write outside the agent workspace: {path}");
     }
     // Report the resolved location, not the raw argument: an absolute or `../`
@@ -653,7 +683,7 @@ async fn write(
     // concurrent sandboxed process can swap a path component between the gate
     // decision and this call, and creating the parents first would already have
     // made directories through the swapped link. Fail closed.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to write through a symlink out of the workspace: {path}");
     }
     if let Some(parent) = target.parent() {
@@ -682,6 +712,7 @@ async fn edit(
     root: &Path,
     scratch: Option<&Path>,
     confine: bool,
+    write_roots: &[PathBuf],
 ) -> String {
     let Some(path) = arg_str(args, "path") else {
         return "ERROR: missing required argument 'path'".to_string();
@@ -693,13 +724,13 @@ async fn edit(
         return "ERROR: edits must contain at least one replacement".to_string();
     }
     let target = resolve_path(root, scratch, path);
-    if confine && escapes_project(root, scratch, path).unwrap_or(true) {
+    if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
     let shown = display_path(root, scratch, &target);
     // Re-validate before the final read+write pair so a swapped symlink cannot
     // redirect either the read or the later write.
-    if symlink_escapes_root(root, scratch, &target) {
+    if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     }
     let mut content = match tokio::fs::read_to_string(&target).await {
@@ -733,6 +764,64 @@ async fn edit(
     }
 }
 
+/// The shell a confined command launches with: the (possibly jail-wrapped)
+/// shell config, the path the sandbox exposes as its temp dir, and the policy
+/// itself (which `denial_hint` reads even when the shell runs unconfined).
+///
+/// With the sandbox off the shell is spawned bare, the way the user's own
+/// terminal would run it: no wrapper, no policy mounts, the real `$HOME` and
+/// `/tmp`. Only a surface that opted in gets that (the CLI's
+/// `--sandbox`/`sandbox` setting); the desktop never does, so an exec there is
+/// still confined or withheld. Shared by `bash` and the `monitor` condition
+/// scripts so a monitored evaluation runs under exactly the policy a `bash`
+/// call would.
+pub(crate) fn confined_shell(
+    ctx: &ToolContext<'_>,
+) -> Result<(proc::ShellConfig, Option<PathBuf>, jail::Policy), String> {
+    let root = ctx.project_root;
+    let mut policy =
+        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
+    // While the shell is sandboxed, hide the project's own `.jan` state directory
+    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
+    // hide is both pointless (there is no OS mount to layer it on) and wrong
+    // (the agent should see its own state), so it is only applied when sandboxed.
+    if ctx.sandbox {
+        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
+    }
+    if let Some(mask) = ctx.mask_root {
+        policy = policy.with_mask_root(mask);
+    }
+    if let Some(scratch) = ctx.scratch_root {
+        policy = policy.with_scratch_root(scratch);
+    }
+    if !ctx.read_roots.is_empty() {
+        policy = policy.with_read_roots(ctx.read_roots.to_vec());
+    }
+    if !ctx.write_roots.is_empty() {
+        policy = policy.with_write_roots(ctx.write_roots.to_vec());
+    }
+    let shell = if ctx.sandbox {
+        // No confinement available means no shell: running unsandboxed would give
+        // the command the whole machine, which is never what the caller asked for.
+        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
+            return Err(
+                "ERROR: bash is unavailable because no OS sandbox could be established on \
+                 this system. Use the read/ls/find/grep tools instead."
+                    .to_string(),
+            );
+        };
+        wrapped
+    } else {
+        proc::shell().clone()
+    };
+    let sandbox_tmp = if ctx.sandbox {
+        jail::scratch_env_path(jail::backend(), &policy)
+    } else {
+        None
+    };
+    Ok((shell, sandbox_tmp, policy))
+}
+
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
     else {
@@ -752,50 +841,20 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         );
     }
 
-    let mut policy =
-        jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
-    // While the shell is sandboxed, hide the project's own `.jan` state directory
-    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
-    // hide is both pointless (there is no OS mount to layer it on) and wrong
-    // (the agent should see its own state), so it is only applied when sandboxed.
-    if ctx.sandbox {
-        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
-    }
-    if let Some(mask) = ctx.mask_root {
-        policy = policy.with_mask_root(mask);
-    }
-    if let Some(scratch) = ctx.scratch_root {
-        policy = policy.with_scratch_root(scratch);
-    }
-    if !ctx.read_roots.is_empty() {
-        policy = policy.with_read_roots(ctx.read_roots.to_vec());
-    }
-    // With the sandbox off the shell is spawned bare, the way the user's own
-    // terminal would: no wrapper, no policy, the real `$HOME` and `/tmp`. Only
-    // a surface that opted in gets here (the CLI's `--sandbox`/`sandbox`
-    // setting); the desktop never does, so `bash` there is still confined or
-    // withheld. `policy` is still built either way -- it is what
-    // `denial_hint` reads, and an unconfined command can still hit a plain
-    // filesystem permission error worth explaining.
-    let shell = if ctx.sandbox {
-        // No confinement available means no shell: running unsandboxed would give
-        // the command the whole machine, which is never what the caller asked for.
-        let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
-            return "ERROR: bash is unavailable because no OS sandbox could be established on \
-                    this system. Use the read/ls/find/grep tools instead."
-                .to_string();
-        };
-        wrapped
-    } else {
-        proc::shell().clone()
+    let (shell, sandbox_tmp, policy) = match confined_shell(ctx) {
+        Ok(v) => v,
+        Err(e) => return e,
     };
-
-    let sandbox_tmp = if ctx.sandbox {
-        jail::scratch_env_path(jail::backend(), &policy)
-    } else {
-        None
-    };
-    let child = match proc::spawn(&shell, command, root, sandbox_tmp.as_deref()).await {
+    let child = match proc::spawn(
+        &shell,
+        command,
+        root,
+        sandbox_tmp.as_deref(),
+        ctx.shell_env(),
+        ctx.thread_id,
+    )
+    .await
+    {
         Ok(c) => c,
         Err(e) => return format!("ERROR: failed to run command: {e}"),
     };
@@ -808,6 +867,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
+    // Owned for the detached task, which unregisters from the same session
+    // bucket the child was registered under.
+    let thread_owned = ctx.thread_id.map(str::to_string);
     // Cloned into the detached task, which is what keeps a backgrounded command
     // reporting after this call has already returned its `job_id`.
     let sink = ctx.on_output.clone();
@@ -835,7 +897,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             );
         }
         if let Some(pid) = pid {
-            proc::unregister(pid);
+            proc::unregister(thread_owned.as_deref(), pid);
         }
         let _ = tx.send(out);
     });
@@ -1124,28 +1186,7 @@ fn spill_dir(scratch: Option<&Path>) -> Option<PathBuf> {
     let base = scratch
         .map(Path::to_path_buf)
         .unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("jan-bash");
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.is_dir() => return None,
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            // create_dir (not create_dir_all) refuses to follow a planted
-            // symlink in the path it creates.
-            let r = std::fs::create_dir(&dir);
-            if let Err(e) = r {
-                if e.kind() != std::io::ErrorKind::AlreadyExists {
-                    return None;
-                }
-            }
-        }
-        Err(_) => return None,
-    }
-    // Re-verify the node is a real directory, not a symlink a concurrent
-    // process swapped in between the create and this check.
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if !meta.file_type().is_symlink() && meta.is_dir() => Some(dir),
-        _ => None,
-    }
+    crate::tools::spill::validated_subdir(&base, "jan-bash")
 }
 
 fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
@@ -1153,16 +1194,11 @@ fn new_temp_path(scratch: Option<&Path>) -> Option<PathBuf> {
     Some(spill_dir(scratch)?.join(format!("jan-bash-{}-{}.txt", std::process::id(), n)))
 }
 
-/// Open a spill file atomically with `O_EXCL` so we never truncate or write
-/// through an existing symlink the shell planted: `create_new` fails if the
-/// path already exists (as a file or a symlink). Combined with the validated
-/// non-symlink parent from [`spill_dir`], the model-controlled spill bytes
-/// cannot be redirected onto a host file.
+/// Open a spill file atomically; see [`crate::tools::spill::open_excl`].
+/// Combined with the validated non-symlink parent from [`spill_dir`], the
+/// model-controlled spill bytes cannot be redirected onto a host file.
 fn open_spill_file(path: &Path) -> std::io::Result<std::fs::File> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
+    crate::tools::spill::open_excl(path)
 }
 
 /// Write `content` to a uniquely named temp file, returning its path on
@@ -1215,22 +1251,22 @@ fn chrome_binary() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-/// Render a local HTML/SVG file to PNG bytes with headless Chrome.
+/// Render a local HTML/SVG file to PNG bytes.
 ///
-/// Shared by the model-facing `screenshot` tool and the `agent_render_preview`
-/// command the annotation overlay calls, so both agree on Chrome discovery,
-/// viewport clamping and the output cap. `width`/`height` are the viewport in
-/// CSS pixels; the caller picks them (the overlay passes its own stage size so
-/// the PNG lines up pixel-for-pixel with what the user drew on).
+/// `backend`, when present, renders through the desktop's own webview (no Chrome
+/// needed); on any backend failure this falls back to headless Chrome so nothing
+/// regresses. `None` goes straight to Chrome. Either way the viewport clamping
+/// and output cap are identical.
 ///
-/// `scale` is the device pixel ratio: the PNG comes out `width*scale` pixels
-/// wide with the layout unchanged. The overlay passes the webview's own ratio
-/// so a HiDPI screen doesn't composite crisp marks over an upscaled blur.
+/// `width`/`height` are the viewport in CSS pixels; `scale` is the device pixel
+/// ratio, so the PNG comes out `width*scale` pixels wide with the layout
+/// unchanged.
 pub async fn render_html_png(
     target: &Path,
     width: u64,
     height: u64,
     scale: f64,
+    backend: Option<&ScreenshotBackend>,
 ) -> Result<Vec<u8>, String> {
     let ext = target
         .extension()
@@ -1246,12 +1282,6 @@ pub async fn render_html_png(
         return Err(format!("file not found: {}", target.display()));
     }
 
-    let Some(chrome) = chrome_binary() else {
-        return Err(
-            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
-        );
-    };
-
     let width = width.clamp(320, 4096);
     let height = height.clamp(240, 4096);
     let scale = if scale.is_finite() {
@@ -1259,6 +1289,23 @@ pub async fn render_html_png(
     } else {
         1.0
     };
+
+    // Try the injected backend (the desktop's webview capture) first, so the tool
+    // works without Chrome; on any failure fall through to Chrome so nothing
+    // regresses.
+    if let Some(backend) = backend {
+        match backend(target.to_path_buf(), width, height, scale).await {
+            Ok(png) => return finalize_screenshot_png(png),
+            Err(_) => { /* fall through to Chrome */ }
+        }
+    }
+
+    let Some(chrome) = chrome_binary() else {
+        return Err(
+            "no Chrome/Chromium binary found (set CHROME_PATH to point at one)".to_string(),
+        );
+    };
+
     // A per-call profile (pid + nanos) keeps headless Chrome from colliding
     // with a running browser or a leftover from a previous call; `--screenshot`
     // exits after writing, but the wait below is bounded in case it lingers.
@@ -1325,8 +1372,13 @@ pub async fn render_html_png(
     };
     let _ = tokio::fs::remove_file(&shot).await;
 
+    finalize_screenshot_png(png)
+}
+
+/// Shared empty-check and size cap for a rendered PNG, whatever produced it.
+fn finalize_screenshot_png(png: Vec<u8>) -> Result<Vec<u8>, String> {
     if png.is_empty() {
-        return Err("Chrome produced an empty screenshot (page may be blank)".to_string());
+        return Err("screenshot came out empty (page may be blank)".to_string());
     }
     if png.len() > SCREENSHOT_MAX_PNG_BYTES {
         return Err(format!(
@@ -1343,11 +1395,17 @@ pub async fn render_html_png(
 /// Returns an `ImageContentPart` rather than a data URL pasted into the text,
 /// matching what `read` does for images: that is the form a vision model
 /// actually consumes, and it keeps a megabyte of base64 out of the transcript.
+///
+/// Desktop-only (`feature = "tauri"`): the headless CLI has no webview to render
+/// through and no window to show a Chrome fallback, so `screenshot` is not
+/// advertised there. See `BUILTIN_TOOLS` and `builtin_tool_schemas`.
+#[cfg(feature = "tauri")]
 async fn screenshot(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    backend: Option<&ScreenshotBackend>,
 ) -> (String, Option<Vec<ImageContentPart>>) {
     let Some(path) = arg_str(args, "path") else {
         return ("ERROR: missing required argument 'path'".to_string(), None);
@@ -1361,7 +1419,7 @@ async fn screenshot(
             None,
         );
     }
-    let png = match render_html_png(&target, width, height, 1.0).await {
+    let png = match render_html_png(&target, width, height, 1.0, backend).await {
         Ok(b) => b,
         Err(e) => return (format!("ERROR: {e}"), None),
     };
@@ -2563,12 +2621,15 @@ mod tests {
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "/tmp/x.txt", "content": "y"}),
-            &root,
-            Some(&scratch),
-            &[],
+            &crate::tools::gate::GateContext {
+                project_root: &root,
+                scratch: Some(&scratch),
+                read_roots: &[],
+                write_roots: &[],
+                hide_jan: true,
+            },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
-            true,
         );
         assert_eq!(
             d,
@@ -2592,12 +2653,15 @@ mod tests {
         let d = crate::tools::gate::resolve_decision(
             lookup("write").unwrap(),
             &json!({"path": "/tmp/esc/x.txt", "content": "y"}),
-            &root,
-            Some(&scratch),
-            &[],
+            &crate::tools::gate::GateContext {
+                project_root: &root,
+                scratch: Some(&scratch),
+                read_roots: &[],
+                write_roots: &[],
+                hide_jan: true,
+            },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
-            true,
         );
         assert_eq!(
             d,
@@ -3487,37 +3551,43 @@ mod tests {
     // ---- screenshot ---------------------------------------------------------
 
     /// Two headless Chromes racing for the same profile dir collide, so the
-    /// tests that actually launch one are serialised.
-    static CHROME_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// tests that actually launch one are serialised. An async mutex so the test
+    /// can hold it across the awaited screenshot without `await_holding_lock`.
+    #[cfg(feature = "tauri")]
+    static CHROME_TEST_LOCK: std::sync::LazyLock<tokio::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| tokio::sync::Mutex::new(()));
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_rejects_a_non_html_file() {
         let root = unique_root();
         std::fs::write(root.join("a.txt"), b"nope").unwrap();
-        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "a.txt"}), &root, None, &[], None).await;
         assert!(out.contains("only renders"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_rejects_a_missing_file() {
         let root = unique_root();
-        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "gone.html"}), &root, None, &[], None).await;
         assert!(out.contains("file not found"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     async fn screenshot_requires_a_path() {
         let root = unique_root();
-        let (out, _) = screenshot(&json!({}), &root, None, &[]).await;
+        let (out, _) = screenshot(&json!({}), &root, None, &[], None).await;
         assert!(out.contains("missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    #[cfg(unix)]
+    #[cfg(all(unix, feature = "tauri"))]
     #[tokio::test]
     async fn screenshot_refuses_a_symlink_out_of_the_workspace() {
         let root = unique_root();
@@ -3527,7 +3597,7 @@ mod tests {
         let link = root.join("innocent.html");
         std::os::unix::fs::symlink(&secret, &link).unwrap();
 
-        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[]).await;
+        let (out, images) = screenshot(&json!({"path": "innocent.html"}), &root, None, &[], None).await;
         assert!(out.contains("symlink"), "{out}");
         assert!(images.is_none());
         let _ = std::fs::remove_dir_all(&root);
@@ -3536,13 +3606,14 @@ mod tests {
 
     /// Renders for real when a browser is present, and returns an image part
     /// rather than a data URL buried in the text.
+    #[cfg(feature = "tauri")]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn screenshot_returns_an_image_part_when_chrome_is_present() {
         if chrome_binary().is_none() {
             return;
         }
-        let _guard = CHROME_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = CHROME_TEST_LOCK.lock().await;
         let root = unique_root();
         std::fs::write(
             root.join("page.html"),
@@ -3555,6 +3626,7 @@ mod tests {
             &root,
             None,
             &[],
+            None,
         )
         .await;
         assert!(!out.starts_with("ERROR"), "{out}");

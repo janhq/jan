@@ -3,6 +3,7 @@
 //! just one project. Optional: a missing file yields an empty provider set,
 //! not an error.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -108,6 +109,17 @@ struct GlobalConfigToml {
     /// one cell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wave: Option<String>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist. Empty by default, so the shell env is
+    /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
+    /// looking name is never copied by a glob (use `env_set` to inject one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over a project's per-key value. The one way to
+    /// inject a secret-named variable on purpose.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    env_set: BTreeMap<String, String>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -274,6 +286,25 @@ pub(crate) fn claude_code_alias_enabled() -> bool {
 /// user cannot parse must not be the thing that blocks a session from starting.
 pub(crate) fn sandbox_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.sandbox)
+}
+
+/// Host env-var names the sandboxed `bash` may inherit beyond the base
+/// allowlist (`env_passthrough` in `~/.jan/config.toml`), merged under a
+/// project's `[tools].env_passthrough`. Empty on an unreadable or malformed
+/// config: a shell-env preference must never block a session from starting.
+pub(crate) fn env_passthrough_setting() -> Vec<String> {
+    load_raw()
+        .map(|config| config.env_passthrough)
+        .unwrap_or_default()
+}
+
+/// Explicit key=value overrides for the `bash` env (`env_set` in
+/// `~/.jan/config.toml`), sorted by key. Same fail-open rationale as
+/// [`env_passthrough_setting`].
+pub(crate) fn env_set_setting() -> Vec<(String, String)> {
+    load_raw()
+        .map(|config| config.env_set.into_iter().collect())
+        .unwrap_or_default()
 }
 
 /// Whether inline `<think>` tags in model content are parsed as reasoning

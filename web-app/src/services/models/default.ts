@@ -25,6 +25,7 @@ import type {
   ModelValidationResult,
   EmbeddingModelReport,
   GpuOffloadReport,
+  EngineVersionInfo,
 } from './types'
 import {
   extractToolContextFromContent,
@@ -41,6 +42,15 @@ export class DefaultModelsService implements ModelsService {
 
   async getModel(modelId: string): Promise<modelInfo | undefined> {
     return this.getEngine()?.get(modelId)
+  }
+
+  async getModelContextLimit(modelId: string, provider: string): Promise<number | undefined> {
+    const engine = this.getEngine(provider) as (AIEngine & {
+      getModelContextLimit?: (id: string) => Promise<number | undefined>
+    }) | undefined
+    if (!engine?.getModelContextLimit)
+      throw new Error('This provider cannot read model context limits. Update its extension or check provider settings.')
+    return engine.getModelContextLimit(modelId)
   }
 
   async fetchModels(): Promise<modelInfo[]> {
@@ -709,6 +719,36 @@ export class DefaultModelsService implements ModelsService {
     } catch (error) {
       console.warn('Failed to start engine setup:', error)
     }
+  }
+
+  /**
+   * Null on a build with no llamacpp engine (the web app) or if the call fails.
+   * The caller renders nothing rather than a half-filled panel: an unknown
+   * engine version is worse than no claim about it.
+   */
+  async getEngineVersion(): Promise<EngineVersionInfo | null> {
+    try {
+      const engine = this.getEngine('llamacpp') as AIEngine & {
+        getEngineVersion?: () => Promise<{
+          version: string
+          tag: string
+          build_number: string
+          commit: string
+        }>
+      }
+      if (engine && typeof engine.getEngineVersion === 'function') {
+        const info = await engine.getEngineVersion()
+        return {
+          version: info.version,
+          tag: info.tag,
+          buildNumber: info.build_number,
+          commit: info.commit,
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to read the engine version:', error)
+    }
+    return null
   }
 
   async verifyGpuOffload(): Promise<GpuOffloadReport> {

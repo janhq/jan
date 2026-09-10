@@ -35,12 +35,12 @@ import {
   IconLoader2,
   IconWorldSearch,
   IconBrandChrome,
+  IconDots,
 } from '@tabler/icons-react'
 import { generateId } from 'ai'
 import { useMessageQueue } from '@/stores/message-queue-store'
 import { QueuedMessageChip } from '@/containers/QueuedMessageBubble'
 import { SamplerPopover } from '@/containers/SamplerPopover'
-import { BotIcon } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -66,6 +66,7 @@ import {
   SESSION_STORAGE_PREFIX,
 } from '@/constants/chat'
 import { defaultModel } from '@/lib/models'
+import { cancelAgentThreadBash } from '@/lib/agentTools'
 import { useAssistant } from '@/hooks/useAssistant'
 import { AssistantSwitcher } from '@/containers/AssistantSwitcher'
 import DropdownToolsAvailable from '@/containers/DropdownToolsAvailable'
@@ -112,6 +113,12 @@ import {
   type FilePickerEntry as FileEntry,
 } from '@/lib/path-references'
 import { FilePickerPopover } from '@/components/FilePickerPopover'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { useElementWidth } from '@/hooks/useElementWidth'
 
 type ChatInputProps = {
   className?: string
@@ -122,7 +129,10 @@ type ChatInputProps = {
   projectAssistantId?: string
   onSubmit?: (
     text: string,
-    files?: Array<{ type: string; mediaType: string; url: string }>
+    files?: Array<{ type: 'file'; mediaType: string; url: string }>,
+    /** Document attachments, for surfaces that do not read them back out of
+     * the attachments store themselves. */
+    documents?: Attachment[]
   ) => void
   onStop?: () => void
   chatStatus?: ChatStatus
@@ -153,7 +163,12 @@ type ChatInputProps = {
    * across surfaces.
    */
   tokenSource?: TokenUsageSource
+  highlightedPrefix?: string | null
 }
+
+// Below this control-row width the toolbar wraps into several rows on busy
+// surfaces (Cowork), so it collapses behind a single overflow button instead.
+const CONTROL_ROW_COLLAPSE_WIDTH = 480
 
 // Video containers llama-server can decode via ffmpeg/ffprobe into frames.
 const VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v']
@@ -173,6 +188,55 @@ const videoMimeForExt = (ext: string | undefined): string => {
 }
 
 
+// Renders the composer's control cluster inline, or behind a single overflow
+// button whose popover holds the same controls, when the surface is too narrow.
+function CollapsibleControls({
+  collapsed,
+  label,
+  children,
+}: {
+  collapsed: boolean
+  label: string
+  children: ReactNode
+}) {
+  if (!collapsed) return <>{children}</>
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          className="rounded-full mb-1"
+          aria-label={label}
+        >
+          <IconDots size={18} className="text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        side="top"
+        sideOffset={8}
+        className="w-auto max-w-[min(20rem,80vw)] p-2"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onInteractOutside={(e) => {
+          // Keep the overflow popover open while the user drives a nested
+          // dropdown/popover/menu that portals its content elsewhere.
+          const target = e.target as HTMLElement | null
+          if (
+            target?.closest(
+              '[data-radix-popper-content-wrapper],[role="menu"],[role="dialog"],[role="listbox"]'
+            )
+          ) {
+            e.preventDefault()
+          }
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-1">{children}</div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 const ChatInput = memo(function ChatInput({
   className,
   initialMessage,
@@ -185,10 +249,21 @@ const ChatInput = memo(function ChatInput({
   ownsToolSet = true,
   surfaceControls,
   tokenSource,
+  highlightedPrefix,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const highlightRef = useRef<HTMLDivElement>(null)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
+  // Collapse the composer's control row into a single overflow button when the
+  // surface is too narrow to lay the controls out on one line (e.g. Cowork's
+  // side panel). Gated on a positive measured width so layout-less test
+  // environments (width 0) keep the controls inline.
+  const [controlRowRef, controlRowWidth] = useElementWidth<HTMLDivElement>()
+  const collapseControls =
+    controlRowWidth != null &&
+    controlRowWidth > 0 &&
+    controlRowWidth < CONTROL_ROW_COLLAPSE_WIDTH
   const serviceHub = useServiceHub()
   const abortControllers = useAppState((state) => state.abortControllers)
   const tools = useAppState((state) => state.tools)
@@ -229,7 +304,6 @@ const ChatInput = memo(function ChatInput({
   const effectiveAgentMode = isAgentMode && !projectId
   // Gate for the controls that shape which tools the model is offered.
   const showToolControls = ownsToolSet && !effectiveAgentMode
-  const toggleAgentMode = useAgentMode((state) => state.toggleAgentMode)
   const webSearchEnabled = useWebSearchConfig((s) => s.webSearchEnabled)
   const setWebSearchEnabled = useWebSearchConfig((s) => s.setWebSearchEnabled)
 
@@ -378,10 +452,6 @@ const ChatInput = memo(function ChatInput({
     },
     [workingDir]
   )
-
-  const handleAgentToggle = useCallback(() => {
-    toggleAgentMode(agentModeKey)
-  }, [agentModeKey, toggleAgentMode])
 
   // Get current thread messages for token counting
   const threadMessages = useMessages(
@@ -601,27 +671,34 @@ const ChatInput = memo(function ChatInput({
       const imageFiles = attachments
         .filter((att) => att.type === 'image' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'image/jpeg',
           url: att.dataUrl!,
         }))
       const audioFiles = attachments
         .filter((att) => att.type === 'audio' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav',
           url: att.dataUrl!,
         }))
       const videoFiles = attachments
         .filter((att) => att.type === 'video' && att.dataUrl)
         .map((att) => ({
-          type: 'file',
+          type: 'file' as const,
           mediaType: att.mimeType ?? 'video/mp4',
           url: att.dataUrl!,
         }))
       const files = [...imageFiles, ...audioFiles, ...videoFiles]
+      const documents = attachments.filter(
+        (att) => att.type === 'document' && att.path
+      )
 
-      onSubmit(effectivePrompt, files.length > 0 ? files : undefined)
+      onSubmit(
+        effectivePrompt,
+        files.length > 0 ? files : undefined,
+        documents.length > 0 ? documents : undefined
+      )
       setPrompt('')
       clearAttachmentsForThread(attachmentsKey)
     } else {
@@ -787,6 +864,10 @@ const ChatInput = memo(function ChatInput({
         abortControllers[threadId]?.abort()
       }
       cancelToolCall?.()
+      // Aborting the stream/loop only discards a pending tool result; a running
+      // or backgrounded bash keeps executing until its session's shells are
+      // killed. Chat's tool thread_id is the chat thread id.
+      void cancelAgentThreadBash(threadId)
     },
     [abortControllers, cancelToolCall, onStop]
   )
@@ -1261,7 +1342,10 @@ const ChatInput = memo(function ChatInput({
       newFiles.length > 0 ? [...prev, ...newFiles] : prev
     )
 
-    if (currentThreadId && newFiles.length > 0) {
+    // Cowork keys attachments by session id (`scopeKey`) and sends them as
+    // data URLs on submit. Ingesting against a leftover chat `currentThreadId`
+    // can fail and strip the chip we just added.
+    if (!scopeKey && currentThreadId && newFiles.length > 0) {
       const ingestTotal = newFiles.length
       void (async () => {
         setFileIngestProgress({ completed: 0, total: ingestTotal })
@@ -1350,7 +1434,7 @@ const ChatInput = memo(function ChatInput({
     } else {
       setMessage('')
     }
-  }, [attachmentsKey, currentThreadId, setAttachmentsForThread, serviceHub, setFileIngestProgress])
+  }, [attachmentsKey, currentThreadId, scopeKey, setAttachmentsForThread, serviceHub, setFileIngestProgress])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -1956,7 +2040,7 @@ const ChatInput = memo(function ChatInput({
 
           <div
             className={cn(
-              'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30',
+              'relative z-20 px-0 border rounded-3xl border-input bg-white dark:bg-input/30',
               isFocused && 'ring-1 ring-ring/50',
               isDragOver && 'ring-2 ring-ring/50 border-primary'
             )}
@@ -2097,6 +2181,18 @@ const ChatInput = memo(function ChatInput({
                 ))}
               </div>
             )}
+            <div className="relative">
+              {highlightedPrefix && prompt.startsWith(highlightedPrefix) && (
+                <div
+                  ref={highlightRef}
+                  aria-hidden="true"
+                  className={cn('pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-4 text-transparent', className)}
+                  style={{ overflowWrap: 'break-word' }}
+                >
+                  <mark className="rounded-sm bg-primary/20 text-transparent">{highlightedPrefix}</mark>
+                  {prompt.slice(highlightedPrefix.length)}
+                </div>
+              )}
             <TextareaAutosize
               dir="auto"
               ref={textareaRef}
@@ -2105,6 +2201,12 @@ const ChatInput = memo(function ChatInput({
               maxRows={10}
               value={prompt}
               data-testid={'chat-input'}
+              onScroll={(event) => {
+                if (highlightRef.current) {
+                  highlightRef.current.scrollTop = event.currentTarget.scrollTop
+                  highlightRef.current.scrollLeft = event.currentTarget.scrollLeft
+                }
+              }}
               onChange={(e) => {
                 const value = e.target.value
                 const cursorIdx = e.target.selectionStart
@@ -2188,6 +2290,7 @@ const ChatInput = memo(function ChatInput({
                 className
               )}
             />
+            </div>
             {/* @path file reference picker popover */}
             {filePickerOpen && effectiveAgentMode && (
               <div className="relative">
@@ -2202,15 +2305,20 @@ const ChatInput = memo(function ChatInput({
                 />
               </div>
             )}
-          </div>
-        </div>
 
-        <div className="absolute z-20 bg-transparent bottom-0 w-full p-2 ">
-          <div className="flex justify-between items-center w-full">
-            <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+        <div className="relative z-20 w-full p-2">
+          <div
+            ref={controlRowRef}
+            className="flex items-end justify-between gap-2 w-full"
+          >
+            <div className="px-1 flex flex-wrap items-center gap-1 flex-1 min-w-0">
+              <CollapsibleControls
+                collapsed={collapseControls}
+                label={t('common:moreControls')}
+              >
               <div
                 className={cn(
-                  'px-1 flex items-center gap-1',
+                  'px-1 flex flex-wrap items-center gap-1',
                   isStreaming && 'opacity-50 pointer-events-none'
                 )}
               >
@@ -2438,37 +2546,6 @@ const ChatInput = memo(function ChatInput({
                       </TooltipContent>
                     </Tooltip>
                   ))}
-
-                {/* Agent mode toggle hidden — kept as dead code for future use */}
-                {false && !projectId && isAgentMode && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant={isAgentMode ? "default" : "ghost"}
-                        size="icon-xs"
-                        onClick={currentThreadId ? handleAgentToggle : undefined}
-                        className={cn(
-                          isAgentMode && 'text-primary bg-primary/10 hover:bg-primary/10 items-center',
-                          !currentThreadId && 'cursor-default pointer-events-none'
-                        )}
-                      >
-                        <BotIcon
-                          className={cn(
-                            'text-muted-foreground -mt-0.5',
-                            isAgentMode && 'text-primary'
-                          )}
-                        />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {isAgentMode
-                          ? 'Agent mode active'
-                          : 'Enable agent mode'}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                )}
 
                 {!effectiveAgentMode && selectedModel?.capabilities?.includes('tools') && (
                   <Tooltip>
@@ -2814,7 +2891,8 @@ const ChatInput = memo(function ChatInput({
                   })()}
               </div>
               {surfaceControls && (
-                <div className="flex min-w-0 flex-1 items-center gap-1">
+                // Keep controls in normal flow so wrapped rows grow the composer.
+                <div className="flex min-w-0 flex-[1_1_12rem] flex-wrap items-center gap-1">
                   <Separator
                     orientation="vertical"
                     className="mx-1 h-4 shrink-0"
@@ -2822,9 +2900,10 @@ const ChatInput = memo(function ChatInput({
                   {surfaceControls}
                 </div>
               )}
+              </CollapsibleControls>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               {tokenCounterVisible && tokenCounterCompact && (
                 <div className="flex-1 flex justify-center">
                   <TokenCounter
@@ -2879,6 +2958,8 @@ const ChatInput = memo(function ChatInput({
                 </Button>
               )}
             </div>
+          </div>
+        </div>
           </div>
         </div>
       </div>

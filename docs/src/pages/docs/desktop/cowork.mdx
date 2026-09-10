@@ -1,0 +1,330 @@
+---
+title: Cowork
+description: Use Cowork to plan tasks, work with files, and review the results in Jan.
+keywords:
+  [Jan, Cowork, agent, sandbox, workspace, plan mode, subagents, artifacts, tasks]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# Cowork
+
+Cowork lets you give Jan a task that takes more than a single response. Jan can
+break the task into steps, read and write files, run commands, and ask questions
+when it needs your input. You can review its progress and open the files it
+creates without leaving the conversation.
+
+<Callout type="warning">
+Cowork is in preview. Features and controls may change between releases.
+</Callout>
+
+## Starting a Session
+
+<Steps>
+
+### Open Cowork
+
+Click **Cowork** in the left sidebar, then **New session**.
+
+### Choose a Model and Workspace
+
+Select a model from the model selector at the top of the window. To work on an
+existing project, use the folder control beside the message input to attach a
+project folder. Jan can read and edit files in the attached folder, so review
+its changes before keeping them.
+
+Without an attached project, Jan uses a separate workspace for the session in
+your Jan data folder. Files it creates there are available from **Files** and
+from artifact cards in the conversation.
+
+### Describe Your Task
+
+Explain what you want Jan to produce and include any constraints. For example:
+
+> Build an offline task dashboard with three cards: Draft outline, Review design,
+> and Publish notes. Save it as dashboard.html in this session's workspace.
+> Ask for approval before creating the file.
+
+You can also attach a PDF, DOCX, or other document using the **+** button beside
+the message input. Jan copies the document into the session workspace and
+extracts its text so the agent can read it. Attachments appear on your message
+and in the **Files** panel.
+
+</Steps>
+
+![Cowork session with the artifact card and session controls highlighted](./_assets/cowork-session.png)
+
+1. **Artifact card**: Click the card to preview a generated file. **Open** opens it in an external application.
+2. **Session controls**: Open Progress, Agent changes, Files, or model settings beside the message input.
+
+## Choosing a Working Folder
+
+Click the folder control beside the message input, then **Attach a folder**.
+Choose the project directory in your system's folder picker.
+
+![Working folder control with Attach a folder highlighted](./_assets/cowork-working-folder.png)
+
+1. **Attach a folder**: Give Jan access to the project you want it to work on.
+
+Without an attached folder, generated files and scratch work stay in the
+session workspace. Attaching a folder lets Jan read and edit that project's
+files in place; it does not create a separate copy of the project. Describe
+which files Jan should work on, and review **Agent changes** afterward.
+Use **Plan** first if you want to review the proposed work before allowing edits.
+
+## Planning a Task
+
+Click **Plan** beside the message input, or type `/plan`, to ask Jan to plan
+before making changes. In Plan mode, Jan can read files, search, and research,
+but cannot edit files or run shell commands.
+
+Review the proposed steps and answer any questions. When Jan offers a plan,
+you can choose:
+
+- **Execute plan**: Leave Plan mode and carry out the plan.
+- **Keep planning**: Continue refining the plan.
+- **Exit plan mode**: Return to normal execution without carrying out the plan.
+
+![Plan mode with an approval question highlighted](./_assets/cowork-plan-mode.png)
+
+1. **Plan**: Turn on planning before making changes.
+2. **Approval question**: Answer Jan's questions to clarify the task before proceeding.
+
+## Reviewing Progress and Changes
+
+Use the controls beside the message input to inspect a session. Panels open
+next to the conversation, so you can review the work while continuing to chat.
+
+### Progress
+
+Click **Progress**, or type `/todo`, to open the task checklist. It shows the
+steps and statuses recorded by the agent.
+
+![Progress panel with the task checklist highlighted](./_assets/cowork-progress-todos.png)
+
+1. **Task checklist**: Track planned, in-progress, and completed steps.
+
+<Callout type="tip">
+Smaller models may not use or update the checklist reliably. If this happens,
+try a larger or newer model with stronger tool-use capabilities.
+</Callout>
+
+### Agent Changes
+
+Click **Agent changes** to review file changes. Expand a file to inspect its
+diff before accepting the result.
+
+![Agent changes with a file and addition markers highlighted](./_assets/cowork-progress-diffs.png)
+
+1. **Changed file**: Expand the file to inspect its changes.
+2. **Added lines**: Green `+` markers and line numbers identify additions.
+
+### Files
+
+Click **Files** to find documents attached to the session and files generated
+by the agent. Select a file to open its preview.
+
+![Files panel with dashboard.html highlighted](./_assets/cowork-progress-files.png)
+
+1. **Session file**: Select `dashboard.html` to preview the generated dashboard.
+
+## Previewing Files
+
+Click an artifact card or select a file from **Files** to preview it beside the
+conversation. Use **Reload** after the file changes. Jan does not replace the
+preview while you are interacting with it.
+
+![HTML preview with file controls and the generated task cards highlighted](./_assets/cowork-artifact-preview.png)
+
+1. **Preview controls**: Manage network access and sandbox mode, reload the preview, open the file externally, or show it in your file manager.
+2. **Generated content**: Review the task cards without leaving the session.
+
+HTML previews are sandboxed by default, with network access off. For a trusted
+page that needs browser storage or relative assets, use the toolbar's
+unsandboxed option. This loads the page through Jan's `preview://` scheme with
+an origin separate from the app. Only registered workspace or attached-project
+folders are served.
+
+<Callout type="warning">
+Leave network access and unsandboxed mode off for untrusted content. Preview
+network access is separate from the shell network setting in **Settings > Cowork**.
+</Callout>
+
+### Browsing the Artifacts Library
+
+Click **Artifacts** in the sidebar to browse files created across sessions.
+Use **Search artifacts** to find a file by name, and the type filter to narrow
+the results to Code, Image, Document, Video, or Audio. Choose **All** to include
+every type.
+
+Files the agent only edited are not added to the library; review those in
+**Agent changes**.
+
+![Artifacts library filtered to the dashboard example](./_assets/cowork-artifacts-library.png)
+
+1. **Search**: Find an artifact by name, such as `dashboard`.
+2. **Artifact**: Click the card to preview it, or **Open** to use an external application.
+
+## Background Work
+
+### Subagents
+
+For a self-contained task, Jan can start a **subagent** with its own
+instructions and tool set. The subagent works in the background and reports
+its result to the main conversation when it finishes. This can help with tasks
+such as researching several topics or reviewing a group of files.
+
+Type `/tasks` to inspect background work. Subagent definitions are stored in
+`agent-workspace/subagents` in your Jan data folder. Jan can also start a
+one-off subagent without a saved definition.
+
+### Monitors and Parked Sessions
+
+Ask Jan to watch for a condition when a task depends on something finishing.
+For example:
+
+> Watch for build.log to contain "BUILD FAILED" and report the matching line.
+
+A monitor checks the condition in the background while Jan continues other
+work. It ends when the condition matches, it reaches its timeout, or it is
+stopped. Ask Jan to list active monitors or stop a monitor you no longer need.
+The `monitor` tool supports `start`, `list`, and `stop` operations.
+
+A session can become **parked** when the model has answered but background
+work is still pending. A watching or waiting notice replaces the working
+spinner. The model is idle, not generating more text. A monitor notification
+or subagent result can wake the agent to continue.
+
+## Configuring Cowork
+
+Open **Settings** in the left sidebar, then select **Cowork**.
+
+![Cowork settings with shell network access and memories highlighted](./_assets/cowork-settings.png)
+
+1. **Shell network access**: Control whether sandboxed commands can access the network.
+2. **Memories**: Review saved memories or click **Add** to create one. Scroll down to find **Skills**.
+
+### Sandbox and Network
+
+Each session has a workspace in
+`agent-workspace/sessions/<session_id>` inside your Jan data folder. An attached
+project folder gives Jan additional read and write access to that project.
+
+Under **Shell Commands**, check whether an OS sandbox is available. When it
+is, shell commands are restricted to permitted workspace locations. If no
+sandbox is available, Jan does not offer the shell tool rather than running
+commands without confinement.
+
+**Allow Network Access** is on by default for Cowork shell commands. Turn it
+off to prevent commands from accessing the network, such as installing packages
+or fetching a repository. This does not change the provider used for model
+requests or the separate [Web Search](/docs/desktop/web-search) setting. Model
+requests still go to the provider you selected. The main chat's shell does not
+have network access, regardless of this Cowork setting.
+
+### Memories and Skills
+
+Cowork stores reusable knowledge in your Jan data folder:
+
+- **Memories**: Facts such as project decisions, preferences, and constraints, stored in `agent-workspace/memory`.
+- **Skills**: Reusable instructions for tasks such as releasing a project or debugging a subsystem, stored in `agent-workspace/skills`. Jan loads the full instructions when a task needs them.
+
+To manage an entry in **Settings > Cowork**:
+
+1. Click **Add** in the Memories or Skills section to create an entry.
+2. Click the pencil icon beside an existing entry to edit it.
+3. Click **Open Folder** to view the underlying files in your file manager.
+
+You can also edit the files in your preferred editor. The formats follow the
+Jan Agent's [skills](/docs/agent/skills) and [memory](/docs/agent/memory)
+conventions.
+
+## Using Skills
+
+Skills give Jan reusable instructions for a task. Click **Customize** in the
+Cowork sidebar to open **Manage skills**. Global skills are available to every
+session.
+
+### Creating a Skill
+
+1. Click **New skill**.
+2. Enter a name, such as `review-dashboard`.
+3. Write the reusable procedure in Markdown.
+4. Click **Save**.
+
+![New skill editor with the name and instructions highlighted](./_assets/cowork-create-skill.png)
+
+1. **Skill definition**: Give the skill a descriptive name and instructions that explain what Jan should do.
+
+For example:
+
+```text
+Review labels, keyboard navigation, and contrast.
+Report findings before changing files.
+```
+
+Select a saved skill in the list to edit its instructions later.
+
+### Installing a Skill
+
+You can import an existing skill instead of writing one from scratch.
+
+1. In **Manage skills**, click **Import from hub**.
+2. Read the available skill descriptions.
+3. Click **Import** beside the skill you want to add.
+
+![Skill hub with Import from hub and an Import button highlighted](./_assets/cowork-import-skill.png)
+
+1. **Import from hub**: Browse the available skills.
+2. **Import**: Add the selected skill to your skill collection.
+
+Review imported instructions before using them. A skill can direct Jan to
+run commands or change files when the available tools and permissions allow it.
+
+### Invoking a Skill with a Slash Command
+
+Return to the conversation and type `/` followed by part of the skill's name.
+Select the matching **SKILL** entry, add any task-specific details, and send
+the message.
+
+![Slash menu showing the saved review-dashboard skill](./_assets/cowork-slash-skill.png)
+
+1. **Skill command**: Select `/review-dashboard` to use the saved instructions.
+
+For example, use `/review-dashboard dashboard.html` to request a review of
+the generated dashboard. The visible invocation stays compact while Jan
+receives the skill's instructions. Newly saved skills appear in the menu
+without restarting the app.
+
+## Managing Context
+
+Use `/compact` to summarize the session's context when a conversation grows
+long. Model settings are available beside the message input.
+
+If a run exceeds its context window, **Increase Context Size** can increase
+the limit for supported local models and resume the conversation, including
+completed tool work. Larger context windows can require more memory. Jan
+checks the model's supported limit before increasing it. If the change is not
+supported or fails, open the relevant provider settings.
+
+Switching sessions or models while the change is saving cancels the automatic
+retry.
+
+## Slash Commands
+
+Type `/` in the message input to see available commands.
+
+| Command | Action |
+| --- | --- |
+| `/help` | List available commands |
+| `/clear` | Clear this session |
+| `/compact` | Summarize the session's context |
+| `/models` | Switch the active model |
+| `/plan` | Toggle Plan mode |
+| `/todo` | Open Progress |
+| `/tasks` | Open background tasks |
+| `/init` | Study the attached project and create skills and memory for it |
+
+Use `/init` when starting work on a new project. Jan examines the directory
+structure and build and test commands, then records what it learns for later
+sessions.

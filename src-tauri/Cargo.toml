@@ -21,10 +21,12 @@ name = "Jan-Desktop"
 path = "src/main.rs"
 required-features = ["desktop"]
 
-[[bin]]
-name = "jan"
-path = "src/bin/jan.rs"
-required-features = ["cli"]
+# The headless `jan` CLI is a separate standalone crate (jan-cli/), not a
+# [[bin]] here: tauri-cli bundles every [[bin]] regardless of required-features,
+# so a `jan` target would make the desktop bundler try to copy a binary the
+# desktop build never compiles. It is deliberately NOT a workspace member -- the
+# desktop build renames this package (`ctoml package.name "Jan-<channel>"`) and a
+# member would then fail to resolve its `package = "Jan"` dependency.
 
 [features]
 default = [
@@ -120,11 +122,9 @@ log = "0.4"
 # accessors on the persisted token record (`core::mcp::oauth`).
 oauth2 = "5.0"
 rand = "0.8"
-rmcp = { version = "0.8.5", features = [
+rmcp = { version = "3.2.0", features = [
     "auth",
     "client",
-    "transport-sse-client",
-    "transport-sse-client-reqwest",
     "transport-streamable-http-client",
     "transport-streamable-http-client-reqwest",
     "transport-child-process",

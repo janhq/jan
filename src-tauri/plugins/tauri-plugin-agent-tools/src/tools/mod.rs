@@ -6,16 +6,22 @@ use std::path::{Path, PathBuf};
 /// Windows-only confinement backend for [`jail`]. Present on every platform so
 /// the argv it builds stays unit-testable.
 pub mod appcontainer;
+/// User attachments copied into a session workspace for the agent to read.
+pub mod attachments;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
 pub mod image;
 pub mod jail;
+/// The `monitor` tool's core: file watching + condition-script evaluation.
+/// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
+pub mod monitor;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
 /// kernel-level confinement for spawned commands.
 pub mod sandbox;
 pub mod schema;
+pub mod spill;
 pub mod web;
 
 /// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
@@ -23,6 +29,7 @@ pub mod web;
 /// file, and the agent loop threads into the tool-result message so a vision
 /// model sees the image.
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageContentPart {
     /// `data:image/png;base64,...` URL, ready to embed in an `image_url` part.
     pub data_url: String,
@@ -56,6 +63,12 @@ pub struct ImageContentPart {
 pub struct ToolContext<'a> {
     pub project_root: &'a Path,
     pub store_root: &'a Path,
+    /// A project's co-located store whose `skills/` layer on top of `store_root`
+    /// for discovery and `skill_read`, so the desktop/Cowork agent sees an
+    /// attached folder's skills alongside the permanent ones (#8879). `None` on
+    /// every surface with no folder attached. Skill *writes* and all memory ops
+    /// still target `store_root`; only skill reads consult this overlay.
+    pub skill_project_root: Option<&'a Path>,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
     /// When set, `write`/`edit` re-canonicalize the target and refuse a path
@@ -102,6 +115,12 @@ pub struct ToolContext<'a> {
     /// attach time; re-canonicalizing per call would be both slower and a
     /// check/use race of its own.
     pub read_roots: &'a [PathBuf],
+    /// The subset of attached folders the caller marked writable: `write`/`edit`
+    /// and the sandboxed shell treat them like the workspace. Every entry must
+    /// also be in `read_roots` (a folder the agent can change but not read back
+    /// is useless), and the default is empty -- attaching stays read-only unless
+    /// a surface opts in.
+    pub write_roots: &'a [PathBuf],
     /// Correlation id echoed on every streamed output chunk.
     ///
     /// Needed because `bash` with `timeout: 0` backgrounds and keeps streaming
@@ -110,6 +129,25 @@ pub struct ToolContext<'a> {
     /// frontend's tool-call id) rather than inside `bash`, so the sink can carry
     /// it from the first chunk.
     pub call_id: Option<&'a str>,
+    /// The session (thread) this call belongs to, so a `bash` child is
+    /// registered under it and a per-session Stop (`proc::kill_thread`) reaps
+    /// exactly this session's shells. `None` on run-owned callers with no
+    /// session identity (the CLI, monitor poll children), which share the
+    /// process-wide bucket only `kill_all` reaps.
+    pub thread_id: Option<&'a str>,
+    /// Host env-var names (exact or `*`-glob) the shell may inherit on top of the
+    /// fixed base allowlist. Empty on every surface that has not configured any,
+    /// so the shell env is unchanged by default. Resolved once per run from
+    /// `[tools].env_passthrough`; secret-looking names are never copied by a glob.
+    pub env_passthrough: &'a [String],
+    /// Explicit key=value pairs injected into the shell env, from
+    /// `[tools].env_set`. Applied after `env_passthrough` and winning per key;
+    /// the one way to inject a secret-named variable on purpose.
+    pub env_set: &'a [(String, String)],
+    /// Renders HTML/SVG to PNG for the `screenshot` tool. `None` falls back to
+    /// headless Chrome; the desktop injects a webview-backed renderer. See
+    /// [`ScreenshotBackend`].
+    pub screenshot_backend: Option<ScreenshotBackend>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -119,6 +157,7 @@ impl std::fmt::Debug for ToolContext<'_> {
         f.debug_struct("ToolContext")
             .field("project_root", &self.project_root)
             .field("store_root", &self.store_root)
+            .field("skill_project_root", &self.skill_project_root)
             .field("enabled_skills", &self.enabled_skills)
             .field("allow_network", &self.allow_network)
             .field("confine_writes", &self.confine_writes)
@@ -128,7 +167,12 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("sandbox", &self.sandbox)
             .field("on_output", &self.on_output.is_some())
             .field("read_roots", &self.read_roots)
+            .field("write_roots", &self.write_roots)
             .field("call_id", &self.call_id)
+            .field("thread_id", &self.thread_id)
+            .field("env_passthrough", &self.env_passthrough)
+            .field("env_set", &self.env_set)
+            .field("screenshot_backend", &self.screenshot_backend.is_some())
             .finish()
     }
 }
@@ -137,11 +181,30 @@ impl std::fmt::Debug for ToolContext<'_> {
 /// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
 pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 
+/// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
+///
+/// Injected by the desktop so `screenshot` can capture through the app's own
+/// webview instead of shelling out to Chrome. A boxed closure so this module
+/// stays Tauri-free: the webview implementation lives behind the `tauri` feature
+/// (`crate::webview_shot`). `None` keeps the Chrome-only path.
+pub type ScreenshotBackend = std::sync::Arc<
+    dyn Fn(
+            std::path::PathBuf,
+            u64,
+            u64,
+            f64,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + Send>,
+        > + Send
+        + Sync,
+>;
+
 impl<'a> ToolContext<'a> {
     pub fn new(project_root: &'a Path, store_root: &'a Path, enabled_skills: &'a [String]) -> Self {
         Self {
             project_root,
             store_root,
+            skill_project_root: None,
             enabled_skills,
             allow_network: false,
             confine_writes: false,
@@ -151,7 +214,61 @@ impl<'a> ToolContext<'a> {
             sandbox: true,
             on_output: None,
             read_roots: &[],
+            write_roots: &[],
             call_id: None,
+            thread_id: None,
+            env_passthrough: &[],
+            env_set: &[],
+            screenshot_backend: None,
+        }
+    }
+
+    /// Inject the `screenshot` PNG renderer. See [`Self::screenshot_backend`].
+    pub fn with_screenshot_backend(mut self, backend: Option<ScreenshotBackend>) -> Self {
+        self.screenshot_backend = backend;
+        self
+    }
+
+    /// The session (thread) this call belongs to. See [`Self::thread_id`].
+    pub fn with_thread_id(mut self, thread_id: Option<&'a str>) -> Self {
+        self.thread_id = thread_id;
+        self
+    }
+
+    /// Host env-var names the shell may inherit beyond the base allowlist. See
+    /// [`Self::env_passthrough`].
+    pub fn with_env_passthrough(mut self, names: &'a [String]) -> Self {
+        self.env_passthrough = names;
+        self
+    }
+
+    /// Explicit key=value pairs injected into the shell env. See [`Self::env_set`].
+    pub fn with_env_set(mut self, set: &'a [(String, String)]) -> Self {
+        self.env_set = set;
+        self
+    }
+
+    /// Overlay a project's co-located skill store on top of the permanent one.
+    /// See [`Self::skill_project_root`].
+    pub fn with_skill_project_root(mut self, root: &'a Path) -> Self {
+        self.skill_project_root = Some(root);
+        self
+    }
+
+    /// Skill stores in precedence order for discovery and `skill_read`: the
+    /// project overlay (when attached) on top of the permanent store.
+    pub fn skill_roots(&self) -> Vec<&Path> {
+        match self.skill_project_root {
+            Some(project) => vec![project, self.store_root],
+            None => vec![self.store_root],
+        }
+    }
+
+    /// The shell env policy this context carries, for [`crate::tools::proc::spawn`].
+    pub fn shell_env(&self) -> crate::tools::proc::ShellEnv<'a> {
+        crate::tools::proc::ShellEnv {
+            passthrough: self.env_passthrough,
+            set: self.env_set,
         }
     }
 
@@ -159,6 +276,13 @@ impl<'a> ToolContext<'a> {
     /// canonical form from [`crate::workspace::validate_read_root`].
     pub fn with_read_roots(mut self, read_roots: &'a [PathBuf]) -> Self {
         self.read_roots = read_roots;
+        self
+    }
+
+    /// Mark attached folders writable. See [`Self::write_roots`]; callers pass
+    /// the same canonical paths they put in `read_roots`.
+    pub fn with_write_roots(mut self, write_roots: &'a [PathBuf]) -> Self {
+        self.write_roots = write_roots;
         self
     }
 
@@ -265,6 +389,9 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         path_args: &["path"],
     },
     // Read: it renders a file that is already reachable and writes nothing back.
+    // Desktop-only: the headless CLI has no webview/window, so it is not built
+    // with `feature = "tauri"` and never advertises or dispatches `screenshot`.
+    #[cfg(feature = "tauri")]
     BuiltinTool {
         name: "screenshot",
         capability: Capability::Read,
@@ -383,7 +510,10 @@ mod tests {
     #[test]
     fn builtin_count_matches_expected() {
         // 8 coding tools + 6 dedicated skill/memory tools + 2 native web tools.
-        assert_eq!(BUILTIN_TOOLS.len(), 16);
+        // `screenshot` (one of the coding tools) is desktop-only, so the headless
+        // CLI build (`feature = "tauri"` off) has one fewer.
+        let expected = if cfg!(feature = "tauri") { 16 } else { 15 };
+        assert_eq!(BUILTIN_TOOLS.len(), expected);
     }
 
     #[test]

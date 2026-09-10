@@ -208,6 +208,7 @@ export function DataProvider() {
     lastServerModels,
     setLastServerModels,
     defaultModelLocalApiServer,
+    runInBackground,
   } = useLocalApiServer()
   const setServerStatus = useAppState((state) => state.setServerStatus)
 
@@ -398,6 +399,16 @@ export function DataProvider() {
       events.off(AppEvent.onModelImported, handler)
     }
   }, [serviceHub, setProviders])
+
+  // Keep the backend's hide-to-tray-on-close flag in sync with the setting
+  useEffect(() => {
+    serviceHub
+      .app()
+      .setServerRunInBackground(runInBackground)
+      .catch((error) =>
+        console.error('Failed to sync run-in-background setting:', error)
+      )
+  }, [serviceHub, runInBackground])
 
   // Auto-start Local API Server on app startup if enabled
   useEffect(() => {

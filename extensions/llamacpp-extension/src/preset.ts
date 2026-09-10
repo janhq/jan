@@ -21,6 +21,7 @@ import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-a
 // `chat_template` that aren't yet in the strict typing.
 type ModelYaml = ModelConfig & {
   chat_template?: string
+  grammar?: string
   ctx_size?: number
   n_gpu_layers?: number
   flash_attn?: string
@@ -48,24 +49,11 @@ type ModelYaml = ModelConfig & {
   spec_draft_p_min?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
+  n_cpu_ffn?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
 }
-
-// One extra llama-server slot beyond the user-visible "Parallel Sequences"
-// count, reserved for background requests (e.g. thread auto-titling) that
-// must never be able to evict the user's own chat KV cache from its slot.
-// Hidden from the setting's UI value.
-//
-// Added unconditionally, and that is load-bearing. The emitted `parallel` is
-// therefore always 3 or more, which is what lets the frontend pin background
-// work and Cowork to fixed slot ids (web-app/src/constants/models.ts) instead
-// of computing an index here that the two sides then have to keep in sync.
-// Upstream wraps an out-of-range id_slot modulo the slot count rather than
-// rejecting it, so any such desync is silent: the background request lands back
-// on the chat slot and overwrites the cache it was meant to protect.
-export const RESERVED_BACKGROUND_SLOTS = 2
 
 /**
  * The ubatch every embedding model's preset section is pinned to.
@@ -86,7 +74,22 @@ export const DEFAULT_EMBEDDING_UBATCH = 2048
  * definition.
  */
 export function threadCacheDir(providerPath: string): string {
-  return `${providerPath}/thread-cache`
+  const sep = isWindowsPath(providerPath) ? '\\' : '/'
+  return `${providerPath.replace(/[\\/]+$/, '')}${sep}thread-cache`
+}
+
+/**
+ * Whether a path is rooted the Windows way: a drive letter, a UNC share, or an
+ * extended `\\?\` prefix.
+ *
+ * Tested on the root rather than on "contains a backslash" because `\` is a
+ * legal filename character on Linux. Win32 normalizes `/` to `\` for the first
+ * two, but *not* for an extended path, where a `/` is a literal name character
+ * -- `create_dir_all` then fails with ERROR_INVALID_NAME and the worker exits
+ * before it serves anything.
+ */
+function isWindowsPath(p: string): boolean {
+  return /^(?:[A-Za-z]:|\\\\)/.test(p)
 }
 
 // Fallback context size when the user hasn't set one, to avoid loading a
@@ -115,6 +118,25 @@ const DEFAULT_SPEC_TYPE = 'draft-mtp'
  */
 const BUILTIN_TEMPLATE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
+// Absolute paths only: a relative one would resolve against llama.cpp's cwd,
+// which is not something the user can predict. Covers POSIX, drive-letter and
+// UNC forms.
+const ABSOLUTE_PATH_RE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+
+/**
+ * When a setting value is an absolute path to an existing file, the preset
+ * passes it through to the corresponding `*-file` flag instead of treating it
+ * as an inline body.
+ */
+async function existingFilePath(value: string): Promise<string | null> {
+  if (!ABSOLUTE_PATH_RE.test(value)) return null
+  try {
+    return (await fs.existsSync(value)) ? value : null
+  } catch {
+    return null
+  }
+}
+
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
   // and strip stray newlines that would break parsing.
@@ -129,17 +151,8 @@ function escapeIniValue(v: string): string {
 export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
-  config: LlamacppConfig,
-  opts: { reservedBackgroundSlots?: number } = {}
+  config: LlamacppConfig
 ): Promise<{ path: string; embeddingCount: number }> {
-  // Overridable for tests only. Production callers take the default: gating it
-  // on the auto-title setting made the reservation appear and disappear behind
-  // a toggle that regenerates no preset, so the frontend's pin outlived the
-  // slot it named.
-  const reservedBackgroundSlots =
-    typeof opts.reservedBackgroundSlots === 'number'
-      ? opts.reservedBackgroundSlots
-      : RESERVED_BACKGROUND_SLOTS
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -246,10 +259,12 @@ export async function generatePreset(
   ) {
     lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
   }
-  // parallel default = -1 (auto); positive user value is intent. The reserved
-  // slot is added on top and never exposed in the setting's own value.
+  // parallel default = 0 (llama.cpp's own auto resolution); a positive user
+  // value is intent and is emitted verbatim. Jan adds no hidden slot of its
+  // own: every pinned surface shares slot 0 and is told apart by `thread_id`
+  // (web-app/src/constants/models.ts), so no slot has to be reserved for one.
   if (typeof config.parallel === 'number' && config.parallel > 0) {
-    lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
+    lines.push(`parallel = ${config.parallel}`)
     // llama.cpp only turns on unified KV as part of resolving parallel = -1;
     // passing parallel explicitly leaves it off, which splits ctx-size into
     // ctx-size/parallel per slot. Restore the auto behaviour so the configured
@@ -310,6 +325,15 @@ export async function generatePreset(
     config.n_cpu_moe > 0
   ) {
     lines.push(`n-cpu-moe = ${Math.floor(config.n_cpu_moe)}`)
+  }
+  // n-cpu-ffn default = 0. The dense-model counterpart of n-cpu-moe, added in
+  // llama.cpp 0.4.0; the two are independent and a model can want either.
+  if (
+    typeof config.n_cpu_ffn === 'number' &&
+    Number.isFinite(config.n_cpu_ffn) &&
+    config.n_cpu_ffn > 0
+  ) {
+    lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
   }
   // no-kv-offload default = false (the cache is offloaded). Spelled negatively
   // to match llama.cpp's own flag and the existing no_mmap setting.
@@ -421,6 +445,12 @@ export async function generatePreset(
   ) {
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
+  // lazy-mode default = auto (on for arch-marked tensors above 4 GiB). Needs
+  // mmap, so it is silently inert with `no_mmap` on; `off` is the pre-0.4.0
+  // behaviour of always keeping those tensors resident.
+  if (config.lazy_mode === 'on' || config.lazy_mode === 'off') {
+    lines.push(`lazy-mode = ${config.lazy_mode}`)
+  }
   // slot-save-path has no default: naming it is what enables llama.cpp's slot
   // save/restore routes at all. Emitted even with the feature off, so the worker
   // knows which directory to keep clear and can still erase a deleted thread's
@@ -444,6 +474,24 @@ export async function generatePreset(
     lines.push('kv-unified = true')
   } else if (config.kv_unified === 'off') {
     lines.push('kv-unified = false')
+  }
+  // kv-unified-per-slot default = unset. Caps one slot's share of the shared KV
+  // pool, which is what bounds a single conversation once the pool is unified
+  // and every surface shares a slot. Only sizes the pool itself when no
+  // ctx-size is pinned (server.cpp:160-170, mirrored in the shim).
+  if (
+    typeof config.kv_unified_per_slot === 'number' &&
+    Number.isFinite(config.kv_unified_per_slot) &&
+    config.kv_unified_per_slot > 0
+  ) {
+    lines.push(`kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`)
+  }
+  // reasoning-preserve defaults to on since 0.4.0, for any template advertising
+  // `supports_preserve_reasoning`. Emitted only to turn it off, which restores
+  // the template's own default and keeps a per-request `chat_template_kwargs`
+  // (Jan's per-model `preserve_thinking`) the authoritative control.
+  if (config.reasoning_preserve === false) {
+    lines.push('reasoning-preserve = false')
   }
   // keep default = 0
   if (
@@ -479,13 +527,17 @@ export async function generatePreset(
     }
 
     // A template body cannot survive the ini: values have no line
-    // continuation, and `#`/`;` anywhere in one starts a comment. So only a
-    // built-in name goes inline; anything else is written beside model.yml and
-    // passed by path, which llama.cpp reads verbatim.
+    // continuation, and `#`/`;` anywhere in one starts a comment. So an
+    // absolute path to an existing file passes through as-is, a built-in name
+    // goes inline, and anything else is written beside model.yml and passed by
+    // path, which llama.cpp reads verbatim.
     const chatTemplate =
       typeof mc.chat_template === 'string' ? mc.chat_template.trim() : ''
     if (chatTemplate.length > 0) {
-      if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
+      const templateFile = await existingFilePath(chatTemplate)
+      if (templateFile) {
+        lines.push(`chat-template-file = ${escapeIniValue(templateFile)}`)
+      } else if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
         lines.push(`chat-template = ${chatTemplate}`)
       } else {
         const templatePath = await joinPath([
@@ -495,6 +547,20 @@ export async function generatePreset(
         ])
         await fs.writeFileSync(templatePath, chatTemplate)
         lines.push(`chat-template-file = ${escapeIniValue(templatePath)}`)
+      }
+    }
+
+    // GBNF uses `#` for comments and is usually multi-line, so an inline body
+    // can never go through the ini; it always reaches llama.cpp as a file.
+    const grammar = typeof mc.grammar === 'string' ? mc.grammar.trim() : ''
+    if (grammar.length > 0) {
+      const grammarFile = await existingFilePath(grammar)
+      if (grammarFile) {
+        lines.push(`grammar-file = ${escapeIniValue(grammarFile)}`)
+      } else {
+        const grammarPath = await joinPath([modelsDir, modelId, 'grammar.gbnf'])
+        await fs.writeFileSync(grammarPath, grammar)
+        lines.push(`grammar-file = ${escapeIniValue(grammarPath)}`)
       }
     }
 
@@ -545,7 +611,7 @@ export async function generatePreset(
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
-      lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
+      lines.push(`parallel = ${mc.parallel}`)
       if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     }
     if (mc.cont_batching === false) {
@@ -570,6 +636,9 @@ export async function generatePreset(
     }
     if (typeof mc.n_cpu_moe === 'number' && mc.n_cpu_moe > 0) {
       lines.push(`n-cpu-moe = ${Math.floor(mc.n_cpu_moe)}`)
+    }
+    if (typeof mc.n_cpu_ffn === 'number' && mc.n_cpu_ffn > 0) {
+      lines.push(`n-cpu-ffn = ${Math.floor(mc.n_cpu_ffn)}`)
     }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.

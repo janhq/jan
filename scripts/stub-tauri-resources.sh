@@ -15,9 +15,7 @@ for bin in uv bun; do
 done
 # The engine worker and the ggml runtime beside it. `libggml*` is a glob in the
 # bundle config, and a glob that matches nothing is an error (GlobPathNotFound),
-# not an empty set -- so one stub library is required, not optional. The CLI is
-# `jan-cli` on some branches and `jan` on others; the Tauri config only asks for
-# one, and stubbing the other costs nothing.
+# not an empty set -- so one stub library is required, not optional.
 case "$(uname -s)" in
   Darwin)
     EXE=""; LIB="libggml-base.dylib"
@@ -28,7 +26,7 @@ case "$(uname -s)" in
   MINGW* | MSYS* | CYGWIN*) EXE=".exe"; LIB="ggml-base.dll" ;;
   *) EXE=""; LIB="libggml-base.so" ;;
 esac
-for bin in jan jan-cli jan-llama-worker; do
+for bin in jan-llama-worker; do
   [ -f "src-tauri/resources/bin/${bin}${EXE}" ] || touch "src-tauri/resources/bin/${bin}${EXE}"
 done
 ls src-tauri/resources/bin/*ggml*."${LIB##*.}"* >/dev/null 2>&1 || touch "src-tauri/resources/bin/$LIB"

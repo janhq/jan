@@ -1,5 +1,6 @@
 //! `agent.toml` project config parsing and `.jan/agent/` scaffolding.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
@@ -156,6 +157,15 @@ pub(crate) struct ToolsSection {
     /// checks it out.
     #[serde(default)]
     pub sandbox: Option<bool>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist, merged over `~/.jan/config.toml`. Empty
+    /// by default; a secret-looking name is never copied by a glob.
+    #[serde(default)]
+    pub env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over the global value for the same key.
+    #[serde(default)]
+    pub env_set: BTreeMap<String, String>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
@@ -207,6 +217,15 @@ allow_write = []
 # ~/.jan/config.toml; the desktop always confines. Set it here to require
 # confinement for anyone working in this project.
 # sandbox = true
+# Host environment variables the shell may inherit beyond the minimal base
+# (PATH, HOME, TMPDIR, ...). Names are exact or use a "*" wildcard; merged with
+# ~/.jan/config.toml. A secret-looking name (*KEY*, *TOKEN*, ...) is never
+# copied by a wildcard -- inject one deliberately with env_set below.
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
+# Explicit values for the shell env; win over env_passthrough and the global
+# value for the same key.
+# [tools.env_set]
+# RUST_LOG = "info"
 
 [skills]
 enabled = []
@@ -245,6 +264,11 @@ pub(crate) struct RunSettings {
     /// `[tools].sandbox`; `None` when unset, so the caller applies the default
     /// appropriate to its surface.
     pub sandbox: Option<bool>,
+    /// `[tools].env_passthrough`: host env-var names/globs the shell may inherit
+    /// beyond the base allowlist. Merged with the global setting by the caller.
+    pub env_passthrough: Vec<String>,
+    /// `[tools].env_set`: explicit shell-env overrides, sorted by key.
+    pub env_set: Vec<(String, String)>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -258,6 +282,8 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
         sandbox: cfg.tools.sandbox,
+        env_passthrough: cfg.tools.env_passthrough,
+        env_set: cfg.tools.env_set.into_iter().collect(),
     }
 }
 

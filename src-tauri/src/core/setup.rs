@@ -155,51 +155,6 @@ fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Install/update the bundled `jan` CLI binary.
-///
-/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
-///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
-///   When `false` only installs if the binary is not yet present on PATH.
-///
-/// Runs in a background task — never blocks startup.
-/// Errors are logged as warnings and never prevent the app from starting.
-pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
-    tauri::async_runtime::spawn(async move {
-        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
-        if !version_changed {
-            let which_cmd = if cfg!(windows) { "where" } else { "which" };
-            let mut cmd = std::process::Command::new(which_cmd);
-            cmd.arg("jan");
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-                log::debug!("jan CLI already on PATH — skipping reinstall");
-                return;
-            }
-        }
-
-        match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
-            Ok(status) => {
-                log::info!(
-                    "jan CLI {} to {}",
-                    if version_changed {
-                        "updated"
-                    } else {
-                        "installed"
-                    },
-                    status.path.as_deref().unwrap_or("<unknown>")
-                );
-            }
-            Err(e) => {
-                log::warn!("jan CLI auto-install skipped: {e}");
-            }
-        }
-    });
-}
-
 /// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window
 /// that never signals still proceeds).
 async fn wait_for_app_ready<R: Runtime>(app: &AppHandle<R>, timeout: Duration) {
@@ -246,12 +201,49 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
 }
 
 #[cfg(feature = "desktop")]
-pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
-    let show_i = MenuItem::with_id(app.handle(), "open", "Open Jan", true, None::<&str>)?;
-    let quit_i = MenuItem::with_id(app.handle(), "quit", "Quit", true, None::<&str>)?;
-    let separator_i = PredefinedMenuItem::separator(app.handle())?;
-    let menu = Menu::with_items(app.handle(), &[&show_i, &separator_i, &quit_i])?;
-    TrayIconBuilder::with_id("tray")
+pub const TRAY_ID: &str = "tray";
+
+/// Tray icon forced on for the whole app lifetime at compile time; otherwise it
+/// only exists while the Local API Server is running.
+#[cfg(feature = "desktop")]
+pub fn tray_always_visible() -> bool {
+    option_env!("ENABLE_SYSTEM_TRAY_ICON").unwrap_or("false") == "true"
+}
+
+#[cfg(feature = "desktop")]
+pub fn show_tray<R: Runtime>(app: &AppHandle<R>) {
+    if app.tray_by_id(TRAY_ID).is_some() {
+        return;
+    }
+    let handle = app.clone();
+    // Tray creation must happen on the main thread (hard requirement on macOS).
+    let _ = app.run_on_main_thread(move || {
+        if handle.tray_by_id(TRAY_ID).is_none() {
+            if let Err(e) = setup_tray(&handle) {
+                log::error!("Failed to create tray icon: {e}");
+            }
+        }
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn remove_tray<R: Runtime>(app: &AppHandle<R>) {
+    if tray_always_visible() {
+        return;
+    }
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = handle.remove_tray_by_id(TRAY_ID);
+    });
+}
+
+#[cfg(feature = "desktop")]
+pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TrayIcon<R>> {
+    let show_i = MenuItem::with_id(app, "open", "Open Jan", true, None::<&str>)?;
+    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let separator_i = PredefinedMenuItem::separator(app)?;
+    let menu = Menu::with_items(app, &[&show_i, &separator_i, &quit_i])?;
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .show_menu_on_left_click(false)

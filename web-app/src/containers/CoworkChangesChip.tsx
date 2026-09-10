@@ -7,7 +7,11 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import type { CoworkFileDiff } from '@/lib/coworkDiffs'
+import {
+  DIFF_ADD_TEXT,
+  DIFF_DEL_TEXT,
+  type CoworkFileDiff,
+} from '@/lib/coworkDiffs'
 
 /**
  * Opens the diff rail, and stays out of the way until the agent has written
@@ -44,10 +48,10 @@ export function CoworkChangesChip({
           className={cn('shrink-0', open && 'text-primary')}
         >
           <FileDiff className="size-3.5 shrink-0" />
-          <span className="font-mono tabular-nums text-muted-foreground">
+          <span className={cn('font-mono tabular-nums', DIFF_ADD_TEXT)}>
             +{additions}
           </span>
-          <span className="font-mono tabular-nums text-muted-foreground">
+          <span className={cn('font-mono tabular-nums', DIFF_DEL_TEXT)}>
             -{deletions}
           </span>
         </Button>

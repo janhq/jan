@@ -4,6 +4,7 @@ import {
   readSkill,
   writeSkill,
   deleteSkill,
+  invokeSkill,
   projectScope,
   storeScope,
 } from '@/lib/skillStore'
@@ -16,6 +17,7 @@ const { api, invoke, getJanDataFolder } = vi.hoisted(() => ({
     skillRead: vi.fn(),
     skillWrite: vi.fn(),
     skillDelete: vi.fn(),
+    skillInvoke: vi.fn(),
   },
   invoke: vi.fn(),
   getJanDataFolder: vi.fn(),
@@ -106,5 +108,21 @@ describe('skillStore', () => {
       await writeSkill(scope, 'lint', 'text')
       expect(getJanDataFolder).not.toHaveBeenCalled()
     })
+  })
+
+  it('invokes a project skill through the core command with arguments', async () => {
+    await invokeSkill(projectScope('/proj'), 'deploy', 'staging --force')
+    expect(invoke).toHaveBeenCalledWith('agent_skill_invoke', {
+      project: '/proj',
+      name: 'deploy',
+      args: 'staging --force',
+    })
+    expect(api.skillInvoke).not.toHaveBeenCalled()
+  })
+
+  it('invokes a global skill through the plugin guest API', async () => {
+    await invokeSkill(storeScope, 'deploy', 'quickly')
+    expect(api.skillInvoke).toHaveBeenCalledWith('/data', 'deploy', 'quickly')
+    expect(invoke).not.toHaveBeenCalled()
   })
 })

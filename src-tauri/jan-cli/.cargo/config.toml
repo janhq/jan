@@ -1,0 +1,6 @@
+# Redirect build output into the desktop crate's target dir so the produced
+# `jan` binary lands at src-tauri/target/release/jan, the path every CLI build
+# script and CI template already expects. jan-cli is standalone (not a workspace
+# member), so without this it would build into jan-cli/target instead.
+[build]
+target-dir = "../target"
