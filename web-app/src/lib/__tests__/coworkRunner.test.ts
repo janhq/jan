@@ -123,6 +123,33 @@ describe('consumeStep', () => {
     )
     expect(r.errorText).toBe('boom')
   })
+
+  // The transcript renders chat's token-speed popover from this block, so the
+  // whole finish metadata has to survive the fold, not just the usage fields.
+  it('keeps the finish metadata the transport stamped on the step', async () => {
+    const tokenSpeed = {
+      tokenSpeed: 42.5,
+      promptSpeed: 120,
+      tokenCount: 300,
+      durationMs: 7000,
+    }
+    const r = await consumeStep(
+      streamOf([
+        { type: 'text-delta', id: 't', delta: 'hi' } as UIMessageChunk,
+        {
+          type: 'finish',
+          messageMetadata: {
+            finishReason: 'stop',
+            usage: { inputTokens: 10, outputTokens: 300, totalTokens: 310 },
+            tokenSpeed,
+          },
+        } as unknown as UIMessageChunk,
+      ]),
+      noopSink()
+    )
+    expect(r.usage?.total_tokens).toBe(310)
+    expect(r.metadata).toMatchObject({ finishReason: 'stop', tokenSpeed })
+  })
 })
 
 describe('runTurn', () => {
@@ -404,6 +431,50 @@ describe('reasoning placement', () => {
       content: '',
       reasoning: 'weigh options',
     })
+  })
+})
+
+describe('step metadata', () => {
+  const tokenSpeed = {
+    tokenSpeed: 42.5,
+    promptSpeed: 120,
+    tokenCount: 300,
+    durationMs: 7000,
+  }
+  const step: StepResult = {
+    text: 'answer',
+    reasoning: '',
+    toolCalls: [],
+    usage: null,
+    metadata: { usage: { totalTokens: 310 }, tokenSpeed },
+    aborted: false,
+  }
+
+  // The row is what `coworkTurnsToUIMessages` turns into the assistant message
+  // `MessageItem` reads its metadata from.
+  it('rides the row that opens the step, not every row of it', () => {
+    const rows = turnsFor(
+      {
+        ...step,
+        toolCalls: [
+          { toolCallId: 'c1', toolName: 'read', input: {} } as PendingToolCall,
+        ],
+      },
+      new Map()
+    )
+    expect(rows[0].metadata).toEqual(step.metadata)
+    expect(rows[1].metadata).toBeUndefined()
+  })
+
+  // A step that answers nothing produces no rows, so there is nothing to hang
+  // the metadata on -- and no message for it to describe.
+  it('has nothing to attach to when the step produced no rows', () => {
+    expect(
+      turnsFor(
+        { ...step, text: '', reasoning: '', toolCalls: [] },
+        new Map()
+      )
+    ).toEqual([])
   })
 })
 

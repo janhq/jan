@@ -108,6 +108,12 @@ export function coworkTurnsToUIMessages(
       return
     }
 
+    // Whatever the step finished with (usage, token speed) rides the assistant
+    // message its parts fold into, so `MessageItem` renders chat's token-speed
+    // popover from the same metadata shape chat persists. A later step
+    // overwrites it: the popover describes the newest generation, not the run.
+    if (turn.metadata) ensureAssistant(i).metadata = turn.metadata
+
     if (turn.role === 'assistant') {
       // Natively streamed reasoning rides beside the content (see
       // `CoworkTurn.reasoning`) and becomes a reasoning part ahead of the text,

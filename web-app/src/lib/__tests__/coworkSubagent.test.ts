@@ -473,6 +473,48 @@ describe('runSubagent', () => {
     expect(kinds).toContain('token')
   })
 
+  // The lane renders `MessageItem` from these turns, so the child's finish
+  // metadata has to reach it or the subagent rows show no speed at all.
+  it('forwards a finished child step metadata block, before its tool results', async () => {
+    mockSteps([
+      [
+        { type: 'text-delta', delta: 'answer' },
+        { type: 'tool-input-start', toolCallId: 'c1', toolName: 'read' },
+        {
+          type: 'tool-input-available',
+          toolCallId: 'c1',
+          toolName: 'read',
+          input: { path: 'a' },
+        },
+        {
+          type: 'finish',
+          messageMetadata: {
+            usage: { totalTokens: 12 },
+            tokenSpeed: { tokenSpeed: 42.5, tokenCount: 300, durationMs: 7000 },
+          },
+        },
+      ],
+    ])
+    const opts = baseOpts()
+    await runSubagent(opts)
+    const events = (opts.events.onInner.mock.calls as [StreamEvent][]).map(
+      ([e]) => e
+    )
+    const step = events.find((e) => e.type === 'step_metadata')
+    expect(step).toMatchObject({
+      metadata: { tokenSpeed: { tokenSpeed: 42.5, tokenCount: 300 } },
+    })
+    // Before the results: the lane hangs it on the answer row, and a tool row
+    // arriving first would leave it nowhere to land.
+    const kinds = events.map((e) => e.type)
+    expect(kinds.indexOf('step_metadata')).toBeGreaterThan(
+      kinds.indexOf('tool_call')
+    )
+    expect(kinds.indexOf('step_metadata')).toBeLessThan(
+      kinds.indexOf('tool_result')
+    )
+  })
+
   it('dispatches the child tool calls', async () => {
     mockSteps([toolStep('c1', 'read', { path: 'a' }), textStep('done')])
     const opts = baseOpts()

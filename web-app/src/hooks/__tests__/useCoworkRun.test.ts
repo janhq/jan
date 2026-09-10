@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useCoworkRun } from '../useCoworkRun'
+import { useCoworkRun, type StreamEvent } from '../useCoworkRun'
 
 // Covers only the llamacpp-attribution slice (llamacppRuns/pendingLlamacppError)
 // added for Cowork's model-load/OOM feedback parity with regular chat — see
@@ -137,6 +137,36 @@ describe('useCoworkRun - subagent lanes', () => {
     const runs = useCoworkRun.getState().subagents.s3
     expect(runs.find((r) => r.runId === 'a')?.turns[0].content).toBe('from a')
     expect(runs.find((r) => r.runId === 'b')?.turns).toEqual([])
+  })
+
+  // The lane renders `MessageItem` from these rows, so the child's step
+  // metadata has to land on the answer row for the speed readout to show.
+  it('hangs a child step metadata block on its answer row', () => {
+    useCoworkRun.getState().resetSubagents('s4')
+    useCoworkRun.getState().startSubagent('s4', 'a', 'one')
+    const route = (event: StreamEvent) =>
+      useCoworkRun.getState().routeIntoSubagent('s4', 'a', event)
+    route({ type: 'token', text: 'answer' })
+    route({
+      type: 'step_metadata',
+      metadata: { tokenSpeed: { tokenSpeed: 20, tokenCount: 40 } },
+    })
+    const turns = useCoworkRun.getState().subagents.s4[0].turns
+    expect(turns[0]).toMatchObject({
+      role: 'assistant',
+      content: 'answer',
+      metadata: { tokenSpeed: { tokenSpeed: 20 } },
+    })
+  })
+
+  it('drops a child step metadata block with no answer row to carry it', () => {
+    useCoworkRun.getState().resetSubagents('s5')
+    useCoworkRun.getState().startSubagent('s5', 'a', 'one')
+    useCoworkRun.getState().routeIntoSubagent('s5', 'a', {
+      type: 'step_metadata',
+      metadata: { tokenSpeed: { tokenSpeed: 20 } },
+    })
+    expect(useCoworkRun.getState().subagents.s5[0].turns).toEqual([])
   })
 })
 

@@ -55,6 +55,10 @@ export type StepResult = {
   reasoning: string
   toolCalls: PendingToolCall[]
   usage: Usage | null
+  /** The step's finish metadata, verbatim: `usage` and the `tokenSpeed` block the
+   * transport stamps on the stream's `finish` chunk. Rides the step's transcript
+   * row so `MessageItem` renders the token-speed popover chat shows. */
+  metadata?: Record<string, unknown>
   errorText?: string
   aborted: boolean
 }
@@ -259,9 +263,14 @@ export async function consumeStep(
         case 'abort':
           result.aborted = true
           break
-        case 'finish':
+        case 'finish': {
           result.usage = usageOf(chunk.messageMetadata) ?? result.usage
+          const meta = chunk.messageMetadata
+          if (meta && typeof meta === 'object') {
+            result.metadata = meta as Record<string, unknown>
+          }
           break
+        }
         default:
           break
       }
@@ -339,6 +348,12 @@ export function turnsFor(
       diff: outcome?.diff,
       status: outcome ? 'done' : 'running',
     })
+  }
+  // The step's finish metadata rides its first row, which is the row that opens
+  // the assistant message these parts fold into. A step that emitted no text and
+  // no calls produces no rows at all, so there is nothing to attach it to.
+  if (step.metadata && turns.length > 0) {
+    turns[0] = { ...turns[0], metadata: step.metadata }
   }
   return turns
 }
