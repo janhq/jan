@@ -1,11 +1,9 @@
 name: Setup engine toolchain
 description: >
-  Selects a JAN_ENGINE_VARIANT and asserts the runner can build it. The engine
-  jobs run on self-hosted runners whose images carry cmake, ccache and the
-  vendor toolkits, so this installs nothing for them -- it points ccache at the
-  runner's persistent cache and fails fast when the image cannot produce the
-  variant it was handed. The one exception is the Vulkan SDK, which the
-  GitHub-hosted images the desktop builds default to do not carry.
+  Selects a JAN_ENGINE_VARIANT and asserts the runner can build it. Every step
+  is guarded on the tool, not the runner label: what the image already carries
+  is left alone, the Vulkan SDK and the CUDA toolkit are fetched when absent,
+  and a runner that cannot produce the variant it was handed fails fast.
 
 inputs:
   variant:
@@ -115,6 +113,139 @@ runs:
           exit 1
           ;;
         esac
+
+    # For the CUDA manifest below.
+    - name: Install jq
+      if: contains(inputs.variant, 'cuda') && runner.environment == 'github-hosted'
+      uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+    # Redist archives, not the vendor installer: 1.1 GB of compiler, runtime
+    # and cuBLAS against 3-4 GB that is mostly display driver and Nsight.
+    - name: Provision the CUDA toolkit
+      if: contains(inputs.variant, 'cuda')
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v nvcc >/dev/null 2>&1; then
+          echo "engine toolchain: nvcc already on the image"
+          exit 0
+        fi
+
+        major=""
+        for token in ${VARIANT//-/ }; do
+          case "$token" in cuda*) major="${token#cuda}" ;; esac
+        done
+        # Pinned: the redist tree has no "latest" alias. Add a line per major.
+        case "$major" in
+        13) release='13.0.3' ;;
+        12) release='12.4.1' ;;
+        *)
+          echo "error: no pinned CUDA redist release for cuda$major" >&2
+          echo "       add one to $(basename "$GITHUB_ACTION_PATH")/action.yml, or run this" >&2
+          echo "       variant on a self-hosted runner whose image carries the toolkit" >&2
+          exit 1
+          ;;
+        esac
+
+        case "$RUNNER_OS" in
+        Linux)
+          platform='linux-x86_64'
+          root="$HOME/cuda-$release"
+          root_native="$root"
+          ;;
+        Windows)
+          platform='windows-x86_64'
+          root="/c/cuda-$release"
+          root_native="C:\\cuda-$release"
+          ;;
+        *)
+          echo "error: no CUDA redist provisioning for $RUNNER_OS" >&2
+          exit 1
+          ;;
+        esac
+
+        # cuBLAS is the only maths library ggml links; the rest is nvcc's own
+        # toolchain, the runtime, and headers ggml includes.
+        packages='
+          cuda_nvcc cuda_crt libnvvm libnvptxcompiler libnvjitlink libnvfatbin
+          cuda_cuobjdump cuda_nvdisasm cuda_nvprune cuda_cuxxfilt cuda_nvrtc
+          cuda_cudart libcublas cuda_cccl cuda_nvtx cuda_profiler_api
+        '
+        # These three ship inside cuda_nvcc before 12.8 and standalone after,
+        # so their absence from a manifest is expected, not a broken list.
+        bundled_before_12_8=' cuda_crt libnvvm libnvptxcompiler '
+
+        base='https://developer.download.nvidia.com/compute/cuda/redist'
+        manifest="$RUNNER_TEMP/redistrib.json"
+        curl -fsSL -o "$manifest" "$base/redistrib_$release.json"
+
+        # One at a time, deleted as we go: the whole set unpacked beside its
+        # archives does not comfortably fit the Windows runner's disk.
+        unpack() {
+          case "$1" in
+          *.zip)
+            if command -v 7z >/dev/null 2>&1; then 7z x -y -o"$2" "$1" >/dev/null
+            elif command -v unzip >/dev/null 2>&1; then unzip -q -o "$1" -d "$2"
+            else echo "error: no 7z or unzip to unpack $1" >&2; return 1
+            fi
+            ;;
+          *) tar -xf "$1" -C "$2" ;;
+          esac
+        }
+
+        tmp="$RUNNER_TEMP/cuda-redist"
+        rm -rf "$tmp"
+        mkdir -p "$tmp" "$root"
+        sw=$SECONDS
+        bytes=0
+        for pkg in $packages; do
+          rel=$(jq -r --arg p "$pkg" --arg pl "$platform" \
+            '.[$p][$pl].relative_path // empty' "$manifest")
+          if [ -z "$rel" ]; then
+            case "$bundled_before_12_8" in
+            *" $pkg "*) echo "engine toolchain: $pkg is part of cuda_nvcc in $release"; continue ;;
+            esac
+            echo "error: $pkg has no $platform archive in redistrib_$release.json" >&2
+            exit 1
+          fi
+          archive="$tmp/$(basename "$rel")"
+          curl -fsSL -o "$archive" "$base/$rel"
+          bytes=$((bytes + $(wc -c < "$archive")))
+          unpack "$archive" "$tmp"
+          # Each unpacks to <name>-archive/{bin,lib,include}; merge them into
+          # one root, which is what CUDA_PATH has to point at.
+          dir="$tmp/$(basename "$rel" | sed 's/\.tar\.xz$//; s/\.zip$//')"
+          cp -r "$dir"/* "$root"/
+          rm -rf "$archive" "$dir"
+        done
+        rm -rf "$tmp"
+        echo "engine toolchain: fetched $((bytes / 1024 / 1024)) MB of CUDA $release in $((SECONDS - sw))s"
+
+        # nvcc is under bin, or bin/x64 on some Windows releases while the DLLs
+        # stay in bin. Locate it rather than assume, and put both on PATH.
+        nvcc=$(find "$root/bin" -maxdepth 2 \( -name 'nvcc' -o -name 'nvcc.exe' \) | head -1)
+        [ -n "$nvcc" ] || { echo "error: no nvcc under $root/bin" >&2; exit 1; }
+        "$nvcc" --version
+
+        for lib in cudart cublas cublasLt; do
+          find "$root" -name "*$lib*" -print -quit | grep -q . || {
+            echo "error: no $lib under $root -- the package list is incomplete" >&2
+            exit 1
+          }
+        done
+
+        {
+          echo "CUDA_PATH=$root_native"
+          echo "CUDA_HOME=$root_native"
+        } >> "$GITHUB_ENV"
+        if [ "$RUNNER_OS" = "Windows" ]; then
+          printf '%s\\bin\n%s\\bin\\x64\n' "$root_native" "$root_native" >> "$GITHUB_PATH"
+        else
+          echo "$root/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi
+      env:
+        VARIANT: ${{ inputs.variant }}
 
     # Windows builds the engine the way upstream llama.cpp builds this exact
     # configuration: Ninja plus its own clang toolchain file. No developer

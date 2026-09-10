@@ -45,19 +45,20 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - name: Free Disk Space Before Build
-        run: |
-          echo "Disk space before cleanup:"
-          df -h
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo rm -rf /usr/local/lib/android/sdk/ndk
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /usr/local/share/boost
-          sudo apt-get clean
-          echo "Disk space after cleanup:"
-          df -h
+      # Hosted only: it uninstalls rather than deletes, which on a persistent
+      # runner would outlive the job. tool-cache holds the Node the next step
+      # wants; swap keeps a parallel engine compile from being OOM-killed.
+      - name: Free disk space
+        if: runner.environment == 'github-hosted'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false # minutes of apt; only the rocm job needs it
+          android: true
+          dotnet: true
+          haskell: true
+          docker-images: true
 
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
