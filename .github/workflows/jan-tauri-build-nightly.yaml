@@ -87,8 +87,8 @@ jobs:
       channel: nightly
       cortex_api_port: '39261'
 
-  # The CUDA runners are the self-hosted images janhq/llama.cpp builds on; a
-  # cuda variant needs the toolkit at build time and ships Vulkan beside it.
+  # No runner label: the templates default to a GitHub-hosted image and
+  # setup-engine-toolchain fetches CUDA from NVIDIA's redist archives.
   build-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
@@ -100,7 +100,6 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: nightly
       cortex_api_port: '39261'
-      runner: windows-cuda-13-0
       engine_variant: cuda13-vulkan
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -114,7 +113,6 @@ jobs:
       channel: nightly
       cortex_api_port: '39261'
       disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
-      runner: ubuntu-22-04-cuda-13-0
       engine_variant: cuda13-vulkan
 
   sync-temp-to-latest:

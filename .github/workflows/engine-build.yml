@@ -42,21 +42,21 @@ jobs:
         shell: bash
         run: |
           pr='[
-            {"name":"linux-x64-vulkan","variant":"vulkan","runs-on":"ubuntu-22-04"}
+            {"name":"linux-x64-vulkan","variant":"vulkan","runs-on":"ubuntu-22.04"}
           ]'
           full='[
-            {"name":"linux-x64-cuda13","variant":"cuda13-vulkan","runs-on":"ubuntu-22-04-cuda-13-0"},
-            {"name":"linux-x64-cuda12","variant":"cuda12-vulkan","runs-on":"ubuntu-22-04-cuda-12-4"},
-            {"name":"linux-x64-rocm","variant":"rocm-vulkan","runs-on":"ubuntu-22-04","rocm":true},
-            {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-cuda-13-0"},
-            {"name":"windows-x64-cuda12","variant":"cuda12-vulkan","runs-on":"windows-cuda-12-0"},
-            {"name":"macos-arm64-metal","variant":"metal","runs-on":"macos-selfhosted-14-arm64"}
+            {"name":"linux-x64-cuda13","variant":"cuda13-vulkan","runs-on":"ubuntu-22.04"},
+            {"name":"linux-x64-cuda12","variant":"cuda12-vulkan","runs-on":"ubuntu-22.04"},
+            {"name":"linux-x64-rocm","variant":"rocm-vulkan","runs-on":"ubuntu-22.04","rocm":true},
+            {"name":"windows-x64-cuda13","variant":"cuda13-vulkan","runs-on":"windows-2025"},
+            {"name":"windows-x64-cuda12","variant":"cuda12-vulkan","runs-on":"windows-2025"},
+            {"name":"macos-arm64-metal","variant":"metal","runs-on":"macos-latest"}
           ]'
           # Not in `full`, and each for a reason rather than an oversight:
-          #   linux-arm64-cuda13   no arm64 CUDA runner in the pool yet (sbsa
-          #                        works, the label does not exist)
-          #   linux-arm64-vulkan   same pool gap; nothing self-hosted is arm64
-          #   windows-arm64-vulkan windows-11-arm has no engine toolchain image
+          #   linux-arm64-cuda13   ubuntu-*-arm exists; the sbsa redist and the
+          #                        aarch64 Vulkan SDK are untried here
+          #   linux-arm64-vulkan   same, untried rather than blocked
+          #   windows-arm64-vulkan see jan-tauri-build-windows-arm64.yml
           #   windows-x64-rocm     no Windows HIP SDK image; ROCm on Windows is
           #                        an installer run, not an apt line
           if [ "${{ github.event_name }}" = "pull_request" ]; then
@@ -68,14 +68,12 @@ jobs:
   worker:
     name: jan-llama-worker (${{ matrix.name }})
     needs: variants
-    # Fork PRs must not reach this job: every runner label in the matrix is
-    # self-hosted and persistent, and the job compiles `build.rs`, `shim/**`
-    # and `engine/**` from the PR tip, then runs `sudo apt-get install`. A
-    # build script is arbitrary code execution by construction, so a fork PR
-    # touching this workflow's paths filter would get root on a box that later
-    # hosts tag-time release builds. Same guard as
-    # jan-tauri-build-nightly.yaml; `workflow_dispatch` and tag pushes are
-    # unaffected because they are not `pull_request` events.
+    # No label here is self-hosted any more, so this guard is belt and braces:
+    # the job compiles `build.rs`, `shim/**` and `engine/**` from the PR tip and
+    # then runs `sudo apt-get install`, which is arbitrary code execution by
+    # construction, but now only ever on an ephemeral image. Drop the `if` to
+    # give fork PRs engine coverage. Same guard as jan-tauri-build-nightly.yaml;
+    # `workflow_dispatch` and tag pushes are unaffected.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ${{ matrix.runs-on }}
     strategy:
@@ -85,9 +83,25 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
-      # no make; every later step (dtolnay's included) is bash, and make runs
-      # recipes like `mkdir -p` through the coreutils in Git's usr\bin.
+      # rocm-hip-sdk is some 15 GB installed and fits nothing else. Only this
+      # variant is that tight, so no other one pays the couple of minutes.
+      # tool-cache holds the Node later steps want; swap keeps a parallel ggml
+      # compile from being OOM-killed.
+      - name: Free disk space
+        if: matrix.rocm && runner.environment == 'github-hosted'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+
+      # Hosted images have no make, and the self-hosted ones have Git for
+      # Windows off PATH; every later step (dtolnay's included) is bash, and
+      # make runs recipes like `mkdir -p` through Git's usr\bin coreutils.
       - name: Provision Git Bash and make on Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -116,9 +130,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
-      # The CUDA images carry their own toolkit; no image in the pool carries
-      # ROCm, so the one HIP job provisions it, guarded so a reprovisioned image
-      # skips the apt work entirely. Mirrors llama.cpp's own menlo-build.yml.
+      # No image carries ROCm, so the one HIP job provisions it -- guarded so an
+      # image that does carry it skips the apt work entirely. Mirrors llama.cpp's
+      # own menlo-build.yml, which installs it the same way on this same image.
       - name: Provision ROCm
         if: matrix.rocm && runner.os == 'Linux'
         run: |
