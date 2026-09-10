@@ -3421,7 +3421,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-llamacpp"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -3447,6 +3447,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

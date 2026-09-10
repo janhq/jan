@@ -11,12 +11,21 @@
 
 pub mod memory;
 pub mod permissions;
+pub mod preview;
 pub mod skills;
 pub mod tools;
 pub mod workspace;
 
 #[cfg(feature = "tauri")]
 mod commands;
+
+/// Webview-backed `screenshot` renderer, so the tool works without Chrome, on
+/// all three desktop platforms; other targets keep the Chrome path.
+#[cfg(all(
+    feature = "tauri",
+    any(target_os = "linux", target_os = "macos", target_os = "windows")
+))]
+mod webview_shot;
 
 /// Runs the confined-spawn helper and exits, when this process was re-exec'd as
 /// one by the Windows sandbox backend. A no-op on every other platform and on a
@@ -44,15 +53,40 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::skill_read,
             commands::skill_write,
             commands::skill_delete,
+            commands::skill_invoke,
             commands::memory_list,
             commands::memory_read,
             commands::memory_write,
+            commands::memory_catalog,
             commands::memory_delete,
             commands::tool_schemas,
             commands::sandbox_status,
+            commands::subagent_result_reserve,
+            commands::subagent_result_fill,
+            commands::attachment_import,
             commands::execute_tool,
-            commands::execute_tool_streaming
+            commands::execute_tool_streaming,
+            commands::start_monitor,
+            commands::stop_monitor,
+            commands::list_monitors,
+            commands::session_monitor_ids,
+            commands::stop_session_monitors,
+            commands::cancel_thread_bash,
+            commands::preview_register_root,
+            commands::preview_unregister_root
         ])
+        .setup(|app, _api| {
+            use tauri::Manager;
+            app.manage(preview::PreviewRoots::default());
+            Ok(())
+        })
+        .register_asynchronous_uri_scheme_protocol("preview", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            // Off the webview thread: canonicalize and read touch the disk.
+            std::thread::spawn(move || {
+                responder.respond(commands::preview_response(&app, request.uri().path()));
+            });
+        })
         .build()
 }
 
@@ -84,10 +118,7 @@ mod permission_tests {
         let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
         assert!(!handlers.is_empty(), "failed to parse generate_handler!");
         assert!(!declared.is_empty(), "failed to parse build.rs COMMANDS");
-        let missing: Vec<_> = handlers
-            .iter()
-            .filter(|c| !declared.contains(c))
-            .collect();
+        let missing: Vec<_> = handlers.iter().filter(|c| !declared.contains(c)).collect();
         assert!(
             missing.is_empty(),
             "commands registered but absent from build.rs COMMANDS: {missing:?}"

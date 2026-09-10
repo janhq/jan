@@ -2,6 +2,14 @@
 export interface SkillMeta {
   name: string
   description: string
+  user_invocable?: boolean
+  model_invocable?: boolean
+}
+
+/** An image a tool returned, as a `data:` URL plus its display name. */
+export interface ToolImage {
+  dataUrl: string
+  name: string
 }
 
 /** Outcome of a built-in tool execution. */
@@ -10,6 +18,8 @@ export interface ToolResult {
   /** Display-only diff for write/edit; never part of model context. */
   diff: string | null
   isError: boolean
+  /** Present when the tool returned images (`read` of an image, `screenshot`). */
+  images?: ToolImage[]
 }
 
 /**
@@ -25,6 +35,17 @@ export interface ToolSchema {
   }
 }
 
+/**
+ * One memory-catalog row: enough to advertise a note without its body.
+ * `mtimeMs` is Unix millis (0 when the filesystem withholds it), so callers can
+ * keep the newest notes when they cannot keep them all.
+ */
+export interface MemoryCatalogEntry {
+  name: string
+  summary: string
+  mtimeMs: number
+}
+
 /** Which sandbox namespace an id belongs to. */
 export type WorkspaceScope = 'thread' | 'session'
 
@@ -35,4 +56,18 @@ export type ToolOutputChunk = {
   /** The tool call this belongs to; a backgrounded `bash` needs it. */
   callId: string | null
   text: string
+}
+
+/**
+ * One monitor notice, in the two registers a background ping needs: `headline`
+ * for the transcript row, `text` for the `<SYSTEM>` reminder the model gets.
+ * Every update is terminal (the script matched, or the monitor timed out), so
+ * it also closes the monitor; `matched` tells the two apart.
+ */
+export type MonitorUpdate = {
+  monitorId: string
+  name: string
+  headline: string
+  text: string
+  matched: boolean
 }

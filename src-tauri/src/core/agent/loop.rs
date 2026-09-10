@@ -18,10 +18,11 @@ use tokio::sync::{mpsc, Mutex};
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::upstream::{
-    collect_mcp_openai_tools, copy_optional_chat_params, drop_malformed_tool_calls,
-    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
-    parse_openai_messages, repair_dangling_tool_calls, resolve_api_type_for_model,
-    resolve_upstream_for_model, set_system_prompt, stream_openai_chat_completions,
+    arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
+    drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
+    load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
+    resolve_api_type_for_model, resolve_upstream_for_model, set_system_prompt,
+    stream_openai_chat_completions,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -107,6 +108,12 @@ pub(crate) struct OrchestrationArgs {
     /// by dispatched subagents via the cloned parent args, so a child shell is
     /// confined exactly as its parent's was.
     pub sandbox: Option<bool>,
+    /// A monitor set owned by the session rather than by this run. When set,
+    /// a running monitor does not park the run: the model's turn ends and the
+    /// owner starts a new turn when a match lands. `None` (a headless run, a
+    /// child) scopes monitors to the run, which then parks on them. Never
+    /// inherited by a child run, which gets its own per-run set.
+    pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
 }
 
 #[async_trait]
@@ -141,9 +148,61 @@ impl ToolOutcome {
     }
 }
 
+/// One background ping. `text` is what reaches the model as a `<SYSTEM>`
+/// reminder; `headline`, when set, is shown to the user at delivery as
+/// [`StreamEvent::Notice`]. Subagent completions carry no headline -- their
+/// `SubagentEnd` row already reported the fact -- while a monitor match has no
+/// other on-screen account.
+pub(crate) struct BackgroundNotice {
+    pub headline: Option<String>,
+    pub text: String,
+}
+
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
+
+    /// Pings raised by work the model started and is no longer blocked on (a
+    /// backgrounded subagent finishing, a monitor condition matching), oldest
+    /// first. Folded into the conversation as `<SYSTEM>` reminders at the top
+    /// of the next turn.
+    fn background_notices(&self) -> Vec<BackgroundNotice> {
+        Vec::new()
+    }
+
+    /// Whether such work is still owed to the model. A cycle that would
+    /// otherwise end waits on this rather than dropping the answer of a child
+    /// that was still running.
+    fn background_pending(&self) -> bool {
+        false
+    }
+
+    /// Park until [`Self::background_notices`] has something, or nothing is
+    /// left to wait for. Only called while `background_pending` holds, so the
+    /// default's immediate return cannot spin.
+    async fn await_background(&self) {}
+
+    /// The run's active file monitors, for [`StreamEvent::Monitors`].
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        Vec::new()
+    }
+}
+
+/// Emit [`StreamEvent::Monitors`] when the set differs from what was last
+/// shown. Called wherever the set can have changed: after tool calls (start,
+/// stop), after a ping drain (match, timeout) and after a park.
+fn publish_monitors(
+    tools: &dyn ToolInvoker,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    shown: &mut Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
+) {
+    let now = tools.monitor_snapshot();
+    if now != *shown {
+        let _ = events.send(StreamEvent::Monitors {
+            monitors: now.clone(),
+        });
+        *shown = now;
+    }
 }
 
 struct HttpModelInvoker {
@@ -276,6 +335,11 @@ struct CompositeToolInvoker {
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// Host env-var names/globs the shell may inherit beyond the base allowlist,
+    /// and explicit key=value overrides. Resolved once per run by merging
+    /// `~/.jan/config.toml` with the project's `[tools]` section.
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -283,6 +347,16 @@ struct CompositeToolInvoker {
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
+    /// The file monitors this run may start. Run-owned unless
+    /// `OrchestrationArgs::monitors` supplied a session set: dropping the last
+    /// reference aborts every watcher, and an active monitor keeps the run
+    /// parked via `background_pending` (bounded, since every monitor has a
+    /// deadline).
+    monitors: std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+    /// Whether `monitors` outlives this run. A session-owned set never parks
+    /// the run on a watcher that has not fired: the owner delivers a later
+    /// match as a fresh turn, so the user can keep talking meanwhile.
+    monitors_outlive_run: bool,
     auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
 }
@@ -392,6 +466,8 @@ struct ResolvedSettings {
     allow_network: bool,
     allow_home_read: bool,
     sandbox: bool,
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -407,6 +483,72 @@ fn resolve_run_settings(
         allow_network: resolve_allow_network(settings.allow_network),
         allow_home_read: resolve_allow_home_read(settings.allow_home_read),
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
+        env_passthrough: resolve_env_passthrough(settings.env_passthrough),
+        env_set: resolve_env_set(settings.env_set),
+    }
+}
+
+/// Merge the global `env_passthrough` with the project's: the union of both
+/// name lists (order-preserving, global first), since each entry is only a name
+/// to match against the host env. The global scope is the CLI's
+/// `~/.jan/config.toml`; the desktop has none, so it contributes nothing there.
+fn resolve_env_passthrough(project: Vec<String>) -> Vec<String> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_passthrough_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_passthrough(global, project)
+}
+
+/// Merge the global `env_set` with the project's, the project winning per key.
+/// Global scope is CLI-only (see [`resolve_env_passthrough`]).
+fn resolve_env_set(project: Vec<(String, String)>) -> Vec<(String, String)> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_set_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_set(global, project)
+}
+
+fn merge_env_passthrough(mut global: Vec<String>, project: Vec<String>) -> Vec<String> {
+    global.extend(project);
+    global
+}
+
+fn merge_env_set(
+    mut global: Vec<(String, String)>,
+    project: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+    for (key, val) in project {
+        global.retain(|(existing, _)| existing != &key);
+        global.push((key, val));
+    }
+    global
+}
+
+#[cfg(test)]
+mod env_merge_tests {
+    use super::{merge_env_passthrough, merge_env_set};
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn passthrough_is_the_union_global_first() {
+        let out = merge_env_passthrough(vec![s("GIT_*")], vec![s("CARGO_HOME")]);
+        assert_eq!(out, vec![s("GIT_*"), s("CARGO_HOME")]);
+    }
+
+    #[test]
+    fn env_set_project_wins_per_key() {
+        let global = vec![(s("RUST_LOG"), s("info")), (s("A"), s("g"))];
+        let project = vec![(s("RUST_LOG"), s("debug")), (s("B"), s("p"))];
+        let out = merge_env_set(global, project);
+        assert!(out.contains(&(s("A"), s("g"))));
+        assert!(out.contains(&(s("B"), s("p"))));
+        assert!(out.contains(&(s("RUST_LOG"), s("debug"))));
+        assert_eq!(out.iter().filter(|(k, _)| k == "RUST_LOG").count(), 1);
     }
 }
 
@@ -437,6 +579,17 @@ fn output_sink(
 }
 
 impl CompositeToolInvoker {
+    /// Whether the monitors owe the model something the run must stay alive
+    /// for: any queued ping, plus a still-running watcher when the set dies
+    /// with the run (nothing else could deliver its match).
+    fn monitors_owed(&self) -> bool {
+        if self.monitors_outlive_run {
+            self.monitors.has_queued_notices()
+        } else {
+            self.monitors.has_pending_work()
+        }
+    }
+
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
@@ -447,6 +600,8 @@ impl CompositeToolInvoker {
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
+        .with_env_passthrough(&self.env_passthrough)
+        .with_env_set(&self.env_set)
     }
 
     /// A tool context whose output streams to the run's event channel as
@@ -509,6 +664,13 @@ impl CompositeToolInvoker {
         decision
     }
 
+    /// Where a child's answer is spilled, or `None` when this run is
+    /// unconfined: no scratch is in force, so there is nowhere sanctioned to
+    /// write and the answer is delivered inline instead.
+    fn subagent_scratch(&self) -> Option<&std::path::Path> {
+        self.sandbox.then_some(self.scratch_root.as_path())
+    }
+
     /// Execute one subagent tool call, returning the model-facing result string
     /// (an `ERROR:`-prefixed message on failure, matching the tool-result
     /// convention). The registry is loaded fresh from disk each call so a
@@ -518,6 +680,7 @@ impl CompositeToolInvoker {
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
             parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
         };
+        use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
         let Some(ctx) = &self.subagents else {
             return "ERROR: subagents are not available in this run".to_string();
         };
@@ -541,10 +704,25 @@ impl CompositeToolInvoker {
                         send_reasoning: ctx.send_reasoning,
                     },
                     &self.events,
+                    // Unconfined means no scratch: the tools see the real
+                    // `/tmp`, so there is nowhere sanctioned to spill.
+                    self.subagent_scratch(),
                 ) {
-                    Ok(run_id) => format!(
-                        "Subagent started in the background. run_id={run_id}. Continue working, then call await_subagent with this run_id to collect its result."
-                    ),
+                    Ok(d) => match d.display_path {
+                        Some(path) => format!(
+                            "Subagent started in the background. run_id={}. Its answer will be \
+                             written to {path}; you will be told when it lands, so keep working \
+                             rather than waiting. Read that file when you need the answer, or \
+                             call await_subagent with this run_id to block until it is ready.",
+                            d.run_id
+                        ),
+                        None => format!(
+                            "Subagent started in the background. run_id={}. You will be told when \
+                             it finishes; keep working, then call await_subagent with this run_id \
+                             to collect its result.",
+                            d.run_id
+                        ),
+                    },
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -554,10 +732,12 @@ impl CompositeToolInvoker {
                     Err(e) => return format!("ERROR: {e}"),
                 };
                 match await_subagent(&ctx.bg, &run_id).await {
-                    Ok(text) if text.trim().is_empty() => {
+                    Ok(c) if c.text.trim().is_empty() => {
                         "The subagent finished but produced no text output.".to_string()
                     }
-                    Ok(text) => text,
+                    // The answer was spilled by the child's own task as it
+                    // finished, so this only names the file, never rewrites it.
+                    Ok(c) => compose_subagent_result(&c.text, c.display_path.as_deref()),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -601,6 +781,75 @@ impl CompositeToolInvoker {
                 }
             }
             _ => "ERROR: unknown subagent tool".to_string(),
+        }
+    }
+
+    /// Prompt the user to approve starting a monitor: its script is an
+    /// arbitrary shell command the watcher will run repeatedly, so starting one
+    /// is an exec-class action even though each later poll is unattended.
+    async fn prompt_monitor_start(
+        &self,
+        spec: &tauri_plugin_agent_tools::tools::monitor::MonitorSpec,
+    ) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        // The cadence rides along as a shell comment, so the user approves a
+        // script knowing how often it will run; the `$ ` preview stays honest.
+        let command = format!(
+            "# monitor '{}', every {}s\n{}",
+            spec.name,
+            spec.interval.as_secs(),
+            spec.script
+        );
+        let _ = self.events.send(StreamEvent::PermissionRequest {
+            request_id: request_id.clone(),
+            tool_name: tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME.to_string(),
+            capability: "run".to_string(),
+            path: None,
+            command: Some(command),
+            diff: None,
+            prompt_kind: "monitor".to_string(),
+            offers_always: false,
+        });
+        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        self.permission_requests.lock().await.remove(&request_id);
+        decision
+    }
+
+    /// Execute one `monitor` tool call. `start` is gated (it schedules shell
+    /// scripts); `stop` and `list` only touch this run's own registry.
+    async fn handle_monitor_tool(&self, args: &serde_json::Value) -> String {
+        use tauri_plugin_agent_tools::tools::monitor;
+        match args.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "start" => {
+                let spec = match monitor::parse_start_args(args) {
+                    Ok(spec) => spec,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                if !self.auto_approve {
+                    match self.prompt_monitor_start(&spec).await {
+                        PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
+                        PermissionDecision::Deny => {
+                            return "ERROR: monitor start denied by user".to_string()
+                        }
+                    }
+                }
+                let ctx = monitor::MonitorCtx::from_tool_context(&self.tool_context());
+                match self.monitors.start(spec, ctx) {
+                    Ok(msg) => msg,
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "stop" => match monitor::parse_stop_args(args) {
+                Ok(id) => self.monitors.stop(&id),
+                Err(e) => format!("ERROR: {e}"),
+            },
+            "list" => self.monitors.list(),
+            other => format!("ERROR: unknown monitor op '{other}'"),
         }
     }
 
@@ -815,6 +1064,66 @@ fn plan_mode_read_only_msg(name: &str) -> String {
 
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
+    fn background_notices(&self) -> Vec<BackgroundNotice> {
+        let mut out: Vec<BackgroundNotice> = self
+            .subagents
+            .as_ref()
+            .map(|ctx| ctx.bg.take_notices())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|text| BackgroundNotice {
+                headline: None,
+                text,
+            })
+            .collect();
+        out.extend(
+            self.monitors
+                .take_notices()
+                .into_iter()
+                .map(|u| BackgroundNotice {
+                    headline: Some(u.headline),
+                    text: u.text,
+                }),
+        );
+        out
+    }
+
+    fn background_pending(&self) -> bool {
+        self.subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_pending_work())
+            || self.monitors_owed()
+    }
+
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        self.monitors.snapshot()
+    }
+
+    async fn await_background(&self) {
+        // Each wait returns on a notice OR when its own side has nothing left,
+        // so an exhausted side must not be selected over: it would win
+        // instantly every time and starve the side actually being waited on.
+        // The re-check between iterations is what `run_turn_cycle` does anyway.
+        // A session-owned set is still selected while a subagent is awaited: a
+        // match landing then should wake the park like a finished child does.
+        let sub_pending = self
+            .subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_pending_work());
+        let mon_pending = self.monitors.has_pending_work();
+        match (self.subagents.as_ref(), sub_pending, mon_pending) {
+            (Some(ctx), true, true) => {
+                tokio::select! {
+                    _ = ctx.bg.wait_for_notice() => {}
+                    _ = self.monitors.wait_for_notice() => {}
+                }
+            }
+            (Some(ctx), true, false) => ctx.bg.wait_for_notice().await,
+            (_, _, true) => self.monitors.wait_for_notice().await,
+            _ => {}
+        }
+    }
+
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
@@ -891,6 +1200,31 @@ impl ToolInvoker for CompositeToolInvoker {
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
+            // The monitor tool schedules shell scripts and owns per-run state,
+            // so like the subagent tools it is handled ahead of the fs/exec
+            // gate (its own prompt gates `start`).
+            if name == tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // Not advertised in Plan; hard-denied here as defense in depth
+                // (a started monitor runs exec-class scripts).
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_monitor_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             if !is_builtin(name) {
                 let id = tc
                     .get("id")
@@ -955,14 +1289,17 @@ impl ToolInvoker for CompositeToolInvoker {
             let decision = resolve_decision(
                 tool,
                 &args,
-                &self.project_root,
-                Some(self.scratch_root.as_path()),
-                // The CLI works *in* the project, so it has no separate
-                // read-only root to attach.
-                &[],
+                &tauri_plugin_agent_tools::tools::gate::GateContext {
+                    project_root: &self.project_root,
+                    scratch: Some(self.scratch_root.as_path()),
+                    // The CLI works *in* the project, so it has no separate
+                    // read-only or writable root to attach.
+                    read_roots: &[],
+                    write_roots: &[],
+                    hide_jan: self.sandbox,
+                },
                 &self.permissions,
                 &snapshot,
-                self.sandbox,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
             // still honors HardDeny, so the hidden `.jan` invariant (while the shell
@@ -1152,6 +1489,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
         sandbox: None,
+        monitors: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1174,15 +1512,23 @@ pub(crate) async fn run_server_side_openai_orchestration(
 #[cfg(not(feature = "cli"))]
 const PROXY_DEFAULT_MAX_TURNS: u64 = 8;
 
-/// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
-/// and exactly one terminal `Done`/`Error` derived from the final result, while
-/// still returning the completion JSON (or error) to the caller.
-pub(crate) async fn run_orchestration_streamed(
+/// A safe-boundary handoff. The TUI retains pending input until it can reply,
+/// so cancellation and late submissions use the ordinary next-turn path.
+// Only the CLI consumes handoffs; other callers always pass no channel.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) struct SteeringRequest {
+    pub run_mode: crate::core::agent::plan::RunMode,
+    pub messages: Vec<serde_json::Value>,
+    pub reply: tokio::sync::oneshot::Sender<Vec<serde_json::Value>>,
+}
+
+pub(crate) async fn run_orchestration_steered(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     args: &OrchestrationArgs,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
-    let result = orchestrate_inner(events, json_body, args).await;
+    let result = orchestrate_inner(events, json_body, args, steering).await;
     match &result {
         Ok(completion) => {
             let _ = events.send(StreamEvent::Done {
@@ -1198,6 +1544,17 @@ pub(crate) async fn run_orchestration_streamed(
         }
     }
     result
+}
+
+/// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
+/// and exactly one terminal `Done`/`Error` derived from the final result, while
+/// still returning the completion JSON (or error) to the caller.
+pub(crate) async fn run_orchestration_streamed(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    json_body: &serde_json::Value,
+    args: &OrchestrationArgs,
+) -> Result<serde_json::Value, String> {
+    run_orchestration_steered(events, json_body, args, None).await
 }
 
 /// Restrict the collected MCP tools to `allowed` (by tool name), pruning both
@@ -1309,6 +1666,16 @@ fn advertise_local_tools(
                     }
                     openai_tools.push(schema);
                 }
+            }
+        }
+        // The monitor tool watches project files and runs exec-class condition
+        // scripts, so it needs a project and is hidden in read-only Plan mode.
+        if !planning {
+            let name = tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME;
+            if !permissions.is_denied(name)
+                && allowed_names.is_none_or(|allowed| allowed.contains(name))
+            {
+                openai_tools.push(tauri_plugin_agent_tools::tools::monitor::monitor_tool_schema());
             }
         }
     }
@@ -1527,6 +1894,7 @@ async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     args: &OrchestrationArgs,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
     let OrchestrationArgs {
         client,
@@ -1549,6 +1917,7 @@ async fn orchestrate_inner(
         auto_approve,
         run_mode,
         session_id,
+        monitors: session_monitors,
         sandbox,
     } = args;
 
@@ -1824,6 +2193,8 @@ async fn orchestrate_inner(
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
             scratch_root: scratch_root.clone(),
+            env_passthrough: settings.env_passthrough,
+            env_set: settings.env_set,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -1834,6 +2205,8 @@ async fn orchestrate_inner(
                 tauri_plugin_agent_tools::tools::gate::SessionGrants::default(),
             ),
             subagents,
+            monitors: session_monitors.clone().unwrap_or_default(),
+            monitors_outlive_run: session_monitors.is_some(),
             auto_approve: *auto_approve,
             run_mode,
         };
@@ -1850,6 +2223,7 @@ async fn orchestrate_inner(
             run_mode,
             todo_registry.as_ref(),
             force_first_tool,
+            steering,
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -1884,6 +2258,7 @@ async fn orchestrate_inner(
             run_mode,
             todo_registry.as_ref(),
             force_first_tool,
+            steering,
         )
         .await
     }
@@ -2075,6 +2450,31 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
+async fn receive_steering(
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
+    messages: &mut Vec<serde_json::Value>,
+    run_mode: crate::core::agent::plan::RunMode,
+) -> bool {
+    let Some(steering) = steering else {
+        return false;
+    };
+    let (reply, response) = tokio::sync::oneshot::channel();
+    if steering
+        .send(SteeringRequest {
+            messages: messages.clone(),
+            reply,
+            run_mode,
+        })
+        .is_err()
+    {
+        return false;
+    }
+    let incoming = response.await.unwrap_or_default();
+    let received = !incoming.is_empty();
+    messages.extend(incoming);
+    received
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
@@ -2092,6 +2492,7 @@ async fn run_turn_cycle(
     // named tool -- used to make the eager-todo nudge actually reliable
     // instead of an easily-ignored suggestion. `None` for every later turn.
     force_first_tool: Option<&str>,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` is the normal case: the session token budget and user
     // cancellation are the real guards, so a run isn't cut off mid-task by a
@@ -2114,12 +2515,50 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // The monitor set last published as `StreamEvent::Monitors`.
+    let mut shown_monitors = Vec::new();
 
     while unlimited || turn < max_turns {
+        receive_steering(steering, &mut conversation_messages, run_mode).await;
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
             max: max_turns as u32,
         });
+
+        // A turn this run just produced can carry poison of its own: a
+        // length-truncated tool call, or an argument string that decodes to a
+        // scalar. A strict upstream rejects the whole request over it, so
+        // sanitize per turn -- the next attempt lands on clean history instead
+        // of wedging the session. The entry-time pass above cannot see what
+        // this run created mid-flight.
+        let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
+        if poisoned > 0 {
+            log::warn!("agent: dropped {poisoned} malformed tool call(s) from the live context");
+        }
+
+        // Background work that finished since the last request reaches the model
+        // here, as a `<SYSTEM>` reminder rather than an invented tool result:
+        // nothing was called this turn. Several pings fold into one user
+        // message, since `attach` appends to a trailing user turn.
+        let notices = tools.background_notices();
+        if !notices.is_empty() {
+            for notice in &notices {
+                crate::core::agent::reminder::attach(&mut conversation_messages, &notice.text);
+                // The headline is shown at delivery, not when the ping was
+                // queued, so the transcript reads in the order the model saw
+                // things (matching Cowork's inbox drain).
+                if let Some(headline) = &notice.headline {
+                    let _ = events.send(StreamEvent::Notice {
+                        text: headline.clone(),
+                    });
+                }
+            }
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+            // A drained ping is how a match or a timeout reaches the display.
+            publish_monitors(tools, events, &mut shown_monitors);
+        }
 
         // On a context-overflow error, compact the conversation and retry.
         // Compaction runs progressively (a smaller kept tail each attempt) and
@@ -2217,6 +2656,22 @@ async fn run_turn_cycle(
                 .and_then(|c| c.as_str())
                 .unwrap_or_default()
                 .to_string();
+            // Include the completed assistant response before any new user input.
+            // The terminal-boundary handshake also catches input submitted during
+            // the final model request without starting a separate run.
+            if steering.is_some() && (unlimited || turn + 1 < max_turns) {
+                let mut continued = conversation_messages.clone();
+                let mut assistant = extract_choice_message(&completion)
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({ "content": final_text }));
+                assistant["role"] = serde_json::json!("assistant");
+                continued.push(assistant);
+                if receive_steering(steering, &mut continued, run_mode).await {
+                    conversation_messages = continued;
+                    turn += 1;
+                    continue;
+                }
+            }
             let awaiting_user = final_text.trim_end().ends_with('?');
             if !closeout_nudged
                 && run_mode == crate::core::agent::plan::RunMode::Normal
@@ -2236,6 +2691,34 @@ async fn run_turn_cycle(
                              you skipped it). If work genuinely remains, continue it instead."
                         ),
                     );
+                    turn += 1;
+                    continue;
+                }
+            }
+            // The model has nothing left to do, but a subagent it dispatched is
+            // still running (or a run-owned monitor is) -- and its answer has
+            // nowhere to go once this cycle returns. So park here instead of
+            // ending: the ping drained at the top of the next turn is what
+            // resumes the conversation. A session-owned monitor never parks:
+            // its owner starts a turn when it fires (`monitors_owed`). The turn
+            // the model just took has to be recorded first, exactly as the
+            // closeout nudge above records it, or the reminder would attach to
+            // a conversation missing the answer it follows.
+            if tools.background_pending() {
+                // Nothing is generated until a ping lands; the display should
+                // say so rather than keep a working badge on an idle model.
+                let _ = events.send(StreamEvent::Parked);
+                tools.await_background().await;
+                publish_monitors(tools, events, &mut shown_monitors);
+                // Re-checked rather than assumed: the wait also returns when
+                // there is nothing left to wait for (a cancelled run drops its
+                // queued pings), and resuming on that would spend a turn asking
+                // the model to react to nothing.
+                if tools.background_pending() {
+                    conversation_messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": final_text,
+                    }));
                     turn += 1;
                     continue;
                 }
@@ -2398,7 +2881,40 @@ async fn run_turn_cycle(
             continue;
         }
 
-        let tool_results = tools.invoke(&tool_calls).await?;
+        // Invariant: a tool call whose arguments do not decode to a plain
+        // JSON object is never executed. A truncated stream or a confused
+        // model would otherwise run a tool with invented or empty arguments.
+        // The call fails visibly instead, and the per-request sanitizer keeps
+        // the malformed call out of the history the next request carries.
+        let executable: Vec<serde_json::Value> = tool_calls
+            .iter()
+            .filter(|tc| arguments_are_executable(tc))
+            .cloned()
+            .collect();
+        let mut error_outcomes: Vec<ToolOutcome> = tool_calls
+            .iter()
+            .filter(|tc| !arguments_are_executable(tc))
+            .map(|tc| {
+                ToolOutcome::plain(
+                    tc.get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    "ERROR: tool-call arguments are not a plain JSON object; the call was not \
+                     executed. Re-emit it with the arguments as a JSON object."
+                        .to_string(),
+                )
+            })
+            .collect();
+        let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
+            Vec::new()
+        } else {
+            tools.invoke(&executable).await?
+        };
+        // Results are matched to calls by id, so appending the failed calls
+        // after the executed ones keeps the protocol intact.
+        tool_results.append(&mut error_outcomes);
+        publish_monitors(tools, events, &mut shown_monitors);
 
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
@@ -2698,6 +3214,144 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn steering_enters_after_all_tool_results_in_submission_order() {
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let mut completion = tool_call_completion();
+        let mut second = completion["choices"][0]["message"]["tool_calls"][0].clone();
+        second["id"] = json!("call_2");
+        completion["choices"][0]["message"]["tool_calls"]
+            .as_array_mut()
+            .unwrap()
+            .push(second);
+        let model = MockModel::new(vec![
+            completion,
+            json!({"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            let first = requests.recv().await.unwrap();
+            first.reply.send(vec![]).unwrap();
+            let boundary = requests.recv().await.unwrap();
+            let roles: Vec<_> = boundary
+                .messages
+                .iter()
+                .map(|m| m["role"].as_str().unwrap())
+                .collect();
+            assert_eq!(roles, ["user", "assistant", "tool", "tool"]);
+            assert_eq!(boundary.messages[2]["tool_call_id"], "call_1");
+            assert_eq!(boundary.messages[3]["tool_call_id"], "call_2");
+            boundary
+                .reply
+                .send(vec![
+                    json!({"role": "user", "content": "use pnpm"}),
+                    json!({"role": "user", "content": "then test"}),
+                ])
+                .unwrap();
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({"role": "user", "content": "start"})],
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+        )
+        .await
+        .unwrap();
+        {
+            let sent = model.requests.lock().unwrap();
+            let messages = sent[1]["messages"].as_array().unwrap();
+            assert_eq!(messages[4]["content"], "use pnpm");
+            assert_eq!(messages[5]["content"], "then test");
+            assert_eq!(sent.len(), 2);
+        }
+        drop(steering);
+        consumer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn steering_during_final_response_continues_the_same_run() {
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let model = MockModel::new(vec![
+            json!({"choices": [{"message": {"content": "first answer", "reasoning_content": "considered options"}, "finish_reason": "stop"}]}),
+            json!({"choices": [{"message": {"content": "revised answer"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            requests.recv().await.unwrap().reply.send(vec![]).unwrap();
+            let final_boundary = requests.recv().await.unwrap();
+            assert_eq!(
+                final_boundary.messages.last().unwrap()["content"],
+                "first answer"
+            );
+            final_boundary
+                .reply
+                .send(vec![json!({"role": "user", "content": "correction"})])
+                .unwrap();
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({"role": "user", "content": "start"})],
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["choices"][0]["message"]["content"], "revised answer");
+        {
+            let sent = model.requests.lock().unwrap();
+            assert_eq!(sent[1]["messages"][1]["content"], "first answer");
+            assert_eq!(
+                sent[1]["messages"][1]["reasoning_content"],
+                "considered options"
+            );
+            assert_eq!(sent[1]["messages"][2]["content"], "correction");
+        }
+        drop(steering);
+        consumer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn steering_disconnected_surface_does_not_block_the_loop() {
+        let (steering, receiver) = mpsc::unbounded_channel();
+        drop(receiver);
+        let mut messages = vec![json!({"role": "user", "content": "start"})];
+        assert!(
+            !receive_steering(
+                Some(&steering),
+                &mut messages,
+                crate::core::agent::plan::RunMode::Normal
+            )
+            .await
+        );
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[tokio::test]
     async fn turn_cycle_executes_tool_then_returns_final() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
@@ -2719,6 +3373,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -2804,6 +3459,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -2824,17 +3480,84 @@ mod tests {
         assert_eq!(content[1]["image_url"]["detail"], "auto");
     }
 
+    /// The reported incident, end to end: mid-run, the model emits a tool
+    /// call whose arguments are a JSON string literal containing JSON. The
+    /// call is never executed, and the poisoned turn never reaches a later
+    /// request -- the run continues from clean history instead of wedging.
+    #[tokio::test]
+    async fn a_mid_run_non_object_tool_call_is_never_executed_and_never_poisons_the_run() {
+        let model = MockModel::new(vec![
+            json!({
+                "choices": [{ "message": {
+                    "content": null,
+                    "tool_calls": [{
+                        "id": "call_edit",
+                        "type": "function",
+                        // JSON string literal decoding to another string.
+                        "function": { "name": "edit", "arguments": "\"{\\\"path\\\": \\\"a.rs\\\"}\"" }
+                    }]
+                }, "finish_reason": "tool_calls" }]
+            }),
+            json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let registry = empty_todo_registry();
+        let (tx, _rx) = mpsc::unbounded_channel();
+
+        let completion = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "edit the file" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            Some(&registry),
+            None,
+            None,
+        )
+        .await
+        .expect("the run continues from clean history");
+
+        assert_eq!(
+            completion["choices"][0]["message"]["content"],
+            "done",
+            "the user gets an answer, not a wedged run"
+        );
+        assert!(
+            tool.calls.lock().unwrap().is_empty(),
+            "a call with non-object arguments is never executed"
+        );
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "one poisoned turn, then a clean retry");
+        let messages = requests[1]["messages"].as_array().unwrap();
+        assert!(
+            messages
+                .iter()
+                .all(|m| m.get("tool_calls").is_none() && m.get("role") != Some(&json!("tool"))),
+            "the poisoned call and its synthetic result never reach a later request: {messages:#?}"
+        );
+    }
+
     /// End-to-end proof of the poisoned-history fix against an upstream that
     /// behaves like the real one: a strict validator that rejects the whole
     /// request (as a 422 does) when any tool call in the inbound history has
-    /// unparsable `function.arguments`.
+    /// `function.arguments` that is not a plain JSON object -- unparsable, or
+    /// one that parses cleanly but decodes to a scalar.
     ///
     /// Without the sanitizer the session is wedged -- every turn resends the
-    /// truncated call and every turn is rejected, so the run can never make
-    /// progress. With it, the turn goes through.
+    /// poisoned call and every turn is rejected, so the run can never make
+    /// progress. The orchestrator sanitizes per turn, so the upstream only
+    /// ever sees clean history.
     #[tokio::test]
-    async fn poisoned_history_wedges_a_strict_upstream_until_sanitized() {
-        /// Rejects any request still carrying an unparsable tool-call argument.
+    async fn poisoned_history_is_healed_before_the_upstream_sees_it() {
+        /// Rejects any request still carrying a tool call whose arguments are
+        /// not a plain JSON object: unparsable, or parsing cleanly into a
+        /// scalar (the double-encoded shape the reported incident produced).
         struct StrictModel {
             calls: std::sync::atomic::AtomicU32,
         }
@@ -2850,9 +3573,12 @@ mod tests {
                 for m in request["messages"].as_array().into_iter().flatten() {
                     for tc in m["tool_calls"].as_array().into_iter().flatten() {
                         if let Some(args) = tc["function"]["arguments"].as_str() {
-                            if !args.trim().is_empty()
-                                && serde_json::from_str::<serde_json::Value>(args).is_err()
-                            {
+                            let decoded = serde_json::from_str::<serde_json::Value>(args);
+                            let plain_object = decoded
+                                .as_ref()
+                                .map(|v| v.is_object())
+                                .unwrap_or(false);
+                            if !args.trim().is_empty() && !plain_object {
                                 return Err("HTTP 422: invalid tool call arguments".to_string());
                             }
                         }
@@ -2865,68 +3591,52 @@ mod tests {
         }
 
         // The history a truncated stream leaves behind: `arguments` cut
-        // mid-JSON while the turn still claimed `finish_reason: "tool_calls"`.
+        // mid-JSON while the turn still claimed `finish_reason: "tool_calls"`,
+        // plus a second call whose arguments decode to a scalar -- the
+        // double-encoded shape that parses cleanly and fooled a parse-only
+        // check.
         let poisoned = vec![
             json!({ "role": "user", "content": "write the file" }),
             json!({
                 "role": "assistant",
                 "content": serde_json::Value::Null,
-                "tool_calls": [{
-                    "id": "call_trunc",
-                    "type": "function",
-                    "function": { "name": "write", "arguments": "{\"path\":\"a.rs\",\"content\":\"fn ma" }
-                }]
+                "tool_calls": [
+                    {
+                        "id": "call_trunc",
+                        "type": "function",
+                        "function": { "name": "write", "arguments": "{\"path\":\"a.rs\",\"content\":\"fn ma" }
+                    },
+                    {
+                        "id": "call_double",
+                        "type": "function",
+                        "function": { "name": "edit", "arguments": "\"{\\\"path\\\": \\\"a.rs\\\"}\"" }
+                    }
+                ]
             }),
             json!({ "role": "tool", "tool_call_id": "call_trunc", "content": "(never ran)" }),
             json!({ "role": "user", "content": "are you stuck?" }),
         ];
 
-        // Before: the untouched history is rejected -- this is the wedge.
+        // The orchestrator sanitizes the inbound history per turn, so the
+        // strict upstream never sees the poison and the turn goes through in
+        // one round trip -- the wedge this used to create is gone.
         let (tx, _rx) = mpsc::unbounded_channel();
-        let wedged = StrictModel {
-            calls: Default::default(),
-        };
-        let err = run_turn_cycle(
-            &tx,
-            &json!({}),
-            "m",
-            &[],
-            poisoned.clone(),
-            8,
-            &mut SessionBudget::new(None),
-            &wedged,
-            &MockTool::default(),
-            crate::core::agent::plan::RunMode::Normal,
-            None,
-            None,
-        )
-        .await;
-        assert!(
-            err.is_err_and(|e| e.contains("422")),
-            "unsanitized poisoned history must be rejected, reproducing the wedge"
-        );
 
-        // After: the same history, through the sanitizer the orchestrator runs
-        // on every inbound request, is accepted and the turn completes.
-        let mut healed_history = poisoned;
-        assert_eq!(drop_malformed_tool_calls(&mut healed_history), 1);
-        assert_eq!(repair_dangling_tool_calls(&mut healed_history), 0);
-
-        let (tx2, _rx2) = mpsc::unbounded_channel();
         let healed = StrictModel {
             calls: Default::default(),
         };
         let result = run_turn_cycle(
-            &tx2,
+            &tx,
             &json!({}),
             "m",
             &[],
-            healed_history,
+            poisoned,
             8,
             &mut SessionBudget::new(None),
             &healed,
             &MockTool::default(),
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -2936,7 +3646,7 @@ mod tests {
         assert_eq!(
             healed.calls.load(std::sync::atomic::Ordering::Relaxed),
             1,
-            "one clean round trip"
+            "one clean round trip on sanitized history"
         );
     }
 
@@ -2964,6 +3674,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             Some("todo"),
+            None,
         )
         .await
         .unwrap();
@@ -3158,6 +3869,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3234,6 +3946,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3278,6 +3991,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3312,6 +4026,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Plan,
             Some(&registry),
+            None,
             None,
         )
         .await
@@ -3364,6 +4079,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3375,6 +4091,309 @@ mod tests {
                 .iter()
                 .all(|r| !request_has_nudge(r)),
             "a todo touch partway through must reset the mutation counter"
+        );
+    }
+
+    /// A tool invoker with background work outstanding, standing in for a run
+    /// that dispatched subagents. Each `await_background` releases one queued
+    /// ping, so a test controls exactly how many times the cycle is resumed.
+    struct BackgroundTool {
+        pending: StdMutex<VecDeque<Vec<String>>>,
+        ready: StdMutex<Vec<String>>,
+    }
+    impl BackgroundTool {
+        fn new(rounds: Vec<Vec<String>>) -> Self {
+            Self {
+                pending: StdMutex::new(rounds.into_iter().collect()),
+                ready: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ToolInvoker for BackgroundTool {
+        async fn invoke(
+            &self,
+            _tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(Vec::new())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            std::mem::take(&mut *self.ready.lock().unwrap())
+                .into_iter()
+                .map(|text| BackgroundNotice {
+                    headline: None,
+                    text,
+                })
+                .collect()
+        }
+        fn background_pending(&self) -> bool {
+            !self.ready.lock().unwrap().is_empty() || !self.pending.lock().unwrap().is_empty()
+        }
+        async fn await_background(&self) {
+            if let Some(round) = self.pending.lock().unwrap().pop_front() {
+                *self.ready.lock().unwrap() = round;
+            }
+        }
+    }
+
+    fn final_answer(text: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": text }, "finish_reason": "stop" }] })
+    }
+
+    /// The model stopping is not the end of the run while a child it dispatched
+    /// is still going: its answer would have nowhere to land. The cycle parks,
+    /// then resumes on the ping -- as a `<SYSTEM>`-marked user turn, since no
+    /// tool was called and there is no tool result to attach it to.
+    #[tokio::test]
+    async fn a_finished_subagent_resumes_a_cycle_that_would_have_ended() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            final_answer("dispatched, waiting"),
+            final_answer("here is what it found"),
+        ]);
+        let tool = BackgroundTool::new(vec![vec!["Subagent 'researcher' finished".to_string()]]);
+        let mut budget = SessionBudget::new(None);
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "look into it" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result["choices"][0]["message"]["content"], "here is what it found",
+            "the run continued past the first answer"
+        );
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "the ping cost exactly one more turn");
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let last = sent.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "the ping is marked, so rewind and recall skip it: {last}"
+        );
+        assert!(last["content"]
+            .as_str()
+            .unwrap()
+            .contains("Subagent 'researcher' finished"));
+        // The turn the model just took has to be in the history the ping
+        // follows, or it reads as a reply to the previous user message.
+        assert_eq!(sent[sent.len() - 2]["content"], "dispatched, waiting");
+    }
+
+    /// Two children landing together produce one user turn, not two: `attach`
+    /// folds into a trailing user message, and consecutive user messages are
+    /// rejected outright by some providers.
+    #[tokio::test]
+    async fn pings_arriving_together_are_fused_into_one_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("waiting"), final_answer("done")]);
+        let tool = BackgroundTool::new(vec![vec![
+            "Subagent 'alpha' finished".to_string(),
+            "Subagent 'beta' finished".to_string(),
+        ]]);
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let pings: Vec<&serde_json::Value> = sent
+            .iter()
+            .filter(|m| {
+                m["role"] == "user" && crate::core::agent::reminder::is_reminder_only(&m["content"])
+            })
+            .collect();
+        assert_eq!(pings.len(), 1, "one turn carries both: {sent:?}");
+        let text = pings[0]["content"].as_str().unwrap();
+        assert!(
+            text.contains("'alpha'") && text.contains("'beta'"),
+            "{text}"
+        );
+    }
+
+    /// A tool invoker whose one queued ping carries a headline, standing in for
+    /// a monitor match. The headline must surface as `StreamEvent::Notice` at
+    /// delivery; the text must reach the model as a `<SYSTEM>` reminder.
+    struct HeadlinedTool {
+        // The match "lands" only once the cycle parks (await_background), so
+        // the ping resumes a stopped run rather than riding the first turn.
+        armed: StdMutex<bool>,
+        delivered: StdMutex<bool>,
+    }
+    #[async_trait]
+    impl ToolInvoker for HeadlinedTool {
+        async fn invoke(
+            &self,
+            _tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(Vec::new())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            if !*self.armed.lock().unwrap() {
+                return Vec::new();
+            }
+            let mut delivered = self.delivered.lock().unwrap();
+            if *delivered {
+                return Vec::new();
+            }
+            *delivered = true;
+            vec![BackgroundNotice {
+                headline: Some("Monitor mon-1: condition 'ok' matched".to_string()),
+                text: "Monitor 'mon-1' condition 'ok' matched on build.log:\nBUILD OK".to_string(),
+            }]
+        }
+        fn background_pending(&self) -> bool {
+            !*self.delivered.lock().unwrap()
+        }
+        async fn await_background(&self) {
+            *self.armed.lock().unwrap() = true;
+        }
+        fn monitor_snapshot(
+            &self,
+        ) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+            if *self.delivered.lock().unwrap() {
+                return Vec::new();
+            }
+            vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
+                monitor_id: "mon-1".to_string(),
+                name: "ok".to_string(),
+                script: "grep OK build.log".to_string(),
+                polls: 1,
+            }]
+        }
+    }
+
+    /// A monitor match is delivered in both registers: the model gets the
+    /// `<SYSTEM>` reminder, the user gets the headline as a `Notice` event.
+    #[tokio::test]
+    async fn a_monitor_match_pings_the_model_and_shows_its_headline() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("watching"), final_answer("reacted")]);
+        let tool = HeadlinedTool {
+            armed: StdMutex::new(false),
+            delivered: StdMutex::new(false),
+        };
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "watch the build" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let last = sent.last().unwrap();
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"].as_str().unwrap().contains("BUILD OK"));
+
+        let mut saw_notice = false;
+        while let Ok(event) = rx.try_recv() {
+            if let StreamEvent::Notice { text } = event {
+                assert_eq!(text, "Monitor mon-1: condition 'ok' matched");
+                saw_notice = true;
+            }
+        }
+        assert!(saw_notice, "the headline must be emitted as a Notice event");
+    }
+
+    /// The display learns about a park and about the monitor set from the
+    /// stream: `Parked` before the wait, the live set once it returns, and the
+    /// emptied set when the delivered ping retires the monitor.
+    #[tokio::test]
+    async fn a_parked_run_publishes_parked_and_its_monitor_set() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("watching"), final_answer("reacted")]);
+        let tool = HeadlinedTool {
+            armed: StdMutex::new(false),
+            delivered: StdMutex::new(false),
+        };
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "watch the build" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let parked = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Parked))
+            .expect("Parked before the wait");
+        let live = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.len() == 1))
+            .expect("the live set after the wait");
+        let notice = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Notice { .. }))
+            .expect("the match headline");
+        let retired = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.is_empty()))
+            .expect("the emptied set at delivery");
+        assert!(
+            parked < live && live < notice && notice < retired,
+            "{events:?}"
         );
     }
 
@@ -3440,6 +4459,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3493,6 +4513,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3598,6 +4619,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .expect("run completes");
@@ -3662,6 +4684,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3742,6 +4765,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3787,6 +4811,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3839,6 +4864,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -3904,6 +4930,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await;
 
@@ -3960,6 +4987,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await;
 
@@ -4010,6 +5038,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4045,6 +5074,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
         )
@@ -4146,6 +5176,8 @@ mod tests {
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
             scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            env_passthrough: Vec::new(),
+            env_set: Vec::new(),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -4155,6 +5187,10 @@ mod tests {
             todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
+            monitors: std::sync::Arc::new(
+                tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
+            ),
+            monitors_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
         }
@@ -4827,6 +5863,7 @@ mod tests {
                     crate::core::agent::plan::RunMode::Normal,
                     None,
                     None,
+                    None,
                 )
                 .await
             }
@@ -5046,6 +6083,178 @@ mod tests {
             out[0].content
         );
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn monitor_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": "monitor", "arguments": args.to_string() }
+        })
+    }
+
+    /// Starting a monitor schedules shell scripts, so it prompts like an exec
+    /// and a deny refuses without starting anything.
+    #[tokio::test]
+    async fn monitor_start_prompts_and_a_deny_refuses() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = Arc::new(build_prompting_invoker(root.clone(), tx, registry.clone()));
+
+        let responder = {
+            let registry = registry.clone();
+            tokio::spawn(async move {
+                let (request_id, prompt_kind, command) = loop {
+                    match rx.recv().await {
+                        Some(StreamEvent::PermissionRequest {
+                            request_id,
+                            prompt_kind,
+                            command,
+                            ..
+                        }) => break (request_id, prompt_kind, command),
+                        Some(_) => continue,
+                        None => panic!("no permission prompt for monitor start"),
+                    }
+                };
+                assert_eq!(prompt_kind, "monitor");
+                let shown = command.as_deref().unwrap_or("");
+                assert!(
+                    shown.contains("grep READY"),
+                    "the prompt must show the scripts it approves: {command:?}"
+                );
+                assert!(
+                    shown.contains("# monitor 'ready', every 5s"),
+                    "the prompt names the monitor and its cadence: {command:?}"
+                );
+                let tx = registry.lock().await.remove(&request_id).unwrap();
+                let _ = tx.send(PermissionDecision::Deny);
+            })
+        };
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("denied"), "got: {}", out[0].content);
+        assert!(!invoker.background_pending(), "nothing may have started");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// End to end through the invoker: an auto-approved start whose script
+    /// already holds delivers a merged background notice carrying a headline
+    /// and the matched content, and the pending flag clears once all conditions
+    /// are met.
+    #[tokio::test]
+    async fn monitor_match_arrives_as_a_headlined_background_notice() {
+        let root = unique_project_root();
+        std::fs::write(root.join("boot.log"), "starting\nREADY on port 1337\n").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+        // Bare shell: this exercises the loop wiring, not the jail.
+        invoker.sandbox = false;
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("monitor_id=mon-1"),
+            "got: {}",
+            out[0].content
+        );
+        assert!(invoker.background_pending());
+
+        let mut notices = Vec::new();
+        for _ in 0..200 {
+            notices = invoker.background_notices();
+            if !notices.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(notices.len(), 1, "one match, one ping");
+        assert!(
+            notices[0]
+                .headline
+                .as_deref()
+                .unwrap_or("")
+                .contains("'ready' matched"),
+            "{:?}",
+            notices[0].headline
+        );
+        assert!(notices[0].text.contains("READY on port 1337"));
+        for _ in 0..200 {
+            if !invoker.background_pending() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            !invoker.background_pending(),
+            "all conditions met, so the run must not stay parked"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A session-owned set does not hold the run open: a watcher that has not
+    /// fired leaves `background_pending` false (the turn ends and the user can
+    /// keep talking), while a queued match still resumes the run, and taking
+    /// it clears the flag again.
+    #[tokio::test]
+    async fn a_session_owned_monitor_does_not_park_the_run_until_it_fires() {
+        let root = unique_project_root();
+        std::fs::write(root.join("boot.log"), "starting\n").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+        invoker.sandbox = false;
+        invoker.monitors_outlive_run = true;
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("monitor_id=mon-1"),
+            "{}",
+            out[0].content
+        );
+        assert_eq!(invoker.monitor_snapshot().len(), 1, "the watcher is up");
+        assert!(
+            !invoker.background_pending(),
+            "an unfired session monitor must not park the run"
+        );
+
+        std::fs::write(root.join("boot.log"), "starting\nREADY on port 1337\n").unwrap();
+        for _ in 0..300 {
+            if invoker.background_pending() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            invoker.background_pending(),
+            "a queued match is owed to the model and resumes the run"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].text.contains("READY on port 1337"));
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
         let _ = std::fs::remove_dir_all(&root);
     }
 

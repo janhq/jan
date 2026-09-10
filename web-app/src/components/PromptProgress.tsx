@@ -26,6 +26,10 @@ export function PromptProgress({
     (threadId ? state.promptProgresses[threadId] : undefined) ??
     state.promptProgress
   )
+  // Cowork keeps its load state in useCoworkRun's session-keyed mirror (fed by
+  // CoworkChatTransport and the load-progress listener), so a cowork surface
+  // reads only that. A chat surface reads useAppState's thread slot, falling
+  // back to the global slot for an off-thread stream.
   const chatLoadingModel = useAppState((state) =>
     (threadId ? state.loadingModels[threadId] : undefined) ?? state.loadingModel
   )
@@ -63,7 +67,7 @@ export function PromptProgress({
     loadingModel && loadProgress ? Math.round(loadProgress.value * 100) : undefined
 
   // Only worth naming the stage when the load actually has more than one
-  // (vision encoder and/or speculative-decoding draft model on top of the
+  // (multimodal encoder and/or speculative-decoding draft model on top of the
   // main weights) - a plain text-only load is always a single "text_model"
   // stage for its entire duration, so calling that out would be noise.
   const stageLabel =
@@ -115,7 +119,7 @@ function describeLoadStage(stage: string | undefined): string | undefined {
     case 'text_model':
       return 'text model'
     case 'mmproj_model':
-      return 'vision encoder'
+      return 'encoder'
     case 'spec_model':
       return 'draft model'
     default:

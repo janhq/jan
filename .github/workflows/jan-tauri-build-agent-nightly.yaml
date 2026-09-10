@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AGENT_BRANCH: refs/heads/dev
+  AGENT_BRANCH: refs/heads/main
 
 jobs:
   resolve-ref:

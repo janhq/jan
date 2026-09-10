@@ -19,12 +19,18 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
   const { t } = useTranslation()
   const { skills, enabled, setEnabled } = useSkills(folder)
 
-  if (!folder || skills.length === 0) return null
+  if (skills.length === 0) return null
 
   const allNames = skills.map((s) => s.name)
   const effective = effectiveEnabled(enabled, allNames)
+  // #8878: the global store is what the Cowork agent actually reads, so its
+  // skills are shown and active even with no folder. The `[skills].enabled`
+  // whitelist lives in a project's agent.toml, so with no folder it has nowhere
+  // to persist -- every global skill is active and the toggle is informational.
+  const scoped = folder !== null
 
   const toggle = (name: string) => {
+    if (!scoped) return
     const next = new Set(effective)
     if (next.has(name)) next.delete(name)
     else next.add(name)
@@ -58,6 +64,11 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
         <div className="px-2 py-1.5 text-xs text-muted-foreground">
           {t('common:skillsInContext')}
         </div>
+        {!scoped && (
+          <div className="px-2 pb-1.5 text-xs text-muted-foreground">
+            {t('common:skillsScopeGlobal')}
+          </div>
+        )}
         <div className="max-h-64 overflow-y-auto">
           {skills.map((s) => (
             <label
@@ -65,7 +76,18 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
             >
               <div className="flex-1 min-w-0">
-                <div className="truncate text-sm font-medium">{s.name}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  {scoped && s.origin && (
+                    <span className="shrink-0 rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">
+                      {t(
+                        s.origin === 'project'
+                          ? 'common:skillOriginFolder'
+                          : 'common:skillOriginGlobal'
+                      )}
+                    </span>
+                  )}
+                </div>
                 {s.description && (
                   <div className="truncate text-xs text-muted-foreground">
                     {s.description}
@@ -74,6 +96,7 @@ export default function SkillSelector({ folder }: { folder: string | null }) {
               </div>
               <Switch
                 checked={effective.has(s.name)}
+                disabled={!scoped}
                 onCheckedChange={() => toggle(s.name)}
               />
             </label>

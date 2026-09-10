@@ -6,7 +6,7 @@
 # remember. `make clean` removes it.
 #
 # The commit is verified after cloning because a git tag is mutable -- upstream
-# could move b10582 and a --branch clone would silently hand us different
+# could move the pinned tag and a --branch clone would silently hand us different
 # sources than build.rs claims, which is the one thing the pin exists to stop.
 #
 # A script rather than a Makefile recipe so Windows gets the same

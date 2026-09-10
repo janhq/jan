@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, act } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
 import { MessageItem } from './MessageItem'
 import type { UIMessage } from 'ai'
 
@@ -10,16 +10,8 @@ vi.mock('@tanstack/react-router', () => ({
   useParams: () => ({}),
 }))
 
-describe('agent activity status', () => {
-  beforeEach(() => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date(2024, 0, 1, 0, 0, 0))
-  })
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  const baseMessage: UIMessage = {
+describe('what a turn shows besides its messages', () => {
+  const pendingWrite: UIMessage = {
     id: 'm1',
     role: 'assistant',
     parts: [
@@ -32,46 +24,44 @@ describe('agent activity status', () => {
     ],
   } as UIMessage
 
-  it('shows the active tool label and ticks elapsed time', () => {
+  /// Every kind of progress now reports itself where it happens: a tool call on
+  /// its own card, a subagent on the chip beside the composer. What is left
+  /// here is the model-load and prompt-reading progress, which has nowhere
+  /// else to go.
+  it('leaves a pending tool call to its own card', () => {
     render(
       <MessageItem
-        message={baseMessage}
+        message={pendingWrite}
         isFirstMessage={false}
         isLastMessage={true}
         status="streaming"
       />
     )
-    expect(screen.getByText(/Writing report\.html/)).toBeInTheDocument()
-    expect(screen.getByText(/0ms/)).toBeInTheDocument()
-
-    act(() => {
-      vi.advanceTimersByTime(3000)
-    })
-    expect(screen.getByText(/3s/)).toBeInTheDocument()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('removes the status row once the tool result lands', () => {
-    const doneMessage: UIMessage = {
-      ...baseMessage,
-      parts: [
-        {
-          type: 'tool-write',
-          toolCallId: 'c1',
-          state: 'output-available',
-          input: { path: '/proj/report.html' },
-          output: 'ok',
-        } as never,
-      ],
-    } as UIMessage
-
+  it('renders a system note on its own, with no message chrome', () => {
     render(
       <MessageItem
-        message={doneMessage}
+        message={
+          {
+            id: 'sys-1',
+            role: 'system',
+            parts: [
+              {
+                type: 'text',
+                text: "Subagent 'researcher' (c1) finished. Its full answer is in /tmp/subagents/r.md",
+              },
+            ],
+          } as UIMessage
+        }
         isFirstMessage={false}
         isLastMessage={true}
         status="ready"
       />
     )
-    expect(screen.queryByText(/Writing report\.html/)).not.toBeInTheDocument()
+    expect(screen.getByText(/finished/)).toBeInTheDocument()
+    // No copy/remember/regenerate: nobody said it, so there is nothing to act on.
+    expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
 })

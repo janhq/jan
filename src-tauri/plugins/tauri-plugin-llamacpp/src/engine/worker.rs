@@ -208,12 +208,82 @@ impl std::fmt::Debug for WorkerHandle {
     }
 }
 
+/// Ties the worker's lifetime to ours on Windows, which has no process group.
+///
+/// `kill_on_drop` is a tokio destructor, and `TerminateProcess` runs no
+/// destructors, so a force-quit Jan -- Task Manager, or the NSIS installer's own
+/// kill of the running app -- leaves the worker alive. It exits eventually,
+/// because losing our end of its stdin pipe is its stop signal, but only after
+/// draining requests, saving slots and freeing every model, and until then it
+/// holds VRAM and keeps `ggml*.dll` mapped -- which is precisely what makes the
+/// next install fail to overwrite them.
+///
+/// A job object whose last handle dies with this process is the one reaping the
+/// OS will do on our behalf. Unix gets this from `process_group(0)`.
+#[cfg(windows)]
+mod reap {
+    use std::os::windows::io::RawHandle;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    /// Closing this kills every process still in the job.
+    pub struct Job(HANDLE);
+
+    // The handle is opaque to everything but `Drop`, which owns it exclusively.
+    unsafe impl Send for Job {}
+    unsafe impl Sync for Job {}
+
+    impl Drop for Job {
+        fn drop(&mut self) {
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    /// Best effort: a Jan already confined to a job that forbids nesting should
+    /// lose the reaping guarantee, not the engine.
+    pub fn confine(child: RawHandle) -> Option<Job> {
+        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if job.is_null() {
+            log::warn!("could not create a job object for the worker");
+            return None;
+        }
+        let job = Job(job);
+        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let set = unsafe {
+            SetInformationJobObject(
+                job.0,
+                JobObjectExtendedLimitInformation,
+                &limits as *const _ as *const std::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if set == 0 {
+            log::warn!("could not set kill-on-close on the worker's job object");
+            return None;
+        }
+        if unsafe { AssignProcessToJobObject(job.0, child as HANDLE) } == 0 {
+            log::warn!("could not put the worker in its job object");
+            return None;
+        }
+        Some(job)
+    }
+}
+
 pub struct WorkerHandle {
     pub port: u16,
     pub pid: u32,
     pub api_key: String,
     pub models: Vec<String>,
     child: Child,
+    /// Declared after `child` so it is dropped after it: the graceful stop must
+    /// get its turn before closing the job would kill the worker outright.
+    #[cfg(windows)]
+    _job: Option<reap::Job>,
 }
 
 impl WorkerHandle {
@@ -335,6 +405,10 @@ pub async fn spawn(
         .kill_on_drop(true);
 
     let mut child = cmd.spawn().map_err(|e| WorkerError::Spawn(e.to_string()))?;
+    // Before the handshake, so every error path below drops the job too and
+    // cannot leak a worker that never reported for duty.
+    #[cfg(windows)]
+    let job = child.raw_handle().and_then(reap::confine);
 
     let stdout = child
         .stdout
@@ -406,6 +480,8 @@ pub async fn spawn(
         api_key: api_key.to_string(),
         models: hs.models,
         child,
+        #[cfg(windows)]
+        _job: job,
     })
 }
 
