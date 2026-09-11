@@ -71,9 +71,11 @@ stage_lib() {
 exts=("$LIBEXT")
 [ "$MODEXT" = "$LIBEXT" ] || exts+=("$MODEXT")
 
+# lib64 is a fallback for a stale prefix that installed there before
+# CMAKE_INSTALL_LIBDIR=lib was passed (Fedora/RHEL GNUInstallDirs default).
 srcs=()
 for ext in "${exts[@]}"; do
-  srcs+=("$PREFIX"/bin/*."$ext"* "$PREFIX"/lib/libggml*."$ext"*)
+  srcs+=("$PREFIX"/bin/*."$ext"* "$PREFIX"/lib/libggml*."$ext"* "$PREFIX"/lib64/libggml*."$ext"*)
 done
 
 staged=0
