@@ -357,11 +357,6 @@ export function ModelSettingFields({ model, provider }: ModelSettingProps) {
                     title={config.title}
                     description={config.description}
                     controllerType={config.controller_type}
-                    disabledReason={
-                      fitEnabled && key === 'ngl'
-                        ? t('common:modelSettings.nglDisabledByFit')
-                        : undefined
-                    }
                     controllerProps={{
                       ...config.controller_props,
                       value: config.controller_props?.value,

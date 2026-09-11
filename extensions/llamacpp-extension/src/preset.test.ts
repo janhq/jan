@@ -365,11 +365,20 @@ describe('generatePreset n-gpu-layers under fit', () => {
     expect(ini).toContain('n-gpu-layers = 33')
   })
 
-  it('omits per-model n-gpu-layers when auto-fit is enabled', async () => {
+  // Fit only auto-fills unset n_gpu_layers. Skipping an explicit value made
+  // the GPU Layers setting a silent no-op whenever Fit was on.
+  it('emits per-model n-gpu-layers even when auto-fit is enabled', async () => {
     setupModel('llama', { n_gpu_layers: 33 })
     await generatePreset('/p', '/jan', { fit: true } as any)
     const ini = writtenFiles['/p/router.preset.ini']
-    expect(ini).not.toContain('n-gpu-layers')
+    expect(ini).toContain('n-gpu-layers = 33')
+  })
+
+  it('omits n-gpu-layers when unset so auto-fit can still choose offload', async () => {
+    setupModel('llama', {})
+    await generatePreset('/p', '/jan', { fit: true } as any, {
+    })
+    expect(writtenFiles['/p/router.preset.ini']).not.toContain('n-gpu-layers')
   })
 })
 
@@ -543,6 +552,12 @@ describe('generatePreset upstream-default skipping', () => {
     setupModel('c', { n_gpu_layers: -3 })
     await generatePreset('/p', '/jan', { fit: false } as any)
     expect(modelSection('c')).not.toContain('n-gpu-layers')
+  })
+
+  it('emits an explicit n-gpu-layers = 100 even when fit is enabled', async () => {
+    setupModel('m', { n_gpu_layers: 100 })
+    await generatePreset('/p', '/jan', { fit: true } as any)
+    expect(modelSection('m')).toContain('n-gpu-layers = 100')
   })
 
   // mlock and no_mmap are two deprecated aliases for one upstream field, so
