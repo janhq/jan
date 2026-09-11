@@ -41,91 +41,129 @@ describe('useFavoriteModel', () => {
     expect(state.favoriteModels).toEqual([])
   })
 
-  it('should add a favorite', () => {
+  it('should add a favorite with provider scope', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(1)
     expect(useFavoriteModel.getState().favoriteModels[0].id).toBe('model-1')
+    expect(useFavoriteModel.getState().favoriteModels[0].provider).toBe(
+      'openrouter'
+    )
   })
 
-  it('should not add duplicate favorites', () => {
+  it('should not add duplicate favorites for the same provider', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(1)
   })
 
-  it('should remove a favorite', () => {
-    const model = makeModel('model-1')
+  it('should allow the same model id under different providers', () => {
+    const model = makeModel('gpt-4o')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
+      useFavoriteModel.getState().addFavorite(model, 'huggingface')
+    })
+
+    expect(useFavoriteModel.getState().favoriteModels).toHaveLength(2)
+    expect(
+      useFavoriteModel.getState().isFavorite('gpt-4o', 'openrouter')
+    ).toBe(true)
+    expect(
+      useFavoriteModel.getState().isFavorite('gpt-4o', 'huggingface')
+    ).toBe(true)
+  })
+
+  it('should remove a favorite for one provider only', () => {
+    const model = makeModel('gpt-4o')
+
+    act(() => {
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
+      useFavoriteModel.getState().addFavorite(model, 'huggingface')
     })
 
     act(() => {
-      useFavoriteModel.getState().removeFavorite('model-1')
+      useFavoriteModel.getState().removeFavorite('gpt-4o', 'openrouter')
     })
 
-    expect(useFavoriteModel.getState().favoriteModels).toHaveLength(0)
+    expect(useFavoriteModel.getState().favoriteModels).toHaveLength(1)
+    expect(
+      useFavoriteModel.getState().isFavorite('gpt-4o', 'openrouter')
+    ).toBe(false)
+    expect(
+      useFavoriteModel.getState().isFavorite('gpt-4o', 'huggingface')
+    ).toBe(true)
   })
 
   it('should check isFavorite correctly', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(true)
-    expect(useFavoriteModel.getState().isFavorite('model-2')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'openrouter')).toBe(
+      true
+    )
+    expect(
+      useFavoriteModel.getState().isFavorite('model-1', 'huggingface')
+    ).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('model-2', 'openrouter')).toBe(
+      false
+    )
   })
 
   it('should toggle favorite on', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().toggleFavorite(model)
+      useFavoriteModel.getState().toggleFavorite(model, 'openrouter')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(true)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'openrouter')).toBe(
+      true
+    )
   })
 
   it('should toggle favorite off', () => {
     const model = makeModel('model-1')
 
     act(() => {
-      useFavoriteModel.getState().addFavorite(model)
+      useFavoriteModel.getState().addFavorite(model, 'openrouter')
     })
 
     act(() => {
-      useFavoriteModel.getState().toggleFavorite(model)
+      useFavoriteModel.getState().toggleFavorite(model, 'openrouter')
     })
 
-    expect(useFavoriteModel.getState().isFavorite('model-1')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('model-1', 'openrouter')).toBe(
+      false
+    )
   })
 
   it('should handle multiple favorites', () => {
     act(() => {
-      useFavoriteModel.getState().addFavorite(makeModel('a'))
-      useFavoriteModel.getState().addFavorite(makeModel('b'))
-      useFavoriteModel.getState().addFavorite(makeModel('c'))
+      useFavoriteModel.getState().addFavorite(makeModel('a'), 'p1')
+      useFavoriteModel.getState().addFavorite(makeModel('b'), 'p1')
+      useFavoriteModel.getState().addFavorite(makeModel('c'), 'p2')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(3)
 
     act(() => {
-      useFavoriteModel.getState().removeFavorite('b')
+      useFavoriteModel.getState().removeFavorite('b', 'p1')
     })
 
     expect(useFavoriteModel.getState().favoriteModels).toHaveLength(2)
-    expect(useFavoriteModel.getState().isFavorite('b')).toBe(false)
+    expect(useFavoriteModel.getState().isFavorite('b', 'p1')).toBe(false)
   })
 })
