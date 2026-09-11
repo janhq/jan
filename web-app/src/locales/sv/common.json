@@ -8,7 +8,6 @@
   "experimental": "Experimentell",
   "https_proxy": "HTTPS-proxy",
   "web_search": "Webbsökning",
-  "agent_tools": "Agentverktyg",
   "browse": "Bläddra",
   "starting": "Startar…",
   "attachments": "Bilagor",
@@ -219,7 +218,6 @@
   },
   "skillsInContext": "Färdigheter som är tillgängliga för agenten i den här körningen",
   "skillsTitle": "Hantera färdigheter",
-  "skillsSelectFolder": "Välj först en projektmapp på kodskärmen för att hantera dess färdigheter.",
   "skillsEmpty": "Inga färdigheter ännu",
   "skillsPickOrNew": "Välj en färdighet att redigera eller skapa en ny.",
   "skillNew": "Ny färdighet",
@@ -273,6 +271,11 @@
   "preview": {
     "loading": "Öppnar…",
     "unsupported": "Jan kan inte visa den här typen av fil. Öppna den i ett annat program.",
+    "unsandboxed": "Kör utan sandlåda: sparade data och lokala filer fungerar",
+    "externalRefs_one": "1 resurs som sidan läser in från webben är blockerad. Aktivera ”Tillåt nätverk” för att läsa in den.",
+    "externalRefs_other": "{{count}} resurser som sidan läser in från webben är blockerade. Aktivera ”Tillåt nätverk” för att läsa in dem.",
+    "scriptErrors_one": "Sidan rapporterade ett fel: {{message}}",
+    "scriptErrors_other": "Sidan rapporterade {{count}} fel. Först: {{message}}",
     "outside": "Den här filen finns inte längre i sessionens arbetsyta.",
     "tooLarge": "Filen är för stor för förhandsvisning. Öppna den i ett annat program.",
     "reload": "Läs in igen",
@@ -433,7 +436,12 @@
     "fileTooLargeDescription": "{{fileName}} överskrider gränsen på {{maxFileSizeMB}} MB"
   },
   "files": {
-    "chunksCount": "{{count}} segment"
+    "chunksCount": "{{count}} segment",
+    "title": "Filer",
+    "empty": "Filer du bifogar och filer som agenten skapar visas här.",
+    "a11y": "Filer: {{count}}",
+    "attachments": "Bilagor",
+    "notImported": "inte i arbetsytan"
   },
   "duration": {
     "seconds": "{{count}} s",
@@ -442,7 +450,10 @@
   },
   "workspace": {
     "readsFrom": "Läser från",
-    "readOnly": "skrivskyddad",
+    "writable": "läser och skriver",
+    "unavailable": "Arbetsytan är inte tillgänglig",
+    "openFailed": "Det gick inte att öppna arbetsytan",
+    "revealFailed": "Det gick inte att visa arbetsytan",
     "footnote": "Agenten läser bara den här mappen. Inget i den ändras någonsin.",
     "footnoteEmpty": "Anslut en mapp så att agenten kan läsa projektet. Den ändrar fortfarande ingenting i mappen.",
     "attach": "Anslut en mapp",
@@ -450,7 +461,7 @@
     "detach": "Koppla från mapp",
     "open": "Öppna",
     "reveal": "Visa",
-    "missing": "Den här mappen finns inte längre. Anslut en annan mapp.",
+    "missing": "Arbetsytans mapp {{folder}} är inte längre tillgänglig. Välj en annan mapp.",
     "a11yWithFolder": "Projektmappen {{folder}} är ansluten skrivskyddad. Byt eller koppla från den.",
     "a11yNoFolder": "Ingen projektmapp är ansluten. Anslut en."
   },
@@ -472,7 +483,6 @@
     "placeholder": "Be om en plan. Agenten ändrar inga filer."
   },
   "budget": {
-    "steps": "steg {{step}}/{{max}}",
     "stoppedSteps": "Stannade efter {{max}} steg. Agenten har inte slutfört uppgiften.",
     "keepGoing": "Fortsätt",
     "stoppedTokens": "Stannade – sessionen nådde sin tokengräns.",
@@ -694,5 +704,62 @@
       "title": "Filen finns redan",
       "description": "Filen är redan bifogad till projektet"
     }
-  }
+  },
+  "moreControls": "Fler kontroller",
+  "cmdCompact": "Komprimera sessionens kontext till en sammanfattning",
+  "cmdCompacted": "Komprimerade {{before}} → {{after}} meddelanden",
+  "cmdNothingToCompact": "Det finns inget att komprimera ännu",
+  "cmdCompactFailed": "Komprimeringen misslyckades: {{error}}",
+  "cmdPlan": "Växla planläge (skrivskyddat: agenten föreslår utan att skriva)",
+  "cmdPlanOn": "Planläge på: agenten läser och föreslår utan att skriva",
+  "cmdPlanOff": "Planläge av: normal körning",
+  "cmdTodo": "Öppna förloppspanelen",
+  "cmdTasks": "Öppna panelen för bakgrundsjobb",
+  "cmdInit": "Studera projektet och skriv färdigheter och minnen",
+  "cmdInitRunning": "Introducerar projektet",
+  "skillsScopeProject": "Färdigheter för {{folder}}",
+  "skillsScopeGlobal": "Globala färdigheter, tillgängliga för varje session",
+  "skillsScopeMerged": "Färdigheter för {{folder}}, plus de globala färdigheter som alla sessioner delar",
+  "skillOriginFolder": "mapp",
+  "skillOriginGlobal": "global",
+  "modelPanel": {
+    "title": "Modellinställningar",
+    "a11y": "Öppna modellinställningar",
+    "contextTooltip": "Kontextfönster: {{value}} av {{max}} token"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "Färdigheten ”{{name}}” är inte tillgänglig",
+    "kind": { "skill": "Färdighet", "command": "Kommando", "model": "Modell" }
+  },
+  "modelControls": { "updateFailed": "Det gick inte att uppdatera modellinställningarna" },
+  "backgroundTasks": "Bakgrundsjobb",
+  "subagentsRunning_one": "{{count}} underagent körs",
+  "subagentsRunning_other": "{{count}} underagenter körs",
+  "monitorsRunning_one": "{{count}} övervakare körs",
+  "monitorsRunning_other": "{{count}} övervakare körs",
+  "backgroundRunning_one": "{{count}} bakgrundsjobb körs",
+  "backgroundRunning_other": "{{count}} bakgrundsjobb körs",
+  "monitors": "Övervakare",
+  "monitorPolling": "Kontrollerar",
+  "monitorMatched": "Matchade",
+  "monitorTimedOut": "Tidsgränsen överskreds",
+  "monitorStopped": "Stoppad",
+  "monitorEnded": "Avslutad",
+  "coworkWatching_one": "Övervakar {{count}} övervakare …",
+  "coworkWatching_other": "Övervakar {{count}} övervakare …",
+  "coworkWaitingBackground": "Väntar på bakgrundsjobb …",
+  "noBackgroundTasks": "Inga bakgrundsjobb ännu.",
+  "running": "Körs",
+  "queued": "Köad",
+  "finished": "Slutförd",
+  "viewTranscript": "Visa transkription",
+  "taskWorking": "Arbetar …",
+  "taskNoOutput": "Underagenten gav ingen synlig utdata.",
+  "subagentToolUses_one": "{{count}} verktygsanrop",
+  "subagentToolUses_other": "{{count}} verktygsanrop",
+  "artifactGroupCode": "Kod",
+  "artifactGroupImage": "Bild",
+  "artifactGroupDocument": "Dokument",
+  "artifactGroupVideo": "Video",
+  "artifactGroupAudio": "Ljud"
 }

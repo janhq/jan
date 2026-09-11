@@ -11,13 +11,21 @@
     "title": "Förbereder dina dokument",
     "description": "Indexerar de bifogade filerna så att de kan sökas och citeras. Det kan ta en stund för stora dokument."
   },
-  "actions": { "regenerate": "Generera svar på nytt", "continue": "Fortsätt generera" },
+  "actions": {
+    "regenerate": "Generera svar på nytt",
+    "continue": "Fortsätt generera",
+    "askAgain": "Fråga igen",
+    "remember": "Kom ihåg detta",
+    "rememberSaved": "Sparades i minnet som ”{{name}}”",
+    "rememberExists": "Finns redan i minnet som ”{{name}}”",
+    "rememberFailed": "Det gick inte att spara i minnet"
+  },
   "done": "Klar",
   "webSources": "{{count}} källa/källor",
   "reasoning": {
     "label": "Resonerar…",
     "thinking": "Tänker",
-    "usingTool": "{{tool}}…",
+    "working": "Arbetar…",
     "showFullTimeline": "Visa hela tidslinjen",
     "showCurrentStep": "Visa endast aktuellt steg",
     "thoughtForAWhile": "Tänkte i några sekunder",
