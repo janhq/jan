@@ -79,7 +79,9 @@ pub(super) fn live_assistant_lines(
                 continue;
             }
             if i < last {
-                vec![reasoning_summary_row(body.len())]
+                // Live: the duration is not yet known; the commit will restamp
+                // this as `Thought for Ns`.
+                vec![reasoning_summary_row(None)]
             } else if stream_reasoning {
                 live_reasoning_tail(&body, width)
             } else {
@@ -100,6 +102,104 @@ pub(super) fn live_assistant_lines(
 /// nothing.
 const REASONING_GUTTER_COLS: usize = 2;
 
+/// Character budget per reasoning step, roughly five chat lines. A paragraph
+/// longer than this is subdivided so a model that streams one unbroken block
+/// still produces settled steps instead of one ever-growing one.
+const REASONING_STEP_MAX_CHARS: usize = 400;
+/// A break earlier than this fraction of the budget would emit a stub step, so
+/// `find_step_break` keeps looking past it.
+const REASONING_MIN_STEP_RATIO: f32 = 0.4;
+
+/// Split a reasoning trace into paragraph "steps": a blank (whitespace-only)
+/// line starts a new step; a single newline stays within one (soft wrap / list
+/// item). Trailing whitespace is trimmed and empty paragraphs dropped. Because
+/// the caller passes the full accumulated text each streaming tick, the last
+/// element is the paragraph currently being written and earlier ones are
+/// settled -- re-segmenting a longer prefix leaves settled steps untouched.
+pub(super) fn split_reasoning_paragraphs(text: &str) -> Vec<String> {
+    let mut paras: Vec<String> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    let mut flush = |cur: &mut Vec<&str>| {
+        if !cur.is_empty() {
+            paras.push(cur.join("\n").trim_end().to_string());
+            cur.clear();
+        }
+    };
+    for line in text.split('\n') {
+        if line.trim().is_empty() {
+            flush(&mut cur);
+        } else {
+            cur.push(line);
+        }
+    }
+    flush(&mut cur);
+    paras.retain(|p| !p.trim().is_empty());
+    paras
+}
+
+/// Split a reasoning trace into steps that always advance: blank lines take
+/// precedence, but any paragraph longer than `max_chars` is subdivided at the
+/// best break so an unbroken block still settles into steps. Greedy from the
+/// start, so a step's boundary depends only on the text before it and a growing
+/// prefix leaves settled steps untouched. Port of the desktop's
+/// `segmentReasoningSteps`.
+pub(super) fn segment_reasoning_steps(text: &str) -> Vec<String> {
+    segment_reasoning_steps_with(text, REASONING_STEP_MAX_CHARS)
+}
+
+fn segment_reasoning_steps_with(text: &str, max_chars: usize) -> Vec<String> {
+    let min_chars = (max_chars as f32 * REASONING_MIN_STEP_RATIO) as usize;
+    let mut steps: Vec<String> = Vec::new();
+    for paragraph in split_reasoning_paragraphs(text) {
+        let chars: Vec<char> = paragraph.chars().collect();
+        let mut start = 0;
+        while chars.len() - start > max_chars {
+            let window = &chars[start..start + max_chars];
+            let end = start + find_step_break(window, min_chars).unwrap_or(max_chars);
+            let step: String = chars[start..end].iter().collect();
+            let step = step.trim();
+            if !step.is_empty() {
+                steps.push(step.to_string());
+            }
+            start = end;
+            while start < chars.len() && chars[start].is_whitespace() {
+                start += 1;
+            }
+        }
+        let tail: String = chars[start..].iter().collect();
+        let tail = tail.trim();
+        if !tail.is_empty() {
+            steps.push(tail.to_string());
+        }
+    }
+    steps
+}
+
+/// Char offset just past the best break in `window` (`None` when none is usable
+/// at or past `min_chars`). Preference: last sentence end, then last line break,
+/// then last word boundary. A sentence end must be followed by whitespace inside
+/// the window, matching the desktop's `[.!?...](?=\s)` lookahead.
+fn find_step_break(window: &[char], min_chars: usize) -> Option<usize> {
+    let mut sentence: Option<usize> = None;
+    for i in 0..window.len() {
+        let ends_sentence = matches!(window[i], '.' | '!' | '?' | '。' | '！' | '？');
+        let followed_by_space = window.get(i + 1).is_some_and(|c| c.is_whitespace());
+        if ends_sentence && followed_by_space {
+            sentence = Some(i + 1);
+        }
+    }
+    if let Some(s) = sentence.filter(|s| *s >= min_chars) {
+        return Some(s);
+    }
+    if let Some(nl) = window.iter().rposition(|&c| c == '\n').filter(|nl| *nl >= min_chars) {
+        return Some(nl + 1);
+    }
+    (min_chars..window.len())
+        .rev()
+        .find(|&i| window[i].is_whitespace())
+        .map(|i| i + 1)
+}
+
 fn reasoning_row(body: Vec<Span<'static>>) -> Line<'static> {
     let mut spans = vec![Span::styled("┊ ", Style::new().dark_gray())];
     spans.extend(body);
@@ -110,12 +210,22 @@ fn reasoning_body_span(text: String) -> Span<'static> {
     Span::styled(text, Style::new().dim().italic())
 }
 
-/// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body).
+/// A reasoning block's full dimmed lines (`┊ ` gutter, dim italic body),
+/// segmented into steps: a blank rail row separates each paragraph step so the
+/// expanded trace reads as discrete thoughts rather than one wall of text,
+/// matching the desktop's stepped rail.
 pub(super) fn reasoning_detail_lines(seg: &str) -> Vec<Line<'static>> {
-    seg.lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| reasoning_row(vec![reasoning_body_span(l.to_string())]))
-        .collect()
+    let mut out = Vec::new();
+    for step in segment_reasoning_steps(seg) {
+        if !out.is_empty() {
+            // A bare rail row (gutter, no body) sets each step apart.
+            out.push(reasoning_row(Vec::new()));
+        }
+        for line in step.lines() {
+            out.push(reasoning_row(vec![reasoning_body_span(line.to_string())]));
+        }
+    }
+    out
 }
 
 /// The open block's tail, bounded to [`LIVE_REASONING_TAIL_LINES`] *rendered*
@@ -138,12 +248,16 @@ fn live_reasoning_tail(body: &[&str], width: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
-/// Collapsed summary row for a folded reasoning block.
-pub(super) fn reasoning_summary_row(n: usize) -> Line<'static> {
-    let label = if n == 1 {
-        "reasoning (1 line)".to_string()
-    } else {
-        format!("reasoning ({n} lines)")
+/// Collapsed summary row for a folded reasoning block, in the desktop's
+/// `Thought for Ns` wording. The duration is known once the block closes;
+/// before that (the live settled-summary) and on replay of a journal written
+/// without it, `None` reads as a plain `Thought`.
+pub(super) fn reasoning_summary_row(dur: Option<std::time::Duration>) -> Line<'static> {
+    // A sub-second block reads as `Thought` rather than `Thought for 0s`; the
+    // duration is only worth showing once it rounds to a second.
+    let label = match dur.map(|d| d.as_secs()).filter(|s| *s >= 1) {
+        Some(secs) => format!("Thought for {}", super::format_elapsed(secs)),
+        None => "Thought".to_string(),
     };
     reasoning_row(vec![reasoning_body_span(label)])
 }
@@ -619,7 +733,7 @@ impl Renderer {
             Tag::Emphasis => self.inlines.push(Style::new().italic()),
             Tag::Strong => self
                 .inlines
-                .push(Style::new().bold().fg(Color::Rgb(255, 165, 0))),
+                .push(Style::new().bold().fg(super::theme::strong_accent())),
             Tag::Strikethrough => self.inlines.push(Style::new().crossed_out()),
             Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. } => {
                 self.link = Some(Link {
@@ -869,11 +983,70 @@ fn group_by_style(chars: &[(char, Style)]) -> Vec<(Style, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_markdown_lines, render_table, wrap_spans_at_words};
+    use super::{
+        format_markdown_lines, render_table, segment_reasoning_steps, segment_reasoning_steps_with,
+        split_reasoning_paragraphs, wrap_spans_at_words,
+    };
     use ratatui::prelude::*;
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn paragraphs_split_on_blank_lines_only() {
+        // A single newline stays within a step (soft wrap / list item); a blank
+        // line starts a new one.
+        let steps = split_reasoning_paragraphs("first line\nsame step\n\nsecond step");
+        assert_eq!(steps, vec!["first line\nsame step", "second step"]);
+        // Trailing whitespace trimmed, blank-only input yields nothing.
+        assert_eq!(split_reasoning_paragraphs("  \n\n  "), Vec::<String>::new());
+        // A whitespace-only line (spaces) still separates.
+        assert_eq!(
+            split_reasoning_paragraphs("a\n   \nb"),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn steps_are_the_paragraphs_when_short() {
+        let steps = segment_reasoning_steps("Think A.\n\nThink B.");
+        assert_eq!(steps, vec!["Think A.", "Think B."]);
+    }
+
+    #[test]
+    fn a_long_unbroken_paragraph_subdivides() {
+        // A short first sentence (period within the budget window) then a long
+        // tail that overflows: the first step breaks just past the period, and
+        // the overflowing tail is subdivided at a word boundary.
+        let first = format!("{}.", "word ".repeat(20).trim_end()); // ~100 chars, ends "."
+        let tail = "more ".repeat(60); // long, no punctuation
+        let steps = segment_reasoning_steps_with(&format!("{first} {tail}"), 200);
+        assert!(steps.len() >= 2, "did not subdivide: {steps:?}");
+        assert!(
+            steps[0].ends_with('.'),
+            "first step did not break at the sentence end: {steps:?}"
+        );
+        // No step exceeds the budget, and none breaks mid-word.
+        assert!(
+            steps.iter().all(|s| s.chars().count() <= 200),
+            "a step exceeded the budget: {steps:?}"
+        );
+        assert!(
+            steps.iter().all(|s| !s.starts_with(' ') && !s.ends_with(' ')),
+            "a step kept boundary whitespace: {steps:?}"
+        );
+    }
+
+    #[test]
+    fn segmentation_is_prefix_stable_while_streaming() {
+        // The last element is the paragraph being written; settled ones do not
+        // change as more text arrives, so a growing prefix keeps its steps.
+        let a = segment_reasoning_steps("Done one.\n\nDone two.\n\nnow writing thi");
+        let b = segment_reasoning_steps("Done one.\n\nDone two.\n\nnow writing this longer tail");
+        assert_eq!(&a[..a.len() - 1], &b[..b.len() - 1], "settled steps drifted");
+        assert_eq!(a[0], "Done one.");
+        assert_eq!(a[1], "Done two.");
     }
 
     fn joined(lines: &[ratatui::text::Line]) -> String {

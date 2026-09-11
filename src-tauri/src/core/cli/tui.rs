@@ -36,6 +36,7 @@ use tokio::task::JoinHandle;
 
 mod highlight;
 mod markdown;
+mod theme;
 
 use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
@@ -364,7 +365,9 @@ impl Pending {
             (None, None) => return out,
         };
         out.extend(gutter_lines(
-            wrap_text(&body, Style::new().white(), max.saturating_sub(2).max(1)),
+            // Terminal default foreground rather than an explicit white, which
+            // is invisible on a light background.
+            wrap_text(&body, Style::new(), max.saturating_sub(2).max(1)),
             vec![Span::styled(lead, dim)],
             vec![Span::raw("  ")],
         ));
@@ -1226,6 +1229,10 @@ enum RowKind {
         cont: &'static str,
         gutter: Style,
         body: Vec<Span<'static>>,
+        /// A filled bubble background spanning the row, or `None` for the plain
+        /// gutter form. Set for the user turn so it reads as a distinct card the
+        /// way the desktop's `bg-secondary` bubble does.
+        bg: Option<Color>,
     },
     /// A tool call/summary row, re-truncated to `width - reserve`.
     Tool {
@@ -1308,10 +1315,14 @@ impl Row {
                 cont,
                 gutter,
                 body,
+                bg,
             } => {
                 let lead = glyph.chars().count() + 1;
-                let max = width.saturating_sub(lead as u16).max(8) as usize;
-                gutter_lines(
+                // A banded row reserves one column so the bubble keeps a right
+                // margin instead of the text touching its tinted edge.
+                let reserve = if bg.is_some() { 1 } else { 0 };
+                let max = width.saturating_sub(lead as u16 + reserve).max(8) as usize;
+                let lines = gutter_lines(
                     wrap_spans_hard(body.clone(), max),
                     vec![Span::styled(
                         format!("{glyph:<width$}", width = lead),
@@ -1321,7 +1332,11 @@ impl Row {
                         format!("{cont:<width$}", width = lead),
                         *gutter,
                     )],
-                )
+                );
+                match bg {
+                    Some(bg) => band_rows(lines, *bg),
+                    None => lines,
+                }
             }
             RowKind::Tool {
                 tag,
@@ -1379,6 +1394,21 @@ struct ReasoningBlock {
     idx: usize,
     /// Full dimmed reasoning lines, revealed when expanded.
     detail: Vec<Line<'static>>,
+}
+
+/// A "trace": a maximal contiguous run of committed reasoning-summary and
+/// tool-group rows (the band-0 thinking+tools activity of a turn). Collapsing
+/// one folds `[start..=end]` to a single `Thought`/`Worked` header. Only runs of
+/// two or more rows are worth collapsing, so `steps >= 2` for every value here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TraceRun {
+    start: usize,
+    end: usize,
+    /// Any member is a tool group (vs reasoning only): picks `Worked` over
+    /// `Thought` for the header, matching the desktop's `worked`/`thought`.
+    tool_ran: bool,
+    /// Member rows in the run (`end - start + 1`).
+    steps: usize,
 }
 
 /// A committed workspace state, one per turn that changed files. `user_index` is
@@ -1710,10 +1740,6 @@ struct App {
     /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
     /// command from a spinner into a terminal.
     live_output: HashMap<String, String>,
-    /// When each call's first output arrived, gating the panel by
-    /// [`LIVE_OUTPUT_GRACE`] so a command that finishes quickly never flashes a
-    /// box on its way to the group summary.
-    live_since: HashMap<String, Instant>,
     /// Maps the call that *collects* a backgrounded job to the call that
     /// *started* it. The job keeps streaming under the original id, so without
     /// this the collecting call -- the one the user is actually waiting on --
@@ -1721,6 +1747,10 @@ struct App {
     live_alias: HashMap<String, String>,
     /// Call id that started each backgrounded job, keyed by `job_id`.
     job_origin: HashMap<String, String>,
+    /// Job ids of `bash` commands still detached in the background: added when a
+    /// result reports its command backgrounded, removed when a later call
+    /// collects that job. Its count drives the status-bar shell indicator.
+    active_bg_jobs: std::collections::HashSet<String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -1779,6 +1809,12 @@ struct App {
     /// Committed reasoning blocks, folded to a summary row and expandable back to
     /// their full dimmed lines.
     reasoning_blocks: Vec<ReasoningBlock>,
+    /// Start transcript index of each "trace" -- a contiguous run of
+    /// reasoning-summary + tool-group rows (see `trace_runs`) -- the user has
+    /// expanded. A *finished* trace (one an answer follows) folds to a single
+    /// `Thought/Worked` header by default; being in this set opts it back out to
+    /// the full run. The active (still-streaming) run is never folded.
+    expanded_traces: std::collections::HashSet<usize>,
     /// Whether `<think>` reasoning reveals in full instead of folding. Defaults
     /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
     /// existing block between its summary row and full detail for the session.
@@ -2207,10 +2243,6 @@ const THINKING_WORDS: [&str; 12] = [
 /// the eye alongside the braille spinner.
 const WORD_ROTATE_FRAMES: usize = 60;
 
-/// Orange used for the "thinking" action word, matching the markdown bold
-/// accent so reasoning reads consistently across the TUI.
-const THINKING_ORANGE: Color = Color::Rgb(255, 165, 0);
-
 /// How long the `[thought for Ns]` header summary lingers after a reasoning
 /// block closes before it falls back to the plain `[working]` status. The
 /// summary is only a transient cue that a block finished; it should not pin the
@@ -2357,9 +2389,9 @@ impl App {
             bash_commands: HashMap::new(),
             bash_jobs: HashMap::new(),
             live_output: HashMap::new(),
-            live_since: HashMap::new(),
             live_alias: HashMap::new(),
             job_origin: HashMap::new(),
+            active_bg_jobs: std::collections::HashSet::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2379,6 +2411,7 @@ impl App {
             groups: Vec::new(),
             pending_rows: Vec::new(),
             reasoning_blocks: Vec::new(),
+            expanded_traces: std::collections::HashSet::new(),
             show_reasoning,
             // Overwritten from the session config right after construction.
             stream_reasoning: true,
@@ -2537,6 +2570,7 @@ impl App {
         self.groups.clear();
         self.pending_rows.clear();
         self.reasoning_blocks.clear();
+        self.expanded_traces.clear();
         self.subagent_blocks.clear();
         self.subagents.clear();
         self.stop_monitors();
@@ -2647,6 +2681,7 @@ impl App {
             cont: " ",
             gutter,
             body: vec![Span::styled(text.to_string(), body)],
+            bg: None,
         });
     }
 
@@ -2673,6 +2708,7 @@ impl App {
             cont: SYSTEM_CONT,
             gutter: Style::new().dark_gray(),
             body,
+            bg: None,
         });
     }
 
@@ -2684,9 +2720,12 @@ impl App {
         let segs = std::mem::take(&mut self.reasoning_segs);
         let prose = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
-        // The buffered stream is committed: any open reasoning window closes
-        // (its elapsed time was stashed when the block itself closed, so this
-        // only matters for a flush that happens mid-block, e.g. a tool call).
+        // How long this turn's reasoning took, for the `Thought for Ns` label:
+        // an open block being closed by this flush (a mid-block tool call) is
+        // still timing on `thinking_since`; one that closed earlier (prose
+        // arrived) stashed its elapsed in `thought_for`. `thought_for` is left
+        // for the header badge; only `thinking_since` is cleared here.
+        let reasoning_dur = self.thinking_since.map(|s| s.elapsed()).or(self.thought_for);
         self.thinking_since = None;
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only turn, so silent consecutive tool calls keep folding.
@@ -2697,18 +2736,25 @@ impl App {
         self.finalize_tool_group();
         // Display-logged here (out of `history` on purpose) so the replay folds
         // reasoning like the live turn did. Prose and reasoning are journaled
-        // apart, exactly as they arrived.
+        // apart, exactly as they arrived; the reasoning duration rides along so
+        // a resumed session keeps its `Thought for Ns` label.
         self.display_log.push(DisplayEntry::Assistant {
             text: prose.clone(),
             reasoning: segs.clone(),
+            reasoning_ms: reasoning_dur.map(|d| d.as_millis() as u64),
         });
-        self.push_assistant_blocks(&prose, &segs);
+        self.push_assistant_blocks(&prose, &segs, reasoning_dur);
     }
 
     /// Commit assistant `text` to the transcript in emission order: answer prose
     /// through markdown, each `<think>` block folded to a one-line summary row
     /// whose full dimmed detail is retained for expansion.
-    fn push_assistant_blocks(&mut self, prose: &str, segs: &[ReasoningSeg]) {
+    fn push_assistant_blocks(
+        &mut self,
+        prose: &str,
+        segs: &[ReasoningSeg],
+        reasoning_dur: Option<Duration>,
+    ) {
         for (reasoning, seg) in assistant_runs(prose, segs) {
             // Only answer prose can carry an injected `<system>` block; stripping
             // per run rather than over the whole turn keeps the reasoning
@@ -2732,7 +2778,7 @@ impl App {
                 if self.show_reasoning {
                     self.transcript.extend(detail.into_iter().map(Row::line));
                 } else {
-                    self.push(reasoning_summary_row(detail.len()));
+                    self.push(reasoning_summary_row(reasoning_dur));
                     let idx = self.transcript.len() - 1;
                     self.reasoning_blocks.push(ReasoningBlock { idx, detail });
                 }
@@ -2834,6 +2880,125 @@ impl App {
         self.groups.push(g);
     }
 
+    /// The committed traces (contiguous runs of reasoning-summary + tool-group
+    /// rows), each of 2+ rows -- a lone reasoning block or tool group is already
+    /// one line and not worth a collapse header. Members are the finalized
+    /// reasoning blocks and tool groups; the still-running group is the active
+    /// tail and never part of a collapsible run.
+    fn trace_runs(&self) -> Vec<TraceRun> {
+        let mut members: Vec<(usize, bool)> = Vec::new();
+        for g in &self.groups {
+            members.push((g.idx, true));
+        }
+        for r in &self.reasoning_blocks {
+            members.push((r.idx, false));
+        }
+        members.sort_by_key(|(i, _)| *i);
+
+        let mut runs = Vec::new();
+        let mut iter = members.into_iter().peekable();
+        while let Some((start, first_is_tool)) = iter.next() {
+            let mut end = start;
+            let mut tool_ran = first_is_tool;
+            while let Some(&(next, is_tool)) = iter.peek() {
+                if next != end + 1 {
+                    break;
+                }
+                end = next;
+                tool_ran |= is_tool;
+                iter.next();
+            }
+            let steps = end - start + 1;
+            if steps >= 2 {
+                runs.push(TraceRun {
+                    start,
+                    end,
+                    tool_ran,
+                    steps,
+                });
+            }
+        }
+        runs
+    }
+
+    /// The current turn's *settled* steps, folded behind the live frontier so the
+    /// condensed view shows only the step in flight. The settled steps are the
+    /// reasoning-summary and tool-group rows after the last answer that are not
+    /// the running box. Folds whenever the run is still live: while a step is
+    /// mid-flight (a running command, a tool call typing its args, or streaming
+    /// reasoning/answer) *and* in the gap between one step finishing and the next
+    /// starting -- that gap is what left a whole run of finished steps rendered
+    /// during streaming. `None` once the run is idle with nothing streaming, or
+    /// with nothing settled to fold yet. A continuing frontier folds even a lone
+    /// step; a bare gap or a streaming answer needs 2+ (matching the finished
+    /// fold) so a single-step turn does not fold then un-fold as it wraps up.
+    fn active_fold(&self) -> Option<TraceRun> {
+        let running = self
+            .tool_group
+            .as_ref()
+            .filter(|g| g.is_running())
+            .map(|g| g.idx);
+        let starting = !self.starting.is_empty();
+        let reasoning_frontier = self.reasoning_open() || !self.reasoning_segs.is_empty();
+        let answer_frontier = !reasoning_frontier && has_answer_text(&self.assistant_buf);
+        let continuing = running.is_some() || starting || reasoning_frontier;
+        let run_active = self.status == Status::Running;
+        if !continuing && !answer_frontier && !run_active {
+            return None;
+        }
+        let last_answer = self.last_answer_idx();
+        let mut settled: Vec<(usize, bool)> = Vec::new();
+        for g in &self.groups {
+            settled.push((g.idx, true));
+        }
+        for r in &self.reasoning_blocks {
+            settled.push((r.idx, false));
+        }
+        // A finished-but-not-yet-closed command is a settled prior step too once
+        // the frontier has moved past it (reasoning is streaming below).
+        if let Some(g) = &self.tool_group {
+            if !g.is_running() {
+                settled.push((g.idx, true));
+            }
+        }
+        settled.retain(|(i, _)| last_answer.is_none_or(|a| *i > a) && Some(*i) != running);
+        let min_steps = if continuing { 1 } else { 2 };
+        if settled.len() < min_steps {
+            return None;
+        }
+        settled.sort_by_key(|(i, _)| *i);
+        let tool_ran = running.is_some() || starting || settled.iter().any(|(_, t)| *t);
+        Some(TraceRun {
+            start: settled[0].0,
+            end: settled.last().unwrap().0,
+            tool_ran,
+            steps: settled.len(),
+        })
+    }
+
+    /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
+    /// default fold). A no-op if `start` is not a trace or active-fold start.
+    fn toggle_trace(&mut self, start: usize) {
+        let is_start = self.trace_runs().iter().any(|r| r.start == start)
+            || self.active_fold().is_some_and(|r| r.start == start);
+        if !is_start {
+            return;
+        }
+        if !self.expanded_traces.remove(&start) {
+            self.expanded_traces.insert(start);
+        }
+    }
+
+    /// Highest transcript index holding answer prose, or `None` when the turn
+    /// has produced none yet. A trace whose last row precedes some answer is
+    /// "finished" and folds by default; the run after the latest answer is the
+    /// active one and stays open.
+    fn last_answer_idx(&self) -> Option<usize> {
+        self.transcript
+            .iter()
+            .rposition(|row| matches!(row.kind, RowKind::Markdown(_)))
+    }
+
     /// Fold one finished child into a summary row, retaining its call list so
     /// the row can expand back to it (like a tool group).
     fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, outcome: SubagentOutcome) {
@@ -2926,42 +3091,46 @@ impl App {
         self.persist();
     }
 
-    /// The live shell panel for `group`'s newest unresolved *command*, or no rows
-    /// when nothing in the group is streaming yet.
+    /// The live terminal box for `group`'s newest unresolved *command*, streamed
+    /// from the moment the command starts -- before any output -- so it reads as
+    /// a terminal opening rather than a spinner that later becomes one. No rows
+    /// when nothing in the group is a command in flight (a `read`/`grep` run
+    /// keeps its plain activity row).
     ///
-    /// Picks the newest call that has output rather than the newest call
-    /// outright: a group runs its calls in parallel, so a `read` issued after a
-    /// `bash` must not blank the panel until it lands and then let it pop back.
-    ///
-    /// Follows the job alias, so a call *waiting on* a backgrounded job shows the
-    /// output the detached job is still producing under the id of the call that
-    /// started it.
-    fn live_shell_panel(&self, group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
-        let Some((command, output)) = group
+    /// One box per command still in flight, in dispatch order: a group runs its
+    /// calls in parallel, so several commands can be streaming at once and each
+    /// gets its own terminal rather than one hiding the rest. A `read`/`grep` in
+    /// the group has no command and contributes no box. Follows the job alias,
+    /// so a call *waiting on* a backgrounded job shows the output the detached
+    /// job is still producing under the id of the call that started it.
+    fn live_shell_panel(&self, group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
+        // The detached job streams under the id of the call that started it, so a
+        // collecting call reads its output through the alias.
+        fn output_key<'a>(alias: &'a HashMap<String, String>, call: &'a GroupedCall) -> &'a str {
+            alias.get(&call.id).map_or(call.id.as_str(), String::as_str)
+        }
+        let elapsed = group.started.elapsed().as_secs();
+        let mut out = Vec::new();
+        for call in group
             .calls
             .iter()
-            .rev()
-            .filter(|c| c.content.is_none())
-            .find_map(|c| self.live_view(&c.id))
-        else {
-            return Vec::new();
-        };
-        shell_panel_lines(command, output, width, SHELL_PANEL_GUTTER)
-    }
-
-    /// A call's command and the output it has streamed, once both exist and the
-    /// command has been running long enough to be worth a box.
-    fn live_view(&self, id: &str) -> Option<(&str, &str)> {
-        let command = self.bash_commands.get(id)?;
-        let key = self.live_alias.get(id).map_or(id, String::as_str);
-        let output = self.live_output.get(key)?;
-        // A command that prints and exits inside the grace period renders no box
-        // at all, so its output never appears only to be yanked away a frame
-        // later by the group summary.
-        if self.live_since.get(key)?.elapsed() < LIVE_OUTPUT_GRACE {
-            return None;
+            .filter(|c| c.content.is_none() && self.bash_commands.contains_key(&c.id))
+        {
+            // A blank row between stacked boxes so two terminals do not run their
+            // borders together.
+            if !out.is_empty() {
+                out.push(Line::raw(""));
+            }
+            let command = &self.bash_commands[&call.id];
+            let output = self
+                .live_output
+                .get(output_key(&self.live_alias, call))
+                .map_or("", String::as_str);
+            out.extend(running_terminal_lines(
+                command, output, elapsed, spinner_frame, width,
+            ));
         }
-        Some((command, output))
+        out
     }
 
     /// Pair a `bash` call with the backgrounded command it is about.
@@ -2995,8 +3164,13 @@ impl App {
         // Collecting a backgrounded job: the detached command still streams under
         // the id of the call that started it, so point this call at that buffer.
         // Without the alias the row the user is waiting on shows an empty box.
-        if let Some(origin) = bash_job_id(&args).and_then(|job| self.job_origin.get(job)) {
-            self.live_alias.insert(id.to_string(), origin.clone());
+        if let Some(job) = bash_job_id(&args) {
+            // The collecting call blocks until the job finishes, so it is no
+            // longer running unattended: drop it from the status-bar count.
+            self.active_bg_jobs.remove(job);
+            if let Some(origin) = self.job_origin.get(job) {
+                self.live_alias.insert(id.to_string(), origin.clone());
+            }
         }
         let remembered = bash_job_id(&args)
             .and_then(|job| self.bash_jobs.get(job))
@@ -3169,18 +3343,44 @@ impl App {
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
             .chain(self.subagent_blocks.iter().map(|b| b.idx))
             .collect();
-        if all.is_empty() {
+        // Ctrl-O also unfolds every collapsed trace (finished runs and the
+        // active fold), so one keystroke opens both the folds and the per-row
+        // detail.
+        let mut trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
+        if let Some(run) = self.active_fold() {
+            trace_starts.push(run.start);
+        }
+        if all.is_empty() && trace_starts.is_empty() {
             return;
         }
-        if all.iter().all(|i| self.expanded.contains(i)) {
+        let fully_open = all.iter().all(|i| self.expanded.contains(i))
+            && trace_starts.iter().all(|s| self.expanded_traces.contains(s));
+        if fully_open {
             self.expanded.clear();
+            self.expanded_traces.clear();
             self.reveal = None;
         } else {
             self.expanded = all.iter().copied().collect();
+            self.expanded_traces = trace_starts.iter().copied().collect();
             // The regions sit above the answer that follows; scroll the latest
             // into view rather than staying pinned to the bottom.
             self.reveal = all.iter().copied().max();
         }
+    }
+
+    /// Whether transcript row `idx` is currently drawn as a folded trace header
+    /// (a finished trace start or the active fold's start, not expanded), so a
+    /// click there unfolds the trace rather than toggling that row's own detail.
+    fn is_folded_trace_start(&self, idx: usize) -> bool {
+        if self.expanded_traces.contains(&idx) {
+            return false;
+        }
+        let last_answer = self.last_answer_idx();
+        let finished = self
+            .trace_runs()
+            .iter()
+            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a));
+        finished || self.active_fold().is_some_and(|r| r.start == idx)
     }
 
     /// Toggle a single collapsed region by its transcript row index (a click on
@@ -4088,10 +4288,14 @@ impl App {
         // carries its own newlines, and a single `Line` renders those as blank
         // cells in one run-on row.
         self.push_row(RowKind::System {
-            glyph: ">",
-            cont: " ",
+            glyph: "",
+            cont: "",
             gutter: Style::new().light_magenta().bold(),
-            body: vec![Span::styled(text.to_string(), Style::new().bold())],
+            body: vec![Span::styled(
+                text.to_string(),
+                Style::new().bold().fg(user_bubble_fg()),
+            )],
+            bg: Some(user_bubble_bg()),
         });
         for name in images {
             let label = if name.is_empty() {
@@ -4114,14 +4318,18 @@ impl App {
     fn push_invocation_label(&mut self, label: &str, detail: &str) {
         let mut body = vec![Span::styled(label.to_string(), Style::new().cyan().bold())];
         if !detail.is_empty() {
-            body.push(Span::raw(format!(" {detail}")));
+            body.push(Span::styled(
+                format!(" {detail}"),
+                Style::new().fg(user_bubble_fg()),
+            ));
         }
         self.gap(Kind::User);
         self.push_row(RowKind::System {
-            glyph: ">",
-            cont: " ",
+            glyph: "",
+            cont: "",
             gutter: Style::new().light_magenta().bold(),
             body,
+            bg: Some(user_bubble_bg()),
         });
     }
 
@@ -4670,9 +4878,6 @@ impl App {
                 // grow the TUI's memory. The tool keeps the authoritative full
                 // output (spilling to disk past its own cap) and hands it over
                 // with the result; this buffer only has to feed the live view.
-                self.live_since
-                    .entry(id.clone())
-                    .or_insert_with(Instant::now);
                 let buf = self.live_output.entry(id).or_default();
                 buf.push_str(&delta);
                 if buf.len() > LIVE_OUTPUT_MAX_BYTES {
@@ -4685,9 +4890,14 @@ impl App {
                 }
             }
             StreamEvent::ToolCall { id, name, args } => {
-                // The full call (with parsed args) supersedes its in-progress
-                // throbber.
-                self.starting.retain(|c| c.id != id);
+                // The full call supersedes its in-progress throbber. Clearing the
+                // whole set, not just this id: `ToolCall` events are emitted only
+                // once the model's stream is fully assembled (see `loop.rs`), so
+                // by the time any arrives no arguments are still streaming and
+                // every "Preparing" throbber is stale. An id-only clear left a
+                // throbber whose id did not line up (or a duplicate) lingering on
+                // screen through the whole command.
+                self.starting.clear();
                 // Commit buffered prose/reasoning before anything else: every
                 // branch below does it anyway (so the timeline stays in emission
                 // order), and doing it here keeps the journal in that order too
@@ -4772,6 +4982,7 @@ impl App {
                     if let Some(job) = backgrounded_job_id(&content) {
                         self.bash_jobs.insert(job.to_string(), cmd);
                         self.job_origin.insert(job.to_string(), id.clone());
+                        self.active_bg_jobs.insert(job.to_string());
                     }
                 }
                 // The command is over, so its live buffer is dead weight: the
@@ -4781,7 +4992,6 @@ impl App {
                 if backgrounded_job_id(&content).is_none() {
                     let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
                     self.live_output.remove(&key);
-                    self.live_since.remove(&key);
                 }
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
@@ -6026,11 +6236,89 @@ const ELAPSED_RESERVE: usize = 8;
 /// Ctrl-O.
 const TOOL_ROW_MAX_LINES: usize = 8;
 
-/// Diff row backgrounds. Dark and desaturated on purpose: the syntax-highlighted
+/// Diff row backgrounds. Desaturated on purpose: the syntax-highlighted
 /// foreground is drawn on top of them, so the tint has to read as added/removed
-/// at a glance without swallowing the code.
+/// at a glance without swallowing the code. The light pair is the same idea
+/// inverted -- pale green/red under dark syntax text -- for a light terminal.
 const DIFF_ADD_BG: Color = Color::Rgb(22, 52, 32);
 const DIFF_DEL_BG: Color = Color::Rgb(66, 26, 30);
+const DIFF_ADD_BG_LIGHT: Color = Color::Rgb(198, 239, 206);
+const DIFF_DEL_BG_LIGHT: Color = Color::Rgb(255, 205, 210);
+
+/// Pure selector so the light branch is tested without the process-wide flag.
+fn diff_bg(added: bool, light: bool) -> Color {
+    match (added, light) {
+        (true, false) => DIFF_ADD_BG,
+        (true, true) => DIFF_ADD_BG_LIGHT,
+        (false, false) => DIFF_DEL_BG,
+        (false, true) => DIFF_DEL_BG_LIGHT,
+    }
+}
+
+/// User-turn bubble background: a subtle slate that reads as a filled card
+/// under the message's own foreground, on either terminal theme. The desktop
+/// equivalent is the `bg-secondary` chat bubble.
+const USER_BUBBLE_BG: Color = Color::Rgb(40, 44, 58);
+const USER_BUBBLE_BG_LIGHT: Color = Color::Rgb(226, 232, 240);
+
+fn user_bubble_bg_for(light: bool) -> Color {
+    if light {
+        USER_BUBBLE_BG_LIGHT
+    } else {
+        USER_BUBBLE_BG
+    }
+}
+
+fn user_bubble_bg() -> Color {
+    user_bubble_bg_for(theme::is_light())
+}
+
+/// User-turn text: the inverse of the bubble background so the message keeps
+/// real contrast on either theme -- near-white on the dark bubble, near-black on
+/// the light one -- rather than inheriting the terminal foreground.
+const USER_BUBBLE_FG: Color = Color::Rgb(233, 236, 242);
+const USER_BUBBLE_FG_LIGHT: Color = Color::Rgb(28, 32, 42);
+
+fn user_bubble_fg_for(light: bool) -> Color {
+    if light {
+        USER_BUBBLE_FG_LIGHT
+    } else {
+        USER_BUBBLE_FG
+    }
+}
+
+fn user_bubble_fg() -> Color {
+    user_bubble_fg_for(theme::is_light())
+}
+
+/// Tint a run of gutter rows as one filled bubble: every span carries the
+/// background and each row is padded to the widest so the block reads as a card
+/// rather than a ragged run of tinted fragments. The padded width is capped at
+/// the frame so the extra column never forces a wrap.
+fn band_rows(lines: Vec<Line<'static>>, bg: Color) -> Vec<Line<'static>> {
+    let target = lines.iter().map(row_width).max().unwrap_or(0);
+    lines
+        .into_iter()
+        .map(|line| {
+            let pad = target.saturating_sub(row_width(&line)) + 1;
+            let mut spans: Vec<Span<'static>> = line
+                .spans
+                .into_iter()
+                .map(|s| Span::styled(s.content, s.style.bg(bg)))
+                .collect();
+            spans.push(Span::styled(" ".repeat(pad), Style::new().bg(bg)));
+            Line::from(spans)
+        })
+        .collect()
+}
+
+fn diff_add_bg() -> Color {
+    diff_bg(true, theme::is_light())
+}
+
+fn diff_del_bg() -> Color {
+    diff_bg(false, theme::is_light())
+}
 
 /// Selection style shared by every arrow-navigable list (ask, permission, slash
 /// hints, path hints, pickers). Palette-only on purpose: `reversed()` swaps in
@@ -6086,8 +6374,8 @@ fn diff_lines(
             continue;
         }
         let bg = match marker.as_bytes().first() {
-            Some(b'-') => Some(DIFF_DEL_BG),
-            Some(b'+') => Some(DIFF_ADD_BG),
+            Some(b'-') => Some(diff_del_bg()),
+            Some(b'+') => Some(diff_add_bg()),
             _ => None,
         };
         let mut spans = Vec::with_capacity(2);
@@ -6480,6 +6768,10 @@ struct StartingPreview {
     tail: Option<Vec<Vec<Span<'static>>>>,
     /// Body lines scrolled off the top of `tail`.
     skipped: usize,
+    /// The shell command as it streams in, for a `bash`/`shell`/`exec` call, so
+    /// the in-flight row shows the command being typed into the same terminal box
+    /// the running call becomes. `None` for every other tool.
+    command: Option<String>,
 }
 
 /// A tool call announced by the model whose arguments are still arriving.
@@ -6516,6 +6808,12 @@ impl StartingCall {
         self.preview_at = Some(self.args.len());
         self.preview.path =
             partial_json_field(&self.args, "path").map(unescape_partial_json_string);
+        // A shell command streams as one short string; keep it so the row can
+        // type it into a terminal box rather than sit on "Preparing bash".
+        self.preview.command = matches!(self.name.as_str(), "bash" | "shell" | "exec")
+            .then(|| partial_json_field(&self.args, "command"))
+            .flatten()
+            .map(unescape_partial_json_string);
         let body = (self.name == "write")
             .then(|| partial_json_field(&self.args, "content"))
             .flatten()
@@ -6695,8 +6993,15 @@ fn unescape_partial_json_string(raw: &str) -> String {
 /// `STREAM_TAIL_LINES` newline escapes instead of the whole body. Line length
 /// is already bounded by `STREAM_MAX_LINE_CHARS`, without which minified
 /// content cost 650ms per delta at 53KB and grew from there.
-fn starting_call_lines(call: &mut StartingCall, frame: &str) -> Vec<Line<'static>> {
+fn starting_call_lines(call: &mut StartingCall, frame: &str, width: u16) -> Vec<Line<'static>> {
     call.refresh_preview();
+    // A shell call types its command into the same terminal box the running
+    // call becomes, so there is no "Preparing bash" stage and the dispatch is a
+    // seamless swap.
+    if matches!(call.name.as_str(), "bash" | "shell" | "exec") {
+        let command = call.preview.command.clone().unwrap_or_default();
+        return typing_terminal_lines(&command, frame, width);
+    }
     let Some(tail) = call.preview.tail.as_ref() else {
         let label = match call.preview.path.as_deref() {
             // Even without a body, the path lands early enough to be worth
@@ -6888,6 +7193,30 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
+/// The one-line header a folded trace collapses to, with a step count so the
+/// fold advertises how much it hides. A finished run gets a static `▸` and past
+/// tense (`▸ Worked · N steps` / `▸ Thought · N steps`); the active run -- still
+/// streaming, its current step shown live below -- gets the spinner and present
+/// tense (`⠋ Working · N steps` / `⠋ Thinking · N steps`), so the condensed live
+/// view reads as one moving header over the current step rather than a growing
+/// pile of settled rows.
+fn trace_header_line(run: &TraceRun, active: bool, frame: &str) -> Line<'static> {
+    let (marker, verb) = if active {
+        let verb = if run.tool_ran { "Working" } else { "Thinking" };
+        (format!("{frame} "), verb)
+    } else {
+        let verb = if run.tool_ran { "Worked" } else { "Thought" };
+        ("▸ ".to_string(), verb)
+    };
+    Line::from(vec![
+        Span::styled(marker, Style::new().cyan()),
+        Span::styled(
+            format!("{verb} · {} steps", run.steps),
+            Style::new().cyan().dim(),
+        ),
+    ])
+}
+
 /// Live rows for the still-open tool group: a braille throbber in place of the
 /// static `▸` tag, the running call's label, and elapsed time, so the user can
 /// see it's actively working and how long it's taken. Rebuilt fresh every draw
@@ -6922,30 +7251,21 @@ const LIVE_OUTPUT_MAX_BYTES: usize = 64 * 1024;
 /// this much of the viewport.
 const LIVE_OUTPUT_TAIL_LINES: usize = 12;
 
-/// How long a command must have been printing before its output gets a box. The
-/// panel is transient -- it gives way to the group summary when the call
-/// resolves -- so anything short-lived is better shown as no box than as a flash.
-const LIVE_OUTPUT_GRACE: Duration = Duration::from_millis(400);
-
 /// Indent of the live shell panel, matching a single-call group's detail box so
 /// the running command and its expanded result sit on the same column.
 const SHELL_PANEL_GUTTER: &str = "│   ";
 
-/// A running command and its output so far, framed like a terminal. No rows
-/// until the first chunk arrives, so a command that has printed nothing shows
-/// only its activity row rather than an empty box.
-fn shell_panel_lines(
+/// The unframed prompt + output rows for a shell command. The command is the
+/// first line as a `$ ` prompt, so a box around these reads as a terminal rather
+/// than a detached wall of output; only a bounded tail of output is kept so a
+/// chatty command cannot fill the viewport.
+fn shell_body_rows(
     command: &str,
     output: &str,
     width: u16,
     gutter: &'static str,
 ) -> Vec<Line<'static>> {
-    if output.is_empty() {
-        return Vec::new();
-    }
     let max = panel_inner(width as usize, gutter);
-    // The command is the session's first line, as a prompt, so the box reads as
-    // a terminal rather than as a detached wall of output.
     let mut rows: Vec<Line<'static>> =
         wrap_text(command, Style::new().bold(), max.saturating_sub(2))
             .into_iter()
@@ -6959,22 +7279,64 @@ fn shell_panel_lines(
                 Line::from(spans)
             })
             .collect();
-    let all: Vec<&str> = output.lines().collect();
-    let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
-    if skipped > 0 {
-        rows.push(Line::styled(
-            format!("… ({})", pluralize("earlier line", skipped)),
-            Style::new().dark_gray(),
-        ));
+    if !output.is_empty() {
+        let all: Vec<&str> = output.lines().collect();
+        let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
+        if skipped > 0 {
+            rows.push(Line::styled(
+                format!("… ({})", pluralize("earlier line", skipped)),
+                Style::new().dark_gray(),
+            ));
+        }
+        for line in &all[skipped..] {
+            rows.extend(
+                wrap_text(line, Style::new().dim(), max)
+                    .into_iter()
+                    .map(Line::from),
+            );
+        }
     }
-    for line in &all[skipped..] {
-        rows.extend(
-            wrap_text(line, Style::new().dim(), max)
-                .into_iter()
-                .map(Line::from),
-        );
+    rows
+}
+
+/// The running command as a live terminal view: the framed prompt and output
+/// plus a trailing status line (spinner + elapsed), so the box stands in for the
+/// plain "Executing:" activity row instead of sitting beneath it. The command
+/// itself types in earlier, in the in-flight box, as its argument tokens stream
+/// (see `typing_terminal_lines`); by the time it runs it is shown whole.
+fn running_terminal_lines(
+    command: &str,
+    output: &str,
+    elapsed: u64,
+    spinner_frame: usize,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
+    let frame = SPINNER[spinner_frame % SPINNER.len()];
+    rows.push(Line::from(vec![
+        Span::styled(format!("{frame} "), Style::new().cyan()),
+        Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
+    ]));
+    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+}
+
+/// The command being typed, framed like the running terminal it becomes: the
+/// partial `$ command` prompt and a "typing" status line where the running box
+/// shows elapsed, so dispatch is a seamless swap -- the prompt does not move,
+/// only the status turns over. Shown even before the first command byte, so a
+/// shell call never sits on a plain "Preparing bash" throbber.
+fn typing_terminal_lines(command: &str, frame: &str, width: u16) -> Vec<Line<'static>> {
+    let mut rows = shell_body_rows(command, "", width, SHELL_PANEL_GUTTER);
+    if rows.is_empty() {
+        // No command bytes yet: still show the prompt so the box reads as a
+        // terminal waiting for input rather than an empty frame.
+        rows.push(Line::from(Span::styled("$ ", Style::new().cyan().bold())));
     }
-    boxed_panel(rows, width as usize, gutter)
+    rows.push(Line::from(vec![
+        Span::styled(format!("{frame} "), Style::new().cyan()),
+        Span::styled("typing…", Style::new().dark_gray()),
+    ]));
+    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -7312,6 +7674,28 @@ fn assistant_has_content(prose: &str, segs: &[ReasoningSeg]) -> bool {
     assistant_runs(prose, segs)
         .iter()
         .any(|(_, seg)| !seg.trim().is_empty())
+}
+
+/// `Kind` of the first non-empty run the live tail will render, so the leading
+/// separator can mirror `gap` exactly: reasoning shares the `Tool` band, so a
+/// tool call followed by streaming reasoning gets no blank, while streaming
+/// prose still opens with one.
+fn live_leading_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
+    assistant_runs(prose, segs)
+        .into_iter()
+        .find(|(_, seg)| !seg.trim().is_empty())
+        .map(|(reasoning, _)| if reasoning { Kind::Reasoning } else { Kind::Prose })
+}
+
+/// `Kind` of the last non-empty run the live tail renders, so a row appended
+/// below it (an awaiting/starting throbber) can gap against what actually
+/// precedes it rather than always inserting a blank.
+fn live_trailing_kind(prose: &str, segs: &[ReasoningSeg]) -> Option<Kind> {
+    assistant_runs(prose, segs)
+        .into_iter()
+        .rev()
+        .find(|(_, seg)| !seg.trim().is_empty())
+        .map(|(reasoning, _)| if reasoning { Kind::Reasoning } else { Kind::Prose })
 }
 
 /// Regex matching `<system>`, `<system-notice>`, `<system-directive>`,
@@ -7742,10 +8126,11 @@ pub async fn run(
     let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
-    // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
-    // Doing it here, off the render loop, keeps the first code block of a
-    // response from stalling a frame mid-stream.
-    tokio::task::spawn_blocking(highlight::warm);
+    // Resolve the colour theme before anything highlights: `warm` below caches
+    // the syntect theme, and the diff bands read the flag live. The auto path
+    // queries the terminal, so it has to run under raw mode (enabled below);
+    // an explicit `theme =` in config skips the query entirely.
+    let theme_pref = crate::core::agent::global_config::theme_setting();
 
     // `env_logger` writes to stderr, which is still the user's terminal once we
     // switch to the alternate screen -- a single `log::warn!` from anywhere
@@ -7758,6 +8143,14 @@ pub async fn run(
     log::set_max_level(log::LevelFilter::Off);
 
     enable_raw_mode().map_err(|e| e.to_string())?;
+    // Under raw mode (so an OSC 11 reply is not echoed) but before the alternate
+    // screen, so a query the terminal ignores leaves no stray bytes on the frame.
+    theme::resolve_and_apply(theme_pref);
+    // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
+    // Doing it here, off the render loop, keeps the first code block of a
+    // response from stalling a frame mid-stream. Spawned after the theme is
+    // resolved so it caches the right variant.
+    tokio::task::spawn_blocking(highlight::warm);
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
     let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
@@ -8580,7 +8973,13 @@ fn click_region(app: &mut App, column: u16, row: u16) {
     // built in the body's own wrapped screen coordinates.
     let body_row = (row - rect.y - 1) as usize;
     if let Some(Some(idx)) = app.row_index.get(body_row) {
-        app.toggle_region(*idx);
+        // A folded trace header expands its whole run; any other row toggles its
+        // own detail.
+        if app.is_folded_trace_start(*idx) {
+            app.toggle_trace(*idx);
+        } else {
+            app.toggle_region(*idx);
+        }
     }
 }
 
@@ -13907,10 +14306,19 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
             // the blocks directly leaves the group open, so every later call
             // folds back into one row that is never committed -- the whole turn's
             // tool calls then render as nothing at all.
-            DisplayEntry::Assistant { text, reasoning } => {
+            DisplayEntry::Assistant {
+                text,
+                reasoning,
+                reasoning_ms,
+            } => {
                 app.assistant_buf = text.clone();
                 app.reasoning_segs = reasoning.clone();
+                // Seed the recorded duration so the replay stamps the same
+                // `Thought for Ns`; flush reads it via `thought_for`. Cleared
+                // after so it cannot leak onto the next reasoning block.
+                app.thought_for = reasoning_ms.map(Duration::from_millis);
                 app.flush_assistant();
+                app.thought_for = None;
             }
             DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
                 id: id.clone(),
@@ -13965,6 +14373,7 @@ fn rebuild_transcript(app: &mut App) {
     app.groups.clear();
     app.pending_rows.clear();
     app.reasoning_blocks.clear();
+    app.expanded_traces.clear();
     app.subagent_blocks.clear();
     app.expanded.clear();
     app.reveal = None;
@@ -13993,7 +14402,7 @@ fn rebuild_transcript(app: &mut App) {
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
-                app.push_assistant_blocks(text, &[]);
+                app.push_assistant_blocks(text, &[], None);
             }
         }
     }
@@ -14036,6 +14445,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     app.groups.clear();
     app.pending_rows.clear();
     app.reasoning_blocks.clear();
+    app.expanded_traces.clear();
     app.subagent_blocks.clear();
     app.stop_monitors();
     app.expanded.clear();
@@ -14477,7 +14887,43 @@ fn draw(f: &mut Frame, app: &mut App) {
     let mut content_h: u16 = 0;
     let mut reveal_at: Option<u16> = None;
     let frame = app.spinner();
+    // Traces fold their run of reasoning/tool rows to one header unless the user
+    // expanded it. A finished run (an answer follows) folds whole to a static
+    // `Thought/Worked` header. The active run's settled steps fold to a live
+    // `Thinking/Working` header, leaving only the current step (the running box /
+    // live tail) below -- the condensed live view. The `bool` is that live flag.
+    let last_answer = app.last_answer_idx();
+    let mut collapsed_headers: HashMap<usize, (TraceRun, bool)> = HashMap::new();
+    for run in app.trace_runs() {
+        if last_answer.is_some_and(|a| run.end < a) && !app.expanded_traces.contains(&run.start) {
+            collapsed_headers.insert(run.start, (run, false));
+        }
+    }
+    if let Some(run) = app.active_fold() {
+        if !app.expanded_traces.contains(&run.start) {
+            collapsed_headers.insert(run.start, (run, true));
+        }
+    }
+    let hidden_trace_rows: std::collections::HashSet<usize> = collapsed_headers
+        .values()
+        .flat_map(|(r, _)| (r.start + 1)..=r.end)
+        .collect();
     for (i, row) in app.transcript.iter().enumerate() {
+        // A collapsed trace shows a single header at its start and hides the
+        // rest of its rows.
+        if hidden_trace_rows.contains(&i) {
+            continue;
+        }
+        if let Some((run, active)) = collapsed_headers.get(&i) {
+            let line = trace_header_line(run, *active, frame);
+            let seg = Segment::eager(Some(i), vec![line], width);
+            if app.reveal == Some(i) {
+                reveal_at = Some(content_h);
+            }
+            content_h = content_h.saturating_add(seg.height);
+            segs.push(seg);
+            continue;
+        }
         if app.reveal == Some(i) {
             reveal_at = Some(content_h);
         }
@@ -14490,10 +14936,17 @@ fn draw(f: &mut Frame, app: &mut App) {
             .filter(|g| g.idx == i && g.is_running())
         {
             Some(g) => {
-                // The running row plus, when the call is a command that has
-                // started printing, its output live under it.
-                let mut rows = running_group_rows(g, app.spinner_frame, width);
-                rows.extend(app.live_shell_panel(g, width));
+                // A running command that has started printing renders as a live
+                // terminal box (prompt + streaming output + spinner/elapsed),
+                // which stands in for the plain "Executing:" activity row. Every
+                // other running call -- and a command still inside its grace
+                // window -- keeps that row.
+                let panel = app.live_shell_panel(g, app.spinner_frame, width);
+                let rows = if panel.is_empty() {
+                    running_group_rows(g, app.spinner_frame, width)
+                } else {
+                    panel
+                };
                 Segment::eager(Some(i), rows, width)
             }
             None => Segment {
@@ -14552,9 +15005,15 @@ fn draw(f: &mut Frame, app: &mut App) {
             app.stream_reasoning,
         );
         if !live.is_empty() {
-            // Mirror flush_assistant's `gap(Kind::Prose)` so the separator above
-            // streaming prose is present live, not only once it is finalized.
-            if !trailing_blank(&tail, &app.transcript, width) {
+            // Mirror `gap` so the separator above the live block matches what
+            // its commit will emit: a band change (prose after a tool call) gets
+            // a blank, but streaming reasoning shares the tool band and gets
+            // none, so a tool call runs straight into the reasoning below it.
+            let leading = live_leading_kind(&app.assistant_buf, &app.reasoning_segs)
+                .unwrap_or(Kind::Prose);
+            if band(app.last_kind) != band(leading)
+                && !trailing_blank(&tail, &app.transcript, width)
+            {
                 tail.push(Line::raw(""));
             }
             // Live tail: same renderer as finalized messages, so an open
@@ -14573,7 +15032,18 @@ fn draw(f: &mut Frame, app: &mut App) {
         .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
         .map(|(_, _, name)| name)
         .collect();
+    // These throbbers are tool-band rows, so they only need a separator when the
+    // row above is a different band. After reasoning or a tool call (both the
+    // tool band) they run straight on; only answer prose (or a user/meta line)
+    // above them earns a blank. What precedes is the live tail if one rendered,
+    // else the last committed row.
+    let preceding_kind = if tail.is_empty() {
+        app.last_kind
+    } else {
+        live_trailing_kind(&app.assistant_buf, &app.reasoning_segs).unwrap_or(Kind::Prose)
+    };
     if (!orphaned.is_empty() || !app.starting.is_empty())
+        && band(preceding_kind) != band(Kind::Tool)
         && !trailing_blank(&tail, &app.transcript, width)
     {
         tail.push(Line::raw(""));
@@ -14590,7 +15060,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
     for call in &mut app.starting {
-        tail.extend(starting_call_lines(call, frame));
+        tail.extend(starting_call_lines(call, frame, width));
     }
     if !tail.is_empty() {
         let seg = Segment::eager(None, tail, width);
@@ -16777,7 +17247,9 @@ fn input_box(app: &App) -> Paragraph<'static> {
             let (word, style) = if app.reasoning_open() {
                 (
                     THINKING_WORDS[step % THINKING_WORDS.len()],
-                    Style::new().fg(THINKING_ORANGE).italic(),
+                    // Same theme-aware accent as markdown bold, so reasoning
+                    // reads consistently on light and dark terminals.
+                    Style::new().fg(theme::strong_accent()).italic(),
                 )
             } else {
                 (
@@ -16945,48 +17417,46 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         )];
     }
     let key_style = Style::new().cyan().bold();
-    let queue_count = app.message_queue.len();
     let mut spans = match app.status {
-        Status::Running => {
-            let mut s = hint_spans(
-                key_style,
-                &[
-                    ("Esc/Ctrl-C", "cancel"),
-                    ("PgUp/PgDn", "scroll"),
-                    ("Ctrl-O", "expand all"),
-                ],
-            );
-            if queue_count > 0 {
-                s.insert(
-                    0,
-                    Span::styled(
-                        format!("⏳ Pending ({queue_count})  "),
-                        Style::new().yellow().bold(),
-                    ),
-                );
-            }
-            s
-        }
-        Status::Idle => {
-            // Idle is the default state, so a cheat sheet here is permanent
-            // noise. Discovery is already covered without it: the session opens
-            // with the splash (`Banner`, which names `/help`), and `/help`
-            // carries the full list (see `KEY_BINDINGS`). Keep only the
-            // leading pad `hint_spans` emits, so a queue count or detail suffix
-            // lands in the same column as the other states.
-            let mut s = vec![Span::raw(" ")];
-            if queue_count > 0 {
-                s.insert(
-                    0,
-                    Span::styled(
-                        format!("⏳ Pending ({queue_count})  "),
-                        Style::new().yellow().bold(),
-                    ),
-                );
-            }
-            s
-        }
+        Status::Running => hint_spans(
+            key_style,
+            &[
+                ("Esc/Ctrl-C", "cancel"),
+                ("PgUp/PgDn", "scroll"),
+                ("Ctrl-O", "expand all"),
+            ],
+        ),
+        // Idle is the default state, so a cheat sheet here is permanent noise.
+        // Discovery is already covered without it: the session opens with the
+        // splash (`Banner`, which names `/help`), and `/help` carries the full
+        // list (see `KEY_BINDINGS`). Keep only the leading pad `hint_spans`
+        // emits, so a queue count or detail suffix lands in the same column as
+        // the other states.
+        Status::Idle => vec![Span::raw(" ")],
     };
+    // Standing indicators lead the row in both states, newest concern leftmost:
+    // pending queue, then background shells still running unattended.
+    let bg_shells = app.active_bg_jobs.len();
+    if bg_shells > 0 {
+        let plural = if bg_shells == 1 { "" } else { "s" };
+        spans.insert(
+            0,
+            Span::styled(
+                format!("⚙ {bg_shells} bg shell{plural}  "),
+                Style::new().magenta().bold(),
+            ),
+        );
+    }
+    let queue_count = app.message_queue.len();
+    if queue_count > 0 {
+        spans.insert(
+            0,
+            Span::styled(
+                format!("⏳ Pending ({queue_count})  "),
+                Style::new().yellow().bold(),
+            ),
+        );
+    }
     if !app.detail.is_empty() {
         // Only separate from a preceding hint; on a bare idle footer the detail
         // is the whole line and should start at the same column as the hints.
@@ -17606,6 +18076,7 @@ mod tests {
             .join("\n")
     }
 
+
     /// Every line the given rows render to at a nominal width.
     fn row_lines(rows: &[Row]) -> Vec<Line<'static>> {
         rows.iter().flat_map(|r| r.lines(80)).collect()
@@ -17661,6 +18132,7 @@ mod tests {
             "| column one heading | column two heading |\n|---|---|\n\
              | a reasonably long value here | another reasonably long value |",
             &[],
+            None,
         );
         let wide = render_rows(&mut app, 100, 20);
         let narrow = render_rows(&mut app, 46, 20);
@@ -17891,13 +18363,48 @@ mod tests {
         app.push_user_line("first line\nsecond line", &[]);
         let rows = render_rows(&mut app, 60, 12);
         assert!(
-            rows.iter().any(|r| r.trim_end().ends_with("> first line")),
+            rows.iter().any(|r| r.trim_end().ends_with("first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
-            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            rows.iter().any(|r| r.trim_end().ends_with("second line")),
             "second line not on its own row: {rows:?}"
         );
+    }
+
+    /// The user turn renders as a filled bubble (the terminal analog of the
+    /// desktop's `bg-secondary` chat bubble), so every wrapped line carries the
+    /// background across the gutter, the text and the trailing padding.
+    #[test]
+    fn user_message_renders_as_a_filled_bubble() {
+        let mut app = test_app();
+        app.push_user_line("first line\nsecond line", &[]);
+        let bg = super::user_bubble_bg();
+        let fg = super::user_bubble_fg();
+        let row = app.transcript.last().expect("no user row");
+        let lines = row.lines(60);
+        assert_eq!(lines.len(), 2, "one bubble line per source line");
+        for line in &lines {
+            assert!(
+                line.spans.iter().all(|s| s.style.bg == Some(bg)),
+                "every span must carry the bubble background: {line:?}"
+            );
+            assert!(
+                line.spans
+                    .iter()
+                    .any(|s| !s.content.trim().is_empty() && s.style.fg == Some(fg)),
+                "the message text must carry the contrast foreground: {line:?}"
+            );
+            let last = line.spans.last().expect("empty bubble line");
+            assert!(
+                last.content.chars().all(|c| c == ' '),
+                "bubble ends in a padding column: {last:?}"
+            );
+            assert!(
+                super::row_width(line) <= 60,
+                "bubble padding must not overflow the frame: {line:?}"
+            );
+        }
     }
 
     /// The expanded (Ctrl-O) view is where the full output lives, so a line
@@ -18028,11 +18535,11 @@ mod tests {
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter()
-                .any(|r| r.trim_end().ends_with("> [skill:deploy] first line")),
+                .any(|r| r.trim_end().ends_with("[skill:deploy] first line")),
             "first line not on its own row: {rows:?}"
         );
         assert!(
-            rows.iter().any(|r| r.trim_end().ends_with("  second line")),
+            rows.iter().any(|r| r.trim_end().ends_with("second line")),
             "second line not on its own row: {rows:?}"
         );
     }
@@ -18104,6 +18611,7 @@ mod tests {
         app.push_assistant_blocks(
             "| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```",
             &[],
+            None,
         );
         app.apply(StreamEvent::ToolResult {
             id: "x".into(),
@@ -18633,6 +19141,7 @@ mod tests {
             DisplayEntry::Assistant {
                 text: "<think>old thought</think>Answer.".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             }
         );
         let mut app = test_app();
@@ -18654,6 +19163,7 @@ mod tests {
                 at: 0,
                 text: "a thought".into(),
             }],
+            reasoning_ms: None,
         };
         let round_tripped: DisplayEntry =
             serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
@@ -18860,7 +19370,7 @@ mod tests {
             .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
             .collect();
         assert!(
-            text.iter().any(|l| l.contains("reasoning (2 lines)")),
+            text.iter().any(|l| l.contains("Thought")),
             "closed run folds to a summary: {text:?}"
         );
         assert!(
@@ -18986,7 +19496,7 @@ mod tests {
             !collapsed.contains("secret plan line"),
             "collapsed: {collapsed}"
         );
-        assert!(collapsed.contains("reasoning (1 line)"));
+        assert!(collapsed.contains("Thought"));
 
         app.toggle_regions();
         let expanded = render(&mut app);
@@ -19029,7 +19539,7 @@ mod tests {
         };
 
         // Pinned to the bottom: the folded reasoning row is not on screen.
-        assert!(!render(&mut app).contains("reasoning (1 line)"));
+        assert!(!render(&mut app).contains("Thought"));
 
         // Expanding scrolls the region into view so its detail is visible.
         app.toggle_regions();
@@ -19263,15 +19773,9 @@ mod tests {
         );
     }
 
-    /// Backdate a call's first-output stamp past [`LIVE_OUTPUT_GRACE`], so a test
-    /// renders the panel a long-running command would have without sleeping.
-    fn age_live_output(app: &mut App, id: &str) {
-        let since = app.live_since.get_mut(id).expect("call has streamed");
-        *since -= super::LIVE_OUTPUT_GRACE;
-    }
-
-    /// A running command is a terminal, not a spinner: its output appears under
-    /// the activity row as it is produced, framed and prefixed by the command.
+    /// A running command is a terminal from the moment it starts: the boxed
+    /// prompt appears immediately, before any output, and each chunk streams into
+    /// the box as it is produced.
     #[test]
     fn a_running_command_shows_its_output_live() {
         let mut app = test_app();
@@ -19280,10 +19784,10 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "make" }),
         });
-        // Nothing printed yet: the activity row stands alone rather than opening
-        // an empty box.
-        let quiet = render_rows(&mut app, 70, 16).join("\n");
-        assert!(!quiet.contains("$ make"), "no box before output: {quiet}");
+        // The box opens right away, framed, before a single line is printed.
+        let opening = render_rows(&mut app, 70, 16).join("\n");
+        assert!(opening.contains("$ make"), "box opens immediately: {opening}");
+        assert!(opening.contains('\u{250c}'), "framed: {opening}");
 
         app.apply(StreamEvent::ToolOutputDelta {
             id: "t1".into(),
@@ -19293,11 +19797,6 @@ mod tests {
             id: "t1".into(),
             delta: "compiling bar\n".into(),
         });
-        // Still inside the grace window: a command this brief would only flash.
-        let brief = render_rows(&mut app, 70, 16).join("\n");
-        assert!(!brief.contains("$ make"), "no box while brief: {brief}");
-
-        age_live_output(&mut app, "t1");
         let live = render_rows(&mut app, 70, 16).join("\n");
         assert!(
             live.contains("$ make"),
@@ -19306,6 +19805,136 @@ mod tests {
         assert!(live.contains("compiling foo"), "first chunk: {live}");
         assert!(live.contains("compiling bar"), "and the next: {live}");
         assert!(live.contains('\u{250c}'), "framed: {live}");
+    }
+
+    /// A streamed bash call types into a terminal box while the arguments
+    /// stream, then the full `ToolCall` swaps it for the running box -- no plain
+    /// throbber at any point, and the typing status must not linger.
+    #[test]
+    fn streamed_bash_call_types_then_runs_in_the_terminal() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "bash".into(),
+        });
+        app.apply(StreamEvent::ToolCallArgsDelta {
+            id: "c1".into(),
+            delta: "{\"command\":\"make\"}".into(),
+        });
+        let typing = render_rows(&mut app, 70, 16).join("\n");
+        assert!(!typing.contains("Preparing"), "no plain throbber: {typing}");
+        assert!(typing.contains("$ make"), "command types into the box: {typing}");
+        assert!(typing.contains("typing"), "typing status while streaming: {typing}");
+
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        let live = render_rows(&mut app, 70, 16).join("\n");
+        assert!(live.contains("$ make"), "the same box now runs: {live}");
+        assert!(
+            !live.contains("typing"),
+            "the status flips off typing once the command runs: {live}"
+        );
+    }
+
+    /// The reported bug: a provider that announces the streaming call under one
+    /// id and assembles the final call under another left the in-flight display
+    /// on screen through the whole command. Any `ToolCall` means streaming is
+    /// over, so a stale throbber must clear regardless of its id.
+    #[test]
+    fn a_stale_throbber_clears_on_a_tool_call_with_a_different_id() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "stream-1".into(),
+            name: "bash".into(),
+        });
+        app.apply(StreamEvent::ToolCallArgsDelta {
+            id: "stream-1".into(),
+            delta: "{\"command\":\"sleep 1\"}".into(),
+        });
+        let typing = render_rows(&mut app, 70, 16).join("\n");
+        assert!(typing.contains("$ sleep 1"), "the in-flight box shows: {typing}");
+
+        app.apply(StreamEvent::ToolCall {
+            id: "final-1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        let live = render_rows(&mut app, 70, 16).join("\n");
+        assert!(
+            !live.contains("sleep 1"),
+            "the stale in-flight box clears despite the id mismatch: {live}"
+        );
+        assert!(live.contains("$ make"), "the running command's box shows: {live}");
+    }
+
+    /// The terminal box replaces the plain "Executing:" activity row entirely,
+    /// from the first frame, so the command is never shown twice; the spinner and
+    /// elapsed fold into the box.
+    #[test]
+    fn the_live_terminal_replaces_the_executing_row() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        let live = render_rows(&mut app, 70, 16).join("\n");
+        assert!(live.contains("$ make"), "terminal box from the start: {live}");
+        assert!(live.contains('\u{250c}'), "framed: {live}");
+        assert!(
+            !live.contains("Executing: make"),
+            "the activity row is replaced, not duplicated: {live}"
+        );
+        // Elapsed folds into the box (0s at render time), with the spinner.
+        assert!(live.contains("0s"), "elapsed in the box: {live}");
+    }
+
+    /// Parallel commands in one group each stream in their own terminal box, so
+    /// a second command never hides an older one still running.
+    #[test]
+    fn parallel_bash_calls_each_get_a_terminal_box() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "make" }),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "c1".into(),
+            delta: "compiling foo\n".into(),
+        });
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "c2".into(),
+            delta: "running 3 tests\n".into(),
+        });
+        let live = render_rows(&mut app, 80, 30).join("\n");
+        assert!(live.contains("$ make"), "first command box: {live}");
+        assert!(live.contains("compiling foo"), "first command output: {live}");
+        assert!(live.contains("$ cargo test"), "second command box: {live}");
+        assert!(live.contains("running 3 tests"), "second command output: {live}");
+        assert!(
+            live.matches('\u{250c}').count() >= 2,
+            "one box per command: {live}"
+        );
+
+        // When the first finishes, only the still-running one keeps its box.
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "compiling foo\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        let live = render_rows(&mut app, 80, 30).join("\n");
+        assert!(!live.contains("$ make"), "the finished command folds away: {live}");
+        assert!(live.contains("$ cargo test"), "the running one stays boxed: {live}");
     }
 
     /// The result is the authoritative output, so the live buffer is released
@@ -19349,7 +19978,6 @@ mod tests {
             id: "t1".into(),
             delta: "compiling foo\n".into(),
         });
-        age_live_output(&mut app, "t1");
         app.apply(StreamEvent::ToolCall {
             id: "t2".into(),
             name: "read".into(),
@@ -19400,7 +20028,6 @@ mod tests {
             id: "t1".into(),
             delta: "test tui::folds ... ok\n".into(),
         });
-        age_live_output(&mut app, "t1");
         let live = render_rows(&mut app, 74, 20).join("\n");
         assert!(
             live.contains("test tui::folds ... ok"),
@@ -19425,9 +20052,10 @@ mod tests {
     #[test]
     fn the_live_panel_renders_only_a_bounded_tail() {
         let many: String = (0..60).map(|i| format!("line {i}\n")).collect();
-        let rows = super::shell_panel_lines("make", &many, 70, "\u{2502}   ");
+        // prompt + skip-notice + bounded tail + status row + two borders.
+        let rows = super::running_terminal_lines("make", &many, 0, 0, 70);
         assert!(
-            rows.len() <= super::LIVE_OUTPUT_TAIL_LINES + 4,
+            rows.len() <= super::LIVE_OUTPUT_TAIL_LINES + 5,
             "unbounded panel: {} rows",
             rows.len()
         );
@@ -24261,6 +24889,41 @@ mod tests {
         );
     }
 
+    /// The diff bands flip with the terminal theme: dark tints on a dark
+    /// background, pale ones on a light background, and add/remove never share a
+    /// colour.
+    #[test]
+    fn diff_bands_pick_a_variant_per_theme() {
+        use super::{diff_bg, DIFF_ADD_BG, DIFF_ADD_BG_LIGHT, DIFF_DEL_BG, DIFF_DEL_BG_LIGHT};
+        assert_eq!(diff_bg(true, false), DIFF_ADD_BG);
+        assert_eq!(diff_bg(false, false), DIFF_DEL_BG);
+        assert_eq!(diff_bg(true, true), DIFF_ADD_BG_LIGHT);
+        assert_eq!(diff_bg(false, true), DIFF_DEL_BG_LIGHT);
+        for light in [false, true] {
+            assert_ne!(
+                diff_bg(true, light),
+                diff_bg(false, light),
+                "add and remove must differ (light={light})"
+            );
+        }
+    }
+
+    /// The user bubble flips with the terminal theme like the diff bands do.
+    #[test]
+    fn user_bubble_picks_a_variant_per_theme() {
+        use super::{
+            user_bubble_bg_for, user_bubble_fg_for, USER_BUBBLE_BG, USER_BUBBLE_BG_LIGHT,
+        };
+        assert_eq!(user_bubble_bg_for(false), USER_BUBBLE_BG);
+        assert_eq!(user_bubble_bg_for(true), USER_BUBBLE_BG_LIGHT);
+        assert_ne!(user_bubble_bg_for(false), user_bubble_bg_for(true));
+        // The text is the inverse of its bubble: the dark theme pairs a light fg
+        // with a dark bg and the light theme the reverse, so each stays legible.
+        assert_ne!(user_bubble_fg_for(false), user_bubble_bg_for(false));
+        assert_ne!(user_bubble_fg_for(true), user_bubble_bg_for(true));
+        assert_ne!(user_bubble_fg_for(false), user_bubble_fg_for(true));
+    }
+
     /// The band is a background only: the code inside a changed row keeps the
     /// same syntax highlighting it has as context, which is what makes it
     /// readable on top of the tint.
@@ -25544,7 +26207,7 @@ mod tests {
         // its header row can scroll out of view. A click on any of its detail
         // rows -- not just the header -- must still collapse it.
         let mut app = test_app();
-        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[]);
+        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[], None);
         assert_eq!(app.reasoning_blocks.len(), 1);
         let idx = app.reasoning_blocks[0].idx;
 
@@ -25634,7 +26297,7 @@ mod tests {
         );
         let think_at = rows
             .iter()
-            .position(|r| r.contains("reasoning (1 line)"))
+            .position(|r| r.contains("Thought"))
             .unwrap();
         let tool_at = rows
             .iter()
@@ -25716,9 +26379,11 @@ mod tests {
         app.toggle_regions();
         let live = render_rows(&mut app, 120, 50).join("\n");
         assert!(live.contains("inspect before changing"), "{live}");
-        assert!(live.contains("Preparing bash"), "{live}");
+        // The in-flight bash call types into a terminal box ($ <command>), which
+        // trails the reasoning that preceded it.
+        assert!(live.contains("$ first"), "{live}");
         assert!(
-            live.find("inspect before changing").unwrap() < live.find("Preparing bash").unwrap(),
+            live.find("inspect before changing").unwrap() < live.find("$ first").unwrap(),
             "{live}"
         );
         app.toggle_regions();
@@ -25788,7 +26453,7 @@ mod tests {
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
         let think_at = rows
             .iter()
-            .position(|r| r.contains("reasoning (1 line)"))
+            .position(|r| r.contains("Thought"))
             .unwrap();
         let prose_at = rows.iter().position(|r| r.contains("Hi there!")).unwrap();
         assert!(think_at < prose_at);
@@ -25798,6 +26463,45 @@ mod tests {
                 .iter()
                 .any(|r| r.trim().is_empty()),
             "expected a blank line between reasoning and prose: {rows:?}"
+        );
+    }
+
+    /// A folded reasoning block reads as the desktop's `Thought for Ns`, and the
+    /// duration is journaled so a resume restamps it rather than dropping to a
+    /// bare `Thought`.
+    #[test]
+    fn committed_reasoning_shows_its_duration_and_survives_resume() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Reasoning {
+            text: "weighing the options".into(),
+        });
+        // Backdate the open block so it reads as multi-second, not instant.
+        app.thinking_since = Some(Instant::now() - Duration::from_secs(3));
+        // Answer prose closes the reasoning block, stashing its elapsed.
+        app.apply(StreamEvent::Token {
+            text: "the answer".into(),
+        });
+        app.flush_assistant();
+        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        assert!(
+            rows.iter().any(|r| r.contains("Thought for 3s")),
+            "collapsed reasoning names its duration: {rows:?}"
+        );
+
+        // The duration rides the journal, so a replay restamps the same label.
+        let entry = app
+            .display_log
+            .iter()
+            .rev()
+            .find(|e| matches!(e, DisplayEntry::Assistant { .. }))
+            .cloned()
+            .expect("assistant entry journaled");
+        let mut fresh = test_app();
+        replay_display_log(&mut fresh, vec![entry]);
+        let replayed: Vec<String> = fresh.transcript.iter().map(row_text).collect();
+        assert!(
+            replayed.iter().any(|r| r.contains("Thought for 3s")),
+            "resume keeps the duration label: {replayed:?}"
         );
     }
 
@@ -25811,7 +26515,7 @@ mod tests {
         app.apply(StreamEvent::Step { index: 1, max: 8 });
 
         let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
-        assert!(rows.iter().any(|r| r.contains("reasoning (2 lines)")));
+        assert!(rows.iter().any(|r| r.contains("Thought")));
         assert!(rows.iter().any(|r| r.contains("The answer is 42")));
         // Raw reasoning is hidden until expanded.
         assert!(!rows.iter().any(|r| r.contains("step one")));
@@ -25822,6 +26526,213 @@ mod tests {
         assert!(app.expanded.contains(&idx));
         app.toggle_regions();
         assert!(app.expanded.is_empty());
+    }
+
+    /// A finished reasoning + tool run is one trace: once the answer follows it
+    /// folds by default to a single `Worked · N steps` header, and expanding
+    /// (toggle or Ctrl-O) restores the run.
+    #[test]
+    fn a_finished_trace_folds_to_one_header_and_expands() {
+        let mut app = test_app();
+        // Reasoning, then a tool call (which commits the reasoning block), then
+        // an answer (which closes the tool group and marks the trace finished).
+        app.apply(StreamEvent::Token { text: "<think>weigh it</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "the answer".into() });
+        app.flush_assistant();
+
+        let runs = app.trace_runs();
+        assert_eq!(runs.len(), 1, "reasoning + tool group form one trace: {runs:?}");
+        assert!(runs[0].tool_ran && runs[0].steps == 2, "{:?}", runs[0]);
+        let start = runs[0].start;
+
+        // Default (an answer follows): folded to one header, members hidden.
+        let folded = render_rows(&mut app, 70, 20).join("\n");
+        assert!(folded.contains("Worked \u{b7} 2 steps"), "fold header: {folded}");
+        assert!(!folded.contains("Thought"), "reasoning row hidden: {folded}");
+        assert!(folded.contains("the answer"), "prose survives: {folded}");
+
+        // Expanding shows the run and drops the header.
+        app.toggle_trace(start);
+        let open = render_rows(&mut app, 70, 20).join("\n");
+        assert!(open.contains("Thought"), "reasoning summary shows: {open}");
+        assert!(!open.contains("Worked \u{b7}"), "no header when expanded: {open}");
+
+        // Ctrl-O folds everything back.
+        app.toggle_trace(start);
+        let refolded = render_rows(&mut app, 70, 20).join("\n");
+        assert!(refolded.contains("Worked \u{b7} 2 steps"), "refolded: {refolded}");
+    }
+
+    /// Ctrl-O (`toggle_regions`) unfolds every collapsed trace along with the
+    /// per-row detail, and folds them back on the next press.
+    #[test]
+    fn ctrl_o_unfolds_and_refolds_traces() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token { text: "<think>weigh it</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "the answer".into() });
+        app.flush_assistant();
+
+        assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "folded by default");
+        app.toggle_regions();
+        assert!(!render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O unfolds");
+        app.toggle_regions();
+        assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O refolds");
+    }
+
+    /// The condensed live view: while an active run streams, its settled steps
+    /// fold into a live `Working…` header and only the current step (the running
+    /// command box here) shows below -- no growing pile of settled rows.
+    #[test]
+    fn the_active_trace_folds_to_a_live_header() {
+        let mut app = test_app();
+        // reasoning, tool, reasoning, then a running tool -- three settled
+        // members (two reasoning blocks + one closed group) with no answer yet.
+        app.apply(StreamEvent::Token { text: "<think>first</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "<think>second</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "t2".into(),
+            name: "bash".into(),
+            args: json!({ "command": "cargo test" }),
+        });
+
+        let runs = app.trace_runs();
+        assert_eq!(runs.len(), 1, "one active run of settled steps: {runs:?}");
+        assert!(runs[0].steps == 3 && runs[0].tool_ran, "{:?}", runs[0]);
+
+        let live = render_rows(&mut app, 70, 20).join("\n");
+        // Live header (present tense, spinner-led), settled steps folded away.
+        assert!(live.contains("Working \u{b7} 3 steps"), "live header: {live}");
+        assert!(!live.contains("Thought"), "settled steps folded: {live}");
+        // The current step -- the running command -- shows below the header.
+        assert!(live.contains("$ cargo test"), "current step shows: {live}");
+    }
+
+    /// The reported case: a just-finished command must fold as soon as reasoning
+    /// starts streaming after it, so the reasoning stands alone as the current
+    /// step rather than sitting under the finished command's row.
+    #[test]
+    fn a_just_finished_tool_folds_when_reasoning_follows() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token { text: "here goes".into() });
+        app.flush_assistant(); // an answer, so what follows is a fresh active run
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "git diff" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "changed.rs".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Reasoning now streams -- the frontier moves past the finished command.
+        app.apply(StreamEvent::Token { text: "<think>analyzing the diff".into() });
+
+        let live = render_rows(&mut app, 70, 20).join("\n");
+        assert!(live.contains("Working \u{b7} 1 step"), "the finished tool folds: {live}");
+        assert!(!live.contains("$ git diff"), "the command row is gone: {live}");
+        assert!(!live.contains("Ran"), "no lingering ran row: {live}");
+        assert!(live.contains("analyzing the diff"), "the reasoning stands alone: {live}");
+    }
+
+    /// The reported case: while the next tool call is still typing its arguments
+    /// (the live typing box), the prior settled steps must fold behind the live
+    /// header rather than all rendering above the box.
+    #[test]
+    fn prior_steps_fold_while_the_next_tool_call_is_typing() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token { text: "<think>investigating</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "grep needle" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "hit".into(),
+            is_error: false,
+            diff: None,
+        });
+        // The next call begins streaming its arguments -- the current step.
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "t2".into(),
+            name: "bash".into(),
+        });
+        app.apply(StreamEvent::ToolCallArgsDelta {
+            id: "t2".into(),
+            delta: "{\"command\": \"cargo build\"}".into(),
+        });
+
+        let live = render_rows(&mut app, 70, 20).join("\n");
+        assert!(live.contains("Working \u{b7} 2 steps"), "prior steps fold: {live}");
+        assert!(!live.contains("grep needle"), "the prior command row is gone: {live}");
+        assert!(live.contains("cargo build"), "the typing box is the current step: {live}");
+    }
+
+    /// The screenshot case: after an answer, a fresh run of settled steps must
+    /// stay folded across the gap between one step finishing and the next
+    /// starting -- while the run is live, not only while a token is mid-flight.
+    #[test]
+    fn a_settled_run_stays_folded_in_the_gap_between_steps() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::Token { text: "I'll review this PR.".into() });
+        app.flush_assistant(); // the answer, so what follows is a fresh run
+        for (id, cmd) in [("t1", "grep alpha"), ("t2", "grep bravo")] {
+            app.apply(StreamEvent::Token {
+                text: format!("<think>step {id}</think>"),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // No token in flight now: a bare gap, but the run is still active.
+        let live = render_rows(&mut app, 90, 24).join("\n");
+        assert!(live.contains("Working \u{b7} 4 steps"), "the run folds in the gap: {live}");
+        assert!(!live.contains("grep alpha"), "no lingering command rows: {live}");
+        assert!(!live.contains("grep bravo"), "no lingering command rows: {live}");
     }
 
     #[test]
@@ -26070,7 +26981,7 @@ mod tests {
             .join("\n");
 
         assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
-        assert!(resumed.contains("reasoning (1 line)"), "{resumed}");
+        assert!(resumed.contains("Thought"), "{resumed}");
         assert!(resumed.contains("✓ Wrote a.txt"), "tool row: {resumed}");
         assert!(
             resumed.contains("@@ created file @@") && resumed.contains("+    1 | x"),
@@ -27491,7 +28402,7 @@ mod tests {
             if !THINKING_WORDS.iter().any(|w| row.contains(w)) {
                 return false;
             }
-            (0..buf.area.width).any(|x| buf[(x, y)].style().fg == Some(super::THINKING_ORANGE))
+            (0..buf.area.width).any(|x| buf[(x, y)].style().fg == Some(super::theme::strong_accent()))
         });
         assert!(orange, "thinking synonym not orange");
     }
@@ -27730,7 +28641,11 @@ mod tests {
         assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
         // Journaled apart: prose verbatim, each stretch at the offset it
         // streamed at, so a replay rebuilds the order without parsing markers.
-        let DisplayEntry::Assistant { text, reasoning } = app
+        let DisplayEntry::Assistant {
+            text,
+            reasoning,
+            reasoning_ms: _,
+        } = app
             .display_log
             .iter()
             .rev()
@@ -28428,7 +29343,7 @@ mod tests {
         let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = format!(r#"{{"path":"game.html","content":"{body}"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
             .iter()
             .map(line_text)
             .collect();
@@ -28506,7 +29421,7 @@ mod tests {
     fn streaming_write_shows_the_path_before_the_body() {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = r#"{"path":"game.html","cont"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
             .iter()
             .map(line_text)
             .collect();
@@ -28517,18 +29432,52 @@ mod tests {
         );
     }
 
-    /// Tools other than `write` keep the plain throbber -- there is no file
-    /// body to stream.
+    /// A shell call types its command into a terminal box as the arguments
+    /// stream, so it never sits on a plain "Preparing bash" throbber; the box is
+    /// the same one the running call becomes.
     #[test]
-    fn other_tools_keep_the_plain_throbber() {
+    fn a_streaming_shell_call_types_into_a_terminal_box() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
         call.args = r#"{"command":"ls -la"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+            .iter()
+            .map(line_text)
+            .collect();
+        let joined = text.join("\n");
+        assert!(!joined.contains("Preparing"), "no plain throbber: {joined}");
+        assert!(joined.contains("$ ls -la"), "command on the prompt line: {joined}");
+        assert!(joined.contains("typing"), "streaming status: {joined}");
+        assert!(joined.contains('\u{250c}'), "framed like a terminal: {joined}");
+    }
+
+    /// Before any command byte a shell call still shows the empty terminal
+    /// prompt, not "Preparing bash".
+    #[test]
+    fn a_shell_call_shows_the_prompt_before_the_command_arrives() {
+        let mut call = super::StartingCall::new("c1".into(), "bash".into());
+        call.args = r#"{"comm"#.into();
+        let joined = starting_call_lines(&mut call, "⠋", 70)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!joined.contains("Preparing"), "no plain throbber: {joined}");
+        assert!(joined.contains("$"), "prompt is shown: {joined}");
+        assert!(joined.contains('\u{250c}'), "framed: {joined}");
+    }
+
+    /// A tool with no streaming preview (no command, no file body) keeps the
+    /// plain throbber -- there is nothing to type.
+    #[test]
+    fn other_tools_keep_the_plain_throbber() {
+        let mut call = super::StartingCall::new("c1".into(), "grep".into());
+        call.args = r#"{"pattern":"foo"#.into();
+        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
             .iter()
             .map(line_text)
             .collect();
         assert_eq!(text.len(), 1);
-        assert!(text[0].contains("Preparing bash"), "got {text:?}");
+        assert!(text[0].contains("Preparing grep"), "got {text:?}");
     }
 
     /// A `write` of minified or single-line content (a bundle, a JSON blob)
@@ -28541,7 +29490,7 @@ mod tests {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         let body = "x".repeat(20_000);
         call.args = format!(r#"{{"path":"bundle.js","content":"{body}"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}", 70)
             .iter()
             .map(line_text)
             .collect();
@@ -28570,7 +29519,7 @@ mod tests {
         let filler = "-".repeat(super::STREAM_MAX_LINE_CHARS * 2);
         call.args =
             format!(r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}")
+        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}", 70)
             .iter()
             .map(line_text)
             .collect();
@@ -28685,7 +29634,7 @@ mod tests {
         for name in ["read", "edit", "list"] {
             let mut call = super::StartingCall::new("c1".into(), name.into());
             call.args = r#"{"path":"src/main.rs"#.into();
-            let text: Vec<String> = starting_call_lines(&mut call, "⠋")
+            let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
                 .iter()
                 .map(line_text)
                 .collect();
@@ -28717,19 +29666,22 @@ mod tests {
     /// A run can end normally while a tool call was still streaming its
     /// arguments: the upstream stops mid-call and the assembled completion
     /// carries no `tool_calls`, so no `ToolCall` ever supersedes the throbber
-    /// and no `ToolResult` ever resolves the pending row.
+    /// and no `ToolResult` ever resolves the pending row. `on_done` owns cleaning
+    /// up both orphans. The throbber (`c2`) is started *after* `c1`'s `ToolCall`
+    /// precisely so no later `ToolCall` clears it first -- that is the truncation
+    /// shape, where the streaming call is the last thing the run ever emits.
     #[test]
     fn normal_done_clears_an_unfinished_tool_call() {
         let mut app = test_app();
         app.submit_user("do a thing".into());
-        app.apply(StreamEvent::ToolCallStarted {
+        app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
             name: "write".into(),
+            args: serde_json::json!({ "path": "a.txt", "content": "x" }),
         });
-        app.apply(StreamEvent::ToolCall {
+        app.apply(StreamEvent::ToolCallStarted {
             id: "c2".into(),
             name: "write".into(),
-            args: serde_json::json!({ "path": "a.txt", "content": "x" }),
         });
         assert_eq!(app.starting.len(), 1);
         assert_eq!(app.pending_rows.len(), 1);
@@ -29360,10 +30312,10 @@ mod tests {
         let injected = last_history_content(&app);
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
-        // The reminder is hidden: no user-authored `> ` row in the transcript.
+        // The reminder is hidden: it never renders into the transcript.
         let rows: String = app.transcript.iter().map(row_text).collect();
         assert!(
-            !rows.contains("> "),
+            !rows.contains("unfinished todos"),
             "reminder must not render as a user row"
         );
     }
@@ -29822,6 +30774,144 @@ mod tests {
             app.transcript.iter().any(Row::is_blank),
             "prose is still separated from the activity above it"
         );
+    }
+
+    /// The live tail mirrors the band rule the commit will: reasoning streaming
+    /// after a tool call shares the tool band, so no blank separates them, while
+    /// streaming prose still opens with one.
+    #[test]
+    fn streaming_reasoning_after_a_tool_call_has_no_leading_blank() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.assistant_buf = "<think>weighing options".to_string();
+        let rows = render_rows(&mut app, 60, 30);
+        let reason = rows
+            .iter()
+            .position(|r| r.contains("weighing options"))
+            .expect("streamed reasoning");
+        assert!(
+            !rows[reason - 1].trim().is_empty(),
+            "no blank between the tool row and streaming reasoning: {rows:?}"
+        );
+
+        // Streaming prose in the same spot is a band change and keeps its air.
+        app.assistant_buf = "here is the answer".to_string();
+        let rows = render_rows(&mut app, 60, 30);
+        let prose = rows
+            .iter()
+            .position(|r| r.contains("here is the answer"))
+            .expect("streamed prose");
+        assert!(
+            rows[prose - 1].trim().is_empty(),
+            "prose after a tool call still opens with a blank: {rows:?}"
+        );
+    }
+
+    /// The in-progress "Preparing X" throbber is a tool-band row, so it shares
+    /// the band with the reasoning or tool row above it (no blank) but is still
+    /// separated from answer prose.
+    #[test]
+    fn preparing_row_shares_the_band_with_reasoning_and_tools() {
+        // After reasoning: same band, no blank.
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>deciding</think>".into(),
+        });
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "c1".into(),
+            name: "read".into(),
+        });
+        let rows = render_rows(&mut app, 60, 30);
+        let prep = rows
+            .iter()
+            .position(|r| r.contains("Preparing"))
+            .expect("preparing row");
+        assert!(
+            !rows[prep - 1].trim().is_empty(),
+            "no blank between reasoning and Preparing: {rows:?}"
+        );
+
+        // After a committed tool call: same band, no blank.
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "t2".into(),
+            name: "read".into(),
+        });
+        let rows = render_rows(&mut app, 60, 30);
+        let prep = rows
+            .iter()
+            .position(|r| r.contains("Preparing"))
+            .expect("preparing row");
+        assert!(
+            !rows[prep - 1].trim().is_empty(),
+            "no blank between a tool row and Preparing: {rows:?}"
+        );
+
+        // After answer prose: a band change still keeps its air.
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "here is the answer".into(),
+        });
+        app.apply(StreamEvent::ToolCallStarted {
+            id: "p1".into(),
+            name: "read".into(),
+        });
+        let rows = render_rows(&mut app, 60, 30);
+        let prep = rows
+            .iter()
+            .position(|r| r.contains("Preparing"))
+            .expect("preparing row");
+        assert!(
+            rows[prep - 1].trim().is_empty(),
+            "prose is still separated from Preparing: {rows:?}"
+        );
+    }
+
+    /// A `bash` command that detaches is counted in the status bar until a later
+    /// call collects it.
+    #[test]
+    fn background_shell_count_tracks_detach_and_collect() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 100" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "Command exceeded 30s and is continuing in the background (job_id=bash-0)."
+                .into(),
+            is_error: false,
+            diff: None,
+        });
+        assert_eq!(app.active_bg_jobs.len(), 1, "the detached job is counted");
+        let footer: String = super::footer_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(footer.contains("1 bg shell"), "status bar names it: {footer}");
+
+        // A later call collects the job; the count drops.
+        app.apply(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "bash".into(),
+            args: json!({ "job_id": "bash-0" }),
+        });
+        assert!(app.active_bg_jobs.is_empty(), "collected job is uncounted");
+        let footer: String = super::footer_spans(&app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
+        assert!(!footer.contains("bg shell"), "indicator is gone: {footer}");
     }
 
     /// The borderless input box used to reserve two blank rows for borders it
@@ -32247,8 +33337,14 @@ mod tests {
         app.note("conversation cleared");
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
+        // The user turn distinguishes itself with a filled bubble background
+        // rather than a gutter glyph.
         app.push_user_line("do it", &[]);
-        assert_eq!(last_row(&app)[0].0, "> ", "user message");
+        assert_eq!(
+            last_row(&app)[0].1.bg,
+            Some(super::user_bubble_bg()),
+            "user message"
+        );
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),

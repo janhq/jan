@@ -30,6 +30,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# theme = "light"                     # force the TUI colour theme: "light",
+#                                     # "dark", or "auto" (the default), which
+#                                     # detects the terminal background
 # ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
 #                                     # after this many seconds, choosing each
 #                                     # question's recommended option (else its
@@ -82,6 +85,11 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// TUI colour theme: `"light"`, `"dark"`, or `"auto"`. `None` = the default,
+    /// auto, which detects the terminal background. Any other string also reads
+    /// as auto so a typo degrades to detection rather than an error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme: Option<String>,
     /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
     /// selecting each question's recommended option (or its first option when
     /// none is recommended). `None` = the default, and `0` is treated the same:
@@ -334,6 +342,14 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// The TUI colour-theme preference (`theme` in `~/.jan/config.toml`): `"light"`,
+/// `"dark"`, or `"auto"`. `None` when unset, which the TUI treats as auto-detect
+/// from the terminal background. An unreadable or malformed config yields `None`
+/// so a display preference never blocks startup.
+pub(crate) fn theme_setting() -> Option<String> {
+    load_raw().ok().and_then(|config| config.theme)
+}
+
 /// How long an unanswered `ask` prompt waits before it auto-answers with each
 /// question's recommended option (`ask_timeout_secs` in `~/.jan/config.toml`).
 /// `None` -- the default -- means wait forever, preserving today's blocking
@@ -416,6 +432,7 @@ const ROOT_KEYS: &[&str] = &[
     "sandbox",
     "think_tags",
     "stream_reasoning",
+    "theme",
     "ask_timeout_secs",
     "terminal_hint",
     "wave",
@@ -943,6 +960,23 @@ mod tests {
                 stream_reasoning_enabled(),
                 "an unreadable config keeps the default"
             );
+        });
+    }
+
+    #[test]
+    fn theme_defaults_unset_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert_eq!(theme_setting(), None, "missing file -> auto (unset)");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(theme_setting(), None, "scaffolded file only comments it");
+
+            std::fs::write(&path, "theme = \"light\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("light"));
+            std::fs::write(&path, "theme = \"dark\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("dark"));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(theme_setting(), None, "an unreadable config reads as auto");
         });
     }
 

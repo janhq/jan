@@ -44,6 +44,11 @@ pub enum DisplayEntry {
         text: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         reasoning: Vec<ReasoningSeg>,
+        /// Milliseconds the turn spent reasoning, for the `Thought for Ns`
+        /// label. Absent in a journal written before it existed, which replays
+        /// as a plain `Thought`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning_ms: Option<u64>,
     },
     ToolCall {
         id: String,
@@ -219,6 +224,7 @@ mod tests {
             DisplayEntry::Assistant {
                 text: "<think>plan</think>".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             },
             DisplayEntry::ToolCall {
                 id: "c1".into(),
@@ -240,6 +246,7 @@ mod tests {
             DisplayEntry::Assistant {
                 text: "Done.".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             },
         ]
     }
@@ -296,6 +303,7 @@ mod tests {
         entries.push(DisplayEntry::Assistant {
             text: "more".into(),
             reasoning: Vec::new(),
+            reasoning_ms: None,
         });
         assert_eq!(truncate_at_user(&entries, 0), 0);
         assert_eq!(truncate_at_user(&entries, 1), 6, "cuts at the second user");
@@ -320,6 +328,7 @@ mod tests {
             DisplayEntry::Assistant {
                 text: "ok".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             },
             user("third"),
         ];
