@@ -179,6 +179,21 @@ pub struct ServerSummary {
     pub description: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptArgument {
+  pub name: String,
+  pub description: Option<String>,
+  pub required: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PromptWithServer {
+  pub name: String,
+  pub description: Option<String>,
+  pub server: String,
+  pub arguments: Option<Vec<PromptArgument>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{extract_active_status, extract_command_args};
