@@ -11,6 +11,33 @@ const MIN_CHUNK_SIZE_CHARS = 64
 // Reserves room for BOS/special tokens the tokenizer adds beyond raw content.
 const EMBEDDING_CONTEXT_SAFETY_TOKENS = 8
 
+/**
+ * Tauri / IPC failures often reject with plain objects (`{ message }`,
+ * `{ error }`) rather than `Error`. `String(obj)` becomes `[object Object]`,
+ * which is what users see in the UI toast — hide the real cause.
+ */
+export function formatUnknownError(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name
+  if (typeof error === 'string') return error
+  if (typeof error === 'number' || typeof error === 'boolean' || typeof error === 'bigint') {
+    return String(error)
+  }
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    for (const key of ['message', 'error', 'msg', 'detail'] as const) {
+      const value = record[key]
+      if (typeof value === 'string' && value.trim()) return value
+      if (value instanceof Error) return value.message || value.name
+    }
+    try {
+      return JSON.stringify(error)
+    } catch {
+      // circular / non-serializable
+    }
+  }
+  return String(error)
+}
+
 export default class VectorDBExt extends VectorDBExtension {
   async onLoad(): Promise<void> {
     // no-op
@@ -209,7 +236,7 @@ export default class VectorDBExt extends VectorDBExtension {
       return await llm.getEmbeddingContextSize()
     } catch (e) {
       throw new Error(
-        `Failed to determine embedding context size: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to determine embedding context size: ${formatUnknownError(e)}`
       )
     }
   }
@@ -225,7 +252,7 @@ export default class VectorDBExt extends VectorDBExtension {
       ;[count] = await llm.countEmbeddingTokens([text])
     } catch (e) {
       throw new Error(
-        `Failed to count embedding tokens: ${e instanceof Error ? e.message : String(e)}`
+        `Failed to count embedding tokens: ${formatUnknownError(e)}`
       )
     }
     if (count <= budget || text.length <= MIN_CHUNK_SIZE_CHARS) return [text]
