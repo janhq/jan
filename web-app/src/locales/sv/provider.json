@@ -1,0 +1,18 @@
+{
+  "addProvider": "Lägg till leverantör",
+  "addOpenAIProvider": "Lägg till anpassad leverantör",
+  "enterNameForProvider": "Leverantörsnamn (t.ex. min-llm-server)",
+  "apiTypeLabel": "API-format",
+  "apiTypeOpenAI": "OpenAI-kompatibel",
+  "apiTypeAnthropic": "Anthropic-kompatibel",
+  "baseUrlLabel": "Bas-URL",
+  "baseUrlPlaceholder": "https://din-slutpunkt/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API-nyckel",
+  "apiKeyPlaceholder": "Klistra in din API-nyckel",
+  "invalidBaseUrl": "Bas-URL:en måste vara en giltig http(s)-URL",
+  "globalSettings": "Globala inställningar",
+  "stripReasoning": "Ta bort resonemang ur kontexten",
+  "stripReasoningDesc": "Ta bort tänkande- och resonemangsinnehåll från tidigare turer innan historiken skickas igen, för alla leverantörer. Det förbättrar återanvändning av KV-cache för lokala modeller, men vissa modeller (t.ex. nyare Qwen-versioner) rekommenderar att innehållet behålls för bättre resonemang över flera turer.",
+  "providerAlreadyExists": "Det finns redan en leverantör med namnet {{name}}."
+}
