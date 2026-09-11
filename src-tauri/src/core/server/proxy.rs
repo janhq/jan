@@ -7,7 +7,10 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use jan_utils::{extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix};
+use jan_utils::{
+    extract_host_from_origin, is_cors_header, is_valid_host, remove_prefix,
+    skip_outbound_provider_header,
+};
 use reqwest::Client;
 use serde_json;
 use std::collections::HashMap;
@@ -2015,11 +2018,15 @@ async fn proxy_request(
 
         // Body is re-buffered/rewritten, so a stale inbound Content-Length would
         // mismatch the bytes we send and stall the upstream; reqwest re-derives it.
+        // Origin/Referer stay on the inbound CORS path and are not forwarded —
+        // the Tauri webview Origin (`http://tauri.localhost`) 403s CORS-strict
+        // backends such as Ollama.
         for (name, value) in headers.iter() {
             if name != hyper::header::HOST
                 && name != hyper::header::AUTHORIZATION
                 && name != hyper::header::CONTENT_LENGTH
                 && name != hyper::header::TRANSFER_ENCODING
+                && !skip_outbound_provider_header(name.as_str())
             {
                 outbound_req = outbound_req.header(name, value);
             }
@@ -2115,6 +2122,7 @@ async fn proxy_request(
                             && name != "content-type"
                             && name != hyper::header::CONTENT_LENGTH
                             && name != hyper::header::ACCEPT_ENCODING
+                            && !skip_outbound_provider_header(name.as_str())
                         {
                             fallback_req = fallback_req.header(name, value);
                         }
