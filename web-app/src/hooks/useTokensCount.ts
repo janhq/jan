@@ -43,6 +43,15 @@ export interface UsageMeta {
 export interface TokenUsageSource {
   threadId?: string
   usage?: UsageMeta
+  /**
+   * Whether the model is loading for this surface's own thread.
+   *
+   * A surface that keeps its load state outside `useAppState` reports it here:
+   * Cowork mirrors loads in `useCoworkRun` under the session id, so the
+   * thread-keyed slots the hook reads on its own never see them. Without it the
+   * launched context window is never refetched for a Cowork session.
+   */
+  loadingModel?: boolean
 }
 
 // The token-usage popup normally reflects the last *successful* turn. When a
@@ -104,8 +113,23 @@ export const useTokensCount = (
   // normally doesn't happen until the first turn is sent. Refetch as soon as that
   // load finishes so the counter can appear mid-turn instead of waiting for the
   // full response (and the resulting messages.length bump) to land.
-  const loadingModel = useAppState((s) =>
+  //
+  // Cowork mirrors its load state onto `useCoworkRun` under the session id, so
+  // these thread-keyed slots never see it; such a surface reports its own mirror
+  // through `source.loadingModel`.
+  const appLoadingModel = useAppState((s) =>
     threadId ? s.loadingModels[threadId] : s.loadingModel
+  )
+  const loadingModel = source?.loadingModel || appLoadingModel
+  // The window the meter divides by is the one the engine actually launched,
+  // and it moves without a model switch: "Increase context" recovery, the model
+  // settings form, or a re-fit. A local settings write publishes the new value
+  // only after the router has reloaded with it (`updateModelSettings` awaits
+  // `refreshEnginePreset`), so depending on it here refetches the launched window
+  // in the same tick the UI learns of the edit. Chat also refetched on its next
+  // message; Cowork has no message-length trigger at all.
+  const configuredCtxLen = readSettingNumber(
+    selectedModel?.settings?.ctx_len?.controller_props?.value
   )
 
   useEffect(() => {
@@ -135,7 +159,13 @@ export const useTokensCount = (
         if (id !== reqId.current) return
         setLoading(false)
       })
-  }, [modelId, selectedProvider, messages.length, loadingModel])
+  }, [
+    modelId,
+    selectedProvider,
+    messages.length,
+    loadingModel,
+    configuredCtxLen,
+  ])
 
   const tokenData: TokenCountData = useMemo(() => {
     if (!isLocalProvider) {
@@ -183,9 +213,6 @@ export const useTokensCount = (
     const fitEnabled =
       provider?.settings?.find((s) => s.key === 'fit')?.controller_props
         ?.value === true
-    const configuredCtxLen = readSettingNumber(
-      selectedModel?.settings?.ctx_len?.controller_props?.value
-    )
     const modelDisplayName =
       modelProps?.modelAlias || selectedModel?.name || modelId
     const caps = selectedModel?.capabilities ?? []
@@ -220,6 +247,7 @@ export const useTokensCount = (
     liveStats,
     getProviderByName,
     selectedModel,
+    configuredCtxLen,
   ])
 
   return {

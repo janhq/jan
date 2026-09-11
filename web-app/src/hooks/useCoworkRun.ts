@@ -24,6 +24,9 @@ export type {
 
 // StreamEvent shapes emitted by the Rust agent loop (events.rs, tag = "type").
 // Owned here because this store is what consumes/dispatches them.
+//
+// `step_metadata` is the one JS-only variant: a Cowork child's own stream
+// produces it (`coworkSubagent`), and it never crosses the Rust boundary.
 export type StreamEvent =
   | { type: 'token'; text: string }
   | { type: 'reasoning'; text: string }
@@ -46,6 +49,13 @@ export type StreamEvent =
   | { type: 'subagent_start'; run_id: string; name: string }
   | { type: 'subagent_end'; run_id: string; name: string; usage: Usage | null }
   | { type: 'turn_usage'; usage: Usage }
+  | {
+      /** A child's finished step, carrying the metadata `MessageItem` renders
+       * the token-speed popover from. Lane-local: the parent's own steps reach
+       * the transcript through `turnsFor` instead. */
+      type: 'step_metadata'
+      metadata: Record<string, unknown>
+    }
   | { type: 'subagent'; run_id: string; name: string; event: StreamEvent }
 
 // Append a streamed token to the last assistant turn, or start a new one.
@@ -155,6 +165,15 @@ function applyInnerToTurns(
         diff: inner.diff,
         status: 'done',
       })
+    // A child's finished step. It lands on the answer row the step streamed
+    // into, so the lane's last assistant message carries the same metadata the
+    // main lane's rows do. A step that answered nothing has no row to hang it
+    // on, and nothing for the popover to describe.
+    case 'step_metadata': {
+      const last = turns[turns.length - 1]
+      if (!last || last.role !== 'assistant') return turns
+      return [...turns.slice(0, -1), { ...last, metadata: inner.metadata }]
+    }
     default:
       return turns // step / anything else: no visible turn
   }

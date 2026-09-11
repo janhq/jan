@@ -25,6 +25,31 @@ describe('coworkTurnsToUIMessages', () => {
     expect(parts[1]).toEqual({ type: 'text', text: 'answer' })
   })
 
+  // `MessageItem` reads the speed popover off the message metadata, so the row
+  // metadata a finished step carries has to land there. Steps fold into one
+  // assistant message until a question splits them, and the popover describes
+  // the newest generation, so the later step wins.
+  it('hands the step metadata to the message its parts fold into', () => {
+    const messages = coworkTurnsToUIMessages([
+      { role: 'user', content: 'q' },
+      {
+        role: 'assistant',
+        content: 'first',
+        metadata: { tokenSpeed: { tokenSpeed: 10 } },
+      },
+      { role: 'tool', content: 'ok', name: 'read', callId: 'c1', status: 'done' },
+      {
+        role: 'assistant',
+        content: 'second',
+        metadata: { tokenSpeed: { tokenSpeed: 20 } },
+      },
+    ] as CoworkTurn[])
+    expect((messages[1] as any).metadata).toEqual({
+      tokenSpeed: { tokenSpeed: 20 },
+    })
+    expect((messages[0] as any).metadata).toBeUndefined()
+  })
+
   it('a reasoning-only turn still renders (thought, then straight to a tool)', () => {
     const messages = coworkTurnsToUIMessages([
       { role: 'user', content: 'q' },

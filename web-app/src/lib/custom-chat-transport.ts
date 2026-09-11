@@ -66,6 +66,7 @@ import { encodeVideoSentinel, parseVideoDataUrl } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
+import { createStepMetadata } from '@/lib/stepMetadata'
 
 export type TokenUsageCallback = (
   usage: LanguageModelUsage,
@@ -1529,7 +1530,6 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       selectedModel
     )
 
-    let streamStartTime: number | undefined
     useAppState.getState().updatePromptProgress(undefined)
     useAppState.getState().updateThreadPromptProgress(threadId, undefined)
     useAppState.getState().updateLiveTokenStats(undefined)
@@ -1557,72 +1557,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       },
     })
 
-    let tokensPerSecond = 0
-    let promptPerSecond = 0
+    const stepMetadata = createStepMetadata()
 
     const uiStream = result.toUIMessageStream({
-      messageMetadata: ({ part }) => {
-        if (
-          !streamStartTime &&
-          (part.type === 'text-start' || part.type === 'reasoning-start')
-        ) {
-          streamStartTime = Date.now()
-        }
-
-        if (part.type === 'finish-step') {
-          tokensPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.tokensPerSecond as number) || 0
-          promptPerSecond =
-            (part.providerMetadata?.providerMetadata
-              ?.promptPerSecond as number) || 0
-        }
-
-        // Add usage and token speed to metadata on finish
-        if (part.type === 'finish') {
-          const finishPart = part as {
-            type: 'finish'
-            totalUsage: LanguageModelUsage
-            finishReason: string
-          }
-          const usage = finishPart.totalUsage
-          const durationMs = streamStartTime ? Date.now() - streamStartTime : 0
-          const durationSec = durationMs / 1000
-
-          // Use provider's outputTokens, or llama.cpp completionTokens, or fall back to text delta count
-          const outputTokens = usage?.outputTokens ?? 0
-          const inputTokens = usage?.inputTokens
-
-          // Use llama.cpp's tokens per second if available, otherwise calculate from duration
-          let tokenSpeed: number
-          if (durationSec > 0 && outputTokens > 0) {
-            tokenSpeed =
-              tokensPerSecond > 0 ? tokensPerSecond : outputTokens / durationSec
-          } else {
-            tokenSpeed = 0
-          }
-
-          return {
-            finishReason: finishPart.finishReason,
-            usage: {
-              inputTokens: inputTokens,
-              outputTokens: outputTokens,
-              totalTokens:
-                usage?.totalTokens ?? (inputTokens ?? 0) + outputTokens,
-            },
-            tokenSpeed: {
-              tokenSpeed: Math.round(tokenSpeed * 100) / 100,
-              promptSpeed: promptPerSecond
-                ? Math.round(promptPerSecond * 100) / 100
-                : undefined,
-              tokenCount: outputTokens,
-              durationMs,
-            },
-          }
-        }
-
-        return undefined
-      },
+      // Usage and token speed, assembled by the one implementation every
+      // streaming surface shares (see `lib/stepMetadata`).
+      messageMetadata: ({ part }) => stepMetadata.onPart(part),
       onError: (error) => {
         // A superseded request (e.g. after Reload) must not clear loading/stream
         // state the newer request already owns.

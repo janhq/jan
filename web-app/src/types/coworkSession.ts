@@ -38,6 +38,11 @@ export type CoworkTurn = {
   isError?: boolean
   diff?: string
   status?: 'running' | 'done'
+  /** Assistant-row only: the model metadata the step finished with, verbatim
+   * from the stream (`usage`, `tokenSpeed`, `finishReason`). `MessageItem` reads
+   * it exactly as it reads the metadata chat persists on a message, so the token
+   * speed popover works here without a second implementation. */
+  metadata?: Record<string, unknown>
 }
 
 /** A pasted or picked image/audio/video, shaped as an AI SDK `file` part. */

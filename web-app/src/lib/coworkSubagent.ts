@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   convertToModelMessages,
   streamText,
@@ -16,6 +15,7 @@ import {
 } from '@/lib/coworkTools'
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
+import { createStepMetadata } from '@/lib/stepMetadata'
 import {
   runTurn,
   type PendingToolCall,
@@ -465,18 +465,11 @@ function childStep(opts: {
       tools: Object.keys(opts.tools).length > 0 ? opts.tools : undefined,
       toolChoice: Object.keys(opts.tools).length > 0 ? 'auto' : undefined,
     })
+    const stepMetadata = createStepMetadata()
     return result.toUIMessageStream({
-      messageMetadata: ({ part }) => {
-        if (part.type !== 'finish') return undefined
-        const usage = (part as any).totalUsage
-        return {
-          usage: {
-            inputTokens: usage?.inputTokens,
-            outputTokens: usage?.outputTokens,
-            totalTokens: usage?.totalTokens,
-          },
-        }
-      },
+      // The same usage-and-speed block the parent's transport stamps, assembled
+      // by the same helper, so a child's lane shows the readout chat shows.
+      messageMetadata: ({ part }) => stepMetadata.onPart(part),
       onError: (error) =>
         error instanceof Error ? error.message : String(error),
     })
@@ -565,6 +558,11 @@ export async function runSubagent(
         sink,
         onStep: ({ result, outcomes }) => {
           if (result.text.trim()) finalText = result.text
+          // Ahead of the results: the lane hangs it on the child's answer row,
+          // and a tool result that arrives first would put a tool row last.
+          if (result.metadata) {
+            events.onInner({ type: 'step_metadata', metadata: result.metadata })
+          }
           for (const [id, o] of outcomes) {
             events.onInner({
               type: 'tool_result',

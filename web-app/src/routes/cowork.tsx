@@ -366,6 +366,12 @@ function CoworkPage() {
   )
 
   const usage = liveUsage ?? session?.lastUsage ?? null
+  // Cowork writes model loads to `useCoworkRun`, keyed by session id, so the
+  // meter cannot see them on its own; hand it the mirror so the launched window
+  // is refetched when the engine reloads.
+  const sessionLoadingModel = useCoworkRun((s) =>
+    currentId ? !!s.loadingModels[currentId] : false
+  )
   const tokenSource = useMemo(
     () => ({
       threadId: session?.id,
@@ -376,8 +382,9 @@ function CoworkPage() {
             totalTokens: usage.total_tokens,
           }
         : undefined,
+      loadingModel: sessionLoadingModel,
     }),
-    [session?.id, usage]
+    [session?.id, usage, sessionLoadingModel]
   )
 
   // Live runs write into the run store; a committed session carries its own.
