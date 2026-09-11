@@ -1,11 +1,10 @@
 import { useRef } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { Handshake, HomeIcon, type LucideIcon } from 'lucide-react'
 import { route, isCoworkRoute } from '@/constants/routes'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { startNewSession } from '@/hooks/useCoworkSessions'
-import { useCoworkRun } from '@/hooks/useCoworkRun'
+import { useThreads } from '@/hooks/useThreads'
 import {
   AnimatedLucideIcon,
   type AnimatedLucideIconHandle,
@@ -18,13 +17,7 @@ type TabItem = {
   icon: LucideIcon
   preset: AnimatedLucidePreset
   isActive: boolean
-  onClick?: () => void
 }
-
-// The tab is the start page, like Home: it opens a fresh session rather than
-// landing on whichever one was viewed last. Sessions are picked from the list.
-const openCoworkStart = () =>
-  startNewSession(Object.keys(useCoworkRun.getState().runId))
 
 function NavTab({ tab }: { tab: TabItem }) {
   const iconRef = useRef<AnimatedLucideIconHandle>(null)
@@ -32,7 +25,6 @@ function NavTab({ tab }: { tab: TabItem }) {
   return (
     <Link
       to={tab.to}
-      onClick={tab.onClick}
       aria-current={tab.isActive ? 'page' : undefined}
       className={cn(
         'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium transition-colors',
@@ -58,7 +50,7 @@ function NavTab({ tab }: { tab: TabItem }) {
 
 export function NavTabs({ surfacePath }: { surfacePath: string }) {
   const { t } = useTranslation()
-  const { pathname } = useLocation()
+  const lastHomePath = useRef<string>(route.home)
 
   const isCowork = isCoworkRoute(surfacePath)
   // Home owns the chat surfaces (new chat, threads, projects); Cowork owns /cowork.
@@ -66,11 +58,19 @@ export function NavTabs({ surfacePath }: { surfacePath: string }) {
     surfacePath === route.home ||
     surfacePath.startsWith('/threads') ||
     surfacePath.startsWith('/project')
+  if (isHome) lastHomePath.current = surfacePath
+  const homePath = isHome ? surfacePath : lastHomePath.current
+  const threadId = homePath.startsWith('/threads/')
+    ? homePath.slice('/threads/'.length)
+    : undefined
+  const threadExists = useThreads(
+    (s) => !threadId || Boolean(s.threads[threadId])
+  )
 
   const tabs: TabItem[] = [
     {
       label: t('common:home'),
-      to: route.home,
+      to: threadExists ? homePath : route.home,
       icon: HomeIcon,
       preset: 'home',
       isActive: isHome,
@@ -81,10 +81,6 @@ export function NavTabs({ surfacePath }: { surfacePath: string }) {
       icon: Handshake,
       preset: 'handshake',
       isActive: isCowork,
-      onClick:
-        isCowork && pathname.startsWith('/settings')
-          ? undefined
-          : openCoworkStart,
     },
   ]
 

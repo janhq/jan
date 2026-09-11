@@ -35,14 +35,6 @@ vi.mock('@tanstack/react-router', () => ({
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
-vi.mock('@/hooks/useCoworkSessions', () => ({
-  startNewSession: () => {
-    navigation.session = 'new-session'
-  },
-}))
-vi.mock('@/hooks/useCoworkRun', () => ({
-  useCoworkRun: { getState: () => ({ runId: {} }) },
-}))
 vi.mock('@/hooks/useLeftPanel', () => ({
   useLeftPanel: () => ({ open: true }),
 }))
@@ -92,7 +84,7 @@ it('keeps Cowork navigation across Settings pages and returns without starting a
   expect(navigation.session).toBe('existing-session')
 })
 
-it('keeps Home navigation for Settings opened from a chat', () => {
+it('keeps the current Cowork session when switching from a chat', () => {
   navigation.pathname = '/threads/chat-1'
   const view = render(<LeftSidebar />)
   navigation.pathname = '/settings/general'
@@ -103,5 +95,5 @@ it('keeps Home navigation for Settings opened from a chat', () => {
     'page'
   )
   fireEvent.click(screen.getByRole('link', { name: 'common:cowork' }))
-  expect(navigation.session).toBe('new-session')
+  expect(navigation.session).toBe('existing-session')
 })
