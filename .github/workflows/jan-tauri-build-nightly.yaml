@@ -25,6 +25,7 @@ on:
       - '.github/workflows/template-get-update-version.yml'
       - '.github/workflows/template-tauri-build-macos.yml'
       - '.github/workflows/template-tauri-build-windows-x64.yml'
+      - '.github/workflows/template-tauri-build-windows-arm64.yml'
       - '.github/workflows/template-tauri-build-linux-x64.yml'
       - '.github/workflows/template-noti-discord-and-update-url-readme.yml'
       - 'src-tauri/**'
@@ -114,6 +115,18 @@ jobs:
       cortex_api_port: '39261'
       disable_updater: ${{ github.event.inputs.disable_updater == 'true' }}
       engine_variant: cuda13-vulkan
+  build-windows-arm64:
+    uses: ./.github/workflows/template-tauri-build-windows-arm64.yml
+    secrets: inherit
+    needs: [get-update-version, set-public-provider]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    with:
+      ref: ${{ needs.set-public-provider.outputs.ref }}
+      public_provider: ${{ needs.set-public-provider.outputs.public_provider }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: nightly
+      engine_variant: cuda13-vulkan
+      vulkan_fallback: '1'
 
   sync-temp-to-latest:
     needs:
@@ -121,11 +134,27 @@ jobs:
         get-update-version,
         set-public-provider,
         build-windows-x64,
+        build-windows-arm64,
         build-linux-x64,
         build-macos,
       ]
     runs-on: ubuntu-22.04
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # build-windows-arm64 does not gate success: a failed ARM leg still publishes
+    # for x64, linux and macOS. It does still gate *scheduling* -- `needs` waits
+    # regardless of `if` -- so a hung ARM build delays the manifest by its 180m
+    # timeout.
+    #
+    # Every other dependency is re-asserted by hand: a status function anywhere in
+    # `if` drops the implicit success() gate for the whole `needs` set, not just
+    # for the job being excused.
+    if: >-
+      !cancelled()
+      && needs.get-update-version.result == 'success'
+      && needs.set-public-provider.result == 'success'
+      && needs.build-windows-x64.result == 'success'
+      && needs.build-linux-x64.result == 'success'
+      && needs.build-macos.result == 'success'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -140,6 +169,11 @@ jobs:
           LINUX_URL="https://delta.jan.ai/nightly/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
           WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          # Empty when that leg failed or was skipped; the key is then left out
+          # rather than written blank, which the updater would find and fail on.
+          WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.outputs.WIN_SIG }}"
+          WINDOWS_ARM_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-arm64.outputs.FILE_NAME }}"
+          [ -n "$WINDOWS_ARM_SIGNATURE" ] || echo "::warning::no ARM64 build this run -- publishing latest.json without windows-aarch64"
           DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
           DARWIN_URL="https://delta.jan.ai/nightly/Jan-nightly_${{ needs.get-update-version.outputs.new_version }}.app.tar.gz"
 
@@ -149,6 +183,8 @@ jobs:
             --arg linux_url "$LINUX_URL" \
             --arg windows_signature "$WINDOWS_SIGNATURE" \
             --arg windows_url "$WINDOWS_URL" \
+            --arg windows_arm_signature "$WINDOWS_ARM_SIGNATURE" \
+            --arg windows_arm_url "$WINDOWS_ARM_URL" \
             --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
             --arg darwin_arm_url "$DARWIN_URL" \
             --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
@@ -159,6 +195,10 @@ jobs:
               | .platforms["linux-x86_64"].url = $linux_url
               | .platforms["windows-x86_64"].signature = $windows_signature
               | .platforms["windows-x86_64"].url = $windows_url
+              | if $windows_arm_signature == "" then . else
+                  .platforms["windows-aarch64"].signature = $windows_arm_signature
+                  | .platforms["windows-aarch64"].url = $windows_arm_url
+                end
               | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
               | .platforms["darwin-aarch64"].url = $darwin_arm_url
               | .platforms["darwin-x86_64"].signature = $darwin_amd_signature

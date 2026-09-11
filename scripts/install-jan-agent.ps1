@@ -33,7 +33,13 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
 $BinaryName = 'jan.exe'
-$PlatformKey = 'windows-x86_64'
+# ARCHITEW6432 is what an emulated process sees; PROCESSOR_ARCHITECTURE alone
+# would report AMD64 for an x64 PowerShell on an ARM64 machine.
+$NativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+# Native first, then x86_64 under emulation: it is all that pre-ARM64 versions,
+# or a nightly whose ARM leg failed, have to offer.
+$PlatformKeys = if ($NativeArch -eq 'ARM64') { @('windows-aarch64', 'windows-x86_64') }
+                else { @('windows-x86_64') }
 
 if (-not $Dir) {
   if ($env:JAN_INSTALL_DIR) {
@@ -45,9 +51,6 @@ if (-not $Dir) {
 
 if ([Environment]::Is64BitOperatingSystem -eq $false) {
   throw 'no published build for 32-bit Windows; use -Source'
-}
-if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') {
-  Write-Warning 'no native ARM64 build is published; the x86_64 build runs under emulation'
 }
 
 # PowerShell 5.1 defaults to TLS 1.0, which delta.jan.ai rejects.
@@ -130,7 +133,16 @@ function Install-Published {
   $resolved = $Version
 
   if ($resolved) {
-    $url = "$base/jan-agent-$PlatformKey-$resolved.zip"
+    foreach ($k in $PlatformKeys) {
+      $candidate = "$base/jan-agent-$k-$resolved.zip"
+      try {
+        Invoke-WebRequest -Uri $candidate -Method Head -UseBasicParsing | Out-Null
+        $url = $candidate
+        if ($k -ne $PlatformKeys[0]) { Write-Warning "no $($PlatformKeys[0]) build of $resolved; using $k under emulation" }
+        break
+      } catch { }
+    }
+    if (-not $url) { throw "no $Channel build of $resolved for $($PlatformKeys -join ' or ')" }
   } else {
     Write-Host "resolving the latest $Channel build"
     try {
@@ -139,9 +151,17 @@ function Install-Published {
       throw "cannot fetch $base/manifest.json : $($_.Exception.Message)"
     }
     $resolved = $manifest.version
-    $entry = $manifest.platforms.$PlatformKey
-    if (-not $entry -or -not $entry.url) {
-      throw "the $Channel manifest has no build for $PlatformKey"
+    $entry = $null
+    foreach ($k in $PlatformKeys) {
+      $candidate = $manifest.platforms.$k
+      if ($candidate -and $candidate.url) {
+        $entry = $candidate
+        if ($k -ne $PlatformKeys[0]) { Write-Warning "no native $($PlatformKeys[0]) build published; using $k under emulation" }
+        break
+      }
+    }
+    if (-not $entry) {
+      throw "the $Channel manifest has no build for $($PlatformKeys -join ' or ')"
     }
     $url = $entry.url
     if ($entry.PSObject.Properties.Name -contains 'sha256') { $expected = $entry.sha256 }

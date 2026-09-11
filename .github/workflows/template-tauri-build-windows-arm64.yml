@@ -1,0 +1,589 @@
+# Windows ARM64 desktop build.
+#
+# Kept separate from the x64 template: the CUDA pool, MSVC resolution and NSIS
+# retarget below are ~200 lines x64 has no use for. Merge once ARM64 is green.
+#
+# Publishes like x64 -- release asset, S3, and the windows-aarch64 key its
+# FILE_NAME/WIN_SIG outputs feed into latest.json.
+name: tauri-build-windows-arm64
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+        default: 'refs/heads/main'
+      public_provider:
+        required: true
+        type: string
+        default: none
+        description: 'none: build only, github: build and publish to github, aws s3: build and publish to aws s3'
+      new_version:
+        required: true
+        type: string
+        default: ''
+      upload_url:
+        required: false
+        type: string
+        default: ''
+      channel:
+        required: true
+        type: string
+        default: 'nightly'
+        description: 'The channel to use for this job'
+      engine_variant:
+        required: false
+        type: string
+        default: 'cuda13'
+        description: >
+          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
+          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
+      vulkan_fallback:
+        required: false
+        type: string
+        default: '0'
+        description: >
+          JAN_ENGINE_VULKAN_FALLBACK. Defaults to 1 in the Makefile, which adds
+          the vulkan feature -- and the SDK requirement -- to any vendor build
+          whether or not the variant named it. Set to 1 with cuda13-vulkan.
+    secrets:
+      DELTA_AWS_S3_BUCKET_NAME:
+        required: false
+      DELTA_AWS_ACCESS_KEY_ID:
+        required: false
+      DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
+        required: false
+      AZURE_KEY_VAULT_URI:
+        required: false
+      AZURE_CLIENT_ID:
+        required: false
+      AZURE_TENANT_ID:
+        required: false
+      AZURE_CLIENT_SECRET:
+        required: false
+      AZURE_CERT_NAME:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY:
+        required: false
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+        required: false
+      JAN_SIGNING_KEY:
+        required: false
+      POSTHOG_KEY:
+        required: false
+      POSTHOG_HOST:
+        required: false
+    outputs:
+      WIN_SIG:
+        value: ${{ jobs.build-windows-arm64.outputs.WIN_SIG }}
+      FILE_NAME:
+        value: ${{ jobs.build-windows-arm64.outputs.FILE_NAME }}
+
+  # Standalone loop for a 3-hour build. `ref` and `public_provider` are left
+  # undeclared: unset, checkout takes the dispatched branch and every publish
+  # step's `if:` is false, so a manual run builds without publishing.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'stable / beta / nightly'
+        required: false
+        type: string
+        default: 'nightly'
+      new_version:
+        description: 'Version to stamp into the app'
+        required: false
+        type: string
+        default: '0.0.0'
+      engine_variant:
+        required: false
+        type: string
+        default: 'cuda13'
+        description: >
+          JAN_ENGINE_VARIANT. `cuda13` is the minimum that exercises CUDA;
+          `cuda13-vulkan` adds the fallback for GPUs with no CUDA runtime.
+      vulkan_fallback:
+        required: false
+        type: string
+        default: '0'
+        description: >
+          JAN_ENGINE_VULKAN_FALLBACK. Defaults to 1 in the Makefile, which adds
+          the vulkan feature -- and the SDK requirement -- to any vendor build
+          whether or not the variant named it. Set to 1 with cuda13-vulkan.
+
+  # Pre-merge hook: workflow_dispatch is not offered until the file is on the
+  # default branch, so until this merges a push is the only way to exercise it.
+  # Drop this once it lands there.
+  push:
+    branches: ['feat/windows-arm64']
+
+# Don't spend 3h of ARM runner on a superseded commit, and concurrent CUDA pulls
+# get throttled. Keyed on the caller's ref so nightly and a feature branch don't
+# evict each other. x64 needs none of this; only this one takes pushes.
+concurrency:
+  group: tauri-win-arm64-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # `||` defaults because a push carries no inputs at all.
+  CHANNEL: ${{ inputs.channel || 'nightly' }}
+  NEW_VERSION: ${{ inputs.new_version || '0.0.0' }}
+  JAN_ENGINE_VARIANT: ${{ inputs.engine_variant || 'cuda13' }}
+  JAN_ENGINE_VULKAN_FALLBACK: ${{ inputs.vulkan_fallback || '0' }}
+  CUDA_SHORT: '13.4'
+  # Redistributable archives, as upstream llama.cpp provisions this same
+  # toolkit (.github/actions/windows-setup-cuda). The 3.8 GB installer spends
+  # its time on the display driver and Nsight, neither of which a build needs,
+  # and hung past 38 minutes on a runner with no NVIDIA GPU.
+  CUDA_POOL: 'https://packages.nvidia.com/bin-archive/pool/windows-arm64/5B515474-7E78-11F1-8656-C51E4F4B317F'
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+    outputs:
+      WIN_SIG: ${{ steps.metadata.outputs.WIN_SIG }}
+      FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Getting the repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Replace Icons for Beta Build
+        if: env.CHANNEL != 'stable'
+        shell: bash
+        run: cp ".github/scripts/icon-${CHANNEL}.png" src-tauri/icons/icon.png
+
+      - name: Installing node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Install jq
+        uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - name: Install ctoml
+        run: cargo install ctoml
+
+      # build.rs reads VCToolsInstallDir to find bin/Host*/arm64/cl.exe; the
+      # image only exports it inside a developer prompt.
+      - name: Resolve the MSVC ARM64 toolset
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsRoot = & $vswhere -products * -latest -property installationPath | Select-Object -First 1
+          if (-not $vsRoot) { throw 'vswhere found no Visual Studio installation' }
+          $ver = (Get-Content "$vsRoot\VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt" -Raw).Trim()
+          $vcTools = "$vsRoot\VC\Tools\MSVC\$ver"
+          $found = $false
+          foreach ($host_ in 'Hostarm64', 'Hostx64') {
+            $cl = "$vcTools\bin\$host_\arm64\cl.exe"
+            if (Test-Path $cl) { Write-Host "ARM64 host compiler: $cl"; $found = $true; break }
+          }
+          if (-not $found) { throw "no arm64 cl.exe under $vcTools\bin\Host*\arm64" }
+          "VCToolsInstallDir=$vcTools" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          # Two Windows SDK tools, searched separately because the ARM64 bin
+          # ships a subset and they land in different arch directories:
+          #   mt       cmake shells out to it from vs_link_exe to embed the
+          #            manifest. It looks for that exact name, so LLVM's
+          #            llvm-mt.exe does not count; without it CMAKE_MT is empty
+          #            and every executable link fails.
+          #   signtool tauri needs it to *verify* existing signatures, which a
+          #            custom signCommand does not replace.
+          $kits = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $versions = @()
+          if (Test-Path $kits) {
+            $versions = Get-ChildItem $kits -Directory |
+              Where-Object { $_.Name -as [version] } |
+              Sort-Object { [version]$_.Name } -Descending
+          }
+          # arm64 first: native beats emulated x64.
+          function Find-SdkTool([string]$exe) {
+            foreach ($ver in $versions) {
+              foreach ($a in 'arm64', 'x64', 'x86') {
+                $p = Join-Path (Join-Path $ver.FullName $a) $exe
+                if (Test-Path $p) { return $p }
+              }
+            }
+            return $null
+          }
+
+          $mt = Find-SdkTool 'mt.exe'
+          if (-not $mt) { throw "no mt.exe under $kits\<version>\{arm64,x64,x86}" }
+          Write-Host "mt:       $mt"
+          Split-Path $mt -Parent | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+          # tauri derives the directory from the *native* processor arch, so
+          # here it only ever looks in arm64. This env var bypasses that.
+          $signtool = Find-SdkTool 'signtool.exe'
+          if (-not $signtool) { throw "no signtool.exe under $kits\<version>\{arm64,x64,x86}" }
+          Write-Host "signtool: $signtool"
+          "TAURI_WINDOWS_SIGNTOOL_PATH=$signtool" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+      # All arm64: this is a native build, so nvcc is an ARM64 binary too.
+      # Upstream instead cross-compiles, pairing x86_64 host tools with arm64
+      # target libs -- the fallback if a native nvcc misbehaves, though it would
+      # also mean cross-compiling the app and relocating every output path.
+      #
+      # Pinned because this prerelease pool has no "latest" alias: an unpinned
+      # URL does not just drift, it 404s.
+      - name: Install the CUDA toolkit (ARM64)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $root = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v$env:CUDA_SHORT"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+
+          $archives = @(
+            'cuda_nvcc-windows-arm64-13.4.46-archive',
+            'cuda_crt-windows-arm64-13.4.46-archive',
+            'libnvvm-windows-arm64-13.4.46-archive',
+            'cuda_cudart-windows-arm64-13.4.46-archive',
+            'libcublas-windows-arm64-13.7.0.10-archive',
+            'cccl-windows-arm64-13.3.4.1.2-archive',
+            'cuda_nvtx-windows-arm64-13.4.46-archive',
+            'cuda_profiler_api-windows-arm64-13.4.46-archive'
+          )
+
+          # curl.exe over Invoke-WebRequest, which has no retry or resume: the pool
+          # throttles concurrent pulls and drops the connection mid-body, killing a
+          # 3h job at minute 3. curl is in System32; checked anyway so a missing one
+          # fails legibly.
+          if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
+            throw 'curl.exe not found; it is expected in System32 on this image'
+          }
+
+          $sw = [Diagnostics.Stopwatch]::StartNew()
+          $tmp = Join-Path $env:RUNNER_TEMP 'cuda'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $total = 0
+          foreach ($a in $archives) {
+            $zip = Join-Path $tmp "$a.zip"
+            # --retry-all-errors: plain --retry ignores a mid-body drop.
+            curl.exe -sS --fail --location --retry 5 --retry-all-errors `
+                     --retry-delay 5 --connect-timeout 30 --max-time 900 `
+                     -o $zip "$env:CUDA_POOL/$a.zip"
+            # Native exes do not trip $ErrorActionPreference; check by hand.
+            if ($LASTEXITCODE -ne 0) {
+              throw "$a.zip failed after 5 retries (curl exit $LASTEXITCODE)"
+            }
+            $total += (Get-Item $zip).Length
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            # Each unpacks to <name>/{bin,lib,include}; merge into one root,
+            # which is what CUDA_PATH must point at.
+            Copy-Item -Path (Join-Path $tmp "$a\*") -Destination $root -Recurse -Force
+          }
+          Write-Host ("Fetched {0:N0} MB and unpacked in {1:N1} min" -f ($total / 1MB), $sw.Elapsed.TotalMinutes)
+
+          "CUDA_PATH=$root" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "$root\bin"       | Out-File $env:GITHUB_PATH -Append -Encoding utf8
+
+          # Layout differs from the installer's and by arch, so print it.
+          foreach ($d in 'bin', 'lib', 'lib\arm64', 'lib\x64') {
+            $path = Join-Path $root $d
+            Write-Host "--- $path"
+            if (Test-Path $path) {
+              Get-ChildItem $path | Select-Object -ExpandProperty Name
+            } else { Write-Host '   (absent)' }
+          }
+
+          $nvcc = Get-ChildItem $root -Recurse -Filter 'nvcc.exe' | Select-Object -First 1
+          if (-not $nvcc) { throw 'nvcc.exe not found under the toolkit root' }
+          Write-Host "nvcc: $($nvcc.FullName)"
+          & $nvcc.FullName --version
+
+          foreach ($need in 'cudart.lib', 'cublas.lib', 'cublasLt.lib') {
+            if (-not (Get-ChildItem $root -Recurse -Filter $need -ErrorAction SilentlyContinue)) {
+              throw "missing $need -- the archive list is incomplete"
+            }
+          }
+
+      # LunarG's Windows ARM64 SDK is platform code `warm`; `windows` is x64.
+      - name: Provision the Vulkan SDK
+        if: contains(format('-{0}-', env.JAN_ENGINE_VARIANT), '-vulkan-') || env.JAN_ENGINE_VULKAN_FALLBACK == '1'
+        shell: bash
+        run: |
+          curl -fL --retry 5 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 30 --max-time 900 \
+            -o "$RUNNER_TEMP/vulkan-sdk.exe" \
+            https://sdk.lunarg.com/sdk/download/latest/warm/vulkan_sdk.exe
+          "$RUNNER_TEMP/vulkan-sdk.exe" --root 'C:\VulkanSDK' \
+            --accept-licenses --default-answer --confirm-command install
+          echo 'VULKAN_SDK=C:\VulkanSDK' >> "$GITHUB_ENV"
+          echo 'C:\VulkanSDK\Bin' >> "$GITHUB_PATH"
+
+      - name: Verify the engine toolchain
+        shell: bash
+        run: |
+          # mt included: without it every executable link fails, and it
+          # surfaces opaquely inside cmake's own compiler probe.
+          for tool in cmake ninja clang mt; do
+            command -v "$tool" >/dev/null 2>&1 || { echo "::error::$tool is not on PATH"; exit 1; }
+            echo "$tool -> $(command -v "$tool")"
+          done
+          nvcc --version
+          # Not on PATH; tauri reads it from the env. Checked here so a missing
+          # signtool fails in seconds rather than after the ~75
+          # minutes of compiling that precede bundling.
+          [ -x "$TAURI_WINDOWS_SIGNTOOL_PATH" ] || {
+            echo "::error::TAURI_WINDOWS_SIGNTOOL_PATH is not an executable: ${TAURI_WINDOWS_SIGNTOOL_PATH:-<unset>}"; exit 1;
+          }
+          echo "signtool -> $TAURI_WINDOWS_SIGNTOOL_PATH"
+
+          # download-bin.mjs names the sidecars from node's os.arch() while the NSIS
+          # retarget below assumes aarch64. An x64 node would mismatch, and not
+          # surface until bundling -- after the engine.
+          node_arch=$(node -p 'process.arch')
+          echo "node -> $node_arch"
+          [ "$node_arch" = "arm64" ] || {
+            echo "::error::node reports $node_arch, not arm64 -- the bun/uv sidecars would be named for the wrong target"; exit 1;
+          }
+
+      - name: Update app version and product name
+        shell: bash
+        run: |
+          jq --arg version "$NEW_VERSION" \
+             '.version = $version | .bundle.createUpdaterArtifacts = true' \
+             ./src-tauri/tauri.conf.json > /tmp/c.json
+          mv /tmp/c.json ./src-tauri/tauri.conf.json
+
+          jq '.bundle.targets = ["nsis"]
+              | .bundle.windows.nsis.template = "tauri.bundle.windows.nsis.template"
+              | .bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' \
+             ./src-tauri/tauri.windows.conf.json > /tmp/w.json
+          mv /tmp/w.json ./src-tauri/tauri.windows.conf.json
+
+          jq --arg version "$NEW_VERSION" '.version = $version' web-app/package.json > /tmp/p.json
+          mv /tmp/p.json web-app/package.json
+
+          for p in hardware llamacpp; do
+            jq --arg version "$NEW_VERSION" '.version = $version' \
+              "./src-tauri/plugins/tauri-plugin-$p/package.json" > /tmp/p.json
+            mv /tmp/p.json "./src-tauri/plugins/tauri-plugin-$p/package.json"
+            ctoml "./src-tauri/plugins/tauri-plugin-$p/Cargo.toml" package.version "$NEW_VERSION"
+          done
+          ctoml ./src-tauri/Cargo.toml package.version "$NEW_VERSION"
+
+          if [ "$CHANNEL" != "stable" ]; then
+            # Without this an arm64 nightly keeps tauri.conf.json's stable
+            # endpoints and checks the wrong manifest.
+            if [ "$CHANNEL" = "nightly" ]; then
+              jq --arg fallback "https://delta.jan.ai/$CHANNEL/latest.json" \
+                 '.plugins.updater.endpoints = ["https://apps-nightly.jan.ai/update-check", $fallback]' \
+                 ./src-tauri/tauri.conf.json > /tmp/c.json
+            else
+              jq --arg fallback "https://delta.jan.ai/$CHANNEL/latest.json" \
+                 '.plugins.updater.endpoints = [$fallback]' \
+                 ./src-tauri/tauri.conf.json > /tmp/c.json
+            fi
+            mv /tmp/c.json ./src-tauri/tauri.conf.json
+
+            jq --arg name "Jan-$CHANNEL" '.productName = $name' ./src-tauri/tauri.conf.json > /tmp/c.json
+            mv /tmp/c.json ./src-tauri/tauri.conf.json
+            chmod +x .github/scripts/rename-tauri-app.sh .github/scripts/rename-workspace.sh
+            .github/scripts/rename-tauri-app.sh ./src-tauri/tauri.conf.json "$CHANNEL"
+            .github/scripts/rename-workspace.sh ./package.json "$CHANNEL"
+            ctoml ./src-tauri/Cargo.toml package.name "Jan-$CHANNEL"
+          fi
+
+      # The checked-in NSIS "template" is a rendered Handlebars dump: every
+      # value is literal except the placeholders the x64 template substitutes
+      # (`jan_workspace` and the product names), so the arch and the sidecar
+      # filenames are rewritten here rather than in the file, which the x64
+      # build shares.
+      - name: Retarget the NSIS template for ARM64
+        shell: pwsh
+        run: |
+          $t = 'src-tauri/tauri.bundle.windows.nsis.template'
+          $c = Get-Content $t -Raw
+
+          # .Replace, not -replace: regex would eat the backslashes.
+          $c = $c.Replace('jan_workspace', $env:GITHUB_WORKSPACE)
+          $c = $c.Replace('!define ARCH "x64"', '!define ARCH "arm64"')
+          $c = $c.Replace('\nsis\x64\', '\nsis\arm64\')
+          # Sidecars are named by target triple, so they land as aarch64-*.
+          # Without this NSIS fails late with "could not find file".
+          $c = $c.Replace('x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc')
+          # VCREDIST_URL embeds the filename, so one replace covers both defines.
+          # Left unpatched, an ARM64 install fetches and runs the x64 redist.
+          $c = $c.Replace('vc_redist.x64.exe', 'vc_redist.arm64.exe')
+
+          # And the detection, the half that bites: an ARM64 machine usually has
+          # the x64 redist, so probing x64 keys skips installing the ARM64 one the
+          # app links against. Guessing wrong the other way just re-runs an
+          # idempotent installer (exit 1638, already handled).
+          $c = $c.Replace('\VC\Runtimes\x64', '\VC\Runtimes\arm64')
+          $c = $c.Replace('VC_RuntimeMinimumVSU_amd64', 'VC_RuntimeMinimumVSU_arm64')
+
+          $base, $build = $env:NEW_VERSION, $env:NEW_VERSION
+          if ($env:NEW_VERSION -match '^([^-]+)-(?:rc(\d+)-beta|(.+))$') {
+            $base = $Matches[1]
+            $build = "$base." + $(if ($Matches[2]) { $Matches[2] } else { $Matches[3] })
+          } else {
+            $build = "$base.0"
+          }
+          $c = $c.Replace('jan_version', $base).Replace('jan_build', $build)
+
+          if ($env:CHANNEL -eq 'stable') {
+            $c = $c.Replace('jan_productname', 'Jan').
+                    Replace('jan_mainbinaryname', 'Jan-Desktop').
+                    Replace('jan_bundleid', 'jan.ai.app')
+          } else {
+            $c = $c.Replace('jan_productname', "Jan-$env:CHANNEL").
+                    Replace('jan_mainbinaryname', "Jan-Desktop-$env:CHANNEL").
+                    Replace('jan_bundleid', "jan-$env:CHANNEL.ai.app")
+          }
+
+          Set-Content -Path $t -Value $c -NoNewline
+          Select-String -Path $t -Pattern 'ARCH|aarch64|jan_' | Select-Object -First 12
+
+      # Only src-tauri, which covers the two release compiles that follow the
+      # engine: `build:cli` and `tauri build`. The llamacpp plugin has its own
+      # target dir -- these are separate crates, not one workspace -- and it is
+      # deliberately left uncached: its OUT_DIR holds the whole cmake tree with
+      # ggml-cuda built for seven architectures, which would swallow the 10 GB
+      # per-repo cache budget on its own.
+      #
+      # Does nothing for a cold first run; the payoff is every run after it.
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: src-tauri
+          # This job has failed in packaging after an hour of compiling more
+          # than once. Saving anyway keeps the next attempt cheap.
+          cache-on-failure: true
+
+      - name: Install AzureSignTool
+        run: dotnet tool install --global --version 6.0.0 AzureSignTool
+
+      - name: Config Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn config set -H enableImmutableInstalls false
+
+      - name: Build app
+        shell: bash
+        run: make build
+        env:
+          AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_CERT_NAME: ${{ secrets.AZURE_CERT_NAME }}
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-windows-arm64
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
+      # `make build` succeeding is not the same as having produced an ARM64
+      # binary with a CUDA backend beside it.
+      - name: Verify the artifacts
+        shell: pwsh
+        run: |
+          $bin = 'src-tauri/resources/bin'
+          $worker = Join-Path $bin 'jan-llama-worker.exe'
+          if (-not (Test-Path $worker)) { throw "$worker missing" }
+
+          $vc = $env:VCToolsInstallDir
+          $dumpbin = Join-Path $vc 'bin\Hostarm64\arm64\dumpbin.exe'
+          if (-not (Test-Path $dumpbin)) { $dumpbin = Join-Path $vc 'bin\Hostx64\x64\dumpbin.exe' }
+
+          $bad = @()
+          foreach ($f in @($worker) + @(Get-ChildItem $bin -Filter 'ggml*.dll')) {
+            $p = if ($f -is [string]) { $f } else { $f.FullName }
+            $h = & $dumpbin /headers $p 2>&1 | Out-String
+            $arm = $h -match 'AA64|ARM64'
+            Write-Host ("{0,-46} {1}" -f (Split-Path $p -Leaf), $(if ($arm) { 'ARM64' } else { 'NOT ARM64' }))
+            if (-not $arm) { $bad += (Split-Path $p -Leaf) }
+          }
+          if ($bad) { throw "not ARM64: $($bad -join ', ')" }
+
+          $backends = Get-ChildItem $bin -Filter 'ggml-*.dll' |
+            Where-Object { $_.Name -notmatch 'ggml-base' }
+          if (-not $backends) { throw 'no ggml backend modules staged' }
+          Write-Host "backends: $($backends.Name -join ', ')"
+          if (-not ($backends.Name -contains 'ggml-cuda.dll')) {
+            throw 'ggml-cuda.dll missing -- the CUDA backend did not build'
+          }
+
+          Get-ChildItem -Path src-tauri/target/release/bundle -Recurse -Include *.exe |
+            ForEach-Object { Write-Host "bundle: $($_.FullName)" }
+
+      # Reconstructed rather than globbed, because latest.json needs the exact
+      # name too. `arm64` is the bundler's own token for AArch64, so this is the
+      # x64 template's step with that one substitution.
+      - name: Set output filename for windows
+        id: metadata
+        shell: bash
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+          if [ "$CHANNEL" != "stable" ]; then
+            FILE_NAME="Jan-${CHANNEL}_${NEW_VERSION}_arm64-setup.exe"
+          else
+            FILE_NAME="Jan_${NEW_VERSION}_arm64-setup.exe"
+          fi
+
+          # Fails here rather than in the updater, where a missing signature
+          # surfaces to users as a download error.
+          [ -f "$FILE_NAME" ]     || { echo "::error::$FILE_NAME not in $(pwd)"; ls -la; exit 1; }
+          [ -s "$FILE_NAME.sig" ] || { echo "::error::$FILE_NAME.sig missing or empty -- createUpdaterArtifacts or the signing key did not take"; exit 1; }
+
+          {
+            echo "FILE_NAME=$FILE_NAME"
+            echo "WIN_SIG=$(cat "$FILE_NAME.sig")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload NSIS Installer Artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: jan-windows-arm64-exe-${{ env.NEW_VERSION }}
+          path: |
+            ./src-tauri/target/release/bundle/nsis/*.exe
+            ./src-tauri/target/release/bundle/nsis/*.sig
+          if-no-files-found: error
+
+      ## Upload to s3 for nightly and beta
+      - name: upload to aws s3 if public provider is aws
+        shell: bash
+        if: inputs.public_provider == 'aws-s3' || inputs.channel == 'beta'
+        run: |
+          cd ./src-tauri/target/release/bundle/nsis
+
+          # Upload for tauri updater
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }} s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}
+          aws s3 cp ./${{ steps.metadata.outputs.FILE_NAME }}.sig s3://${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}/temp-${{ inputs.channel }}/${{ steps.metadata.outputs.FILE_NAME }}.sig
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Upload release assert if public provider is github
+        if: inputs.public_provider == 'github'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
+        with:
+          upload_url: ${{ inputs.upload_url }}
+          asset_path: ./src-tauri/target/release/bundle/nsis/${{ steps.metadata.outputs.FILE_NAME }}
+          asset_name: ${{ steps.metadata.outputs.FILE_NAME }}
+          asset_content_type: application/octet-stream
