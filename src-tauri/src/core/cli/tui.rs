@@ -1004,8 +1004,16 @@ impl ToolGroup {
             }
             .into();
         }
+        // An aborted single call that never resolved keeps its present-tense
+        // `activity()` label: `first_done` ("Ran: cargo build") beside the yellow
+        // interrupted mark would read as completed. Mirrors the standalone
+        // edit/write orphan path (resolve_orphan_tool_rows).
         let label = if self.nouns.len() <= 1 {
-            self.first_done.clone()
+            if state == GroupRow::Aborted && self.is_running() {
+                self.activity()
+            } else {
+                self.first_done.clone()
+            }
         } else {
             group_summary(&self.nouns)
         };
@@ -2723,10 +2731,17 @@ impl App {
         // How long this turn's reasoning took, for the `Thought for Ns` label:
         // an open block being closed by this flush (a mid-block tool call) is
         // still timing on `thinking_since`; one that closed earlier (prose
-        // arrived) stashed its elapsed in `thought_for`. `thought_for` is left
-        // for the header badge; only `thinking_since` is cleared here.
-        let reasoning_dur = self.thinking_since.map(|s| s.elapsed()).or(self.thought_for);
-        self.thinking_since = None;
+        // arrived) stashed its elapsed in `thought_for`.
+        let open = self.thinking_since.take();
+        let reasoning_dur = open.map(|s| s.elapsed()).or(self.thought_for);
+        // A block still open at flush time is closed by this flush (a reason ->
+        // tool turn): stamp the header badge state so it shows `[thought for Ns]`
+        // exactly as a reason -> answer turn does, where a content Token stamps
+        // it. A block that closed earlier already stamped itself.
+        if let Some(started) = open {
+            self.thought_for = Some(started.elapsed());
+            self.thought_for_since = Some(Instant::now());
+        }
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only turn, so silent consecutive tool calls keep folding.
         if !assistant_has_content(&prose, &segs) {
@@ -2755,7 +2770,17 @@ impl App {
         segs: &[ReasoningSeg],
         reasoning_dur: Option<Duration>,
     ) {
-        for (reasoning, seg) in assistant_runs(prose, segs) {
+        let runs = assistant_runs(prose, segs);
+        // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
+        // when the turn has one reasoning block; stamping it on each of several
+        // would misreport all but one (per-block timing is not tracked). With
+        // more than one, they fall back to a plain `Thought`.
+        let single_reasoning = runs
+            .iter()
+            .filter(|(reasoning, seg)| *reasoning && !seg.trim().is_empty())
+            .count()
+            == 1;
+        for (reasoning, seg) in runs {
             // Only answer prose can carry an injected `<system>` block; stripping
             // per run rather than over the whole turn keeps the reasoning
             // offsets meaningful.
@@ -2778,7 +2803,8 @@ impl App {
                 if self.show_reasoning {
                     self.transcript.extend(detail.into_iter().map(Row::line));
                 } else {
-                    self.push(reasoning_summary_row(reasoning_dur));
+                    let dur = single_reasoning.then_some(reasoning_dur).flatten();
+                    self.push(reasoning_summary_row(dur));
                     let idx = self.transcript.len() - 1;
                     self.reasoning_blocks.push(ReasoningBlock { idx, detail });
                 }
@@ -2921,31 +2947,31 @@ impl App {
         runs
     }
 
-    /// The current turn's *settled* steps, folded behind the live frontier so the
-    /// condensed view shows only the step in flight. The settled steps are the
-    /// reasoning-summary and tool-group rows after the last answer that are not
-    /// the running box. Folds whenever the run is still live: while a step is
-    /// mid-flight (a running command, a tool call typing its args, or streaming
-    /// reasoning/answer) *and* in the gap between one step finishing and the next
-    /// starting -- that gap is what left a whole run of finished steps rendered
-    /// during streaming. `None` once the run is idle with nothing streaming, or
-    /// with nothing settled to fold yet. A continuing frontier folds even a lone
-    /// step; a bare gap or a streaming answer needs 2+ (matching the finished
-    /// fold) so a single-step turn does not fold then un-fold as it wraps up.
+    /// The live run's *settled* steps, folded behind one header so the condensed
+    /// view shows only the step in flight. Settled steps are the reasoning-summary
+    /// and tool-group rows after the last answer that are not the running box.
+    ///
+    /// The fold is stable for the whole run: it depends only on the run being live
+    /// (`Status::Running`) and on how many settled steps exist -- never on a
+    /// transient frontier or a per-event marker -- so the header cannot toggle
+    /// open as one step hands off to the next, in the gap before a step's content
+    /// arrives, or when a background (monitor/subagent/notice) event lands. The
+    /// frontier below the header is the only moving part. Gating on status also
+    /// means the fold ends the instant the run does: `draw` never gets an animated
+    /// header over an idle transcript, and the committed `trace_runs` fold (static,
+    /// past-tense) takes over the same rows, so nothing moves on wrap-up.
+    ///
+    /// Returns `None` until two settled steps exist: a lone step is already one
+    /// line, so a header would save no space and only read as "1 step".
     fn active_fold(&self) -> Option<TraceRun> {
+        if self.status != Status::Running {
+            return None;
+        }
         let running = self
             .tool_group
             .as_ref()
             .filter(|g| g.is_running())
             .map(|g| g.idx);
-        let starting = !self.starting.is_empty();
-        let reasoning_frontier = self.reasoning_open() || !self.reasoning_segs.is_empty();
-        let answer_frontier = !reasoning_frontier && has_answer_text(&self.assistant_buf);
-        let continuing = running.is_some() || starting || reasoning_frontier;
-        let run_active = self.status == Status::Running;
-        if !continuing && !answer_frontier && !run_active {
-            return None;
-        }
         let last_answer = self.last_answer_idx();
         let mut settled: Vec<(usize, bool)> = Vec::new();
         for g in &self.groups {
@@ -2954,20 +2980,19 @@ impl App {
         for r in &self.reasoning_blocks {
             settled.push((r.idx, false));
         }
-        // A finished-but-not-yet-closed command is a settled prior step too once
-        // the frontier has moved past it (reasoning is streaming below).
+        // A finished-but-not-yet-closed command is a settled prior step too.
         if let Some(g) = &self.tool_group {
             if !g.is_running() {
                 settled.push((g.idx, true));
             }
         }
         settled.retain(|(i, _)| last_answer.is_none_or(|a| *i > a) && Some(*i) != running);
-        let min_steps = if continuing { 1 } else { 2 };
-        if settled.len() < min_steps {
+        if settled.len() < 2 {
             return None;
         }
         settled.sort_by_key(|(i, _)| *i);
-        let tool_ran = running.is_some() || starting || settled.iter().any(|(_, t)| *t);
+        let tool_ran =
+            running.is_some() || !self.starting.is_empty() || settled.iter().any(|(_, t)| *t);
         Some(TraceRun {
             start: settled[0].0,
             end: settled.last().unwrap().0,
@@ -7208,10 +7233,11 @@ fn trace_header_line(run: &TraceRun, active: bool, frame: &str) -> Line<'static>
         let verb = if run.tool_ran { "Worked" } else { "Thought" };
         ("▸ ".to_string(), verb)
     };
+    let unit = if run.steps == 1 { "step" } else { "steps" };
     Line::from(vec![
         Span::styled(marker, Style::new().cyan()),
         Span::styled(
-            format!("{verb} · {} steps", run.steps),
+            format!("{verb} · {} {unit}", run.steps),
             Style::new().cyan().dim(),
         ),
     ])
@@ -19466,6 +19492,69 @@ mod tests {
         );
     }
 
+    /// A reason -> tool turn (the reasoning block is closed by a tool call's
+    /// flush, not by a content token) still shows `[thought for Ns]` in the
+    /// header, exactly as a reason -> answer turn does. Before, `flush_assistant`
+    /// closed the block without stamping the badge state, so the header jumped
+    /// straight to [working] on this path alone.
+    #[test]
+    fn reason_then_tool_turn_shows_thought_for_badge() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Native reasoning streams (open block) -> [thinking].
+        app.apply(StreamEvent::Reasoning {
+            text: "planning the edit".into(),
+        });
+        assert!(render(&mut app).contains("[thinking]"), "thinking while reasoning");
+        // A tool call (no answer prose) closes the block via flush_assistant.
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let after = render(&mut app);
+        assert!(
+            after.contains("[thought for"),
+            "reason -> tool turn must keep the thought-for badge: {after}"
+        );
+    }
+
+    /// Several reasoning blocks in one turn must not all show the same turn-wide
+    /// duration: per-block timing is not tracked, so each falls back to a plain
+    /// `Thought` rather than stamping the total on every one.
+    #[test]
+    fn multiple_reasoning_blocks_drop_the_shared_duration() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>first thought</think>one<think>second thought</think>two".into(),
+        });
+        // Force a measurable duration so a single block would read "Thought for Ns".
+        app.thinking_since =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        app.flush_assistant();
+        let text = transcript_text(&app);
+        assert!(text.contains("Thought"), "reasoning summaries present: {text}");
+        assert!(
+            !text.contains("Thought for"),
+            "a shared duration was stamped on multiple blocks: {text}"
+        );
+    }
+
     #[test]
     fn expanded_reasoning_renders_full_detail_in_draw() {
         use ratatui::{backend::TestBackend, Terminal};
@@ -25654,6 +25743,12 @@ mod tests {
             "a cancelled command must not read as succeeded: {row}"
         );
         assert!(row.contains("○"), "no interrupted marker: {row}");
+        // Present tense beside the interrupted mark: `Ran: sleep 300` would read
+        // as completed, matching the standalone edit/write orphan path.
+        assert!(
+            row.contains("Executing") && !row.contains("Ran"),
+            "interrupted command reads as completed: {row}"
+        );
     }
 
     #[test]
@@ -26607,6 +26702,7 @@ mod tests {
     #[test]
     fn the_active_trace_folds_to_a_live_header() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         // reasoning, tool, reasoning, then a running tool -- three settled
         // members (two reasoning blocks + one closed group) with no answer yet.
         app.apply(StreamEvent::Token { text: "<think>first</think>".into() });
@@ -26640,12 +26736,14 @@ mod tests {
         assert!(live.contains("$ cargo test"), "current step shows: {live}");
     }
 
-    /// The reported case: a just-finished command must fold as soon as reasoning
-    /// starts streaming after it, so the reasoning stands alone as the current
-    /// step rather than sitting under the finished command's row.
+    /// A lone settled step is not worth a fold header: it is already one line, so
+    /// a header saves no space, reads as "1 step", and would then un-fold on
+    /// wrap-up (the committed trace fold needs 2+ too). It stays visible beside
+    /// the current step instead. Only a second settled step earns the fold.
     #[test]
-    fn a_just_finished_tool_folds_when_reasoning_follows() {
+    fn a_lone_finished_tool_is_not_folded() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "here goes".into() });
         app.flush_assistant(); // an answer, so what follows is a fresh active run
         app.apply(StreamEvent::ToolCall {
@@ -26659,14 +26757,13 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        // Reasoning now streams -- the frontier moves past the finished command.
+        // Reasoning now streams: one settled tool + the current reasoning step.
         app.apply(StreamEvent::Token { text: "<think>analyzing the diff".into() });
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        assert!(live.contains("Working \u{b7} 1 step"), "the finished tool folds: {live}");
-        assert!(!live.contains("$ git diff"), "the command row is gone: {live}");
-        assert!(!live.contains("Ran"), "no lingering ran row: {live}");
-        assert!(live.contains("analyzing the diff"), "the reasoning stands alone: {live}");
+        assert!(!live.contains("Working \u{b7}"), "a lone step is not folded: {live}");
+        assert!(live.contains("git diff"), "the finished tool shows: {live}");
+        assert!(live.contains("analyzing the diff"), "the current reasoning shows: {live}");
     }
 
     /// The reported case: while the next tool call is still typing its arguments
@@ -26675,6 +26772,7 @@ mod tests {
     #[test]
     fn prior_steps_fold_while_the_next_tool_call_is_typing() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "<think>investigating</think>".into() });
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -26728,11 +26826,57 @@ mod tests {
                 diff: None,
             });
         }
-        // No token in flight now: a bare gap, but the run is still active.
+        // No token in flight now: a bare gap, but the run is still live, so the
+        // settled steps stay folded behind the header rather than un-folding for
+        // the frame before the next step's content arrives.
         let live = render_rows(&mut app, 90, 24).join("\n");
         assert!(live.contains("Working \u{b7} 4 steps"), "the run folds in the gap: {live}");
         assert!(!live.contains("grep alpha"), "no lingering command rows: {live}");
         assert!(!live.contains("grep bravo"), "no lingering command rows: {live}");
+
+        // The fold does not depend on a Step event to hold; a Step (the next
+        // turn) keeps it folded just the same, never toggling it open.
+        app.apply(StreamEvent::Step { index: 3, max: 8 });
+        let folded = render_rows(&mut app, 90, 24).join("\n");
+        assert!(folded.contains("Working \u{b7} 4 steps"), "still folded after a Step: {folded}");
+        assert!(!folded.contains("grep alpha"), "prior command rows stay hidden: {folded}");
+        assert!(!folded.contains("grep bravo"), "prior command rows stay hidden: {folded}");
+    }
+
+    /// Gating the live fold on `Status::Running` ties it to the run's lifetime: a
+    /// `Step` landing as the last event before the stream stops cannot leave an
+    /// animated `Working · N steps` header spinning over an idle transcript. This
+    /// is the phantom-header regression the removed `step_boundary` flag caused
+    /// (it was never reset on the terminal paths, which skip `apply`).
+    #[test]
+    fn the_live_fold_ends_with_the_run() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        for (id, cmd) in [("t1", "grep alpha"), ("t2", "grep bravo")] {
+            app.apply(StreamEvent::Token {
+                text: format!("<think>step {id}</think>"),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // A Step arrives, then the run stops with no further content.
+        app.apply(StreamEvent::Step { index: 2, max: 8 });
+        assert!(
+            render_rows(&mut app, 90, 24).join("\n").contains("Working \u{b7} 4 steps"),
+            "folded while the run is live"
+        );
+        app.status = super::Status::Idle;
+        let idle = render_rows(&mut app, 90, 24).join("\n");
+        assert!(!idle.contains("Working"), "no phantom animated header at idle: {idle}");
     }
 
     #[test]
