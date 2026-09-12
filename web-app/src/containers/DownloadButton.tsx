@@ -8,6 +8,7 @@ import { useTranslation } from '@/i18n'
 import {
   extractModelName,
   extractQuantLabel,
+  getHuggingFaceUrl,
   selectDefaultQuant,
 } from '@/lib/models'
 import { toast } from 'sonner'
@@ -105,7 +106,7 @@ export function DownloadButtonPlaceholder({
     return (
       <div className="flex items-center gap-2">
         <a
-          href={`https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`}
+          href={getHuggingFaceUrl(model)}
           target="_blank"
           rel="noopener noreferrer"
         >

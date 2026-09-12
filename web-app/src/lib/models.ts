@@ -91,6 +91,26 @@ export const extractModelRepo = (model?: string) => {
   return model?.replace('https://huggingface.co/', '')
 }
 
+/**
+ * Build the canonical Hugging Face repo URL for a catalog model.
+ *
+ * `model_name` may already carry the org prefix — e.g. a repo pasted into the
+ * hub as `https://huggingface.co/meta-llama/Llama-3.1-8B` is stored with
+ * `model_name: 'meta-llama/Llama-3.1-8B'` and `developer: 'meta-llama'`
+ * (see convertHfRepoToCatalogModel). The developer must only be prepended when
+ * the org is missing, otherwise the "View on HuggingFace" link becomes
+ * `meta-llama/meta-llama/Llama-3.1-8B` and 404s (#8634).
+ */
+export const getHuggingFaceUrl = (model: {
+  model_name: string
+  developer?: string
+}): string => {
+  if (model.model_name.includes('/')) {
+    return `https://huggingface.co/${model.model_name}`
+  }
+  return `https://huggingface.co/${model.developer ? `${model.developer}/` : ''}${model.model_name}`
+}
+
 export const selectDefaultQuant = <T extends { model_id: string }>(
   quants: T[] | undefined,
   preferred: readonly string[]
