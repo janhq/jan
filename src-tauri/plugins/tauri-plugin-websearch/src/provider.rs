@@ -740,6 +740,9 @@ fn normalize_youcom_search(body: &Value) -> Vec<SearchResult> {
 
 /// `/v1/contents` answers with a bare array, one entry per requested URL.
 /// The request asks for `markdown`, so that is the only content field read.
+/// The spec types `markdown` as nullable — null is how the API reports a
+/// failed extraction — so a missing or empty `markdown` is an error, not an
+/// empty page.
 fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<FetchedPage, String> {
     let first = body
         .as_array()
@@ -755,7 +758,11 @@ fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<Fetche
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
-    let raw = first.get("markdown").and_then(|v| v.as_str()).unwrap_or("");
+    let raw = first
+        .get("markdown")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| format!("You.com returned no content for {requested_url}"))?;
     let (content, truncated) = bound_text(raw);
     Ok(FetchedPage {
         url,
@@ -1420,5 +1427,13 @@ mod tests {
         assert!(normalize_youcom_contents(&json!([]), "u").is_err());
         // A non-array body must error rather than panic.
         assert!(normalize_youcom_contents(&json!({"results": []}), "u").is_err());
+        // The spec types `markdown` as nullable for failed extractions; a null,
+        // missing, or empty `markdown` must error rather than return an empty page.
+        let null_markdown = json!([{ "url": "https://example.com", "markdown": null }]);
+        assert!(normalize_youcom_contents(&null_markdown, "u").is_err());
+        let no_markdown = json!([{ "url": "https://example.com", "title": "T" }]);
+        assert!(normalize_youcom_contents(&no_markdown, "u").is_err());
+        let empty_markdown = json!([{ "url": "https://example.com", "markdown": "" }]);
+        assert!(normalize_youcom_contents(&empty_markdown, "u").is_err());
     }
 }
