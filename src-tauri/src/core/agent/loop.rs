@@ -7118,10 +7118,10 @@ mod tests {
     }
 
     /// `bash` hands its child to a detached task that keeps the output sink
-    /// alive after the call has returned its `job_id`. The sink must not keep
-    /// the run's event channel open with it: every consumer of that channel --
-    /// the desktop forwarder, the headless printer, a subagent's forwarder --
-    /// finishes only when the channel closes.
+    /// alive after the call has backgrounded. The sink must not keep the run's
+    /// event channel open with it: every consumer of that channel -- the desktop
+    /// forwarder, the headless printer, a subagent's forwarder -- finishes only
+    /// when the channel closes.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
@@ -7140,7 +7140,7 @@ mod tests {
         .await
         .0;
         assert!(
-            out.contains("job_id=bash-"),
+            out.contains("still running in the background"),
             "expected a backgrounded job, got: {out}"
         );
 

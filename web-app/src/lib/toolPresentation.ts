@@ -13,8 +13,8 @@ export type ToolCallBar =
   | { variant: 'search'; query: string; count?: number }
   | { variant: 'address'; url: string }
   | { variant: 'documents'; query: string; count?: number; fileCount?: number }
-  /** `bash`, presented as a terminal. `jobId` set = polling a backgrounded run. */
-  | { variant: 'terminal'; command: string; jobId?: string }
+  /** `bash`, presented as a terminal. */
+  | { variant: 'terminal'; command: string }
   /**
    * The workspace tools. `target` is whatever the call is really about -- a path
    * for read/ls, the pattern for find/grep, the entry name for memory/skill --
@@ -115,11 +115,9 @@ export function describeNativeToolCall(
   }
   if (origin.kind === 'agent') {
     if (toolName === 'bash') {
-      const jobId = asString(args.job_id)
       return {
         variant: 'terminal',
         command: asString(args.command),
-        jobId: jobId || undefined,
       }
     }
     // find/grep are about their pattern, with the directory as context; the

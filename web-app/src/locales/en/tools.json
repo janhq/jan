@@ -57,7 +57,6 @@
     "exitCode": "exit {{code}}",
     "terminated": "terminated",
     "outputTruncated": "Output was truncated; only the last lines are shown.",
-    "pollingJob": "waiting for background job {{id}}",
     "pathPlaceholder": "path",
     "reading": "Reading...",
     "writing": "Writing...",

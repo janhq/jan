@@ -50,9 +50,8 @@ pub enum StreamEvent {
     /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
     /// the output size. Chunks are raw fragments and may split a line.
     ///
-    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
-    /// `job_id`, so a long-running job reports progress under the id of the call
-    /// that started it.
+    /// Keeps arriving after a `bash` call has backgrounded itself, so a
+    /// long-running job reports progress under the id of the call that started it.
     ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for

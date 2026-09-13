@@ -122,8 +122,7 @@ pub struct ToolContext<'a> {
     ///
     /// `Arc` and not a borrow because `bash` hands its child to a detached task:
     /// the sink has to outlive the call that created it, which is also what makes
-    /// a backgrounded command keep reporting after the tool has returned its
-    /// `job_id`.
+    /// a backgrounded command keep reporting after the tool has returned.
     pub on_output: Option<OutputSink>,
     /// Folders attached read-only: readable by the file tools and the shell,
     /// never writable. Empty on every surface that has not attached one.

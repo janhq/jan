@@ -440,8 +440,6 @@ enum PickerKind {
     /// One subagent's detail: its stats, brief, and collapsed call history.
     /// Reached with Enter from `Agents`; Esc steps back to the list.
     AgentDetail,
-    /// `/shells`: inspect commands detached by the `bash` tool.
-    BackgroundShells,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -472,7 +470,6 @@ impl Picker {
             PickerKind::McpServer => " mcp server ",
             PickerKind::Agents => " subagents ",
             PickerKind::AgentDetail => " subagent ",
-            PickerKind::BackgroundShells => " background shells ",
         }
     }
 
@@ -495,7 +492,6 @@ impl Picker {
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
             PickerKind::AgentDetail => " Esc back",
-            PickerKind::BackgroundShells => " ↑/↓ select   Esc close",
         }
     }
 }
@@ -1756,28 +1752,12 @@ struct App {
     /// syntax-highlighted for the right language. Removed as results arrive.
     diff_paths: HashMap<String, String>,
     /// Command of each in-flight `bash` call, keyed by call id, kept only until
-    /// its result lands -- which is where a job id would appear.
+    /// its result lands. Labels a running shell row with the work it is doing.
     bash_commands: HashMap<String, String>,
-    /// Commands the `bash` tool backgrounded, keyed by the `job_id` it handed
-    /// out. The later call that collects a job carries only that id, and blocks
-    /// until the command finishes, so without this its row -- live for as long
-    /// as the command runs -- has nothing to name.
-    bash_jobs: HashMap<String, String>,
     /// Output streamed by each `bash` call so far, keyed by call id, bounded to
     /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
     /// command from a spinner into a terminal.
     live_output: HashMap<String, String>,
-    /// Maps the call that *collects* a backgrounded job to the call that
-    /// *started* it. The job keeps streaming under the original id, so without
-    /// this the collecting call -- the one the user is actually waiting on --
-    /// would show an empty box while the output piled up out of sight.
-    live_alias: HashMap<String, String>,
-    /// Call id that started each backgrounded job, keyed by `job_id`.
-    job_origin: HashMap<String, String>,
-    /// Job ids of `bash` commands still detached in the background: added when a
-    /// result reports its command backgrounded, removed when a later call
-    /// collects that job. Its count drives the status-bar shell indicator.
-    active_bg_jobs: std::collections::HashSet<String>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -2426,11 +2406,7 @@ impl App {
             turn_touched: Vec::new(),
             diff_paths: HashMap::new(),
             bash_commands: HashMap::new(),
-            bash_jobs: HashMap::new(),
             live_output: HashMap::new(),
-            live_alias: HashMap::new(),
-            job_origin: HashMap::new(),
-            active_bg_jobs: std::collections::HashSet::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2867,8 +2843,8 @@ impl App {
             content: None,
             is_error: false,
             diff: None,
-            // Set for shell calls (track_bash_job ran first). Kept on the call so
-            // the terminal box survives the result clearing `bash_commands`.
+            // Set for shell calls (track_bash_command ran first). Kept on the call
+            // so the terminal box survives the result clearing `bash_commands`.
             command: self.bash_commands.get(id).cloned(),
         };
         let extend = self
@@ -3110,15 +3086,8 @@ impl App {
     /// One box per command still in flight, in dispatch order: a group runs its
     /// calls in parallel, so several commands can be streaming at once and each
     /// gets its own terminal rather than one hiding the rest. A `read`/`grep` in
-    /// the group has no command and contributes no box. Follows the job alias,
-    /// so a call *waiting on* a backgrounded job shows the output the detached
-    /// job is still producing under the id of the call that started it.
+    /// the group has no command and contributes no box.
     fn live_shell_panel(&self, group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-        // The detached job streams under the id of the call that started it, so a
-        // collecting call reads its output through the alias.
-        fn output_key<'a>(alias: &'a HashMap<String, String>, call: &'a GroupedCall) -> &'a str {
-            alias.get(&call.id).map_or(call.id.as_str(), String::as_str)
-        }
         let elapsed = group.started.elapsed().as_secs();
         let mut out = Vec::new();
         // A blank row between stacked boxes so two terminals do not run their
@@ -3136,7 +3105,7 @@ impl App {
                     let command = call.command.as_deref().unwrap_or("");
                     let output = self
                         .live_output
-                        .get(output_key(&self.live_alias, call))
+                        .get(&call.id)
                         .map_or("", String::as_str);
                     out.extend(running_terminal_lines(
                         command, output, elapsed, spinner_frame, width,
@@ -3164,23 +3133,12 @@ impl App {
         out
     }
 
-    /// Pair a `bash` call with the backgrounded command it is about.
-    ///
-    /// Both directions run off the same maps: a call carrying a `command` is
-    /// remembered against its call id until its result lands (which is where a
-    /// `job_id` would appear), and a call carrying only a `job_id` gets that
-    /// command filled back in, so every row labelling the call names the work
-    /// rather than an opaque id. Labels are built from the returned value; the
-    /// journal keeps the arguments as they arrived, so a replay rebuilds the
-    /// pairing from the same events in the same order.
-    fn track_bash_job(
-        &mut self,
-        id: &str,
-        name: &str,
-        mut args: serde_json::Value,
-    ) -> serde_json::Value {
+    /// Remember a `bash` call's command against its call id until its result
+    /// lands, so every row labelling the call names the work it is doing rather
+    /// than an opaque id.
+    fn track_bash_command(&mut self, id: &str, name: &str, args: &serde_json::Value) {
         if !matches!(name, "bash" | "shell" | "exec") {
-            return args;
+            return;
         }
         let cmd = args
             .get("command")
@@ -3190,27 +3148,7 @@ impl App {
             .to_string();
         if !cmd.is_empty() {
             self.bash_commands.insert(id.to_string(), cmd);
-            return args;
         }
-        // Collecting a backgrounded job: the detached command still streams under
-        // the id of the call that started it, so point this call at that buffer.
-        // Without the alias the row the user is waiting on shows an empty box.
-        if let Some(job) = bash_job_id(&args) {
-            // The collecting call blocks until the job finishes, so it is no
-            // longer running unattended: drop it from the status-bar count.
-            self.active_bg_jobs.remove(job);
-            if let Some(origin) = self.job_origin.get(job) {
-                self.live_alias.insert(id.to_string(), origin.clone());
-            }
-        }
-        let remembered = bash_job_id(&args)
-            .and_then(|job| self.bash_jobs.get(job))
-            .cloned();
-        if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
-            self.bash_commands.insert(id.to_string(), cmd.clone());
-            obj.insert("command".to_string(), serde_json::Value::String(cmd));
-        }
-        args
     }
 
     /// Rewrite a standalone tool row to its resolved form once its result lands:
@@ -4957,7 +4895,7 @@ impl App {
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
-                let args = self.track_bash_job(&id, &name, args);
+                self.track_bash_command(&id, &name, &args);
                 // Untruncated: every row that shows these clamps to the width it
                 // is drawn at, so they survive a resize either way.
                 let label = tool_activity(&name, &args);
@@ -5003,24 +4941,12 @@ impl App {
                     is_error,
                     diff: diff.clone(),
                 });
-                // Before the grouped-call early return: a backgrounded command
-                // is reported by its result, and the call that later collects it
-                // needs the pairing whichever way this row renders.
-                if let Some(cmd) = self.bash_commands.remove(&id) {
-                    if let Some(job) = backgrounded_job_id(&content) {
-                        self.bash_jobs.insert(job.to_string(), cmd);
-                        self.job_origin.insert(job.to_string(), id.clone());
-                        self.active_bg_jobs.insert(job.to_string());
-                    }
-                }
-                // The command is over, so its live buffer is dead weight: the
-                // authoritative output is in this result. A call that backgrounded
-                // itself keeps its buffer -- the detached job is still writing to
-                // it, under this same id.
-                if backgrounded_job_id(&content).is_none() {
-                    let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
-                    self.live_output.remove(&key);
-                }
+                // This call is no longer in flight (it finished, or it detached
+                // into the background where its output now lands in a file the
+                // agent reads later): the row's content is authoritative, so the
+                // in-flight command label and the live buffer are both dead weight.
+                self.bash_commands.remove(&id);
+                self.live_output.remove(&id);
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
@@ -6579,28 +6505,6 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
-/// The `job_id` of a `bash` poll: a call that collects an already-backgrounded
-/// command instead of starting a new one. Blank is treated as absent.
-fn bash_job_id(args: &serde_json::Value) -> Option<&str> {
-    args.get("job_id")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
-/// The job id in a `bash` result reporting that its command was backgrounded.
-/// Matched on the `job_id=` marker the tool prints and stopping at the first
-/// character that cannot be part of an id, so the instruction text repeating
-/// the id parses to the same value.
-fn backgrounded_job_id(content: &str) -> Option<&str> {
-    let at = content.find("job_id=")? + "job_id=".len();
-    let rest = &content[at..];
-    let end = rest
-        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
-        .unwrap_or(rest.len());
-    Some(&rest[..end]).filter(|id| !id.is_empty())
-}
-
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -6615,11 +6519,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             let cmd = s("command");
             // Untruncated: the row wraps at the draw width, so the command
             // fills the terminal rather than eliding at a fixed 80.
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("Waiting for background job {job}"),
-                (Some(_), cmd) => format!("Waiting for: {}", collapse_command(cmd)),
-                (None, "") => "Executing command".to_string(),
-                (None, cmd) => format!("Executing: {}", collapse_command(cmd)),
+            match cmd.trim() {
+                "" => "Executing command".to_string(),
+                cmd => format!("Executing: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -6745,11 +6647,9 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
             let cmd = s("command");
             // The live panel gives each call exactly one row, so this one stays
             // flattened where the transcript's label keeps its breaks.
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("awaiting job {job}"),
-                (Some(_), cmd) => format!("awaiting $ {}", single_line(cmd)),
-                (None, "") => "command".to_string(),
-                (None, cmd) => format!("$ {}", single_line(cmd)),
+            match cmd.trim() {
+                "" => "command".to_string(),
+                cmd => format!("$ {}", single_line(cmd)),
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -6776,11 +6676,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("Collected background job {job}"),
-                (Some(_), cmd) => format!("Collected: {}", collapse_command(cmd)),
-                (None, "") => "Ran command".to_string(),
-                (None, cmd) => format!("Ran: {}", collapse_command(cmd)),
+            match cmd.trim() {
+                "" => "Ran command".to_string(),
+                cmd => format!("Ran: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -10191,7 +10089,7 @@ async fn handle_key(
                     PickerKind::McpServer => {}
                     // Agents Enter is handled by the guarded arm above; the
                     // detail has no Enter action of its own.
-                    PickerKind::Agents | PickerKind::AgentDetail | PickerKind::BackgroundShells => {}
+                    PickerKind::Agents | PickerKind::AgentDetail => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -10826,18 +10724,6 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
-        name: "/shells",
-        hint: "",
-        description: "Inspect background shell commands still running",
-        alias_of: None,
-    },
-    SlashCommand {
-        name: "/jobs",
-        hint: "",
-        description: "Alias of /shells: inspect background shell commands",
-        alias_of: Some("/shells"),
-    },
-    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
@@ -11073,7 +10959,6 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "agents" => open_agents_picker(app),
-        "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
@@ -13132,46 +13017,6 @@ fn open_agents_picker(app: &mut App) {
     });
 }
 
-/// Open the live list of shell commands detached by the `bash` tool.
-fn open_background_shells_picker(app: &mut App) {
-    app.picker = Some(Picker {
-        kind: PickerKind::BackgroundShells,
-        items: background_shell_picker_items(&app.active_bg_jobs, &app.bash_jobs),
-        selected: 0,
-        armed_delete: None,
-    });
-}
-
-/// One row per detached shell. The TUI only knows jobs started in this session;
-/// the command is retained when the backgrounding notice lands so the row is
-/// useful without exposing the opaque job id alone.
-fn background_shell_picker_items(
-    active: &std::collections::HashSet<String>,
-    commands: &HashMap<String, String>,
-) -> Vec<PickerItem> {
-    if active.is_empty() {
-        return vec![PickerItem {
-            label: "no background shells running".to_string(),
-            value: String::new(),
-            hint: None,
-            checkbox: None,
-        }];
-    }
-    let mut jobs: Vec<&String> = active.iter().collect();
-    jobs.sort();
-    jobs.into_iter()
-        .map(|job| PickerItem {
-            label: commands
-                .get(job)
-                .map(|command| format!("{job}  {command}"))
-                .unwrap_or_else(|| job.clone()),
-            value: job.clone(),
-            hint: Some("running".to_string()),
-            checkbox: None,
-        })
-        .collect()
-}
-
 /// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
 /// single watermark row when the fan-out is empty. The row `value` is the
 /// child's `run_id`, which Enter drills into.
@@ -15216,17 +15061,6 @@ fn draw(f: &mut Frame, app: &mut App) {
             p.items = items;
         }
     }
-    // Background shell jobs can finish while the inspector is open. Rebuild
-    // the rows from the same live maps that drive the footer indicator so the
-    // view never leaves a collected job visible.
-    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::BackgroundShells) {
-        let items = background_shell_picker_items(&app.active_bg_jobs, &app.bash_jobs);
-        if let Some(p) = app.picker.as_mut() {
-            p.selected = p.selected.min(items.len().saturating_sub(1));
-            p.items = items;
-        }
-    }
-
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
@@ -17984,19 +17818,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         // the other states.
         Status::Idle => vec![Span::raw(" ")],
     };
-    // Standing indicators lead the row in both states, newest concern leftmost:
-    // pending queue, then background shells still running unattended.
-    let bg_shells = app.active_bg_jobs.len();
-    if bg_shells > 0 {
-        let plural = if bg_shells == 1 { "" } else { "s" };
-        spans.insert(
-            0,
-            Span::styled(
-                format!("⚙ {bg_shells} bg shell{plural} · /shells  "),
-                Style::new().magenta().bold(),
-            ),
-        );
-    }
+    // Standing indicator leads the row in both states.
     let queue_count = app.message_queue.len();
     if queue_count > 0 {
         spans.insert(
@@ -18036,7 +17858,7 @@ mod tests {
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
         assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping,
-        backgrounded_job_id, brand, build_user_message, clipboard_path, compact_tokens,
+        brand, build_user_message, clipboard_path, compact_tokens,
         context_lines, diff_lines, drain_stream_events, estimate_token_count, finish_account_login,
         finish_compaction, finish_context_report, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, format_tokens, group_detail_lines,
@@ -18060,9 +17882,8 @@ mod tests {
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        collapse_runs, open_agents_picker, trailing_repeat, workqueue_column, SubagentPanel,
-        WorkItemView,
+        agent_detail_lines, agent_picker_items, agents_column, collapse_runs, open_agents_picker,
+        trailing_repeat, workqueue_column, SubagentPanel, WorkItemView,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18259,40 +18080,6 @@ mod tests {
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
         assert!(items[0].label.contains("×4"), "spin visible in the row: {}", items[0].label);
-    }
-
-    #[test]
-    fn background_shell_picker_lists_sorted_jobs_and_commands() {
-        let active = ["bash-2".to_string(), "bash-1".to_string()]
-            .into_iter()
-            .collect();
-        let commands = HashMap::from([
-            ("bash-1".to_string(), "cargo test".to_string()),
-            ("bash-2".to_string(), "sleep 10".to_string()),
-        ]);
-        let items = background_shell_picker_items(&active, &commands);
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].value, "bash-1");
-        assert_eq!(items[0].label, "bash-1  cargo test");
-        assert_eq!(items[0].hint.as_deref(), Some("running"));
-        assert_eq!(items[1].value, "bash-2");
-    }
-
-    #[test]
-    fn background_shell_picker_shows_empty_state() {
-        let items = background_shell_picker_items(
-            &std::collections::HashSet::new(),
-            &HashMap::new(),
-        );
-        assert_eq!(items.len(), 1);
-        assert!(items[0].label.contains("no background shells"));
-        assert!(items[0].value.is_empty());
-    }
-
-    #[test]
-    fn shells_commands_are_registered() {
-        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/shells"));
-        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/jobs"));
     }
 
     #[test]
@@ -20535,101 +20322,6 @@ mod tests {
         );
     }
 
-    /// A `bash` call carrying only a `job_id` is a poll of an already
-    /// backgrounded command: it blocks until that command finishes, so its row
-    /// can stay live for minutes. "Executing command" said nothing at all
-    /// about what was running.
-    #[test]
-    fn a_backgrounded_bash_poll_names_the_job_it_waits_on() {
-        assert_eq!(
-            tool_activity("bash", &json!({ "job_id": "bash-3" })),
-            "Waiting for background job bash-3"
-        );
-        assert_eq!(
-            tool_finished("bash", &json!({ "job_id": "bash-3" })),
-            "Collected background job bash-3"
-        );
-        assert_eq!(
-            subagent_activity("bash", &json!({ "job_id": "bash-3" })),
-            "awaiting job bash-3"
-        );
-        // The command, once the run remembers which one the job is:
-        let args = json!({ "job_id": "bash-3", "command": "cargo build --release" });
-        assert_eq!(
-            tool_activity("bash", &args),
-            "Waiting for: cargo build --release"
-        );
-        assert_eq!(
-            tool_finished("bash", &args),
-            "Collected: cargo build --release"
-        );
-        assert_eq!(
-            subagent_activity("bash", &args),
-            "awaiting $ cargo build --release"
-        );
-        // A blank job id is no job id: an ordinary call is unaffected.
-        assert_eq!(
-            tool_activity("bash", &json!({ "command": "ls", "job_id": "  " })),
-            "Executing: ls"
-        );
-    }
-
-    /// The job id is read back out of the result that handed it out, so the
-    /// marker the tool prints is what this has to match.
-    #[test]
-    fn a_backgrounding_notice_yields_its_job_id() {
-        let notice = "Command exceeded 30s and is continuing in the background \
-             (job_id=bash-7). Call bash again with {\"job_id\": \"bash-7\"} (no \
-             command) to wait for and collect its output once it finishes.";
-        assert_eq!(backgrounded_job_id(notice), Some("bash-7"));
-        // Not every bash result carries one.
-        assert_eq!(backgrounded_job_id("hello\n[exit 0]"), None);
-        assert_eq!(
-            backgrounded_job_id("ERROR: unknown or already-collected job_id 'nope'"),
-            None
-        );
-    }
-
-    /// End to end: the command a job was started with reaches the poll's row.
-    #[tokio::test]
-    async fn a_polled_job_row_names_the_command_it_was_started_with() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "c1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "cargo build --release", "timeout": 1 }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "c1".into(),
-            content: "Command exceeded 1s and is continuing in the background \
-                      (job_id=bash-1). Call bash again with {\"job_id\": \"bash-1\"}."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        app.apply(StreamEvent::ToolCall {
-            id: "c2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-1" }),
-        });
-
-        let text: String = app
-            .transcript
-            .iter()
-            .map(row_text)
-            .chain(std::iter::once(
-                app.tool_group
-                    .as_ref()
-                    .map(|g| g.calls.iter().map(|c| c.activity.clone()).collect())
-                    .unwrap_or_default(),
-            ))
-            .collect();
-        assert!(
-            text.contains("Waiting for: cargo build --release"),
-            "the poll row does not name its command: {text}"
-        );
-    }
-
     /// A running command is a terminal from the moment it starts: the boxed
     /// prompt appears immediately, before any output, and each chunk streams into
     /// the box as it is produced.
@@ -20847,51 +20539,6 @@ mod tests {
         assert!(
             live.contains("compiling foo"),
             "the streaming call keeps the panel: {live}"
-        );
-    }
-
-    /// The wait on a backgrounded job is the case the live view matters most for.
-    /// The job streams under the id of the call that *started* it while the user
-    /// watches the later call that *collects* it, so the two are aliased.
-    #[test]
-    fn waiting_on_a_backgrounded_job_shows_its_live_output() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "t1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "cargo test" }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "t1".into(),
-            content: "Command exceeded 30s and is continuing in the background \
-                      (job_id=bash-7)."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        // Backgrounded, so the buffer survives its own result.
-        app.apply(StreamEvent::ToolOutputDelta {
-            id: "t1".into(),
-            delta: "test tui::rolls ... ok\n".into(),
-        });
-        app.apply(StreamEvent::ToolCall {
-            id: "t2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-7" }),
-        });
-        assert_eq!(
-            app.live_alias.get("t2").map(String::as_str),
-            Some("t1"),
-            "the collecting call is aliased to the job's origin"
-        );
-        app.apply(StreamEvent::ToolOutputDelta {
-            id: "t1".into(),
-            delta: "test tui::folds ... ok\n".into(),
-        });
-        let live = render_rows(&mut app, 74, 20).join("\n");
-        assert!(
-            live.contains("test tui::folds ... ok"),
-            "the waiting row reports the job's progress: {live}"
         );
     }
 
@@ -31939,44 +31586,6 @@ mod tests {
         );
     }
 
-    /// A `bash` command that detaches is counted in the status bar until a later
-    /// call collects it.
-    #[test]
-    fn background_shell_count_tracks_detach_and_collect() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "c1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "sleep 100" }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "c1".into(),
-            content: "Command exceeded 30s and is continuing in the background (job_id=bash-0)."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        assert_eq!(app.active_bg_jobs.len(), 1, "the detached job is counted");
-        let footer: String = super::footer_spans(&app)
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(footer.contains("1 bg shell"), "status bar names it: {footer}");
-
-        // A later call collects the job; the count drops.
-        app.apply(StreamEvent::ToolCall {
-            id: "c2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-0" }),
-        });
-        assert!(app.active_bg_jobs.is_empty(), "collected job is uncounted");
-        let footer: String = super::footer_spans(&app)
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(!footer.contains("bg shell"), "indicator is gone: {footer}");
-    }
-
     /// The borderless input box used to reserve two blank rows for borders it
     /// does not draw. One row of air above the dock is all it needs.
     #[test]
@@ -32483,8 +32092,12 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let shown = rows.iter().filter(|r| r.contains("agent-")).count();
         assert!(shown < 9, "not every agent fits: {rows:?}");
+        // The overflow row counts the hidden agents, in either elision form: the
+        // `/agents` hint when the column is wide enough, the compact "more
+        // running" otherwise.
         assert!(
-            rows.iter().any(|r| r.contains("more running")),
+            rows.iter()
+                .any(|r| r.contains("more · /agents") || r.contains("more running")),
             "the rest are counted: {rows:?}"
         );
     }
