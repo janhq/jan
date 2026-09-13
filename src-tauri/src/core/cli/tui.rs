@@ -434,6 +434,12 @@ enum PickerKind {
     /// One MCP server's detail screen: the info block plus the actions that
     /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
     McpServer,
+    /// `/agents`: the live fan-out inspector. Lists every running subagent with
+    /// its stats and current activity, rebuilt from `App::subagents` each frame.
+    Agents,
+    /// One subagent's detail: its stats, brief, and collapsed call history.
+    /// Reached with Enter from `Agents`; Esc steps back to the list.
+    AgentDetail,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -462,6 +468,8 @@ impl Picker {
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
             PickerKind::McpServer => " mcp server ",
+            PickerKind::Agents => " subagents ",
+            PickerKind::AgentDetail => " subagent ",
         }
     }
 
@@ -482,6 +490,8 @@ impl Picker {
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
             PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
+            PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
+            PickerKind::AgentDetail => " Esc back",
         }
     }
 }
@@ -1934,6 +1944,10 @@ struct App {
     /// rows are its actions. Held on `App` rather than in the picker so a job
     /// landing later (a tool list, a finished sign-in) can update it in place.
     mcp_detail: Option<McpDetail>,
+    /// The run_id the `/agents` inspector is drilled into, or `None` at the
+    /// list. The detail renders live from `App::subagents` by this id, so a
+    /// finishing child updates (or empties) the screen in place.
+    agent_detail: Option<String>,
     /// MCP work handed to the loop to run off the render loop. Taken once.
     mcp_job_request: Option<McpJob>,
     /// An OAuth sign-in in flight, shown in place on the `/mcp` screen and as a
@@ -2472,6 +2486,7 @@ impl App {
             context_request: false,
             mcp_prompt: None,
             mcp_detail: None,
+            agent_detail: None,
             mcp_job_request: None,
             mcp_auth: None,
             mcp_auth_cancel: false,
@@ -9876,6 +9891,20 @@ async fn handle_key(
                 let action = picker.items[picker.selected].value.clone();
                 run_mcp_action(app, &action, mcp_servers).await;
             }
+            // `/agents`: Enter drills into the selected subagent's detail.
+            KeyCode::Enter if picker.kind == PickerKind::Agents => {
+                let run_id = picker
+                    .items
+                    .get(picker.selected)
+                    .map(|i| i.value.clone())
+                    .unwrap_or_default();
+                // The watermark row (no subagents running) has no id to open.
+                if run_id.is_empty() {
+                    return;
+                }
+                picker.kind = PickerKind::AgentDetail;
+                app.agent_detail = Some(run_id);
+            }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
             // wizard prefilled from the selected row, `d` removes the selected
             // server. All act through the shared config layer.
@@ -10133,6 +10162,9 @@ async fn handle_key(
                     PickerKind::PluginSelect => {}
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
+                    // Agents Enter is handled by the guarded arm above; the
+                    // detail has no Enter action of its own.
+                    PickerKind::Agents | PickerKind::AgentDetail => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -10153,15 +10185,23 @@ async fn handle_key(
                     open_mcp_picker(app, mcp_servers).await;
                 }
             }
+            // Esc on a subagent's detail steps back to the `/agents` list, one
+            // level up, rather than closing the inspector outright.
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::AgentDetail => {
+                picker.kind = PickerKind::Agents;
+                app.agent_detail = None;
+            }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
+                app.agent_detail = None;
             }
             _ if ctrl_c || ctrl_d => {
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
+                app.agent_detail = None;
             }
             _ => {}
         }
@@ -10753,6 +10793,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/agents",
+        hint: "",
+        description: "Inspect running subagents: their stats and current activity",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
@@ -10987,6 +11033,7 @@ async fn run_command(
             }
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
+        "agents" => open_agents_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
@@ -13032,6 +13079,165 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
     });
 }
 
+/// Open the `/agents` inspector: the live list of running subagents. The rows
+/// are rebuilt from `App::subagents` every frame (see `draw`), so this only
+/// seeds the initial list; the empty state is a single watermark row.
+fn open_agents_picker(app: &mut App) {
+    app.agent_detail = None;
+    app.picker = Some(Picker {
+        kind: PickerKind::Agents,
+        items: agent_picker_items(&app.subagents),
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
+/// single watermark row when the fan-out is empty. The row `value` is the
+/// child's `run_id`, which Enter drills into.
+fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
+    if subagents.is_empty() {
+        return vec![PickerItem {
+            label: "no subagents running".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }];
+    }
+    subagents
+        .iter()
+        .map(|p| {
+            let work = p
+                .work_id
+                .as_ref()
+                .map(|w| format!(" · {w}"))
+                .unwrap_or_default();
+            PickerItem {
+                label: format!(
+                    "{}  ·  {}t{}  ·  {}",
+                    p.name,
+                    p.calls.len(),
+                    work,
+                    panel_activity_summary(p)
+                ),
+                value: p.run_id.clone(),
+                hint: None,
+                checkbox: None,
+            }
+        })
+        .collect()
+}
+
+/// A one-line "what this agent is doing now" for an immutable panel (the
+/// `/agents` inspector), mirroring the live dock's logic in `agents_column` but
+/// without the streaming argument preview (`StartingCall::activity_label` needs
+/// `&mut`; the tool name is enough here). A spin of identical calls collapses to
+/// `label ×N` so a stuck worker reads as stuck.
+fn panel_activity_summary(panel: &SubagentPanel) -> String {
+    let repeats = trailing_repeat(&panel.calls);
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        return format!("{} ×{repeats}", panel.calls.last().cloned().unwrap_or_default());
+    }
+    if let Some(call) = panel.active.as_ref() {
+        return format!("{}…", call.name);
+    }
+    match panel.calls.last() {
+        Some(last) if repeats > 1 => format!("{last} ×{repeats}"),
+        Some(last) => last.clone(),
+        None if panel.queued => format!("queued ({})", panel.waiting),
+        None => "starting…".to_string(),
+    }
+}
+
+/// Group consecutive identical labels into `(label, count)` runs, preserving
+/// order, so a repeated call renders once as `label ×N` instead of N rows.
+fn collapse_runs(calls: &[String]) -> Vec<(String, usize)> {
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for c in calls {
+        match out.last_mut() {
+            Some(run) if &run.0 == c => run.1 += 1,
+            _ => out.push((c.clone(), 1)),
+        }
+    }
+    out
+}
+
+/// The `/agents` detail body for the subagent `run_id`: header, stats, dispatch
+/// brief, and the tail of its collapsed call history that fits in `height`. An
+/// agent that has finished (its panel gone) shows a short "finished" note, since
+/// the inspector reads live panels only.
+fn agent_detail_lines(
+    subagents: &[SubagentPanel],
+    run_id: Option<&str>,
+    width: u16,
+    height: u16,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let Some(panel) = run_id.and_then(|id| subagents.iter().find(|p| p.run_id == id)) else {
+        return vec![Line::styled(
+            "this subagent has finished. Press Esc to go back.".to_string(),
+            dim,
+        )];
+    };
+    let max = (width.max(8) as usize).saturating_sub(2);
+    let mut out = vec![Line::from(vec![
+        Span::styled(panel.name.clone(), Style::new().magenta().bold()),
+        Span::styled(format!("  ({})", panel.run_id), dim),
+    ])];
+    let mut stats = format!("{} tools · {} req", panel.calls.len(), panel.requests);
+    if let Some(w) = &panel.work_id {
+        stats.push_str(&format!(" · {w}"));
+    }
+    if panel.queued {
+        stats.push_str(&format!(" · queued ({})", panel.waiting));
+    }
+    out.push(Line::styled(stats, dim));
+    if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
+        out.push(Line::from(""));
+        out.extend(
+            wrap_text(brief.trim(), Style::new().dim().italic(), max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    out.push(Line::from(""));
+    out.push(Line::styled("recent calls".to_string(), dim));
+    if panel.calls.is_empty() {
+        out.push(Line::styled("  (no tool calls yet)".to_string(), dim));
+        return out;
+    }
+    let runs = collapse_runs(&panel.calls);
+    // Reserve the rows already used plus one for a possible "+N earlier" head,
+    // then show the tail so the most recent calls are the ones that survive.
+    let budget = (height as usize).saturating_sub(out.len()).max(1);
+    let (hidden, shown) = if runs.len() <= budget {
+        (0, &runs[..])
+    } else {
+        let start = runs.len() - budget.saturating_sub(1);
+        (start, &runs[start..])
+    };
+    if hidden > 0 {
+        out.push(Line::styled(format!("  +{hidden} earlier"), dim));
+    }
+    for (label, n) in shown {
+        let text = if *n > 1 {
+            format!("{label} ×{n}")
+        } else {
+            label.clone()
+        };
+        let style = if *n >= STUCK_REPEAT_THRESHOLD {
+            Style::new().red()
+        } else {
+            Style::new().dim()
+        };
+        out.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(truncate(&text, max), style),
+        ]));
+    }
+    out
+}
+
 fn open_login_picker(app: &mut App) {
     open_login_picker_at(app, None);
 }
@@ -14920,6 +15126,17 @@ fn draw(f: &mut Frame, app: &mut App) {
     // the vertical viewport.
     let width = chunks[1].width.max(1);
 
+    // The /agents inspector is a live view: rebuild its rows from the running
+    // fan-out each frame so a finishing or newly-dispatched child appears
+    // without reopening. Sequential borrows: read subagents, then write picker.
+    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
+        let items = agent_picker_items(&app.subagents);
+        if let Some(p) = app.picker.as_mut() {
+            p.selected = p.selected.min(items.len().saturating_sub(1));
+            p.items = items;
+        }
+    }
+
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
@@ -14930,6 +15147,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             &toml_path,
             app.mcp_detail.as_ref(),
             app.mcp_auth.as_ref(),
+            &app.subagents,
+            app.agent_detail.as_deref(),
             app.spinner(),
         );
         f.render_widget(input_box(app), chunks[2]);
@@ -16398,6 +16617,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_picker(
     f: &mut Frame,
     area: ratatui::layout::Rect,
@@ -16405,6 +16625,8 @@ fn draw_picker(
     toml_path: &std::path::Path,
     mcp_detail: Option<&McpDetail>,
     mcp_auth: Option<&McpAuthFlow>,
+    subagents: &[SubagentPanel],
+    agent_detail: Option<&str>,
     spinner: &str,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
@@ -16516,6 +16738,15 @@ fn draw_picker(
         );
         f.render_widget(Paragraph::new(info), info_area);
         f.render_stateful_widget(list.block(Block::default()), list_area, &mut state);
+    } else if picker.kind == PickerKind::AgentDetail {
+        // One subagent's live detail: rendered from the panels, not the picker
+        // rows, so it updates in place as the child works and empties when it
+        // finishes.
+        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let lines = agent_detail_lines(subagents, agent_detail, inner.width, inner.height);
+        f.render_widget(Paragraph::new(lines), inner);
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -16555,6 +16786,22 @@ const PANEL_GUTTER: u16 = 3;
 /// Detail rows one agent may occupy under its stats line, when the budget
 /// stretches that far: the dispatch brief and the current activity.
 const AGENT_MAX_ROWS: usize = 3;
+
+/// A trailing run of identical calls this long reads as a spin, not progress, so
+/// the collapsed `×N` marker turns red to flag it. Aligned with the loop's own
+/// poll dampener, which nudges around the same point.
+const STUCK_REPEAT_THRESHOLD: usize = 4;
+
+/// Length of the trailing run of the last entry in `calls`: 0 when empty, 1 when
+/// the last call differs from the one before it. Lets the panel collapse a spin
+/// (`read_agent …` repeated dozens of times) into one `×N` line instead of
+/// showing the newest copy alone, with only the tool counter to betray the loop.
+fn trailing_repeat(calls: &[String]) -> usize {
+    match calls.last() {
+        None => 0,
+        Some(last) => calls.iter().rev().take_while(|l| *l == last).count(),
+    }
+}
 
 /// The live fan-out, as a column: one stats line per child plus as much detail
 /// as `rows` allows.
@@ -16647,16 +16894,36 @@ fn agents_column(
         // own newlines rather than word-wrapping: models write these as
         // structured briefs whose first line is the summary.
         let brief = panel.task.lines().find(|l| !l.trim().is_empty());
-        let activity = match panel.active.as_mut() {
-            Some(call) => Some((
-                format!("{frame} {}", call.activity_label()),
-                Style::new().cyan().dim(),
-            )),
-            None => panel
+        let repeats = trailing_repeat(&panel.calls);
+        let activity = if repeats >= STUCK_REPEAT_THRESHOLD {
+            // A run of identical calls is a spin: show the count in red so it
+            // reads as stuck rather than working, even while the newest copy is
+            // still streaming as `active`.
+            panel
                 .calls
                 .last()
-                .map(|label| (label.clone(), Style::new().dim()))
-                .or_else(|| (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))),
+                .map(|label| (format!("{label} ×{repeats}"), Style::new().red()))
+        } else {
+            match panel.active.as_mut() {
+                Some(call) => Some((
+                    format!("{frame} {}", call.activity_label()),
+                    Style::new().cyan().dim(),
+                )),
+                None => panel
+                    .calls
+                    .last()
+                    .map(|label| {
+                        let text = if repeats > 1 {
+                            format!("{label} ×{repeats}")
+                        } else {
+                            label.clone()
+                        };
+                        (text, Style::new().dim())
+                    })
+                    .or_else(|| {
+                        (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))
+                    }),
+            }
         };
         // With only one detail row the activity wins: what it is doing now is
         // worth more than what it was asked, which the transcript already shows.
@@ -17690,7 +17957,10 @@ mod tests {
         MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
-    use super::{workqueue_column, WorkItemView};
+    use super::{
+        agent_detail_lines, agent_picker_items, agents_column, collapse_runs, open_agents_picker,
+        trailing_repeat, workqueue_column, SubagentPanel, WorkItemView,
+    };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
@@ -17822,6 +18092,111 @@ mod tests {
         assert_eq!(lines.len(), 4, "never exceeds its row budget");
         let last = line_text(lines.last().unwrap());
         assert!(last.contains("more"), "tail elided: {last}");
+    }
+
+    fn panel_with_calls(name: &str, calls: Vec<&str>) -> SubagentPanel {
+        SubagentPanel {
+            run_id: format!("sub-{name}-1"),
+            name: name.to_string(),
+            task: "review the file".to_string(),
+            calls: calls.into_iter().map(String::from).collect(),
+            requests: 0,
+            prompt_tokens: 0,
+            active: None,
+            queued: false,
+            waiting: 0,
+            work_id: None,
+        }
+    }
+
+    #[test]
+    fn trailing_repeat_counts_the_final_run() {
+        assert_eq!(trailing_repeat(&[]), 0);
+        assert_eq!(trailing_repeat(&["a".into()]), 1);
+        assert_eq!(trailing_repeat(&["a".into(), "b".into(), "b".into()]), 2);
+        assert_eq!(trailing_repeat(&["b".into(), "b".into(), "a".into()]), 1);
+    }
+
+    /// A worker spinning on one call collapses to a `×N` line in the panel, so
+    /// the loop is visible at a glance rather than hidden behind the tool counter
+    /// with one innocuous call on screen.
+    #[test]
+    fn agents_column_collapses_a_repeated_call() {
+        let call = "read_agent {\"run_id\":\"sub-kv-review-1\",\"tail\":1}";
+        let mut panels = vec![panel_with_calls("kv-review", vec![call; 5])];
+        let lines = agents_column(&mut panels, 200_000, 80, 8, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("×5"), "collapsed spin shows its count: {text}");
+        // The single call is not duplicated across five rows.
+        assert_eq!(text.matches("read_agent").count(), 1, "one collapsed row: {text}");
+    }
+
+    #[test]
+    fn collapse_runs_groups_consecutive_calls() {
+        let calls: Vec<String> = ["a", "a", "b", "a"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            collapse_runs(&calls),
+            vec![("a".into(), 2), ("b".into(), 1), ("a".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn agents_picker_shows_a_watermark_when_no_children_run() {
+        let items = agent_picker_items(&[]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
+        assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
+    }
+
+    #[test]
+    fn agents_picker_row_names_the_child_and_flags_a_spin() {
+        let panels = vec![panel_with_calls("kv-review", vec!["read_agent {}"; 4])];
+        let items = agent_picker_items(&panels);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, "sub-kv-review-1");
+        assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
+        assert!(items[0].label.contains("×4"), "spin visible in the row: {}", items[0].label);
+    }
+
+    #[test]
+    fn agent_detail_shows_stats_and_collapses_a_spin() {
+        let panels = vec![panel_with_calls("kv-review", vec!["claim_work {}"; 5])];
+        let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
+        assert!(text.contains("×5"), "call run collapsed in the detail: {text}");
+    }
+
+    #[test]
+    fn agent_detail_notes_a_finished_child() {
+        let text = agent_detail_lines(&[], Some("sub-gone-1"), 80, 20)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("finished"), "{text}");
+    }
+
+    /// Enter on the `/agents` list drills into a child's detail; Esc steps back
+    /// to the list rather than closing the inspector.
+    #[tokio::test]
+    async fn agents_inspector_enter_opens_detail_and_esc_returns() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-a-1".to_string(),
+            name: "a".to_string(),
+            task: Some("do it".to_string()),
+        });
+        open_agents_picker(&mut app);
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        assert_eq!(app.agent_detail.as_deref(), Some("sub-a-1"));
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
+        assert!(app.agent_detail.is_none(), "Esc cleared the drilled-in id");
     }
 
     #[test]
