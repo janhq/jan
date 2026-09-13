@@ -599,6 +599,52 @@ fn next_subagent_run_id(name: &str) -> String {
     format!("sub-{name}-{}", SUBAGENT_RUN_SEQ.fetch_add(1, Ordering::Relaxed))
 }
 
+/// A data-free, run-scoped doorbell rung by `post_work` from any agent (main or
+/// a child) to wake a parked main so it can re-dispatch a worker. It shares its
+/// `wake` with the run's [`BackgroundSubagents`], so ringing it wakes the same
+/// park the completion pings do -- no new `await_background` select arm is added
+/// (closing the review's starvation finding). `pending` is a single boolean,
+/// *drained* (not queued) at the top of the next turn, so it cannot accumulate.
+pub(crate) struct WorkSignal {
+    pending: std::sync::atomic::AtomicBool,
+    wake: Arc<tokio::sync::Notify>,
+}
+
+impl WorkSignal {
+    pub(crate) fn new() -> Self {
+        Self {
+            pending: std::sync::atomic::AtomicBool::new(false),
+            wake: Arc::new(tokio::sync::Notify::new()),
+        }
+    }
+
+    /// Ring the bell: mark work available and wake a parked waiter.
+    pub(crate) fn post(&self) {
+        self.pending.store(true, Ordering::SeqCst);
+        self.wake.notify_waiters();
+    }
+
+    /// Whether the bell is ringing (work posted since the last drain).
+    fn is_pending(&self) -> bool {
+        self.pending.load(Ordering::SeqCst)
+    }
+
+    /// Take-and-clear the bell, returning whether it was ringing.
+    pub(crate) fn take(&self) -> bool {
+        self.pending.swap(false, Ordering::SeqCst)
+    }
+
+    fn shared_wake(&self) -> Arc<tokio::sync::Notify> {
+        self.wake.clone()
+    }
+}
+
+impl Default for WorkSignal {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// One in-flight background subagent: the channel that will carry its final
 /// result, the handle to abort it on parent cancellation/teardown, and the
 /// identity + event sink needed to close out its `SubagentStart` bracket if it
@@ -657,12 +703,18 @@ pub(crate) struct BackgroundSubagents {
     /// conversation as a `<SYSTEM>` reminder at the top of the next turn.
     notices: std::sync::Mutex<Vec<Notice>>,
     /// Raised whenever a notice lands, so a parent that has run out of work can
-    /// park until a child finishes instead of ending the run under it.
-    wake: tokio::sync::Notify,
+    /// park until a child finishes instead of ending the run under it. Shared
+    /// with [`WorkSignal`] (`work.shared_wake()`), so a `post_work` doorbell
+    /// wakes this same park -- no separate select arm.
+    wake: Arc<tokio::sync::Notify>,
     /// Children dispatched and not yet finished. Incremented at dispatch and
     /// decremented only *after* the notice is queued, so `has_pending_work`
     /// never reads false in the window between the two.
     running: std::sync::atomic::AtomicUsize,
+    /// The run-scoped work-available doorbell. Rung by any agent's `post_work`;
+    /// its `pending` flag counts toward `has_pending_work`/`wait_for_notice` so a
+    /// parked main stays alive and wakes when ready work appears.
+    work: Arc<WorkSignal>,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -680,13 +732,21 @@ impl BackgroundSubagents {
     /// Clamped to at least 1: a cap of 0 would make every dispatch queue
     /// forever with nothing ever releasing a permit.
     pub(crate) fn new(cap: u32) -> Self {
+        Self::with_signal(cap, Arc::new(WorkSignal::new()))
+    }
+
+    /// Create a registry sharing a caller-supplied [`WorkSignal`], so `post_work`
+    /// from a child (which builds its own registry from the cloned run args)
+    /// rings the same doorbell the top-level run's park awaits.
+    pub(crate) fn with_signal(cap: u32, work: Arc<WorkSignal>) -> Self {
         Self {
             inner: std::sync::Mutex::new(std::collections::HashMap::new()),
             semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(cap.max(1) as usize)),
             queued: std::sync::atomic::AtomicUsize::new(0),
             notices: std::sync::Mutex::new(Vec::new()),
-            wake: tokio::sync::Notify::new(),
+            wake: work.shared_wake(),
             running: std::sync::atomic::AtomicUsize::new(0),
+            work,
         }
     }
 
@@ -703,6 +763,7 @@ impl BackgroundSubagents {
     pub(crate) fn has_pending_work(&self) -> bool {
         !self.notices.lock().unwrap().is_empty()
             || self.running.load(std::sync::atomic::Ordering::SeqCst) > 0
+            || self.work.is_pending()
     }
 
     /// Park until a ping is available, or until nothing is left to wait for.
@@ -715,7 +776,12 @@ impl BackgroundSubagents {
             let waiter = self.wake.notified();
             tokio::pin!(waiter);
             waiter.as_mut().enable();
+            // Re-check after enabling the waiter so a post/completion landing in
+            // the window is not missed (`notify_waiters` only reaches an
+            // already-registered waiter). The doorbell is a return condition
+            // like a notice; `running == 0` is the "nothing left" exit.
             if !self.notices.lock().unwrap().is_empty()
+                || self.work.is_pending()
                 || self.running.load(std::sync::atomic::Ordering::SeqCst) == 0
             {
                 return;
@@ -835,7 +901,7 @@ fn child_body(
 /// the definition's system prompt, narrowed tools, dispatch disabled.
 async fn run_subagent(
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
-    resolved: ResolvedDispatch,
+    mut resolved: ResolvedDispatch,
     description: String,
     parent: ParentRun,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
@@ -858,8 +924,32 @@ async fn run_subagent(
     // A child's monitors are its own and die with it; nothing would pick up a
     // match left in the session set once the child has returned.
     child_args.monitors = None;
+    // A worker keeps the shared work queue (it is not nesting): it posts/claims/
+    // completes under its own run id and writes its status there. `work_signal`
+    // is the same Arc as the parent's, so its posts wake the parent's park.
+    child_args.collab_run_id = Some(run_id.clone());
+    // When collaboration is on, force the five work tools into a narrowed child
+    // toolset (as skills are), so a definition's `tools:` list does not strip
+    // them. A `None` allowlist already inherits them via default advertisement.
+    if child_args.work_queue_enabled {
+        if let Some(list) = resolved.allowed_tools.as_ref() {
+            resolved.allowed_tools = Some(with_workqueue_tools(list, &child_args.permissions));
+        }
+    }
 
     let body = child_body(&resolved, &description, &parent);
+    let collab_scratch = collab_scratch_for(&child_args);
+    // Pre-write the child's status header (with its friendly name) before it
+    // starts, so the roster shows it immediately and its own invoker reads the
+    // name back rather than falling back to the run id.
+    if let Some(scratch) = &collab_scratch {
+        use tauri_plugin_agent_tools::tools::observ;
+        let now = tauri_plugin_agent_tools::tools::epoch_secs();
+        let mut s = observ::AgentStatusView::new(&run_id, &name, now);
+        s.state = observ::STATE_RUNNING.to_string();
+        observ::write_status(scratch, &s);
+        crate::core::agent::events::maybe_emit_agent_status(&events, scratch, &run_id);
+    }
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -873,12 +963,21 @@ async fn run_subagent(
     let fwd_name = name.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(ev) = child_rx.recv().await {
-            if forward_to_parent(&ev) {
-                let _ = parent_events.send(StreamEvent::Subagent {
-                    run_id: fwd_run_id.clone(),
-                    name: fwd_name.clone(),
-                    event: Box::new(ev),
-                });
+            match &ev {
+                // A child's own status/queue events name a specific run_id or
+                // describe the shared queue, so they ride up unwrapped rather
+                // than nested in this child's Subagent envelope.
+                StreamEvent::AgentStatus { .. } | StreamEvent::WorkQueue { .. } => {
+                    let _ = parent_events.send(ev);
+                }
+                _ if forward_to_parent(&ev) => {
+                    let _ = parent_events.send(StreamEvent::Subagent {
+                        run_id: fwd_run_id.clone(),
+                        name: fwd_name.clone(),
+                        event: Box::new(ev),
+                    });
+                }
+                _ => {}
             }
         }
     });
@@ -891,12 +990,74 @@ async fn run_subagent(
         Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
     };
+    // Stamp the child's terminal status and free any work it claimed but never
+    // completed, so its dependents fail fast instead of blocking on a lease. The
+    // invoker wrote the running/activity status; this only flips the state.
+    if let Some(scratch) = &collab_scratch {
+        finalize_agent_status(scratch, &run_id, &name, outcome.is_ok());
+        crate::core::agent::events::maybe_emit_agent_status(&events, scratch, &run_id);
+    }
     let _ = events.send(StreamEvent::SubagentEnd {
         run_id,
         name,
         error: outcome.as_ref().err().map(|e| e.to_string()),
     });
     outcome
+}
+
+/// The collaboration scratch a run shares with its peers: the session scratch
+/// dir, independent of the bash sandbox. `None` when collaboration is off or the
+/// run has no session (the proxy path), which also has no peers.
+fn collab_scratch_for(
+    args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Option<std::path::PathBuf> {
+    if !args.work_queue_enabled {
+        return None;
+    }
+    args.session_id
+        .as_deref()
+        .map(tauri_plugin_agent_tools::workspace::scratch_dir)
+}
+
+/// Flip a finished child's `status.json` to `done`/`failed` (preserving the
+/// step/tool-call counts its own invoker wrote) and fail every work item it
+/// still holds an uncompleted claim on.
+fn finalize_agent_status(scratch: &std::path::Path, run_id: &str, name: &str, ok: bool) {
+    use tauri_plugin_agent_tools::tools::observ;
+    let now = tauri_plugin_agent_tools::tools::epoch_secs();
+    let mut status = observ::read_status(scratch, run_id)
+        .unwrap_or_else(|| observ::AgentStatusView::new(run_id, name, now));
+    status.state = if ok {
+        observ::STATE_DONE
+    } else {
+        observ::STATE_FAILED
+    }
+    .to_string();
+    status.work_id = None;
+    status.updated_at = now;
+    observ::write_status(scratch, &status);
+    tauri_plugin_agent_tools::tools::workqueue::fail_owned_claims(scratch, run_id, now);
+}
+
+/// Tools force-added to every collaborating agent's toolset (the shared work
+/// queue and observability), mirroring [`with_skill_tools`]. A worker keeps
+/// these even when its definition narrows `tools:`.
+const WORKQUEUE_TOOLS: &[&str] = &[
+    "post_work",
+    "claim_work",
+    "complete_work",
+    "list_work",
+    "read_agent",
+];
+
+fn with_workqueue_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
+    let mut out = tools.to_vec();
+    for tool in WORKQUEUE_TOOLS {
+        if !out.iter().any(|t| t == tool) && !parent.is_denied(tool) {
+            out.push((*tool).to_string());
+        }
+    }
+    out
 }
 
 /// Resolve and start a subagent on a background task, returning its `run_id`
@@ -2021,6 +2182,50 @@ mod tests {
         assert!(bg.inner.lock().unwrap().is_empty(), "teardown drained the map");
     }
 
+    // ── work-available doorbell ────────────────────────────────────────────
+
+    /// The doorbell counts toward `has_pending_work` and is cleared by `take`, so
+    /// a run with ready-but-unclaimed work stays alive one more turn (the nudge)
+    /// and then terminates once drained.
+    #[test]
+    fn a_post_keeps_the_run_alive_until_drained() {
+        let signal = Arc::new(WorkSignal::new());
+        let bg = BackgroundSubagents::with_signal(4, signal.clone());
+        assert!(!bg.has_pending_work(), "idle registry owes nothing");
+        signal.post();
+        assert!(bg.has_pending_work(), "a post keeps the run alive");
+        assert!(bg.take_notices().is_empty(), "the doorbell is not a notice queue");
+        assert!(signal.take(), "drain reports it was ringing");
+        assert!(!bg.has_pending_work(), "drained: nothing left to wait for");
+        assert!(!signal.take(), "a second drain is empty");
+    }
+
+    /// A parked wait wakes when a *different* task rings the shared doorbell --
+    /// the child->main wake path, with no completion ping involved. The registry
+    /// reports a running child so the wait would otherwise block indefinitely.
+    #[tokio::test]
+    async fn a_shared_post_wakes_a_parked_wait() {
+        let signal = Arc::new(WorkSignal::new());
+        let bg = Arc::new(BackgroundSubagents::with_signal(4, signal.clone()));
+        // Pretend a child is running, so `wait_for_notice` does not return early.
+        bg.running.fetch_add(1, Ordering::SeqCst);
+
+        let waiter = {
+            let bg = bg.clone();
+            tokio::spawn(async move { bg.wait_for_notice().await })
+        };
+        // Let the waiter register on the shared Notify before ringing.
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+        assert!(!waiter.is_finished(), "the wait parks while a child runs");
+
+        signal.post(); // a peer's post_work, via the shared signal
+        tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+            .await
+            .expect("the post must wake the parked wait")
+            .expect("waiter task");
+    }
+
     // ── max-parallel admission (semaphore queue) ───────────────────────────
 
     /// Minimal run args for queue tests: empty providers (so dispatched
@@ -2055,6 +2260,9 @@ mod tests {
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
+            work_queue_enabled: false,
+            work_signal: Arc::new(WorkSignal::new()),
+            collab_run_id: None,
         }
     }
 

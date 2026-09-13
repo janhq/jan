@@ -8,7 +8,7 @@ import type {
   TodoList,
   AskRequestPayload,
 } from '@/types/coworkSession'
-import type { MonitorUpdate } from '@/lib/agentTools'
+import type { MonitorUpdate, WorkItemView } from '@/lib/agentTools'
 import { userTurn } from '@/lib/coworkTurns'
 import type { ModelLoadProgress } from '@/hooks/useAppState'
 import type { RunOutcome } from '@/lib/coworkRunner'
@@ -207,6 +207,9 @@ type CoworkRunState = {
   // run: a watcher keeps going after the model has answered, and a later
   // match starts a turn of its own. Dropped with the session (`clearMonitors`).
   monitors: Record<string, MonitorView[]>
+  // The session's shared work queue, replaced wholesale from each work-tool
+  // command's post-mutation snapshot. Display-only; the files live in scratch.
+  workqueue: Record<string, WorkItemView[]>
   // True while the run is parked on a subagent still running with the model
   // idle. A running monitor never parks a run.
   parked: Record<string, boolean>
@@ -284,6 +287,8 @@ type CoworkRunState = {
   reconcileMonitors: (sid: string, activeIds: string[]) => void
   /** Session teardown: the watchers are stopped in Rust alongside. */
   clearMonitors: (sid: string) => void
+  /** Replace a session's work-queue snapshot from a work-tool command return. */
+  setWorkqueue: (sid: string, items: WorkItemView[]) => void
   setParked: (sid: string, parked: boolean) => void
   setUsage: (sid: string, usage: Usage | null) => void
   requestPreview: (sessionId: string, path: string) => void
@@ -325,6 +330,7 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     set((s) => ({ liveTurns: { ...s.liveTurns, [sid]: turns } })),
   subagents: {},
   monitors: {},
+  workqueue: {},
   parked: {},
   runId: {},
   pendingAsks: {},
@@ -541,6 +547,8 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
     }),
 
   clearMonitors: (sid) => set((s) => ({ monitors: omitKey(s.monitors, sid) })),
+  setWorkqueue: (sid, items) =>
+    set((s) => ({ workqueue: { ...s.workqueue, [sid]: items } })),
 
   setParked: (sid, parked) =>
     set((s) => ({
@@ -636,6 +644,7 @@ export const useCoworkRun = create<CoworkRunState>()((set, get) => ({
       liveTurns: omitKey(s.liveTurns, sid),
       outcomes: omitKey(s.outcomes, sid),
       subagents: omitKey(s.subagents, sid),
+      workqueue: omitKey(s.workqueue, sid),
       parked: omitKey(s.parked, sid),
       runId: omitKey(s.runId, sid),
       pendingAsks: omitKey(s.pendingAsks, sid),

@@ -104,6 +104,7 @@ import {
   reserveSubagentResult,
   cancelAgentThreadBash,
   activeAgentMonitorIds,
+  type WorkItemView,
 } from '@/lib/agentTools'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
@@ -173,6 +174,7 @@ const MANUAL_COMPACT_CONFIG: ContextManagerConfig = {
 // Stable empty set, so a session with no monitors does not re-render on every
 // store write the way a fresh `[]` from the selector would.
 const NO_MONITORS: MonitorView[] = []
+const NO_WORKQUEUE: WorkItemView[] = []
 const NO_TURNS: CoworkTurn[] = []
 
 /** The session's monitor lane, mirrored into the run store for the rail. */
@@ -398,6 +400,9 @@ function CoworkPage() {
   // Monitors are the session's and outlive a run; the parked flag is run-only.
   const monitors = useCoworkRun(
     (s) => (session?.id ? s.monitors[session.id] : undefined) ?? NO_MONITORS
+  )
+  const workqueue = useCoworkRun(
+    (s) => (session?.id ? s.workqueue[session.id] : undefined) ?? NO_WORKQUEUE
   )
   const parked = useCoworkRun((s) =>
     session?.id ? (s.parked[session.id] ?? false) : false
@@ -701,6 +706,9 @@ function CoworkPage() {
                 failedReadPaths,
                 webSearch,
                 monitors: monitorLane,
+                workAgentId: 'main',
+                onWorkQueue: (items) =>
+                  useCoworkRun.getState().setWorkqueue(sid, items),
                 onTodo: async (input) => {
                   const result = applyTodoOp(
                     useCoworkSessions
@@ -810,6 +818,11 @@ function CoworkPage() {
                         webSearch,
                         // A child has no inbox for a watcher to ping.
                         monitors: null,
+                        // A worker posts/claims/completes under its own id so
+                        // the queue attributes items to it.
+                        workAgentId: `sub-${resolved.name}-${callId}`,
+                        onWorkQueue: (items) =>
+                          useCoworkRun.getState().setWorkqueue(sid, items),
                         onTodo: async () => ({
                           output:
                             'The todo list belongs to the agent that dispatched you.',
@@ -1652,6 +1665,7 @@ function CoworkPage() {
                       <CoworkTasksChip
                         subagents={subagents}
                         monitors={monitors}
+                        workqueue={workqueue}
                         open={rail?.kind === 'tasks'}
                         onToggle={() =>
                           setRail((r) =>
@@ -1726,6 +1740,7 @@ function CoworkPage() {
           <CoworkTasksPanel
             subagents={subagents}
             monitors={monitors}
+            workqueue={workqueue}
             onClose={() => setRail(null)}
           />
         )}

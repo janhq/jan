@@ -55,6 +55,7 @@ use crate::core::agent::r#loop::{
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::tools::monitor::{MonitorSet, MonitorSnapshot};
+use tauri_plugin_agent_tools::tools::workqueue::WorkItemView;
 use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
@@ -2032,6 +2033,10 @@ struct App {
     /// Docked beside the fan-out; never a transcript row, since a monitor
     /// describes now.
     monitors: Vec<MonitorSnapshot>,
+    /// The run's shared work queue, replaced wholesale by each
+    /// `StreamEvent::WorkQueue`. Docked beside the fan-out and monitors in the
+    /// status panel (Phase 5); never a transcript row, since it describes now.
+    workqueue: Vec<WorkItemView>,
     /// The session-owned monitor registry, shared with every run through
     /// `OrchestrationArgs::monitors`. A watcher outlives the turn that started
     /// it, so the model can answer and the user can keep talking while it
@@ -2288,6 +2293,10 @@ struct SubagentPanel {
     queued: bool,
     /// 1-based position in the queue at the time the child was queued.
     waiting: u32,
+    /// The work item this child currently holds, from its `AgentStatus`. Shown
+    /// as a `w-N` tag beside its stats so a fan-out over the shared queue reads
+    /// as who-is-on-what, not just who is running.
+    work_id: Option<String>,
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -2493,6 +2502,7 @@ impl App {
             exit_armed: false,
             subagents: Vec::new(),
             monitors: Vec::new(),
+            workqueue: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
             parked: false,
             subagent_blocks: Vec::new(),
@@ -2947,65 +2957,10 @@ impl App {
         runs
     }
 
-    /// The live run's *settled* steps, folded behind one header so the condensed
-    /// view shows only the step in flight. Settled steps are the reasoning-summary
-    /// and tool-group rows after the last answer that are not the running box.
-    ///
-    /// The fold is stable for the whole run: it depends only on the run being live
-    /// (`Status::Running`) and on how many settled steps exist -- never on a
-    /// transient frontier or a per-event marker -- so the header cannot toggle
-    /// open as one step hands off to the next, in the gap before a step's content
-    /// arrives, or when a background (monitor/subagent/notice) event lands. The
-    /// frontier below the header is the only moving part. Gating on status also
-    /// means the fold ends the instant the run does: `draw` never gets an animated
-    /// header over an idle transcript, and the committed `trace_runs` fold (static,
-    /// past-tense) takes over the same rows, so nothing moves on wrap-up.
-    ///
-    /// Returns `None` until two settled steps exist: a lone step is already one
-    /// line, so a header would save no space and only read as "1 step".
-    fn active_fold(&self) -> Option<TraceRun> {
-        if self.status != Status::Running {
-            return None;
-        }
-        let running = self
-            .tool_group
-            .as_ref()
-            .filter(|g| g.is_running())
-            .map(|g| g.idx);
-        let last_answer = self.last_answer_idx();
-        let mut settled: Vec<(usize, bool)> = Vec::new();
-        for g in &self.groups {
-            settled.push((g.idx, true));
-        }
-        for r in &self.reasoning_blocks {
-            settled.push((r.idx, false));
-        }
-        // A finished-but-not-yet-closed command is a settled prior step too.
-        if let Some(g) = &self.tool_group {
-            if !g.is_running() {
-                settled.push((g.idx, true));
-            }
-        }
-        settled.retain(|(i, _)| last_answer.is_none_or(|a| *i > a) && Some(*i) != running);
-        if settled.len() < 2 {
-            return None;
-        }
-        settled.sort_by_key(|(i, _)| *i);
-        let tool_ran =
-            running.is_some() || !self.starting.is_empty() || settled.iter().any(|(_, t)| *t);
-        Some(TraceRun {
-            start: settled[0].0,
-            end: settled.last().unwrap().0,
-            tool_ran,
-            steps: settled.len(),
-        })
-    }
-
     /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
     /// default fold). A no-op if `start` is not a trace or active-fold start.
     fn toggle_trace(&mut self, start: usize) {
-        let is_start = self.trace_runs().iter().any(|r| r.start == start)
-            || self.active_fold().is_some_and(|r| r.start == start);
+        let is_start = self.trace_runs().iter().any(|r| r.start == start);
         if !is_start {
             return;
         }
@@ -3076,6 +3031,10 @@ impl App {
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
+        // The work queue is run display state: a finished queue of done/failed
+        // items should not linger on an idle session (a later run republishes a
+        // live one). The files persist in scratch for `list_work`/`read_agent`.
+        self.workqueue.clear();
         // Session monitors outlive the run, so the dock keeps whatever is
         // still watching; a run that ended is no longer parked on anything.
         self.monitors = self.monitor_set.snapshot();
@@ -3368,13 +3327,9 @@ impl App {
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
             .chain(self.subagent_blocks.iter().map(|b| b.idx))
             .collect();
-        // Ctrl-O also unfolds every collapsed trace (finished runs and the
-        // active fold), so one keystroke opens both the folds and the per-row
-        // detail.
-        let mut trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
-        if let Some(run) = self.active_fold() {
-            trace_starts.push(run.start);
-        }
+        // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
+        // opens both the folds and the per-row detail.
+        let trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
         if all.is_empty() && trace_starts.is_empty() {
             return;
         }
@@ -3394,18 +3349,17 @@ impl App {
     }
 
     /// Whether transcript row `idx` is currently drawn as a folded trace header
-    /// (a finished trace start or the active fold's start, not expanded), so a
-    /// click there unfolds the trace rather than toggling that row's own detail.
+    /// (a finished trace start, not expanded), so a click there unfolds the trace
+    /// rather than toggling that row's own detail. The active run never folds, so
+    /// only finished traces qualify.
     fn is_folded_trace_start(&self, idx: usize) -> bool {
         if self.expanded_traces.contains(&idx) {
             return false;
         }
         let last_answer = self.last_answer_idx();
-        let finished = self
-            .trace_runs()
+        self.trace_runs()
             .iter()
-            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a));
-        finished || self.active_fold().is_some_and(|r| r.start == idx)
+            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a))
     }
 
     /// Toggle a single collapsed region by its transcript row index (a click on
@@ -4735,6 +4689,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.session_id.as_deref(),
             args.subagents_enabled,
             args.sandbox,
+            args.work_queue_enabled,
         )
         .unwrap_or_default();
         context_bytes =
@@ -4757,6 +4712,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.max_parallel_subagents,
             args.ask_requests.is_some(),
             args.todo_registry.is_some(),
+            args.work_queue_enabled,
         )
         .await
         .iter()
@@ -5140,6 +5096,7 @@ impl App {
                         active: None,
                         queued: false,
                         waiting: 0,
+                        work_id: None,
                     });
                 }
             }
@@ -5164,6 +5121,7 @@ impl App {
                     active: None,
                     queued: true,
                     waiting,
+                    work_id: None,
                 });
             }
             StreamEvent::SubagentEnd {
@@ -5195,6 +5153,19 @@ impl App {
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             StreamEvent::Parked => self.parked = true,
+            // The shared work queue as a whole, docked in the status panel's
+            // coordination lane. Display-only, never journaled.
+            StreamEvent::WorkQueue { items } => self.workqueue = items,
+            // A per-agent status delta. A child's `work_id` tags its live panel;
+            // the main run's own status is already conveyed by the header badge,
+            // so it is not re-shown here (its status.json still feeds read_agent).
+            StreamEvent::AgentStatus { run_id, work_id, .. } => {
+                if run_id != "main" {
+                    if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                        panel.work_id = work_id;
+                    }
+                }
+            }
             StreamEvent::Subagent {
                 run_id,
                 name,
@@ -7218,28 +7189,31 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// The one-line header a folded trace collapses to, with a step count so the
-/// fold advertises how much it hides. A finished run gets a static `▸` and past
-/// tense (`▸ Worked · N steps` / `▸ Thought · N steps`); the active run -- still
-/// streaming, its current step shown live below -- gets the spinner and present
-/// tense (`⠋ Working · N steps` / `⠋ Thinking · N steps`), so the condensed live
-/// view reads as one moving header over the current step rather than a growing
-/// pile of settled rows.
-fn trace_header_line(run: &TraceRun, active: bool, frame: &str) -> Line<'static> {
-    let (marker, verb) = if active {
-        let verb = if run.tool_ran { "Working" } else { "Thinking" };
-        (format!("{frame} "), verb)
-    } else {
-        let verb = if run.tool_ran { "Worked" } else { "Thought" };
-        ("▸ ".to_string(), verb)
-    };
+/// The one-line header a finished trace collapses to, with a step count so the
+/// fold advertises how much it hides: a static `▸` and past tense
+/// (`▸ Worked · N steps` / `▸ Thought · N steps`). Only finished traces fold;
+/// the active run renders as the live growing rail (each step as it happens), so
+/// there is no present-tense header form.
+fn trace_header_line(run: &TraceRun) -> Line<'static> {
+    let verb = if run.tool_ran { "Worked" } else { "Thought" };
     let unit = if run.steps == 1 { "step" } else { "steps" };
     Line::from(vec![
-        Span::styled(marker, Style::new().cyan()),
+        Span::styled("▸ ".to_string(), Style::new().cyan()),
         Span::styled(
             format!("{verb} · {} {unit}", run.steps),
             Style::new().cyan().dim(),
         ),
+    ])
+}
+
+/// The terminal cap of an expanded trace's rail: a `└` corner that closes the
+/// run of `│`-gutter step rows into a `Done` marker, so the timeline reads as a
+/// completed thread. Only rendered under an expanded finished trace; the live
+/// rail's terminal is its current step, and a folded trace shows only the header.
+fn trace_done_line() -> Line<'static> {
+    Line::from(vec![
+        Span::styled("└ ", Style::new().dark_gray()),
+        Span::styled("Done", Style::new().dark_gray()),
     ])
 }
 
@@ -14913,26 +14887,32 @@ fn draw(f: &mut Frame, app: &mut App) {
     let mut content_h: u16 = 0;
     let mut reveal_at: Option<u16> = None;
     let frame = app.spinner();
-    // Traces fold their run of reasoning/tool rows to one header unless the user
-    // expanded it. A finished run (an answer follows) folds whole to a static
-    // `Thought/Worked` header. The active run's settled steps fold to a live
-    // `Thinking/Working` header, leaving only the current step (the running box /
-    // live tail) below -- the condensed live view. The `bool` is that live flag.
+    // A finished trace (an answer follows) folds its run of reasoning/tool rows
+    // to one static `Thought/Worked` header unless the user expanded it. The
+    // active run is never folded: its steps render as the live growing rail, so
+    // the reader watches each step land as it happens.
     let last_answer = app.last_answer_idx();
-    let mut collapsed_headers: HashMap<usize, (TraceRun, bool)> = HashMap::new();
+    let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
     for run in app.trace_runs() {
         if last_answer.is_some_and(|a| run.end < a) && !app.expanded_traces.contains(&run.start) {
-            collapsed_headers.insert(run.start, (run, false));
-        }
-    }
-    if let Some(run) = app.active_fold() {
-        if !app.expanded_traces.contains(&run.start) {
-            collapsed_headers.insert(run.start, (run, true));
+            collapsed_headers.insert(run.start, run);
         }
     }
     let hidden_trace_rows: std::collections::HashSet<usize> = collapsed_headers
         .values()
-        .flat_map(|(r, _)| (r.start + 1)..=r.end)
+        .flat_map(|r| (r.start + 1)..=r.end)
+        .collect();
+    // A finished trace the user expanded caps its rail with a `└ Done` terminal
+    // after its last row, keyed by that row's index. The live rail's terminal is
+    // its current step, and a folded trace shows only its header, so neither gets
+    // one.
+    let expanded_trace_ends: std::collections::HashSet<usize> = app
+        .trace_runs()
+        .iter()
+        .filter(|r| {
+            last_answer.is_some_and(|a| r.end < a) && app.expanded_traces.contains(&r.start)
+        })
+        .map(|r| r.end)
         .collect();
     for (i, row) in app.transcript.iter().enumerate() {
         // A collapsed trace shows a single header at its start and hides the
@@ -14940,8 +14920,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         if hidden_trace_rows.contains(&i) {
             continue;
         }
-        if let Some((run, active)) = collapsed_headers.get(&i) {
-            let line = trace_header_line(run, *active, frame);
+        if let Some(run) = collapsed_headers.get(&i) {
+            let line = trace_header_line(run);
             let seg = Segment::eager(Some(i), vec![line], width);
             if app.reveal == Some(i) {
                 reveal_at = Some(content_h);
@@ -15014,6 +14994,14 @@ fn draw(f: &mut Frame, app: &mut App) {
                 content_h = content_h.saturating_add(seg.height);
                 segs.push(seg);
             }
+        }
+        // Cap an expanded finished trace's rail with the `└ Done` terminal, after
+        // its last row (and that row's own detail). Keyed to the same `idx`, so a
+        // click on it collapses the run like any other row of the trace.
+        if expanded_trace_ends.contains(&i) {
+            let seg = Segment::eager(Some(i), vec![trace_done_line()], width);
+            content_h = content_h.saturating_add(seg.height);
+            segs.push(seg);
         }
     }
 
@@ -16570,6 +16558,9 @@ fn agents_column(
                 let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
                 stats.push_str(&format!(" · {pct:.1}%"));
             }
+            if let Some(work_id) = &panel.work_id {
+                stats.push_str(&format!(" · {work_id}"));
+            }
             spans.push(Span::styled(stats, dim));
         }
         out.push(Line::from(spans));
@@ -17043,12 +17034,14 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
     // known (configured, catalog, or fallback), so it is always a denominator.
     let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    let has_activity = !app.subagents.is_empty() || !app.monitors.is_empty();
+    let has_activity =
+        !app.subagents.is_empty() || !app.monitors.is_empty() || !app.workqueue.is_empty();
     match (has_todos, has_activity) {
         (false, false) => Vec::new(),
         (true, false) => todo_column(&app.todos, width, rows),
         (false, true) => activity_column(
             &mut app.subagents,
+            &app.workqueue,
             &app.monitors,
             context_window,
             width,
@@ -17060,6 +17053,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             // the activity, which is the thing actually moving.
             let activity = activity_column(
                 &mut app.subagents,
+                &app.workqueue,
                 &app.monitors,
                 context_window,
                 width,
@@ -17076,6 +17070,7 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             let left = todo_column(&app.todos, left_w, rows);
             let right = activity_column(
                 &mut app.subagents,
+                &app.workqueue,
                 &app.monitors,
                 context_window,
                 right_w,
@@ -17092,21 +17087,106 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
 /// capped at half the budget; the agents take whatever they leave.
 fn activity_column(
     panels: &mut [SubagentPanel],
+    workqueue: &[WorkItemView],
     monitors: &[MonitorSnapshot],
     context_window: u64,
     width: u16,
     rows: usize,
     frame: &str,
 ) -> Vec<Line<'static>> {
-    let monitor_rows = if panels.is_empty() {
+    // Agents keep priority: the compact sections (the work queue and the
+    // monitors) share at most half the budget when agents are present, and take
+    // only what they need otherwise. Queue sits above monitors.
+    let want_queue = if workqueue.is_empty() {
+        0
+    } else {
+        1 + workqueue.len()
+    };
+    let want_mon = if monitors.is_empty() {
+        0
+    } else {
+        1 + monitors.len()
+    };
+    let compact_budget = if panels.is_empty() {
         rows
     } else {
-        (1 + monitors.len()).min(rows / 2)
+        (want_queue + want_mon).min(rows / 2)
     };
-    let monitors = monitors_column(monitors, width, monitor_rows);
-    let mut out = agents_column(panels, context_window, width, rows - monitors.len(), frame);
+    let queue = workqueue_column(workqueue, width, want_queue.min(compact_budget));
+    let monitors = monitors_column(monitors, width, compact_budget.saturating_sub(queue.len()));
+    let used = queue.len() + monitors.len();
+    let mut out = agents_column(panels, context_window, width, rows.saturating_sub(used), frame);
+    out.extend(queue);
     out.extend(monitors);
     out
+}
+
+/// The shared work queue as a column: one line per item with a state glyph, its
+/// `w-N` id, title, and the `-> owner` flow tag that is the work-sharing
+/// indicator. A failed/blocked item shows its reason so a stuck graph is visible
+/// rather than silent.
+fn workqueue_column(items: &[WorkItemView], width: u16, rows: usize) -> Vec<Line<'static>> {
+    if items.is_empty() || rows == 0 {
+        return Vec::new();
+    }
+    let dim = Style::new().dark_gray();
+    let max = width.max(8) as usize;
+    let ready = items.iter().filter(|i| i.state == "open").count();
+    let mut out = vec![Line::from(vec![
+        Span::styled("~ ", Style::new().magenta()),
+        Span::styled(
+            format!("work queue ({ready} ready)"),
+            Style::new().magenta().bold(),
+        ),
+    ])];
+    let body = rows - 1;
+    let (shown, hidden) = if items.len() <= body {
+        (items.len(), 0)
+    } else {
+        (body.saturating_sub(1), items.len() - body.saturating_sub(1))
+    };
+    for item in items.iter().take(shown) {
+        let (glyph, gstyle) = work_glyph(&item.state);
+        let id = format!("{} ", item.work_id);
+        let owner = item
+            .claimed_by
+            .as_deref()
+            .map(|w| format!(" -> {w}"))
+            .unwrap_or_default();
+        let reason = item
+            .reason
+            .as_deref()
+            .map(|r| format!(" ({r})"))
+            .unwrap_or_default();
+        let text = format!("{}{owner}{reason}", item.title);
+        let reserve = 2 + id.len();
+        out.push(Line::from(vec![
+            Span::styled(format!("{glyph} "), gstyle),
+            Span::styled(id, dim),
+            Span::styled(truncate(&text, max.saturating_sub(reserve)), gstyle),
+        ]));
+    }
+    if hidden > 0 {
+        out.push(Line::from(vec![Span::styled(
+            format!("  +{hidden} more"),
+            dim,
+        )]));
+    }
+    out.truncate(rows);
+    out
+}
+
+/// The leading glyph + colour for a work item's state. ASCII markers so the
+/// column stays single-width and alignment-preserving.
+fn work_glyph(state: &str) -> (&'static str, Style) {
+    match state {
+        "open" => ("o", Style::new().magenta()),
+        "claimed" => ("@", Style::new().yellow()),
+        "done" => ("*", Style::new().green()),
+        "failed" => ("!", Style::new().red()),
+        "blocked" => ("x", Style::new().dark_gray()),
+        _ => ("-", Style::new().dark_gray()),
+    }
 }
 
 /// The session's active monitors, as a column: one line per monitor (id, name,
@@ -17535,6 +17615,7 @@ mod tests {
         MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
+    use super::{workqueue_column, WorkItemView};
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
     use crate::core::cli::updater::{AvailableUpdate, UpdateOutcome};
@@ -17626,6 +17707,80 @@ mod tests {
             None,
         );
         TestApp { app, _dir: dir }
+    }
+
+    fn work_item(work_id: &str, state: &str, claimed_by: Option<&str>, reason: Option<&str>) -> WorkItemView {
+        WorkItemView {
+            work_id: work_id.to_string(),
+            title: format!("task {work_id}"),
+            state: state.to_string(),
+            claimed_by: claimed_by.map(str::to_string),
+            reason: reason.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn workqueue_column_shows_state_owner_flow_and_reason() {
+        let items = vec![
+            work_item("w-1", "done", None, None),
+            work_item("w-2", "claimed", Some("reviewer-3"), None),
+            work_item("w-3", "failed", None, Some("dep w-2 failed")),
+            work_item("w-4", "open", None, None),
+        ];
+        let lines: Vec<String> = workqueue_column(&items, 60, 8)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert!(lines[0].contains("work queue (1 ready)"), "{lines:?}");
+        let claimed = lines.iter().find(|l| l.contains("w-2")).unwrap();
+        assert!(claimed.contains("-> reviewer-3"), "owner flow: {claimed}");
+        let failed = lines.iter().find(|l| l.contains("w-3")).unwrap();
+        assert!(failed.contains("dep w-2 failed"), "reason: {failed}");
+    }
+
+    #[test]
+    fn workqueue_column_elides_its_tail_under_budget() {
+        let items: Vec<WorkItemView> = (1..=20)
+            .map(|n| work_item(&format!("w-{n}"), "open", None, None))
+            .collect();
+        let lines = workqueue_column(&items, 60, 4);
+        assert_eq!(lines.len(), 4, "never exceeds its row budget");
+        let last = line_text(lines.last().unwrap());
+        assert!(last.contains("more"), "tail elided: {last}");
+    }
+
+    #[test]
+    fn agent_status_tags_the_child_panel_and_ignores_main() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-a-1".to_string(),
+            name: "a".to_string(),
+            task: Some("do it".to_string()),
+        });
+        app.apply(StreamEvent::AgentStatus {
+            run_id: "sub-a-1".to_string(),
+            name: "a".to_string(),
+            state: "running".to_string(),
+            step: 2,
+            tool_calls: 3,
+            last: "edit".to_string(),
+            work_id: Some("w-7".to_string()),
+        });
+        let panel = app.subagents.iter().find(|p| p.run_id == "sub-a-1").unwrap();
+        assert_eq!(panel.work_id.as_deref(), Some("w-7"));
+        // A main status delta never creates or mutates a panel.
+        let before = app.subagents.len();
+        app.apply(StreamEvent::AgentStatus {
+            run_id: "main".to_string(),
+            name: "main".to_string(),
+            state: "running".to_string(),
+            step: 1,
+            tool_calls: 0,
+            last: String::new(),
+            work_id: Some("w-9".to_string()),
+        });
+        assert_eq!(app.subagents.len(), before, "main adds no panel");
+        assert!(app.subagents.iter().all(|p| p.work_id.as_deref() != Some("w-9")));
     }
 
     fn steering_request(
@@ -22828,6 +22983,9 @@ mod tests {
                 session_id: None,
                 sandbox: None,
                 monitors: Some(app.monitor_set.clone()),
+                work_queue_enabled: false,
+                work_signal: std::sync::Arc::new(crate::core::agent::subagent::WorkSignal::new()),
+                collab_run_id: None,
             });
             app.args = Some(args.clone());
 
@@ -26669,6 +26827,60 @@ mod tests {
         assert!(refolded.contains("Worked \u{b7} 2 steps"), "refolded: {refolded}");
     }
 
+    /// An expanded finished trace caps its rail with a `└ Done` terminal; the
+    /// folded header does not, and neither does a live (unfinished) run.
+    #[test]
+    fn an_expanded_finished_trace_ends_with_done() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token { text: "<think>weigh it</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "the answer".into() });
+        app.flush_assistant();
+        let start = app.trace_runs()[0].start;
+
+        // Folded: header only, no terminal.
+        let folded = render_rows(&mut app, 70, 20).join("\n");
+        assert!(!folded.contains("Done"), "folded trace has no terminal: {folded}");
+
+        // Expanded: the rail ends in `└ Done`.
+        app.toggle_trace(start);
+        let open = render_rows(&mut app, 70, 20).join("\n");
+        assert!(open.contains("\u{2514} Done"), "expanded rail ends with Done: {open}");
+    }
+
+    /// A live (unfinished) run's rail has no `Done` terminal: its current step is
+    /// the terminal, and Done would wrongly read as finished.
+    #[test]
+    fn a_live_rail_has_no_done_terminal() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::Token { text: "<think>first</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "<think>second</think>".into() });
+        let live = render_rows(&mut app, 70, 20).join("\n");
+        assert!(!live.contains("Done"), "no Done terminal while live: {live}");
+    }
+
     /// Ctrl-O (`toggle_regions`) unfolds every collapsed trace along with the
     /// per-row detail, and folds them back on the next press.
     #[test]
@@ -26696,11 +26908,12 @@ mod tests {
         assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O refolds");
     }
 
-    /// The condensed live view: while an active run streams, its settled steps
-    /// fold into a live `Working…` header and only the current step (the running
-    /// command box here) shows below -- no growing pile of settled rows.
+    /// The live growing rail: while an active run streams, each settled step
+    /// renders as its own row (reasoning summaries and finished tool rows), with
+    /// the current step (the running command box here) as the frontier below --
+    /// the reader watches the trail accrue rather than a single folded header.
     #[test]
-    fn the_active_trace_folds_to_a_live_header() {
+    fn the_active_trace_shows_the_growing_rail() {
         let mut app = test_app();
         app.status = super::Status::Running;
         // reasoning, tool, reasoning, then a running tool -- three settled
@@ -26729,17 +26942,15 @@ mod tests {
         assert!(runs[0].steps == 3 && runs[0].tool_ran, "{:?}", runs[0]);
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        // Live header (present tense, spinner-led), settled steps folded away.
-        assert!(live.contains("Working \u{b7} 3 steps"), "live header: {live}");
-        assert!(!live.contains("Thought"), "settled steps folded: {live}");
-        // The current step -- the running command -- shows below the header.
+        // No live fold header: the settled steps render on the rail instead.
+        assert!(!live.contains("Working \u{b7}"), "no live fold header: {live}");
+        assert!(live.contains("Thought"), "settled reasoning steps show: {live}");
+        // The current step -- the running command -- shows as the frontier.
         assert!(live.contains("$ cargo test"), "current step shows: {live}");
     }
 
-    /// A lone settled step is not worth a fold header: it is already one line, so
-    /// a header saves no space, reads as "1 step", and would then un-fold on
-    /// wrap-up (the committed trace fold needs 2+ too). It stays visible beside
-    /// the current step instead. Only a second settled step earns the fold.
+    /// A live run shows both its settled step and the current reasoning step at
+    /// once: the growing rail never hides a settled row while a step is in flight.
     #[test]
     fn a_lone_finished_tool_is_not_folded() {
         let mut app = test_app();
@@ -26766,11 +26977,11 @@ mod tests {
         assert!(live.contains("analyzing the diff"), "the current reasoning shows: {live}");
     }
 
-    /// The reported case: while the next tool call is still typing its arguments
-    /// (the live typing box), the prior settled steps must fold behind the live
-    /// header rather than all rendering above the box.
+    /// While the next tool call is still typing its arguments (the live typing
+    /// box), the prior settled steps render on the rail above it -- the growing
+    /// live trail, with the typing box as the current step.
     #[test]
-    fn prior_steps_fold_while_the_next_tool_call_is_typing() {
+    fn prior_steps_show_while_the_next_tool_call_is_typing() {
         let mut app = test_app();
         app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "<think>investigating</think>".into() });
@@ -26796,16 +27007,16 @@ mod tests {
         });
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        assert!(live.contains("Working \u{b7} 2 steps"), "prior steps fold: {live}");
-        assert!(!live.contains("grep needle"), "the prior command row is gone: {live}");
+        assert!(!live.contains("Working \u{b7}"), "no live fold header: {live}");
+        assert!(live.contains("grep needle"), "the prior command row shows on the rail: {live}");
         assert!(live.contains("cargo build"), "the typing box is the current step: {live}");
     }
 
-    /// The screenshot case: after an answer, a fresh run of settled steps must
-    /// stay folded across the gap between one step finishing and the next
-    /// starting -- while the run is live, not only while a token is mid-flight.
+    /// After an answer, a fresh run of settled steps renders on the growing rail
+    /// -- each step visible -- across the gap between one step finishing and the
+    /// next starting, and a `Step` event does not change that.
     #[test]
-    fn a_settled_run_stays_folded_in_the_gap_between_steps() {
+    fn a_settled_run_shows_its_steps_in_the_gap() {
         let mut app = test_app();
         app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "I'll review this PR.".into() });
@@ -26827,29 +27038,26 @@ mod tests {
             });
         }
         // No token in flight now: a bare gap, but the run is still live, so the
-        // settled steps stay folded behind the header rather than un-folding for
-        // the frame before the next step's content arrives.
+        // settled steps render on the rail rather than folding behind a header.
         let live = render_rows(&mut app, 90, 24).join("\n");
-        assert!(live.contains("Working \u{b7} 4 steps"), "the run folds in the gap: {live}");
-        assert!(!live.contains("grep alpha"), "no lingering command rows: {live}");
-        assert!(!live.contains("grep bravo"), "no lingering command rows: {live}");
+        assert!(!live.contains("Working \u{b7}"), "no live fold header in the gap: {live}");
+        assert!(live.contains("grep alpha"), "settled step shows on the rail: {live}");
+        assert!(live.contains("grep bravo"), "settled step shows on the rail: {live}");
 
-        // The fold does not depend on a Step event to hold; a Step (the next
-        // turn) keeps it folded just the same, never toggling it open.
+        // A Step event (the next turn) does not change that: the rail stays.
         app.apply(StreamEvent::Step { index: 3, max: 8 });
-        let folded = render_rows(&mut app, 90, 24).join("\n");
-        assert!(folded.contains("Working \u{b7} 4 steps"), "still folded after a Step: {folded}");
-        assert!(!folded.contains("grep alpha"), "prior command rows stay hidden: {folded}");
-        assert!(!folded.contains("grep bravo"), "prior command rows stay hidden: {folded}");
+        let after = render_rows(&mut app, 90, 24).join("\n");
+        assert!(!after.contains("Working \u{b7}"), "still no fold header after a Step: {after}");
+        assert!(after.contains("grep alpha"), "steps stay visible after a Step: {after}");
+        assert!(after.contains("grep bravo"), "steps stay visible after a Step: {after}");
     }
 
-    /// Gating the live fold on `Status::Running` ties it to the run's lifetime: a
-    /// `Step` landing as the last event before the stream stops cannot leave an
-    /// animated `Working · N steps` header spinning over an idle transcript. This
-    /// is the phantom-header regression the removed `step_boundary` flag caused
-    /// (it was never reset on the terminal paths, which skip `apply`).
+    /// The active run shows its steps on the rail (no header of either tense);
+    /// once the run finishes with an answer, the finished trace folds to the
+    /// static `Worked · N steps` header. There is no live header that could be
+    /// left spinning over an idle transcript.
     #[test]
-    fn the_live_fold_ends_with_the_run() {
+    fn the_growing_rail_folds_when_the_run_finishes() {
         let mut app = test_app();
         app.status = super::Status::Running;
         for (id, cmd) in [("t1", "grep alpha"), ("t2", "grep bravo")] {
@@ -26868,15 +27076,22 @@ mod tests {
                 diff: None,
             });
         }
-        // A Step arrives, then the run stops with no further content.
-        app.apply(StreamEvent::Step { index: 2, max: 8 });
+        // Live: the steps show on the rail, no fold header of either tense.
+        let live = render_rows(&mut app, 90, 24).join("\n");
         assert!(
-            render_rows(&mut app, 90, 24).join("\n").contains("Working \u{b7} 4 steps"),
-            "folded while the run is live"
+            !live.contains("Working \u{b7}") && !live.contains("Worked \u{b7}"),
+            "no header while live: {live}"
         );
+        assert!(live.contains("grep alpha"), "steps show on the rail: {live}");
+
+        // The run answers and ends: the finished trace folds to a static header.
+        app.apply(StreamEvent::Token { text: "reviewed it".into() });
+        app.flush_assistant();
         app.status = super::Status::Idle;
         let idle = render_rows(&mut app, 90, 24).join("\n");
-        assert!(!idle.contains("Working"), "no phantom animated header at idle: {idle}");
+        assert!(idle.contains("Worked \u{b7}"), "finished trace folds: {idle}");
+        assert!(!idle.contains("Working"), "no phantom live header at idle: {idle}");
+        assert!(idle.contains("reviewed it"), "the answer shows: {idle}");
     }
 
     #[test]

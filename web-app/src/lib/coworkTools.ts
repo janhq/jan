@@ -10,6 +10,11 @@ import { jsonSchema, type Tool } from 'ai'
 import { getAgentToolSchemas } from '@/lib/agentTools'
 import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
+  WORK_MUTATION_NAMES,
+  WORK_TOOL_NAMES,
+  workqueueTools,
+} from '@/lib/coworkWorkqueue'
+import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
   WEB_SEARCH_DESCRIPTION,
@@ -26,6 +31,9 @@ export const PLAN_DENIED_TOOLS = new Set([
   'task',
   // Starting one schedules shell scripts, which is exec-class work.
   MONITOR_TOOL_NAME,
+  // The queue-mutating work tools (post/claim/complete); read_agent and
+  // list_work are read-only and stay available in plan mode.
+  ...WORK_MUTATION_NAMES,
 ])
 
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
@@ -40,6 +48,7 @@ export const CLIENT_TOOL_NAMES = new Set([
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
   MONITOR_TOOL_NAME,
+  ...WORK_TOOL_NAMES,
 ])
 
 const todoTool: Tool = {
@@ -249,5 +258,8 @@ export async function buildCoworkTools(
   if (!opts.planMode) {
     tools[MONITOR_TOOL_NAME] = monitorTool()
   }
+  // The shared work queue + observability. Available to main and to workers
+  // (unlike `task`, which caps recursion); mutations are dropped in plan mode.
+  Object.assign(tools, workqueueTools(opts.planMode))
   return tools
 }

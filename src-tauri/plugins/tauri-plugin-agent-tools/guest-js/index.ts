@@ -296,6 +296,70 @@ export async function subagentResultFill(
   })
 }
 
+/** One item on the shared work queue (mirrors the Rust `WorkItemView`). */
+export type WorkItemView = {
+  workId: string
+  title: string
+  /** `open` | `claimed` | `done` | `failed` | `blocked`. */
+  state: string
+  claimedBy?: string
+  reason?: string
+}
+
+/** The result of a work-queue command: the model-facing message plus the fresh
+ * queue snapshot the store applies directly. */
+export type WorkCommandResult = {
+  message: string
+  items: WorkItemView[]
+  /** The id a `workClaim` handed the caller, if any. */
+  claimed?: string
+}
+
+/** Post a task to `threadId`'s shared work queue. `args` is `{task, deps?, title?}`;
+ * `agentId` is the poster of record (`"main"` or a subagent run id). */
+export async function workPost(
+  threadId: string,
+  agentId: string,
+  args: Record<string, unknown>
+): Promise<WorkCommandResult> {
+  return await invoke('plugin:agent-tools|work_post', { threadId, agentId, args })
+}
+
+/** Claim the next ready item for `agentId`. */
+export async function workClaim(
+  threadId: string,
+  agentId: string
+): Promise<WorkCommandResult> {
+  return await invoke('plugin:agent-tools|work_claim', { threadId, agentId })
+}
+
+/** Complete an item `agentId` claimed. `args` is `{work_id, result}`. */
+export async function workComplete(
+  threadId: string,
+  agentId: string,
+  args: Record<string, unknown>
+): Promise<WorkCommandResult> {
+  return await invoke('plugin:agent-tools|work_complete', {
+    threadId,
+    agentId,
+    args,
+  })
+}
+
+/** The whole work queue as a snapshot, with a summary in `message`. */
+export async function workList(threadId: string): Promise<WorkCommandResult> {
+  return await invoke('plugin:agent-tools|work_list', { threadId })
+}
+
+/** Read a peer's status + transcript, or the roster (no `run_id`). `args` is
+ * `{run_id?, tail?}`; the returned string is model-facing. */
+export async function agentRead(
+  threadId: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  return await invoke('plugin:agent-tools|agent_read', { threadId, args })
+}
+
 /** An attachment copied into a session workspace. */
 export type ImportedAttachment = {
   /** The copy inside the workspace, readable by the agent's file tools. */

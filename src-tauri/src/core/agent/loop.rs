@@ -114,6 +114,19 @@ pub(crate) struct OrchestrationArgs {
     /// child) scopes monitors to the run, which then parks on them. Never
     /// inherited by a child run, which gets its own per-run set.
     pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// Whether this run may use the shared work queue (`post_work`/`claim_work`/
+    /// `complete_work`/`list_work`) and per-agent observability. Unlike
+    /// `subagents_enabled` this stays *true* on a child, so a dispatched worker
+    /// can claim and complete queue items while still being unable to nest.
+    pub work_queue_enabled: bool,
+    /// The run-scoped work-available doorbell, shared across the whole run tree
+    /// via the cloned child args: any agent's `post_work` rings it, waking a
+    /// parked main to re-dispatch. Created once at the top level.
+    pub work_signal: std::sync::Arc<crate::core::agent::subagent::WorkSignal>,
+    /// This run's own collaboration identity: the `run_id` it posts/claims work
+    /// and writes its status under. `None` for the top-level run, which is
+    /// `"main"`. Set by `spawn_subagent` on each child's cloned args.
+    pub collab_run_id: Option<String>,
 }
 
 #[async_trait]
@@ -186,6 +199,11 @@ pub(crate) trait ToolInvoker: Send + Sync {
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
         Vec::new()
     }
+
+    /// Record that a new model turn (`index`, 1-based) began, so a collaborating
+    /// agent's `status.json` shows an accurate live step even on a turn that
+    /// calls no tools. Default no-op for invokers with no observability.
+    fn record_step(&self, _index: u32) {}
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -203,6 +221,57 @@ fn publish_monitors(
         });
         *shown = now;
     }
+}
+
+/// Flatten and clamp a transcript detail so one line cannot bloat the log.
+fn truncate_detail(s: &str) -> String {
+    const MAX: usize = 200;
+    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= MAX {
+        return flat;
+    }
+    let head: String = flat.chars().take(MAX).collect();
+    format!("{head}...")
+}
+
+/// A compact roster + queue snapshot folded into each completion/doorbell wake,
+/// so a resuming main sees current peer/queue state without a dedicated poll.
+/// Empty when there is nothing worth reporting (no queue and no workers).
+fn work_queue_digest(scratch: &std::path::Path) -> String {
+    use tauri_plugin_agent_tools::tools::{observ, workqueue};
+    let items = workqueue::list_work_dir(scratch);
+    let roster = observ::roster(scratch);
+    let workers: Vec<&observ::AgentStatusView> =
+        roster.iter().filter(|s| s.run_id != "main").collect();
+    if items.is_empty() && workers.is_empty() {
+        return String::new();
+    }
+    let count = |state: &str| items.iter().filter(|i| i.state == state).count();
+    let mut out = format!(
+        "Work queue: {} ready, {} in progress, {} done, {} failed.",
+        count("open"),
+        count("claimed"),
+        count("done"),
+        count("failed")
+    );
+    if !workers.is_empty() {
+        let list: Vec<String> = workers
+            .iter()
+            .map(|s| {
+                format!(
+                    "{} [{}]{}",
+                    s.name,
+                    s.state,
+                    s.work_id
+                        .as_ref()
+                        .map(|w| format!(" {w}"))
+                        .unwrap_or_default()
+                )
+            })
+            .collect();
+        out.push_str(&format!(" Workers: {}.", list.join(", ")));
+    }
+    out
 }
 
 struct HttpModelInvoker {
@@ -359,6 +428,23 @@ struct CompositeToolInvoker {
     monitors_outlive_run: bool,
     auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
+    /// Whether this run participates in the shared work queue + per-agent
+    /// observability. Stays true on a child worker (unlike `subagents`).
+    work_queue_enabled: bool,
+    /// The run-scoped doorbell rung on `post_work`, shared with the run's
+    /// `BackgroundSubagents` so a post wakes a parked main.
+    work_signal: std::sync::Arc<crate::core::agent::subagent::WorkSignal>,
+    /// This agent's collaboration id (`"main"` or a `sub-...` run id): the
+    /// poster/claimer/completer of record, and the run_id its status is written
+    /// under.
+    collab_run_id: String,
+    /// Live status header this agent rewrites as it works, mirrored to
+    /// `status.json` so peers/main/the user can read it mid-flight.
+    collab_status: std::sync::Mutex<tauri_plugin_agent_tools::tools::observ::AgentStatusView>,
+    /// Append-only activity log, created once for the run's life. `None` when
+    /// collaboration is off or there is no scratch.
+    transcript:
+        std::sync::Mutex<Option<tauri_plugin_agent_tools::tools::observ::TranscriptWriter>>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -669,6 +755,120 @@ impl CompositeToolInvoker {
     /// write and the answer is delivered inline instead.
     fn subagent_scratch(&self) -> Option<&std::path::Path> {
         self.sandbox.then_some(self.scratch_root.as_path())
+    }
+
+    /// The collaboration scratch this run shares with its peers: the session
+    /// scratch dir, independent of the bash sandbox (unlike `subagent_scratch`).
+    /// `None` when collaboration is off.
+    fn collab_scratch(&self) -> Option<&std::path::Path> {
+        self.work_queue_enabled
+            .then_some(self.scratch_root.as_path())
+    }
+
+    /// Rewrite `status.json` from the live header and emit `AgentStatus`.
+    fn flush_collab_status(&self) {
+        let Some(scratch) = self.collab_scratch() else {
+            return;
+        };
+        {
+            let status = self.collab_status.lock().unwrap();
+            tauri_plugin_agent_tools::tools::observ::write_status(scratch, &status);
+        }
+        crate::core::agent::events::maybe_emit_agent_status(
+            &self.events,
+            scratch,
+            &self.collab_run_id,
+        );
+    }
+
+    /// Append one activity line to this agent's transcript (best-effort).
+    fn log_activity(&self, kind: &str, detail: &str, err: Option<bool>) {
+        if let Some(w) = self.transcript.lock().unwrap().as_mut() {
+            w.append(kind, detail, err);
+        }
+    }
+
+    /// Emit the whole work-queue snapshot (publish-on-mutation, mirroring
+    /// `publish_monitors`; the consumer replaces its view each time).
+    fn publish_workqueue(&self) {
+        if let Some(scratch) = self.collab_scratch() {
+            let items = tauri_plugin_agent_tools::tools::workqueue::list_work_dir(scratch);
+            let _ = self.events.send(StreamEvent::WorkQueue { items });
+        }
+    }
+
+    /// Execute one work-queue / observability tool call and return its result.
+    /// Rings the doorbell on a post, records a claim in the status header, and
+    /// republishes the queue snapshot.
+    fn handle_work_tool(&self, name: &str, args: &serde_json::Value) -> String {
+        use tauri_plugin_agent_tools::tools::{epoch_secs, observ, workqueue};
+        let Some(scratch) = self.collab_scratch() else {
+            return "ERROR: the work queue is not available in this run".to_string();
+        };
+        if name == observ::READ_AGENT_TOOL {
+            return observ::run_read_agent(scratch, args);
+        }
+        let res = workqueue::run_work_tool(scratch, name, args, &self.collab_run_id, epoch_secs());
+        if res.posted {
+            self.work_signal.post();
+        }
+        if let Some(work_id) = &res.claimed {
+            self.collab_status.lock().unwrap().work_id = Some(work_id.clone());
+            self.flush_collab_status();
+        }
+        self.publish_workqueue();
+        res.message
+    }
+
+    /// Record a batch of tool calls in this agent's status header + transcript,
+    /// so peers see live activity. A no-op when collaboration is off.
+    fn note_batch(&self, calls: &[serde_json::Value], out: &[ToolOutcome]) {
+        if self.collab_scratch().is_none() {
+            return;
+        }
+        let name_of = |tc: &serde_json::Value| -> String {
+            tc.get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool")
+                .to_string()
+        };
+        let names: std::collections::HashMap<String, String> = calls
+            .iter()
+            .filter_map(|tc| {
+                let id = tc.get("id").and_then(|v| v.as_str())?.to_string();
+                Some((id, name_of(tc)))
+            })
+            .collect();
+        let mut last: Option<String> = None;
+        for tc in calls {
+            let name = name_of(tc);
+            let args = tc
+                .get("function")
+                .and_then(|f| f.get("arguments"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            self.log_activity("tool_call", &truncate_detail(&format!("{name} {args}")), None);
+            last = Some(name);
+        }
+        for o in out {
+            let name = names.get(&o.id).map(String::as_str).unwrap_or("tool");
+            let err = o.content.starts_with("ERROR");
+            self.log_activity(
+                "tool_result",
+                &truncate_detail(&format!("{name}: {}", o.content)),
+                Some(err),
+            );
+        }
+        {
+            let mut s = self.collab_status.lock().unwrap();
+            s.tool_calls = s.tool_calls.saturating_add(calls.len() as u64);
+            if let Some(last) = last {
+                s.last = last;
+            }
+            s.updated_at = tauri_plugin_agent_tools::tools::epoch_secs();
+        }
+        self.flush_collab_status();
     }
 
     /// Execute one subagent tool call, returning the model-facing result string
@@ -1085,7 +1285,44 @@ impl ToolInvoker for CompositeToolInvoker {
                     text: u.text,
                 }),
         );
+        // The work-available doorbell: any agent's post_work rang it. Draining
+        // clears the flag `has_pending_work` reads, so the run can terminate once
+        // nothing is left. Whenever anything reached the model this drain, append
+        // a fresh roster + queue digest so a resuming main has current state.
+        if self.work_signal.take() {
+            out.push(BackgroundNotice {
+                headline: Some("work items ready".to_string()),
+                text: "New work items are ready on the shared queue. Dispatch a worker (or claim \
+                       one) as appropriate."
+                    .to_string(),
+            });
+        }
+        if self.work_queue_enabled && !out.is_empty() {
+            if let Some(scratch) = self.collab_scratch() {
+                let digest = work_queue_digest(scratch);
+                if !digest.is_empty() {
+                    out.push(BackgroundNotice {
+                        headline: None,
+                        text: digest,
+                    });
+                }
+            }
+        }
         out
+    }
+
+    fn record_step(&self, index: u32) {
+        if self.collab_scratch().is_none() {
+            return;
+        }
+        {
+            let mut s = self.collab_status.lock().unwrap();
+            s.step = index as u64;
+            s.state = tauri_plugin_agent_tools::tools::observ::STATE_RUNNING.to_string();
+            s.updated_at = tauri_plugin_agent_tools::tools::epoch_secs();
+        }
+        self.log_activity("step", &index.to_string(), None);
+        self.flush_collab_status();
     }
 
     fn background_pending(&self) -> bool {
@@ -1222,6 +1459,36 @@ impl ToolInvoker for CompositeToolInvoker {
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 let content = self.handle_monitor_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            // Work-queue + observability tools are loop-dispatched like the
+            // subagent and monitor tools, ahead of the fs/exec gate: they touch
+            // only the run's own collaboration scratch, never the filesystem.
+            if tauri_plugin_agent_tools::tools::workqueue::is_work_tool(name)
+                || name == tauri_plugin_agent_tools::tools::observ::READ_AGENT_TOOL
+            {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // Plan mode: the queue-mutating tools change shared state and are
+                // not advertised there; hard-denied here as defense in depth.
+                // `read_agent`/`list_work` are read-only and fall through.
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan
+                    && tauri_plugin_agent_tools::tools::workqueue::is_work_mutation(name)
+                {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_work_tool(name, &args);
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
@@ -1445,6 +1712,7 @@ impl ToolInvoker for CompositeToolInvoker {
             .filter_map(|(i, tc)| tc.get("id").and_then(|v| v.as_str()).map(|id| (id, i)))
             .collect();
         out.sort_by_key(|o| *order.get(o.id.as_str()).unwrap_or(&usize::MAX));
+        self.note_batch(tool_calls, &out);
         Ok(out)
     }
 }
@@ -1490,6 +1758,11 @@ pub(crate) async fn run_server_side_openai_orchestration(
         session_id: None,
         sandbox: None,
         monitors: None,
+        // The proxy has no session scratch and never dispatches subagents, so the
+        // collaboration layer is inert here; a fresh signal keeps the field total.
+        work_queue_enabled: false,
+        work_signal: std::sync::Arc::new(crate::core::agent::subagent::WorkSignal::new()),
+        collab_run_id: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1613,6 +1886,7 @@ fn advertise_local_tools(
     max_parallel_subagents: u32,
     ask_enabled: bool,
     todo_enabled: bool,
+    work_queue_enabled: bool,
 ) {
     let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
     if project_root.is_some() {
@@ -1678,6 +1952,32 @@ fn advertise_local_tools(
                 openai_tools.push(tauri_plugin_agent_tools::tools::monitor::monitor_tool_schema());
             }
         }
+        // Work-queue + observability tools. Available to main AND to workers
+        // (unlike subagent dispatch, which caps recursion), gated on
+        // collaboration being enabled. The mutating three are hidden in Plan;
+        // `read_agent`/`list_work` are read-only and stay.
+        if work_queue_enabled {
+            for schema in tauri_plugin_agent_tools::tools::workqueue::work_tool_schemas() {
+                let name = schema["function"]["name"].as_str().unwrap_or_default();
+                if permissions.is_denied(name) {
+                    continue;
+                }
+                if planning && tauri_plugin_agent_tools::tools::workqueue::is_work_mutation(name) {
+                    continue;
+                }
+                if allowed_names.is_some_and(|allowed| !allowed.contains(name)) {
+                    continue;
+                }
+                openai_tools.push(schema);
+            }
+            let read_agent = tauri_plugin_agent_tools::tools::observ::read_agent_tool_schema();
+            let ra_name = read_agent["function"]["name"].as_str().unwrap_or_default();
+            if !permissions.is_denied(ra_name)
+                && allowed_names.is_none_or(|allowed| allowed.contains(ra_name))
+            {
+                openai_tools.push(read_agent);
+            }
+        }
     }
     // The `ask` tool needs no project (it's an interactive question, not
     // filesystem access), so it's advertised independent of the project_root
@@ -1739,6 +2039,7 @@ fn build_run_system_prompt(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox: bool,
+    work_queue_enabled: bool,
 ) -> Option<String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
@@ -1752,6 +2053,7 @@ fn build_run_system_prompt(
                 root,
                 scratch.as_deref(),
                 subagents_enabled,
+                work_queue_enabled,
             )
         }
         None => base.map(str::to_string),
@@ -1772,6 +2074,7 @@ pub(crate) fn context_system_prompt_preview(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox_flag: Option<bool>,
+    work_queue_enabled: bool,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
     build_run_system_prompt(
@@ -1781,6 +2084,7 @@ pub(crate) fn context_system_prompt_preview(
         session_id,
         subagents_enabled,
         settings.sandbox,
+        work_queue_enabled,
     )
 }
 
@@ -1803,6 +2107,7 @@ pub(crate) async fn context_advertised_tools(
     max_parallel_subagents: u32,
     ask_enabled: bool,
     todo_enabled: bool,
+    work_queue_enabled: bool,
 ) -> Vec<serde_json::Value> {
     let (mut tools, mut tool_to_server) =
         crate::core::agent::upstream::collect_mcp_openai_tools(mcp_servers, mcp_settings)
@@ -1823,6 +2128,7 @@ pub(crate) async fn context_advertised_tools(
         max_parallel_subagents,
         ask_enabled,
         todo_enabled,
+        work_queue_enabled,
     );
     tools
 }
@@ -1919,6 +2225,9 @@ async fn orchestrate_inner(
         session_id,
         monitors: session_monitors,
         sandbox,
+        work_queue_enabled,
+        work_signal,
+        collab_run_id,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1982,6 +2291,7 @@ async fn orchestrate_inner(
         session_id.as_deref(),
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
+        *work_queue_enabled,
     );
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
@@ -2118,6 +2428,7 @@ async fn orchestrate_inner(
         *max_parallel_subagents,
         ask_requests.is_some(),
         todo_registry.is_some(),
+        *work_queue_enabled,
     );
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -2159,9 +2470,14 @@ async fn orchestrate_inner(
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
-            *max_parallel_subagents,
-        ));
+        // Share the run tree's one doorbell, so a child's `post_work` (its own
+        // registry, built from the cloned args) wakes this run's park.
+        let bg = std::sync::Arc::new(
+            crate::core::agent::subagent::BackgroundSubagents::with_signal(
+                *max_parallel_subagents,
+                work_signal.clone(),
+            ),
+        );
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -2182,9 +2498,38 @@ async fn orchestrate_inner(
         // is unconfined: nothing binds it, so creating it would only leave an
         // empty directory behind.
         let scratch_root = scratch_root_for(session_id.as_deref(), root);
-        if settings.sandbox {
+        // Also ensured when collaboration is on but the shell is unconfined: the
+        // work queue and observability write here regardless of the sandbox
+        // (they never become a `resolve_path` rewrite root, so bash still sees
+        // the real `/tmp`), and their `validated_subdir` needs this to exist.
+        if settings.sandbox || *work_queue_enabled {
             tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
         }
+        // Collaboration identity + initial observability. `run_subagent`
+        // pre-writes a child's status (with its friendly name) before this runs,
+        // so reading it back preserves the name; main creates its own as "main".
+        let collab_run_id = collab_run_id.clone().unwrap_or_else(|| "main".to_string());
+        let (collab_status, transcript) = if *work_queue_enabled {
+            use tauri_plugin_agent_tools::tools::observ;
+            let now = tauri_plugin_agent_tools::tools::epoch_secs();
+            let mut status = observ::read_status(&scratch_root, &collab_run_id)
+                .unwrap_or_else(|| observ::AgentStatusView::new(&collab_run_id, &collab_run_id, now));
+            status.state = observ::STATE_RUNNING.to_string();
+            status.updated_at = now;
+            observ::write_status(&scratch_root, &status);
+            crate::core::agent::events::maybe_emit_agent_status(events, &scratch_root, &collab_run_id);
+            let transcript = observ::TranscriptWriter::create(&scratch_root, &collab_run_id);
+            (status, transcript)
+        } else {
+            (
+                tauri_plugin_agent_tools::tools::observ::AgentStatusView::new(
+                    &collab_run_id,
+                    &collab_run_id,
+                    0,
+                ),
+                None,
+            )
+        };
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root: tauri_plugin_agent_tools::workspace::project_store(root),
@@ -2209,6 +2554,11 @@ async fn orchestrate_inner(
             monitors_outlive_run: session_monitors.is_some(),
             auto_approve: *auto_approve,
             run_mode,
+            work_queue_enabled: *work_queue_enabled,
+            work_signal: work_signal.clone(),
+            collab_run_id,
+            collab_status: std::sync::Mutex::new(collab_status),
+            transcript: std::sync::Mutex::new(transcript),
         };
         let result = run_turn_cycle(
             events,
@@ -2524,6 +2874,10 @@ async fn run_turn_cycle(
             index: (turn as u32) + 1,
             max: max_turns as u32,
         });
+        // Mirror the step into this agent's collaboration status header, so a
+        // peer reading its status sees an accurate live step even on a turn that
+        // calls no tools.
+        tools.record_step((turn as u32) + 1);
 
         // A turn this run just produced can carry poison of its own: a
         // length-truncated tool call, or an argument string that decodes to a
@@ -3185,6 +3539,7 @@ mod tests {
             Some("test-session"),
             false,
             true,
+            false,
         )
         .expect("prompt");
 
@@ -5193,6 +5548,13 @@ mod tests {
             monitors_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
+            work_queue_enabled: false,
+            work_signal: std::sync::Arc::new(crate::core::agent::subagent::WorkSignal::new()),
+            collab_run_id: "main".to_string(),
+            collab_status: std::sync::Mutex::new(
+                tauri_plugin_agent_tools::tools::observ::AgentStatusView::new("main", "main", 0),
+            ),
+            transcript: std::sync::Mutex::new(None),
         }
     }
 
@@ -5320,6 +5682,7 @@ mod tests {
             Some("s1"),
             false,
             true,
+            false,
         )
         .expect("prompt");
         assert!(confined.contains("Scratch:"), "{confined}");
@@ -5328,6 +5691,7 @@ mod tests {
             Some("do things"),
             Some(&root),
             Some("s1"),
+            false,
             false,
             false,
         )

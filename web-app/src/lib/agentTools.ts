@@ -8,6 +8,11 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  workPost,
+  workClaim,
+  workComplete,
+  workList,
+  agentRead,
   attachmentImport,
   startMonitor,
   stopMonitor,
@@ -20,6 +25,8 @@ import {
   type SandboxStatus,
   type ToolImage,
   type ToolSchema,
+  type WorkCommandResult,
+  type WorkItemView,
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -436,6 +443,75 @@ export async function fillSubagentResult(
   } catch (e) {
     console.warn('[agentTools] Failed to save subagent result:', messageOf(e))
     return false
+  }
+}
+
+export type { WorkCommandResult, WorkItemView }
+
+/** A work-tool result plus the fresh queue snapshot. `null` when the command
+ * failed, so the caller can fall back to an error message inline. */
+type WorkResult = WorkCommandResult | null
+
+/** Post a task to the session's shared work queue. */
+export async function postWork(
+  sessionId: string,
+  agentId: string,
+  args: Record<string, unknown>
+): Promise<WorkResult> {
+  try {
+    return await workPost(sessionId, agentId, args)
+  } catch (e) {
+    console.warn('[agentTools] Failed to post work:', messageOf(e))
+    return null
+  }
+}
+
+/** Claim the next ready item for `agentId`. */
+export async function claimWork(
+  sessionId: string,
+  agentId: string
+): Promise<WorkResult> {
+  try {
+    return await workClaim(sessionId, agentId)
+  } catch (e) {
+    console.warn('[agentTools] Failed to claim work:', messageOf(e))
+    return null
+  }
+}
+
+/** Complete an item `agentId` claimed. */
+export async function completeWork(
+  sessionId: string,
+  agentId: string,
+  args: Record<string, unknown>
+): Promise<WorkResult> {
+  try {
+    return await workComplete(sessionId, agentId, args)
+  } catch (e) {
+    console.warn('[agentTools] Failed to complete work:', messageOf(e))
+    return null
+  }
+}
+
+/** The whole work queue as a snapshot. */
+export async function listWork(sessionId: string): Promise<WorkResult> {
+  try {
+    return await workList(sessionId)
+  } catch (e) {
+    console.warn('[agentTools] Failed to list work:', messageOf(e))
+    return null
+  }
+}
+
+/** Read a peer's status + transcript, or the roster (no `run_id`). */
+export async function readAgent(
+  sessionId: string,
+  args: Record<string, unknown>
+): Promise<string> {
+  try {
+    return await agentRead(sessionId, args)
+  } catch (e) {
+    return `ERROR: ${messageOf(e)}`
   }
 }
 

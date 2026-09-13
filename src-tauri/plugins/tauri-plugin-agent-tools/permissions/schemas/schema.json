@@ -295,6 +295,18 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the agent_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-agent-read",
+          "markdownDescription": "Enables the agent_read command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the agent_read command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-agent-read",
+          "markdownDescription": "Denies the agent_read command without any pre-configured scope."
+        },
+        {
           "description": "Enables the attachment_import command without any pre-configured scope.",
           "type": "string",
           "const": "allow-attachment-import",
@@ -667,6 +679,54 @@
           "markdownDescription": "Denies the tool_schemas command without any pre-configured scope."
         },
         {
+          "description": "Enables the work_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-work-claim",
+          "markdownDescription": "Enables the work_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the work_claim command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-work-claim",
+          "markdownDescription": "Denies the work_claim command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the work_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-work-complete",
+          "markdownDescription": "Enables the work_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the work_complete command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-work-complete",
+          "markdownDescription": "Denies the work_complete command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the work_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-work-list",
+          "markdownDescription": "Enables the work_list command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the work_list command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-work-list",
+          "markdownDescription": "Denies the work_list command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the work_post command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-work-post",
+          "markdownDescription": "Enables the work_post command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the work_post command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-work-post",
+          "markdownDescription": "Denies the work_post command without any pre-configured scope."
+        },
+        {
           "description": "Enables the workspace_path command without any pre-configured scope.",
           "type": "string",
           "const": "allow-workspace-path",
@@ -679,10 +739,10 @@
           "markdownDescription": "Denies the workspace_path command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`",
+          "description": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-work-post`\n- `allow-work-claim`\n- `allow-work-complete`\n- `allow-work-list`\n- `allow-agent-read`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`"
+          "markdownDescription": "Default permissions for the agent tools plugin: skill/memory management plus built-in tool execution\n#### This default permission set includes:\n\n- `allow-workspace-path`\n- `allow-thread-workspace-path`\n- `allow-thread-workspace-delete`\n- `allow-thread-workspace-sweep`\n- `allow-session-workspace-path`\n- `allow-session-workspace-delete`\n- `allow-session-workspace-sweep`\n- `allow-skill-list`\n- `allow-skill-read`\n- `allow-skill-write`\n- `allow-skill-delete`\n- `allow-skill-invoke`\n- `allow-memory-list`\n- `allow-memory-read`\n- `allow-memory-write`\n- `allow-memory-catalog`\n- `allow-memory-delete`\n- `allow-tool-schemas`\n- `allow-sandbox-status`\n- `allow-subagent-result-reserve`\n- `allow-subagent-result-fill`\n- `allow-work-post`\n- `allow-work-claim`\n- `allow-work-complete`\n- `allow-work-list`\n- `allow-agent-read`\n- `allow-attachment-import`\n- `allow-execute-tool`\n- `allow-execute-tool-streaming`\n- `allow-start-monitor`\n- `allow-stop-monitor`\n- `allow-list-monitors`\n- `allow-session-monitor-ids`\n- `allow-stop-session-monitors`\n- `allow-cancel-thread-bash`\n- `allow-preview-register-root`\n- `allow-preview-unregister-root`"
         }
       ]
     }

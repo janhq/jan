@@ -125,8 +125,10 @@ pub fn fill_subagent_result(path: &Path, text: &str) -> bool {
 }
 
 /// `create(false)`: the file must be the one we reserved, so a path that has
-/// since been removed is a failure rather than something to recreate.
-fn open_truncating(path: &Path) -> std::io::Result<std::fs::File> {
+/// since been removed is a failure rather than something to recreate. Shared
+/// with `observ`'s resume-collision reclaim, which truncates an owned stale
+/// transcript rather than suffixing a new run id.
+pub(crate) fn open_truncating(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)

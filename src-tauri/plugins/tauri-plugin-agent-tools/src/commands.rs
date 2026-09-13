@@ -447,6 +447,104 @@ pub async fn subagent_result_fill(
     Ok(())
 }
 
+/// The result of a work-queue command: the model-facing message the Cowork loop
+/// feeds back to the model, plus the post-mutation queue snapshot the store
+/// applies directly (so the rail updates without a separate poll).
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkCommandResult {
+    pub message: String,
+    pub items: Vec<crate::tools::workqueue::WorkItemView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claimed: Option<String>,
+}
+
+/// Run one work-queue tool against a session's scratch and return its message +
+/// the fresh snapshot. Host-side, mirroring the CLI loop's dispatch: names cross
+/// the JS boundary and are re-validated inside the core (`is_work_id`), and no
+/// host path is ever accepted.
+async fn run_work(
+    thread_id: String,
+    name: &'static str,
+    args: serde_json::Value,
+    agent_id: String,
+) -> Result<WorkCommandResult, AgentToolsError> {
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    tokio::task::spawn_blocking(move || {
+        let now = crate::tools::epoch_secs();
+        let res = crate::tools::workqueue::run_work_tool(&scratch, name, &args, &agent_id, now);
+        WorkCommandResult {
+            message: res.message,
+            items: crate::tools::workqueue::list_work_dir(&scratch),
+            claimed: res.claimed,
+        }
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("work tool failed: {e}")))
+}
+
+/// Post a task to the session's shared work queue. `args` is `{task, deps?,
+/// title?}`; `agent_id` is the poster of record (`"main"` or a subagent run id).
+#[tauri::command]
+pub async fn work_post(
+    thread_id: String,
+    agent_id: String,
+    args: serde_json::Value,
+) -> Result<WorkCommandResult, AgentToolsError> {
+    run_work(thread_id, "post_work", args, agent_id).await
+}
+
+/// Claim the next ready item for `agent_id`.
+#[tauri::command]
+pub async fn work_claim(
+    thread_id: String,
+    agent_id: String,
+) -> Result<WorkCommandResult, AgentToolsError> {
+    run_work(
+        thread_id,
+        "claim_work",
+        serde_json::Value::Object(Default::default()),
+        agent_id,
+    )
+    .await
+}
+
+/// Complete an item `agent_id` claimed. `args` is `{work_id, result}`.
+#[tauri::command]
+pub async fn work_complete(
+    thread_id: String,
+    agent_id: String,
+    args: serde_json::Value,
+) -> Result<WorkCommandResult, AgentToolsError> {
+    run_work(thread_id, "complete_work", args, agent_id).await
+}
+
+/// The whole work queue as a snapshot, with a model-facing summary in `message`.
+#[tauri::command]
+pub async fn work_list(thread_id: String) -> Result<WorkCommandResult, AgentToolsError> {
+    run_work(
+        thread_id,
+        "list_work",
+        serde_json::Value::Object(Default::default()),
+        String::new(),
+    )
+    .await
+}
+
+/// Read a peer's status + transcript, or the roster. `args` is `{run_id?, tail?}`.
+/// Returns the model-facing text; a JS-supplied `run_id` is re-validated inside
+/// the core (`is_agent_id`).
+#[tauri::command]
+pub async fn agent_read(
+    thread_id: String,
+    args: serde_json::Value,
+) -> Result<String, AgentToolsError> {
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    tokio::task::spawn_blocking(move || crate::tools::observ::run_read_agent(&scratch, &args))
+        .await
+        .map_err(|e| AgentToolsError::from(format!("agent read failed: {e}")))
+}
+
 /// An attachment imported into a session workspace: host paths, which are also
 /// the model-visible spelling since the workspace is the tools' root.
 #[derive(serde::Serialize)]

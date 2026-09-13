@@ -16,6 +16,8 @@ import {
   monitorSpecFromArgs,
   type MonitorLane,
 } from '@/lib/coworkMonitor'
+import { WORK_TOOL_NAMES, runWorkOp } from '@/lib/coworkWorkqueue'
+import type { WorkItemView } from '@/lib/agentTools'
 import type { PendingToolCall, ToolOutcome } from '@/lib/coworkRunner'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
 import {
@@ -43,6 +45,12 @@ export type DispatchContext = {
   /** The session's monitor lane; `null` for a subagent's dispatch, which
    * refuses the tool (a child has no turn of its own for a match to start). */
   monitors: MonitorLane | null
+  /** This agent's collaboration id (`"main"` or a `sub-...` worker id): the
+   * poster/claimer/completer of record for the shared work queue. */
+  workAgentId: string
+  /** Applies the post-mutation work-queue snapshot to the session store, so the
+   * rail stays live. Omitted where there is no display to feed. */
+  onWorkQueue?: (items: WorkItemView[]) => void
 }
 
 /**
@@ -185,6 +193,13 @@ export async function dispatchCoworkTool(
     }
     if (toolName === MONITOR_TOOL_NAME) {
       return await runMonitorOp(call.input, ctx)
+    }
+    if (WORK_TOOL_NAMES.has(toolName)) {
+      return await runWorkOp(toolName, call.input, {
+        sessionId: ctx.sessionId,
+        agentId: ctx.workAgentId,
+        onWorkQueue: ctx.onWorkQueue,
+      })
     }
 
     if (WEB_TOOL_NAMES.has(toolName)) {

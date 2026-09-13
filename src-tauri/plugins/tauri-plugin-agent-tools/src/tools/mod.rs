@@ -16,6 +16,10 @@ pub mod jail;
 /// The `monitor` tool's core: file watching + condition-script evaluation.
 /// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
 pub mod monitor;
+/// Per-agent live transcript + status header, written into the collaboration
+/// scratch so peers and the main agent can read what an agent is doing while it
+/// still runs. Loop-dispatched read side (`read_agent`); not in `BUILTIN_TOOLS`.
+pub mod observ;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
 /// kernel-level confinement for spawned commands.
@@ -23,6 +27,19 @@ pub mod sandbox;
 pub mod schema;
 pub mod spill;
 pub mod web;
+/// The shared work queue's core: file-mediated task posting/claiming/completing
+/// among the main agent and its depth-1 workers. Loop-dispatched like the
+/// subagent and monitor tools, so it is not in `BUILTIN_TOOLS`.
+pub mod workqueue;
+
+/// Epoch seconds, saturating to 0 before the epoch. The one clock the
+/// collaboration cores (`workqueue`, `observ`) stamp files and leases with.
+pub fn epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
 
 /// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
 /// URL plus a display name. This is what the `read` tool returns for an image

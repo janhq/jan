@@ -668,6 +668,8 @@
   "backgroundRunning_one": "{{count}} background task running",
   "backgroundRunning_other": "{{count}} background tasks running",
   "monitors": "Monitors",
+  "workQueue": "Work queue",
+  "workReady": "{{count}} ready",
   "monitorPolling": "Polling",
   "monitorMatched": "Matched",
   "monitorTimedOut": "Timed out",

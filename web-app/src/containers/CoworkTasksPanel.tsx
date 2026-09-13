@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft, ChevronDown, Eye, Loader2, Sparkles } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
+import type { WorkItemView } from '@/lib/agentTools'
 import type {
   CoworkTurn,
   MonitorView,
@@ -98,6 +99,46 @@ function MonitorRow({ monitor }: { monitor: MonitorView }) {
       {monitor.script && (
         <span className="truncate pl-6 font-mono text-xs text-main-view-fg/50">
           {monitor.script}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** Dot colour per work-item state, mirroring the TUI's glyph colours. */
+const WORK_STATE_DOT: Record<string, string> = {
+  open: 'bg-accent',
+  claimed: 'bg-yellow-500',
+  done: 'bg-green-500',
+  failed: 'bg-destructive',
+  blocked: 'bg-main-view-fg/30',
+}
+
+/** One work-queue item: its state dot, id, title, and the `-> owner` flow tag
+ * that shows who is on it; a failed/blocked item shows its reason. */
+function WorkRow({ item }: { item: WorkItemView }) {
+  return (
+    <div
+      data-testid="cowork-work-row"
+      className="flex w-full flex-col gap-1 rounded-lg border bg-main-view-fg/2 px-3 py-2.5 text-left"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={cn(
+            'size-2 shrink-0 rounded-full',
+            WORK_STATE_DOT[item.state] ?? 'bg-main-view-fg/30'
+          )}
+        />
+        <span className="truncate text-sm font-medium">{item.title}</span>
+        <span className="ml-auto shrink-0 font-mono text-xs text-main-view-fg/50">
+          {item.workId}
+        </span>
+      </div>
+      {(item.claimedBy || item.reason) && (
+        <span className="truncate pl-4 font-mono text-xs text-main-view-fg/50">
+          {item.claimedBy ? `-> ${item.claimedBy}` : ''}
+          {item.claimedBy && item.reason ? ' · ' : ''}
+          {item.reason ?? ''}
         </span>
       )}
     </div>
@@ -207,12 +248,15 @@ function Section({
 export function CoworkTasksPanel({
   subagents,
   monitors = [],
+  workqueue = [],
   onClose,
 }: {
   subagents: SubagentRun[]
   /** The run's file monitors. Transient: they die with the run, so unlike
    * finished children they never come back from the session. */
   monitors?: MonitorView[]
+  /** The session's shared work queue, from each work-tool command snapshot. */
+  workqueue?: WorkItemView[]
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -259,12 +303,24 @@ export function CoworkTasksPanel({
         <TaskDetail run={selected} />
       ) : (
         <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
-          {subagents.length === 0 && monitors.length === 0 ? (
+          {subagents.length === 0 &&
+          monitors.length === 0 &&
+          workqueue.length === 0 ? (
             <p className="px-1 py-6 text-center text-sm text-main-view-fg/50">
               {t('common:noBackgroundTasks')}
             </p>
           ) : (
             <>
+              {workqueue.length > 0 && (
+                <Section
+                  label={t('common:workQueue')}
+                  count={workqueue.filter((w) => w.state === 'open').length}
+                >
+                  {workqueue.map((item) => (
+                    <WorkRow key={item.workId} item={item} />
+                  ))}
+                </Section>
+              )}
               {monitors.length > 0 && (
                 <Section label={t('common:monitors')} count={monitors.length}>
                   {monitors.map((monitor) => (
