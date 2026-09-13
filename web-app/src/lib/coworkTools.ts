@@ -31,8 +31,9 @@ export const PLAN_DENIED_TOOLS = new Set([
   'task',
   // Starting one schedules shell scripts, which is exec-class work.
   MONITOR_TOOL_NAME,
-  // The queue-mutating work tools (post/claim/complete); read_agent and
-  // list_work are read-only and stay available in plan mode.
+  // The queue-mutating work tools (post/claim/complete). list_work and
+  // read_agent are no longer advertised on either surface, so there is nothing
+  // to gate for them here.
   ...WORK_MUTATION_NAMES,
 ])
 

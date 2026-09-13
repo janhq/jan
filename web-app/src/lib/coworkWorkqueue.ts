@@ -35,17 +35,18 @@ export const WORK_TOOL_NAMES = new Set([
   READ_AGENT_TOOL,
 ])
 
-/** The queue-mutating tools, withheld in plan mode. `list_work`/`read_agent`
- * are read-only and stay available. */
+/** The queue-mutating tools, withheld in plan mode. (list_work and read_agent
+ * are no longer advertised at all -- see `workqueueTools`.) */
 export const WORK_MUTATION_NAMES = new Set([
   POST_WORK_TOOL,
   CLAIM_WORK_TOOL,
   COMPLETE_WORK_TOOL,
 ])
 
-/** Wording ported from `work_tool_schemas` / `read_agent_tool_schema` in Rust;
- * the two surfaces must advertise the same contract. In plan mode only the
- * read-only pair is offered. */
+/** Wording ported from `work_tool_schemas` in Rust; the two surfaces advertise
+ * the same contract. Only the three queue mutators are offered -- list_work and
+ * read_agent are un-advertised, matching the Rust loop -- and plan mode drops
+ * even those, so it returns an empty set there. */
 export function workqueueTools(planMode: boolean): Record<string, Tool> {
   const tools: Record<string, Tool> = {}
   if (!planMode) {
@@ -98,29 +99,11 @@ export function workqueueTools(planMode: boolean): Record<string, Tool> {
       }),
     } as Tool
   }
-  tools[LIST_WORK_TOOL] = {
-    description:
-      'List every item on the shared work queue with its state (open, claimed, done, failed, blocked), so you can see what is ready to dispatch and what is still in flight.',
-    inputSchema: jsonSchema({ type: 'object', properties: {} }),
-  } as Tool
-  tools[READ_AGENT_TOOL] = {
-    description:
-      "See what another agent is doing. With no run_id, returns a roster of every agent (the main agent and each worker) with its current state. With a run_id, returns that agent's status plus the tail of its live activity log -- use it to check on a worker mid-flight.",
-    inputSchema: jsonSchema({
-      type: 'object',
-      properties: {
-        run_id: {
-          type: 'string',
-          description:
-            'The agent to inspect (from the roster). Omit for the full roster.',
-        },
-        tail: {
-          type: 'integer',
-          description: 'How many recent log lines to include (default 40, max 200).',
-        },
-      },
-    }),
-  } as Tool
+  // list_work and read_agent are not advertised (matching the Rust loop): the
+  // queue and each peer's status are visible to the user via the rail and the
+  // background-tasks view, and a worker's claim->do->complete loop does not need
+  // to poll them. Their constants and `runWorkOp` arms stay, so a named call is
+  // still handled and the change is reversible.
   return tools
 }
 
