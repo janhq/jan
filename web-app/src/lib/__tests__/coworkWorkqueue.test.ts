@@ -36,23 +36,17 @@ describe('coworkWorkqueue', () => {
     readAgent.mockReset()
   })
 
-  it('withholds the mutating tools in plan mode, keeps the read-only pair', () => {
+  it('advertises only the queue mutators, and none in plan mode', () => {
     const normal = workqueueTools(false)
     expect(Object.keys(normal).sort()).toEqual(
-      [
-        POST_WORK_TOOL,
-        CLAIM_WORK_TOOL,
-        COMPLETE_WORK_TOOL,
-        LIST_WORK_TOOL,
-        READ_AGENT_TOOL,
-      ].sort()
+      [POST_WORK_TOOL, CLAIM_WORK_TOOL, COMPLETE_WORK_TOOL].sort()
     )
-    const plan = workqueueTools(true)
-    expect(plan[POST_WORK_TOOL]).toBeUndefined()
-    expect(plan[CLAIM_WORK_TOOL]).toBeUndefined()
-    expect(plan[COMPLETE_WORK_TOOL]).toBeUndefined()
-    expect(plan[LIST_WORK_TOOL]).toBeDefined()
-    expect(plan[READ_AGENT_TOOL]).toBeDefined()
+    // list_work and read_agent are not advertised as tools in either mode; their
+    // runWorkOp arms stay so a named call is still handled.
+    expect(normal[LIST_WORK_TOOL]).toBeUndefined()
+    expect(normal[READ_AGENT_TOOL]).toBeUndefined()
+    // Plan mode withholds even the mutators.
+    expect(Object.keys(workqueueTools(true))).toEqual([])
   })
 
   it('posts as the given agent and applies the returned snapshot', async () => {
@@ -95,7 +89,7 @@ describe('coworkWorkqueue', () => {
       { run_id: 'sub-a-1' },
       { sessionId: 's', agentId: 'main' }
     )
-    expect(readAgent).toHaveBeenCalledWith('s', { run_id: 'sub-a-1' })
+    expect(readAgent).toHaveBeenCalledWith('s', 'main', { run_id: 'sub-a-1' })
     expect(out.output).toContain('running')
   })
 
