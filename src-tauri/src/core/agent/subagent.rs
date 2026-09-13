@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
-use tauri_plugin_agent_tools::tools::spill::{fill_subagent_result, reserve_subagent_result};
+use tauri_plugin_agent_tools::tools::spill::{
+    compose_subagent_result, fill_subagent_result, reserve_subagent_result,
+};
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
@@ -1227,11 +1229,13 @@ fn completion_notice(
         (Err(e), _) => format!("Subagent '{name}' ({run_id}) failed: {e}"),
         (Ok(_), Some(path)) => format!(
             "Subagent '{name}' ({run_id}) finished. Its full answer is in {path} -- read that file \
-             when you need it. Do not call await_subagent for this run."
+             when you need it."
         ),
-        (Ok(_), None) => format!(
-            "Subagent '{name}' ({run_id}) finished. Call await_subagent with that run_id to read \
-             its answer."
+        // No spill file (an unconfined run has no scratch): the answer has
+        // nowhere to be read from later, so it rides the note inline, bounded.
+        (Ok(text), None) => format!(
+            "Subagent '{name}' ({run_id}) finished. Its answer:\n\n{}",
+            compose_subagent_result(text, None)
         ),
     }
 }
@@ -1316,7 +1320,7 @@ pub fn subagent_tool_schemas(
         names
     };
     let one_off = " For a one-off subagent, pass system_prompt inline (with a descriptive subagent_name); use create_subagent only to save a reusable definition.";
-    let bg = format!(" Runs in the BACKGROUND and returns immediately with a run_id and the file its answer will be written to; keep working, dispatch more, and a note tells you the moment each one finishes. Awaiting is optional: call await_subagent(run_id) only to block until a specific child is done. Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
+    let bg = format!(" Runs in the BACKGROUND and returns immediately with a run_id; keep working and dispatch more -- a note tells you the moment each one finishes and carries its answer (or the file its answer was written to). Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
     let dispatch_desc = if available.is_empty() {
         format!("Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} No saved subagents yet.")
     } else {
@@ -1517,18 +1521,20 @@ mod tests {
         std::fs::write(dir.join(format!("{name}.toml")), body).unwrap();
     }
 
-    /// The ping is what the parent gets when it never awaits, so it has to name
-    /// the file -- and say plainly that awaiting is not the way to read it.
+    /// The ping is the only signal a non-awaiting parent gets, so it must carry
+    /// the answer: a file path when there is scratch, the bounded text inline
+    /// when there is not (await_subagent is no longer advertised).
     #[test]
-    fn the_completion_ping_names_the_reserved_file() {
+    fn the_completion_ping_delivers_the_answer() {
         let ok = Ok("the findings".to_string());
         let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &ok);
         assert!(note.contains("/tmp/x.md"), "{note}");
-        assert!(note.contains("Do not call await_subagent"), "{note}");
+        assert!(!note.contains("await_subagent"), "no await reference: {note}");
 
-        // Unconfined: no file, so collecting is the only way to read it.
+        // Unconfined: no file, so the answer rides the note inline.
         let note = completion_notice("researcher", "sub-researcher-1", None, &ok);
-        assert!(note.contains("await_subagent"), "{note}");
+        assert!(note.contains("the findings"), "answer is inline: {note}");
+        assert!(!note.contains("await_subagent"), "no await reference: {note}");
 
         let failed = Err(SubagentError::Upstream("upstream refused".to_string()));
         let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &failed);
@@ -2521,7 +2527,10 @@ mod tests {
         );
         let dispatch = &schemas[0]["function"]["description"].as_str().unwrap();
         assert!(dispatch.contains("reviewer"), "got: {dispatch}");
-        assert!(dispatch.contains("await_subagent"), "dispatch should mention await");
+        // await_subagent is no longer advertised; the description explains the
+        // background model (a note carries each child's answer) instead.
+        assert!(!dispatch.contains("await_subagent"), "no await reference: {dispatch}");
+        assert!(dispatch.contains("BACKGROUND"), "explains the background model: {dispatch}");
     }
 
     #[test]

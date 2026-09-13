@@ -939,14 +939,12 @@ impl CompositeToolInvoker {
                         Some(path) => format!(
                             "Subagent started in the background. run_id={}. Its answer will be \
                              written to {path}; you will be told when it lands, so keep working \
-                             rather than waiting. Read that file when you need the answer, or \
-                             call await_subagent with this run_id to block until it is ready.",
+                             rather than waiting, and read that file when you need the answer.",
                             d.run_id
                         ),
                         None => format!(
-                            "Subagent started in the background. run_id={}. You will be told when \
-                             it finishes; keep working, then call await_subagent with this run_id \
-                             to collect its result.",
+                            "Subagent started in the background. run_id={}. Keep working; you will \
+                             be told when it finishes, and that note carries its answer.",
                             d.run_id
                         ),
                     },
@@ -1964,6 +1962,13 @@ fn advertise_local_tools(
                     if permissions.is_denied(name) {
                         continue;
                     }
+                    // await_subagent is not advertised: a finished child's note
+                    // already carries its answer (inline, or a file path to
+                    // read), so blocking to collect is redundant. The handler
+                    // stays (recognized + executable) so a named call still works.
+                    if name == "await_subagent" {
+                        continue;
+                    }
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;
@@ -1983,14 +1988,18 @@ fn advertise_local_tools(
                 openai_tools.push(tauri_plugin_agent_tools::tools::monitor::monitor_tool_schema());
             }
         }
-        // Work-queue + observability tools. Available to main AND to workers
-        // (unlike subagent dispatch, which caps recursion), gated on
-        // collaboration being enabled. The mutating three are hidden in Plan;
-        // `read_agent`/`list_work` are read-only and stay.
+        // Work-queue tools, gated on collaboration being enabled. Available to
+        // main AND to workers (unlike subagent dispatch, which caps recursion).
+        // The mutating three are hidden in Plan mode. `list_work` and `read_agent`
+        // are not advertised: the queue and each peer's status are visible to the
+        // user (the panel and `/agents`), and a worker's claim->do->complete loop
+        // does not need to poll them -- dropping them also shrinks the schema and
+        // removes two thirds of the poll-only set. Both stay recognized and
+        // executable (handlers untouched) so a named call still works.
         if work_queue_enabled {
             for schema in tauri_plugin_agent_tools::tools::workqueue::work_tool_schemas() {
                 let name = schema["function"]["name"].as_str().unwrap_or_default();
-                if permissions.is_denied(name) {
+                if name == "list_work" || permissions.is_denied(name) {
                     continue;
                 }
                 if planning && tauri_plugin_agent_tools::tools::workqueue::is_work_mutation(name) {
@@ -2000,13 +2009,6 @@ fn advertise_local_tools(
                     continue;
                 }
                 openai_tools.push(schema);
-            }
-            let read_agent = tauri_plugin_agent_tools::tools::observ::read_agent_tool_schema();
-            let ra_name = read_agent["function"]["name"].as_str().unwrap_or_default();
-            if !permissions.is_denied(ra_name)
-                && allowed_names.is_none_or(|allowed| allowed.contains(ra_name))
-            {
-                openai_tools.push(read_agent);
             }
         }
     }

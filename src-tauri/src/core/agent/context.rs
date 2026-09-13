@@ -140,8 +140,9 @@ const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited.
 that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
-their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
-targeted tasks where delegating would cost more than it saves.";
+their work doesn't depend on each other; each returns in the background and a note carries its answer when \
+it finishes -- keep working rather than waiting. Do inline work yourself for small, targeted tasks where \
+delegating would cost more than it saves.";
 
 /// The worker half of the work-queue guide, shown to every collaborating agent
 /// (main and workers), so a worker knows the claim -> do -> complete -> stop loop
@@ -149,8 +150,7 @@ targeted tasks where delegating would cost more than it saves.";
 const WORK_QUEUE_WORKER_GUIDE: &str = "# Shared work queue\n\nYou share a work queue and a live status \
 board with the other agents on this run. As a worker: call `claim_work` to take the next ready task, do \
 it, then `complete_work` with the result. If `claim_work` reports nothing is ready, stop -- do not loop \
-on it; you are re-dispatched when new work appears. `list_work` shows the whole queue, and `read_agent` \
-shows what any agent is doing (call it with no argument for the roster of every agent).";
+on it; you are re-dispatched when new work appears.";
 
 /// The dispatcher half, added only for a run that may dispatch subagents (main),
 /// so it learns the post -> dispatch-workers -> chain-with-deps pattern and the
