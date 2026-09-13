@@ -4,10 +4,11 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use tokio::process::{Child, Command};
 
@@ -369,7 +370,7 @@ pub async fn spawn(
     }
 
     if let Some(pid) = child.id() {
-        register(thread, pid);
+        register(thread, pid, command);
     }
     Ok(child)
 }
@@ -405,26 +406,52 @@ pub fn kill_tree(pid: u32) {
         .output();
 }
 
-/// Running bash pids, bucketed by the session (thread id) that spawned them, so
-/// a per-session cancel (`kill_thread`) reaps exactly that session's shells
-/// without touching a concurrently-running one. Callers with no session (the
-/// monitor poll children, tests) share the [`NO_THREAD`] bucket, which only
-/// `kill_all` reaps.
-fn running() -> &'static Mutex<HashMap<String, HashSet<u32>>> {
-    static RUNNING: OnceLock<Mutex<HashMap<String, HashSet<u32>>>> = OnceLock::new();
+/// A running bash command: what it is, when it started, and whether it outran
+/// its call's timeout and detached into the background. Backs the `/shells`
+/// inspector, which lists the detached ones so the user can stop a stuck job.
+struct ShellProc {
+    command: String,
+    started: Instant,
+    backgrounded: bool,
+}
+
+/// One running background shell, as `snapshot` reports it to the UI. `pid` is
+/// the handle [`kill`] takes to stop it.
+#[derive(Debug, Clone)]
+pub struct ShellInfo {
+    pub pid: u32,
+    pub command: String,
+    pub elapsed_secs: u64,
+    pub backgrounded: bool,
+}
+
+/// Running bash commands, bucketed by the session (thread id) that spawned them
+/// and keyed by pid, so a per-session cancel (`kill_thread`) reaps exactly that
+/// session's shells without touching a concurrently-running one. Callers with no
+/// session (the monitor poll children, tests) share the [`NO_THREAD`] bucket,
+/// which only `kill_all` reaps.
+fn running() -> &'static Mutex<HashMap<String, HashMap<u32, ShellProc>>> {
+    static RUNNING: OnceLock<Mutex<HashMap<String, HashMap<u32, ShellProc>>>> = OnceLock::new();
     RUNNING.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// Bucket for pids spawned outside any session.
 const NO_THREAD: &str = "";
 
-pub fn register(thread: Option<&str>, pid: u32) {
+pub fn register(thread: Option<&str>, pid: u32, command: &str) {
     running()
         .lock()
         .unwrap()
         .entry(thread.unwrap_or(NO_THREAD).to_string())
         .or_default()
-        .insert(pid);
+        .insert(
+            pid,
+            ShellProc {
+                command: command.to_string(),
+                started: Instant::now(),
+                backgrounded: false,
+            },
+        );
 }
 
 pub fn unregister(thread: Option<&str>, pid: u32) {
@@ -438,6 +465,51 @@ pub fn unregister(thread: Option<&str>, pid: u32) {
     }
 }
 
+/// Flag a still-running command as backgrounded: it outran its `bash` call's
+/// timeout and is now detached, so `/shells` should list it. A no-op if the pid
+/// already finished (the detached task unregistered it in the race).
+pub fn mark_backgrounded(thread: Option<&str>, pid: u32) {
+    if let Some(set) = running().lock().unwrap().get_mut(thread.unwrap_or(NO_THREAD)) {
+        if let Some(proc) = set.get_mut(&pid) {
+            proc.backgrounded = true;
+        }
+    }
+}
+
+/// Every currently-running bash command across all sessions, pid-sorted for a
+/// stable list. The `/shells` inspector filters to the backgrounded ones.
+pub fn snapshot() -> Vec<ShellInfo> {
+    let map = running().lock().unwrap();
+    let mut out: Vec<ShellInfo> = map
+        .values()
+        .flat_map(|set| {
+            set.iter().map(|(pid, p)| ShellInfo {
+                pid: *pid,
+                command: p.command.clone(),
+                elapsed_secs: p.started.elapsed().as_secs(),
+                backgrounded: p.backgrounded,
+            })
+        })
+        .collect();
+    out.sort_by_key(|s| s.pid);
+    out
+}
+
+/// Stop one running shell by pid: reap its whole tree and drop it from the
+/// registry. Returns whether the pid was known. Drives the `/shells` stop action.
+pub fn kill(pid: u32) -> bool {
+    let found = {
+        let mut map = running().lock().unwrap();
+        let hit = map.values_mut().any(|set| set.remove(&pid).is_some());
+        map.retain(|_, set| !set.is_empty());
+        hit
+    };
+    if found {
+        kill_tree(pid);
+    }
+    found
+}
+
 /// Reap every bash tree a session started. The per-session counterpart of
 /// [`kill_all`]: the Stop button drives this so a running or backgrounded shell
 /// is terminated with the run rather than left to finish on the host.
@@ -446,7 +518,7 @@ pub fn kill_thread(thread: &str) {
         .lock()
         .unwrap()
         .remove(thread)
-        .map(|set| set.into_iter().collect())
+        .map(|set| set.into_keys().collect())
         .unwrap_or_default();
     for pid in pids {
         kill_tree(pid);
@@ -460,7 +532,7 @@ pub fn kill_all() {
         .lock()
         .unwrap()
         .drain()
-        .flat_map(|(_, set)| set)
+        .flat_map(|(_, set)| set.into_keys())
         .collect();
     for pid in pids {
         kill_tree(pid);
@@ -596,7 +668,7 @@ mod tests {
             .lock()
             .unwrap()
             .get(thread.unwrap_or(NO_THREAD))
-            .map(|set| set.contains(&pid))
+            .map(|set| set.contains_key(&pid))
             .unwrap_or(false)
     }
 
@@ -606,10 +678,41 @@ mod tests {
         // signalling a live process (kill_all is shutdown-only and would reap
         // other tests' children if called under the parallel harness).
         let fake = u32::MAX - 1;
-        register(Some("thread-a"), fake);
+        register(Some("thread-a"), fake, "sleep 1");
         assert!(is_registered(Some("thread-a"), fake));
         unregister(Some("thread-a"), fake);
         assert!(!is_registered(Some("thread-a"), fake));
+    }
+
+    /// `mark_backgrounded` flips only the named pid, and `snapshot` reports it
+    /// with its command so `/shells` can name the detached job.
+    #[test]
+    fn snapshot_reports_backgrounded_shells_with_their_command() {
+        let (fg, bg) = (u32::MAX - 10, u32::MAX - 11);
+        register(Some("snap"), fg, "cargo build");
+        register(Some("snap"), bg, "sleep 300");
+        mark_backgrounded(Some("snap"), bg);
+        let shells = snapshot();
+        let got = |pid| shells.iter().find(|s| s.pid == pid).cloned();
+        assert_eq!(got(bg).unwrap().command, "sleep 300");
+        assert!(got(bg).unwrap().backgrounded, "marked one is backgrounded");
+        assert!(!got(fg).unwrap().backgrounded, "the other is not");
+        unregister(Some("snap"), fg);
+        unregister(Some("snap"), bg);
+    }
+
+    /// `kill` drops the named pid from the registry (whichever bucket it is in)
+    /// and reports whether it was known; an unknown pid is a no-op. Fake pids
+    /// chosen to stay a positive, implausible i32 so the `kill_tree` this reaches
+    /// signals a non-existent group (ESRCH), never a real low-numbered one.
+    #[test]
+    fn kill_removes_a_known_pid_and_reports_unknown() {
+        let fake = 2_000_000_001;
+        register(Some("kill-sess"), fake, "sleep 300");
+        assert!(is_registered(Some("kill-sess"), fake));
+        assert!(kill(fake), "a known pid is reported found");
+        assert!(!is_registered(Some("kill-sess"), fake), "and dropped");
+        assert!(!kill(2_000_000_002), "an unknown pid is a no-op");
     }
 
     /// `kill_thread` reaps only its own session's pids and leaves another
@@ -618,8 +721,8 @@ mod tests {
     #[test]
     fn kill_thread_is_scoped_to_its_session() {
         let (a, b) = (u32::MAX - 2, u32::MAX - 3);
-        register(Some("sess-a"), a);
-        register(Some("sess-b"), b);
+        register(Some("sess-a"), a, "sleep 1");
+        register(Some("sess-b"), b, "sleep 1");
         kill_thread("sess-a");
         assert!(!is_registered(Some("sess-a"), a), "own session must be reaped");
         assert!(is_registered(Some("sess-b"), b), "other session must survive");

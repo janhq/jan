@@ -892,6 +892,11 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             // land in a file the agent reads when it is ready -- no second tool
             // mode, no job registry. `None` means the background file could not
             // be created; the command still runs, its output just isn't captured.
+            // Flag it in the process registry so the `/shells` inspector lists it
+            // as a detached shell the user can stop.
+            if let Some(pid) = pid {
+                proc::mark_backgrounded(ctx.thread_id, pid);
+            }
             match new_temp_path(ctx.scratch_root) {
                 Some(path) => {
                     let display =

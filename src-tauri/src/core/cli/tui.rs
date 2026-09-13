@@ -440,6 +440,9 @@ enum PickerKind {
     /// One subagent's detail: its stats, brief, and collapsed call history.
     /// Reached with Enter from `Agents`; Esc steps back to the list.
     AgentDetail,
+    /// `/shells`: the background-shell inspector. Lists commands the `bash` tool
+    /// detached (outran their timeout, still running), each stoppable with `x`.
+    BackgroundShells,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -470,6 +473,7 @@ impl Picker {
             PickerKind::McpServer => " mcp server ",
             PickerKind::Agents => " subagents ",
             PickerKind::AgentDetail => " subagent ",
+            PickerKind::BackgroundShells => " background shells ",
         }
     }
 
@@ -492,6 +496,7 @@ impl Picker {
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
             PickerKind::AgentDetail => " Esc back",
+            PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
         }
     }
 }
@@ -1758,6 +1763,11 @@ struct App {
     /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
     /// command from a spinner into a terminal.
     live_output: HashMap<String, String>,
+    /// Background shells the `bash` tool has detached, refreshed from the process
+    /// registry once per frame in the render loop (never in `draw`, so tests are
+    /// not coupled to that process-global state). Drives the `/shells` inspector
+    /// and the footer chip; the row that stops one reads the pid off it.
+    bg_shells: Vec<tauri_plugin_agent_tools::tools::proc::ShellInfo>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -2407,6 +2417,7 @@ impl App {
             diff_paths: HashMap::new(),
             bash_commands: HashMap::new(),
             live_output: HashMap::new(),
+            bg_shells: Vec::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -8728,6 +8739,15 @@ async fn chat_loop<B: Backend>(
         if app.take_repaint() {
             apply_repaint(terminal);
         }
+        // Refresh the detached-shell list from the process registry here, in the
+        // live loop, rather than inside `draw`: the registry is process-global, so
+        // reading it from the render path would couple every render test to
+        // whatever a parallel test has spawned. `draw`, the footer chip and the
+        // `/shells` picker all read `app.bg_shells` instead.
+        app.bg_shells = tauri_plugin_agent_tools::tools::proc::snapshot()
+            .into_iter()
+            .filter(|s| s.backgrounded)
+            .collect();
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
         if sync_output {
             let _ = execute!(io::stdout(), EndSynchronizedUpdate);
@@ -9998,6 +10018,21 @@ async fn handle_key(
                     }
                 }
             }
+            // `/shells`: `x` stops the selected background shell (kills its whole
+            // process tree). The rows are rebuilt from the live registry each
+            // frame, so the stopped one drops out on the next draw.
+            KeyCode::Char('x') if picker.kind == PickerKind::BackgroundShells => {
+                let pid: Option<u32> = picker.items[picker.selected].value.parse().ok();
+                match pid {
+                    Some(pid)
+                        if tauri_plugin_agent_tools::tools::proc::kill(pid) =>
+                    {
+                        app.note(&format!("stopped background shell (pid {pid})"));
+                    }
+                    Some(pid) => app.note(&format!("shell {pid} already finished")),
+                    None => {}
+                }
+            }
             // Collection picker: Space toggles the selected plugin, Enter hands
             // the checked set to the loop (see `plugin_select_request`). Rows
             // already installed stay displayed but are not toggleable -- checking
@@ -10088,8 +10123,11 @@ async fn handle_key(
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
                     // Agents Enter is handled by the guarded arm above; the
-                    // detail has no Enter action of its own.
-                    PickerKind::Agents | PickerKind::AgentDetail => {}
+                    // detail has no Enter action of its own. Background shells are
+                    // acted on with `x` (stop), not Enter.
+                    PickerKind::Agents
+                    | PickerKind::AgentDetail
+                    | PickerKind::BackgroundShells => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -10724,6 +10762,18 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/shells",
+        hint: "",
+        description: "Inspect and stop background shell commands the agent left running",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/jobs",
+        hint: "",
+        description: "Alias of /shells: inspect and stop background shell commands",
+        alias_of: Some("/shells"),
+    },
+    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
@@ -10959,6 +11009,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "agents" => open_agents_picker(app),
+        "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
@@ -13017,6 +13068,48 @@ fn open_agents_picker(app: &mut App) {
     });
 }
 
+/// Open the `/shells` inspector: background shells the `bash` tool detached. The
+/// rows are rebuilt from the live process registry every frame (see `draw`), so
+/// a shell that finishes or is stopped drops out without reopening.
+fn open_background_shells_picker(app: &mut App) {
+    app.picker = Some(Picker {
+        kind: PickerKind::BackgroundShells,
+        items: background_shell_picker_items(&app.bg_shells),
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// One row per detached background shell (`<elapsed>  <command>`), whose `value`
+/// is the real pid so `x` can stop it. A single watermark row when nothing is
+/// backgrounded. `shells` is `App::bg_shells` (already filtered to backgrounded
+/// and refreshed off the render path), so this stays a pure render function.
+fn background_shell_picker_items(
+    shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo],
+) -> Vec<PickerItem> {
+    if shells.is_empty() {
+        return vec![PickerItem {
+            label: "no background shells running".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }];
+    }
+    shells
+        .iter()
+        .map(|s| PickerItem {
+            label: format!(
+                "{}  {}",
+                format_elapsed(s.elapsed_secs),
+                single_line(&s.command)
+            ),
+            value: s.pid.to_string(),
+            hint: Some("running".to_string()),
+            checkbox: None,
+        })
+        .collect()
+}
+
 /// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
 /// single watermark row when the fan-out is empty. The row `value` is the
 /// child's `run_id`, which Enter drills into.
@@ -15056,6 +15149,16 @@ fn draw(f: &mut Frame, app: &mut App) {
     // without reopening. Sequential borrows: read subagents, then write picker.
     if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
         let items = agent_picker_items(&app.subagents);
+        if let Some(p) = app.picker.as_mut() {
+            p.selected = p.selected.min(items.len().saturating_sub(1));
+            p.items = items;
+        }
+    }
+    // The /shells inspector is likewise live: rebuild from the refreshed
+    // `bg_shells` each frame so a shell that finished or was just stopped drops
+    // out. (`bg_shells` is refreshed off the render path; see the loop.)
+    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::BackgroundShells) {
+        let items = background_shell_picker_items(&app.bg_shells);
         if let Some(p) = app.picker.as_mut() {
             p.selected = p.selected.min(items.len().saturating_sub(1));
             p.items = items;
@@ -17818,7 +17921,19 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         // the other states.
         Status::Idle => vec![Span::raw(" ")],
     };
-    // Standing indicator leads the row in both states.
+    // Standing indicators lead the row in both states, newest concern leftmost:
+    // pending queue, then background shells still running unattended.
+    let bg_shells = app.bg_shells.len();
+    if bg_shells > 0 {
+        let plural = if bg_shells == 1 { "" } else { "s" };
+        spans.insert(
+            0,
+            Span::styled(
+                format!("⚙ {bg_shells} bg shell{plural} · /shells  "),
+                Style::new().magenta().bold(),
+            ),
+        );
+    }
     let queue_count = app.message_queue.len();
     if queue_count > 0 {
         spans.insert(
@@ -17882,8 +17997,9 @@ mod tests {
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_detail_lines, agent_picker_items, agents_column, collapse_runs, open_agents_picker,
-        trailing_repeat, workqueue_column, SubagentPanel, WorkItemView,
+        agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
+        collapse_runs, open_agents_picker, trailing_repeat, workqueue_column, SubagentPanel,
+        WorkItemView,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18147,6 +18263,38 @@ mod tests {
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("more running"), "compact fallback: {text}");
         assert!(!text.contains("/agents"), "no hint when it would not fit: {text}");
+    }
+
+    #[test]
+    fn shells_commands_are_registered() {
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/shells"));
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/jobs"));
+    }
+
+    /// Each `/shells` row names its command and its elapsed time, and carries the
+    /// real pid in `value` so `x` can stop it.
+    #[test]
+    fn shells_picker_names_each_shell_by_command_and_elapsed() {
+        use tauri_plugin_agent_tools::tools::proc::ShellInfo;
+        let shells = vec![ShellInfo {
+            pid: 4242,
+            command: "sleep 9000".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
+        let items = background_shell_picker_items(&shells);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, "4242", "pid rides in value for the stop action");
+        assert!(items[0].label.contains("sleep 9000"), "{}", items[0].label);
+        assert!(items[0].label.contains("1m05s"), "elapsed shown: {}", items[0].label);
+    }
+
+    #[test]
+    fn shells_picker_shows_an_empty_state() {
+        let items = background_shell_picker_items(&[]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].label.contains("no background shells"));
+        assert!(items[0].value.is_empty());
     }
 
     #[test]
