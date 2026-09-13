@@ -937,14 +937,16 @@ impl CompositeToolInvoker {
                 ) {
                     Ok(d) => match d.display_path {
                         Some(path) => format!(
-                            "Subagent started in the background. run_id={}. Its answer will be \
-                             written to {path}; you will be told when it lands, so keep working \
-                             rather than waiting, and read that file when you need the answer.",
+                            "Subagent started in the background. run_id={}. This task is now the \
+                             subagent's -- do not do it yourself. Its answer will be written to \
+                             {path}; you will be told when it lands, so work on other steps \
+                             meanwhile and read that file when you need the answer.",
                             d.run_id
                         ),
                         None => format!(
-                            "Subagent started in the background. run_id={}. Keep working; you will \
-                             be told when it finishes, and that note carries its answer.",
+                            "Subagent started in the background. run_id={}. This task is now the \
+                             subagent's -- do not do it yourself. Work on other steps; you will be \
+                             told when it finishes, and that note carries its answer.",
                             d.run_id
                         ),
                     },

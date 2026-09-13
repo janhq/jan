@@ -176,6 +176,9 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
         'research sweep, working through many files, generating and then',
         'verifying a large output. Delegating keeps your own context focused on',
         'the plan, and a backgrounded subagent works while you continue.',
+        'Once you hand a task to a subagent it is theirs -- do not do that same',
+        'work yourself; spend the time on other steps and use its answer when it',
+        'arrives.',
         `Available: ${opts.subagentNames.join(', ')}.`,
       ].join('\n')
     )

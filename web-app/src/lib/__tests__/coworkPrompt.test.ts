@@ -129,6 +129,13 @@ describe('buildCoworkSystemPrompt', () => {
     expect(p).toMatch(/prefer a subagent for long or repetitive jobs/i)
   })
 
+  // Parity with the CLI's SUBAGENT_GUIDE: a delegated task is the child's, so
+  // the dispatcher must be told not to redo it while the child runs.
+  it('tells the dispatcher a handed-off task is the subagent to do, not itself', () => {
+    const p = buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
+    expect(p).toMatch(/do not do that same\s+work yourself/i)
+  })
+
   it('describes subagents only when some are available and not planning', () => {
     expect(
       buildCoworkSystemPrompt(opts({ subagentNames: ['researcher'] }))
