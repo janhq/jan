@@ -440,6 +440,8 @@ enum PickerKind {
     /// One subagent's detail: its stats, brief, and collapsed call history.
     /// Reached with Enter from `Agents`; Esc steps back to the list.
     AgentDetail,
+    /// `/shells`: inspect commands detached by the `bash` tool.
+    BackgroundShells,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -470,6 +472,7 @@ impl Picker {
             PickerKind::McpServer => " mcp server ",
             PickerKind::Agents => " subagents ",
             PickerKind::AgentDetail => " subagent ",
+            PickerKind::BackgroundShells => " background shells ",
         }
     }
 
@@ -492,6 +495,7 @@ impl Picker {
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
             PickerKind::AgentDetail => " Esc back",
+            PickerKind::BackgroundShells => " ↑/↓ select   Esc close",
         }
     }
 }
@@ -10164,7 +10168,7 @@ async fn handle_key(
                     PickerKind::McpServer => {}
                     // Agents Enter is handled by the guarded arm above; the
                     // detail has no Enter action of its own.
-                    PickerKind::Agents | PickerKind::AgentDetail => {}
+                    PickerKind::Agents | PickerKind::AgentDetail | PickerKind::BackgroundShells => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -10799,6 +10803,18 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/shells",
+        hint: "",
+        description: "Inspect background shell commands still running",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/jobs",
+        hint: "",
+        description: "Alias of /shells: inspect background shell commands",
+        alias_of: Some("/shells"),
+    },
+    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
@@ -11034,6 +11050,7 @@ async fn run_command(
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "agents" => open_agents_picker(app),
+        "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
@@ -13092,6 +13109,46 @@ fn open_agents_picker(app: &mut App) {
     });
 }
 
+/// Open the live list of shell commands detached by the `bash` tool.
+fn open_background_shells_picker(app: &mut App) {
+    app.picker = Some(Picker {
+        kind: PickerKind::BackgroundShells,
+        items: background_shell_picker_items(&app.active_bg_jobs, &app.bash_jobs),
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// One row per detached shell. The TUI only knows jobs started in this session;
+/// the command is retained when the backgrounding notice lands so the row is
+/// useful without exposing the opaque job id alone.
+fn background_shell_picker_items(
+    active: &std::collections::HashSet<String>,
+    commands: &HashMap<String, String>,
+) -> Vec<PickerItem> {
+    if active.is_empty() {
+        return vec![PickerItem {
+            label: "no background shells running".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }];
+    }
+    let mut jobs: Vec<&String> = active.iter().collect();
+    jobs.sort();
+    jobs.into_iter()
+        .map(|job| PickerItem {
+            label: commands
+                .get(job)
+                .map(|command| format!("{job}  {command}"))
+                .unwrap_or_else(|| job.clone()),
+            value: job.clone(),
+            hint: Some("running".to_string()),
+            checkbox: None,
+        })
+        .collect()
+}
+
 /// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
 /// single watermark row when the fan-out is empty. The row `value` is the
 /// child's `run_id`, which Enter drills into.
@@ -15131,6 +15188,16 @@ fn draw(f: &mut Frame, app: &mut App) {
     // without reopening. Sequential borrows: read subagents, then write picker.
     if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
         let items = agent_picker_items(&app.subagents);
+        if let Some(p) = app.picker.as_mut() {
+            p.selected = p.selected.min(items.len().saturating_sub(1));
+            p.items = items;
+        }
+    }
+    // Background shell jobs can finish while the inspector is open. Rebuild
+    // the rows from the same live maps that drive the footer indicator so the
+    // view never leaves a collected job visible.
+    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::BackgroundShells) {
+        let items = background_shell_picker_items(&app.active_bg_jobs, &app.bash_jobs);
         if let Some(p) = app.picker.as_mut() {
             p.selected = p.selected.min(items.len().saturating_sub(1));
             p.items = items;
@@ -17902,7 +17969,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         spans.insert(
             0,
             Span::styled(
-                format!("⚙ {bg_shells} bg shell{plural}  "),
+                format!("⚙ {bg_shells} bg shell{plural} · /shells  "),
                 Style::new().magenta().bold(),
             ),
         );
@@ -17970,8 +18037,9 @@ mod tests {
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_detail_lines, agent_picker_items, agents_column, collapse_runs, open_agents_picker,
-        trailing_repeat, workqueue_column, SubagentPanel, WorkItemView,
+        agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
+        collapse_runs, open_agents_picker, trailing_repeat, workqueue_column, SubagentPanel,
+        WorkItemView,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18168,6 +18236,40 @@ mod tests {
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
         assert!(items[0].label.contains("×4"), "spin visible in the row: {}", items[0].label);
+    }
+
+    #[test]
+    fn background_shell_picker_lists_sorted_jobs_and_commands() {
+        let active = ["bash-2".to_string(), "bash-1".to_string()]
+            .into_iter()
+            .collect();
+        let commands = HashMap::from([
+            ("bash-1".to_string(), "cargo test".to_string()),
+            ("bash-2".to_string(), "sleep 10".to_string()),
+        ]);
+        let items = background_shell_picker_items(&active, &commands);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].value, "bash-1");
+        assert_eq!(items[0].label, "bash-1  cargo test");
+        assert_eq!(items[0].hint.as_deref(), Some("running"));
+        assert_eq!(items[1].value, "bash-2");
+    }
+
+    #[test]
+    fn background_shell_picker_shows_empty_state() {
+        let items = background_shell_picker_items(
+            &std::collections::HashSet::new(),
+            &HashMap::new(),
+        );
+        assert_eq!(items.len(), 1);
+        assert!(items[0].label.contains("no background shells"));
+        assert!(items[0].value.is_empty());
+    }
+
+    #[test]
+    fn shells_commands_are_registered() {
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/shells"));
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/jobs"));
     }
 
     #[test]
