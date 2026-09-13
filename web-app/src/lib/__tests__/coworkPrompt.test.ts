@@ -171,6 +171,16 @@ describe('buildSubagentSystemPrompt', () => {
     expect(out).toContain('cannot dispatch')
   })
 
+  // Parity with the CLI's child_system_prompt: a named child knows it is a lone
+  // agent on one errand, not a worker that waits on the shared queue.
+  it('names the child in its scope when a name is given', () => {
+    const named = buildSubagentSystemPrompt('p', opts, 'kv-review')
+    expect(named).toContain('subagent `kv-review`, running one errand')
+    const anon = buildSubagentSystemPrompt('p', opts)
+    expect(anon).toContain('a subagent running one errand')
+    expect(anon).not.toContain('subagent `')
+  })
+
   it('never leaks plan mode, a subagent roster, or memory into a child', () => {
     const out = buildSubagentSystemPrompt('p', opts)
     expect(out).not.toContain('PLAN MODE')

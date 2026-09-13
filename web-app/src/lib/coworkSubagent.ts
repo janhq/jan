@@ -502,14 +502,18 @@ export async function runSubagent(
     events.onStart()
 
     const tools = subagentTools(opts.parentTools, resolved.allowedTools)
-    const system = buildSubagentSystemPrompt(resolved.systemPrompt, {
-      workspacePath: opts.system.workspacePath,
-      readOnlyFolder: opts.system.readOnlyFolder,
-      bashAvailable: opts.system.bashAvailable && 'bash' in tools,
-      // Derived, not passed: the intersection above may have dropped them.
-      webSearch: 'web_search' in tools,
-      environment: opts.system.environment,
-    })
+    const system = buildSubagentSystemPrompt(
+      resolved.systemPrompt,
+      {
+        workspacePath: opts.system.workspacePath,
+        readOnlyFolder: opts.system.readOnlyFolder,
+        bashAvailable: opts.system.bashAvailable && 'bash' in tools,
+        // Derived, not passed: the intersection above may have dropped them.
+        webSearch: 'web_search' in tools,
+        environment: opts.system.environment,
+      },
+      resolved.name
+    )
 
     // A fresh history: the child does not see the parent's conversation, so the
     // description is the whole brief.

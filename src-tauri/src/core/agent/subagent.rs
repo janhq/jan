@@ -909,6 +909,21 @@ fn child_body(
     serde_json::Value::Object(body)
 }
 
+/// The child's system prompt: the definition's role, plus a one-line identity
+/// when collaboration is on. Without its own name a subagent cannot tell it is
+/// a lone agent, so the worker guide's queue loop reads as an invitation to wait
+/// on a peer that isn't there. The behavioural rule (do your direct task, don't
+/// wait on the queue) lives in the shared worker guide, not here.
+fn child_system_prompt(role: &str, name: &str, work_queue_enabled: bool) -> String {
+    let mut prompt = role.to_string();
+    if work_queue_enabled {
+        prompt.push_str(&format!(
+            "\n\n# You\n\nYou are the subagent `{name}`, one of the agents on this run."
+        ));
+    }
+    prompt
+}
+
 /// Run one resolved subagent to completion, wrapping its events for `run_id` and
 /// returning its final assistant text. Isolated: fresh history (`description`),
 /// the definition's system prompt, narrowed tools, dispatch disabled.
@@ -925,7 +940,11 @@ async fn run_subagent(
 
     let name = resolved.definition.name.clone();
     let mut child_args = parent_args;
-    child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
+    child_args.system_prompt_override = Some(child_system_prompt(
+        &resolved.definition.system_prompt,
+        &name,
+        child_args.work_queue_enabled,
+    ));
     child_args.subagents_enabled = false;
     // A subagent's own interactive question (if any) belongs to its parent's
     // conversation, not a client waiting on this child's ask_requests -- and
@@ -1915,6 +1934,21 @@ mod tests {
             },
         );
         assert_eq!(off["send_reasoning"], serde_json::json!(false));
+    }
+
+    /// A collaborating subagent has to know its own name, or the shared worker
+    /// guide reads as an invitation to wait on a peer that isn't there. Off the
+    /// queue there are no peers, so no identity line is added.
+    #[test]
+    fn child_system_prompt_names_the_subagent_only_when_collaborating() {
+        let solo = child_system_prompt("You review code.", "kv-review", false);
+        assert_eq!(solo, "You review code.");
+        let collab = child_system_prompt("You review code.", "kv-review", true);
+        assert!(collab.starts_with("You review code."));
+        assert!(
+            collab.contains("subagent `kv-review`"),
+            "identity names the child: {collab}"
+        );
     }
 
     #[test]

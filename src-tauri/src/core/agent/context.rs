@@ -145,12 +145,15 @@ it finishes -- keep working rather than waiting. Do inline work yourself for sma
 delegating would cost more than it saves.";
 
 /// The worker half of the work-queue guide, shown to every collaborating agent
-/// (main and workers), so a worker knows the claim -> do -> complete -> stop loop
-/// even though it cannot dispatch.
+/// (main and workers). It leads with the direct-task rule: a subagent handed a
+/// concrete task must do that task rather than drain the queue or wait on a
+/// peer that isn't there -- the loop a lone subagent otherwise fell into.
 const WORK_QUEUE_WORKER_GUIDE: &str = "# Shared work queue\n\nYou share a work queue and a live status \
-board with the other agents on this run. As a worker: call `claim_work` to take the next ready task, do \
-it, then `complete_work` with the result. If `claim_work` reports nothing is ready, stop -- do not loop \
-on it; you are re-dispatched when new work appears.";
+board with the other agents on this run. If your instructions give you a task, do that task yourself -- \
+do not wait on the queue for it. Use `claim_work` only when you were dispatched as a generic worker with \
+no task of your own: claim the next ready item, do it, then `complete_work` with the result. If \
+`claim_work` reports nothing is ready, stop -- do not loop on it and do not wait for a peer; you are \
+re-dispatched when new work appears.";
 
 /// The dispatcher half, added only for a run that may dispatch subagents (main),
 /// so it learns the post -> dispatch-workers -> chain-with-deps pattern and the
@@ -533,6 +536,24 @@ mod tests {
         assert!(!without.contains("dispatch_subagent"));
         let with = build_system_prompt(None, &root, None, true, false).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn work_queue_worker_guide_leads_with_the_direct_task_rule() {
+        let root = scratch_project("workqueue-guide");
+        let off = build_system_prompt(None, &root, None, false, false).expect("prompt");
+        assert!(!off.contains("Shared work queue"));
+        // A worker (dispatch disabled): worker guide present, dispatch half not.
+        let worker = build_system_prompt(None, &root, None, false, true).expect("prompt");
+        assert!(worker.contains("Shared work queue"));
+        assert!(worker.contains("do that task yourself"));
+        assert!(worker.contains("do not wait for a peer"));
+        assert!(!worker.contains("dispatch a generic subagent"));
+        // Main (dispatch enabled) also learns the fan-out half.
+        let main = build_system_prompt(None, &root, None, true, true).expect("prompt");
+        assert!(main.contains("do not wait for a peer"));
+        assert!(main.contains("post_work"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
