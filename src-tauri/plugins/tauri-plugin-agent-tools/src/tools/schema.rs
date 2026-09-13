@@ -25,57 +25,12 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "ls",
-                "description": "List directory contents sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Truncated to the entry limit or 64KB.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Directory to list (default '.')." },
-                        "limit": { "type": "integer", "description": "Maximum number of entries to return (default 500)." }
-                    },
-                    "required": []
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "find",
-                "description": "Search for files by glob pattern, e.g. '*.ts', '**/*.json', or 'src/**/*.rs'. Returns paths relative to the search directory. Respects .gitignore.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": { "type": "string", "description": "Glob pattern to match files." },
-                        "path": { "type": "string", "description": "Directory to search in (default '.')." },
-                        "limit": { "type": "integer", "description": "Maximum number of results (default 1000)." }
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "grep",
-                "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Truncated to the match limit or 64KB.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": { "type": "string", "description": "Search pattern (regex or literal string)." },
-                        "path": { "type": "string", "description": "Directory or file to search (default '.')." },
-                        "glob": { "type": "string", "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.rs'." },
-                        "ignore_case": { "type": "boolean", "description": "Case-insensitive search (default false)." },
-                        "literal": { "type": "boolean", "description": "Treat pattern as a literal string instead of regex (default false)." },
-                        "context": { "type": "integer", "description": "Number of lines to show before and after each match (default 0)." },
-                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }),
+        // ls / find / grep are deliberately NOT advertised: `bash` covers
+        // listing and searching (`ls`, `find`, `grep`/`rg`), so dedicated tools
+        // for them only enlarge the schema a weak model has to handle. They stay
+        // in BUILTIN_TOOLS -- recognized, gated, and executable if named -- so
+        // the change is reversible and the handlers/tests are untouched; they are
+        // just no longer offered to the model.
         #[cfg(feature = "tauri")]
         json!({
             "type": "function",
@@ -262,11 +217,13 @@ mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
 
+    /// ls/find/grep stay in BUILTIN_TOOLS (recognized + executable) but are not
+    /// advertised -- bash covers listing and searching -- so the offered set is
+    /// BUILTIN_TOOLS minus that trio. Every other builtin must be advertised, in
+    /// the same order, so a new one can't be silently added and never offered.
     #[test]
-    fn schemas_match_builtin_tools() {
+    fn advertised_schemas_are_the_builtins_minus_the_unadvertised() {
         let schemas = builtin_tool_schemas();
-        let expected_len = if cfg!(feature = "tauri") { 16 } else { 15 };
-        assert_eq!(schemas.len(), expected_len);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }
@@ -274,7 +231,11 @@ mod tests {
             .iter()
             .map(|s| s["function"]["name"].as_str().unwrap())
             .collect();
-        let expected: Vec<&str> = BUILTIN_TOOLS.iter().map(|t| t.name).collect();
+        let expected: Vec<&str> = BUILTIN_TOOLS
+            .iter()
+            .map(|t| t.name)
+            .filter(|n| !matches!(*n, "ls" | "find" | "grep"))
+            .collect();
         assert_eq!(names, expected);
     }
 }

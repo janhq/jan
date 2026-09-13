@@ -361,8 +361,11 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
         .filter_map(|t| {
             let jan = match t.to_ascii_lowercase().as_str() {
                 "read" => Some("read"),
-                "glob" => Some("glob"),
-                "grep" => Some("grep"),
+                // Glob/Grep intentionally unmapped: Jan no longer advertises
+                // list/search tools (bash covers them). Mapping them would
+                // restrict a child to a tool it is never offered -- and a child
+                // scoped to *only* those would be left with none. Dropped instead,
+                // so such an agent inherits the full toolset (bash included).
                 "bash" => Some("bash"),
                 "edit" => Some("edit"),
                 "write" => Some("write"),
@@ -2632,7 +2635,8 @@ mod tests {
         )
         .unwrap();
         // tools is a Claude Code frontmatter list; NotebookRead has no Jan
-        // equivalent and must be dropped, not fatal.
+        // equivalent, and Glob/Grep are intentionally unmapped (Jan no longer
+        // advertises list/search tools) -- all three must drop, leaving `read`.
         std::fs::write(
             plugin_agents_dir(&root).join("scout.md"),
             "---\nname: scout\ndescription: Scans\ntools: [Read, Glob, Grep, NotebookRead]\n---\nScan.",
@@ -2641,12 +2645,26 @@ mod tests {
 
         let reg = SubagentRegistry::load(&root);
         let def = reg.get("scout").expect("loaded");
-        assert_eq!(
-            def.allowed_tools.as_deref(),
-            Some(&["read".to_string(), "glob".to_string(), "grep".to_string()][..])
-        );
+        assert_eq!(def.allowed_tools.as_deref(), Some(&["read".to_string()][..]));
         // No tools field: no allowlist at all.
         assert_eq!(reg.get("reader").unwrap().allowed_tools, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_agent_scoped_to_only_search_tools_inherits_full_toolset() {
+        // Glob/Grep are unmapped, so an agent listing only those maps to nothing
+        // -> None (inherit), never Some([]) -- otherwise it would be left with no
+        // way to search (bash is what covers it now).
+        let root = unique_root("plugin-search-only");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("finder.md"),
+            "---\nname: finder\ndescription: Finds\ntools: [Glob, Grep]\n---\nFind.",
+        )
+        .unwrap();
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("finder").unwrap().allowed_tools, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 
