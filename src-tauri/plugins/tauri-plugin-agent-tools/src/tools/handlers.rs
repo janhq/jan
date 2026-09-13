@@ -45,13 +45,21 @@ static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// Counter for unique bash background job ids.
 static BASH_JOB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// Commands still running past their `bash` call's timeout, keyed by job_id.
-/// Each receiver resolves with the same formatted output a foreground call
-/// would have returned. Entries are removed once collected via `job_id`;
-/// uncollected jobs live for the process's lifetime, same tradeoff as the
+/// A backgrounded command: still running, or finished with its output cached.
+enum BashJob {
+    Pending(oneshot::Receiver<String>),
+    Done(String),
+}
+
+/// Commands that outran their `bash` call's timeout, keyed by job_id. A
+/// `Pending` job resolves with the same formatted output a foreground call
+/// would have returned; on collection it is cached as `Done` so a re-collect
+/// (e.g. after a cancel/continue that never persisted the first result) returns
+/// the same text instead of erroring and pushing the model to re-run the
+/// command. Entries live for the process's lifetime, the same tradeoff as the
 /// bash-output temp files this module already leaves on disk.
-fn bash_jobs() -> &'static Mutex<HashMap<String, oneshot::Receiver<String>>> {
-    static JOBS: OnceLock<Mutex<HashMap<String, oneshot::Receiver<String>>>> = OnceLock::new();
+fn bash_jobs() -> &'static Mutex<HashMap<String, BashJob>> {
+    static JOBS: OnceLock<Mutex<HashMap<String, BashJob>>> = OnceLock::new();
     JOBS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -906,7 +914,10 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
         _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
             let job_id = format!("bash-{}", BASH_JOB_COUNTER.fetch_add(1, Ordering::SeqCst));
-            bash_jobs().lock().unwrap().insert(job_id.clone(), rx);
+            bash_jobs()
+                .lock()
+                .unwrap()
+                .insert(job_id.clone(), BashJob::Pending(rx));
             format!(
                 "Command exceeded {timeout_secs}s and is continuing in the background \
                  (job_id={job_id}). Call bash again with {{\"job_id\": \"{job_id}\"}} (no \
@@ -917,16 +928,29 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 }
 
 /// Wait for a previously backgrounded command to finish and return its
-/// (already-formatted) output, or an error if `job_id` is unknown or was
-/// already collected.
+/// (already-formatted) output. A job collected once keeps its output, so a
+/// re-collect returns the same text; only a genuinely unknown `job_id` errors.
 async fn await_bash_job(job_id: &str) -> String {
-    let rx = bash_jobs().lock().unwrap().remove(job_id);
-    match rx {
-        Some(rx) => rx.await.unwrap_or_else(|_| {
-            "ERROR: background command ended without producing output".to_string()
-        }),
-        None => format!("ERROR: unknown or already-collected job_id '{job_id}'"),
-    }
+    let pending = {
+        let mut jobs = bash_jobs().lock().unwrap();
+        if let Some(BashJob::Done(out)) = jobs.get(job_id) {
+            return out.clone();
+        }
+        // Held under one lock with the peek above, so `remove` cannot observe a
+        // `Done` the peek missed: the entry is `Pending` or genuinely absent.
+        match jobs.remove(job_id) {
+            Some(BashJob::Pending(rx)) => rx,
+            _ => return format!("ERROR: unknown or already-collected job_id '{job_id}'"),
+        }
+    };
+    let out = pending.await.unwrap_or_else(|_| {
+        "ERROR: background command ended without producing output".to_string()
+    });
+    bash_jobs()
+        .lock()
+        .unwrap()
+        .insert(job_id.to_string(), BashJob::Done(out.clone()));
+    out
 }
 
 /// Drain a running child's stdout+stderr into a bounded rolling buffer (so a
@@ -2983,13 +3007,12 @@ mod tests {
             execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
         assert!(collected.contains("done"), "unexpected: {collected}");
 
-        // The job is removed once collected.
+        // Re-collecting returns the same cached output instead of erroring, so a
+        // model that re-issues the collect after a cancel/continue is not forced
+        // to re-run the command.
         let again =
             execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
-        assert!(
-            again.starts_with("ERROR: unknown or already-collected"),
-            "unexpected: {again}"
-        );
+        assert!(again.contains("done"), "re-collect should be cached: {again}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
