@@ -330,14 +330,23 @@ pub fn read_agent_tool_schema() -> serde_json::Value {
 }
 
 /// Run a `read_agent` call and format its model-facing result. Shared by the
-/// CLI loop and the desktop/Cowork command layer.
-pub fn run_read_agent(scratch: &Path, args: &serde_json::Value) -> String {
+/// CLI loop and the desktop/Cowork command layer. `self_id` is the caller's own
+/// collaboration id (`"main"` or a `sub-...` run id): an agent reading its own
+/// log is a no-op loop -- the last line it gets back is the `read_agent` call it
+/// just made -- so any surface passes its caller here and the read is refused.
+pub fn run_read_agent(scratch: &Path, args: &serde_json::Value, self_id: &str) -> String {
     let run_id = args
         .get("run_id")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty());
     match run_id {
+        Some(id) if id == self_id => {
+            "ERROR: that run_id is you. read_agent inspects *other* agents; reading your own log \
+             tells you nothing. If your task is done, report your result (call complete_work, or \
+             give your final answer) instead of polling."
+                .to_string()
+        }
         None => {
             let r = roster(scratch);
             if r.is_empty() {
@@ -539,6 +548,24 @@ mod tests {
         assert!(dir.join("transcript.jsonl").exists());
         assert!(dir.join("transcript.1.jsonl").exists());
         drop(w);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn refuses_reading_your_own_log() {
+        let scratch = tmp("selfread");
+        assert!(write_status(&scratch, &AgentStatusView::new("sub-a-1", "a", 100)));
+        // A peer can read it.
+        let peer = run_read_agent(&scratch, &serde_json::json!({ "run_id": "sub-a-1" }), "main");
+        assert!(peer.contains("sub-a-1"), "{peer}");
+        // Reading yourself is refused, whoever you are.
+        let own = run_read_agent(&scratch, &serde_json::json!({ "run_id": "sub-a-1" }), "sub-a-1");
+        assert!(own.starts_with("ERROR") && own.contains("you"), "{own}");
+        let main = run_read_agent(&scratch, &serde_json::json!({ "run_id": "main" }), "main");
+        assert!(main.starts_with("ERROR"), "main cannot read itself either: {main}");
+        // The roster (no run_id) is not a self-read and still works.
+        let roster = run_read_agent(&scratch, &serde_json::json!({}), "sub-a-1");
+        assert!(roster.contains("Agents"), "{roster}");
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

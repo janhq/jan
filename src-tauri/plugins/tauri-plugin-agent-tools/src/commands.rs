@@ -533,16 +533,20 @@ pub async fn work_list(thread_id: String) -> Result<WorkCommandResult, AgentTool
 
 /// Read a peer's status + transcript, or the roster. `args` is `{run_id?, tail?}`.
 /// Returns the model-facing text; a JS-supplied `run_id` is re-validated inside
-/// the core (`is_agent_id`).
+/// the core (`is_agent_id`). `agent_id` is the caller's own id, so the core can
+/// refuse an agent reading its own log (a no-op loop).
 #[tauri::command]
 pub async fn agent_read(
     thread_id: String,
+    agent_id: String,
     args: serde_json::Value,
 ) -> Result<String, AgentToolsError> {
     let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
-    tokio::task::spawn_blocking(move || crate::tools::observ::run_read_agent(&scratch, &args))
-        .await
-        .map_err(|e| AgentToolsError::from(format!("agent read failed: {e}")))
+    tokio::task::spawn_blocking(move || {
+        crate::tools::observ::run_read_agent(&scratch, &args, &agent_id)
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("agent read failed: {e}")))
 }
 
 /// An attachment imported into a session workspace: host paths, which are also

@@ -94,9 +94,11 @@ describe('agentTools', () => {
     it('reads a peer through agent_read and surfaces errors as an ERROR string', async () => {
       agentRead.mockResolvedValue('reviewer (sub-a-1) [running] step 2')
       const { readAgent } = await import('../agentTools')
-      expect(await readAgent('sess-1', { run_id: 'sub-a-1' })).toContain('running')
+      expect(await readAgent('sess-1', 'main', { run_id: 'sub-a-1' })).toContain('running')
+      // The caller's own id is forwarded so the core can refuse a self-read.
+      expect(agentRead).toHaveBeenCalledWith('sess-1', 'main', { run_id: 'sub-a-1' })
       agentRead.mockRejectedValue(new Error('nope'))
-      expect(await readAgent('sess-1', {})).toBe('ERROR: nope')
+      expect(await readAgent('sess-1', 'main', {})).toBe('ERROR: nope')
     })
   })
 

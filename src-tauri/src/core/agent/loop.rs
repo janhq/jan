@@ -204,6 +204,31 @@ pub(crate) trait ToolInvoker: Send + Sync {
     /// agent's `status.json` shows an accurate live step even on a turn that
     /// calls no tools. Default no-op for invokers with no observability.
     fn record_step(&self, _index: u32) {}
+
+    /// Whether this run is a dispatched worker (a `sub-...` collaboration id)
+    /// rather than the top-level agent. Only a child may be hard-stopped by the
+    /// poll dampener: ending the main run would abort the very children it is
+    /// waiting on. Default false, so a non-collaborating run is never a child.
+    fn collab_is_child(&self) -> bool {
+        false
+    }
+}
+
+/// Work-queue/observability tools that read shared state without doing any work
+/// or producing a result. A run whose turns consist only of these is polling,
+/// not progressing -- the stuck-worker failure the dampener in [`run_turn_cycle`]
+/// catches. `complete_work`/`post_work`/`dispatch_subagent` and every file/exec
+/// tool are productive and reset the streak.
+fn is_poll_only_tool(name: &str) -> bool {
+    matches!(name, "claim_work" | "list_work" | "read_agent")
+}
+
+/// The `function.name` of a tool call, or `""` when absent.
+fn tool_call_fn_name(tc: &serde_json::Value) -> &str {
+    tc.get("function")
+        .and_then(|f| f.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -806,7 +831,9 @@ impl CompositeToolInvoker {
             return "ERROR: the work queue is not available in this run".to_string();
         };
         if name == observ::READ_AGENT_TOOL {
-            return observ::run_read_agent(scratch, args);
+            // The self-read guard lives in the shared core so every surface
+            // (this loop and the Cowork command) enforces it identically.
+            return observ::run_read_agent(scratch, args, &self.collab_run_id);
         }
         let res = workqueue::run_work_tool(scratch, name, args, &self.collab_run_id, epoch_secs());
         if res.posted {
@@ -1323,6 +1350,10 @@ impl ToolInvoker for CompositeToolInvoker {
         }
         self.log_activity("step", &index.to_string(), None);
         self.flush_collab_status();
+    }
+
+    fn collab_is_child(&self) -> bool {
+        self.collab_run_id != "main"
     }
 
     fn background_pending(&self) -> bool {
@@ -2865,6 +2896,13 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // Poll dampener: consecutive turns whose tool calls were *all* work-queue/
+    // observability polls (see `is_poll_only_tool`). A worker that only claims,
+    // lists and reads without doing or completing anything is stuck; nudge it
+    // once, then hard-stop a child that will not stop itself.
+    const POLL_STREAK_NUDGE: u32 = 3;
+    const POLL_STREAK_STOP: u32 = 6;
+    let mut poll_streak: u32 = 0;
     // The monitor set last published as `StreamEvent::Monitors`.
     let mut shown_monitors = Vec::new();
 
@@ -3115,6 +3153,16 @@ async fn run_turn_cycle(
                 messages: conversation_messages.clone(),
             });
             return Ok(completion);
+        }
+
+        // A turn that calls nothing but poll tools is one more turn of a spin;
+        // any productive call resets the count. Decided here, acted on (nudge/
+        // stop) after the results are appended so history stays clean.
+        let poll_only = tool_calls.iter().all(|tc| is_poll_only_tool(tool_call_fn_name(tc)));
+        if poll_only {
+            poll_streak += 1;
+        } else {
+            poll_streak = 0;
         }
 
         // Crossing the session budget is advisory: it is recorded and the run
@@ -3376,6 +3424,42 @@ async fn run_turn_cycle(
                     ),
                 );
             }
+        }
+
+        // Poll dampener: acted on after the results are in the history, so a
+        // nudge or a synthetic stop leaves a well-formed conversation (no
+        // dangling tool_calls). Nudge once at the lower threshold; hard-stop a
+        // child at the higher one -- the main run is only nudged, since ending
+        // it would abort the children it may be waiting on.
+        if poll_only && poll_streak == POLL_STREAK_NUDGE {
+            crate::core::agent::reminder::attach(
+                &mut conversation_messages,
+                "You have spent several turns calling only work-queue/observability tools \
+                 (claim_work/list_work/read_agent) without doing any work or producing a result. \
+                 Stop polling -- you are pinged automatically when new work is ready. If your task \
+                 is already done, call complete_work with your result (or, if you are not a worker, \
+                 give your final answer) instead of calling these tools again.",
+            );
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+        } else if poll_only && poll_streak >= POLL_STREAK_STOP && tools.collab_is_child() {
+            let stop = "Stopped after several consecutive turns of polling the work queue \
+                        (claim_work/list_work/read_agent) with no progress and no result. There \
+                        was no ready work to claim.";
+            conversation_messages.push(serde_json::json!({
+                "role": "assistant",
+                "content": stop,
+            }));
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: conversation_messages.clone(),
+            });
+            return Ok(serde_json::json!({
+                "choices": [{
+                    "message": { "role": "assistant", "content": stop },
+                    "finish_reason": "stop"
+                }]
+            }));
         }
         turn += 1;
     }
@@ -4594,6 +4678,148 @@ mod tests {
             text.contains("'alpha'") && text.contains("'beta'"),
             "{text}"
         );
+    }
+
+    /// A worker invoker: every claim reports the queue empty, and `child`
+    /// decides whether the poll dampener is allowed to hard-stop this run.
+    struct PollTool {
+        child: bool,
+    }
+    #[async_trait]
+    impl ToolInvoker for PollTool {
+        async fn invoke(
+            &self,
+            tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(tool_calls
+                .iter()
+                .map(|tc| {
+                    let id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    ToolOutcome::plain(id, "No work is ready right now. Stop and wait.".to_string())
+                })
+                .collect())
+        }
+        fn collab_is_child(&self) -> bool {
+            self.child
+        }
+    }
+
+    fn claim_work_completion() -> serde_json::Value {
+        json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "claim_work", "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        })
+    }
+
+    fn carries_poll_nudge(request: &serde_json::Value) -> bool {
+        request["messages"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|m| {
+                m.get("content")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(|s| s.contains("Stop polling"))
+            })
+    }
+
+    /// A child that only ever polls the work queue is hard-stopped by the
+    /// dampener well before it can exhaust its budget on the spin, and the run
+    /// ends with the explanatory stop answer rather than an error.
+    #[tokio::test]
+    async fn a_worker_spinning_on_poll_tools_is_stopped() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new((0..30).map(|_| claim_work_completion()).collect());
+        let tool = PollTool { child: true };
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "review the file" })],
+            0, // unlimited: only the dampener can end this run
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let content = result["choices"][0]["message"]["content"].as_str().unwrap();
+        assert!(content.contains("Stopped"), "run ended with the stop answer: {content}");
+        // Streak reaches POLL_STREAK_STOP (6) on the 6th turn.
+        assert_eq!(model.requests.lock().unwrap().len(), 6);
+    }
+
+    /// The nudge lands one turn after the lower threshold and before the stop:
+    /// absent on the 3rd request, present on the 4th.
+    #[tokio::test]
+    async fn a_polling_run_is_nudged_before_it_is_stopped() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new((0..30).map(|_| claim_work_completion()).collect());
+        let tool = PollTool { child: true };
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let requests = model.requests.lock().unwrap();
+        assert!(!carries_poll_nudge(&requests[2]), "not nudged before the 3rd poll turn");
+        assert!(carries_poll_nudge(&requests[3]), "nudged on the request after the 3rd");
+    }
+
+    /// The main run is nudged like a worker but never hard-stopped: ending it
+    /// would abort the children it may be waiting on, so it runs to the turn cap.
+    #[tokio::test]
+    async fn the_main_run_is_nudged_but_not_stopped() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new((0..8).map(|_| claim_work_completion()).collect());
+        let tool = PollTool { child: false };
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "go" })],
+            8, // capped so the test terminates without a stop
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+        )
+        .await;
+        assert!(result.is_err(), "main hit the turn cap, not the child stop: {result:?}");
+        assert_eq!(model.requests.lock().unwrap().len(), 8, "every turn ran");
     }
 
     /// A tool invoker whose one queued ping carries a headline, standing in for

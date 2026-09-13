@@ -503,13 +503,15 @@ export async function listWork(sessionId: string): Promise<WorkResult> {
   }
 }
 
-/** Read a peer's status + transcript, or the roster (no `run_id`). */
+/** Read a peer's status + transcript, or the roster (no `run_id`). `agentId` is
+ * the caller's own id, passed so the core can refuse a self-read. */
 export async function readAgent(
   sessionId: string,
+  agentId: string,
   args: Record<string, unknown>
 ): Promise<string> {
   try {
-    return await agentRead(sessionId, args)
+    return await agentRead(sessionId, agentId, args)
   } catch (e) {
     return `ERROR: ${messageOf(e)}`
   }

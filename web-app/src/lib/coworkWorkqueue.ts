@@ -142,7 +142,7 @@ export async function runWorkOp(
   const args =
     input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   if (toolName === READ_AGENT_TOOL) {
-    const output = await readAgent(ctx.sessionId, args)
+    const output = await readAgent(ctx.sessionId, ctx.agentId, args)
     return { output, isError: output.startsWith('ERROR') }
   }
   let res: WorkCommandResult | null

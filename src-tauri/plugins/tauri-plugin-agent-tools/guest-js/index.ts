@@ -352,12 +352,14 @@ export async function workList(threadId: string): Promise<WorkCommandResult> {
 }
 
 /** Read a peer's status + transcript, or the roster (no `run_id`). `args` is
- * `{run_id?, tail?}`; the returned string is model-facing. */
+ * `{run_id?, tail?}`; the returned string is model-facing. `agentId` is the
+ * caller's own collaboration id, so the core can refuse a self-read. */
 export async function agentRead(
   threadId: string,
+  agentId: string,
   args: Record<string, unknown>
 ): Promise<string> {
-  return await invoke('plugin:agent-tools|agent_read', { threadId, args })
+  return await invoke('plugin:agent-tools|agent_read', { threadId, agentId, args })
 }
 
 /** An attachment copied into a session workspace. */
