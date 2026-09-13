@@ -928,6 +928,10 @@ struct GroupedCall {
     content: Option<String>,
     is_error: bool,
     diff: Option<String>,
+    /// Raw shell command, retained so the live terminal box can keep showing it
+    /// (and its output) after the result lands -- until the group folds. `None`
+    /// for non-shell calls, which contribute no box.
+    command: Option<String>,
 }
 
 /// A run of consecutive collapsible tool calls folded into one transcript row.
@@ -2844,6 +2848,9 @@ impl App {
             content: None,
             is_error: false,
             diff: None,
+            // Set for shell calls (track_bash_job ran first). Kept on the call so
+            // the terminal box survives the result clearing `bash_commands`.
+            command: self.bash_commands.get(id).cloned(),
         };
         let extend = self
             .tool_group
@@ -3095,24 +3102,45 @@ impl App {
         }
         let elapsed = group.started.elapsed().as_secs();
         let mut out = Vec::new();
-        for call in group
-            .calls
-            .iter()
-            .filter(|c| c.content.is_none() && self.bash_commands.contains_key(&c.id))
-        {
-            // A blank row between stacked boxes so two terminals do not run their
-            // borders together.
+        // A blank row between stacked boxes so two terminals do not run their
+        // borders together.
+        let spacer = |out: &mut Vec<Line<'static>>| {
             if !out.is_empty() {
                 out.push(Line::raw(""));
             }
-            let command = &self.bash_commands[&call.id];
-            let output = self
-                .live_output
-                .get(output_key(&self.live_alias, call))
-                .map_or("", String::as_str);
-            out.extend(running_terminal_lines(
-                command, output, elapsed, spinner_frame, width,
-            ));
+        };
+        for call in group.calls.iter().filter(|c| c.command.is_some()) {
+            match &call.content {
+                // Still running: the live output tail with a spinner + elapsed.
+                None => {
+                    spacer(&mut out);
+                    let command = call.command.as_deref().unwrap_or("");
+                    let output = self
+                        .live_output
+                        .get(output_key(&self.live_alias, call))
+                        .map_or("", String::as_str);
+                    out.extend(running_terminal_lines(
+                        command, output, elapsed, spinner_frame, width,
+                    ));
+                }
+                // Finished, but the group is still the current step: keep the box
+                // (command + output + a settled status) so the output stays
+                // readable until the group folds, rather than vanishing the
+                // instant the result lands. The authoritative content backs it
+                // (`bash_commands`/`live_output` are cleared on the result), and a
+                // bounded tail keeps a huge result cheap to re-render each frame.
+                Some(content) => {
+                    spacer(&mut out);
+                    let command = call.command.as_deref().unwrap_or("");
+                    let output = tail_on_char_boundary(content, FINISHED_OUTPUT_TAIL_BYTES);
+                    out.extend(finished_terminal_lines(
+                        command,
+                        output,
+                        call.is_error,
+                        width,
+                    ));
+                }
+            }
         }
         out
     }
@@ -7317,6 +7345,45 @@ fn running_terminal_lines(
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
     ]));
+    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+}
+
+/// The most-recent bytes of `s` that begin on a char boundary, capped at `max`.
+/// Used to bound a finished command's (possibly large) result before rendering
+/// its terminal tail, so re-rendering the box each frame stays cheap.
+fn tail_on_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let start = s.len() - max;
+    let at = (start..s.len())
+        .find(|i| s.is_char_boundary(*i))
+        .unwrap_or(s.len());
+    &s[at..]
+}
+
+/// Bytes of a finished command's result kept for its lingering terminal box.
+/// Only a tail is shown (`LIVE_OUTPUT_TAIL_LINES`); this bounds the scan cheaply.
+const FINISHED_OUTPUT_TAIL_BYTES: usize = 8 * 1024;
+
+/// A finished command's terminal box: the same framed prompt + output as the
+/// running one, but with a settled status glyph in place of the spinner/elapsed,
+/// so a command's output stays readable after it returns -- until the group
+/// folds it to a one-line summary. The full output is still on the group's
+/// expand.
+fn finished_terminal_lines(
+    command: &str,
+    output: &str,
+    is_error: bool,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
+    let (glyph, style) = if is_error {
+        ("✗", Style::new().red())
+    } else {
+        ("✓", Style::new().green())
+    };
+    rows.push(Line::from(Span::styled(glyph.to_string(), style)));
     boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
 }
 
@@ -14934,26 +15001,34 @@ fn draw(f: &mut Frame, app: &mut App) {
             reveal_at = Some(content_h);
         }
         // Every committed row re-renders at the current width, so a resize
-        // re-flows prose, re-boxes diffs and re-truncates labels. The running
-        // group's row animates, so it can never come from the row cache.
-        let seg = match app
-            .tool_group
-            .as_ref()
-            .filter(|g| g.idx == i && g.is_running())
-        {
+        // re-flows prose, re-boxes diffs and re-truncates labels. The open
+        // group's row is live (spinner, or a lingering finished box), so it can
+        // never come from the row cache.
+        let seg = match app.tool_group.as_ref().filter(|g| g.idx == i) {
             Some(g) => {
-                // A running command that has started printing renders as a live
-                // terminal box (prompt + streaming output + spinner/elapsed),
-                // which stands in for the plain "Executing:" activity row. Every
-                // other running call -- and a command still inside its grace
-                // window -- keeps that row.
+                // The open group's shell calls render as live terminal boxes: a
+                // running command shows its streaming output + spinner/elapsed; a
+                // finished one keeps its box (output + a settled status) until the
+                // group folds, so the output does not vanish the instant the
+                // result lands. A running non-shell group keeps its plain
+                // activity row; a finished non-shell group (no box, not yet
+                // committed) renders its folded summary row.
                 let panel = app.live_shell_panel(g, app.spinner_frame, width);
-                let rows = if panel.is_empty() {
-                    running_group_rows(g, app.spinner_frame, width)
+                if !panel.is_empty() {
+                    Segment::eager(Some(i), panel, width)
+                } else if g.is_running() {
+                    Segment::eager(
+                        Some(i),
+                        running_group_rows(g, app.spinner_frame, width),
+                        width,
+                    )
                 } else {
-                    panel
-                };
-                Segment::eager(Some(i), rows, width)
+                    Segment {
+                        idx: Some(i),
+                        height: row.height(width),
+                        lines: None,
+                    }
+                }
             }
             None => Segment {
                 idx: Some(i),
@@ -20169,7 +20244,9 @@ mod tests {
             "one box per command: {live}"
         );
 
-        // When the first finishes, only the still-running one keeps its box.
+        // When the first finishes its box stays -- now settled with a status and
+        // its final output -- so the output remains readable while the second
+        // command keeps streaming its own box. It only folds once the group does.
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "compiling foo\n[exit 0]".into(),
@@ -20177,7 +20254,8 @@ mod tests {
             diff: None,
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(!live.contains("$ make"), "the finished command folds away: {live}");
+        assert!(live.contains("$ make"), "the finished command keeps its box: {live}");
+        assert!(live.contains("[exit 0]"), "with its final output: {live}");
         assert!(live.contains("$ cargo test"), "the running one stays boxed: {live}");
     }
 
@@ -26879,6 +26957,68 @@ mod tests {
         app.apply(StreamEvent::Token { text: "<think>second</think>".into() });
         let live = render_rows(&mut app, 70, 20).join("\n");
         assert!(!live.contains("Done"), "no Done terminal while live: {live}");
+    }
+
+    /// A finished bash command keeps its terminal box (command + output) while
+    /// its group is still the current step, so the output stays readable instead
+    /// of vanishing the instant the result lands. Once the model moves on (an
+    /// answer here), the group folds to the one-line summary; the full output is
+    /// still on the group's expand.
+    #[test]
+    fn a_finished_bash_command_keeps_its_output_visible() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls -la" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "file_a.txt\nfile_b.txt".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Group still open: the finished box lingers with its command and output.
+        let open = render_rows(&mut app, 60, 16).join("\n");
+        assert!(open.contains("$ ls -la"), "command still shown: {open}");
+        assert!(
+            open.contains("file_a.txt") && open.contains("file_b.txt"),
+            "output stays visible after the result: {open}"
+        );
+
+        // The model answers: the group folds to its one-line summary, output gone
+        // from the transcript (still reachable via expand).
+        app.apply(StreamEvent::Token { text: "Two files.".into() });
+        app.flush_assistant();
+        let folded = render_rows(&mut app, 60, 16).join("\n");
+        assert!(folded.contains("Ran: ls -la"), "folds to a summary: {folded}");
+        assert!(
+            !folded.contains("file_a.txt"),
+            "output folds away once the step is past: {folded}"
+        );
+    }
+
+    /// A failed bash command's lingering box carries the error glyph and its
+    /// error output, so a failure is legible before the group folds.
+    #[test]
+    fn a_finished_bash_box_marks_failure() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "false" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "boom".into(),
+            is_error: true,
+            diff: None,
+        });
+        let open = render_rows(&mut app, 50, 12).join("\n");
+        assert!(open.contains("\u{2717}"), "failed box shows the error glyph: {open}");
+        assert!(open.contains("boom"), "error output shows: {open}");
     }
 
     /// Ctrl-O (`toggle_regions`) unfolds every collapsed trace along with the
