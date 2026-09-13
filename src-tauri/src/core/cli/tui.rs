@@ -16945,10 +16945,22 @@ fn agents_column(
         }
     }
     if hidden > 0 {
-        out.push(Line::from(vec![Span::styled(
-            format!("  +{hidden} more running"),
-            dim,
-        )]));
+        // The overflow row points at the `/agents` inspector, which lists the
+        // whole live fan-out with per-agent detail -- the dock only has room for
+        // the newest few. Compact form when the (often half-width) column can't
+        // fit the hint.
+        let hinted = format!("  +{hidden} more · /agents");
+        if hinted.chars().count() <= max {
+            out.push(Line::from(vec![
+                Span::styled(format!("  +{hidden} more · "), dim),
+                Span::styled("/agents", Style::new().cyan()),
+            ]));
+        } else {
+            out.push(Line::from(vec![Span::styled(
+                format!("  +{hidden} more running"),
+                dim,
+            )]));
+        }
     }
     out.truncate(rows);
     out
@@ -18197,6 +18209,32 @@ mod tests {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
         assert!(app.agent_detail.is_none(), "Esc cleared the drilled-in id");
+    }
+
+    /// When more agents are running than the dock can show, the overflow row
+    /// points at the `/agents` inspector so the full list is reachable.
+    #[test]
+    fn agents_column_overflow_hints_the_agents_command() {
+        let mut panels: Vec<SubagentPanel> = (0..6)
+            .map(|n| panel_with_calls(&format!("worker-{n}"), vec!["bash {}"]))
+            .collect();
+        let lines = agents_column(&mut panels, 200_000, 80, 4, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("more"), "overflow row present: {text}");
+        assert!(text.contains("/agents"), "overflow hints /agents: {text}");
+    }
+
+    /// A column too narrow for the hint falls back to the plain count rather than
+    /// spilling `/agents` off the edge.
+    #[test]
+    fn agents_column_overflow_drops_the_hint_when_too_narrow() {
+        let mut panels: Vec<SubagentPanel> = (0..6)
+            .map(|n| panel_with_calls(&format!("w{n}"), vec!["bash {}"]))
+            .collect();
+        let lines = agents_column(&mut panels, 200_000, 12, 4, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("more running"), "compact fallback: {text}");
+        assert!(!text.contains("/agents"), "no hint when it would not fit: {text}");
     }
 
     #[test]
