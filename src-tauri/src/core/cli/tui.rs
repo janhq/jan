@@ -5431,6 +5431,29 @@ impl App {
             }
             self.history.push(msg);
         }
+        // Some OpenAI-compatible servers send usage only with the terminal
+        // event. Keep the same context accounting path for that case instead
+        // of leaving the header at zero when no intermediate TurnUsage arrived.
+        if self.turn_prompt_tokens == 0 {
+            if let Some(prompt) = usage.as_ref().and_then(|u| u.prompt_tokens) {
+                self.turn_prompt_tokens = prompt;
+                self.tokens = prompt
+                    + usage
+                        .as_ref()
+                        .and_then(|u| u.completion_tokens)
+                        .unwrap_or(0);
+                self.tokens_estimated = false;
+            }
+        }
+        // If a provider does not report prompt usage at all, show a useful
+        // estimate. The old OpenAI accumulator always had a prompt estimate
+        // available; genai cannot manufacture one when the upstream omits
+        // usage metadata. Do this per turn so a missing sample cannot leave a
+        // stale measured value from the previous turn in the header.
+        if self.turn_prompt_tokens == 0 && !self.history.is_empty() {
+            self.tokens = estimate_token_count(&self.history);
+            self.tokens_estimated = true;
+        }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
         // only place the cost of a turn is visible after the fact.
@@ -29703,6 +29726,32 @@ mod tests {
 
     /// The turn receipt reports what the whole turn cost, which for a
     /// tool-using turn is more than the final request's usage.
+    #[test]
+    fn terminal_usage_updates_context_when_no_intermediate_event_arrives() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.on_done(
+            "stop".into(),
+            Some(Usage {
+                prompt_tokens: Some(120),
+                completion_tokens: Some(8),
+                total_tokens: Some(128),
+            }),
+        );
+        assert_eq!(app.turn_prompt_tokens, 120);
+        assert_eq!(app.tokens, 128);
+        assert!(!app.tokens_estimated);
+    }
+
+    #[test]
+    fn missing_usage_falls_back_to_a_context_estimate() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.on_done("stop".into(), None);
+        assert!(app.tokens > 0);
+        assert!(app.tokens_estimated);
+    }
+
     #[test]
     fn turn_stats_sum_output_across_requests() {
         let mut app = test_app();
