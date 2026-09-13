@@ -446,9 +446,15 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
 /// definition's `allowed_tools`, the call-site override, and the parent's
 /// permissions, plus the always-on `skill_list`/`skill_read` pair. Deny (from
 /// the parent) always wins. Returns the list to set as the child's
-/// `allowed_tools` (an empty list means "no tools"), or `None` to inherit the
-/// definition's full toolset with no per-run allowlist (the parent's deny-list
-/// still applies at gate time).
+/// `allowed_tools`, or `None` to inherit the parent's full toolset with no
+/// per-run allowlist (the parent's deny-list still applies at gate time).
+///
+/// An empty allowlist is normalized to `None` (inherit), never "no tools": a
+/// model dispatching a one-off routinely emits `allowed_tools: []` for the
+/// optional array parameter, which used to hand the child only the forced
+/// skill/work tools and no `read`/`bash` -- the "subagent has no tools" failure.
+/// Restricting a child is still possible, with a non-empty list. (The plugin
+/// path already relies on this via `map_claude_tools` returning `None`.)
 ///
 /// Fails closed: a tool named in `request` that the definition does not permit,
 /// or that the parent denies, is rejected rather than silently dropped. A
@@ -459,6 +465,8 @@ pub fn intersect_allowed_tools(
     request: Option<&[String]>,
     parent: &ToolPermissions,
 ) -> Result<Option<Vec<String>>, SubagentError> {
+    let definition = definition.filter(|d| !d.is_empty());
+    let request = request.filter(|r| !r.is_empty());
     if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
@@ -1329,7 +1337,7 @@ pub fn subagent_tool_schemas(
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Tool allowlist. For a saved subagent this further narrows its own allowed_tools (never widens); for a one-off it is the subagent's toolset."
+                            "description": "Optional tool allowlist. OMIT this to give the subagent the parent's full toolset (the usual choice -- a subagent that runs tests needs bash, one that edits needs write, etc.). Provide a list ONLY to restrict it: for a saved subagent it further narrows that subagent's own tools (never widens); for a one-off the list IS its toolset. An empty list is treated as omitted, not as 'no tools'."
                         }
                     },
                     "required": ["subagent_name", "description"]
@@ -1364,7 +1372,7 @@ pub fn subagent_tool_schemas(
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Optional default tool allowlist for the subagent."
+                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. bash to run commands, write/edit to change files). An empty list is treated as omitted."
                         },
                         "scope": { "type": "string", "enum": ["user", "project"], "description": "Where to store it (default 'project')." },
                         "overwrite": { "type": "boolean", "description": "Replace an existing same-name definition in that scope (default false)." }
@@ -1398,8 +1406,11 @@ fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
         .map(|a| {
             a.iter()
                 .filter_map(|v| v.as_str().map(String::from))
-                .collect()
+                .collect::<Vec<_>>()
         })
+        // `allowed_tools: []` means "inherit", not "no tools" -- see
+        // `intersect_allowed_tools`. Drop an empty list so it reads as omitted.
+        .filter(|list| !list.is_empty())
 }
 
 /// Parse a `dispatch_subagent` tool-call argument object.
@@ -1733,6 +1744,33 @@ mod tests {
     fn intersect_none_none_inherits() {
         let p = ToolPermissions::allow_all();
         assert_eq!(intersect_allowed_tools(None, None, &p).unwrap(), None);
+    }
+
+    #[test]
+    fn intersect_empty_lists_inherit_rather_than_stripping_tools() {
+        // A model emitting `allowed_tools: []` must not yield a toolless child
+        // (no read/bash) -- an empty allowlist inherits the full toolset.
+        let p = ToolPermissions::allow_all();
+        let empty: &[String] = &[];
+        assert_eq!(intersect_allowed_tools(None, Some(empty), &p).unwrap(), None);
+        assert_eq!(intersect_allowed_tools(Some(empty), None, &p).unwrap(), None);
+        assert_eq!(
+            intersect_allowed_tools(Some(empty), Some(empty), &p).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn optional_tool_list_treats_empty_array_as_omitted() {
+        assert_eq!(
+            optional_tool_list(&serde_json::json!({ "allowed_tools": [] })),
+            None
+        );
+        assert_eq!(optional_tool_list(&serde_json::json!({})), None);
+        assert_eq!(
+            optional_tool_list(&serde_json::json!({ "allowed_tools": ["read"] })),
+            Some(vec!["read".to_string()])
+        );
     }
 
     #[test]
