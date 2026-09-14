@@ -1,0 +1,25 @@
+{
+  "name": "@janhq/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "wdio run ./wdio.conf.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@wdio/cli": "^9.30.0",
+    "@wdio/globals": "^9.30.0",
+    "@wdio/local-runner": "^9.30.0",
+    "@wdio/mocha-framework": "^9.30.0",
+    "@wdio/spec-reporter": "^9.30.0",
+    "@wdio/tauri-service": "^1.4.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.0",
+    "webdriverio": "^9.30.0"
+  },
+  "packageManager": "yarn@4.5.3",
+  "engines": {
+    "node": ">=20.11"
+  }
+}
