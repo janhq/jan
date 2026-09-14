@@ -484,6 +484,11 @@ endif
 check-engine-toolchain:
 	bash src-tauri/build-utils/check-engine-toolchain.sh $(JAN_ENGINE_VARIANT) $(ENGINE_FEATURES)
 
+# The S3 cache key for what build-engine would compile. Run through make so the
+# script sees the same resolved features and exported environment cargo gets.
+engine-prebuilt-key:
+	@bash src-tauri/build-utils/engine-prebuilt.sh key $(ENGINE_FEATURES)
+
 # Release worker plus the ggml runtime it loads.
 build-engine: engine-source check-engine-toolchain
 	@echo "Building llama.cpp engine worker (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
