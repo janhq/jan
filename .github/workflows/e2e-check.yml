@@ -1,0 +1,36 @@
+# e2e/ is a standalone yarn project, so no other workflow's path filter or
+# install covers it -- an e2e-only PR would otherwise trigger nothing at all.
+# This validates the harness type-checks and its lockfile is current. It does
+# NOT run the suite: that needs a macOS runner and a full app build.
+name: e2e harness check
+
+on:
+  push:
+    branches: [main]
+    paths: ['e2e/**', '.github/workflows/e2e-check.yml']
+  pull_request:
+    paths: ['e2e/**', '.github/workflows/e2e-check.yml']
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      # --immutable fails if e2e/yarn.lock is out of date with package.json.
+      # Enforceable here precisely because this project is standalone; the root
+      # workflows all disable immutable installs.
+      - name: Install
+        working-directory: e2e
+        run: |
+          corepack enable
+          yarn install --immutable
+
+      - name: Typecheck
+        working-directory: e2e
+        run: yarn typecheck

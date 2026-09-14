@@ -49,7 +49,7 @@
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extensions": "yarn workspace @janhq/core build && yarn workspaces foreach -Apt --include '@janhq/*-extension' run build",
     "prepare": "husky",
-    "e2e": "yarn build:e2e:app && cd e2e && yarn install && yarn test",
+    "e2e": "yarn build:e2e:app && cd e2e && yarn install --immutable && yarn test",
     "build:e2e:app": "yarn build:icon && ./scripts/stub-tauri-resources.sh && cross-env IS_TAURI=true yarn build:web && cargo build --locked --manifest-path src-tauri/Cargo.toml --features e2e --bin Jan-Desktop"
   },
   "devDependencies": {
