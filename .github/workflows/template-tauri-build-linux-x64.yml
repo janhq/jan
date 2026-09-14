@@ -226,8 +226,24 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
 
+      # Rust compiles go through sccache with its cache in S3, so dependency
+      # crates stop recompiling on every run; written only when the job builds
+      # main or a release tag. Setup: src-tauri/build-utils/sccache-setup.sh
+      - name: Set up the Rust compile cache
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/sccache-setup.sh
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          WRITE: ${{ inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+
       - name: Build app
         run: |
+          trap '[ -z "${RUSTC_WRAPPER:-}" ] || "$RUSTC_WRAPPER" --show-stats || true' EXIT
           make build
 
           APP_IMAGE=./src-tauri/target/release/bundle/appimage/$(ls ./src-tauri/target/release/bundle/appimage/ | grep AppImage | head -1)
@@ -246,6 +262,10 @@ jobs:
           AUTO_UPDATER_DISABLED: ${{ inputs.disable_updater && 'true' || 'false' }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
           TAURI_TRAY: libappindicator3
+          # For the sccache server, which this build's first rustc starts
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       # Only after a miss, and only when the job builds main or a release tag
       # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
