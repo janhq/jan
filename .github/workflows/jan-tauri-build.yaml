@@ -49,6 +49,8 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
+  # The same engine the nightly ships: CUDA 13, with Vulkan as the fallback on
+  # machines whose driver cannot run it.
   build-windows-x64:
     uses: ./.github/workflows/template-tauri-build-windows-x64.yml
     secrets: inherit
@@ -59,6 +61,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
 
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -70,6 +73,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
 
   sync-temp-to-latest:
     needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]
