@@ -239,7 +239,7 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
           AWS_EC2_METADATA_DISABLED: 'true'
-          WRITE: ${{ inputs.ref == github.ref && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/llama-prebuilt-cache' || startsWith(github.ref, 'refs/tags/v')) }}
+          WRITE: ${{ inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
 
       - name: Build app
         run: |
@@ -274,7 +274,7 @@ jobs:
       # bundling fails later; the script itself refuses unless the worker was
       # built and every output is present.
       - name: Save the prebuilt llama.cpp engine
-        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/llama-prebuilt-cache' || startsWith(github.ref, 'refs/tags/v')) }}
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
         continue-on-error: true
         shell: bash
         run: bash src-tauri/build-utils/engine-prebuilt.sh save
