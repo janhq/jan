@@ -31,11 +31,24 @@ virtual display for no reason.
 ## Running
 
 ```bash
-yarn e2e    # from the repo root
+yarn install   # once, on a fresh clone -- see below
+yarn e2e       # from the repo root
 ```
 
-That builds icons, stubs the Tauri bundle resources, builds the frontend,
-compiles the app with `--features e2e`, then installs and runs this package.
+That builds icons, stubs the Tauri bundle resources, builds the workspace
+packages, builds the frontend, compiles the app with `--features e2e`, then
+installs and runs this package.
+
+`yarn e2e` is not self-contained on a fresh clone, and cannot be: Yarn Berry
+refuses to run *any* package script before `node_modules` exists
+(`Couldn't find the node_modules state file`), so the install has to happen
+outside the script. `build:e2e:deps` runs `yarn install` anyway, which is what
+picks up dependency changes after a branch switch.
+
+That deps stage is not optional. The workspace packages have to be **built**,
+not just installed -- `web-app` imports `@janhq/core`, which resolves to
+`core/dist`. Without it `build:web` fails with
+`TS2307: Cannot find module '@janhq/core'`.
 
 To iterate on specs without rebuilding the app:
 
