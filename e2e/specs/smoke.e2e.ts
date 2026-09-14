@@ -1,5 +1,9 @@
 import { browser, expect, $ } from '@wdio/globals'
 
+// Side-effect-free by design, so importing it here does not re-run the profile
+// creation that wdio.conf.ts does at module scope.
+import { isolationEnv } from '../isolation.js'
+
 // The worker inherits this from the launcher; see wdio.conf.ts. Read from the
 // environment rather than importing the config, so the spec does not trigger a
 // second evaluation of a module with top-level side effects.
@@ -71,5 +75,25 @@ describe('Jan desktop app', () => {
       'title',
       expect.stringContaining(testHome)
     )
+  })
+})
+
+// Not a UI test: a regression guard for a destructive bug. Before isolation.ts
+// pinned XDG_CONFIG_HOME, a run deleted the developer's real
+// ~/.config/Jan/settings.json through the fs::copy + fs::remove_file
+// legacy-config migration in core/app/commands.rs -- and nothing about the run
+// looked wrong while it happened. Dropping any one of these puts that back.
+describe('isolation environment', () => {
+  it('confines every XDG base directory to the throwaway profile', function () {
+    if (process.platform !== 'linux') this.skip()
+    const env = isolationEnv(testHome)
+    for (const key of [
+      'XDG_DATA_HOME',
+      'XDG_CONFIG_HOME',
+      'XDG_STATE_HOME',
+      'XDG_CACHE_HOME',
+    ]) {
+      expect(env[key]).toEqual(expect.stringContaining(testHome))
+    }
   })
 })

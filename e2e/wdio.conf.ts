@@ -1,18 +1,24 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service'
+import { isolationEnv } from './isolation.js'
 
-// Isolation is only sound on macOS, and silently pretending otherwise is worse
-// than not running: the app resolves its data folder through `dirs::data_dir()`,
-// which on Windows reads FOLDERID_RoamingAppData via the Win32 known-folder API
-// (ignoring USERPROFILE entirely), and on Linux prefers $XDG_DATA_HOME over
-// $HOME. Either would let the suite write to a real Jan profile.
-if (process.platform !== 'darwin') {
+// The app resolves its data folder through `dirs::data_dir()`, so isolation is
+// only sound where that call can be redirected by environment:
+//
+//   macOS   $HOME/Library/Application Support        -> HOME
+//   Linux   $XDG_DATA_HOME, else $HOME/.local/share  -> both (see isolationEnv)
+//   Windows FOLDERID_RoamingAppData via the Win32
+//           known-folder API                         -> no env override exists
+//
+// Windows therefore cannot be isolated at all, and a run there would use a real
+// Jan profile. Failing loudly beats pretending.
+if (process.platform !== 'darwin' && process.platform !== 'linux') {
   throw new Error(
-    `e2e isolation is only verified on macOS; refusing to run on ${process.platform}. ` +
-      'Supporting another platform means redirecting that platform\'s data dir ' +
-      '(XDG_DATA_HOME on Linux; the known-folder API on Windows has no env override).'
+    `e2e isolation is not possible on ${process.platform}; refusing to run. ` +
+      'On Windows `dirs::data_dir()` reads FOLDERID_RoamingAppData through the ' +
+      'known-folder API, which has no environment override.'
   )
 }
 
@@ -22,10 +28,18 @@ const repoRoot = resolve(import.meta.dirname, '..')
 // feature is a test-only opt-in and never goes near a release artifact.
 const appBinary = join(repoRoot, 'src-tauri/target/debug/Jan-Desktop')
 
-// A throwaway HOME per run. The desktop app resolves its data folder from
-// `app_handle.path().data_dir()` (core/app/commands.rs), which on macOS is
-// $HOME/Library/Application Support -- so redirecting HOME is what keeps the
-// suite away from the developer's real Jan profile.
+// Fail here rather than 2 minutes later inside a driver-connection retry loop,
+// which is what a missing binary otherwise looks like.
+if (!existsSync(appBinary)) {
+  throw new Error(
+    `no app binary at ${appBinary}. Run \`yarn build:e2e:app\` from the repo root ` +
+      '(or `yarn e2e`, which builds and then runs this suite).'
+  )
+}
+
+// A throwaway profile per run, which is what keeps the suite away from the
+// developer's real Jan data. See isolationEnv() for the variables that confine
+// the app to it -- HOME alone is not sufficient on Linux.
 //
 // Deliberately NOT using JAN_DATA_FOLDER: only resolve_jan_data_folder() reads
 // it, and that is the CLI path. The desktop build ignores it.
@@ -66,13 +80,19 @@ if (ownsTestHome) {
     if (!testHome.startsWith(realpathSync(tmpdir()))) return
     rmSync(testHome, { recursive: true, force: true })
   })
+  // No SIGINT/SIGTERM handler on purpose. wdio installs its own, and a second
+  // listener would delete the tree while that one is still tearing the app
+  // down -- the race the comment above exists to avoid. Ctrl-C therefore leaks
+  // one directory under the OS temp root, which is the cheaper failure.
 }
 
 const tauriServiceOptions: TauriServiceOptions = {
-  // Embedded WebDriver server (tauri-plugin-wdio-webdriver), the only provider
-  // that works on macOS -- there is no WKWebView driver to drive from outside.
+  // Embedded WebDriver server (tauri-plugin-wdio-webdriver). Required on macOS,
+  // where there is no WKWebView driver to attach from outside; used on Linux too
+  // so both platforms exercise one path and neither needs `tauri-driver`
+  // installed (Linux could otherwise drive WebKitWebDriver via 'official').
   driverProvider: 'embedded',
-  env: { HOME: testHome },
+  env: isolationEnv(testHome),
 }
 
 export const config: WebdriverIO.Config = {

@@ -43,8 +43,9 @@ default = [
 hardware = ["dep:tauri-plugin-hardware"]
 deep-link = ["dep:tauri-plugin-deep-link"]
 # WebDriver e2e only. Runs an embedded WebDriver server inside the app so
-# @wdio/tauri-service can drive it on macOS, where no WKWebView driver exists.
-# Opt-in so release builds never ship a remote-control listener.
+# @wdio/tauri-service can drive it. Required on macOS, where no WKWebView driver
+# exists to attach from outside; used on Linux too so both platforms exercise
+# one path. Opt-in so release builds never ship a remote-control listener.
 e2e = ["dep:tauri-plugin-wdio-webdriver"]
 # MLX (tauri-plugin-mlx) is Apple-Silicon-only; it's a macOS-target dependency
 # (see [target.'cfg(target_os = "macos")'.dependencies]) rather than a feature.
