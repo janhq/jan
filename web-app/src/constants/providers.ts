@@ -193,7 +193,7 @@ export const predefinedProviders = [
         key: 'api-key',
         title: 'API Key',
         description:
-          'API Route uses API keys for authentication. Create or copy a key from the [API Keys](https://www.api-route.com/api-keys) page.',
+          'API-Route uses API keys for authentication. Create or copy a key from the [API Keys](https://www.api-route.com/api-keys) page.',
         controller_type: 'input',
         controller_props: {
           placeholder: 'Insert API Key',
