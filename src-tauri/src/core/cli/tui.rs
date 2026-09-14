@@ -40,6 +40,7 @@ mod theme;
 
 use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
+    reasoning_tail_lines,
 };
 
 use super::agent_status::AgentStatusReporter;
@@ -1421,6 +1422,14 @@ struct ReasoningBlock {
     idx: usize,
     /// Full dimmed reasoning lines, revealed when expanded.
     detail: Vec<Line<'static>>,
+    /// The raw reasoning text, so the lingering step can render the same bounded
+    /// scrolling tail (`reasoning_tail_lines`) the live stream did, re-wrapped at
+    /// the draw width.
+    source: String,
+    /// When the block was committed, so the newest step can linger expanded for
+    /// `REASONING_FOLD_AFTER` before folding to its summary. Not journaled: a
+    /// replayed block is history and folds immediately.
+    committed: Instant,
 }
 
 /// A "trace": a maximal contiguous run of committed reasoning-summary and
@@ -2269,6 +2278,12 @@ const WORD_ROTATE_FRAMES: usize = 60;
 /// header for the rest of the turn once the model gets back to work.
 const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 
+/// How long the newest reasoning step stays expanded after it commits before it
+/// folds to its `reasoned for Ns` summary. The next step (a tool call) starts at
+/// that same moment, so this is the grace window that makes the fold read as a
+/// transition rather than the thought vanishing the instant the tool runs.
+const REASONING_FOLD_AFTER: Duration = Duration::from_secs(4);
+
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
 /// the finished summary row can expand back to every call (Ctrl-O).
@@ -2823,7 +2838,12 @@ impl App {
                     let dur = single_reasoning.then_some(reasoning_dur).flatten();
                     self.push(reasoning_summary_row(dur));
                     let idx = self.transcript.len() - 1;
-                    self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                    self.reasoning_blocks.push(ReasoningBlock {
+                        idx,
+                        detail,
+                        source: seg.clone(),
+                        committed: Instant::now(),
+                    });
                 }
             } else {
                 // Kept as source: the markdown re-wraps at the draw width, so a
@@ -6461,9 +6481,9 @@ fn split_diff_marker(line: &str) -> (&str, &str) {
     }
 }
 
-/// Total display width of a row's spans.
+/// Total display width of a row's spans, in terminal cells.
 fn row_width(row: &Line<'_>) -> usize {
-    row.spans.iter().map(|s| s.content.chars().count()).sum()
+    row.spans.iter().map(Span::width).sum()
 }
 
 /// Content columns a panel of total `width` has left after its gutter and the
@@ -6471,7 +6491,9 @@ fn row_width(row: &Line<'_>) -> usize {
 /// the closing border lands inside the terminal instead of wrapping onto a line
 /// of its own.
 pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
-    width.saturating_sub(gutter.chars().count() + 4).max(1)
+    use unicode_width::UnicodeWidthStr;
+
+    width.saturating_sub(gutter.width() + 4).max(1)
 }
 
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
@@ -6482,12 +6504,25 @@ pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
 /// fills the interior padding so a highlighted row reads as a band from border to
 /// border rather than stopping at the end of its text.
 fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> Vec<Line<'static>> {
-    let inner = rows
-        .iter()
-        .map(row_width)
-        .max()
-        .unwrap_or(0)
-        .clamp(1, panel_inner(width, gutter));
+    boxed_panel_sized(rows, width, gutter, false)
+}
+
+/// `boxed_panel`, but `full` forces the box to the whole available width instead
+/// of shrinking it to the widest row. The shell terminal boxes use it so the
+/// frame stretches to the console edge and every command/output line shares one
+/// fixed column budget (they are truncated to it in `shell_body_rows`).
+fn boxed_panel_sized(
+    rows: Vec<Line<'static>>,
+    width: usize,
+    gutter: &'static str,
+    full: bool,
+) -> Vec<Line<'static>> {
+    let cap = panel_inner(width, gutter);
+    let inner = if full {
+        cap
+    } else {
+        rows.iter().map(row_width).max().unwrap_or(0).clamp(1, cap)
+    };
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -6495,6 +6530,10 @@ fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> 
         Span::styled(format!("┌{}┐", "─".repeat(inner + 2)), border),
     ]));
     for row in rows {
+        // Metadata/status rows are assembled after the body is wrapped. Keep
+        // them inside the same cell budget too, or Paragraph will wrap the
+        // right border onto a separate line.
+        let row = clamp_line(row, (inner + 2) as u16);
         let pad = inner.saturating_sub(row_width(&row));
         let row_style = row.style;
         // Interior spacing carries the row's background but not its foreground:
@@ -7279,19 +7318,26 @@ fn shell_body_rows(
     gutter: &'static str,
 ) -> Vec<Line<'static>> {
     let max = panel_inner(width as usize, gutter);
-    let mut rows: Vec<Line<'static>> =
-        wrap_text(command, Style::new().bold(), max.saturating_sub(2))
-            .into_iter()
-            .enumerate()
-            .map(|(i, chunk)| {
-                let mut spans = vec![Span::styled(
+    // The box spans the full width, so each command/output line is truncated to
+    // one row rather than wrapped: the terminal reads like a terminal, and a long
+    // command or a wide log line cannot balloon the box vertically. The full text
+    // is still on the group's expand (Ctrl-O).
+    let mut rows: Vec<Line<'static>> = command
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            Line::from(vec![
+                Span::styled(
                     if i == 0 { "$ " } else { "  " },
                     Style::new().cyan().bold(),
-                )];
-                spans.extend(chunk);
-                Line::from(spans)
-            })
-            .collect();
+                ),
+                Span::styled(
+                    truncate(&single_line(line), max.saturating_sub(2)),
+                    Style::new().bold(),
+                ),
+            ])
+        })
+        .collect();
     if !output.is_empty() {
         let all: Vec<&str> = output.lines().collect();
         let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
@@ -7302,11 +7348,10 @@ fn shell_body_rows(
             ));
         }
         for line in &all[skipped..] {
-            rows.extend(
-                wrap_text(line, Style::new().dim(), max)
-                    .into_iter()
-                    .map(Line::from),
-            );
+            rows.push(Line::styled(
+                truncate(line, max),
+                Style::new().dim(),
+            ));
         }
     }
     rows
@@ -7330,7 +7375,7 @@ fn running_terminal_lines(
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
     ]));
-    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
 }
 
 /// The most-recent bytes of `s` that begin on a char boundary, capped at `max`.
@@ -7369,7 +7414,7 @@ fn finished_terminal_lines(
         ("✓", Style::new().green())
     };
     rows.push(Line::from(Span::styled(glyph.to_string(), style)));
-    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
 }
 
 /// The command being typed, framed like the running terminal it becomes: the
@@ -7388,7 +7433,7 @@ fn typing_terminal_lines(command: &str, frame: &str, width: u16) -> Vec<Line<'st
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled("typing…", Style::new().dark_gray()),
     ]));
-    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -15233,12 +15278,17 @@ fn draw(f: &mut Frame, app: &mut App) {
     let frame = app.spinner();
     // A finished trace (an answer follows) folds its run of reasoning/tool rows
     // to one static `Thought/Worked` header unless the user expanded it. The
-    // active run is never folded: its steps render as the live growing rail, so
-    // the reader watches each step land as it happens.
+    // active run stays open as the live growing rail while the model reasons and
+    // calls tools -- but the moment answer prose begins streaming, the whole run
+    // collapses to its header too, so the reader's eye is on the answer rather
+    // than the scaffolding that produced it. (`finalize_tool_group` closes the
+    // open group on that same first prose token, so it is already a trace member.)
     let last_answer = app.last_answer_idx();
+    let answer_started = has_answer_text(&app.assistant_buf);
     let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
     for run in app.trace_runs() {
-        if last_answer.is_some_and(|a| run.end < a) && !app.expanded_traces.contains(&run.start) {
+        let finished = answer_started || last_answer.is_some_and(|a| run.end < a);
+        if finished && !app.expanded_traces.contains(&run.start) {
             collapsed_headers.insert(run.start, run);
         }
     }
@@ -15290,8 +15340,24 @@ fn draw(f: &mut Frame, app: &mut App) {
                 // result lands. A running non-shell group keeps its plain
                 // activity row; a finished non-shell group (no box, not yet
                 // committed) renders its folded summary row.
-                let panel = app.live_shell_panel(g, app.spinner_frame, width);
+                let mut panel = app.live_shell_panel(g, app.spinner_frame, width);
+                // The panel only boxes the shell calls. A group can keep folding
+                // in later, non-shell calls (a read/grep after a bash), or the
+                // running command may not be a shell call at all -- those would be
+                // hidden behind the lingering box. Show the running activity row
+                // beneath it too, unless the in-flight call is itself a shell box
+                // (which already carries its own spinner).
+                let inflight_shell = g
+                    .calls
+                    .iter()
+                    .rev()
+                    .find(|c| c.content.is_none())
+                    .is_some_and(|c| c.command.is_some());
                 if !panel.is_empty() {
+                    if g.is_running() && !inflight_shell {
+                        panel.push(Line::raw(""));
+                        panel.extend(running_group_rows(g, app.spinner_frame, width));
+                    }
                     Segment::eager(Some(i), panel, width)
                 } else if g.is_running() {
                     Segment::eager(
@@ -15315,7 +15381,21 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         content_h = content_h.saturating_add(seg.height);
         segs.push(seg);
-        if app.expanded.contains(&i) {
+        // The newest reasoning step lingers expanded for a grace window after it
+        // commits, then folds to its `reasoned for Ns` summary as the run rolls
+        // on -- so the chain of thought is readable across the tool call it
+        // triggered without every past step piling up on screen. Older steps and
+        // the whole run past the answer fold normally. `show_reasoning` already
+        // inlines every block, so this only touches the default-folded case.
+        let active_reasoning = app.status != Status::Idle
+            && !app.show_reasoning
+            && !has_answer_text(&app.assistant_buf)
+            && last_answer.is_none_or(|a| i > a)
+            && app
+                .reasoning_blocks
+                .last()
+                .is_some_and(|r| r.idx == i && r.committed.elapsed() < REASONING_FOLD_AFTER);
+        if app.expanded.contains(&i) || active_reasoning {
             // Detail rows map back to the same owning idx (not `None`), so a
             // click anywhere in an expanded block collapses it -- not just on
             // its header row, which may have scrolled out of view once the
@@ -15330,10 +15410,16 @@ fn draw(f: &mut Frame, app: &mut App) {
                 .or(running_group)
                 .map(|group| group_detail_lines(group, width))
                 .or_else(|| {
-                    app.reasoning_blocks
-                        .iter()
-                        .find(|r| r.idx == i)
-                        .map(|block| block.detail.clone())
+                    app.reasoning_blocks.iter().find(|r| r.idx == i).map(|block| {
+                        // A lingering active step shows the same bounded scrolling
+                        // tail the live stream did; a manual expand (click, Ctrl-O)
+                        // shows the whole thing.
+                        if active_reasoning && !app.expanded.contains(&i) {
+                            reasoning_tail_lines(&block.source, width)
+                        } else {
+                            block.detail.clone()
+                        }
+                    })
                 })
                 .or_else(|| {
                     app.subagent_blocks
@@ -25621,6 +25707,39 @@ mod tests {
         );
     }
 
+    /// The shell terminal box stretches to the full width and truncates each
+    /// command/output line to one row rather than wrapping, so a long command or
+    /// a wide log line cannot balloon the box.
+    #[test]
+    fn shell_box_fills_width_and_truncates_lines() {
+        let long_cmd = format!("echo {}", "x".repeat(400));
+        let lines = super::finished_terminal_lines(&long_cmd, "one\ntwo", false, 100);
+        let widths: Vec<usize> = lines.iter().map(|line| spans_width(&line.spans)).collect();
+        assert!(
+            widths.windows(2).all(|pair| pair[0] == pair[1]),
+            "box is not a uniform full width: {widths:?}"
+        );
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        let cmd_rows = texts.iter().filter(|r| r.contains("echo")).count();
+        assert_eq!(cmd_rows, 1, "command wrapped instead of truncating: {texts:?}");
+        assert!(
+            texts.iter().any(|r| r.contains('…')),
+            "long command should be truncated with an ellipsis: {texts:?}"
+        );
+    }
+
+    /// Box sizing must use terminal cells, not Unicode scalar counts. A row made
+    /// only of wide glyphs otherwise becomes wider than the top and bottom rules.
+    #[test]
+    fn a_boxed_panel_keeps_wide_glyph_borders_aligned() {
+        let lines = super::boxed_panel(vec![Line::raw("界界界")], 20, "");
+        let widths: Vec<usize> = lines.iter().map(|line| spans_width(&line.spans)).collect();
+        assert!(
+            widths.windows(2).all(|pair| pair[0] == pair[1]),
+            "panel borders are misaligned: {widths:?}"
+        );
+    }
+
     /// The panel is sized to the width it is drawn at: gutter, frame and content
     /// together have to fit, or the closing border wraps onto a line of its own
     /// and the box reads as double-spaced with no right edge.
@@ -29380,6 +29499,79 @@ mod tests {
             detail_text(&app.reasoning_blocks[0]).contains("</think>"),
             "the tag is preserved as written: {}",
             detail_text(&app.reasoning_blocks[0])
+        );
+    }
+
+    /// While a turn runs, a committed reasoning block in the active run stays
+    /// expanded so the chain of thought stays on screen across tool calls; the
+    /// moment answer prose begins it folds back to its one-line summary.
+    #[test]
+    fn active_run_reasoning_stays_open_until_prose() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.status = Status::Running;
+        app.apply(StreamEvent::Reasoning {
+            text: "weigh the options carefully".into(),
+        });
+        // A tool call flushes the reasoning into a committed block and opens a
+        // group; the reasoning must not fold yet.
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning committed to a block");
+        let open = render_rows(&mut app, 100, 40).join("\n");
+        assert!(
+            open.contains("weigh the options carefully"),
+            "active reasoning should stay expanded: {open}"
+        );
+        // Answer prose collapses the whole run to its trace header the instant it
+        // starts streaming -- before it commits as a row.
+        app.apply(StreamEvent::Token {
+            text: "Here is the answer.".into(),
+        });
+        let folded = render_rows(&mut app, 100, 40).join("\n");
+        assert!(
+            !folded.contains("weigh the options carefully"),
+            "reasoning should fold once prose starts: {folded}"
+        );
+        assert!(
+            folded.contains("Worked"),
+            "the run should collapse to a Worked header once prose starts: {folded}"
+        );
+        assert!(
+            folded.contains("Here is the answer."),
+            "streaming answer should be on screen: {folded}"
+        );
+    }
+
+    /// The lingering active reasoning step shows only the bounded scrolling tail
+    /// the live stream did, not the whole block -- a long chain of thought cannot
+    /// push the running tool call off screen while it lingers.
+    #[test]
+    fn lingering_reasoning_step_is_bounded_to_its_tail() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.status = Status::Running;
+        let mut body = vec!["FIRST thought".to_string()];
+        for n in 2..=19 {
+            body.push(format!("middle {n}"));
+        }
+        body.push("LAST thought".into());
+        app.apply(StreamEvent::Reasoning {
+            text: body.join("\n"),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        let out = render_rows(&mut app, 100, 60).join("\n");
+        assert!(out.contains("LAST thought"), "tail of the block missing: {out}");
+        assert!(
+            !out.contains("FIRST thought"),
+            "the head should be truncated to the bounded tail: {out}"
         );
     }
 
