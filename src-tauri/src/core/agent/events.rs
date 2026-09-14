@@ -103,6 +103,13 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// The later phases of a phased dispatch, named up front so a consumer can
+    /// show their subagents as WAITING on an earlier phase before they start.
+    /// Each pending subagent is promoted by its own `SubagentStart` (or
+    /// `SubagentQueued`), matched by `name`, which is unique across a plan.
+    /// Display-only and never journaled; emitted only by the top-level run
+    /// (children cannot dispatch), so it is never wrapped in `Subagent`.
+    SubagentPlan { pending: Vec<PendingSubagent> },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -132,29 +139,6 @@ pub enum StreamEvent {
     /// Nothing is being generated until a ping resumes the run, which the next
     /// `Step` marks. Lets a consumer say "watching" rather than "working".
     Parked,
-    /// A per-agent status-header change: the main run as `run_id == "main"`, or
-    /// a child by its `run_id`. Emitted on a state/step change and mirrored into
-    /// the agent's `status.json`, so a consumer can show live peer status --
-    /// including the `blocked`/`parked` transitions the [`Subagent`] bracket does
-    /// not carry -- and which `work_id` the agent currently holds. Display-only
-    /// and never journaled, like [`Monitors`]/[`Parked`].
-    AgentStatus {
-        run_id: String,
-        name: String,
-        state: String,
-        step: u64,
-        tool_calls: u64,
-        last: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        work_id: Option<String>,
-    },
-    /// The run's shared work queue as a whole, replacing the previous snapshot.
-    /// Emitted publish-on-change after any work-tool mutation (mirroring
-    /// [`Monitors`]), so a consumer keeps a live view without bookkeeping of its
-    /// own. Display-only and never journaled.
-    WorkQueue {
-        items: Vec<tauri_plugin_agent_tools::tools::workqueue::WorkItemView>,
-    },
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
     /// `messages` for subsequent turns.
@@ -220,25 +204,14 @@ pub enum StreamEvent {
     },
 }
 
-/// Read an agent's `status.json` and emit it as [`StreamEvent::AgentStatus`] on
-/// `events`, so the docked per-agent view and roster stay live. A no-op if the
-/// agent has no status header yet.
-pub(crate) fn maybe_emit_agent_status(
-    events: &tokio::sync::mpsc::UnboundedSender<StreamEvent>,
-    scratch: &std::path::Path,
-    run_id: &str,
-) {
-    if let Some(s) = tauri_plugin_agent_tools::tools::observ::read_status(scratch, run_id) {
-        let _ = events.send(StreamEvent::AgentStatus {
-            run_id: s.run_id,
-            name: s.name,
-            state: s.state,
-            step: s.step,
-            tool_calls: s.tool_calls,
-            last: s.last,
-            work_id: s.work_id,
-        });
-    }
+/// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
+/// across the plan, and its blackboard file) and 1-based phase number. Carried by
+/// [`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase
+/// before it.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PendingSubagent {
+    pub name: String,
+    pub phase: u32,
 }
 
 /// If `path` targets a file in the agent's skill or memory workspace, return the
@@ -542,67 +515,6 @@ mod tests {
                 "run_id": "sub-1",
                 "name": "reviewer",
                 "event": { "type": "token", "text": "hi" }
-            })
-        );
-    }
-
-    #[test]
-    fn agent_status_serializes_to_wire_shape() {
-        let v = serde_json::to_value(StreamEvent::AgentStatus {
-            run_id: "sub-a-1".into(),
-            name: "a".into(),
-            state: "running".into(),
-            step: 4,
-            tool_calls: 12,
-            last: "edit src/auth.rs".into(),
-            work_id: Some("w-7".into()),
-        })
-        .unwrap();
-        assert_eq!(
-            v,
-            json!({
-                "type": "agent_status",
-                "run_id": "sub-a-1",
-                "name": "a",
-                "state": "running",
-                "step": 4,
-                "tool_calls": 12,
-                "last": "edit src/auth.rs",
-                "work_id": "w-7"
-            })
-        );
-        // work_id is omitted when the agent holds no item.
-        let none = serde_json::to_value(StreamEvent::AgentStatus {
-            run_id: "main".into(),
-            name: "main".into(),
-            state: "parked".into(),
-            step: 1,
-            tool_calls: 0,
-            last: String::new(),
-            work_id: None,
-        })
-        .unwrap();
-        assert!(none.get("work_id").is_none());
-    }
-
-    #[test]
-    fn work_queue_serializes_with_camel_case_items() {
-        use tauri_plugin_agent_tools::tools::workqueue::WorkItemView;
-        let v = serde_json::to_value(StreamEvent::WorkQueue {
-            items: vec![WorkItemView {
-                work_id: "w-1".into(),
-                title: "lint".into(),
-                state: "open".into(),
-                claimed_by: None,
-                reason: None,
-            }],
-        })
-        .unwrap();
-        assert_eq!(
-            v,
-            json!({
-                "type": "work_queue",
-                "items": [{ "workId": "w-1", "title": "lint", "state": "open" }]
             })
         );
     }

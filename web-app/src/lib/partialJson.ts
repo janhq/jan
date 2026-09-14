@@ -125,8 +125,6 @@ const HEADER_FIELDS = [
   'url',
   'pattern',
   'name',
-  'subagent_name',
-  'description',
 ] as const
 
 export type PartialEdit = { old_string: string; new_string?: string }

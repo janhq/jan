@@ -145,27 +145,6 @@ it finishes. Once you delegate a task it belongs to that subagent -- do not do t
 spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
 yourself for small, targeted tasks where delegating would cost more than it saves.";
 
-/// The worker half of the work-queue guide, shown to every collaborating agent
-/// (main and workers). It leads with the direct-task rule: a subagent handed a
-/// concrete task must do that task rather than drain the queue or wait on a
-/// peer that isn't there -- the loop a lone subagent otherwise fell into.
-const WORK_QUEUE_WORKER_GUIDE: &str = "# Shared work queue\n\nYou share a work queue and a live status \
-board with the other agents on this run. If your instructions give you a task, do that task yourself -- \
-do not wait on the queue for it. Use `claim_work` only when you were dispatched as a generic worker with \
-no task of your own: claim the next ready item, do it, then `complete_work` with the result. If \
-`claim_work` reports nothing is ready, stop -- do not loop on it and do not wait for a peer; you are \
-re-dispatched when new work appears.";
-
-/// The dispatcher half, added only for a run that may dispatch subagents (main),
-/// so it learns the post -> dispatch-workers -> chain-with-deps pattern and the
-/// offload-only rule.
-const WORK_QUEUE_DISPATCH_GUIDE: &str = "To fan work out across workers: `post_work` one item per \
-independent piece, then dispatch a generic subagent for each; each claims one item, completes it, and \
-stops. Chain steps with `deps` -- a task posted with `deps: [\"w-1\"]` is claimable only once w-1 \
-completes, and w-1's result is delivered to whoever claims it. Never post work whose result you need \
-within this same turn (a peer, or you on a later turn, completes it -- never you right now); do that \
-work inline instead.";
-
 /// System-prompt addendum for a `/goal` run with no staged plan: an unattended
 /// loop that keeps firing turns until a condition is met needs the phased list
 /// up front, both to work through and for the user to read on return. Paired
@@ -280,7 +259,6 @@ pub(crate) fn build_system_prompt(
     project_root: &Path,
     scratch: Option<&Path>,
     subagents_enabled: bool,
-    work_queue_enabled: bool,
 ) -> Option<String> {
     let mut blocks: Vec<String> = Vec::new();
     match base {
@@ -295,14 +273,6 @@ pub(crate) fn build_system_prompt(
     blocks.push(runtime_environment_block(project_root, scratch));
     if subagents_enabled {
         blocks.push(SUBAGENT_GUIDE.to_string());
-    }
-    // Independent of `subagents_enabled`: a worker (dispatch disabled) still
-    // needs the claim -> complete loop; only the dispatch half is gated on it.
-    if work_queue_enabled {
-        blocks.push(WORK_QUEUE_WORKER_GUIDE.to_string());
-        if subagents_enabled {
-            blocks.push(WORK_QUEUE_DISPATCH_GUIDE.to_string());
-        }
     }
     blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
     blocks.push(WEB_TOOLS_GUIDE.to_string());
@@ -442,7 +412,7 @@ mod tests {
     fn build_system_prompt_orders_base_guide_then_skills() {
         let root = scratch_project("merge");
         write_skill(&root, "s.md", "Do the thing.");
-        let out = build_system_prompt(Some("You are Jan."), &root, None, false, false).expect("prompt");
+        let out = build_system_prompt(Some("You are Jan."), &root, None, false).expect("prompt");
         assert!(out.starts_with("You are Jan."));
         assert!(out.contains("Do the thing."));
         // Guide sits between the base prompt and the project skills.
@@ -455,7 +425,7 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_native_web_tools() {
         let root = scratch_project("web");
-        let out = build_system_prompt(None, &root, None, false, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Web Access"));
         assert!(out.contains("web_search"));
         assert!(out.contains("web_fetch"));
@@ -473,13 +443,13 @@ mod tests {
     fn build_system_prompt_always_includes_guide() {
         let root = scratch_project("guide");
         // No base and no project skills: the built-in guide is still injected.
-        let out = build_system_prompt(None, &root, None, false, false).expect("guide always present");
+        let out = build_system_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
         assert!(out.contains("memory_write"));
 
         // Base is preserved and precedes the guide.
-        let with_base = build_system_prompt(Some("base"), &root, None, false, false).expect("prompt");
+        let with_base = build_system_prompt(Some("base"), &root, None, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
         let _ = std::fs::remove_dir_all(&root);
@@ -488,7 +458,7 @@ mod tests {
     #[test]
     fn default_identity_and_guidelines_present_without_base() {
         let root = scratch_project("identity");
-        let out = build_system_prompt(None, &root, None, false, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.starts_with("You're currently running on Jan agent harness"));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
@@ -516,7 +486,7 @@ mod tests {
         // Nearest (nested) file wins by appearing last.
         assert!(block.find("ROOT_RULES").unwrap() < block.find("NESTED_RULES").unwrap());
 
-        let prompt = build_system_prompt(None, &nested, None, false, false).expect("prompt");
+        let prompt = build_system_prompt(None, &nested, None, false).expect("prompt");
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
@@ -533,9 +503,9 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_subagents_only_when_enabled() {
         let root = scratch_project("subagents");
-        let without = build_system_prompt(None, &root, None, false, false).expect("prompt");
+        let without = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(!without.contains("dispatch_subagent"));
-        let with = build_system_prompt(None, &root, None, true, false).expect("prompt");
+        let with = build_system_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -546,28 +516,10 @@ mod tests {
     #[test]
     fn subagent_guide_hands_off_ownership_of_a_delegated_task() {
         let root = scratch_project("subagent-handoff");
-        let with = build_system_prompt(None, &root, None, true, false).expect("prompt");
+        let with = build_system_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("belongs to that subagent"));
         assert!(with.contains("do not do the same work yourself"));
         assert!(!with.contains("keep working rather than waiting"));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn work_queue_worker_guide_leads_with_the_direct_task_rule() {
-        let root = scratch_project("workqueue-guide");
-        let off = build_system_prompt(None, &root, None, false, false).expect("prompt");
-        assert!(!off.contains("Shared work queue"));
-        // A worker (dispatch disabled): worker guide present, dispatch half not.
-        let worker = build_system_prompt(None, &root, None, false, true).expect("prompt");
-        assert!(worker.contains("Shared work queue"));
-        assert!(worker.contains("do that task yourself"));
-        assert!(worker.contains("do not wait for a peer"));
-        assert!(!worker.contains("dispatch a generic subagent"));
-        // Main (dispatch enabled) also learns the fan-out half.
-        let main = build_system_prompt(None, &root, None, true, true).expect("prompt");
-        assert!(main.contains("do not wait for a peer"));
-        assert!(main.contains("post_work"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -598,7 +550,7 @@ mod tests {
     fn runtime_environment_block_injected_into_system_prompt() {
         let root = scratch_project("inject");
         std::fs::create_dir_all(&root).unwrap();
-        let out = build_system_prompt(None, &root, None, false, false).expect("prompt");
+        let out = build_system_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Runtime Environment"));
         assert!(out.contains("Work directory:"));
         // The block sits right after the Working Directory section.

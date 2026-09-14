@@ -9,11 +9,6 @@ const memoryCatalog = vi.fn()
 const memoryRead = vi.fn()
 const subagentResultReserve = vi.fn()
 const subagentResultFill = vi.fn()
-const workPost = vi.fn()
-const workClaim = vi.fn()
-const workComplete = vi.fn()
-const workList = vi.fn()
-const agentRead = vi.fn()
 const getJanDataFolder = vi.fn()
 
 vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
@@ -26,11 +21,6 @@ vi.mock('@janhq/tauri-plugin-agent-tools-api', () => ({
   memoryRead: (...args: unknown[]) => memoryRead(...args),
   subagentResultReserve: (...args: unknown[]) => subagentResultReserve(...args),
   subagentResultFill: (...args: unknown[]) => subagentResultFill(...args),
-  workPost: (...args: unknown[]) => workPost(...args),
-  workClaim: (...args: unknown[]) => workClaim(...args),
-  workComplete: (...args: unknown[]) => workComplete(...args),
-  workList: (...args: unknown[]) => workList(...args),
-  agentRead: (...args: unknown[]) => agentRead(...args),
   attachmentImport: vi.fn(),
 }))
 
@@ -57,49 +47,7 @@ describe('agentTools', () => {
     memoryRead.mockReset().mockResolvedValue('')
     subagentResultReserve.mockReset()
     subagentResultFill.mockReset()
-    workPost.mockReset()
-    workClaim.mockReset()
-    workComplete.mockReset()
-    workList.mockReset()
-    agentRead.mockReset()
     getJanDataFolder.mockReset().mockResolvedValue('/data')
-  })
-
-  describe('work queue', () => {
-    it('posts work as the given agent and returns the snapshot', async () => {
-      const snapshot = {
-        message: 'Posted w-1',
-        items: [{ workId: 'w-1', title: 'do it', state: 'open' }],
-      }
-      workPost.mockResolvedValue(snapshot)
-      const { postWork } = await import('../agentTools')
-      const result = await postWork('sess-1', 'main', { task: 'do it' })
-      expect(workPost).toHaveBeenCalledWith('sess-1', 'main', { task: 'do it' })
-      expect(result).toEqual(snapshot)
-    })
-
-    it('returns null when a work command throws so the caller can fall back', async () => {
-      workClaim.mockRejectedValue(new Error('boom'))
-      const { claimWork } = await import('../agentTools')
-      expect(await claimWork('sess-1', 'sub-a-1')).toBeNull()
-    })
-
-    it('carries the claimed id through', async () => {
-      workClaim.mockResolvedValue({ message: 'ok', items: [], claimed: 'w-3' })
-      const { claimWork } = await import('../agentTools')
-      const result = await claimWork('sess-1', 'sub-a-1')
-      expect(result?.claimed).toBe('w-3')
-    })
-
-    it('reads a peer through agent_read and surfaces errors as an ERROR string', async () => {
-      agentRead.mockResolvedValue('reviewer (sub-a-1) [running] step 2')
-      const { readAgent } = await import('../agentTools')
-      expect(await readAgent('sess-1', 'main', { run_id: 'sub-a-1' })).toContain('running')
-      // The caller's own id is forwarded so the core can refuse a self-read.
-      expect(agentRead).toHaveBeenCalledWith('sess-1', 'main', { run_id: 'sub-a-1' })
-      agentRead.mockRejectedValue(new Error('nope'))
-      expect(await readAgent('sess-1', 'main', {})).toBe('ERROR: nope')
-    })
   })
 
   // The chat surface offers the sandboxed shell alone; everything else is

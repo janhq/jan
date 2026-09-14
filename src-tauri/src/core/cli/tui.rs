@@ -55,7 +55,6 @@ use crate::core::agent::r#loop::{
 use serde_json::Value;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tauri_plugin_agent_tools::tools::monitor::{MonitorSet, MonitorSnapshot};
-use tauri_plugin_agent_tools::tools::workqueue::WorkItemView;
 use tauri_plugin_agent_tools::workspace;
 
 /// Mouse tracking, hand-rolled instead of crossterm's `EnableMouseCapture`,
@@ -2045,10 +2044,6 @@ struct App {
     /// Docked beside the fan-out; never a transcript row, since a monitor
     /// describes now.
     monitors: Vec<MonitorSnapshot>,
-    /// The run's shared work queue, replaced wholesale by each
-    /// `StreamEvent::WorkQueue`. Docked beside the fan-out and monitors in the
-    /// status panel (Phase 5); never a transcript row, since it describes now.
-    workqueue: Vec<WorkItemView>,
     /// The session-owned monitor registry, shared with every run through
     /// `OrchestrationArgs::monitors`. A watcher outlives the turn that started
     /// it, so the model can answer and the user can keep talking while it
@@ -2305,10 +2300,13 @@ struct SubagentPanel {
     queued: bool,
     /// 1-based position in the queue at the time the child was queued.
     waiting: u32,
-    /// The work item this child currently holds, from its `AgentStatus`. Shown
-    /// as a `w-N` tag beside its stats so a fan-out over the shared queue reads
-    /// as who-is-on-what, not just who is running.
-    work_id: Option<String>,
+    /// True for a later-phase subagent named by `SubagentPlan` that has not
+    /// started yet: it is waiting on the phase before it. Flipped off when its
+    /// own `SubagentStart`/`SubagentQueued` arrives (matched by name).
+    pending: bool,
+    /// 1-based phase this subagent belongs to, for phases past the first. `None`
+    /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
+    phase: Option<u32>,
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -2512,7 +2510,6 @@ impl App {
             exit_armed: false,
             subagents: Vec::new(),
             monitors: Vec::new(),
-            workqueue: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
             parked: false,
             subagent_blocks: Vec::new(),
@@ -3041,13 +3038,14 @@ impl App {
     /// accounted for rather than vanishing with the panel.
     fn close_live_background(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
+            // A later-phase subagent that never started has no run to summarize;
+            // drop it rather than report a phantom "interrupted (0 calls)".
+            if panel.pending {
+                continue;
+            }
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
-        // The work queue is run display state: a finished queue of done/failed
-        // items should not linger on an idle session (a later run republishes a
-        // live one). The files persist in scratch for `list_work`/`read_agent`.
-        self.workqueue.clear();
         // Session monitors outlive the run, so the dock keeps whatever is
         // still watching; a run that ended is no longer parked on anything.
         self.monitors = self.monitor_set.snapshot();
@@ -4685,7 +4683,6 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.session_id.as_deref(),
             args.subagents_enabled,
             args.sandbox,
-            args.work_queue_enabled,
         )
         .unwrap_or_default();
         context_bytes =
@@ -4708,7 +4705,6 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.max_parallel_subagents,
             args.ask_requests.is_some(),
             args.todo_registry.is_some(),
-            args.work_queue_enabled,
         )
         .await
         .iter()
@@ -5061,12 +5057,46 @@ impl App {
                 self.ask_queue.retain(|ask| ask.request_id != request_id);
                 self.publish_agent_status();
             }
+            StreamEvent::SubagentPlan { pending } => {
+                // The later phases of a plan, named before they start. Open a
+                // waiting panel per subagent so a dependent phase is visible up
+                // front; its own SubagentStart/SubagentQueued promotes it later.
+                self.finalize_tool_group();
+                self.flush_assistant();
+                for p in pending {
+                    self.subagents.push(SubagentPanel {
+                        run_id: String::new(),
+                        name: p.name,
+                        task: String::new(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: false,
+                        waiting: 0,
+                        pending: true,
+                        phase: Some(p.phase),
+                    });
+                }
+            }
             StreamEvent::SubagentStart { run_id, name, task } => {
-                // A queued dispatch already opened a panel for this run; promote
-                // it to running instead of pushing a duplicate. Otherwise open a
-                // fresh live panel (several may be active).
+                // A queued/pending dispatch already opened a panel; promote it to
+                // running instead of pushing a duplicate. A queued one matches by
+                // run_id; a pending later-phase one matches by name (no run_id
+                // yet). Otherwise open a fresh live panel (several may be active).
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.queued = false;
+                } else if let Some(panel) = self
+                    .subagents
+                    .iter_mut()
+                    .find(|p| p.pending && p.name == name)
+                {
+                    panel.run_id = run_id;
+                    panel.pending = false;
+                    panel.queued = false;
+                    if let Some(t) = task {
+                        panel.task = t;
+                    }
                 } else {
                     self.finalize_tool_group();
                     self.flush_assistant();
@@ -5080,7 +5110,8 @@ impl App {
                         active: None,
                         queued: false,
                         waiting: 0,
-                        work_id: None,
+                        pending: false,
+                        phase: None,
                     });
                 }
             }
@@ -5091,22 +5122,38 @@ impl App {
                 waiting,
             } => {
                 // The cap is exhausted; this dispatch will start when a running
-                // child finishes. Open its panel now, marked queued, so the
-                // fan-out shows the queue instead of hiding dispatches.
+                // child finishes. Promote a pending later-phase panel (matched by
+                // name) or open a fresh queued one, so the fan-out shows the queue
+                // instead of hiding dispatches.
                 self.finalize_tool_group();
                 self.flush_assistant();
-                self.subagents.push(SubagentPanel {
-                    run_id,
-                    name,
-                    task: task.unwrap_or_default(),
-                    calls: Vec::new(),
-                    requests: 0,
-                    prompt_tokens: 0,
-                    active: None,
-                    queued: true,
-                    waiting,
-                    work_id: None,
-                });
+                if let Some(panel) = self
+                    .subagents
+                    .iter_mut()
+                    .find(|p| p.pending && p.name == name)
+                {
+                    panel.run_id = run_id;
+                    panel.pending = false;
+                    panel.queued = true;
+                    panel.waiting = waiting;
+                    if let Some(t) = task {
+                        panel.task = t;
+                    }
+                } else {
+                    self.subagents.push(SubagentPanel {
+                        run_id,
+                        name,
+                        task: task.unwrap_or_default(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: true,
+                        waiting,
+                        pending: false,
+                        phase: None,
+                    });
+                }
             }
             StreamEvent::SubagentEnd {
                 run_id,
@@ -5137,19 +5184,6 @@ impl App {
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             StreamEvent::Parked => self.parked = true,
-            // The shared work queue as a whole, docked in the status panel's
-            // coordination lane. Display-only, never journaled.
-            StreamEvent::WorkQueue { items } => self.workqueue = items,
-            // A per-agent status delta. A child's `work_id` tags its live panel;
-            // the main run's own status is already conveyed by the header badge,
-            // so it is not re-shown here (its status.json still feeds read_agent).
-            StreamEvent::AgentStatus { run_id, work_id, .. } => {
-                if run_id != "main" {
-                    if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                        panel.work_id = work_id;
-                    }
-                }
-            }
             StreamEvent::Subagent {
                 run_id,
                 name,
@@ -13125,17 +13159,11 @@ fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
     subagents
         .iter()
         .map(|p| {
-            let work = p
-                .work_id
-                .as_ref()
-                .map(|w| format!(" · {w}"))
-                .unwrap_or_default();
             PickerItem {
                 label: format!(
-                    "{}  ·  {}t{}  ·  {}",
+                    "{}  ·  {}t  ·  {}",
                     p.name,
                     p.calls.len(),
-                    work,
                     panel_activity_summary(p)
                 ),
                 value: p.run_id.clone(),
@@ -13152,6 +13180,12 @@ fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
 /// `&mut`; the tool name is enough here). A spin of identical calls collapses to
 /// `label ×N` so a stuck worker reads as stuck.
 fn panel_activity_summary(panel: &SubagentPanel) -> String {
+    if panel.pending {
+        return match panel.phase {
+            Some(p) => format!("phase {p} (waiting)"),
+            None => "waiting".to_string(),
+        };
+    }
     let repeats = trailing_repeat(&panel.calls);
     if repeats >= STUCK_REPEAT_THRESHOLD {
         return format!("{} ×{repeats}", panel.calls.last().cloned().unwrap_or_default());
@@ -13203,9 +13237,6 @@ fn agent_detail_lines(
         Span::styled(format!("  ({})", panel.run_id), dim),
     ])];
     let mut stats = format!("{} tools · {} req", panel.calls.len(), panel.requests);
-    if let Some(w) = &panel.work_id {
-        stats.push_str(&format!(" · {w}"));
-    }
     if panel.queued {
         stats.push_str(&format!(" · queued ({})", panel.waiting));
     }
@@ -16815,13 +16846,12 @@ const PANEL_GUTTER: u16 = 3;
 const AGENT_MAX_ROWS: usize = 3;
 
 /// A trailing run of identical calls this long reads as a spin, not progress, so
-/// the collapsed `×N` marker turns red to flag it. Aligned with the loop's own
-/// poll dampener, which nudges around the same point.
+/// the collapsed `×N` marker turns red to flag it.
 const STUCK_REPEAT_THRESHOLD: usize = 4;
 
 /// Length of the trailing run of the last entry in `calls`: 0 when empty, 1 when
 /// the last call differs from the one before it. Lets the panel collapse a spin
-/// (`read_agent …` repeated dozens of times) into one `×N` line instead of
+/// (`bash …` repeated dozens of times) into one `×N` line instead of
 /// showing the newest copy alone, with only the tool counter to betray the loop.
 fn trailing_repeat(calls: &[String]) -> usize {
     match calls.last() {
@@ -16875,11 +16905,26 @@ fn agents_column(
         .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
 
     for panel in panels.iter_mut().take(shown) {
+        let idle = panel.queued || panel.pending;
         let mut spans = vec![Span::styled(
-            format!("{} ", if panel.queued { "·" } else { frame }),
+            format!("{} ", if idle { "·" } else { frame }),
             Style::new().magenta(),
         )];
-        if panel.queued {
+        if panel.pending {
+            // A later-phase subagent waiting on the phase before it: no run yet,
+            // so show which phase it belongs to instead of live stats.
+            spans.push(Span::styled(
+                truncate(&panel.name, max.saturating_sub(18)),
+                Style::new().magenta().dim(),
+            ));
+            spans.push(Span::styled(
+                match panel.phase {
+                    Some(p) => format!("  phase {p} · waiting"),
+                    None => "  waiting".to_string(),
+                },
+                Style::new().yellow(),
+            ));
+        } else if panel.queued {
             // Parked on the `max_parallel_subagents` cap; the child has not
             // started, so there are no live stats -- its queue position instead.
             spans.push(Span::styled(
@@ -16898,6 +16943,11 @@ fn agents_column(
             // Compact stats: side by side with the plan there is no room for
             // "33 tools  ·  24 req", and the units are obvious in context.
             let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
+            // A running subagent from a later phase keeps its phase badge, so the
+            // dependent-stage hint persists past the wait.
+            if let Some(p) = panel.phase {
+                stats.push_str(&format!(" · phase {p}"));
+            }
             // Only once the child has reported usage; "0%" before its first
             // response would read as a stalled agent rather than a starting one.
             // `context_window` arrives as 0 when the session has disproven it,
@@ -16906,9 +16956,6 @@ fn agents_column(
             if panel.prompt_tokens > 0 && context_window > 0 {
                 let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
                 stats.push_str(&format!(" · {pct:.1}%"));
-            }
-            if let Some(work_id) = &panel.work_id {
-                stats.push_str(&format!(" · {work_id}"));
             }
             spans.push(Span::styled(stats, dim));
         }
@@ -16948,7 +16995,8 @@ fn agents_column(
                         (text, Style::new().dim())
                     })
                     .or_else(|| {
-                        (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))
+                        (!panel.queued && !panel.pending)
+                            .then(|| ("starting…".to_string(), Style::new().dim()))
                     }),
             }
         };
@@ -17415,14 +17463,12 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
     // known (configured, catalog, or fallback), so it is always a denominator.
     let context_window = app.context_window;
     let has_todos = !app.todos.is_empty() && !app.todos_expired();
-    let has_activity =
-        !app.subagents.is_empty() || !app.monitors.is_empty() || !app.workqueue.is_empty();
+    let has_activity = !app.subagents.is_empty() || !app.monitors.is_empty();
     match (has_todos, has_activity) {
         (false, false) => Vec::new(),
         (true, false) => todo_column(&app.todos, width, rows),
         (false, true) => activity_column(
             &mut app.subagents,
-            &app.workqueue,
             &app.monitors,
             context_window,
             width,
@@ -17434,7 +17480,6 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             // the activity, which is the thing actually moving.
             let activity = activity_column(
                 &mut app.subagents,
-                &app.workqueue,
                 &app.monitors,
                 context_window,
                 width,
@@ -17451,7 +17496,6 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
             let left = todo_column(&app.todos, left_w, rows);
             let right = activity_column(
                 &mut app.subagents,
-                &app.workqueue,
                 &app.monitors,
                 context_window,
                 right_w,
@@ -17468,21 +17512,14 @@ fn status_panel(app: &mut App, width: u16, rows: usize) -> Vec<Line<'static>> {
 /// capped at half the budget; the agents take whatever they leave.
 fn activity_column(
     panels: &mut [SubagentPanel],
-    workqueue: &[WorkItemView],
     monitors: &[MonitorSnapshot],
     context_window: u64,
     width: u16,
     rows: usize,
     frame: &str,
 ) -> Vec<Line<'static>> {
-    // Agents keep priority: the compact sections (the work queue and the
-    // monitors) share at most half the budget when agents are present, and take
-    // only what they need otherwise. Queue sits above monitors.
-    let want_queue = if workqueue.is_empty() {
-        0
-    } else {
-        1 + workqueue.len()
-    };
+    // Agents keep priority: the monitors share at most half the budget when
+    // agents are present, and take only what they need otherwise.
     let want_mon = if monitors.is_empty() {
         0
     } else {
@@ -17491,83 +17528,13 @@ fn activity_column(
     let compact_budget = if panels.is_empty() {
         rows
     } else {
-        (want_queue + want_mon).min(rows / 2)
+        want_mon.min(rows / 2)
     };
-    let queue = workqueue_column(workqueue, width, want_queue.min(compact_budget));
-    let monitors = monitors_column(monitors, width, compact_budget.saturating_sub(queue.len()));
-    let used = queue.len() + monitors.len();
+    let monitors = monitors_column(monitors, width, compact_budget);
+    let used = monitors.len();
     let mut out = agents_column(panels, context_window, width, rows.saturating_sub(used), frame);
-    out.extend(queue);
     out.extend(monitors);
     out
-}
-
-/// The shared work queue as a column: one line per item with a state glyph, its
-/// `w-N` id, title, and the `-> owner` flow tag that is the work-sharing
-/// indicator. A failed/blocked item shows its reason so a stuck graph is visible
-/// rather than silent.
-fn workqueue_column(items: &[WorkItemView], width: u16, rows: usize) -> Vec<Line<'static>> {
-    if items.is_empty() || rows == 0 {
-        return Vec::new();
-    }
-    let dim = Style::new().dark_gray();
-    let max = width.max(8) as usize;
-    let ready = items.iter().filter(|i| i.state == "open").count();
-    let mut out = vec![Line::from(vec![
-        Span::styled("~ ", Style::new().magenta()),
-        Span::styled(
-            format!("work queue ({ready} ready)"),
-            Style::new().magenta().bold(),
-        ),
-    ])];
-    let body = rows - 1;
-    let (shown, hidden) = if items.len() <= body {
-        (items.len(), 0)
-    } else {
-        (body.saturating_sub(1), items.len() - body.saturating_sub(1))
-    };
-    for item in items.iter().take(shown) {
-        let (glyph, gstyle) = work_glyph(&item.state);
-        let id = format!("{} ", item.work_id);
-        let owner = item
-            .claimed_by
-            .as_deref()
-            .map(|w| format!(" -> {w}"))
-            .unwrap_or_default();
-        let reason = item
-            .reason
-            .as_deref()
-            .map(|r| format!(" ({r})"))
-            .unwrap_or_default();
-        let text = format!("{}{owner}{reason}", item.title);
-        let reserve = 2 + id.len();
-        out.push(Line::from(vec![
-            Span::styled(format!("{glyph} "), gstyle),
-            Span::styled(id, dim),
-            Span::styled(truncate(&text, max.saturating_sub(reserve)), gstyle),
-        ]));
-    }
-    if hidden > 0 {
-        out.push(Line::from(vec![Span::styled(
-            format!("  +{hidden} more"),
-            dim,
-        )]));
-    }
-    out.truncate(rows);
-    out
-}
-
-/// The leading glyph + colour for a work item's state. ASCII markers so the
-/// column stays single-width and alignment-preserving.
-fn work_glyph(state: &str) -> (&'static str, Style) {
-    match state {
-        "open" => ("o", Style::new().magenta()),
-        "claimed" => ("@", Style::new().yellow()),
-        "done" => ("*", Style::new().green()),
-        "failed" => ("!", Style::new().red()),
-        "blocked" => ("x", Style::new().dark_gray()),
-        _ => ("-", Style::new().dark_gray()),
-    }
 }
 
 /// The session's active monitors, as a column: one line per monitor (id, name,
@@ -17998,8 +17965,7 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        collapse_runs, open_agents_picker, trailing_repeat, workqueue_column, SubagentPanel,
-        WorkItemView,
+        collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18094,46 +18060,6 @@ mod tests {
         TestApp { app, _dir: dir }
     }
 
-    fn work_item(work_id: &str, state: &str, claimed_by: Option<&str>, reason: Option<&str>) -> WorkItemView {
-        WorkItemView {
-            work_id: work_id.to_string(),
-            title: format!("task {work_id}"),
-            state: state.to_string(),
-            claimed_by: claimed_by.map(str::to_string),
-            reason: reason.map(str::to_string),
-        }
-    }
-
-    #[test]
-    fn workqueue_column_shows_state_owner_flow_and_reason() {
-        let items = vec![
-            work_item("w-1", "done", None, None),
-            work_item("w-2", "claimed", Some("reviewer-3"), None),
-            work_item("w-3", "failed", None, Some("dep w-2 failed")),
-            work_item("w-4", "open", None, None),
-        ];
-        let lines: Vec<String> = workqueue_column(&items, 60, 8)
-            .iter()
-            .map(line_text)
-            .collect();
-        assert!(lines[0].contains("work queue (1 ready)"), "{lines:?}");
-        let claimed = lines.iter().find(|l| l.contains("w-2")).unwrap();
-        assert!(claimed.contains("-> reviewer-3"), "owner flow: {claimed}");
-        let failed = lines.iter().find(|l| l.contains("w-3")).unwrap();
-        assert!(failed.contains("dep w-2 failed"), "reason: {failed}");
-    }
-
-    #[test]
-    fn workqueue_column_elides_its_tail_under_budget() {
-        let items: Vec<WorkItemView> = (1..=20)
-            .map(|n| work_item(&format!("w-{n}"), "open", None, None))
-            .collect();
-        let lines = workqueue_column(&items, 60, 4);
-        assert_eq!(lines.len(), 4, "never exceeds its row budget");
-        let last = line_text(lines.last().unwrap());
-        assert!(last.contains("more"), "tail elided: {last}");
-    }
-
     fn panel_with_calls(name: &str, calls: Vec<&str>) -> SubagentPanel {
         SubagentPanel {
             run_id: format!("sub-{name}-1"),
@@ -18145,7 +18071,8 @@ mod tests {
             active: None,
             queued: false,
             waiting: 0,
-            work_id: None,
+            pending: false,
+            phase: None,
         }
     }
 
@@ -18162,13 +18089,13 @@ mod tests {
     /// with one innocuous call on screen.
     #[test]
     fn agents_column_collapses_a_repeated_call() {
-        let call = "read_agent {\"run_id\":\"sub-kv-review-1\",\"tail\":1}";
+        let call = "bash {\"command\":\"ls -la\"}";
         let mut panels = vec![panel_with_calls("kv-review", vec![call; 5])];
         let lines = agents_column(&mut panels, 200_000, 80, 8, "-");
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("×5"), "collapsed spin shows its count: {text}");
         // The single call is not duplicated across five rows.
-        assert_eq!(text.matches("read_agent").count(), 1, "one collapsed row: {text}");
+        assert_eq!(text.matches("bash").count(), 1, "one collapsed row: {text}");
     }
 
     #[test]
@@ -18190,7 +18117,7 @@ mod tests {
 
     #[test]
     fn agents_picker_row_names_the_child_and_flags_a_spin() {
-        let panels = vec![panel_with_calls("kv-review", vec!["read_agent {}"; 4])];
+        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
         let items = agent_picker_items(&panels);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-kv-review-1");
@@ -18200,7 +18127,7 @@ mod tests {
 
     #[test]
     fn agent_detail_shows_stats_and_collapses_a_spin() {
-        let panels = vec![panel_with_calls("kv-review", vec!["claim_work {}"; 5])];
+        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 5])];
         let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
@@ -18215,6 +18142,48 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(text.contains("finished"), "{text}");
+    }
+
+    /// A later phase's subagents appear waiting (with their phase) before they
+    /// start, and each is promoted in place by its own SubagentStart -- no
+    /// duplicate panel, and the phase badge survives the promotion.
+    #[tokio::test]
+    async fn a_pending_phase_subagent_waits_then_is_promoted_by_name() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        assert_eq!(app.subagents.len(), 1);
+        assert!(app.subagents[0].pending && app.subagents[0].phase == Some(2));
+
+        let text = agents_column(&mut app.subagents, 200_000, 80, 8, "-")
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("collector") && text.contains("phase 2") && text.contains("waiting"),
+            "the waiting hint is shown: {text}"
+        );
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: Some("synthesize".to_string()),
+        });
+        assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
+        assert!(!app.subagents[0].pending);
+        assert_eq!(app.subagents[0].run_id, "sub-collector-1");
+        assert_eq!(app.subagents[0].task, "synthesize");
+        assert_eq!(
+            app.subagents[0].phase,
+            Some(2),
+            "keeps its phase badge once running"
+        );
     }
 
     /// Enter on the `/agents` list drills into a child's detail; Esc steps back
@@ -18295,40 +18264,6 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert!(items[0].label.contains("no background shells"));
         assert!(items[0].value.is_empty());
-    }
-
-    #[test]
-    fn agent_status_tags_the_child_panel_and_ignores_main() {
-        let mut app = test_app();
-        app.apply(StreamEvent::SubagentStart {
-            run_id: "sub-a-1".to_string(),
-            name: "a".to_string(),
-            task: Some("do it".to_string()),
-        });
-        app.apply(StreamEvent::AgentStatus {
-            run_id: "sub-a-1".to_string(),
-            name: "a".to_string(),
-            state: "running".to_string(),
-            step: 2,
-            tool_calls: 3,
-            last: "edit".to_string(),
-            work_id: Some("w-7".to_string()),
-        });
-        let panel = app.subagents.iter().find(|p| p.run_id == "sub-a-1").unwrap();
-        assert_eq!(panel.work_id.as_deref(), Some("w-7"));
-        // A main status delta never creates or mutates a panel.
-        let before = app.subagents.len();
-        app.apply(StreamEvent::AgentStatus {
-            run_id: "main".to_string(),
-            name: "main".to_string(),
-            state: "running".to_string(),
-            step: 1,
-            tool_calls: 0,
-            last: String::new(),
-            work_id: Some("w-9".to_string()),
-        });
-        assert_eq!(app.subagents.len(), before, "main adds no panel");
-        assert!(app.subagents.iter().all(|p| p.work_id.as_deref() != Some("w-9")));
     }
 
     fn steering_request(
@@ -23394,9 +23329,6 @@ mod tests {
                 session_id: None,
                 sandbox: None,
                 monitors: Some(app.monitor_set.clone()),
-                work_queue_enabled: false,
-                work_signal: std::sync::Arc::new(crate::core::agent::subagent::WorkSignal::new()),
-                collab_run_id: None,
             });
             app.args = Some(args.clone());
 

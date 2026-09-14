@@ -1,9 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronLeft, ChevronDown, Eye, Loader2, Sparkles } from 'lucide-react'
+import {
+  ChevronLeft,
+  ChevronDown,
+  Clock,
+  Eye,
+  Loader2,
+  Sparkles,
+} from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn, formatDuration, formatTokenCount } from '@/lib/utils'
-import type { WorkItemView } from '@/lib/agentTools'
 import type {
   CoworkTurn,
   MonitorView,
@@ -18,15 +24,17 @@ import {
 } from '@/components/ai-elements/conversation'
 import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
 
-/** One row in the running/queued/finished lists. */
+/** One row in the running/queued/waiting/finished lists. */
 function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) {
   const { t } = useTranslation()
   const running = run.status === 'running'
-  // Only rendered for finished rows below — skip the scan while running (it
-  // would just be recomputed and discarded on every tick/stream re-render).
-  const toolUses = running
-    ? 0
-    : run.turns.filter((tn) => tn.role === 'tool').length
+  const waiting = run.status === 'waiting'
+  // Only rendered for finished rows below — skip the scan while running/waiting
+  // (it would just be recomputed and discarded on every tick/stream re-render).
+  const toolUses =
+    running || waiting
+      ? 0
+      : run.turns.filter((tn) => tn.role === 'tool').length
   return (
     <button
       type="button"
@@ -36,15 +44,34 @@ function TaskRow({ run, onSelect }: { run: SubagentRun; onSelect: () => void }) 
       <div className="flex items-center gap-2">
         {running ? (
           <Loader2 size={14} className="shrink-0 animate-spin text-accent" />
+        ) : waiting ? (
+          <Clock size={14} className="shrink-0 text-main-view-fg/50" />
         ) : (
           <Sparkles size={14} className="shrink-0 text-main-view-fg/50" />
         )}
         <span className="truncate text-sm font-medium">{run.name}</span>
+        {run.phase != null && (running || waiting) && (
+          <span className="ml-auto shrink-0 rounded bg-main-view-fg/5 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-main-view-fg/50">
+            {t('common:subagentPhase', { phase: run.phase })}
+          </span>
+        )}
       </div>
-      <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
-        {formatDuration(run.startedAt, run.endedAt)}
-      </span>
-      {!running && run.status === 'done' && (
+      {waiting ? (
+        <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
+          {run.phase != null && (
+            <>
+              {t('common:subagentPhase', { phase: run.phase })}
+              {' · '}
+            </>
+          )}
+          {t('common:subagentWaiting')}
+        </span>
+      ) : (
+        <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
+          {formatDuration(run.startedAt, run.endedAt)}
+        </span>
+      )}
+      {!running && !waiting && run.status === 'done' && (
         <span className="pl-6 font-mono text-xs tabular-nums text-main-view-fg/50">
           {run.usage?.total_tokens
             ? `${formatTokenCount(run.usage.total_tokens)} · `
@@ -99,46 +126,6 @@ function MonitorRow({ monitor }: { monitor: MonitorView }) {
       {monitor.script && (
         <span className="truncate pl-6 font-mono text-xs text-main-view-fg/50">
           {monitor.script}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Dot colour per work-item state, mirroring the TUI's glyph colours. */
-const WORK_STATE_DOT: Record<string, string> = {
-  open: 'bg-accent',
-  claimed: 'bg-yellow-500',
-  done: 'bg-green-500',
-  failed: 'bg-destructive',
-  blocked: 'bg-main-view-fg/30',
-}
-
-/** One work-queue item: its state dot, id, title, and the `-> owner` flow tag
- * that shows who is on it; a failed/blocked item shows its reason. */
-function WorkRow({ item }: { item: WorkItemView }) {
-  return (
-    <div
-      data-testid="cowork-work-row"
-      className="flex w-full flex-col gap-1 rounded-lg border bg-main-view-fg/2 px-3 py-2.5 text-left"
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            'size-2 shrink-0 rounded-full',
-            WORK_STATE_DOT[item.state] ?? 'bg-main-view-fg/30'
-          )}
-        />
-        <span className="truncate text-sm font-medium">{item.title}</span>
-        <span className="ml-auto shrink-0 font-mono text-xs text-main-view-fg/50">
-          {item.workId}
-        </span>
-      </div>
-      {(item.claimedBy || item.reason) && (
-        <span className="truncate pl-4 font-mono text-xs text-main-view-fg/50">
-          {item.claimedBy ? `-> ${item.claimedBy}` : ''}
-          {item.claimedBy && item.reason ? ' · ' : ''}
-          {item.reason ?? ''}
         </span>
       )}
     </div>
@@ -248,15 +235,12 @@ function Section({
 export function CoworkTasksPanel({
   subagents,
   monitors = [],
-  workqueue = [],
   onClose,
 }: {
   subagents: SubagentRun[]
   /** The run's file monitors. Transient: they die with the run, so unlike
    * finished children they never come back from the session. */
   monitors?: MonitorView[]
-  /** The session's shared work queue, from each work-tool command snapshot. */
-  workqueue?: WorkItemView[]
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -280,6 +264,7 @@ export function CoworkTasksPanel({
     : null
   const runningRuns = subagents.filter((s) => s.status === 'running')
   const queuedRuns = subagents.filter((s) => s.status === 'queued')
+  const waitingRuns = subagents.filter((s) => s.status === 'waiting')
   const finishedRuns = subagents.filter((s) => s.status === 'done')
 
   return (
@@ -303,24 +288,12 @@ export function CoworkTasksPanel({
         <TaskDetail run={selected} />
       ) : (
         <div className="flex h-full flex-col gap-4 overflow-y-auto p-3">
-          {subagents.length === 0 &&
-          monitors.length === 0 &&
-          workqueue.length === 0 ? (
+          {subagents.length === 0 && monitors.length === 0 ? (
             <p className="px-1 py-6 text-center text-sm text-main-view-fg/50">
               {t('common:noBackgroundTasks')}
             </p>
           ) : (
             <>
-              {workqueue.length > 0 && (
-                <Section
-                  label={t('common:workQueue')}
-                  count={workqueue.filter((w) => w.state === 'open').length}
-                >
-                  {workqueue.map((item) => (
-                    <WorkRow key={item.workId} item={item} />
-                  ))}
-                </Section>
-              )}
               {monitors.length > 0 && (
                 <Section label={t('common:monitors')} count={monitors.length}>
                   {monitors.map((monitor) => (
@@ -342,6 +315,17 @@ export function CoworkTasksPanel({
               {queuedRuns.length > 0 && (
                 <Section label={t('common:queued')} count={queuedRuns.length}>
                   {queuedRuns.map((run) => (
+                    <TaskRow
+                      key={run.runId}
+                      run={run}
+                      onSelect={() => setSelectedRunId(run.runId)}
+                    />
+                  ))}
+                </Section>
+              )}
+              {waitingRuns.length > 0 && (
+                <Section label={t('common:waiting')} count={waitingRuns.length}>
+                  {waitingRuns.map((run) => (
                     <TaskRow
                       key={run.runId}
                       run={run}

@@ -8,11 +8,7 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
-  workPost,
-  workClaim,
-  workComplete,
-  workList,
-  agentRead,
+  blackboardWrite,
   attachmentImport,
   startMonitor,
   stopMonitor,
@@ -25,8 +21,6 @@ import {
   type SandboxStatus,
   type ToolImage,
   type ToolSchema,
-  type WorkCommandResult,
-  type WorkItemView,
   type WorkspaceScope,
 } from '@janhq/tauri-plugin-agent-tools-api'
 import { getServiceHub } from '@/hooks/useServiceHub'
@@ -446,74 +440,31 @@ export async function fillSubagentResult(
   }
 }
 
-export type { WorkCommandResult, WorkItemView }
+/**
+ * The model-visible blackboard directory. The session scratch is mounted over
+ * `/tmp` (see `scratch_display_path`), and the blackboard is its `blackboard`
+ * subdir (`spill::BLACKBOARD_DIR`), so a finished child's answer is read from
+ * `/tmp/blackboard/<name>.md`. Reported up front by the plan summary; each
+ * child's completion notice carries the exact path `writeBlackboard` returns.
+ */
+export const BLACKBOARD_DIR_DISPLAY = '/tmp/blackboard'
 
-/** A work-tool result plus the fresh queue snapshot. `null` when the command
- * failed, so the caller can fall back to an error message inline. */
-type WorkResult = WorkCommandResult | null
-
-/** Post a task to the session's shared work queue. */
-export async function postWork(
+/**
+ * Write a finished subagent's answer to `blackboard/<name>.md` in the session
+ * scratch -- the name-keyed coordination file a phased dispatch's next phase
+ * reads. Returns the model-visible path, or `null` when no scratch is reachable
+ * (the web build), so the caller can fall back to delivering the answer inline.
+ */
+export async function writeBlackboard(
   sessionId: string,
-  agentId: string,
-  args: Record<string, unknown>
-): Promise<WorkResult> {
+  name: string,
+  content: string
+): Promise<string | null> {
   try {
-    return await workPost(sessionId, agentId, args)
+    return await blackboardWrite(sessionId, name, content)
   } catch (e) {
-    console.warn('[agentTools] Failed to post work:', messageOf(e))
+    console.warn('[agentTools] Failed to write the blackboard:', messageOf(e))
     return null
-  }
-}
-
-/** Claim the next ready item for `agentId`. */
-export async function claimWork(
-  sessionId: string,
-  agentId: string
-): Promise<WorkResult> {
-  try {
-    return await workClaim(sessionId, agentId)
-  } catch (e) {
-    console.warn('[agentTools] Failed to claim work:', messageOf(e))
-    return null
-  }
-}
-
-/** Complete an item `agentId` claimed. */
-export async function completeWork(
-  sessionId: string,
-  agentId: string,
-  args: Record<string, unknown>
-): Promise<WorkResult> {
-  try {
-    return await workComplete(sessionId, agentId, args)
-  } catch (e) {
-    console.warn('[agentTools] Failed to complete work:', messageOf(e))
-    return null
-  }
-}
-
-/** The whole work queue as a snapshot. */
-export async function listWork(sessionId: string): Promise<WorkResult> {
-  try {
-    return await workList(sessionId)
-  } catch (e) {
-    console.warn('[agentTools] Failed to list work:', messageOf(e))
-    return null
-  }
-}
-
-/** Read a peer's status + transcript, or the roster (no `run_id`). `agentId` is
- * the caller's own id, passed so the core can refuse a self-read. */
-export async function readAgent(
-  sessionId: string,
-  agentId: string,
-  args: Record<string, unknown>
-): Promise<string> {
-  try {
-    return await agentRead(sessionId, agentId, args)
-  } catch (e) {
-    return `ERROR: ${messageOf(e)}`
   }
 }
 

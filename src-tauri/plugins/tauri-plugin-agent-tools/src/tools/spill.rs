@@ -110,6 +110,32 @@ pub fn reserve_subagent_result(scratch: &Path, id: &str) -> Option<PathBuf> {
     None
 }
 
+/// Scratch subdirectory holding the shared blackboard: one `<name>.md` per
+/// subagent, the coordination surface a phased dispatch reads from and writes to.
+pub const BLACKBOARD_DIR: &str = "blackboard";
+
+/// Reserve `<scratch>/blackboard/<name>.md` as an empty file, returning the host
+/// path. Unlike [`reserve_subagent_result`], the name is predictable and stable:
+/// it is how the next phase and sibling agents find this subagent's answer, so a
+/// stale file left by an earlier plan is truncated in place rather than suffixed.
+/// A pre-planted symlink at the leaf is still refused.
+pub fn reserve_blackboard_result(scratch: &Path, name: &str) -> Option<PathBuf> {
+    let dir = validated_subdir(scratch, BLACKBOARD_DIR)?;
+    let path = dir.join(format!("{}.md", sanitize_stem(name)));
+    match open_excl(&path) {
+        Ok(_) => Some(path),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            match std::fs::symlink_metadata(&path) {
+                Ok(m) if m.is_file() && !m.file_type().is_symlink() => {
+                    open_truncating(&path).ok().map(|_| path)
+                }
+                _ => None,
+            }
+        }
+        Err(_) => None,
+    }
+}
+
 /// Fill a path [`reserve_subagent_result`] handed out. The shell could have
 /// swapped our empty file for a link in the meantime, so the same fail-closed
 /// re-check applies: write only to a real file, never through a redirect.
@@ -125,9 +151,7 @@ pub fn fill_subagent_result(path: &Path, text: &str) -> bool {
 }
 
 /// `create(false)`: the file must be the one we reserved, so a path that has
-/// since been removed is a failure rather than something to recreate. Shared
-/// with `observ`'s resume-collision reclaim, which truncates an owned stale
-/// transcript rather than suffixing a new run id.
+/// since been removed is a failure rather than something to recreate.
 pub(crate) fn open_truncating(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .write(true)
@@ -225,6 +249,22 @@ mod tests {
         // invitation to write somewhere new.
         std::fs::remove_file(&b).unwrap();
         assert!(!fill_subagent_result(&b, "x"));
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The blackboard path is name-keyed and predictable, and a re-dispatch of
+    /// the same name truncates the earlier file rather than suffixing it -- so
+    /// the next phase always reads it at the one path it was told.
+    #[test]
+    fn blackboard_is_name_keyed_and_reused_in_place() {
+        let scratch = tmp("bb");
+        let a = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert_eq!(a, scratch.join("blackboard/research.md"));
+        assert!(fill_subagent_result(&a, "first"));
+        // A later reservation of the same name yields the SAME path, truncated.
+        let b = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert_eq!(a, b);
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "");
         let _ = std::fs::remove_dir_all(&scratch);
     }
 

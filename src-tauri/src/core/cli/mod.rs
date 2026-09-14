@@ -692,7 +692,6 @@ fn build_cli_orchestration_args(
     plan: bool,
     max_parallel_subagents: u32,
     sandbox: Option<bool>,
-    work_queue_enabled: bool,
 ) -> OrchestrationArgs {
     OrchestrationArgs {
         client: crate::core::agent::upstream::agent_http_client(),
@@ -725,12 +724,6 @@ fn build_cli_orchestration_args(
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
-        work_queue_enabled,
-        // One doorbell for the whole run tree; children inherit this exact Arc
-        // via their cloned args, so a child's post_work wakes this run's park.
-        work_signal: std::sync::Arc::new(crate::core::agent::subagent::WorkSignal::new()),
-        // The top-level run is "main"; children get their id from spawn_subagent.
-        collab_run_id: None,
     }
 }
 
@@ -969,9 +962,6 @@ fn prepare_agent_session(
         .agent
         .max_parallel_subagents
         .unwrap_or(crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS);
-    // Collaboration (shared work queue + per-agent observability) is on by
-    // default; a project opts out with `[agent].work_queue_enabled = false`.
-    let work_queue_enabled = cfg.agent.work_queue_enabled.unwrap_or(true);
     let args = build_cli_orchestration_args(
         project_root,
         permissions,
@@ -983,7 +973,6 @@ fn prepare_agent_session(
         flags.plan,
         max_parallel_subagents,
         flags.sandbox,
-        work_queue_enabled,
     );
 
     // Resolution order: configured `[agent].context_window` override, then the
@@ -1395,6 +1384,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
+        StreamEvent::SubagentPlan { pending } => {
+            if let Some(max_phase) = pending.iter().map(|p| p.phase).max() {
+                eprintln!(
+                    "\x1b[2m[plan] {} subagent(s) queued across later phases (through phase {max_phase})\x1b[0m",
+                    pending.len()
+                )
+            }
+        }
         StreamEvent::SubagentEnd { name, error, .. } => match error {
             Some(e) => eprintln!("\x1b[2m[subagent:{name}] failed: {e}\x1b[0m"),
             None => eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m"),
@@ -1407,26 +1404,6 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::Monitors { .. } => {}
         StreamEvent::Parked => {
             eprintln!("\x1b[2m[parked] waiting on background work\x1b[0m")
-        }
-        // A child's live status is real progress in a headless run; main's own
-        // status duplicates the [turn]/[tool] lines above, so it is not echoed.
-        StreamEvent::AgentStatus {
-            run_id,
-            name,
-            state,
-            work_id,
-            ..
-        } => {
-            if run_id != "main" {
-                let held = work_id.map(|w| format!(" [{w}]")).unwrap_or_default();
-                eprintln!("\x1b[2m[agent:{name}] {state}{held}\x1b[0m");
-            }
-        }
-        // One compact line per queue change: how many items are ready to
-        // dispatch out of the total, so a headless run shows the pool draining.
-        StreamEvent::WorkQueue { items } => {
-            let ready = items.iter().filter(|i| i.state == "open").count();
-            eprintln!("\x1b[2m[work] {ready}/{} ready\x1b[0m", items.len());
         }
         StreamEvent::Subagent { name, event, .. } => {
             if let StreamEvent::ToolCall { name: tool, args, .. } = *event {

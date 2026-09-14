@@ -7,7 +7,6 @@ import {
 } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import type { WorkItemView } from '@/lib/agentTools'
 import type { MonitorView, SubagentRun } from '@/types/coworkSession'
 
 /**
@@ -23,7 +22,6 @@ import type { MonitorView, SubagentRun } from '@/types/coworkSession'
 export function CoworkTasksChip({
   subagents,
   monitors = [],
-  workqueue = [],
   open,
   onToggle,
 }: {
@@ -31,21 +29,16 @@ export function CoworkTasksChip({
   /** The run's file monitors: background work like the children, so they
    * count here too and open the same rail. */
   monitors?: MonitorView[]
-  /** The session's shared work queue: also background work, opening the same rail. */
-  workqueue?: WorkItemView[]
   open: boolean
   onToggle: () => void
 }) {
   const { t } = useTranslation()
-  const total = subagents.length + monitors.length + workqueue.length
+  const total = subagents.length + monitors.length
   if (total === 0) return null
 
   const activeSubagents = subagents.filter((s) => s.status !== 'done').length
   const activeMonitors = monitors.filter((m) => m.status === 'running').length
-  const activeWork = workqueue.filter(
-    (w) => w.state !== 'done' && w.state !== 'failed'
-  ).length
-  const active = activeSubagents + activeMonitors + activeWork
+  const active = activeSubagents + activeMonitors
   const onlyKind = (kept: number) => active > 0 && active === kept
   const label =
     active === 0

@@ -121,12 +121,6 @@ pub(crate) struct AgentSection {
     /// out of the context budget.
     #[serde(default)]
     pub send_reasoning: Option<bool>,
-    /// Whether the run may use the shared work queue and per-agent
-    /// observability (`post_work`/`claim_work`/`complete_work`/`list_work`/
-    /// `read_agent`), letting the main agent fan work out to a pool of workers
-    /// that coordinate through files. Default true when unset.
-    #[serde(default)]
-    pub work_queue_enabled: Option<bool>,
 }
 
 // `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
@@ -183,7 +177,6 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 # send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 #                        # (a provider that rejects the field is detected and stripped automatically)
-# work_queue_enabled = true  # shared work queue + per-agent observability so workers coordinate through files
 
 # Project-local provider override. Wins over ~/.jan/config.toml and any
 # provider inherited from Jan Desktop's settings.json. Most projects don't
