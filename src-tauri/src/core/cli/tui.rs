@@ -6589,6 +6589,18 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
+/// The name of the first subagent in a phased `dispatch_subagent` call. The
+/// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
+/// names the first, mirroring the web card (`firstPlannedSubagent`).
+fn first_dispatched_subagent_name(args: &serde_json::Value) -> &str {
+    args.get("subagents")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|s| s.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+}
+
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     let base = |p: &str| {
@@ -6614,7 +6626,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
-        "dispatch_subagent" => format!("Dispatching subagent: {}", s("subagent_name")),
+        "dispatch_subagent" => {
+            format!("Dispatching subagent: {}", first_dispatched_subagent_name(args))
+        }
         "await_subagent" => format!(
             "Awaiting subagent: {}",
             subagent_name_from_run_id(s("run_id"))
@@ -6771,7 +6785,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
-        "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
+        "dispatch_subagent" => {
+            format!("Dispatched subagent: {}", first_dispatched_subagent_name(args))
+        }
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
@@ -21496,7 +21512,7 @@ mod tests {
 
     #[test]
     fn subagent_tool_rows_have_readable_labels() {
-        let dispatch = json!({ "subagent_name": "reviewer", "description": "x" });
+        let dispatch = json!({ "subagents": [{ "name": "reviewer", "task": "x" }] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
             "Dispatching subagent: reviewer"

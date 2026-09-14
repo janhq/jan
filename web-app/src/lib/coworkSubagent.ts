@@ -362,6 +362,16 @@ function ephemeralSubagentPrompt(name: string): string {
  * always on the blackboard. Mirrors `subagent.rs::PHASE_INPUT_MAX_BYTES`. */
 export const PHASE_INPUT_MAX_BYTES = 12 * 1024
 
+/** Cap a finished child's answer to what a next-phase brief can hold before it
+ * is retained in memory, so a plan never keeps arbitrarily large outputs across
+ * its phases: `injectInputs` would truncate to the same bound at prompt-build
+ * anyway, and the full answer is always on the blackboard (the brief header
+ * points there). Mirrors the Rust read path, which never holds more than the
+ * blackboard file it just read. */
+function capRetainedAnswer(output: string): string {
+  return truncateToBytes(output, PHASE_INPUT_MAX_BYTES).text
+}
+
 /** UTF-8 byte length of a single code point, without allocating. */
 function utf8Len(codePoint: number): number {
   if (codePoint <= 0x7f) return 1
@@ -855,7 +865,9 @@ export async function runDispatchPlan(
           ? await cb.writeBlackboard(req.name, result.output)
           : null
         cb.onComplete(id, req.name, result, savedPath)
-        return realAnswer ? { name: req.name, output: result.output } : null
+        return realAnswer
+          ? { name: req.name, output: capRetainedAnswer(result.output) }
+          : null
       })
     )
     inputs = results.filter(

@@ -441,11 +441,13 @@ export async function fillSubagentResult(
 }
 
 /**
- * The model-visible blackboard directory. The session scratch is mounted over
- * `/tmp` (see `scratch_display_path`), and the blackboard is its `blackboard`
- * subdir (`spill::BLACKBOARD_DIR`), so a finished child's answer is read from
- * `/tmp/blackboard/<name>.md`. Reported up front by the plan summary; each
- * child's completion notice carries the exact path `writeBlackboard` returns.
+ * The model-visible blackboard directory on Linux only, where the session
+ * scratch is bound over `/tmp` (see `scratch_display_path`, whose `/tmp`
+ * mapping is gated on `target_os = "linux"`), so a finished child's answer is
+ * read from `/tmp/blackboard/<name>.md`. On macOS/Windows the scratch is a real
+ * host path, so callers must not advertise this constant there. Reported up
+ * front by the plan summary; each child's completion notice always carries the
+ * exact path `writeBlackboard` returns.
  */
 export const BLACKBOARD_DIR_DISPLAY = '/tmp/blackboard'
 

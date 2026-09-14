@@ -389,14 +389,19 @@ fn set_process_group(cmd: &mut Command) {
 }
 
 /// Kill the process `pid` and every descendant it spawned.
+///
+/// Every child we register is spawned with `process_group(0)` (see
+/// [`set_process_group`]), so its pgid equals its pid and `killpg` reaps the
+/// whole tree. There is deliberately no bare-`kill(pid)` fallback: `killpg`
+/// fails only when the group is already gone (ESRCH) or we lack permission
+/// (EPERM, which a single `kill` would hit too), so the fallback could never
+/// help a live tree -- it could only signal a recycled pid, since the registry
+/// lock is dropped before this call and the OS may have reused the number.
 #[cfg(unix)]
 pub fn kill_tree(pid: u32) {
     use nix::sys::signal::{killpg, Signal};
     use nix::unistd::Pid;
-    let group = Pid::from_raw(pid as i32);
-    if killpg(group, Signal::SIGKILL).is_err() {
-        let _ = nix::sys::signal::kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-    }
+    let _ = killpg(Pid::from_raw(pid as i32), Signal::SIGKILL);
 }
 
 #[cfg(windows)]

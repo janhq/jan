@@ -136,6 +136,25 @@ pub fn reserve_blackboard_result(scratch: &Path, name: &str) -> Option<PathBuf> 
     }
 }
 
+/// Read `<scratch>/blackboard/<name>.md` for injection into the next phase,
+/// fail-closed against the same redirection the write path guards: the shell
+/// shares this scratch and can `rm` a finished answer and `ln -s` a host file in
+/// its place, which a plain read would follow, feeding host contents into the
+/// successor's prompt. The directory is re-validated as a real (non-symlink)
+/// dir and the leaf must be a real file, not a symlink. `name` is the model's
+/// blackboard stem; it is sanitized to one safe component before resolving.
+/// Returns `None` on a missing, redirected, or unreadable entry -- all "no
+/// input", indistinguishable to the caller.
+pub fn read_blackboard_result(scratch: &Path, name: &str) -> Option<String> {
+    let dir = validated_subdir(scratch, BLACKBOARD_DIR)?;
+    let path = dir.join(format!("{}.md", sanitize_stem(name)));
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        _ => return None,
+    }
+    std::fs::read_to_string(&path).ok()
+}
+
 /// Fill a path [`reserve_subagent_result`] handed out. The shell could have
 /// swapped our empty file for a link in the meantime, so the same fail-closed
 /// re-check applies: write only to a real file, never through a redirect.
@@ -266,6 +285,45 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(std::fs::read_to_string(&b).unwrap(), "");
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn reads_a_real_blackboard_answer() {
+        let scratch = tmp("bb-read");
+        let p = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert!(fill_subagent_result(&p, "the answer"));
+        assert_eq!(
+            read_blackboard_result(&scratch, "research").as_deref(),
+            Some("the answer")
+        );
+        assert!(read_blackboard_result(&scratch, "missing").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_through_a_swapped_link() {
+        let scratch = tmp("bb-read-swap");
+        let host = tmp("bb-read-host").join("secret");
+        std::fs::write(&host, "host-secret").unwrap();
+        let path = reserve_blackboard_result(&scratch, "research").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&host, &path).unwrap();
+        assert!(read_blackboard_result(&scratch, "research").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(host.parent().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_through_a_redirected_dir() {
+        let scratch = tmp("bb-read-dir");
+        let host = tmp("bb-read-dir-host");
+        std::fs::write(host.join("research.md"), "host-secret").unwrap();
+        std::os::unix::fs::symlink(&host, scratch.join(BLACKBOARD_DIR)).unwrap();
+        assert!(read_blackboard_result(&scratch, "research").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&host);
     }
 
     #[cfg(unix)]

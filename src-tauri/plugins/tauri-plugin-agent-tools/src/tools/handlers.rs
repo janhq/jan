@@ -909,8 +909,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                     });
                     format!(
                         "Command exceeded {timeout_secs}s and is still running in the \
-                         background. Its full output will be written to {display} once it \
-                         finishes; read that file to collect the result."
+                         background. Its result will be written to {display} once it \
+                         finishes; read that file to collect it (if the output was large \
+                         that file keeps a tail and points to the full log)."
                     )
                 }
                 None => format!(

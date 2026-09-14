@@ -1153,12 +1153,10 @@ fn read_blackboard(scratch: Option<&Path>, names: &[String]) -> Vec<(String, Str
     let Some(s) = scratch else {
         return Vec::new();
     };
-    let dir = blackboard_dir_path(s);
     names
         .iter()
         .filter_map(|n| {
-            std::fs::read_to_string(dir.join(format!("{n}.md")))
-                .ok()
+            tauri_plugin_agent_tools::tools::spill::read_blackboard_result(s, n)
                 .map(|c| (n.clone(), c))
         })
         .collect()
