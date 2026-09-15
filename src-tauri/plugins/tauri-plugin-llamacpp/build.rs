@@ -256,9 +256,11 @@ mod engine {
 
         // Prebuilt path: a matrix job compiled both stages once and published
         // them, so the app build only links. No network, no cmake, no nvcc.
-        // Layout is `lib/` (stage 2 .a plus stage 1 ggml shared libs),
-        // `include/` (llama.cpp's *generated* headers, e.g. build-info.h) and
-        // `backends/` (the runtime-loaded ggml modules).
+        // Layout (produced by build-utils/engine-prebuilt.sh): `lib/` (stage 2
+        // static archives plus ggml-prefix/lib, the ggml link inputs),
+        // `include/` (may be empty; the shim's headers all come from the
+        // source tree) and `bin/` (ggml-prefix/bin: the runtime-loaded backend
+        // modules, plus ggml.dll and ggml-base.dll on Windows).
         let (mut search_dirs, generated_include, backend_dir) =
             if let Ok(dir) = env::var("JAN_LLAMA_PREBUILT_DIR") {
                 let dir = PathBuf::from(dir);
@@ -269,7 +271,7 @@ mod engine {
                     "JAN_LLAMA_PREBUILT_DIR={} must contain lib/ and include/",
                     dir.display()
                 );
-                (vec![lib], inc, dir.join("backends"))
+                (vec![lib], inc, dir.join("bin"))
             } else {
                 let root = build_root();
                 let ggml = build_ggml(&src, &root);

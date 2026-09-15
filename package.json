@@ -14,7 +14,7 @@
     "dev": "yarn dev:tauri",
     "ios": "yarn tauri ios dev",
     "android": "yarn tauri android dev",
-    "build": "yarn build:web && yarn build:tauri",
+    "build": "yarn build:tauri",
     "test": "yarn test:core && yarn test:web && yarn test:ext",
     "test:core": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/core",
     "test:web": "cross-env NODE_OPTIONS=--max-old-space-size=4096 vitest run --project @janhq/web-app",

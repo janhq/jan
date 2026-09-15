@@ -186,9 +186,12 @@ test-ci: test-prepare
 check-cli:
 	cd src-tauri/jan-cli && cargo check --locked --no-default-features --features cli
 
-# Build MLX server (macOS Apple Silicon only) - always builds
+# Build MLX server (macOS Apple Silicon only) - always builds, unless
+# JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
+# (build-utils/mlx-prebuilt.sh), which is then staged and signed the same way
 build-mlx-server:
 ifeq ($(DETECTED_OS),Darwin)
+ifeq ($(JAN_MLX_PREBUILT_DIR),)
 	@echo "Building MLX server for Apple Silicon..."
 	# mlx-swift's Metal shaders are compiled by the PrepareMetalShaders
 	# plugin, which only runs under Xcode -- `swift build` produces a
@@ -196,8 +199,9 @@ ifeq ($(DETECTED_OS),Darwin)
 	# https://github.com/ml-explore/mlx-swift README ("SwiftPM (command
 	# line) cannot build the Metal shaders").
 	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
+endif
 	@echo "Finding build products..."
-	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
+	@DERIVED_DATA=$${JAN_MLX_PREBUILT_DIR:-$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1)}; \
 	if [ -z "$$DERIVED_DATA" ] || [ ! -f "$$DERIVED_DATA/mlx-server" ]; then \
 		echo "Error: Could not find xcodebuild products under DerivedData"; \
 		exit 1; \
@@ -483,6 +487,11 @@ endif
 
 check-engine-toolchain:
 	bash src-tauri/build-utils/check-engine-toolchain.sh $(JAN_ENGINE_VARIANT) $(ENGINE_FEATURES)
+
+# The S3 cache key for what build-engine would compile. Run through make so the
+# script sees the same resolved features and exported environment cargo gets.
+engine-prebuilt-key:
+	@bash src-tauri/build-utils/engine-prebuilt.sh key $(ENGINE_FEATURES)
 
 # Release worker plus the ggml runtime it loads.
 build-engine: engine-source check-engine-toolchain
