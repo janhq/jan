@@ -388,7 +388,18 @@ pub fn run() {
                 let _ = setup::setup_tray(app.handle());
             }
 
-            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
+            // Not in e2e builds: on Windows `register_all` writes HKCU
+            // Software\Classes\jan\shell\open\command and points it at the
+            // running exe, so every run would repoint the developer's real
+            // `jan://` handler at target/debug/Jan-Desktop.exe. The registry is
+            // outside everything the harness's env overrides can reach. (On
+            // Linux it writes into `data_dir()/applications`, which XDG_DATA_HOME
+            // does redirect -- but no spec opens a deep link, so skip both.)
+            #[cfg(all(
+                feature = "deep-link",
+                not(feature = "e2e"),
+                any(windows, target_os = "linux")
+            ))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
