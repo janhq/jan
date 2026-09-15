@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@types/node": "^20.11.30",
     "@wdio/cli": "^9.30.0",
     "@wdio/globals": "^9.30.0",
     "@wdio/local-runner": "^9.30.0",

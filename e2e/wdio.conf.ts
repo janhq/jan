@@ -1,7 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service'
+import { SevereServiceError } from 'webdriverio'
 import { isolationEnv } from './isolation.js'
 
 // The app resolves its data folder through `dirs::data_dir()`, so isolation is
@@ -65,8 +67,6 @@ const testHome = inheritedHome
   : mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-'))
 process.env.JAN_E2E_HOME = testHome
 
-export const testHomeForSpecs = testHome
-
 if (ownsTestHome) {
   // Cleanup on process exit rather than in onComplete: wdio runs user
   // onComplete hooks BEFORE service onComplete hooks (@wdio/cli, "user hooks
@@ -92,6 +92,24 @@ if (ownsTestHome) {
 // TMPDIR is pinned to a path inside the profile, and temp_dir() will not create
 // it. An app that cannot write scratch is a confusing failure; make it exist.
 mkdirSync(join(testHome, 'tmp'), { recursive: true })
+
+// Resolved exactly as the service resolves it -- getEmbeddedPort(): the
+// TAURI_WEBDRIVER_PORT env var, else a hardcoded 4445.
+const driverPort = Number(process.env.TAURI_WEBDRIVER_PORT) || 4445
+
+function somethingIsListening(port: number): Promise<boolean> {
+  return new Promise((done) => {
+    const socket = connect({ port, host: '127.0.0.1' })
+    const answer = (listening: boolean) => {
+      socket.destroy()
+      done(listening)
+    }
+    socket.setTimeout(1_000)
+    socket.once('connect', () => answer(true))
+    socket.once('timeout', () => answer(false))
+    socket.once('error', () => answer(false))
+  })
+}
 
 const tauriServiceOptions: TauriServiceOptions = {
   // Embedded WebDriver server (tauri-plugin-wdio-webdriver). Required on macOS,
@@ -121,4 +139,38 @@ export const config: WebdriverIO.Config = {
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
   mochaOpts: { ui: 'bdd', timeout: 120_000 },
+
+  // The embedded provider spawns the app and then polls
+  // http://127.0.0.1:<port>/status until *something* reports ready. It never
+  // checks that the responder is the process it spawned, and it does not test
+  // the port first. So if anything is already listening, the poll is satisfied
+  // instantly, the app it just spawned loses the bind, and the whole run drives
+  // the other process -- which has a different HOME. The isolation spec then
+  // fails accusing the isolation of being broken, which is the wrong diagnosis
+  // and an expensive one to chase.
+  //
+  // Two ways to get there, both ordinary: a second `yarn test` in another
+  // terminal, or an orphaned Jan-Desktop from a hard-killed run (the service
+  // spawns with detached:false, which does not tie the child's lifetime to the
+  // launcher's -- SIGKILL the launcher and the app survives holding the port).
+  //
+  // A config onPrepare is the right place: it runs in the launcher only, and
+  // @wdio/cli runs it before the service's own onPrepare, which is what does
+  // the spawning.
+  //
+  // SevereServiceError, not Error: runLauncherHook catches everything, logs it,
+  // and only rethrows `e instanceof SevereServiceError` (@wdio/cli, catchFn). A
+  // plain Error here is printed and then ignored, and the run continues into the
+  // collision this is meant to prevent -- which is exactly what it did.
+  onPrepare: async () => {
+    if (!(await somethingIsListening(driverPort))) return
+    throw new SevereServiceError(
+      `something is already listening on 127.0.0.1:${driverPort}, the port the ` +
+        'embedded WebDriver server uses. This run would drive that process ' +
+        'instead of the app it launches. Most likely another e2e run is in ' +
+        'progress, or a previous one was killed and left Jan-Desktop alive ' +
+        '(`pkill -f Jan-Desktop`). To use a different port instead, set ' +
+        'TAURI_WEBDRIVER_PORT.'
+    )
+  },
 }

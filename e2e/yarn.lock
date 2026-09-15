@@ -479,6 +479,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@janhq/e2e@workspace:."
   dependencies:
+    "@types/node": "npm:^20.11.30"
     "@wdio/cli": "npm:^9.30.0"
     "@wdio/globals": "npm:^9.30.0"
     "@wdio/local-runner": "npm:^9.30.0"

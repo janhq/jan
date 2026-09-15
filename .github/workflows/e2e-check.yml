@@ -1,5 +1,7 @@
-# e2e/ is a standalone yarn project, so no other workflow's path filter or
-# install covers it -- an e2e-only PR would otherwise trigger nothing at all.
+# e2e/ is a standalone yarn project with its own lockfile, so no other
+# workflow installs it or looks at it. rust-check.yml does run on every PR, but
+# it never touches e2e/ -- so without this, an e2e-only change would go through
+# CI entirely unvalidated.
 # This validates the harness type-checks and its lockfile is current. It does
 # NOT run the suite: that needs a full Tauri app build (~20 min cold). The suite
 # does run headless on Linux under xvfb-run, so promoting this to a real run on
