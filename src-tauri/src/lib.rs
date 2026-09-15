@@ -262,9 +262,9 @@ pub fn run() {
     // thing that touched `builder`, and a `mut` binding would then be unused --
     // which CI's `clippy -D warnings` treats as an error.
     //
-    // Not in e2e builds: single-instance keys off a TMPDIR socket on macOS (a
-    // D-Bus name on Linux, a named mutex on Windows), none of which the test
-    // harness's HOME override isolates. With a real Jan already running, the
+    // Not in e2e builds: single-instance keys off a hardcoded /tmp socket on
+    // macOS (a D-Bus name on Linux, a named mutex on Windows), none of which the
+    // test harness's HOME/XDG/TMPDIR overrides isolate. With a real Jan already running, the
     // test binary would hand over its argv and exit before the embedded
     // WebDriver server ever bound.
     #[cfg(all(desktop, not(feature = "e2e")))]

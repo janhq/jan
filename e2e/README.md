@@ -6,16 +6,21 @@ WebDriver-driven end-to-end tests against a real Jan desktop build, using
 **macOS and Linux.** Windows cannot be isolated and the config refuses to run
 there — see [Isolation](#isolation).
 
-On Linux you need the Tauri build dependencies plus a WebDriver and a display.
-`libssl-dev` is required but absent from the repo's other dependency lists —
-`openssl-sys` is in the app's default dependency graph, and GitHub runners ship
-it preinstalled, so a clean machine is the only place you notice:
+On Linux you need the Tauri build dependencies plus a display. `libssl-dev` is
+easy to miss: `openssl-sys` is in the app's default dependency graph, but GitHub
+runners ship OpenSSL preinstalled and the CI workflows never install it, so a
+clean machine is the only place the gap shows. (`.devcontainer/postCreateCommand.sh`
+does list it.)
 
 ```bash
 sudo apt-get install -y build-essential cmake pkg-config libssl-dev \
   libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev \
-  libwebkit2gtk-4.1-dev librsvg2-dev webkit2gtk-driver xvfb
+  libwebkit2gtk-4.1-dev librsvg2-dev xvfb
 ```
+
+No `webkit2gtk-driver`: the embedded provider drives the webview in-process and
+never launches `WebKitWebDriver`. You would only need it to switch to the
+`official` provider.
 
 Then run headless under Xvfb. Only the suite needs the display, so build first
 and wrap just the run:
@@ -49,6 +54,11 @@ That deps stage is not optional. The workspace packages have to be **built**,
 not just installed -- `web-app` imports `@janhq/core`, which resolves to
 `core/dist`. Without it `build:web` fails with
 `TS2307: Cannot find module '@janhq/core'`.
+
+`build:e2e:deps` is deliberately the same four steps as `Makefile:44-47`,
+including its redundant second build of `core` (`build:extensions` starts by
+building `core` again). Staying in step with the Makefile is worth more than the
+minute that would save.
 
 To iterate on specs without rebuilding the app:
 
@@ -94,9 +104,11 @@ cargo tree --manifest-path src-tauri/Cargo.toml -i tauri-plugin-wdio-webdriver
 ```
 
 The `e2e` feature also disables `tauri-plugin-single-instance`. Its rendezvous
-is a `TMPDIR` socket on macOS, a session-bus **D-Bus name** on Linux, and a named
-mutex on Windows — none of which live under `HOME` or any XDG directory, so
-nothing in `isolationEnv` isolates them. A developer with the real Jan open would
+is a hardcoded `/tmp/{identifier}_si.sock` on macOS (`platform_impl/macos.rs` —
+literally `/tmp`, not `$TMPDIR`, because the path must stay under 100 chars), a
+session-bus **D-Bus name** on Linux, and a named mutex on Windows. None live
+under `HOME` or any XDG directory, and the macOS socket ignores the pinned
+`TMPDIR` too, so nothing in `isolationEnv` isolates them. A developer with the real Jan open would
 otherwise see the test binary hand over its argv and exit before the WebDriver
 server ever bound.
 

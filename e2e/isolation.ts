@@ -18,6 +18,14 @@ import { join } from 'node:path'
  * inherited, a run DELETES the developer's real ~/.config/Jan/settings.json.
  * Confirmed against a decoy: the file did not survive one run.
  *
+ * TMPDIR is pinned on both platforms, not just Linux. `std::env::temp_dir()`
+ * reads it on Unix, and tauri-plugin-agent-tools puts agent scratch at
+ * `temp_dir()/jan-agent-<session>` -- then sweep_stale_scratch_dirs()
+ * (workspace.rs) DELETES every `jan-agent-*` older than 24h it finds there. The
+ * current smoke suite never reaches that sweep (it is gated on an existing
+ * thread, and a fresh profile has none), so this is pre-emptive rather than a
+ * live bug. It stops being pre-emptive the moment a spec creates a thread.
+ *
  * Deliberately absent:
  * - XDG_DATA_DIRS / XDG_CONFIG_DIRS: read-only system paths; overriding them
  *   breaks GTK schema and theme lookup.
@@ -25,9 +33,12 @@ import { join } from 'node:path'
  *   isolated, which is an accepted gap rather than an oversight.
  */
 export function isolationEnv(home: string): Record<string, string> {
-  if (process.platform !== 'linux') return { HOME: home }
+  // Callers must ensure TMPDIR exists: temp_dir() does not create it.
+  const tmp = join(home, 'tmp')
+  if (process.platform !== 'linux') return { HOME: home, TMPDIR: tmp }
   return {
     HOME: home,
+    TMPDIR: tmp,
     XDG_DATA_HOME: join(home, '.local', 'share'),
     XDG_CONFIG_HOME: join(home, '.config'),
     XDG_STATE_HOME: join(home, '.local', 'state'),

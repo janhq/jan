@@ -1,8 +1,7 @@
-import { browser, expect, $ } from '@wdio/globals'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 
-// Side-effect-free by design, so importing it here does not re-run the profile
-// creation that wdio.conf.ts does at module scope.
-import { isolationEnv } from '../isolation.js'
+import { browser, expect, $ } from '@wdio/globals'
 
 // The worker inherits this from the launcher; see wdio.conf.ts. Read from the
 // environment rather than importing the config, so the spec does not trigger a
@@ -78,22 +77,29 @@ describe('Jan desktop app', () => {
   })
 })
 
-// Not a UI test: a regression guard for a destructive bug. Before isolation.ts
-// pinned XDG_CONFIG_HOME, a run deleted the developer's real
-// ~/.config/Jan/settings.json through the fs::copy + fs::remove_file
-// legacy-config migration in core/app/commands.rs -- and nothing about the run
-// looked wrong while it happened. Dropping any one of these puts that back.
-describe('isolation environment', () => {
-  it('confines every XDG base directory to the throwaway profile', function () {
-    if (process.platform !== 'linux') this.skip()
-    const env = isolationEnv(testHome)
-    for (const key of [
-      'XDG_DATA_HOME',
-      'XDG_CONFIG_HOME',
-      'XDG_STATE_HOME',
-      'XDG_CACHE_HOME',
-    ]) {
-      expect(env[key]).toEqual(expect.stringContaining(testHome))
-    }
+// The regression guard for the destructive bug. Asserting on isolationEnv()
+// directly would be tautological -- it returns join(home, ...), so checking the
+// result contains `home` proves nothing, and would still pass if wdio.conf.ts
+// stopped passing that env to the app at all.
+//
+// This asserts the opposite end: a file the Rust side wrote, at a path the Rust
+// side resolved through dirs::data_dir(). It only exists here if the overridden
+// environment actually reached the app process.
+describe('on-disk isolation', () => {
+  it('wrote its config inside the throwaway profile', async () => {
+    // app_data_dir_with_fallback() -> data_dir()/Jan, + CONFIGURATION_FILE_NAME
+    // (core/app/commands.rs, core/app/constants.rs).
+    const settings =
+      process.platform === 'darwin'
+        ? join(testHome, 'Library/Application Support/Jan/settings.json')
+        : join(testHome, '.local/share/Jan/settings.json')
+
+    await browser.waitUntil(() => existsSync(settings), {
+      timeout: 30_000,
+      timeoutMsg:
+        `the app never wrote ${settings}. Either it resolved data_dir() ` +
+        'outside the throwaway profile -- which is the isolation failing -- or ' +
+        'the config path changed in core/app/commands.rs.',
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service'
@@ -58,8 +58,11 @@ if (!existsSync(appBinary)) {
 // is used but never removed.
 const inheritedHome = process.env.JAN_E2E_HOME
 const ownsTestHome = !inheritedHome
-const testHome =
-  inheritedHome ?? mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-'))
+// resolve() because `dirs` silently ignores a relative XDG value and falls back
+// to its $HOME-relative default -- which, with a relative HOME, is also relative.
+const testHome = inheritedHome
+  ? resolve(inheritedHome)
+  : mkdtempSync(join(realpathSync(tmpdir()), 'jan-e2e-'))
 process.env.JAN_E2E_HOME = testHome
 
 export const testHomeForSpecs = testHome
@@ -85,6 +88,10 @@ if (ownsTestHome) {
   // down -- the race the comment above exists to avoid. Ctrl-C therefore leaks
   // one directory under the OS temp root, which is the cheaper failure.
 }
+
+// TMPDIR is pinned to a path inside the profile, and temp_dir() will not create
+// it. An app that cannot write scratch is a confusing failure; make it exist.
+mkdirSync(join(testHome, 'tmp'), { recursive: true })
 
 const tauriServiceOptions: TauriServiceOptions = {
   // Embedded WebDriver server (tauri-plugin-wdio-webdriver). Required on macOS,
