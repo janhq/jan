@@ -188,9 +188,7 @@ export const TerminalWidget = memo(
               $
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap wrap-break-word text-foreground">
-              {bar.jobId && !bar.command
-                ? t('tools:toolCall.pollingJob', { id: bar.jobId })
-                : bar.command}
+              {bar.command}
               {running && <Caret />}
             </span>
           </div>

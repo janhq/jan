@@ -8,6 +8,7 @@ import {
   memoryRead,
   subagentResultReserve,
   subagentResultFill,
+  blackboardWrite,
   attachmentImport,
   startMonitor,
   stopMonitor,
@@ -436,6 +437,36 @@ export async function fillSubagentResult(
   } catch (e) {
     console.warn('[agentTools] Failed to save subagent result:', messageOf(e))
     return false
+  }
+}
+
+/**
+ * The model-visible blackboard directory on Linux only, where the session
+ * scratch is bound over `/tmp` (see `scratch_display_path`, whose `/tmp`
+ * mapping is gated on `target_os = "linux"`), so a finished child's answer is
+ * read from `/tmp/blackboard/<name>.md`. On macOS/Windows the scratch is a real
+ * host path, so callers must not advertise this constant there. Reported up
+ * front by the plan summary; each child's completion notice always carries the
+ * exact path `writeBlackboard` returns.
+ */
+export const BLACKBOARD_DIR_DISPLAY = '/tmp/blackboard'
+
+/**
+ * Write a finished subagent's answer to `blackboard/<name>.md` in the session
+ * scratch -- the name-keyed coordination file a phased dispatch's next phase
+ * reads. Returns the model-visible path, or `null` when no scratch is reachable
+ * (the web build), so the caller can fall back to delivering the answer inline.
+ */
+export async function writeBlackboard(
+  sessionId: string,
+  name: string,
+  content: string
+): Promise<string | null> {
+  try {
+    return await blackboardWrite(sessionId, name, content)
+  } catch (e) {
+    console.warn('[agentTools] Failed to write the blackboard:', messageOf(e))
+    return null
   }
 }
 

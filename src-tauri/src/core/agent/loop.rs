@@ -578,6 +578,34 @@ fn output_sink(
     })
 }
 
+/// The model-facing summary of a phased `dispatch_subagent` call.
+fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> String {
+    let names = d.first_phase_names.join(", ");
+    let where_answers = match &d.blackboard_dir {
+        Some(dir) => format!(
+            " Each answer is written to {dir}/<name>.md; read those files when you need them."
+        ),
+        None => " Each answer rides the note that tells you it finished.".to_string(),
+    };
+    let head = if d.phase_count > 1 {
+        format!(
+            "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running: {}. Later phases \
+             start automatically as each phase finishes, each receiving the previous phase's \
+             results.",
+            d.phase_count, d.total_subagents, names
+        )
+    } else {
+        format!(
+            "Dispatched {} subagent(s) running concurrently in the background: {}.",
+            d.total_subagents, names
+        )
+    };
+    format!(
+        "{head}{where_answers} These tasks are the subagents' now -- do not do them yourself; \
+         you'll be pinged as each finishes."
+    )
+}
+
 impl CompositeToolInvoker {
     /// Whether the monitors owe the model something the run must stay alive
     /// for: any queued ping, plus a still-running watcher when the set dies
@@ -678,7 +706,8 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
+            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
         let Some(ctx) = &self.subagents else {
@@ -690,14 +719,14 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let req = match parse_dispatch_args(args) {
-                    Ok(r) => r,
+                let plan = match parse_dispatch_plan(args) {
+                    Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
-                match spawn_subagent(
+                match spawn_dispatch_plan(
                     &ctx.bg,
                     &ctx.parent_args,
-                    req,
+                    plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
@@ -708,21 +737,7 @@ impl CompositeToolInvoker {
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
                 ) {
-                    Ok(d) => match d.display_path {
-                        Some(path) => format!(
-                            "Subagent started in the background. run_id={}. Its answer will be \
-                             written to {path}; you will be told when it lands, so keep working \
-                             rather than waiting. Read that file when you need the answer, or \
-                             call await_subagent with this run_id to block until it is ready.",
-                            d.run_id
-                        ),
-                        None => format!(
-                            "Subagent started in the background. run_id={}. You will be told when \
-                             it finishes; keep working, then call await_subagent with this run_id \
-                             to collect its result.",
-                            d.run_id
-                        ),
-                    },
+                    Ok(d) => format_dispatched_plan(&d),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -1659,6 +1674,13 @@ fn advertise_local_tools(
                     if permissions.is_denied(name) {
                         continue;
                     }
+                    // await_subagent is not advertised: a finished child's note
+                    // already carries its answer (inline, or a file path to
+                    // read), so blocking to collect is redundant. The handler
+                    // stays (recognized + executable) so a named call still works.
+                    if name == "await_subagent" {
+                        continue;
+                    }
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;
@@ -2159,9 +2181,9 @@ async fn orchestrate_inner(
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
-            *max_parallel_subagents,
-        ));
+        let bg = std::sync::Arc::new(
+            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
+        );
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -3023,6 +3045,7 @@ async fn run_turn_cycle(
                 );
             }
         }
+
         turn += 1;
     }
 
@@ -6524,10 +6547,10 @@ mod tests {
     }
 
     /// `bash` hands its child to a detached task that keeps the output sink
-    /// alive after the call has returned its `job_id`. The sink must not keep
-    /// the run's event channel open with it: every consumer of that channel --
-    /// the desktop forwarder, the headless printer, a subagent's forwarder --
-    /// finishes only when the channel closes.
+    /// alive after the call has backgrounded. The sink must not keep the run's
+    /// event channel open with it: every consumer of that channel -- the desktop
+    /// forwarder, the headless printer, a subagent's forwarder -- finishes only
+    /// when the channel closes.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
@@ -6546,7 +6569,7 @@ mod tests {
         .await
         .0;
         assert!(
-            out.contains("job_id=bash-"),
+            out.contains("still running in the background"),
             "expected a backgrounded job, got: {out}"
         );
 

@@ -1,6 +1,6 @@
 [package]
 name = "jan-cli"
-version = "0.8.4"
+version = "0.8.5"
 description = "Headless CLI for Jan: chat with remote AI models in an interactive agent console."
 authors = ["Jan <service@jan.ai>"]
 license = "MIT"

@@ -176,6 +176,9 @@ export function buildCoworkSystemPrompt(opts: CoworkPromptOptions): string {
         'research sweep, working through many files, generating and then',
         'verifying a large output. Delegating keeps your own context focused on',
         'the plan, and a backgrounded subagent works while you continue.',
+        'Once you hand a task to a subagent it is theirs -- do not do that same',
+        'work yourself; spend the time on other steps and use its answer when it',
+        'arrives.',
         `Available: ${opts.subagentNames.join(', ')}.`,
       ].join('\n')
     )
@@ -197,8 +200,15 @@ export function buildSubagentSystemPrompt(
   definitionPrompt: string,
   // No memory catalog: a child runs one stated errand, so recall is the
   // dispatching agent's job -- it reads the note and states what matters.
-  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames' | 'memoryCatalog'>
+  opts: Omit<CoworkPromptOptions, 'planMode' | 'subagentNames' | 'memoryCatalog'>,
+  // The child's own name, so it can tell it is a lone agent on one errand
+  // rather than a worker that should wait on the shared queue (parity with the
+  // CLI's `child_system_prompt`).
+  name?: string
 ): string {
+  const who = name
+    ? `You are the subagent \`${name}\`, running one errand.`
+    : 'You are a subagent running one errand.'
   return [
     definitionPrompt.trim(),
     ...(opts.environment ? [environmentBlock(opts.environment)] : []),
@@ -207,7 +217,7 @@ export function buildSubagentSystemPrompt(
     [
       '# Scope',
       '',
-      'You are a subagent running one errand. You cannot see the conversation',
+      `${who} You cannot see the conversation`,
       'that dispatched you, cannot ask the user questions, and cannot dispatch',
       'subagents of your own. Your final message is the whole answer returned to',
       'the agent that called you, so make it self-contained.',

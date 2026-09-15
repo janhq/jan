@@ -296,6 +296,25 @@ export async function subagentResultFill(
   })
 }
 
+/**
+ * Write a finished subagent's answer to `<scratch>/blackboard/<name>.md` -- the
+ * predictable, name-keyed coordination file a phased dispatch's next phase and
+ * sibling agents read. Reserve + fill in one call (written only after the child
+ * finishes). A re-dispatch of the same name truncates the earlier file in place.
+ * Returns the model-visible path.
+ */
+export async function blackboardWrite(
+  threadId: string,
+  name: string,
+  content: string
+): Promise<string> {
+  return await invoke('plugin:agent-tools|blackboard_write', {
+    threadId,
+    name,
+    content,
+  })
+}
+
 /** An attachment copied into a session workspace. */
 export type ImportedAttachment = {
   /** The copy inside the workspace, readable by the agent's file tools. */

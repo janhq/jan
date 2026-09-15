@@ -54,6 +54,22 @@ describe('CoworkTasksChip', () => {
     ).toBeInTheDocument()
   })
 
+  /// A later-phase subagent is registered up front as `waiting`; it is pending
+  /// work, so it counts against the active total like a running child.
+  it('counts a waiting later-phase child as active', () => {
+    render(
+      <CoworkTasksChip
+        subagents={[run('a', 'running'), run('b', 'waiting')]}
+        open={false}
+        onToggle={vi.fn()}
+      />
+    )
+    expect(screen.getByText('2/2')).toBeInTheDocument()
+    expect(
+      screen.getByLabelText('common:subagentsRunning 2')
+    ).toBeInTheDocument()
+  })
+
   /// A watcher is background work like a child: it counts, and it is enough
   /// on its own to show the chip.
   it('counts running monitors as background work', () => {

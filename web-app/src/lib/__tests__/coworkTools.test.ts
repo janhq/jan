@@ -151,11 +151,28 @@ describe('allowedToolNames', () => {
     expect(out).toEqual(['read'])
   })
 
-  /// The dispatch that fails is the first one of every fan-out: a model reaches
-  /// for a descriptive name long before it has saved a definition, and a schema
-  /// that mentions `system_prompt` only in passing gets it omitted.
-  describe('the task schema states the one-off rule', () => {
-    it('says which combination fails, on the field filled in first', async () => {
+  /// The flat schema: `{ subagents: [ {name, task, phase?, allowed_tools?} ] }`,
+  /// with no system_prompt and no unknown-name failure (an unknown name is an
+  /// ephemeral generalist). One optional per-subagent `phase` pipelines them.
+  describe('the task schema is a flat subagents array with an optional phase', () => {
+    type TaskSchema = {
+      description: string
+      inputSchema: {
+        jsonSchema: {
+          required?: string[]
+          properties: {
+            subagents: {
+              items: {
+                required?: string[]
+                properties: Record<string, unknown>
+              }
+            }
+          }
+        }
+      }
+    }
+
+    it('requires a subagents array with name+task, an optional phase, and no system_prompt', async () => {
       const { buildCoworkTools } = await import('../coworkTools')
       const tools = await buildCoworkTools({
         planMode: false,
@@ -163,13 +180,21 @@ describe('allowedToolNames', () => {
         allowSubagents: true,
         webSearch: false,
       })
-      const task = tools['task'] as unknown as {
-        description: string
-        inputSchema: { jsonSchema: { properties: Record<string, { description?: string }> } }
-      }
-      const props = task.inputSchema.jsonSchema.properties
-      expect(props.subagent_name.description).toContain('system_prompt')
-      expect(props.system_prompt.description).toContain('Required')
+      const task = tools['task'] as unknown as TaskSchema
+      const schema = task.inputSchema.jsonSchema
+      expect(schema.required).toContain('subagents')
+      const sub = schema.properties.subagents.items
+      expect(sub.required).toEqual(['name', 'task'])
+      expect(Object.keys(sub.properties)).toEqual([
+        'name',
+        'task',
+        'phase',
+        'allowed_tools',
+      ])
+      // The one-off vocabulary is gone entirely.
+      const serialized = JSON.stringify(schema)
+      expect(serialized).not.toContain('system_prompt')
+      expect(serialized).not.toContain('subagent_name')
       expect(task.description).toContain('No saved subagents yet')
     })
 

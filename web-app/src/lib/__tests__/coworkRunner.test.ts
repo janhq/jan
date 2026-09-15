@@ -17,6 +17,7 @@ import {
 } from '../coworkRunner'
 import { MAX_SESSION_TOKENS } from '../coworkBudget'
 import { encodeToolImageSentinel } from '../tool-image-sentinel'
+import { coworkTurnsToUIMessages } from '../coworkTurns'
 
 const streamOf = (chunks: UIMessageChunk[]): ReadableStream<UIMessageChunk> =>
   new ReadableStream({
@@ -122,6 +123,35 @@ describe('consumeStep', () => {
       noopSink()
     )
     expect(r.errorText).toBe('boom')
+  })
+
+  it('preserves finish metadata through the rendered transcript', async () => {
+    const tokenSpeed = {
+      tokenSpeed: 42.5,
+      promptSpeed: 120,
+      tokenCount: 300,
+      durationMs: 7000,
+    }
+    const r = await consumeStep(
+      streamOf([
+        { type: 'text-delta', id: 't', delta: 'hi' } as UIMessageChunk,
+        {
+          type: 'finish',
+          messageMetadata: {
+            finishReason: 'stop',
+            usage: { inputTokens: 10, outputTokens: 300, totalTokens: 310 },
+            tokenSpeed,
+          },
+        } as unknown as UIMessageChunk,
+      ]),
+      noopSink()
+    )
+    expect(r.usage?.total_tokens).toBe(310)
+    const messages = coworkTurnsToUIMessages(turnsFor(r, new Map()))
+    expect(messages[0].metadata).toMatchObject({
+      finishReason: 'stop',
+      tokenSpeed,
+    })
   })
 })
 

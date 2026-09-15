@@ -53,6 +53,15 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       channel: agent-nightly
 
+  build-windows-arm64:
+    uses: ./.github/workflows/template-cli-build-windows-arm64.yml
+    needs: [get-update-version, resolve-ref]
+    secrets: inherit
+    with:
+      ref: ${{ needs.resolve-ref.outputs.ref }}
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      channel: agent-nightly
+
   build-linux-aarch64:
     uses: ./.github/workflows/template-cli-build-linux-aarch64.yml
     needs: [get-update-version, resolve-ref]
@@ -63,8 +72,26 @@ jobs:
       channel: agent-nightly
 
   sync-manifest:
-    needs: [get-update-version, build-linux-x64, build-macos, build-windows-x64, build-linux-aarch64]
+    needs:
+      [
+        get-update-version,
+        build-linux-x64,
+        build-macos,
+        build-windows-x64,
+        build-windows-arm64,
+        build-linux-aarch64,
+      ]
     runs-on: ubuntu-22.04
+    # build-windows-arm64 is here for its outputs, not as a gate -- see the
+    # ARM_SHA branch below. Every other dependency is re-asserted by hand: a
+    # status function in `if` drops the implicit success() gate for all of `needs`.
+    if: >-
+      !cancelled()
+      && needs.get-update-version.result == 'success'
+      && needs.build-linux-x64.result == 'success'
+      && needs.build-macos.result == 'success'
+      && needs.build-windows-x64.result == 'success'
+      && needs.build-linux-aarch64.result == 'success'
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +127,20 @@ jobs:
             }
           }
           MANIFEST
+
+          # Appended, not inlined: empty when the ARM64 leg failed, and a blank url
+          # is one the CLI finds and then fails to download.
+          ARM_SHA="${{ needs.build-windows-arm64.outputs.SHA256 }}"
+          if [ -n "$ARM_SHA" ]; then
+            jq --arg url "https://delta.jan.ai/agent-nightly/${{ needs.build-windows-arm64.outputs.FILE_NAME }}" \
+               --arg sha "$ARM_SHA" \
+               '.platforms["windows-aarch64"] = {url: $url, sha256: $sha}' \
+               manifest.json > /tmp/m.json
+            mv /tmp/m.json manifest.json
+          else
+            echo "::warning::no ARM64 CLI build this run -- publishing manifest.json without windows-aarch64"
+          fi
+
           cat manifest.json
 
       - name: Upload manifest to S3

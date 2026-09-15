@@ -12,18 +12,24 @@ vi.mock('ai', async (orig) => ({
 }))
 
 import {
-  dispatchedSubagentResult,
+  formatDispatchedPlan,
+  injectInputs,
   intersectAllowedTools,
-  parseSubagentRequest,
+  parseDispatchPlan,
   parentToolNames,
   resolveSubagent,
   runSubagent,
+  runDispatchPlan,
   subagentCompletionNotice,
   subagentTools,
   SubagentInbox,
   MAX_PARALLEL_SUBAGENTS,
   SUBAGENT_INLINE_MAX,
+  PHASE_INPUT_MAX_BYTES,
   __testing,
+  type DispatchPlan,
+  type SubagentRequest,
+  type SubagentResult,
 } from '../coworkSubagent'
 import type { StreamEvent } from '@/hooks/useCoworkRun'
 import { MAX_SUBAGENT_STEPS } from '../coworkBudget'
@@ -41,15 +47,41 @@ const definition = (over = {}) => ({
 })
 
 describe('the task result and its completion ping', () => {
-  it('names the file the answer will land in, and does not wait', () => {
-    const out = dispatchedSubagentResult('researcher', 'c1', '/tmp/subagents/r.md')
-    expect(out).toContain('/tmp/subagents/r.md')
-    expect(out).toContain('Keep working')
+  const single: DispatchPlan = {
+    phases: [{ number: 0, subagents: [{ name: 'researcher', description: 'go' }] }],
+  }
+  const multi: DispatchPlan = {
+    phases: [
+      {
+        number: 0,
+        subagents: [
+          { name: 'alpha', description: 'a' },
+          { name: 'beta', description: 'b' },
+        ],
+      },
+      { number: 1, subagents: [{ name: 'collector', description: 'c' }] },
+    ],
+  }
+
+  it('summarizes a single-phase fan-out and names the blackboard dir', () => {
+    const out = formatDispatchedPlan(single, '/tmp/blackboard')
+    expect(out).toContain('running concurrently')
+    expect(out).toContain('researcher')
+    expect(out).toContain('/tmp/blackboard/<name>.md')
+    expect(out).toContain('do not do them yourself')
   })
 
-  it('promises the answer itself when there is no file to point at', () => {
-    const out = dispatchedSubagentResult('researcher', 'c1', null)
-    expect(out).toContain('You will be given its answer')
+  it('names the phase count and phase-1 subagents for a multi-phase plan', () => {
+    const out = formatDispatchedPlan(multi, '/tmp/blackboard')
+    expect(out).toContain('2-phase plan of 3 subagents')
+    expect(out).toContain('Phase 1 is now running: alpha, beta')
+    expect(out).toContain('Later phases start automatically')
+  })
+
+  it('falls back to inline delivery when there is no scratch', () => {
+    const out = formatDispatchedPlan(single, null)
+    expect(out).toContain('rides the note')
+    expect(out).not.toContain('blackboard')
   })
 
   /// The row shows the headline and the model gets the instructions after it:
@@ -146,38 +178,110 @@ describe('SubagentInbox', () => {
   })
 })
 
-describe('parseSubagentRequest', () => {
-  it('requires a name and a description', () => {
-    expect(parseSubagentRequest({})).toContain('subagent_name')
-    // The child cannot see the parent's conversation, so an empty brief is a
-    // guaranteed-useless run rather than a recoverable one.
-    expect(parseSubagentRequest({ subagent_name: 'x' })).toContain(
-      'description'
-    )
+describe('parseDispatchPlan', () => {
+  it('groups a flat subagents list into ordered phases by their `phase` key', () => {
+    // Listed out of order and with a gap (0, 2); grouped and ordered, and the
+    // phase number carried is the model's own key.
+    const plan = parseDispatchPlan({
+      subagents: [
+        { name: 'c', task: 'do c', phase: 2, allowed_tools: ['read', 42] },
+        { name: 'a', task: 'do a' },
+        { name: 'b', task: 'do b', phase: 0 },
+      ],
+    })
+    expect(plan).toEqual({
+      phases: [
+        {
+          number: 0,
+          subagents: [
+            { name: 'a', description: 'do a' },
+            { name: 'b', description: 'do b' },
+          ],
+        },
+        {
+          number: 2,
+          subagents: [{ name: 'c', description: 'do c', allowed_tools: ['read'] }],
+        },
+      ],
+    })
   })
 
-  it('keeps an inline prompt and allowlist', () => {
-    const req = parseSubagentRequest({
-      subagent_name: 'oneoff',
-      description: 'do it',
-      system_prompt: 'You are terse.',
-      allowed_tools: ['read', 42, 'grep'],
-    })
-    expect(req).toEqual({
-      subagent_name: 'oneoff',
-      description: 'do it',
-      system_prompt: 'You are terse.',
-      allowed_tools: ['read', 'grep'],
-    })
+  it('fans out into a single phase when no `phase` is given', () => {
+    const plan = parseDispatchPlan({
+      subagents: [
+        { name: 'a', task: 'x' },
+        { name: 'b', task: 'y' },
+      ],
+    }) as DispatchPlan
+    expect(plan.phases).toHaveLength(1)
+    expect(plan.phases[0].number).toBe(0)
+    expect(plan.phases[0].subagents).toHaveLength(2)
   })
 
-  it('drops a blank inline prompt rather than running an empty role', () => {
-    const req = parseSubagentRequest({
-      subagent_name: 'x',
-      description: 'd',
-      system_prompt: '   ',
-    })
-    expect(req).not.toHaveProperty('system_prompt')
+  it('requires a non-empty subagents array', () => {
+    expect(parseDispatchPlan({})).toContain('subagents')
+    expect(parseDispatchPlan({ subagents: [] })).toContain('at least one')
+  })
+
+  it('requires a non-empty name and task per subagent', () => {
+    expect(parseDispatchPlan({ subagents: [{ task: 'x' }] })).toContain('name')
+    expect(parseDispatchPlan({ subagents: [{ name: 'a' }] })).toContain('task')
+  })
+
+  it('rejects an invalid name charset and an over-long name', () => {
+    expect(
+      parseDispatchPlan({ subagents: [{ name: 'a b', task: 't' }] })
+    ).toContain('invalid subagent name')
+    expect(
+      parseDispatchPlan({ subagents: [{ name: 'a'.repeat(65), task: 't' }] })
+    ).toContain('too long')
+  })
+
+  it('rejects a non-negative-integer phase', () => {
+    expect(
+      parseDispatchPlan({ subagents: [{ name: 'a', task: 't', phase: -1 }] })
+    ).toContain("invalid 'phase'")
+    expect(
+      parseDispatchPlan({ subagents: [{ name: 'a', task: 't', phase: 'later' }] })
+    ).toContain("invalid 'phase'")
+  })
+
+  it('rejects a duplicate name across the whole plan', () => {
+    expect(
+      parseDispatchPlan({
+        subagents: [
+          { name: 'dup', task: 't1' },
+          { name: 'dup', task: 't2', phase: 1 },
+        ],
+      })
+    ).toContain('duplicate subagent name')
+  })
+
+  it('treats an empty allowlist as omitted', () => {
+    const plan = parseDispatchPlan({
+      subagents: [{ name: 'a', task: 't', allowed_tools: [] }],
+    }) as DispatchPlan
+    expect(plan.phases[0].subagents[0]).not.toHaveProperty('allowed_tools')
+  })
+})
+
+describe('injectInputs', () => {
+  it('returns the task unchanged when there are no inputs', () => {
+    expect(injectInputs('do it', [])).toBe('do it')
+  })
+
+  it('prefixes the previous phase results and keeps the task last', () => {
+    const out = injectInputs('synthesize', [{ name: 'alpha', output: 'found X' }])
+    expect(out).toContain('Results from the previous phase')
+    expect(out).toContain('### alpha')
+    expect(out).toContain('found X')
+    expect(out.trimEnd().endsWith('synthesize')).toBe(true)
+  })
+
+  it('truncates a verbose input at the byte cap with a pointer to the blackboard', () => {
+    const big = 'x'.repeat(PHASE_INPUT_MAX_BYTES + 500)
+    const out = injectInputs('t', [{ name: 'beta', output: big }])
+    expect(out).toContain('truncated; read blackboard/beta.md')
   })
 })
 
@@ -235,7 +339,7 @@ describe('resolveSubagent', () => {
 
   it('uses a saved definition', () => {
     const out = resolveSubagent(
-      { subagent_name: 'researcher', description: 'go' },
+      { name: 'researcher', description: 'go' },
       [definition({ allowed_tools: ['read'], model: 'm-1' })],
       parent
     )
@@ -247,43 +351,38 @@ describe('resolveSubagent', () => {
     })
   })
 
-  it('runs a one-off from an inline prompt', () => {
+  it('resolves an unknown name to an ephemeral generalist (no error)', () => {
     const out = resolveSubagent(
-      {
-        subagent_name: 'oneoff',
-        description: 'go',
-        system_prompt: 'You are terse.',
-        allowed_tools: ['read'],
-      },
+      { name: 'designer', description: 'go', allowed_tools: ['read'] },
       [],
       parent
     )
-    expect(out).toEqual({
-      name: 'oneoff',
-      systemPrompt: 'You are terse.',
+    expect(out).toMatchObject({
+      name: 'designer',
       allowedTools: ['read', 'skill_list', 'skill_read'],
       model: null,
     })
+    // The ephemeral system prompt names the subagent and its hand-off role.
+    expect((out as { systemPrompt: string }).systemPrompt).toBe(
+      __testing.ephemeralSubagentPrompt('designer')
+    )
+    expect((out as { systemPrompt: string }).systemPrompt).toContain('designer')
   })
 
-  it('errors on an unknown name with no inline prompt', () => {
+  it('surfaces a call-site tool outside the saved definition as an error', () => {
     const out = resolveSubagent(
-      { subagent_name: 'ghost', description: 'go' },
-      [],
+      { name: 'researcher', description: 'go', allowed_tools: ['write'] },
+      [definition({ allowed_tools: ['read'] })],
       parent
     )
     expect(out).toEqual({
-      error: expect.stringContaining("unknown subagent 'ghost'"),
+      error: expect.stringContaining("outside the subagent definition's"),
     })
   })
 
   it('lets a call site narrow a saved definition', () => {
     const out = resolveSubagent(
-      {
-        subagent_name: 'researcher',
-        description: 'go',
-        allowed_tools: ['read'],
-      },
+      { name: 'researcher', description: 'go', allowed_tools: ['read'] },
       [definition({ allowed_tools: ['read', 'grep'] })],
       parent
     )
@@ -473,6 +572,48 @@ describe('runSubagent', () => {
     expect(kinds).toContain('token')
   })
 
+  // The lane renders `MessageItem` from these turns, so the child's finish
+  // metadata has to reach it or the subagent rows show no speed at all.
+  it('forwards a finished child step metadata block, before its tool results', async () => {
+    mockSteps([
+      [
+        { type: 'text-delta', delta: 'answer' },
+        { type: 'tool-input-start', toolCallId: 'c1', toolName: 'read' },
+        {
+          type: 'tool-input-available',
+          toolCallId: 'c1',
+          toolName: 'read',
+          input: { path: 'a' },
+        },
+        {
+          type: 'finish',
+          messageMetadata: {
+            usage: { totalTokens: 12 },
+            tokenSpeed: { tokenSpeed: 42.5, tokenCount: 300, durationMs: 7000 },
+          },
+        },
+      ],
+    ])
+    const opts = baseOpts()
+    await runSubagent(opts)
+    const events = (opts.events.onInner.mock.calls as [StreamEvent][]).map(
+      ([e]) => e
+    )
+    const step = events.find((e) => e.type === 'step_metadata')
+    expect(step).toMatchObject({
+      metadata: { tokenSpeed: { tokenSpeed: 42.5, tokenCount: 300 } },
+    })
+    // Before the results: the lane hangs it on the answer row, and a tool row
+    // arriving first would leave it nowhere to land.
+    const kinds = events.map((e) => e.type)
+    expect(kinds.indexOf('step_metadata')).toBeGreaterThan(
+      kinds.indexOf('tool_call')
+    )
+    expect(kinds.indexOf('step_metadata')).toBeLessThan(
+      kinds.indexOf('tool_result')
+    )
+  })
+
   it('dispatches the child tool calls', async () => {
     mockSteps([toolStep('c1', 'read', { path: 'a' }), textStep('done')])
     const opts = baseOpts()
@@ -570,5 +711,167 @@ describe('runSubagent', () => {
     // The queued child runs once a permit frees, rather than being dropped.
     expect(streamText).toHaveBeenCalledTimes(4)
     expect(queued[0].events.onStart).toHaveBeenCalled()
+  })
+})
+
+describe('runDispatchPlan', () => {
+  const okResult = (output: string): SubagentResult => ({
+    output,
+    usage: null,
+    sessionTokens: 0,
+  })
+  const req = (name: string): SubagentRequest => ({
+    name,
+    description: `do ${name}`,
+  })
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>((r) => {
+      resolve = r
+    })
+    return { promise, resolve }
+  }
+  const flush = async () => {
+    for (let i = 0; i < 15; i += 1) await Promise.resolve()
+  }
+
+  // Mirrors the Rust `a_later_phase_starts_after_the_earlier_one_with_its_results`.
+  it('starts a later phase only after the earlier one finished, with its results injected', async () => {
+    const plan: DispatchPlan = {
+      phases: [
+        { number: 0, subagents: [req('alpha'), req('beta')] },
+        { number: 1, subagents: [req('collector')] },
+      ],
+    }
+    const order: string[] = []
+    const briefs: Record<string, string> = {}
+    const gateA = deferred()
+    const gateB = deferred()
+
+    const done = runDispatchPlan(plan, 'c1', {
+      runOne: async (r, description) => {
+        order.push(`start:${r.name}`)
+        briefs[r.name] = description
+        if (r.name === 'alpha') await gateA.promise
+        if (r.name === 'beta') await gateB.promise
+        order.push(`end:${r.name}`)
+        return okResult(`${r.name} findings`)
+      },
+      writeBlackboard: async (name) => `/tmp/blackboard/${name}.md`,
+      onDispatch: () => {},
+      onComplete: () => {},
+    })
+
+    await flush()
+    // Phase 1 is dispatched; phase 2 must not have started yet.
+    expect(order).toContain('start:alpha')
+    expect(order).toContain('start:beta')
+    expect(order).not.toContain('start:collector')
+
+    gateA.resolve()
+    gateB.resolve()
+    await done
+
+    const collector = order.indexOf('start:collector')
+    expect(collector).toBeGreaterThan(-1)
+    expect(order.indexOf('end:alpha')).toBeLessThan(collector)
+    expect(order.indexOf('end:beta')).toBeLessThan(collector)
+
+    // The collector's brief carries phase 1's blackboard results.
+    expect(briefs.collector).toContain('Results from the previous phase')
+    expect(briefs.collector).toContain('alpha findings')
+    expect(briefs.collector).toContain('beta findings')
+  })
+
+  it('keys each subagent `${callId}-${name}` and writes real answers to the blackboard', async () => {
+    const dispatched: string[] = []
+    const writes: string[] = []
+    await runDispatchPlan(
+      { phases: [{ number: 0, subagents: [req('alpha')] }] },
+      'call-9',
+      {
+        runOne: async () => okResult('the answer'),
+        writeBlackboard: async (name, content) => {
+          writes.push(`${name}:${content}`)
+          return `/tmp/blackboard/${name}.md`
+        },
+        onDispatch: (id) => dispatched.push(id),
+        onComplete: () => {},
+      }
+    )
+    expect(dispatched).toEqual(['call-9-alpha'])
+    expect(writes).toEqual(['alpha:the answer'])
+  })
+
+  it('proceeds past a failed child and does not write its blackboard', async () => {
+    const writes: string[] = []
+    const completed: { name: string; savedPath: string | null }[] = []
+    await runDispatchPlan(
+      {
+        phases: [
+          { number: 0, subagents: [req('flaky')] },
+          { number: 1, subagents: [req('next')] },
+        ],
+      },
+      'c1',
+      {
+        runOne: async (r) =>
+          r.name === 'flaky'
+            ? { output: 'boom', usage: null, isError: true, sessionTokens: 0 }
+            : okResult('ok'),
+        writeBlackboard: async (name) => {
+          writes.push(name)
+          return `/tmp/blackboard/${name}.md`
+        },
+        onDispatch: () => {},
+        onComplete: (_id, name, _res, savedPath) =>
+          completed.push({ name, savedPath }),
+      }
+    )
+    expect(completed).toEqual([
+      { name: 'flaky', savedPath: null },
+      { name: 'next', savedPath: '/tmp/blackboard/next.md' },
+    ])
+    expect(writes).toEqual(['next'])
+  })
+
+  // The plan hold keeps inbox.pending() true across the phase boundary, even if
+  // the run loop drains every ping the instant a child finishes.
+  it('keeps the run alive across the whole plan via the plan hold', async () => {
+    const inbox = new SubagentInbox()
+    const plan: DispatchPlan = {
+      phases: [
+        { number: 0, subagents: [req('alpha'), req('beta')] },
+        { number: 1, subagents: [req('collector')] },
+      ],
+    }
+    let planDone = false
+    const observations: boolean[] = []
+    inbox.begin() // the plan hold, taken at dispatch
+
+    const drainer = (async () => {
+      for (;;) {
+        await inbox.wait()
+        inbox.take()
+        observations.push(inbox.pending())
+        if (planDone) break
+      }
+    })()
+
+    await runDispatchPlan(plan, 'c1', {
+      runOne: async (r) => okResult(`${r.name} out`),
+      writeBlackboard: async (name) => `/tmp/blackboard/${name}.md`,
+      onDispatch: () => inbox.begin(),
+      onComplete: (_id, name) => inbox.finish({ headline: name, text: name }),
+    })
+    planDone = true
+    inbox.abandon() // release the plan hold, as the finally in onTask does
+    await drainer
+
+    // Every drain while the plan ran saw work outstanding; only the final drain
+    // (after the hold released) reads idle.
+    expect(observations.length).toBeGreaterThan(0)
+    expect(observations.slice(0, -1).every((p) => p === true)).toBe(true)
+    expect(observations.at(-1)).toBe(false)
   })
 })
