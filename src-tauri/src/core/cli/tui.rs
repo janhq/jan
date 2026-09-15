@@ -40,6 +40,7 @@ mod theme;
 
 use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
+    reasoning_tail_lines,
 };
 
 use super::agent_status::AgentStatusReporter;
@@ -433,6 +434,15 @@ enum PickerKind {
     /// One MCP server's detail screen: the info block plus the actions that
     /// apply to it (see `open_mcp_detail`). Reached with Enter from `ToggleMcp`.
     McpServer,
+    /// `/agents`: the live fan-out inspector. Lists every running subagent with
+    /// its stats and current activity, rebuilt from `App::subagents` each frame.
+    Agents,
+    /// One subagent's detail: its stats, brief, and collapsed call history.
+    /// Reached with Enter from `Agents`; Esc steps back to the list.
+    AgentDetail,
+    /// `/shells`: the background-shell inspector. Lists commands the `bash` tool
+    /// detached (outran their timeout, still running), each stoppable with `x`.
+    BackgroundShells,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -461,6 +471,9 @@ impl Picker {
             PickerKind::Todo => " todo ",
             PickerKind::PluginSelect => " install plugins ",
             PickerKind::McpServer => " mcp server ",
+            PickerKind::Agents => " subagents ",
+            PickerKind::AgentDetail => " subagent ",
+            PickerKind::BackgroundShells => " background shells ",
         }
     }
 
@@ -481,6 +494,9 @@ impl Picker {
             PickerKind::Todo => " ↑/↓ select   d done   x abandon   r remove   Esc close",
             PickerKind::PluginSelect => " ↑/↓ select   Space toggle   Enter install   Esc cancel",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
+            PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
+            PickerKind::AgentDetail => " Esc back",
+            PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
         }
     }
 }
@@ -927,6 +943,10 @@ struct GroupedCall {
     content: Option<String>,
     is_error: bool,
     diff: Option<String>,
+    /// Raw shell command, retained so the live terminal box can keep showing it
+    /// (and its output) after the result lands -- until the group folds. `None`
+    /// for non-shell calls, which contribute no box.
+    command: Option<String>,
 }
 
 /// A run of consecutive collapsible tool calls folded into one transcript row.
@@ -1004,8 +1024,16 @@ impl ToolGroup {
             }
             .into();
         }
+        // An aborted single call that never resolved keeps its present-tense
+        // `activity()` label: `first_done` ("Ran: cargo build") beside the yellow
+        // interrupted mark would read as completed. Mirrors the standalone
+        // edit/write orphan path (resolve_orphan_tool_rows).
         let label = if self.nouns.len() <= 1 {
-            self.first_done.clone()
+            if state == GroupRow::Aborted && self.is_running() {
+                self.activity()
+            } else {
+                self.first_done.clone()
+            }
         } else {
             group_summary(&self.nouns)
         };
@@ -1394,6 +1422,14 @@ struct ReasoningBlock {
     idx: usize,
     /// Full dimmed reasoning lines, revealed when expanded.
     detail: Vec<Line<'static>>,
+    /// The raw reasoning text, so the lingering step can render the same bounded
+    /// scrolling tail (`reasoning_tail_lines`) the live stream did, re-wrapped at
+    /// the draw width.
+    source: String,
+    /// When the block was committed, so the newest step can linger expanded for
+    /// `REASONING_FOLD_AFTER` before folding to its summary. Not journaled: a
+    /// replayed block is history and folds immediately.
+    committed: Instant,
 }
 
 /// A "trace": a maximal contiguous run of committed reasoning-summary and
@@ -1729,28 +1765,17 @@ struct App {
     /// syntax-highlighted for the right language. Removed as results arrive.
     diff_paths: HashMap<String, String>,
     /// Command of each in-flight `bash` call, keyed by call id, kept only until
-    /// its result lands -- which is where a job id would appear.
+    /// its result lands. Labels a running shell row with the work it is doing.
     bash_commands: HashMap<String, String>,
-    /// Commands the `bash` tool backgrounded, keyed by the `job_id` it handed
-    /// out. The later call that collects a job carries only that id, and blocks
-    /// until the command finishes, so without this its row -- live for as long
-    /// as the command runs -- has nothing to name.
-    bash_jobs: HashMap<String, String>,
     /// Output streamed by each `bash` call so far, keyed by call id, bounded to
     /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
     /// command from a spinner into a terminal.
     live_output: HashMap<String, String>,
-    /// Maps the call that *collects* a backgrounded job to the call that
-    /// *started* it. The job keeps streaming under the original id, so without
-    /// this the collecting call -- the one the user is actually waiting on --
-    /// would show an empty box while the output piled up out of sight.
-    live_alias: HashMap<String, String>,
-    /// Call id that started each backgrounded job, keyed by `job_id`.
-    job_origin: HashMap<String, String>,
-    /// Job ids of `bash` commands still detached in the background: added when a
-    /// result reports its command backgrounded, removed when a later call
-    /// collects that job. Its count drives the status-bar shell indicator.
-    active_bg_jobs: std::collections::HashSet<String>,
+    /// Background shells the `bash` tool has detached, refreshed from the process
+    /// registry once per frame in the render loop (never in `draw`, so tests are
+    /// not coupled to that process-global state). Drives the `/shells` inspector
+    /// and the footer chip; the row that stops one reads the pid off it.
+    bg_shells: Vec<tauri_plugin_agent_tools::tools::proc::ShellInfo>,
     /// Base snapshot (working-tree state before the first turn) for the active
     /// thread. `Some` once snapshotting is armed; `None` = no workspace restore.
     base_snapshot: Option<String>,
@@ -1921,6 +1946,10 @@ struct App {
     /// rows are its actions. Held on `App` rather than in the picker so a job
     /// landing later (a tool list, a finished sign-in) can update it in place.
     mcp_detail: Option<McpDetail>,
+    /// The run_id the `/agents` inspector is drilled into, or `None` at the
+    /// list. The detail renders live from `App::subagents` by this id, so a
+    /// finishing child updates (or empties) the screen in place.
+    agent_detail: Option<String>,
     /// MCP work handed to the loop to run off the render loop. Taken once.
     mcp_job_request: Option<McpJob>,
     /// An OAuth sign-in in flight, shown in place on the `/mcp` screen and as a
@@ -2249,6 +2278,12 @@ const WORD_ROTATE_FRAMES: usize = 60;
 /// header for the rest of the turn once the model gets back to work.
 const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 
+/// How long the newest reasoning step stays expanded after it commits before it
+/// folds to its `reasoned for Ns` summary. The next step (a tool call) starts at
+/// that same moment, so this is the grace window that makes the fold read as a
+/// transition rather than the thought vanishing the instant the tool runs.
+const REASONING_FOLD_AFTER: Duration = Duration::from_secs(4);
+
 /// Live rolling view of an in-flight subagent's tool calls. The panel shows only
 /// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
 /// the finished summary row can expand back to every call (Ctrl-O).
@@ -2280,6 +2315,13 @@ struct SubagentPanel {
     queued: bool,
     /// 1-based position in the queue at the time the child was queued.
     waiting: u32,
+    /// True for a later-phase subagent named by `SubagentPlan` that has not
+    /// started yet: it is waiting on the phase before it. Flipped off when its
+    /// own `SubagentStart`/`SubagentQueued` arrives (matched by name).
+    pending: bool,
+    /// 1-based phase this subagent belongs to, for phases past the first. `None`
+    /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
+    phase: Option<u32>,
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -2387,11 +2429,8 @@ impl App {
             turn_touched: Vec::new(),
             diff_paths: HashMap::new(),
             bash_commands: HashMap::new(),
-            bash_jobs: HashMap::new(),
             live_output: HashMap::new(),
-            live_alias: HashMap::new(),
-            job_origin: HashMap::new(),
-            active_bg_jobs: std::collections::HashSet::new(),
+            bg_shells: Vec::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
             snap_queue: std::collections::VecDeque::new(),
@@ -2451,6 +2490,7 @@ impl App {
             context_request: false,
             mcp_prompt: None,
             mcp_detail: None,
+            agent_detail: None,
             mcp_job_request: None,
             mcp_auth: None,
             mcp_auth_cancel: false,
@@ -2723,10 +2763,17 @@ impl App {
         // How long this turn's reasoning took, for the `Thought for Ns` label:
         // an open block being closed by this flush (a mid-block tool call) is
         // still timing on `thinking_since`; one that closed earlier (prose
-        // arrived) stashed its elapsed in `thought_for`. `thought_for` is left
-        // for the header badge; only `thinking_since` is cleared here.
-        let reasoning_dur = self.thinking_since.map(|s| s.elapsed()).or(self.thought_for);
-        self.thinking_since = None;
+        // arrived) stashed its elapsed in `thought_for`.
+        let open = self.thinking_since.take();
+        let reasoning_dur = open.map(|s| s.elapsed()).or(self.thought_for);
+        // A block still open at flush time is closed by this flush (a reason ->
+        // tool turn): stamp the header badge state so it shows `[thought for Ns]`
+        // exactly as a reason -> answer turn does, where a content Token stamps
+        // it. A block that closed earlier already stamped itself.
+        if let Some(started) = open {
+            self.thought_for = Some(started.elapsed());
+            self.thought_for_since = Some(Instant::now());
+        }
         // No-op (and, crucially, don't finalize the tool group) on an empty or
         // whitespace-only turn, so silent consecutive tool calls keep folding.
         if !assistant_has_content(&prose, &segs) {
@@ -2755,7 +2802,17 @@ impl App {
         segs: &[ReasoningSeg],
         reasoning_dur: Option<Duration>,
     ) {
-        for (reasoning, seg) in assistant_runs(prose, segs) {
+        let runs = assistant_runs(prose, segs);
+        // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
+        // when the turn has one reasoning block; stamping it on each of several
+        // would misreport all but one (per-block timing is not tracked). With
+        // more than one, they fall back to a plain `Thought`.
+        let single_reasoning = runs
+            .iter()
+            .filter(|(reasoning, seg)| *reasoning && !seg.trim().is_empty())
+            .count()
+            == 1;
+        for (reasoning, seg) in runs {
             // Only answer prose can carry an injected `<system>` block; stripping
             // per run rather than over the whole turn keeps the reasoning
             // offsets meaningful.
@@ -2778,9 +2835,15 @@ impl App {
                 if self.show_reasoning {
                     self.transcript.extend(detail.into_iter().map(Row::line));
                 } else {
-                    self.push(reasoning_summary_row(reasoning_dur));
+                    let dur = single_reasoning.then_some(reasoning_dur).flatten();
+                    self.push(reasoning_summary_row(dur));
                     let idx = self.transcript.len() - 1;
-                    self.reasoning_blocks.push(ReasoningBlock { idx, detail });
+                    self.reasoning_blocks.push(ReasoningBlock {
+                        idx,
+                        detail,
+                        source: seg.clone(),
+                        committed: Instant::now(),
+                    });
                 }
             } else {
                 // Kept as source: the markdown re-wraps at the draw width, so a
@@ -2808,6 +2871,9 @@ impl App {
             content: None,
             is_error: false,
             diff: None,
+            // Set for shell calls (track_bash_command ran first). Kept on the call
+            // so the terminal box survives the result clearing `bash_commands`.
+            command: self.bash_commands.get(id).cloned(),
         };
         let extend = self
             .tool_group
@@ -2921,66 +2987,10 @@ impl App {
         runs
     }
 
-    /// The current turn's *settled* steps, folded behind the live frontier so the
-    /// condensed view shows only the step in flight. The settled steps are the
-    /// reasoning-summary and tool-group rows after the last answer that are not
-    /// the running box. Folds whenever the run is still live: while a step is
-    /// mid-flight (a running command, a tool call typing its args, or streaming
-    /// reasoning/answer) *and* in the gap between one step finishing and the next
-    /// starting -- that gap is what left a whole run of finished steps rendered
-    /// during streaming. `None` once the run is idle with nothing streaming, or
-    /// with nothing settled to fold yet. A continuing frontier folds even a lone
-    /// step; a bare gap or a streaming answer needs 2+ (matching the finished
-    /// fold) so a single-step turn does not fold then un-fold as it wraps up.
-    fn active_fold(&self) -> Option<TraceRun> {
-        let running = self
-            .tool_group
-            .as_ref()
-            .filter(|g| g.is_running())
-            .map(|g| g.idx);
-        let starting = !self.starting.is_empty();
-        let reasoning_frontier = self.reasoning_open() || !self.reasoning_segs.is_empty();
-        let answer_frontier = !reasoning_frontier && has_answer_text(&self.assistant_buf);
-        let continuing = running.is_some() || starting || reasoning_frontier;
-        let run_active = self.status == Status::Running;
-        if !continuing && !answer_frontier && !run_active {
-            return None;
-        }
-        let last_answer = self.last_answer_idx();
-        let mut settled: Vec<(usize, bool)> = Vec::new();
-        for g in &self.groups {
-            settled.push((g.idx, true));
-        }
-        for r in &self.reasoning_blocks {
-            settled.push((r.idx, false));
-        }
-        // A finished-but-not-yet-closed command is a settled prior step too once
-        // the frontier has moved past it (reasoning is streaming below).
-        if let Some(g) = &self.tool_group {
-            if !g.is_running() {
-                settled.push((g.idx, true));
-            }
-        }
-        settled.retain(|(i, _)| last_answer.is_none_or(|a| *i > a) && Some(*i) != running);
-        let min_steps = if continuing { 1 } else { 2 };
-        if settled.len() < min_steps {
-            return None;
-        }
-        settled.sort_by_key(|(i, _)| *i);
-        let tool_ran = running.is_some() || starting || settled.iter().any(|(_, t)| *t);
-        Some(TraceRun {
-            start: settled[0].0,
-            end: settled.last().unwrap().0,
-            tool_ran,
-            steps: settled.len(),
-        })
-    }
-
     /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
     /// default fold). A no-op if `start` is not a trace or active-fold start.
     fn toggle_trace(&mut self, start: usize) {
-        let is_start = self.trace_runs().iter().any(|r| r.start == start)
-            || self.active_fold().is_some_and(|r| r.start == start);
+        let is_start = self.trace_runs().iter().any(|r| r.start == start);
         if !is_start {
             return;
         }
@@ -3048,6 +3058,11 @@ impl App {
     /// accounted for rather than vanishing with the panel.
     fn close_live_background(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
+            // A later-phase subagent that never started has no run to summarize;
+            // drop it rather than report a phantom "interrupted (0 calls)".
+            if panel.pending {
+                continue;
+            }
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
         self.awaiting.clear();
@@ -3100,56 +3115,59 @@ impl App {
     /// One box per command still in flight, in dispatch order: a group runs its
     /// calls in parallel, so several commands can be streaming at once and each
     /// gets its own terminal rather than one hiding the rest. A `read`/`grep` in
-    /// the group has no command and contributes no box. Follows the job alias,
-    /// so a call *waiting on* a backgrounded job shows the output the detached
-    /// job is still producing under the id of the call that started it.
+    /// the group has no command and contributes no box.
     fn live_shell_panel(&self, group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-        // The detached job streams under the id of the call that started it, so a
-        // collecting call reads its output through the alias.
-        fn output_key<'a>(alias: &'a HashMap<String, String>, call: &'a GroupedCall) -> &'a str {
-            alias.get(&call.id).map_or(call.id.as_str(), String::as_str)
-        }
         let elapsed = group.started.elapsed().as_secs();
         let mut out = Vec::new();
-        for call in group
-            .calls
-            .iter()
-            .filter(|c| c.content.is_none() && self.bash_commands.contains_key(&c.id))
-        {
-            // A blank row between stacked boxes so two terminals do not run their
-            // borders together.
+        // A blank row between stacked boxes so two terminals do not run their
+        // borders together.
+        let spacer = |out: &mut Vec<Line<'static>>| {
             if !out.is_empty() {
                 out.push(Line::raw(""));
             }
-            let command = &self.bash_commands[&call.id];
-            let output = self
-                .live_output
-                .get(output_key(&self.live_alias, call))
-                .map_or("", String::as_str);
-            out.extend(running_terminal_lines(
-                command, output, elapsed, spinner_frame, width,
-            ));
+        };
+        for call in group.calls.iter().filter(|c| c.command.is_some()) {
+            match &call.content {
+                // Still running: the live output tail with a spinner + elapsed.
+                None => {
+                    spacer(&mut out);
+                    let command = call.command.as_deref().unwrap_or("");
+                    let output = self
+                        .live_output
+                        .get(&call.id)
+                        .map_or("", String::as_str);
+                    out.extend(running_terminal_lines(
+                        command, output, elapsed, spinner_frame, width,
+                    ));
+                }
+                // Finished, but the group is still the current step: keep the box
+                // (command + output + a settled status) so the output stays
+                // readable until the group folds, rather than vanishing the
+                // instant the result lands. The authoritative content backs it
+                // (`bash_commands`/`live_output` are cleared on the result), and a
+                // bounded tail keeps a huge result cheap to re-render each frame.
+                Some(content) => {
+                    spacer(&mut out);
+                    let command = call.command.as_deref().unwrap_or("");
+                    let output = tail_on_char_boundary(content, FINISHED_OUTPUT_TAIL_BYTES);
+                    out.extend(finished_terminal_lines(
+                        command,
+                        output,
+                        call.is_error,
+                        width,
+                    ));
+                }
+            }
         }
         out
     }
 
-    /// Pair a `bash` call with the backgrounded command it is about.
-    ///
-    /// Both directions run off the same maps: a call carrying a `command` is
-    /// remembered against its call id until its result lands (which is where a
-    /// `job_id` would appear), and a call carrying only a `job_id` gets that
-    /// command filled back in, so every row labelling the call names the work
-    /// rather than an opaque id. Labels are built from the returned value; the
-    /// journal keeps the arguments as they arrived, so a replay rebuilds the
-    /// pairing from the same events in the same order.
-    fn track_bash_job(
-        &mut self,
-        id: &str,
-        name: &str,
-        mut args: serde_json::Value,
-    ) -> serde_json::Value {
+    /// Remember a `bash` call's command against its call id until its result
+    /// lands, so every row labelling the call names the work it is doing rather
+    /// than an opaque id.
+    fn track_bash_command(&mut self, id: &str, name: &str, args: &serde_json::Value) {
         if !matches!(name, "bash" | "shell" | "exec") {
-            return args;
+            return;
         }
         let cmd = args
             .get("command")
@@ -3159,27 +3177,7 @@ impl App {
             .to_string();
         if !cmd.is_empty() {
             self.bash_commands.insert(id.to_string(), cmd);
-            return args;
         }
-        // Collecting a backgrounded job: the detached command still streams under
-        // the id of the call that started it, so point this call at that buffer.
-        // Without the alias the row the user is waiting on shows an empty box.
-        if let Some(job) = bash_job_id(&args) {
-            // The collecting call blocks until the job finishes, so it is no
-            // longer running unattended: drop it from the status-bar count.
-            self.active_bg_jobs.remove(job);
-            if let Some(origin) = self.job_origin.get(job) {
-                self.live_alias.insert(id.to_string(), origin.clone());
-            }
-        }
-        let remembered = bash_job_id(&args)
-            .and_then(|job| self.bash_jobs.get(job))
-            .cloned();
-        if let (Some(cmd), Some(obj)) = (remembered, args.as_object_mut()) {
-            self.bash_commands.insert(id.to_string(), cmd.clone());
-            obj.insert("command".to_string(), serde_json::Value::String(cmd));
-        }
-        args
     }
 
     /// Rewrite a standalone tool row to its resolved form once its result lands:
@@ -3343,13 +3341,9 @@ impl App {
             .chain(self.reasoning_blocks.iter().map(|r| r.idx))
             .chain(self.subagent_blocks.iter().map(|b| b.idx))
             .collect();
-        // Ctrl-O also unfolds every collapsed trace (finished runs and the
-        // active fold), so one keystroke opens both the folds and the per-row
-        // detail.
-        let mut trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
-        if let Some(run) = self.active_fold() {
-            trace_starts.push(run.start);
-        }
+        // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
+        // opens both the folds and the per-row detail.
+        let trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
         if all.is_empty() && trace_starts.is_empty() {
             return;
         }
@@ -3369,18 +3363,17 @@ impl App {
     }
 
     /// Whether transcript row `idx` is currently drawn as a folded trace header
-    /// (a finished trace start or the active fold's start, not expanded), so a
-    /// click there unfolds the trace rather than toggling that row's own detail.
+    /// (a finished trace start, not expanded), so a click there unfolds the trace
+    /// rather than toggling that row's own detail. The active run never folds, so
+    /// only finished traces qualify.
     fn is_folded_trace_start(&self, idx: usize) -> bool {
         if self.expanded_traces.contains(&idx) {
             return false;
         }
         let last_answer = self.last_answer_idx();
-        let finished = self
-            .trace_runs()
+        self.trace_runs()
             .iter()
-            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a));
-        finished || self.active_fold().is_some_and(|r| r.start == idx)
+            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a))
     }
 
     /// Toggle a single collapsed region by its transcript row index (a click on
@@ -4929,7 +4922,7 @@ impl App {
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
-                let args = self.track_bash_job(&id, &name, args);
+                self.track_bash_command(&id, &name, &args);
                 // Untruncated: every row that shows these clamps to the width it
                 // is drawn at, so they survive a resize either way.
                 let label = tool_activity(&name, &args);
@@ -4975,24 +4968,12 @@ impl App {
                     is_error,
                     diff: diff.clone(),
                 });
-                // Before the grouped-call early return: a backgrounded command
-                // is reported by its result, and the call that later collects it
-                // needs the pairing whichever way this row renders.
-                if let Some(cmd) = self.bash_commands.remove(&id) {
-                    if let Some(job) = backgrounded_job_id(&content) {
-                        self.bash_jobs.insert(job.to_string(), cmd);
-                        self.job_origin.insert(job.to_string(), id.clone());
-                        self.active_bg_jobs.insert(job.to_string());
-                    }
-                }
-                // The command is over, so its live buffer is dead weight: the
-                // authoritative output is in this result. A call that backgrounded
-                // itself keeps its buffer -- the detached job is still writing to
-                // it, under this same id.
-                if backgrounded_job_id(&content).is_none() {
-                    let key = self.live_alias.remove(&id).unwrap_or_else(|| id.clone());
-                    self.live_output.remove(&key);
-                }
+                // This call is no longer in flight (it finished, or it detached
+                // into the background where its output now lands in a file the
+                // agent reads later): the row's content is authoritative, so the
+                // in-flight command label and the live buffer are both dead weight.
+                self.bash_commands.remove(&id);
+                self.live_output.remove(&id);
                 let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
@@ -5096,12 +5077,46 @@ impl App {
                 self.ask_queue.retain(|ask| ask.request_id != request_id);
                 self.publish_agent_status();
             }
+            StreamEvent::SubagentPlan { pending } => {
+                // The later phases of a plan, named before they start. Open a
+                // waiting panel per subagent so a dependent phase is visible up
+                // front; its own SubagentStart/SubagentQueued promotes it later.
+                self.finalize_tool_group();
+                self.flush_assistant();
+                for p in pending {
+                    self.subagents.push(SubagentPanel {
+                        run_id: String::new(),
+                        name: p.name,
+                        task: String::new(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: false,
+                        waiting: 0,
+                        pending: true,
+                        phase: Some(p.phase),
+                    });
+                }
+            }
             StreamEvent::SubagentStart { run_id, name, task } => {
-                // A queued dispatch already opened a panel for this run; promote
-                // it to running instead of pushing a duplicate. Otherwise open a
-                // fresh live panel (several may be active).
+                // A queued/pending dispatch already opened a panel; promote it to
+                // running instead of pushing a duplicate. A queued one matches by
+                // run_id; a pending later-phase one matches by name (no run_id
+                // yet). Otherwise open a fresh live panel (several may be active).
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.queued = false;
+                } else if let Some(panel) = self
+                    .subagents
+                    .iter_mut()
+                    .find(|p| p.pending && p.name == name)
+                {
+                    panel.run_id = run_id;
+                    panel.pending = false;
+                    panel.queued = false;
+                    if let Some(t) = task {
+                        panel.task = t;
+                    }
                 } else {
                     self.finalize_tool_group();
                     self.flush_assistant();
@@ -5115,6 +5130,8 @@ impl App {
                         active: None,
                         queued: false,
                         waiting: 0,
+                        pending: false,
+                        phase: None,
                     });
                 }
             }
@@ -5125,21 +5142,38 @@ impl App {
                 waiting,
             } => {
                 // The cap is exhausted; this dispatch will start when a running
-                // child finishes. Open its panel now, marked queued, so the
-                // fan-out shows the queue instead of hiding dispatches.
+                // child finishes. Promote a pending later-phase panel (matched by
+                // name) or open a fresh queued one, so the fan-out shows the queue
+                // instead of hiding dispatches.
                 self.finalize_tool_group();
                 self.flush_assistant();
-                self.subagents.push(SubagentPanel {
-                    run_id,
-                    name,
-                    task: task.unwrap_or_default(),
-                    calls: Vec::new(),
-                    requests: 0,
-                    prompt_tokens: 0,
-                    active: None,
-                    queued: true,
-                    waiting,
-                });
+                if let Some(panel) = self
+                    .subagents
+                    .iter_mut()
+                    .find(|p| p.pending && p.name == name)
+                {
+                    panel.run_id = run_id;
+                    panel.pending = false;
+                    panel.queued = true;
+                    panel.waiting = waiting;
+                    if let Some(t) = task {
+                        panel.task = t;
+                    }
+                } else {
+                    self.subagents.push(SubagentPanel {
+                        run_id,
+                        name,
+                        task: task.unwrap_or_default(),
+                        calls: Vec::new(),
+                        requests: 0,
+                        prompt_tokens: 0,
+                        active: None,
+                        queued: true,
+                        waiting,
+                        pending: false,
+                        phase: None,
+                    });
+                }
             }
             StreamEvent::SubagentEnd {
                 run_id,
@@ -5387,6 +5421,29 @@ impl App {
                 msg["reasoning_content"] = serde_json::json!(reasoning);
             }
             self.history.push(msg);
+        }
+        // Some OpenAI-compatible servers send usage only with the terminal
+        // event. Keep the same context accounting path for that case instead
+        // of leaving the header at zero when no intermediate TurnUsage arrived.
+        if self.turn_prompt_tokens == 0 {
+            if let Some(prompt) = usage.as_ref().and_then(|u| u.prompt_tokens) {
+                self.turn_prompt_tokens = prompt;
+                self.tokens = prompt
+                    + usage
+                        .as_ref()
+                        .and_then(|u| u.completion_tokens)
+                        .unwrap_or(0);
+                self.tokens_estimated = false;
+            }
+        }
+        // If a provider does not report prompt usage at all, show a useful
+        // estimate. The old OpenAI accumulator always had a prompt estimate
+        // available; genai cannot manufacture one when the upstream omits
+        // usage metadata. Do this per turn so a missing sample cannot leave a
+        // stale measured value from the previous turn in the header.
+        if self.turn_prompt_tokens == 0 && !self.history.is_empty() {
+            self.tokens = estimate_token_count(&self.history);
+            self.tokens_estimated = true;
         }
         // A closing receipt for the turn: when, how much context went up, how
         // much came back, how long it took, how fast. Cheap to skim, and the
@@ -6424,9 +6481,9 @@ fn split_diff_marker(line: &str) -> (&str, &str) {
     }
 }
 
-/// Total display width of a row's spans.
+/// Total display width of a row's spans, in terminal cells.
 fn row_width(row: &Line<'_>) -> usize {
-    row.spans.iter().map(|s| s.content.chars().count()).sum()
+    row.spans.iter().map(Span::width).sum()
 }
 
 /// Content columns a panel of total `width` has left after its gutter and the
@@ -6434,7 +6491,9 @@ fn row_width(row: &Line<'_>) -> usize {
 /// the closing border lands inside the terminal instead of wrapping onto a line
 /// of its own.
 pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
-    width.saturating_sub(gutter.chars().count() + 4).max(1)
+    use unicode_width::UnicodeWidthStr;
+
+    width.saturating_sub(gutter.width() + 4).max(1)
 }
 
 /// Frame styled rows in a light box, right-padded to the widest row (clamped to
@@ -6445,12 +6504,25 @@ pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
 /// fills the interior padding so a highlighted row reads as a band from border to
 /// border rather than stopping at the end of its text.
 fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> Vec<Line<'static>> {
-    let inner = rows
-        .iter()
-        .map(row_width)
-        .max()
-        .unwrap_or(0)
-        .clamp(1, panel_inner(width, gutter));
+    boxed_panel_sized(rows, width, gutter, false)
+}
+
+/// `boxed_panel`, but `full` forces the box to the whole available width instead
+/// of shrinking it to the widest row. The shell terminal boxes use it so the
+/// frame stretches to the console edge and every command/output line shares one
+/// fixed column budget (they are truncated to it in `shell_body_rows`).
+fn boxed_panel_sized(
+    rows: Vec<Line<'static>>,
+    width: usize,
+    gutter: &'static str,
+    full: bool,
+) -> Vec<Line<'static>> {
+    let cap = panel_inner(width, gutter);
+    let inner = if full {
+        cap
+    } else {
+        rows.iter().map(row_width).max().unwrap_or(0).clamp(1, cap)
+    };
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -6458,6 +6530,10 @@ fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> 
         Span::styled(format!("┌{}┐", "─".repeat(inner + 2)), border),
     ]));
     for row in rows {
+        // Metadata/status rows are assembled after the body is wrapped. Keep
+        // them inside the same cell budget too, or Paragraph will wrap the
+        // right border onto a separate line.
+        let row = clamp_line(row, (inner + 2) as u16);
         let pad = inner.saturating_sub(row_width(&row));
         let row_style = row.style;
         // Interior spacing carries the row's background but not its foreground:
@@ -6513,26 +6589,16 @@ fn collapse_command(cmd: &str) -> String {
         .to_string()
 }
 
-/// The `job_id` of a `bash` poll: a call that collects an already-backgrounded
-/// command instead of starting a new one. Blank is treated as absent.
-fn bash_job_id(args: &serde_json::Value) -> Option<&str> {
-    args.get("job_id")
+/// The name of the first subagent in a phased `dispatch_subagent` call. The
+/// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
+/// names the first, mirroring the web card (`firstPlannedSubagent`).
+fn first_dispatched_subagent_name(args: &serde_json::Value) -> &str {
+    args.get("subagents")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|s| s.get("name"))
         .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-}
-
-/// The job id in a `bash` result reporting that its command was backgrounded.
-/// Matched on the `job_id=` marker the tool prints and stopping at the first
-/// character that cannot be part of an id, so the instruction text repeating
-/// the id parses to the same value.
-fn backgrounded_job_id(content: &str) -> Option<&str> {
-    let at = content.find("job_id=")? + "job_id=".len();
-    let rest = &content[at..];
-    let end = rest
-        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
-        .unwrap_or(rest.len());
-    Some(&rest[..end]).filter(|id| !id.is_empty())
+        .unwrap_or("")
 }
 
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
@@ -6549,11 +6615,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             let cmd = s("command");
             // Untruncated: the row wraps at the draw width, so the command
             // fills the terminal rather than eliding at a fixed 80.
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("Waiting for background job {job}"),
-                (Some(_), cmd) => format!("Waiting for: {}", collapse_command(cmd)),
-                (None, "") => "Executing command".to_string(),
-                (None, cmd) => format!("Executing: {}", collapse_command(cmd)),
+            match cmd.trim() {
+                "" => "Executing command".to_string(),
+                cmd => format!("Executing: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -6562,7 +6626,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
-        "dispatch_subagent" => format!("Dispatching subagent: {}", s("subagent_name")),
+        "dispatch_subagent" => {
+            format!("Dispatching subagent: {}", first_dispatched_subagent_name(args))
+        }
         "await_subagent" => format!(
             "Awaiting subagent: {}",
             subagent_name_from_run_id(s("run_id"))
@@ -6679,11 +6745,9 @@ fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
             let cmd = s("command");
             // The live panel gives each call exactly one row, so this one stays
             // flattened where the transcript's label keeps its breaks.
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("awaiting job {job}"),
-                (Some(_), cmd) => format!("awaiting $ {}", single_line(cmd)),
-                (None, "") => "command".to_string(),
-                (None, cmd) => format!("$ {}", single_line(cmd)),
+            match cmd.trim() {
+                "" => "command".to_string(),
+                cmd => format!("$ {}", single_line(cmd)),
             }
         }
         "grep" | "search" => format!("grep {}", s("pattern")),
@@ -6710,11 +6774,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
     match name {
         "bash" | "shell" | "exec" => {
             let cmd = s("command");
-            match (bash_job_id(args), cmd.trim()) {
-                (Some(job), "") => format!("Collected background job {job}"),
-                (Some(_), cmd) => format!("Collected: {}", collapse_command(cmd)),
-                (None, "") => "Ran command".to_string(),
-                (None, cmd) => format!("Ran: {}", collapse_command(cmd)),
+            match cmd.trim() {
+                "" => "Ran command".to_string(),
+                cmd => format!("Ran: {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -6723,7 +6785,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
-        "dispatch_subagent" => format!("Dispatched subagent: {}", s("subagent_name")),
+        "dispatch_subagent" => {
+            format!("Dispatched subagent: {}", first_dispatched_subagent_name(args))
+        }
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
@@ -7193,27 +7257,31 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
     group_clauses(nouns, "Read", "ran")
 }
 
-/// The one-line header a folded trace collapses to, with a step count so the
-/// fold advertises how much it hides. A finished run gets a static `▸` and past
-/// tense (`▸ Worked · N steps` / `▸ Thought · N steps`); the active run -- still
-/// streaming, its current step shown live below -- gets the spinner and present
-/// tense (`⠋ Working · N steps` / `⠋ Thinking · N steps`), so the condensed live
-/// view reads as one moving header over the current step rather than a growing
-/// pile of settled rows.
-fn trace_header_line(run: &TraceRun, active: bool, frame: &str) -> Line<'static> {
-    let (marker, verb) = if active {
-        let verb = if run.tool_ran { "Working" } else { "Thinking" };
-        (format!("{frame} "), verb)
-    } else {
-        let verb = if run.tool_ran { "Worked" } else { "Thought" };
-        ("▸ ".to_string(), verb)
-    };
+/// The one-line header a finished trace collapses to, with a step count so the
+/// fold advertises how much it hides: a static `▸` and past tense
+/// (`▸ Worked · N steps` / `▸ Thought · N steps`). Only finished traces fold;
+/// the active run renders as the live growing rail (each step as it happens), so
+/// there is no present-tense header form.
+fn trace_header_line(run: &TraceRun) -> Line<'static> {
+    let verb = if run.tool_ran { "Worked" } else { "Thought" };
+    let unit = if run.steps == 1 { "step" } else { "steps" };
     Line::from(vec![
-        Span::styled(marker, Style::new().cyan()),
+        Span::styled("▸ ".to_string(), Style::new().cyan()),
         Span::styled(
-            format!("{verb} · {} steps", run.steps),
+            format!("{verb} · {} {unit}", run.steps),
             Style::new().cyan().dim(),
         ),
+    ])
+}
+
+/// The terminal cap of an expanded trace's rail: a `└` corner that closes the
+/// run of `│`-gutter step rows into a `Done` marker, so the timeline reads as a
+/// completed thread. Only rendered under an expanded finished trace; the live
+/// rail's terminal is its current step, and a folded trace shows only the header.
+fn trace_done_line() -> Line<'static> {
+    Line::from(vec![
+        Span::styled("└ ", Style::new().dark_gray()),
+        Span::styled("Done", Style::new().dark_gray()),
     ])
 }
 
@@ -7266,19 +7334,26 @@ fn shell_body_rows(
     gutter: &'static str,
 ) -> Vec<Line<'static>> {
     let max = panel_inner(width as usize, gutter);
-    let mut rows: Vec<Line<'static>> =
-        wrap_text(command, Style::new().bold(), max.saturating_sub(2))
-            .into_iter()
-            .enumerate()
-            .map(|(i, chunk)| {
-                let mut spans = vec![Span::styled(
+    // The box spans the full width, so each command/output line is truncated to
+    // one row rather than wrapped: the terminal reads like a terminal, and a long
+    // command or a wide log line cannot balloon the box vertically. The full text
+    // is still on the group's expand (Ctrl-O).
+    let mut rows: Vec<Line<'static>> = command
+        .lines()
+        .enumerate()
+        .map(|(i, line)| {
+            Line::from(vec![
+                Span::styled(
                     if i == 0 { "$ " } else { "  " },
                     Style::new().cyan().bold(),
-                )];
-                spans.extend(chunk);
-                Line::from(spans)
-            })
-            .collect();
+                ),
+                Span::styled(
+                    truncate(&single_line(line), max.saturating_sub(2)),
+                    Style::new().bold(),
+                ),
+            ])
+        })
+        .collect();
     if !output.is_empty() {
         let all: Vec<&str> = output.lines().collect();
         let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
@@ -7289,11 +7364,10 @@ fn shell_body_rows(
             ));
         }
         for line in &all[skipped..] {
-            rows.extend(
-                wrap_text(line, Style::new().dim(), max)
-                    .into_iter()
-                    .map(Line::from),
-            );
+            rows.push(Line::styled(
+                truncate(line, max),
+                Style::new().dim(),
+            ));
         }
     }
     rows
@@ -7317,7 +7391,46 @@ fn running_terminal_lines(
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
     ]));
-    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
+}
+
+/// The most-recent bytes of `s` that begin on a char boundary, capped at `max`.
+/// Used to bound a finished command's (possibly large) result before rendering
+/// its terminal tail, so re-rendering the box each frame stays cheap.
+fn tail_on_char_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let start = s.len() - max;
+    let at = (start..s.len())
+        .find(|i| s.is_char_boundary(*i))
+        .unwrap_or(s.len());
+    &s[at..]
+}
+
+/// Bytes of a finished command's result kept for its lingering terminal box.
+/// Only a tail is shown (`LIVE_OUTPUT_TAIL_LINES`); this bounds the scan cheaply.
+const FINISHED_OUTPUT_TAIL_BYTES: usize = 8 * 1024;
+
+/// A finished command's terminal box: the same framed prompt + output as the
+/// running one, but with a settled status glyph in place of the spinner/elapsed,
+/// so a command's output stays readable after it returns -- until the group
+/// folds it to a one-line summary. The full output is still on the group's
+/// expand.
+fn finished_terminal_lines(
+    command: &str,
+    output: &str,
+    is_error: bool,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
+    let (glyph, style) = if is_error {
+        ("✗", Style::new().red())
+    } else {
+        ("✓", Style::new().green())
+    };
+    rows.push(Line::from(Span::styled(glyph.to_string(), style)));
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
 }
 
 /// The command being typed, framed like the running terminal it becomes: the
@@ -7336,7 +7449,7 @@ fn typing_terminal_lines(command: &str, frame: &str, width: u16) -> Vec<Line<'st
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled("typing…", Style::new().dark_gray()),
     ]));
-    boxed_panel(rows, width as usize, SHELL_PANEL_GUTTER)
+    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -8721,6 +8834,15 @@ async fn chat_loop<B: Backend>(
         if app.take_repaint() {
             apply_repaint(terminal);
         }
+        // Refresh the detached-shell list from the process registry here, in the
+        // live loop, rather than inside `draw`: the registry is process-global, so
+        // reading it from the render path would couple every render test to
+        // whatever a parallel test has spawned. `draw`, the footer chip and the
+        // `/shells` picker all read `app.bg_shells` instead.
+        app.bg_shells = tauri_plugin_agent_tools::tools::proc::snapshot()
+            .into_iter()
+            .filter(|s| s.backgrounded)
+            .collect();
         let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
         if sync_output {
             let _ = execute!(io::stdout(), EndSynchronizedUpdate);
@@ -9809,6 +9931,20 @@ async fn handle_key(
                 let action = picker.items[picker.selected].value.clone();
                 run_mcp_action(app, &action, mcp_servers).await;
             }
+            // `/agents`: Enter drills into the selected subagent's detail.
+            KeyCode::Enter if picker.kind == PickerKind::Agents => {
+                let run_id = picker
+                    .items
+                    .get(picker.selected)
+                    .map(|i| i.value.clone())
+                    .unwrap_or_default();
+                // The watermark row (no subagents running) has no id to open.
+                if run_id.is_empty() {
+                    return;
+                }
+                picker.kind = PickerKind::AgentDetail;
+                app.agent_detail = Some(run_id);
+            }
             // `/mcp` picker: `a` opens the add wizard, `e` opens the edit
             // wizard prefilled from the selected row, `d` removes the selected
             // server. All act through the shared config layer.
@@ -9977,6 +10113,21 @@ async fn handle_key(
                     }
                 }
             }
+            // `/shells`: `x` stops the selected background shell (kills its whole
+            // process tree). The rows are rebuilt from the live registry each
+            // frame, so the stopped one drops out on the next draw.
+            KeyCode::Char('x') if picker.kind == PickerKind::BackgroundShells => {
+                let pid: Option<u32> = picker.items[picker.selected].value.parse().ok();
+                match pid {
+                    Some(pid)
+                        if tauri_plugin_agent_tools::tools::proc::kill(pid) =>
+                    {
+                        app.note(&format!("stopped background shell (pid {pid})"));
+                    }
+                    Some(pid) => app.note(&format!("shell {pid} already finished")),
+                    None => {}
+                }
+            }
             // Collection picker: Space toggles the selected plugin, Enter hands
             // the checked set to the loop (see `plugin_select_request`). Rows
             // already installed stay displayed but are not toggleable -- checking
@@ -10066,6 +10217,12 @@ async fn handle_key(
                     PickerKind::PluginSelect => {}
                     // McpServer Enter is handled by the guarded arm above.
                     PickerKind::McpServer => {}
+                    // Agents Enter is handled by the guarded arm above; the
+                    // detail has no Enter action of its own. Background shells are
+                    // acted on with `x` (stop), not Enter.
+                    PickerKind::Agents
+                    | PickerKind::AgentDetail
+                    | PickerKind::BackgroundShells => {}
                 }
             }
             // Esc on the detail screen steps back to the server list rather
@@ -10086,15 +10243,23 @@ async fn handle_key(
                     open_mcp_picker(app, mcp_servers).await;
                 }
             }
+            // Esc on a subagent's detail steps back to the `/agents` list, one
+            // level up, rather than closing the inspector outright.
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl && picker.kind == PickerKind::AgentDetail => {
+                picker.kind = PickerKind::Agents;
+                app.agent_detail = None;
+            }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
+                app.agent_detail = None;
             }
             _ if ctrl_c || ctrl_d => {
                 app.plugin_collection_url = None;
                 app.picker = None;
                 app.mcp_detail = None;
+                app.agent_detail = None;
             }
             _ => {}
         }
@@ -10686,6 +10851,24 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/agents",
+        hint: "",
+        description: "Inspect running subagents: their stats and current activity",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/shells",
+        hint: "",
+        description: "Inspect and stop background shell commands the agent left running",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/jobs",
+        hint: "",
+        description: "Alias of /shells: inspect and stop background shell commands",
+        alias_of: Some("/shells"),
+    },
+    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
@@ -10920,6 +11103,8 @@ async fn run_command(
             }
         }
         "mcp" => open_mcp_picker(app, mcp_servers).await,
+        "agents" => open_agents_picker(app),
+        "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
@@ -12965,6 +13150,204 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
     });
 }
 
+/// Open the `/agents` inspector: the live list of running subagents. The rows
+/// are rebuilt from `App::subagents` every frame (see `draw`), so this only
+/// seeds the initial list; the empty state is a single watermark row.
+fn open_agents_picker(app: &mut App) {
+    app.agent_detail = None;
+    app.picker = Some(Picker {
+        kind: PickerKind::Agents,
+        items: agent_picker_items(&app.subagents),
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// Open the `/shells` inspector: background shells the `bash` tool detached. The
+/// rows are rebuilt from the live process registry every frame (see `draw`), so
+/// a shell that finishes or is stopped drops out without reopening.
+fn open_background_shells_picker(app: &mut App) {
+    app.picker = Some(Picker {
+        kind: PickerKind::BackgroundShells,
+        items: background_shell_picker_items(&app.bg_shells),
+        selected: 0,
+        armed_delete: None,
+    });
+}
+
+/// One row per detached background shell (`<elapsed>  <command>`), whose `value`
+/// is the real pid so `x` can stop it. A single watermark row when nothing is
+/// backgrounded. `shells` is `App::bg_shells` (already filtered to backgrounded
+/// and refreshed off the render path), so this stays a pure render function.
+fn background_shell_picker_items(
+    shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo],
+) -> Vec<PickerItem> {
+    if shells.is_empty() {
+        return vec![PickerItem {
+            label: "no background shells running".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }];
+    }
+    shells
+        .iter()
+        .map(|s| PickerItem {
+            label: format!(
+                "{}  {}",
+                format_elapsed(s.elapsed_secs),
+                single_line(&s.command)
+            ),
+            value: s.pid.to_string(),
+            hint: Some("running".to_string()),
+            checkbox: None,
+        })
+        .collect()
+}
+
+/// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
+/// single watermark row when the fan-out is empty. The row `value` is the
+/// child's `run_id`, which Enter drills into.
+fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
+    if subagents.is_empty() {
+        return vec![PickerItem {
+            label: "no subagents running".to_string(),
+            value: String::new(),
+            hint: None,
+            checkbox: None,
+        }];
+    }
+    subagents
+        .iter()
+        .map(|p| {
+            PickerItem {
+                label: format!(
+                    "{}  ·  {}t  ·  {}",
+                    p.name,
+                    p.calls.len(),
+                    panel_activity_summary(p)
+                ),
+                value: p.run_id.clone(),
+                hint: None,
+                checkbox: None,
+            }
+        })
+        .collect()
+}
+
+/// A one-line "what this agent is doing now" for an immutable panel (the
+/// `/agents` inspector), mirroring the live dock's logic in `agents_column` but
+/// without the streaming argument preview (`StartingCall::activity_label` needs
+/// `&mut`; the tool name is enough here). A spin of identical calls collapses to
+/// `label ×N` so a stuck worker reads as stuck.
+fn panel_activity_summary(panel: &SubagentPanel) -> String {
+    if panel.pending {
+        return match panel.phase {
+            Some(p) => format!("phase {p} (waiting)"),
+            None => "waiting".to_string(),
+        };
+    }
+    let repeats = trailing_repeat(&panel.calls);
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        return format!("{} ×{repeats}", panel.calls.last().cloned().unwrap_or_default());
+    }
+    if let Some(call) = panel.active.as_ref() {
+        return format!("{}…", call.name);
+    }
+    match panel.calls.last() {
+        Some(last) if repeats > 1 => format!("{last} ×{repeats}"),
+        Some(last) => last.clone(),
+        None if panel.queued => format!("queued ({})", panel.waiting),
+        None => "starting…".to_string(),
+    }
+}
+
+/// Group consecutive identical labels into `(label, count)` runs, preserving
+/// order, so a repeated call renders once as `label ×N` instead of N rows.
+fn collapse_runs(calls: &[String]) -> Vec<(String, usize)> {
+    let mut out: Vec<(String, usize)> = Vec::new();
+    for c in calls {
+        match out.last_mut() {
+            Some(run) if &run.0 == c => run.1 += 1,
+            _ => out.push((c.clone(), 1)),
+        }
+    }
+    out
+}
+
+/// The `/agents` detail body for the subagent `run_id`: header, stats, dispatch
+/// brief, and the tail of its collapsed call history that fits in `height`. An
+/// agent that has finished (its panel gone) shows a short "finished" note, since
+/// the inspector reads live panels only.
+fn agent_detail_lines(
+    subagents: &[SubagentPanel],
+    run_id: Option<&str>,
+    width: u16,
+    height: u16,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let Some(panel) = run_id.and_then(|id| subagents.iter().find(|p| p.run_id == id)) else {
+        return vec![Line::styled(
+            "this subagent has finished. Press Esc to go back.".to_string(),
+            dim,
+        )];
+    };
+    let max = (width.max(8) as usize).saturating_sub(2);
+    let mut out = vec![Line::from(vec![
+        Span::styled(panel.name.clone(), Style::new().magenta().bold()),
+        Span::styled(format!("  ({})", panel.run_id), dim),
+    ])];
+    let mut stats = format!("{} tools · {} req", panel.calls.len(), panel.requests);
+    if panel.queued {
+        stats.push_str(&format!(" · queued ({})", panel.waiting));
+    }
+    out.push(Line::styled(stats, dim));
+    if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
+        out.push(Line::from(""));
+        out.extend(
+            wrap_text(brief.trim(), Style::new().dim().italic(), max)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    out.push(Line::from(""));
+    out.push(Line::styled("recent calls".to_string(), dim));
+    if panel.calls.is_empty() {
+        out.push(Line::styled("  (no tool calls yet)".to_string(), dim));
+        return out;
+    }
+    let runs = collapse_runs(&panel.calls);
+    // Reserve the rows already used plus one for a possible "+N earlier" head,
+    // then show the tail so the most recent calls are the ones that survive.
+    let budget = (height as usize).saturating_sub(out.len()).max(1);
+    let (hidden, shown) = if runs.len() <= budget {
+        (0, &runs[..])
+    } else {
+        let start = runs.len() - budget.saturating_sub(1);
+        (start, &runs[start..])
+    };
+    if hidden > 0 {
+        out.push(Line::styled(format!("  +{hidden} earlier"), dim));
+    }
+    for (label, n) in shown {
+        let text = if *n > 1 {
+            format!("{label} ×{n}")
+        } else {
+            label.clone()
+        };
+        let style = if *n >= STUCK_REPEAT_THRESHOLD {
+            Style::new().red()
+        } else {
+            Style::new().dim()
+        };
+        out.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(truncate(&text, max), style),
+        ]));
+    }
+    out
+}
+
 fn open_login_picker(app: &mut App) {
     open_login_picker_at(app, None);
 }
@@ -14853,6 +15236,26 @@ fn draw(f: &mut Frame, app: &mut App) {
     // the vertical viewport.
     let width = chunks[1].width.max(1);
 
+    // The /agents inspector is a live view: rebuild its rows from the running
+    // fan-out each frame so a finishing or newly-dispatched child appears
+    // without reopening. Sequential borrows: read subagents, then write picker.
+    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
+        let items = agent_picker_items(&app.subagents);
+        if let Some(p) = app.picker.as_mut() {
+            p.selected = p.selected.min(items.len().saturating_sub(1));
+            p.items = items;
+        }
+    }
+    // The /shells inspector is likewise live: rebuild from the refreshed
+    // `bg_shells` each frame so a shell that finished or was just stopped drops
+    // out. (`bg_shells` is refreshed off the render path; see the loop.)
+    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::BackgroundShells) {
+        let items = background_shell_picker_items(&app.bg_shells);
+        if let Some(p) = app.picker.as_mut() {
+            p.selected = p.selected.min(items.len().saturating_sub(1));
+            p.items = items;
+        }
+    }
     if let Some(picker) = &app.picker {
         app.row_index.clear();
         let toml_path = app.agent_dir.join("agent.toml");
@@ -14863,6 +15266,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             &toml_path,
             app.mcp_detail.as_ref(),
             app.mcp_auth.as_ref(),
+            &app.subagents,
+            app.agent_detail.as_deref(),
             app.spinner(),
         );
         f.render_widget(input_box(app), chunks[2]);
@@ -14887,26 +15292,37 @@ fn draw(f: &mut Frame, app: &mut App) {
     let mut content_h: u16 = 0;
     let mut reveal_at: Option<u16> = None;
     let frame = app.spinner();
-    // Traces fold their run of reasoning/tool rows to one header unless the user
-    // expanded it. A finished run (an answer follows) folds whole to a static
-    // `Thought/Worked` header. The active run's settled steps fold to a live
-    // `Thinking/Working` header, leaving only the current step (the running box /
-    // live tail) below -- the condensed live view. The `bool` is that live flag.
+    // A finished trace (an answer follows) folds its run of reasoning/tool rows
+    // to one static `Thought/Worked` header unless the user expanded it. The
+    // active run stays open as the live growing rail while the model reasons and
+    // calls tools -- but the moment answer prose begins streaming, the whole run
+    // collapses to its header too, so the reader's eye is on the answer rather
+    // than the scaffolding that produced it. (`finalize_tool_group` closes the
+    // open group on that same first prose token, so it is already a trace member.)
     let last_answer = app.last_answer_idx();
-    let mut collapsed_headers: HashMap<usize, (TraceRun, bool)> = HashMap::new();
+    let answer_started = has_answer_text(&app.assistant_buf);
+    let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
     for run in app.trace_runs() {
-        if last_answer.is_some_and(|a| run.end < a) && !app.expanded_traces.contains(&run.start) {
-            collapsed_headers.insert(run.start, (run, false));
-        }
-    }
-    if let Some(run) = app.active_fold() {
-        if !app.expanded_traces.contains(&run.start) {
-            collapsed_headers.insert(run.start, (run, true));
+        let finished = answer_started || last_answer.is_some_and(|a| run.end < a);
+        if finished && !app.expanded_traces.contains(&run.start) {
+            collapsed_headers.insert(run.start, run);
         }
     }
     let hidden_trace_rows: std::collections::HashSet<usize> = collapsed_headers
         .values()
-        .flat_map(|(r, _)| (r.start + 1)..=r.end)
+        .flat_map(|r| (r.start + 1)..=r.end)
+        .collect();
+    // A finished trace the user expanded caps its rail with a `└ Done` terminal
+    // after its last row, keyed by that row's index. The live rail's terminal is
+    // its current step, and a folded trace shows only its header, so neither gets
+    // one.
+    let expanded_trace_ends: std::collections::HashSet<usize> = app
+        .trace_runs()
+        .iter()
+        .filter(|r| {
+            last_answer.is_some_and(|a| r.end < a) && app.expanded_traces.contains(&r.start)
+        })
+        .map(|r| r.end)
         .collect();
     for (i, row) in app.transcript.iter().enumerate() {
         // A collapsed trace shows a single header at its start and hides the
@@ -14914,8 +15330,8 @@ fn draw(f: &mut Frame, app: &mut App) {
         if hidden_trace_rows.contains(&i) {
             continue;
         }
-        if let Some((run, active)) = collapsed_headers.get(&i) {
-            let line = trace_header_line(run, *active, frame);
+        if let Some(run) = collapsed_headers.get(&i) {
+            let line = trace_header_line(run);
             let seg = Segment::eager(Some(i), vec![line], width);
             if app.reveal == Some(i) {
                 reveal_at = Some(content_h);
@@ -14928,26 +15344,50 @@ fn draw(f: &mut Frame, app: &mut App) {
             reveal_at = Some(content_h);
         }
         // Every committed row re-renders at the current width, so a resize
-        // re-flows prose, re-boxes diffs and re-truncates labels. The running
-        // group's row animates, so it can never come from the row cache.
-        let seg = match app
-            .tool_group
-            .as_ref()
-            .filter(|g| g.idx == i && g.is_running())
-        {
+        // re-flows prose, re-boxes diffs and re-truncates labels. The open
+        // group's row is live (spinner, or a lingering finished box), so it can
+        // never come from the row cache.
+        let seg = match app.tool_group.as_ref().filter(|g| g.idx == i) {
             Some(g) => {
-                // A running command that has started printing renders as a live
-                // terminal box (prompt + streaming output + spinner/elapsed),
-                // which stands in for the plain "Executing:" activity row. Every
-                // other running call -- and a command still inside its grace
-                // window -- keeps that row.
-                let panel = app.live_shell_panel(g, app.spinner_frame, width);
-                let rows = if panel.is_empty() {
-                    running_group_rows(g, app.spinner_frame, width)
+                // The open group's shell calls render as live terminal boxes: a
+                // running command shows its streaming output + spinner/elapsed; a
+                // finished one keeps its box (output + a settled status) until the
+                // group folds, so the output does not vanish the instant the
+                // result lands. A running non-shell group keeps its plain
+                // activity row; a finished non-shell group (no box, not yet
+                // committed) renders its folded summary row.
+                let mut panel = app.live_shell_panel(g, app.spinner_frame, width);
+                // The panel only boxes the shell calls. A group can keep folding
+                // in later, non-shell calls (a read/grep after a bash), or the
+                // running command may not be a shell call at all -- those would be
+                // hidden behind the lingering box. Show the running activity row
+                // beneath it too, unless the in-flight call is itself a shell box
+                // (which already carries its own spinner).
+                let inflight_shell = g
+                    .calls
+                    .iter()
+                    .rev()
+                    .find(|c| c.content.is_none())
+                    .is_some_and(|c| c.command.is_some());
+                if !panel.is_empty() {
+                    if g.is_running() && !inflight_shell {
+                        panel.push(Line::raw(""));
+                        panel.extend(running_group_rows(g, app.spinner_frame, width));
+                    }
+                    Segment::eager(Some(i), panel, width)
+                } else if g.is_running() {
+                    Segment::eager(
+                        Some(i),
+                        running_group_rows(g, app.spinner_frame, width),
+                        width,
+                    )
                 } else {
-                    panel
-                };
-                Segment::eager(Some(i), rows, width)
+                    Segment {
+                        idx: Some(i),
+                        height: row.height(width),
+                        lines: None,
+                    }
+                }
             }
             None => Segment {
                 idx: Some(i),
@@ -14957,7 +15397,21 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         content_h = content_h.saturating_add(seg.height);
         segs.push(seg);
-        if app.expanded.contains(&i) {
+        // The newest reasoning step lingers expanded for a grace window after it
+        // commits, then folds to its `reasoned for Ns` summary as the run rolls
+        // on -- so the chain of thought is readable across the tool call it
+        // triggered without every past step piling up on screen. Older steps and
+        // the whole run past the answer fold normally. `show_reasoning` already
+        // inlines every block, so this only touches the default-folded case.
+        let active_reasoning = app.status != Status::Idle
+            && !app.show_reasoning
+            && !has_answer_text(&app.assistant_buf)
+            && last_answer.is_none_or(|a| i > a)
+            && app
+                .reasoning_blocks
+                .last()
+                .is_some_and(|r| r.idx == i && r.committed.elapsed() < REASONING_FOLD_AFTER);
+        if app.expanded.contains(&i) || active_reasoning {
             // Detail rows map back to the same owning idx (not `None`), so a
             // click anywhere in an expanded block collapses it -- not just on
             // its header row, which may have scrolled out of view once the
@@ -14972,10 +15426,16 @@ fn draw(f: &mut Frame, app: &mut App) {
                 .or(running_group)
                 .map(|group| group_detail_lines(group, width))
                 .or_else(|| {
-                    app.reasoning_blocks
-                        .iter()
-                        .find(|r| r.idx == i)
-                        .map(|block| block.detail.clone())
+                    app.reasoning_blocks.iter().find(|r| r.idx == i).map(|block| {
+                        // A lingering active step shows the same bounded scrolling
+                        // tail the live stream did; a manual expand (click, Ctrl-O)
+                        // shows the whole thing.
+                        if active_reasoning && !app.expanded.contains(&i) {
+                            reasoning_tail_lines(&block.source, width)
+                        } else {
+                            block.detail.clone()
+                        }
+                    })
                 })
                 .or_else(|| {
                     app.subagent_blocks
@@ -14988,6 +15448,14 @@ fn draw(f: &mut Frame, app: &mut App) {
                 content_h = content_h.saturating_add(seg.height);
                 segs.push(seg);
             }
+        }
+        // Cap an expanded finished trace's rail with the `└ Done` terminal, after
+        // its last row (and that row's own detail). Keyed to the same `idx`, so a
+        // click on it collapses the run like any other row of the trace.
+        if expanded_trace_ends.contains(&i) {
+            let seg = Segment::eager(Some(i), vec![trace_done_line()], width);
+            content_h = content_h.saturating_add(seg.height);
+            segs.push(seg);
         }
     }
 
@@ -16309,6 +16777,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_picker(
     f: &mut Frame,
     area: ratatui::layout::Rect,
@@ -16316,6 +16785,8 @@ fn draw_picker(
     toml_path: &std::path::Path,
     mcp_detail: Option<&McpDetail>,
     mcp_auth: Option<&McpAuthFlow>,
+    subagents: &[SubagentPanel],
+    agent_detail: Option<&str>,
     spinner: &str,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
@@ -16427,6 +16898,15 @@ fn draw_picker(
         );
         f.render_widget(Paragraph::new(info), info_area);
         f.render_stateful_widget(list.block(Block::default()), list_area, &mut state);
+    } else if picker.kind == PickerKind::AgentDetail {
+        // One subagent's live detail: rendered from the panels, not the picker
+        // rows, so it updates in place as the child works and empties when it
+        // finishes.
+        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let lines = agent_detail_lines(subagents, agent_detail, inner.width, inner.height);
+        f.render_widget(Paragraph::new(lines), inner);
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -16466,6 +16946,21 @@ const PANEL_GUTTER: u16 = 3;
 /// Detail rows one agent may occupy under its stats line, when the budget
 /// stretches that far: the dispatch brief and the current activity.
 const AGENT_MAX_ROWS: usize = 3;
+
+/// A trailing run of identical calls this long reads as a spin, not progress, so
+/// the collapsed `×N` marker turns red to flag it.
+const STUCK_REPEAT_THRESHOLD: usize = 4;
+
+/// Length of the trailing run of the last entry in `calls`: 0 when empty, 1 when
+/// the last call differs from the one before it. Lets the panel collapse a spin
+/// (`bash …` repeated dozens of times) into one `×N` line instead of
+/// showing the newest copy alone, with only the tool counter to betray the loop.
+fn trailing_repeat(calls: &[String]) -> usize {
+    match calls.last() {
+        None => 0,
+        Some(last) => calls.iter().rev().take_while(|l| *l == last).count(),
+    }
+}
 
 /// The live fan-out, as a column: one stats line per child plus as much detail
 /// as `rows` allows.
@@ -16512,11 +17007,26 @@ fn agents_column(
         .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
 
     for panel in panels.iter_mut().take(shown) {
+        let idle = panel.queued || panel.pending;
         let mut spans = vec![Span::styled(
-            format!("{} ", if panel.queued { "·" } else { frame }),
+            format!("{} ", if idle { "·" } else { frame }),
             Style::new().magenta(),
         )];
-        if panel.queued {
+        if panel.pending {
+            // A later-phase subagent waiting on the phase before it: no run yet,
+            // so show which phase it belongs to instead of live stats.
+            spans.push(Span::styled(
+                truncate(&panel.name, max.saturating_sub(18)),
+                Style::new().magenta().dim(),
+            ));
+            spans.push(Span::styled(
+                match panel.phase {
+                    Some(p) => format!("  phase {p} · waiting"),
+                    None => "  waiting".to_string(),
+                },
+                Style::new().yellow(),
+            ));
+        } else if panel.queued {
             // Parked on the `max_parallel_subagents` cap; the child has not
             // started, so there are no live stats -- its queue position instead.
             spans.push(Span::styled(
@@ -16535,6 +17045,11 @@ fn agents_column(
             // Compact stats: side by side with the plan there is no room for
             // "33 tools  ·  24 req", and the units are obvious in context.
             let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
+            // A running subagent from a later phase keeps its phase badge, so the
+            // dependent-stage hint persists past the wait.
+            if let Some(p) = panel.phase {
+                stats.push_str(&format!(" · phase {p}"));
+            }
             // Only once the child has reported usage; "0%" before its first
             // response would read as a stalled agent rather than a starting one.
             // `context_window` arrives as 0 when the session has disproven it,
@@ -16555,16 +17070,37 @@ fn agents_column(
         // own newlines rather than word-wrapping: models write these as
         // structured briefs whose first line is the summary.
         let brief = panel.task.lines().find(|l| !l.trim().is_empty());
-        let activity = match panel.active.as_mut() {
-            Some(call) => Some((
-                format!("{frame} {}", call.activity_label()),
-                Style::new().cyan().dim(),
-            )),
-            None => panel
+        let repeats = trailing_repeat(&panel.calls);
+        let activity = if repeats >= STUCK_REPEAT_THRESHOLD {
+            // A run of identical calls is a spin: show the count in red so it
+            // reads as stuck rather than working, even while the newest copy is
+            // still streaming as `active`.
+            panel
                 .calls
                 .last()
-                .map(|label| (label.clone(), Style::new().dim()))
-                .or_else(|| (!panel.queued).then(|| ("starting…".to_string(), Style::new().dim()))),
+                .map(|label| (format!("{label} ×{repeats}"), Style::new().red()))
+        } else {
+            match panel.active.as_mut() {
+                Some(call) => Some((
+                    format!("{frame} {}", call.activity_label()),
+                    Style::new().cyan().dim(),
+                )),
+                None => panel
+                    .calls
+                    .last()
+                    .map(|label| {
+                        let text = if repeats > 1 {
+                            format!("{label} ×{repeats}")
+                        } else {
+                            label.clone()
+                        };
+                        (text, Style::new().dim())
+                    })
+                    .or_else(|| {
+                        (!panel.queued && !panel.pending)
+                            .then(|| ("starting…".to_string(), Style::new().dim()))
+                    }),
+            }
         };
         // With only one detail row the activity wins: what it is doing now is
         // worth more than what it was asked, which the transcript already shows.
@@ -16586,10 +17122,22 @@ fn agents_column(
         }
     }
     if hidden > 0 {
-        out.push(Line::from(vec![Span::styled(
-            format!("  +{hidden} more running"),
-            dim,
-        )]));
+        // The overflow row points at the `/agents` inspector, which lists the
+        // whole live fan-out with per-agent detail -- the dock only has room for
+        // the newest few. Compact form when the (often half-width) column can't
+        // fit the hint.
+        let hinted = format!("  +{hidden} more · /agents");
+        if hinted.chars().count() <= max {
+            out.push(Line::from(vec![
+                Span::styled(format!("  +{hidden} more · "), dim),
+                Span::styled("/agents", Style::new().cyan()),
+            ]));
+        } else {
+            out.push(Line::from(vec![Span::styled(
+                format!("  +{hidden} more running"),
+                dim,
+            )]));
+        }
     }
     out.truncate(rows);
     out
@@ -17072,13 +17620,21 @@ fn activity_column(
     rows: usize,
     frame: &str,
 ) -> Vec<Line<'static>> {
-    let monitor_rows = if panels.is_empty() {
+    // Agents keep priority: the monitors share at most half the budget when
+    // agents are present, and take only what they need otherwise.
+    let want_mon = if monitors.is_empty() {
+        0
+    } else {
+        1 + monitors.len()
+    };
+    let compact_budget = if panels.is_empty() {
         rows
     } else {
-        (1 + monitors.len()).min(rows / 2)
+        want_mon.min(rows / 2)
     };
-    let monitors = monitors_column(monitors, width, monitor_rows);
-    let mut out = agents_column(panels, context_window, width, rows - monitors.len(), frame);
+    let monitors = monitors_column(monitors, width, compact_budget);
+    let used = monitors.len();
+    let mut out = agents_column(panels, context_window, width, rows.saturating_sub(used), frame);
     out.extend(monitors);
     out
 }
@@ -17436,13 +17992,13 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
     };
     // Standing indicators lead the row in both states, newest concern leftmost:
     // pending queue, then background shells still running unattended.
-    let bg_shells = app.active_bg_jobs.len();
+    let bg_shells = app.bg_shells.len();
     if bg_shells > 0 {
         let plural = if bg_shells == 1 { "" } else { "s" };
         spans.insert(
             0,
             Span::styled(
-                format!("⚙ {bg_shells} bg shell{plural}  "),
+                format!("⚙ {bg_shells} bg shell{plural} · /shells  "),
                 Style::new().magenta().bold(),
             ),
         );
@@ -17486,7 +18042,7 @@ mod tests {
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
         assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping,
-        backgrounded_job_id, brand, build_user_message, clipboard_path, compact_tokens,
+        brand, build_user_message, clipboard_path, compact_tokens,
         context_lines, diff_lines, drain_stream_events, estimate_token_count, finish_account_login,
         finish_compaction, finish_context_report, finish_login, finish_plugin_install,
         finish_tokamak_login, finish_update_install, format_tokens, group_detail_lines,
@@ -17508,6 +18064,10 @@ mod tests {
         DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
         MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
         SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+    };
+    use super::{
+        agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
+        collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -17600,6 +18160,212 @@ mod tests {
             None,
         );
         TestApp { app, _dir: dir }
+    }
+
+    fn panel_with_calls(name: &str, calls: Vec<&str>) -> SubagentPanel {
+        SubagentPanel {
+            run_id: format!("sub-{name}-1"),
+            name: name.to_string(),
+            task: "review the file".to_string(),
+            calls: calls.into_iter().map(String::from).collect(),
+            requests: 0,
+            prompt_tokens: 0,
+            active: None,
+            queued: false,
+            waiting: 0,
+            pending: false,
+            phase: None,
+        }
+    }
+
+    #[test]
+    fn trailing_repeat_counts_the_final_run() {
+        assert_eq!(trailing_repeat(&[]), 0);
+        assert_eq!(trailing_repeat(&["a".into()]), 1);
+        assert_eq!(trailing_repeat(&["a".into(), "b".into(), "b".into()]), 2);
+        assert_eq!(trailing_repeat(&["b".into(), "b".into(), "a".into()]), 1);
+    }
+
+    /// A worker spinning on one call collapses to a `×N` line in the panel, so
+    /// the loop is visible at a glance rather than hidden behind the tool counter
+    /// with one innocuous call on screen.
+    #[test]
+    fn agents_column_collapses_a_repeated_call() {
+        let call = "bash {\"command\":\"ls -la\"}";
+        let mut panels = vec![panel_with_calls("kv-review", vec![call; 5])];
+        let lines = agents_column(&mut panels, 200_000, 80, 8, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("×5"), "collapsed spin shows its count: {text}");
+        // The single call is not duplicated across five rows.
+        assert_eq!(text.matches("bash").count(), 1, "one collapsed row: {text}");
+    }
+
+    #[test]
+    fn collapse_runs_groups_consecutive_calls() {
+        let calls: Vec<String> = ["a", "a", "b", "a"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            collapse_runs(&calls),
+            vec![("a".into(), 2), ("b".into(), 1), ("a".into(), 1)]
+        );
+    }
+
+    #[test]
+    fn agents_picker_shows_a_watermark_when_no_children_run() {
+        let items = agent_picker_items(&[]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
+        assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
+    }
+
+    #[test]
+    fn agents_picker_row_names_the_child_and_flags_a_spin() {
+        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
+        let items = agent_picker_items(&panels);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, "sub-kv-review-1");
+        assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
+        assert!(items[0].label.contains("×4"), "spin visible in the row: {}", items[0].label);
+    }
+
+    #[test]
+    fn agent_detail_shows_stats_and_collapses_a_spin() {
+        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 5])];
+        let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
+        assert!(text.contains("×5"), "call run collapsed in the detail: {text}");
+    }
+
+    #[test]
+    fn agent_detail_notes_a_finished_child() {
+        let text = agent_detail_lines(&[], Some("sub-gone-1"), 80, 20)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("finished"), "{text}");
+    }
+
+    /// A later phase's subagents appear waiting (with their phase) before they
+    /// start, and each is promoted in place by its own SubagentStart -- no
+    /// duplicate panel, and the phase badge survives the promotion.
+    #[tokio::test]
+    async fn a_pending_phase_subagent_waits_then_is_promoted_by_name() {
+        use crate::core::agent::events::PendingSubagent;
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentPlan {
+            pending: vec![PendingSubagent {
+                name: "collector".to_string(),
+                phase: 2,
+            }],
+        });
+        assert_eq!(app.subagents.len(), 1);
+        assert!(app.subagents[0].pending && app.subagents[0].phase == Some(2));
+
+        let text = agents_column(&mut app.subagents, 200_000, 80, 8, "-")
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("collector") && text.contains("phase 2") && text.contains("waiting"),
+            "the waiting hint is shown: {text}"
+        );
+
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-collector-1".to_string(),
+            name: "collector".to_string(),
+            task: Some("synthesize".to_string()),
+        });
+        assert_eq!(app.subagents.len(), 1, "promoted in place, not duplicated");
+        assert!(!app.subagents[0].pending);
+        assert_eq!(app.subagents[0].run_id, "sub-collector-1");
+        assert_eq!(app.subagents[0].task, "synthesize");
+        assert_eq!(
+            app.subagents[0].phase,
+            Some(2),
+            "keeps its phase badge once running"
+        );
+    }
+
+    /// Enter on the `/agents` list drills into a child's detail; Esc steps back
+    /// to the list rather than closing the inspector.
+    #[tokio::test]
+    async fn agents_inspector_enter_opens_detail_and_esc_returns() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-a-1".to_string(),
+            name: "a".to_string(),
+            task: Some("do it".to_string()),
+        });
+        open_agents_picker(&mut app);
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
+
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::AgentDetail);
+        assert_eq!(app.agent_detail.as_deref(), Some("sub-a-1"));
+
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
+        assert!(app.agent_detail.is_none(), "Esc cleared the drilled-in id");
+    }
+
+    /// When more agents are running than the dock can show, the overflow row
+    /// points at the `/agents` inspector so the full list is reachable.
+    #[test]
+    fn agents_column_overflow_hints_the_agents_command() {
+        let mut panels: Vec<SubagentPanel> = (0..6)
+            .map(|n| panel_with_calls(&format!("worker-{n}"), vec!["bash {}"]))
+            .collect();
+        let lines = agents_column(&mut panels, 200_000, 80, 4, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("more"), "overflow row present: {text}");
+        assert!(text.contains("/agents"), "overflow hints /agents: {text}");
+    }
+
+    /// A column too narrow for the hint falls back to the plain count rather than
+    /// spilling `/agents` off the edge.
+    #[test]
+    fn agents_column_overflow_drops_the_hint_when_too_narrow() {
+        let mut panels: Vec<SubagentPanel> = (0..6)
+            .map(|n| panel_with_calls(&format!("w{n}"), vec!["bash {}"]))
+            .collect();
+        let lines = agents_column(&mut panels, 200_000, 12, 4, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("more running"), "compact fallback: {text}");
+        assert!(!text.contains("/agents"), "no hint when it would not fit: {text}");
+    }
+
+    #[test]
+    fn shells_commands_are_registered() {
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/shells"));
+        assert!(SLASH_COMMANDS.iter().any(|command| command.name == "/jobs"));
+    }
+
+    /// Each `/shells` row names its command and its elapsed time, and carries the
+    /// real pid in `value` so `x` can stop it.
+    #[test]
+    fn shells_picker_names_each_shell_by_command_and_elapsed() {
+        use tauri_plugin_agent_tools::tools::proc::ShellInfo;
+        let shells = vec![ShellInfo {
+            pid: 4242,
+            command: "sleep 9000".into(),
+            elapsed_secs: 65,
+            backgrounded: true,
+        }];
+        let items = background_shell_picker_items(&shells);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, "4242", "pid rides in value for the stop action");
+        assert!(items[0].label.contains("sleep 9000"), "{}", items[0].label);
+        assert!(items[0].label.contains("1m05s"), "elapsed shown: {}", items[0].label);
+    }
+
+    #[test]
+    fn shells_picker_shows_an_empty_state() {
+        let items = background_shell_picker_items(&[]);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].label.contains("no background shells"));
+        assert!(items[0].value.is_empty());
     }
 
     fn steering_request(
@@ -19466,6 +20232,69 @@ mod tests {
         );
     }
 
+    /// A reason -> tool turn (the reasoning block is closed by a tool call's
+    /// flush, not by a content token) still shows `[thought for Ns]` in the
+    /// header, exactly as a reason -> answer turn does. Before, `flush_assistant`
+    /// closed the block without stamping the badge state, so the header jumped
+    /// straight to [working] on this path alone.
+    #[test]
+    fn reason_then_tool_turn_shows_thought_for_badge() {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        let render = |app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(110, 30)).unwrap();
+            terminal.draw(|f| super::draw(f, app)).unwrap();
+            let buf = terminal.backend().buffer().clone();
+            (0..buf.area.height)
+                .map(|y| {
+                    (0..buf.area.width)
+                        .map(|x| buf[(x, y)].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        // Native reasoning streams (open block) -> [thinking].
+        app.apply(StreamEvent::Reasoning {
+            text: "planning the edit".into(),
+        });
+        assert!(render(&mut app).contains("[thinking]"), "thinking while reasoning");
+        // A tool call (no answer prose) closes the block via flush_assistant.
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "read".into(),
+            args: json!({ "path": "main.rs" }),
+        });
+        let after = render(&mut app);
+        assert!(
+            after.contains("[thought for"),
+            "reason -> tool turn must keep the thought-for badge: {after}"
+        );
+    }
+
+    /// Several reasoning blocks in one turn must not all show the same turn-wide
+    /// duration: per-block timing is not tracked, so each falls back to a plain
+    /// `Thought` rather than stamping the total on every one.
+    #[test]
+    fn multiple_reasoning_blocks_drop_the_shared_duration() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token {
+            text: "<think>first thought</think>one<think>second thought</think>two".into(),
+        });
+        // Force a measurable duration so a single block would read "Thought for Ns".
+        app.thinking_since =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        app.flush_assistant();
+        let text = transcript_text(&app);
+        assert!(text.contains("Thought"), "reasoning summaries present: {text}");
+        assert!(
+            !text.contains("Thought for"),
+            "a shared duration was stamped on multiple blocks: {text}"
+        );
+    }
+
     #[test]
     fn expanded_reasoning_renders_full_detail_in_draw() {
         use ratatui::{backend::TestBackend, Terminal};
@@ -19678,101 +20507,6 @@ mod tests {
         );
     }
 
-    /// A `bash` call carrying only a `job_id` is a poll of an already
-    /// backgrounded command: it blocks until that command finishes, so its row
-    /// can stay live for minutes. "Executing command" said nothing at all
-    /// about what was running.
-    #[test]
-    fn a_backgrounded_bash_poll_names_the_job_it_waits_on() {
-        assert_eq!(
-            tool_activity("bash", &json!({ "job_id": "bash-3" })),
-            "Waiting for background job bash-3"
-        );
-        assert_eq!(
-            tool_finished("bash", &json!({ "job_id": "bash-3" })),
-            "Collected background job bash-3"
-        );
-        assert_eq!(
-            subagent_activity("bash", &json!({ "job_id": "bash-3" })),
-            "awaiting job bash-3"
-        );
-        // The command, once the run remembers which one the job is:
-        let args = json!({ "job_id": "bash-3", "command": "cargo build --release" });
-        assert_eq!(
-            tool_activity("bash", &args),
-            "Waiting for: cargo build --release"
-        );
-        assert_eq!(
-            tool_finished("bash", &args),
-            "Collected: cargo build --release"
-        );
-        assert_eq!(
-            subagent_activity("bash", &args),
-            "awaiting $ cargo build --release"
-        );
-        // A blank job id is no job id: an ordinary call is unaffected.
-        assert_eq!(
-            tool_activity("bash", &json!({ "command": "ls", "job_id": "  " })),
-            "Executing: ls"
-        );
-    }
-
-    /// The job id is read back out of the result that handed it out, so the
-    /// marker the tool prints is what this has to match.
-    #[test]
-    fn a_backgrounding_notice_yields_its_job_id() {
-        let notice = "Command exceeded 30s and is continuing in the background \
-             (job_id=bash-7). Call bash again with {\"job_id\": \"bash-7\"} (no \
-             command) to wait for and collect its output once it finishes.";
-        assert_eq!(backgrounded_job_id(notice), Some("bash-7"));
-        // Not every bash result carries one.
-        assert_eq!(backgrounded_job_id("hello\n[exit 0]"), None);
-        assert_eq!(
-            backgrounded_job_id("ERROR: unknown or already-collected job_id 'nope'"),
-            None
-        );
-    }
-
-    /// End to end: the command a job was started with reaches the poll's row.
-    #[tokio::test]
-    async fn a_polled_job_row_names_the_command_it_was_started_with() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "c1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "cargo build --release", "timeout": 1 }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "c1".into(),
-            content: "Command exceeded 1s and is continuing in the background \
-                      (job_id=bash-1). Call bash again with {\"job_id\": \"bash-1\"}."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        app.apply(StreamEvent::ToolCall {
-            id: "c2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-1" }),
-        });
-
-        let text: String = app
-            .transcript
-            .iter()
-            .map(row_text)
-            .chain(std::iter::once(
-                app.tool_group
-                    .as_ref()
-                    .map(|g| g.calls.iter().map(|c| c.activity.clone()).collect())
-                    .unwrap_or_default(),
-            ))
-            .collect();
-        assert!(
-            text.contains("Waiting for: cargo build --release"),
-            "the poll row does not name its command: {text}"
-        );
-    }
-
     /// A running command is a terminal from the moment it starts: the boxed
     /// prompt appears immediately, before any output, and each chunk streams into
     /// the box as it is produced.
@@ -19925,7 +20659,9 @@ mod tests {
             "one box per command: {live}"
         );
 
-        // When the first finishes, only the still-running one keeps its box.
+        // When the first finishes its box stays -- now settled with a status and
+        // its final output -- so the output remains readable while the second
+        // command keeps streaming its own box. It only folds once the group does.
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "compiling foo\n[exit 0]".into(),
@@ -19933,7 +20669,8 @@ mod tests {
             diff: None,
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(!live.contains("$ make"), "the finished command folds away: {live}");
+        assert!(live.contains("$ make"), "the finished command keeps its box: {live}");
+        assert!(live.contains("[exit 0]"), "with its final output: {live}");
         assert!(live.contains("$ cargo test"), "the running one stays boxed: {live}");
     }
 
@@ -19987,51 +20724,6 @@ mod tests {
         assert!(
             live.contains("compiling foo"),
             "the streaming call keeps the panel: {live}"
-        );
-    }
-
-    /// The wait on a backgrounded job is the case the live view matters most for.
-    /// The job streams under the id of the call that *started* it while the user
-    /// watches the later call that *collects* it, so the two are aliased.
-    #[test]
-    fn waiting_on_a_backgrounded_job_shows_its_live_output() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "t1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "cargo test" }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "t1".into(),
-            content: "Command exceeded 30s and is continuing in the background \
-                      (job_id=bash-7)."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        // Backgrounded, so the buffer survives its own result.
-        app.apply(StreamEvent::ToolOutputDelta {
-            id: "t1".into(),
-            delta: "test tui::rolls ... ok\n".into(),
-        });
-        app.apply(StreamEvent::ToolCall {
-            id: "t2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-7" }),
-        });
-        assert_eq!(
-            app.live_alias.get("t2").map(String::as_str),
-            Some("t1"),
-            "the collecting call is aliased to the job's origin"
-        );
-        app.apply(StreamEvent::ToolOutputDelta {
-            id: "t1".into(),
-            delta: "test tui::folds ... ok\n".into(),
-        });
-        let live = render_rows(&mut app, 74, 20).join("\n");
-        assert!(
-            live.contains("test tui::folds ... ok"),
-            "the waiting row reports the job's progress: {live}"
         );
     }
 
@@ -20820,7 +21512,7 @@ mod tests {
 
     #[test]
     fn subagent_tool_rows_have_readable_labels() {
-        let dispatch = json!({ "subagent_name": "reviewer", "description": "x" });
+        let dispatch = json!({ "subagents": [{ "name": "reviewer", "task": "x" }] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
             "Dispatching subagent: reviewer"
@@ -25031,6 +25723,39 @@ mod tests {
         );
     }
 
+    /// The shell terminal box stretches to the full width and truncates each
+    /// command/output line to one row rather than wrapping, so a long command or
+    /// a wide log line cannot balloon the box.
+    #[test]
+    fn shell_box_fills_width_and_truncates_lines() {
+        let long_cmd = format!("echo {}", "x".repeat(400));
+        let lines = super::finished_terminal_lines(&long_cmd, "one\ntwo", false, 100);
+        let widths: Vec<usize> = lines.iter().map(|line| spans_width(&line.spans)).collect();
+        assert!(
+            widths.windows(2).all(|pair| pair[0] == pair[1]),
+            "box is not a uniform full width: {widths:?}"
+        );
+        let texts: Vec<String> = lines.iter().map(line_text).collect();
+        let cmd_rows = texts.iter().filter(|r| r.contains("echo")).count();
+        assert_eq!(cmd_rows, 1, "command wrapped instead of truncating: {texts:?}");
+        assert!(
+            texts.iter().any(|r| r.contains('…')),
+            "long command should be truncated with an ellipsis: {texts:?}"
+        );
+    }
+
+    /// Box sizing must use terminal cells, not Unicode scalar counts. A row made
+    /// only of wide glyphs otherwise becomes wider than the top and bottom rules.
+    #[test]
+    fn a_boxed_panel_keeps_wide_glyph_borders_aligned() {
+        let lines = super::boxed_panel(vec![Line::raw("界界界")], 20, "");
+        let widths: Vec<usize> = lines.iter().map(|line| spans_width(&line.spans)).collect();
+        assert!(
+            widths.windows(2).all(|pair| pair[0] == pair[1]),
+            "panel borders are misaligned: {widths:?}"
+        );
+    }
+
     /// The panel is sized to the width it is drawn at: gutter, frame and content
     /// together have to fit, or the closing border wraps onto a line of its own
     /// and the box reads as double-spaced with no right edge.
@@ -25654,6 +26379,12 @@ mod tests {
             "a cancelled command must not read as succeeded: {row}"
         );
         assert!(row.contains("○"), "no interrupted marker: {row}");
+        // Present tense beside the interrupted mark: `Ran: sleep 300` would read
+        // as completed, matching the standalone edit/write orphan path.
+        assert!(
+            row.contains("Executing") && !row.contains("Ran"),
+            "interrupted command reads as completed: {row}"
+        );
     }
 
     #[test]
@@ -26574,6 +27305,122 @@ mod tests {
         assert!(refolded.contains("Worked \u{b7} 2 steps"), "refolded: {refolded}");
     }
 
+    /// An expanded finished trace caps its rail with a `└ Done` terminal; the
+    /// folded header does not, and neither does a live (unfinished) run.
+    #[test]
+    fn an_expanded_finished_trace_ends_with_done() {
+        let mut app = test_app();
+        app.apply(StreamEvent::Token { text: "<think>weigh it</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "the answer".into() });
+        app.flush_assistant();
+        let start = app.trace_runs()[0].start;
+
+        // Folded: header only, no terminal.
+        let folded = render_rows(&mut app, 70, 20).join("\n");
+        assert!(!folded.contains("Done"), "folded trace has no terminal: {folded}");
+
+        // Expanded: the rail ends in `└ Done`.
+        app.toggle_trace(start);
+        let open = render_rows(&mut app, 70, 20).join("\n");
+        assert!(open.contains("\u{2514} Done"), "expanded rail ends with Done: {open}");
+    }
+
+    /// A live (unfinished) run's rail has no `Done` terminal: its current step is
+    /// the terminal, and Done would wrongly read as finished.
+    #[test]
+    fn a_live_rail_has_no_done_terminal() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::Token { text: "<think>first</think>".into() });
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "x" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "match".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token { text: "<think>second</think>".into() });
+        let live = render_rows(&mut app, 70, 20).join("\n");
+        assert!(!live.contains("Done"), "no Done terminal while live: {live}");
+    }
+
+    /// A finished bash command keeps its terminal box (command + output) while
+    /// its group is still the current step, so the output stays readable instead
+    /// of vanishing the instant the result lands. Once the model moves on (an
+    /// answer here), the group folds to the one-line summary; the full output is
+    /// still on the group's expand.
+    #[test]
+    fn a_finished_bash_command_keeps_its_output_visible() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls -la" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "file_a.txt\nfile_b.txt".into(),
+            is_error: false,
+            diff: None,
+        });
+        // Group still open: the finished box lingers with its command and output.
+        let open = render_rows(&mut app, 60, 16).join("\n");
+        assert!(open.contains("$ ls -la"), "command still shown: {open}");
+        assert!(
+            open.contains("file_a.txt") && open.contains("file_b.txt"),
+            "output stays visible after the result: {open}"
+        );
+
+        // The model answers: the group folds to its one-line summary, output gone
+        // from the transcript (still reachable via expand).
+        app.apply(StreamEvent::Token { text: "Two files.".into() });
+        app.flush_assistant();
+        let folded = render_rows(&mut app, 60, 16).join("\n");
+        assert!(folded.contains("Ran: ls -la"), "folds to a summary: {folded}");
+        assert!(
+            !folded.contains("file_a.txt"),
+            "output folds away once the step is past: {folded}"
+        );
+    }
+
+    /// A failed bash command's lingering box carries the error glyph and its
+    /// error output, so a failure is legible before the group folds.
+    #[test]
+    fn a_finished_bash_box_marks_failure() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "false" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "boom".into(),
+            is_error: true,
+            diff: None,
+        });
+        let open = render_rows(&mut app, 50, 12).join("\n");
+        assert!(open.contains("\u{2717}"), "failed box shows the error glyph: {open}");
+        assert!(open.contains("boom"), "error output shows: {open}");
+    }
+
     /// Ctrl-O (`toggle_regions`) unfolds every collapsed trace along with the
     /// per-row detail, and folds them back on the next press.
     #[test]
@@ -26601,12 +27448,14 @@ mod tests {
         assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O refolds");
     }
 
-    /// The condensed live view: while an active run streams, its settled steps
-    /// fold into a live `Working…` header and only the current step (the running
-    /// command box here) shows below -- no growing pile of settled rows.
+    /// The live growing rail: while an active run streams, each settled step
+    /// renders as its own row (reasoning summaries and finished tool rows), with
+    /// the current step (the running command box here) as the frontier below --
+    /// the reader watches the trail accrue rather than a single folded header.
     #[test]
-    fn the_active_trace_folds_to_a_live_header() {
+    fn the_active_trace_shows_the_growing_rail() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         // reasoning, tool, reasoning, then a running tool -- three settled
         // members (two reasoning blocks + one closed group) with no answer yet.
         app.apply(StreamEvent::Token { text: "<think>first</think>".into() });
@@ -26633,19 +27482,19 @@ mod tests {
         assert!(runs[0].steps == 3 && runs[0].tool_ran, "{:?}", runs[0]);
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        // Live header (present tense, spinner-led), settled steps folded away.
-        assert!(live.contains("Working \u{b7} 3 steps"), "live header: {live}");
-        assert!(!live.contains("Thought"), "settled steps folded: {live}");
-        // The current step -- the running command -- shows below the header.
+        // No live fold header: the settled steps render on the rail instead.
+        assert!(!live.contains("Working \u{b7}"), "no live fold header: {live}");
+        assert!(live.contains("Thought"), "settled reasoning steps show: {live}");
+        // The current step -- the running command -- shows as the frontier.
         assert!(live.contains("$ cargo test"), "current step shows: {live}");
     }
 
-    /// The reported case: a just-finished command must fold as soon as reasoning
-    /// starts streaming after it, so the reasoning stands alone as the current
-    /// step rather than sitting under the finished command's row.
+    /// A live run shows both its settled step and the current reasoning step at
+    /// once: the growing rail never hides a settled row while a step is in flight.
     #[test]
-    fn a_just_finished_tool_folds_when_reasoning_follows() {
+    fn a_lone_finished_tool_is_not_folded() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "here goes".into() });
         app.flush_assistant(); // an answer, so what follows is a fresh active run
         app.apply(StreamEvent::ToolCall {
@@ -26659,22 +27508,22 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        // Reasoning now streams -- the frontier moves past the finished command.
+        // Reasoning now streams: one settled tool + the current reasoning step.
         app.apply(StreamEvent::Token { text: "<think>analyzing the diff".into() });
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        assert!(live.contains("Working \u{b7} 1 step"), "the finished tool folds: {live}");
-        assert!(!live.contains("$ git diff"), "the command row is gone: {live}");
-        assert!(!live.contains("Ran"), "no lingering ran row: {live}");
-        assert!(live.contains("analyzing the diff"), "the reasoning stands alone: {live}");
+        assert!(!live.contains("Working \u{b7}"), "a lone step is not folded: {live}");
+        assert!(live.contains("git diff"), "the finished tool shows: {live}");
+        assert!(live.contains("analyzing the diff"), "the current reasoning shows: {live}");
     }
 
-    /// The reported case: while the next tool call is still typing its arguments
-    /// (the live typing box), the prior settled steps must fold behind the live
-    /// header rather than all rendering above the box.
+    /// While the next tool call is still typing its arguments (the live typing
+    /// box), the prior settled steps render on the rail above it -- the growing
+    /// live trail, with the typing box as the current step.
     #[test]
-    fn prior_steps_fold_while_the_next_tool_call_is_typing() {
+    fn prior_steps_show_while_the_next_tool_call_is_typing() {
         let mut app = test_app();
+        app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "<think>investigating</think>".into() });
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -26698,16 +27547,16 @@ mod tests {
         });
 
         let live = render_rows(&mut app, 70, 20).join("\n");
-        assert!(live.contains("Working \u{b7} 2 steps"), "prior steps fold: {live}");
-        assert!(!live.contains("grep needle"), "the prior command row is gone: {live}");
+        assert!(!live.contains("Working \u{b7}"), "no live fold header: {live}");
+        assert!(live.contains("grep needle"), "the prior command row shows on the rail: {live}");
         assert!(live.contains("cargo build"), "the typing box is the current step: {live}");
     }
 
-    /// The screenshot case: after an answer, a fresh run of settled steps must
-    /// stay folded across the gap between one step finishing and the next
-    /// starting -- while the run is live, not only while a token is mid-flight.
+    /// After an answer, a fresh run of settled steps renders on the growing rail
+    /// -- each step visible -- across the gap between one step finishing and the
+    /// next starting, and a `Step` event does not change that.
     #[test]
-    fn a_settled_run_stays_folded_in_the_gap_between_steps() {
+    fn a_settled_run_shows_its_steps_in_the_gap() {
         let mut app = test_app();
         app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "I'll review this PR.".into() });
@@ -26728,11 +27577,61 @@ mod tests {
                 diff: None,
             });
         }
-        // No token in flight now: a bare gap, but the run is still active.
+        // No token in flight now: a bare gap, but the run is still live, so the
+        // settled steps render on the rail rather than folding behind a header.
         let live = render_rows(&mut app, 90, 24).join("\n");
-        assert!(live.contains("Working \u{b7} 4 steps"), "the run folds in the gap: {live}");
-        assert!(!live.contains("grep alpha"), "no lingering command rows: {live}");
-        assert!(!live.contains("grep bravo"), "no lingering command rows: {live}");
+        assert!(!live.contains("Working \u{b7}"), "no live fold header in the gap: {live}");
+        assert!(live.contains("grep alpha"), "settled step shows on the rail: {live}");
+        assert!(live.contains("grep bravo"), "settled step shows on the rail: {live}");
+
+        // A Step event (the next turn) does not change that: the rail stays.
+        app.apply(StreamEvent::Step { index: 3, max: 8 });
+        let after = render_rows(&mut app, 90, 24).join("\n");
+        assert!(!after.contains("Working \u{b7}"), "still no fold header after a Step: {after}");
+        assert!(after.contains("grep alpha"), "steps stay visible after a Step: {after}");
+        assert!(after.contains("grep bravo"), "steps stay visible after a Step: {after}");
+    }
+
+    /// The active run shows its steps on the rail (no header of either tense);
+    /// once the run finishes with an answer, the finished trace folds to the
+    /// static `Worked · N steps` header. There is no live header that could be
+    /// left spinning over an idle transcript.
+    #[test]
+    fn the_growing_rail_folds_when_the_run_finishes() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        for (id, cmd) in [("t1", "grep alpha"), ("t2", "grep bravo")] {
+            app.apply(StreamEvent::Token {
+                text: format!("<think>step {id}</think>"),
+            });
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: "bash".into(),
+                args: json!({ "command": cmd }),
+            });
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        // Live: the steps show on the rail, no fold header of either tense.
+        let live = render_rows(&mut app, 90, 24).join("\n");
+        assert!(
+            !live.contains("Working \u{b7}") && !live.contains("Worked \u{b7}"),
+            "no header while live: {live}"
+        );
+        assert!(live.contains("grep alpha"), "steps show on the rail: {live}");
+
+        // The run answers and ends: the finished trace folds to a static header.
+        app.apply(StreamEvent::Token { text: "reviewed it".into() });
+        app.flush_assistant();
+        app.status = super::Status::Idle;
+        let idle = render_rows(&mut app, 90, 24).join("\n");
+        assert!(idle.contains("Worked \u{b7}"), "finished trace folds: {idle}");
+        assert!(!idle.contains("Working"), "no phantom live header at idle: {idle}");
+        assert!(idle.contains("reviewed it"), "the answer shows: {idle}");
     }
 
     #[test]
@@ -28619,6 +29518,79 @@ mod tests {
         );
     }
 
+    /// While a turn runs, a committed reasoning block in the active run stays
+    /// expanded so the chain of thought stays on screen across tool calls; the
+    /// moment answer prose begins it folds back to its one-line summary.
+    #[test]
+    fn active_run_reasoning_stays_open_until_prose() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.status = Status::Running;
+        app.apply(StreamEvent::Reasoning {
+            text: "weigh the options carefully".into(),
+        });
+        // A tool call flushes the reasoning into a committed block and opens a
+        // group; the reasoning must not fold yet.
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning committed to a block");
+        let open = render_rows(&mut app, 100, 40).join("\n");
+        assert!(
+            open.contains("weigh the options carefully"),
+            "active reasoning should stay expanded: {open}"
+        );
+        // Answer prose collapses the whole run to its trace header the instant it
+        // starts streaming -- before it commits as a row.
+        app.apply(StreamEvent::Token {
+            text: "Here is the answer.".into(),
+        });
+        let folded = render_rows(&mut app, 100, 40).join("\n");
+        assert!(
+            !folded.contains("weigh the options carefully"),
+            "reasoning should fold once prose starts: {folded}"
+        );
+        assert!(
+            folded.contains("Worked"),
+            "the run should collapse to a Worked header once prose starts: {folded}"
+        );
+        assert!(
+            folded.contains("Here is the answer."),
+            "streaming answer should be on screen: {folded}"
+        );
+    }
+
+    /// The lingering active reasoning step shows only the bounded scrolling tail
+    /// the live stream did, not the whole block -- a long chain of thought cannot
+    /// push the running tool call off screen while it lingers.
+    #[test]
+    fn lingering_reasoning_step_is_bounded_to_its_tail() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.status = Status::Running;
+        let mut body = vec!["FIRST thought".to_string()];
+        for n in 2..=19 {
+            body.push(format!("middle {n}"));
+        }
+        body.push("LAST thought".into());
+        app.apply(StreamEvent::Reasoning {
+            text: body.join("\n"),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        let out = render_rows(&mut app, 100, 60).join("\n");
+        assert!(out.contains("LAST thought"), "tail of the block missing: {out}");
+        assert!(
+            !out.contains("FIRST thought"),
+            "the head should be truncated to the bounded tail: {out}"
+        );
+    }
+
     /// Interleaved reasoning keeps emission order: each stretch folds where it
     /// streamed instead of every thought being hoisted above all the prose.
     #[test]
@@ -28689,6 +29661,32 @@ mod tests {
 
     /// The turn receipt reports what the whole turn cost, which for a
     /// tool-using turn is more than the final request's usage.
+    #[test]
+    fn terminal_usage_updates_context_when_no_intermediate_event_arrives() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.on_done(
+            "stop".into(),
+            Some(Usage {
+                prompt_tokens: Some(120),
+                completion_tokens: Some(8),
+                total_tokens: Some(128),
+            }),
+        );
+        assert_eq!(app.turn_prompt_tokens, 120);
+        assert_eq!(app.tokens, 128);
+        assert!(!app.tokens_estimated);
+    }
+
+    #[test]
+    fn missing_usage_falls_back_to_a_context_estimate() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.on_done("stop".into(), None);
+        assert!(app.tokens > 0);
+        assert!(app.tokens_estimated);
+    }
+
     #[test]
     fn turn_stats_sum_output_across_requests() {
         let mut app = test_app();
@@ -30876,44 +31874,6 @@ mod tests {
         );
     }
 
-    /// A `bash` command that detaches is counted in the status bar until a later
-    /// call collects it.
-    #[test]
-    fn background_shell_count_tracks_detach_and_collect() {
-        let mut app = test_app();
-        app.apply(StreamEvent::ToolCall {
-            id: "c1".into(),
-            name: "bash".into(),
-            args: json!({ "command": "sleep 100" }),
-        });
-        app.apply(StreamEvent::ToolResult {
-            id: "c1".into(),
-            content: "Command exceeded 30s and is continuing in the background (job_id=bash-0)."
-                .into(),
-            is_error: false,
-            diff: None,
-        });
-        assert_eq!(app.active_bg_jobs.len(), 1, "the detached job is counted");
-        let footer: String = super::footer_spans(&app)
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(footer.contains("1 bg shell"), "status bar names it: {footer}");
-
-        // A later call collects the job; the count drops.
-        app.apply(StreamEvent::ToolCall {
-            id: "c2".into(),
-            name: "bash".into(),
-            args: json!({ "job_id": "bash-0" }),
-        });
-        assert!(app.active_bg_jobs.is_empty(), "collected job is uncounted");
-        let footer: String = super::footer_spans(&app)
-            .iter()
-            .map(|s| s.content.as_ref())
-            .collect();
-        assert!(!footer.contains("bg shell"), "indicator is gone: {footer}");
-    }
-
     /// The borderless input box used to reserve two blank rows for borders it
     /// does not draw. One row of air above the dock is all it needs.
     #[test]
@@ -31420,8 +32380,12 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let shown = rows.iter().filter(|r| r.contains("agent-")).count();
         assert!(shown < 9, "not every agent fits: {rows:?}");
+        // The overflow row counts the hidden agents, in either elision form: the
+        // `/agents` hint when the column is wide enough, the compact "more
+        // running" otherwise.
         assert!(
-            rows.iter().any(|r| r.contains("more running")),
+            rows.iter()
+                .any(|r| r.contains("more · /agents") || r.contains("more running")),
             "the rest are counted: {rows:?}"
         );
     }

@@ -248,6 +248,18 @@ fn live_reasoning_tail(body: &[&str], width: u16) -> Vec<Line<'static>> {
         .collect()
 }
 
+/// The bounded scrolling tail of a committed reasoning block, identical to what
+/// the live stream showed: the last [`LIVE_REASONING_TAIL_LINES`] rendered rows.
+/// Used while the newest step lingers expanded before it folds, so the view does
+/// not jump from a scrolling tail to the whole block and back to a summary.
+pub(super) fn reasoning_tail_lines(seg: &str, width: u16) -> Vec<Line<'static>> {
+    let body: Vec<&str> = seg.lines().filter(|l| !l.trim().is_empty()).collect();
+    if body.is_empty() {
+        return Vec::new();
+    }
+    live_reasoning_tail(&body, width)
+}
+
 /// Collapsed summary row for a folded reasoning block, in the desktop's
 /// `Thought for Ns` wording. The duration is known once the block closes;
 /// before that (the live settled-summary) and on replay of a journal written
@@ -347,6 +359,8 @@ fn render_code_block(body: &[&str], lang: &str, width: usize, plain: bool) -> Ve
 /// Break a styled row into chunks of at most `max` columns, splitting spans
 /// where needed and carrying each span's style onto its continuation.
 fn wrap_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> {
+    use unicode_width::UnicodeWidthStr;
+
     let max = max.max(1);
     let mut out: Vec<Vec<Span<'static>>> = Vec::new();
     let mut row: Vec<Span<'static>> = Vec::new();
@@ -356,17 +370,34 @@ fn wrap_spans(spans: Vec<Span<'static>>, max: usize) -> Vec<Vec<Span<'static>>> 
         let mut rest: &str = &span.content;
         while !rest.is_empty() {
             let room = max - used;
-            let take = rest.chars().count().min(room);
-            let split = rest
-                .char_indices()
-                .nth(take)
-                .map(|(i, _)| i)
-                .unwrap_or(rest.len());
-            let (head, tail) = rest.split_at(split);
-            if !head.is_empty() {
-                row.push(Span::styled(head.to_string(), style));
-                used += take;
+            let mut take = 0usize;
+            let mut split = 0usize;
+            for (i, ch) in rest.char_indices() {
+                let next = ch.to_string().width();
+                if take + next > room {
+                    break;
+                }
+                take += next;
+                split = i + ch.len_utf8();
             }
+            if split == 0 {
+                // A wide glyph cannot fit in the remaining cell. Move it to
+                // the next visual row instead of allowing it to overrun the
+                // panel frame.
+                if used > 0 {
+                    out.push(std::mem::take(&mut row));
+                    used = 0;
+                    continue;
+                }
+                let (head, tail) = rest.split_at(rest.chars().next().unwrap().len_utf8());
+                row.push(Span::styled(head.to_string(), style));
+                rest = tail;
+                out.push(std::mem::take(&mut row));
+                continue;
+            }
+            let (head, tail) = rest.split_at(split);
+            row.push(Span::styled(head.to_string(), style));
+            used += take;
             rest = tail;
             if used >= max && !rest.is_empty() {
                 out.push(std::mem::take(&mut row));

@@ -13,8 +13,8 @@ export type ToolCallBar =
   | { variant: 'search'; query: string; count?: number }
   | { variant: 'address'; url: string }
   | { variant: 'documents'; query: string; count?: number; fileCount?: number }
-  /** `bash`, presented as a terminal. `jobId` set = polling a backgrounded run. */
-  | { variant: 'terminal'; command: string; jobId?: string }
+  /** `bash`, presented as a terminal. */
+  | { variant: 'terminal'; command: string }
   /**
    * The workspace tools. `target` is whatever the call is really about -- a path
    * for read/ls, the pattern for find/grep, the entry name for memory/skill --
@@ -71,6 +71,15 @@ const asEdits = (
   return edits.length > 0 ? edits : undefined
 }
 
+/** The first subagent of a `dispatch_subagent` call, tolerating the streaming
+ * partial shape (a flat `subagents[]`); undefined until enough args arrive. */
+const firstPlannedSubagent = (
+  subagents: unknown
+): { name?: unknown; task?: unknown } | undefined => {
+  if (!Array.isArray(subagents) || subagents.length === 0) return undefined
+  return subagents[0] as { name?: unknown; task?: unknown }
+}
+
 /**
  * Build the bar for a native tool call from its arguments. Arguments stream in,
  * so a missing or partial value is normal and renders as an empty/partial bar
@@ -97,10 +106,14 @@ export function describeNativeToolCall(
     return { variant: 'address', url: asString(args.url) }
   }
   if (origin.kind === 'subagent') {
+    // The `dispatch_subagent` schema is a flat `subagents[]`; the card names the
+    // first one (the widget is transient and hides once the fan-out is launched,
+    // so a per-plan summary is not worth the extra chrome).
+    const first = firstPlannedSubagent(args.subagents)
     return {
       variant: 'subagent',
-      name: asString(args.subagent_name),
-      task: asString(args.description),
+      name: asString(first?.name),
+      task: asString(first?.task),
     }
   }
   if (origin.kind === 'rag' && toolName === RAG_RETRIEVE_TOOL) {
@@ -115,11 +128,9 @@ export function describeNativeToolCall(
   }
   if (origin.kind === 'agent') {
     if (toolName === 'bash') {
-      const jobId = asString(args.job_id)
       return {
         variant: 'terminal',
         command: asString(args.command),
-        jobId: jobId || undefined,
       }
     }
     // find/grep are about their pattern, with the directory as context; the

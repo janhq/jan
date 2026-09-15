@@ -1134,6 +1134,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn usage_only_tail_is_reconstructed_for_the_tui() {
+        let (url, server) = serve(vec![Some(sse_response(&[
+            r#"{"choices":[{"delta":{"content":"ok"}}]}"#,
+            r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":3,"total_tokens":45}}"#,
+        ]))])
+        .await;
+
+        let (tx, _) = sink();
+        let completion = run(&url, &[], &tx).await.expect("stream succeeds");
+        assert_eq!(completion["usage"]["prompt_tokens"], 42);
+        assert_eq!(completion["usage"]["completion_tokens"], 3);
+        assert_eq!(completion["usage"]["total_tokens"], 45);
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
     async fn streams_tokens_and_reconstructs_the_completion() {
         let (url, server) = serve(vec![Some(sse_response(&[
             r#"{"choices":[{"delta":{"content":"He"}}]}"#,
@@ -1147,6 +1164,8 @@ mod tests {
 
         assert_eq!(completion["choices"][0]["message"]["content"], "Hello");
         assert_eq!(completion["choices"][0]["finish_reason"], "stop");
+        assert_eq!(completion["usage"]["prompt_tokens"], 3);
+        assert_eq!(completion["usage"]["completion_tokens"], 2);
         assert_eq!(completion["usage"]["total_tokens"], 5);
 
         drop(tx);

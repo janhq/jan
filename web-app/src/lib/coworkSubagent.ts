@@ -63,18 +63,33 @@ export const MAX_PARALLEL_SUBAGENTS = 3
  */
 export const SUBAGENT_INLINE_MAX = 8 * 1024
 
-/** The `task` result for a child that has just been started. */
-export function dispatchedSubagentResult(
-  name: string,
-  callId: string,
-  savedPath: string | null
+/**
+ * The `task` result for a phased dispatch, reported the moment phase 1 is
+ * launched. Port of the Rust `format_dispatched_plan`: single-phase vs
+ * multi-phase wording, the blackboard note (or the inline-note fallback when
+ * there is no scratch), and the "these are the subagents' now" hand-off.
+ */
+export function formatDispatchedPlan(
+  plan: DispatchPlan,
+  blackboardDir: string | null
 ): string {
-  const where = savedPath
-    ? `Its answer will be written to ${savedPath}; read that file once you are told it has landed.`
-    : 'You will be given its answer as soon as it finishes.'
+  const firstPhaseNames = plan.phases[0].subagents.map((s) => s.name)
+  const names = firstPhaseNames.join(', ')
+  const phaseCount = plan.phases.length
+  const totalSubagents = plan.phases.reduce(
+    (n, p) => n + p.subagents.length,
+    0
+  )
+  const whereAnswers = blackboardDir
+    ? ` Each answer is written to ${blackboardDir}/<name>.md; read those files when you need them.`
+    : ' Each answer rides the note that tells you it finished.'
+  const head =
+    phaseCount > 1
+      ? `Dispatched a ${phaseCount}-phase plan of ${totalSubagents} subagents. Phase 1 is now running: ${names}. Later phases start automatically as each phase finishes, each receiving the previous phase's results.`
+      : `Dispatched ${totalSubagents} subagent(s) running concurrently in the background: ${names}.`
   return (
-    `Subagent '${name}' started in the background (${callId}). ${where} ` +
-    'Keep working rather than waiting for it.'
+    `${head}${whereAnswers} These tasks are the subagents' now -- do not do them yourself; ` +
+    "you'll be pinged as each finishes."
   )
 }
 
@@ -213,12 +228,27 @@ const WITHHELD_FROM_SUBAGENTS = new Set([
   MONITOR_TOOL_NAME,
 ])
 
+/**
+ * One subagent within a phased dispatch. `name` is a saved definition's name or,
+ * when nothing matches, the identity of an ephemeral generalist; it is also the
+ * blackboard file the answer is written to (`blackboard/<name>.md`).
+ * `description` is the subagent's sole task (the schema calls it `task`). Ported
+ * from `subagent.rs::SubagentRequest`.
+ */
 export type SubagentRequest = {
-  subagent_name: string
+  name: string
   description: string
-  system_prompt?: string
   allowed_tools?: string[]
 }
+
+/** A group of subagents that run concurrently; the next phase starts only once
+ * every one here has finished. `number` is the model's own `phase` key for the
+ * group (what the "phase N" badge shows). Ported from `subagent.rs::Phase`. */
+export type Phase = { number: number; subagents: SubagentRequest[] }
+
+/** A parsed `task` call: one or more ordered phases. Ported from
+ * `subagent.rs::DispatchPlan`. */
+export type DispatchPlan = { phases: Phase[] }
 
 export type ResolvedSubagent = {
   name: string
@@ -228,28 +258,174 @@ export type ResolvedSubagent = {
   model: string | null
 }
 
-/** Reject a malformed `task` call rather than running an errand with no brief. */
-export function parseSubagentRequest(input: unknown): SubagentRequest | string {
-  const raw = (input ?? {}) as Partial<SubagentRequest>
-  if (typeof raw.subagent_name !== 'string' || !raw.subagent_name.trim()) {
-    return '`task` requires a non-empty `subagent_name`'
+/** Longest subagent name accepted. Mirrors `subagent.rs::MAX_SUBAGENT_NAME_LEN`;
+ * kept short so the validated name maps to `blackboard/<name>.md` verbatim. */
+const MAX_SUBAGENT_NAME_LEN = 64
+/** `[A-Za-z0-9_-]`: a name is a single path component, mirroring
+ * `subagent.rs::validate_name`. */
+const SUBAGENT_NAME_RE = /^[A-Za-z0-9_-]+$/
+
+/**
+ * Parse a `dispatch_subagent` tool-call argument object into an ordered plan, or
+ * a helpful error string.
+ *
+ * The wire shape is a flat `subagents` array; each subagent's optional `phase`
+ * (a non-negative integer, default 0) groups it into a stage. Subagents sharing
+ * a `phase` run together; lower phases run first. One shape covers both a plain
+ * fan-out (omit `phase`) and a pipeline (raise `phase`). Names are validated
+ * (charset + length) and required unique across the whole plan, since each is a
+ * blackboard filename and a panel identity. Ported from
+ * `subagent.rs::parse_dispatch_plan`.
+ */
+export function parseDispatchPlan(input: unknown): DispatchPlan | string {
+  const raw = (input ?? {}) as { subagents?: unknown }
+  if (!Array.isArray(raw.subagents)) {
+    return '`dispatch_subagent` requires a `subagents` array (each with a name and task, plus an optional integer `phase`)'
   }
-  if (typeof raw.description !== 'string' || !raw.description.trim()) {
-    return '`task` requires a `description`: the subagent cannot see this conversation, so state everything it needs'
+  if (raw.subagents.length === 0) {
+    return '`subagents` must contain at least one subagent'
   }
-  const req: SubagentRequest = {
-    subagent_name: raw.subagent_name,
-    description: raw.description,
+  const seen = new Set<string>()
+  const byPhase = new Map<number, SubagentRequest[]>()
+  for (const subVal of raw.subagents) {
+    const sub = (subVal ?? {}) as {
+      name?: unknown
+      task?: unknown
+      phase?: unknown
+      allowed_tools?: unknown
+    }
+    if (typeof sub.name !== 'string' || !sub.name.trim()) {
+      return 'each subagent requires a non-empty `name`'
+    }
+    const name = sub.name
+    if (!SUBAGENT_NAME_RE.test(name)) {
+      return `invalid subagent name '${name}': use only letters, digits, '-' and '_'`
+    }
+    if (name.length > MAX_SUBAGENT_NAME_LEN) {
+      return `subagent name '${name}' is too long (max ${MAX_SUBAGENT_NAME_LEN} characters)`
+    }
+    if (seen.has(name)) {
+      return `duplicate subagent name '${name}': names must be unique across the whole plan (each is a blackboard filename)`
+    }
+    seen.add(name)
+    if (typeof sub.task !== 'string' || !sub.task.trim()) {
+      return `subagent '${name}' requires a \`task\`: it cannot see this conversation, so state everything it needs`
+    }
+    let phase = 0
+    if (sub.phase !== undefined && sub.phase !== null) {
+      if (
+        typeof sub.phase !== 'number' ||
+        !Number.isInteger(sub.phase) ||
+        sub.phase < 0
+      ) {
+        return `subagent '${name}' has an invalid 'phase': use a non-negative integer (0 = the first stage)`
+      }
+      phase = sub.phase
+    }
+    const req: SubagentRequest = { name, description: sub.task }
+    if (Array.isArray(sub.allowed_tools)) {
+      const list = sub.allowed_tools.filter(
+        (t): t is string => typeof t === 'string'
+      )
+      // `[]` means "inherit", not "no tools" (see intersectAllowedTools), so a
+      // blank list is dropped rather than handed on as a restriction.
+      if (list.length > 0) req.allowed_tools = list
+    }
+    const group = byPhase.get(phase)
+    if (group) group.push(req)
+    else byPhase.set(phase, [req])
   }
-  if (typeof raw.system_prompt === 'string' && raw.system_prompt.trim()) {
-    req.system_prompt = raw.system_prompt
+  // Ascending phase order, so sparse numbers (0, 5) collapse to adjacent stages.
+  const phases: Phase[] = [...byPhase.keys()]
+    .sort((a, b) => a - b)
+    .map((number) => ({ number, subagents: byPhase.get(number)! }))
+  return { phases }
+}
+
+/**
+ * System prompt for a subagent dispatched without a saved definition: a focused
+ * generalist whose closing report becomes the next phase's input. Ported
+ * verbatim from `subagent.rs::ephemeral_subagent_prompt`.
+ */
+function ephemeralSubagentPrompt(name: string): string {
+  return (
+    `You are "${name}", a focused subagent handling one task as part of a larger plan. ` +
+    'Do exactly the task you are given, using your tools as needed, and do not wait for ' +
+    'clarification -- you cannot receive any. When you finish, end with a concise, ' +
+    'self-contained report of what you found or did: it is handed verbatim to the agents in ' +
+    'the next phase, so include the facts, paths, and decisions they will need.'
+  )
+}
+
+/** Max bytes of each previous-phase answer folded into a next-phase brief, so a
+ * verbose predecessor cannot blow the successor's context. The full answer is
+ * always on the blackboard. Mirrors `subagent.rs::PHASE_INPUT_MAX_BYTES`. */
+export const PHASE_INPUT_MAX_BYTES = 12 * 1024
+
+/** Cap a finished child's answer to what a next-phase brief can hold before it
+ * is retained in memory, so a plan never keeps arbitrarily large outputs across
+ * its phases: `injectInputs` would truncate to the same bound at prompt-build
+ * anyway, and the full answer is always on the blackboard (the brief header
+ * points there). Mirrors the Rust read path, which never holds more than the
+ * blackboard file it just read. */
+function capRetainedAnswer(output: string): string {
+  return truncateToBytes(output, PHASE_INPUT_MAX_BYTES).text
+}
+
+/** UTF-8 byte length of a single code point, without allocating. */
+function utf8Len(codePoint: number): number {
+  if (codePoint <= 0x7f) return 1
+  if (codePoint <= 0x7ff) return 2
+  if (codePoint <= 0xffff) return 3
+  return 4
+}
+
+/** Truncate to at most `maxBytes` UTF-8 bytes at a code-point boundary, so a
+ * byte cut never splits a character. Mirrors `subagent.rs::char_boundary`. */
+function truncateToBytes(
+  s: string,
+  maxBytes: number
+): { text: string; truncated: boolean } {
+  let bytes = 0
+  let cut = 0
+  for (const ch of s) {
+    const n = utf8Len(ch.codePointAt(0) ?? 0)
+    if (bytes + n > maxBytes) return { text: s.slice(0, cut), truncated: true }
+    bytes += n
+    cut += ch.length
   }
-  if (Array.isArray(raw.allowed_tools)) {
-    req.allowed_tools = raw.allowed_tools.filter(
-      (t): t is string => typeof t === 'string'
+  return { text: s, truncated: false }
+}
+
+/**
+ * Prefix a next-phase brief with the previous phase's results. Ported verbatim
+ * (header wording + byte cap + truncation note) from
+ * `subagent.rs::inject_inputs`. Empty inputs leave the task unchanged.
+ */
+export function injectInputs(
+  task: string,
+  inputs: { name: string; output: string }[]
+): string {
+  if (inputs.length === 0) return task
+  let s =
+    '## Results from the previous phase\n\n' +
+    'The agents before you produced the following; their full outputs are also on ' +
+    'the blackboard at blackboard/<name>.md.\n\n'
+  for (const { name, output } of inputs) {
+    s += `### ${name}\n`
+    const { text, truncated } = truncateToBytes(
+      output.trim(),
+      PHASE_INPUT_MAX_BYTES
     )
+    s += text
+    if (truncated) {
+      s += `\n\n[...truncated; read blackboard/${name}.md for the full output]`
+    }
+    s += '\n\n'
   }
-  return req
+  s += '---\n\n'
+  s += task
+  return s
 }
 
 /**
@@ -300,20 +476,21 @@ export function intersectAllowedTools(
 /**
  * Resolve a request against the saved definitions.
  *
- * An unknown name is only an error when no inline `system_prompt` was supplied:
- * a one-off subagent is first-class, which is what keeps `task` useful before
- * anything is saved. Ported from `subagent.rs::resolve_dispatch`.
+ * A name matching a saved definition uses that role and tools; any other name
+ * runs as a focused general-purpose agent whose system prompt is the ephemeral
+ * generalist text (no error for an unknown name). Only a tool-allowlist conflict
+ * errors. Ported from `subagent.rs::resolve_dispatch`.
  */
 export function resolveSubagent(
   req: SubagentRequest,
   definitions: SubagentDefinition[],
   parentTools: string[]
 ): ResolvedSubagent | { error: string } {
-  const saved = definitions.find((d) => d.name === req.subagent_name)
+  const saved = definitions.find((d) => d.name === req.name)
   const narrowed = intersectAllowedTools(
     saved ? saved.allowed_tools : (req.allowed_tools ?? null),
-    // An inline allowlist *is* the one-off's definition, so it is not also
-    // applied as a call-site narrowing (that would compare it to itself).
+    // An inline allowlist *is* the ephemeral agent's definition, so it is not
+    // also applied as a call-site narrowing (that would compare it to itself).
     saved ? (req.allowed_tools ?? null) : null,
     parentTools
   )
@@ -326,16 +503,9 @@ export function resolveSubagent(
       model: saved.model,
     }
   }
-  if (!req.system_prompt) {
-    return {
-      error:
-        `unknown subagent '${req.subagent_name}': no saved definition. For a ` +
-        'one-off, retry with a `system_prompt` describing its role.',
-    }
-  }
   return {
-    name: req.subagent_name,
-    systemPrompt: req.system_prompt,
+    name: req.name,
+    systemPrompt: ephemeralSubagentPrompt(req.name),
     allowedTools: narrowed.tools,
     model: null,
   }
@@ -502,14 +672,18 @@ export async function runSubagent(
     events.onStart()
 
     const tools = subagentTools(opts.parentTools, resolved.allowedTools)
-    const system = buildSubagentSystemPrompt(resolved.systemPrompt, {
-      workspacePath: opts.system.workspacePath,
-      readOnlyFolder: opts.system.readOnlyFolder,
-      bashAvailable: opts.system.bashAvailable && 'bash' in tools,
-      // Derived, not passed: the intersection above may have dropped them.
-      webSearch: 'web_search' in tools,
-      environment: opts.system.environment,
-    })
+    const system = buildSubagentSystemPrompt(
+      resolved.systemPrompt,
+      {
+        workspacePath: opts.system.workspacePath,
+        readOnlyFolder: opts.system.readOnlyFolder,
+        bashAvailable: opts.system.bashAvailable && 'bash' in tools,
+        // Derived, not passed: the intersection above may have dropped them.
+        webSearch: 'web_search' in tools,
+        environment: opts.system.environment,
+      },
+      resolved.name
+    )
 
     // A fresh history: the child does not see the parent's conversation, so the
     // description is the whole brief.
@@ -622,4 +796,88 @@ export async function runSubagent(
   }
 }
 
-export const __testing = { Semaphore, SUBAGENT_SKILL_TOOLS }
+/** The lifecycle hooks the phase scheduler drives, so `runDispatchPlan` stays
+ * store- and inbox-free (and unit-testable with fakes). */
+export type DispatchPlanCallbacks = {
+  /** Run one subagent to completion. The caller wires store events + the gate
+   * (via `runSubagent`). Its resolved definition is looked up by the caller. */
+  runOne: (
+    req: SubagentRequest,
+    description: string,
+    id: string
+  ) => Promise<SubagentResult>
+  /** Persist a finished child's answer to `blackboard/<name>.md`; returns the
+   * model-visible path, or `null` when no scratch is reachable. */
+  writeBlackboard: (name: string, content: string) => Promise<string | null>
+  /** A child is being dispatched now (for the inbox begin + waiting-promotion). */
+  onDispatch: (id: string, name: string) => void
+  /** A child finished: its result and the blackboard path (null on failure or
+   * when nothing was saved). */
+  onComplete: (
+    id: string,
+    name: string,
+    result: SubagentResult,
+    savedPath: string | null
+  ) => void
+}
+
+/**
+ * The phase scheduler: run each phase's subagents concurrently, wait for the
+ * whole phase, write every real answer to the blackboard AND keep it in memory,
+ * then hand the next phase those results (via `injectInputs`). Port of the Rust
+ * `spawn_dispatch_plan`/`run_phase_plan` driver.
+ *
+ * Resilient by construction: a failed child yields an error output and the plan
+ * proceeds; this never throws (so the caller can release its plan-hold in a
+ * `finally`). Each subagent is keyed `${callId}-${name}` for the store.
+ */
+export async function runDispatchPlan(
+  plan: DispatchPlan,
+  callId: string,
+  cb: DispatchPlanCallbacks
+): Promise<void> {
+  let inputs: { name: string; output: string }[] = []
+  for (const phase of plan.phases) {
+    const results = await Promise.all(
+      phase.subagents.map(async (req) => {
+        const id = `${callId}-${req.name}`
+        const description = injectInputs(req.description, inputs)
+        cb.onDispatch(id, req.name)
+        let result: SubagentResult
+        try {
+          result = await cb.runOne(req, description, id)
+        } catch (e) {
+          // `runSubagent` does not throw, so this is the driver itself failing;
+          // the plan must still proceed rather than losing the later phases.
+          result = {
+            output: e instanceof Error ? e.message : String(e),
+            usage: null,
+            isError: true,
+            sessionTokens: 0,
+          }
+        }
+        // Only a real answer is written to the blackboard and fed forward: an
+        // error message in the file the next phase reads would be
+        // indistinguishable from an answer. (Rust writes the error there too;
+        // Cowork keeps the coordination file answer-only.)
+        const realAnswer = !result.isError && result.output.trim().length > 0
+        const savedPath = realAnswer
+          ? await cb.writeBlackboard(req.name, result.output)
+          : null
+        cb.onComplete(id, req.name, result, savedPath)
+        return realAnswer
+          ? { name: req.name, output: capRetainedAnswer(result.output) }
+          : null
+      })
+    )
+    inputs = results.filter(
+      (r): r is { name: string; output: string } => r !== null
+    )
+  }
+}
+
+export const __testing = {
+  Semaphore,
+  SUBAGENT_SKILL_TOOLS,
+  ephemeralSubagentPrompt,
+}
