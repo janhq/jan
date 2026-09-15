@@ -24,6 +24,14 @@ pub mod schema;
 pub mod spill;
 pub mod web;
 
+/// Epoch seconds, saturating to 0 before the epoch, used to stamp spill files.
+pub fn epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
 /// A single OpenAI `image_url` content part: the `data:<mime>;base64,<bytes>`
 /// URL plus a display name. This is what the `read` tool returns for an image
 /// file, and the agent loop threads into the tool-result message so a vision
@@ -105,8 +113,7 @@ pub struct ToolContext<'a> {
     ///
     /// `Arc` and not a borrow because `bash` hands its child to a detached task:
     /// the sink has to outlive the call that created it, which is also what makes
-    /// a backgrounded command keep reporting after the tool has returned its
-    /// `job_id`.
+    /// a backgrounded command keep reporting after the tool has returned.
     pub on_output: Option<OutputSink>,
     /// Folders attached read-only: readable by the file tools and the shell,
     /// never writable. Empty on every surface that has not attached one.

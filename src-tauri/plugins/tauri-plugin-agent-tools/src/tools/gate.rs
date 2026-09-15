@@ -241,18 +241,6 @@ pub fn resolve_decision(
         }
         Capability::Exec => {
             let command = args.get("command").and_then(|v| v.as_str()).unwrap_or("");
-            // Polling a previously backgrounded command (job_id, no new
-            // command) never prompts: the exec permission was already
-            // granted (or denied above) when the command was started. A real
-            // command wins over a stray model-supplied job_id.
-            if command.trim().is_empty()
-                && args
-                    .get("job_id")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|job_id| !job_id.trim().is_empty())
-            {
-                return Decision::Allow;
-            }
             if grants.covers_command(command) {
                 Decision::Allow
             } else {
@@ -539,52 +527,6 @@ mod tests {
             &grants,
         );
         assert_eq!(d, Decision::Prompt(PromptKind::Exec));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn bash_command_with_spurious_job_id_still_prompts_exec() {
-        let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        let grants = SessionGrants::default();
-        for job_id in ["", " ", "x"] {
-            let d = resolve_decision(
-                lookup("bash").unwrap(),
-                &json!({"command": "ls", "job_id": job_id}),
-                &GateContext {
-                    project_root: &root,
-                    scratch: None,
-                    read_roots: &[],
-                    write_roots: &[],
-                    hide_jan: true,
-                },
-                &perms,
-                &grants,
-            );
-            assert_eq!(d, Decision::Prompt(PromptKind::Exec), "job_id {job_id:?}");
-        }
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn bash_job_id_poll_never_prompts() {
-        let root = unique_root();
-        let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
-        let grants = SessionGrants::default();
-        let d = resolve_decision(
-            lookup("bash").unwrap(),
-            &json!({"job_id": "bash-0"}),
-            &GateContext {
-                project_root: &root,
-                scratch: None,
-                read_roots: &[],
-                write_roots: &[],
-                hide_jan: true,
-            },
-            &perms,
-            &grants,
-        );
-        assert_eq!(d, Decision::Allow);
         let _ = std::fs::remove_dir_all(&root);
     }
 

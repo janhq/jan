@@ -110,6 +110,51 @@ pub fn reserve_subagent_result(scratch: &Path, id: &str) -> Option<PathBuf> {
     None
 }
 
+/// Scratch subdirectory holding the shared blackboard: one `<name>.md` per
+/// subagent, the coordination surface a phased dispatch reads from and writes to.
+pub const BLACKBOARD_DIR: &str = "blackboard";
+
+/// Reserve `<scratch>/blackboard/<name>.md` as an empty file, returning the host
+/// path. Unlike [`reserve_subagent_result`], the name is predictable and stable:
+/// it is how the next phase and sibling agents find this subagent's answer, so a
+/// stale file left by an earlier plan is truncated in place rather than suffixed.
+/// A pre-planted symlink at the leaf is still refused.
+pub fn reserve_blackboard_result(scratch: &Path, name: &str) -> Option<PathBuf> {
+    let dir = validated_subdir(scratch, BLACKBOARD_DIR)?;
+    let path = dir.join(format!("{}.md", sanitize_stem(name)));
+    match open_excl(&path) {
+        Ok(_) => Some(path),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            match std::fs::symlink_metadata(&path) {
+                Ok(m) if m.is_file() && !m.file_type().is_symlink() => {
+                    open_truncating(&path).ok().map(|_| path)
+                }
+                _ => None,
+            }
+        }
+        Err(_) => None,
+    }
+}
+
+/// Read `<scratch>/blackboard/<name>.md` for injection into the next phase,
+/// fail-closed against the same redirection the write path guards: the shell
+/// shares this scratch and can `rm` a finished answer and `ln -s` a host file in
+/// its place, which a plain read would follow, feeding host contents into the
+/// successor's prompt. The directory is re-validated as a real (non-symlink)
+/// dir and the leaf must be a real file, not a symlink. `name` is the model's
+/// blackboard stem; it is sanitized to one safe component before resolving.
+/// Returns `None` on a missing, redirected, or unreadable entry -- all "no
+/// input", indistinguishable to the caller.
+pub fn read_blackboard_result(scratch: &Path, name: &str) -> Option<String> {
+    let dir = validated_subdir(scratch, BLACKBOARD_DIR)?;
+    let path = dir.join(format!("{}.md", sanitize_stem(name)));
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !meta.file_type().is_symlink() => {}
+        _ => return None,
+    }
+    std::fs::read_to_string(&path).ok()
+}
+
 /// Fill a path [`reserve_subagent_result`] handed out. The shell could have
 /// swapped our empty file for a link in the meantime, so the same fail-closed
 /// re-check applies: write only to a real file, never through a redirect.
@@ -126,7 +171,7 @@ pub fn fill_subagent_result(path: &Path, text: &str) -> bool {
 
 /// `create(false)`: the file must be the one we reserved, so a path that has
 /// since been removed is a failure rather than something to recreate.
-fn open_truncating(path: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn open_truncating(path: &Path) -> std::io::Result<std::fs::File> {
     std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -224,6 +269,61 @@ mod tests {
         std::fs::remove_file(&b).unwrap();
         assert!(!fill_subagent_result(&b, "x"));
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The blackboard path is name-keyed and predictable, and a re-dispatch of
+    /// the same name truncates the earlier file rather than suffixing it -- so
+    /// the next phase always reads it at the one path it was told.
+    #[test]
+    fn blackboard_is_name_keyed_and_reused_in_place() {
+        let scratch = tmp("bb");
+        let a = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert_eq!(a, scratch.join("blackboard/research.md"));
+        assert!(fill_subagent_result(&a, "first"));
+        // A later reservation of the same name yields the SAME path, truncated.
+        let b = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert_eq!(a, b);
+        assert_eq!(std::fs::read_to_string(&b).unwrap(), "");
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[test]
+    fn reads_a_real_blackboard_answer() {
+        let scratch = tmp("bb-read");
+        let p = reserve_blackboard_result(&scratch, "research").unwrap();
+        assert!(fill_subagent_result(&p, "the answer"));
+        assert_eq!(
+            read_blackboard_result(&scratch, "research").as_deref(),
+            Some("the answer")
+        );
+        assert!(read_blackboard_result(&scratch, "missing").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_through_a_swapped_link() {
+        let scratch = tmp("bb-read-swap");
+        let host = tmp("bb-read-host").join("secret");
+        std::fs::write(&host, "host-secret").unwrap();
+        let path = reserve_blackboard_result(&scratch, "research").unwrap();
+        std::fs::remove_file(&path).unwrap();
+        std::os::unix::fs::symlink(&host, &path).unwrap();
+        assert!(read_blackboard_result(&scratch, "research").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(host.parent().unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_to_read_through_a_redirected_dir() {
+        let scratch = tmp("bb-read-dir");
+        let host = tmp("bb-read-dir-host");
+        std::fs::write(host.join("research.md"), "host-secret").unwrap();
+        std::os::unix::fs::symlink(&host, scratch.join(BLACKBOARD_DIR)).unwrap();
+        assert!(read_blackboard_result(&scratch, "research").is_none());
+        let _ = std::fs::remove_dir_all(&scratch);
+        let _ = std::fs::remove_dir_all(&host);
     }
 
     #[cfg(unix)]

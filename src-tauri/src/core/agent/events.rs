@@ -50,9 +50,8 @@ pub enum StreamEvent {
     /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
     /// the output size. Chunks are raw fragments and may split a line.
     ///
-    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
-    /// `job_id`, so a long-running job reports progress under the id of the call
-    /// that started it.
+    /// Keeps arriving after a `bash` call has backgrounded itself, so a
+    /// long-running job reports progress under the id of the call that started it.
     ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
@@ -104,6 +103,13 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// The later phases of a phased dispatch, named up front so a consumer can
+    /// show their subagents as WAITING on an earlier phase before they start.
+    /// Each pending subagent is promoted by its own `SubagentStart` (or
+    /// `SubagentQueued`), matched by `name`, which is unique across a plan.
+    /// Display-only and never journaled; emitted only by the top-level run
+    /// (children cannot dispatch), so it is never wrapped in `Subagent`.
+    SubagentPlan { pending: Vec<PendingSubagent> },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -196,6 +202,16 @@ pub enum StreamEvent {
         prompt_kind: String,
         offers_always: bool,
     },
+}
+
+/// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
+/// across the plan, and its blackboard file) and 1-based phase number. Carried by
+/// [`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase
+/// before it.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PendingSubagent {
+    pub name: String,
+    pub phase: u32,
 }
 
 /// If `path` targets a file in the agent's skill or memory workspace, return the
