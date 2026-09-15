@@ -309,25 +309,9 @@ jobs:
           AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
 
-      # Rust compiles go through sccache with its cache in S3, so dependency
-      # crates stop recompiling on every run; written only when the job builds
-      # main or a release tag. Setup: src-tauri/build-utils/sccache-setup.sh
-      - name: Set up the Rust compile cache
-        continue-on-error: true
-        shell: bash
-        run: bash src-tauri/build-utils/sccache-setup.sh
-        env:
-          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
-          REGION: ${{ secrets.DELTA_AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
-          AWS_EC2_METADATA_DISABLED: 'true'
-          WRITE: ${{ inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
-
       - name: Build app
         shell: bash
         run: |
-          trap '[ -z "${RUSTC_WRAPPER:-}" ] || "$RUSTC_WRAPPER" --show-stats || true' EXIT
           make build
         env:
           AZURE_KEY_VAULT_URI: ${{ secrets.AZURE_KEY_VAULT_URI }}
