@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "Jan"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "aes-gcm",
  "arboard",
@@ -2478,7 +2478,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jan-cli"
-version = "0.8.4"
+version = "0.8.5"
 dependencies = [
  "Jan",
  "chrono",
