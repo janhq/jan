@@ -86,17 +86,17 @@ install-web-app:
 
 dev-web-app: install-web-app
 	yarn build:core
-	yarn dev:web-app
+	yarn dev:web
 
 build-web-app: install-web-app
 	yarn build:core
-	yarn build:web-app
+	yarn build:web
 
 serve-web-app:
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 build-serve-web-app: build-web-app
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 # Mobile
 dev-android: install-and-build install-android-rust-targets

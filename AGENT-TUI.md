@@ -4,12 +4,12 @@
 
 The **Jan Agent CLI TUI** is a terminal-based interactive UI for Jan's agent. It uses [ratatui](https://ratatui.rs) (a Rust TUI framework) and [crossterm](https://github.com/crossterm-rs/crossterm) for terminal control.
 
-The CLI binary (`jan`) is separate from the desktop binary (`jan-desktop`). They share the same library crate (`app_lib`).
+The CLI binary (`jan`) is separate from the desktop binary (`Jan-Desktop`). They share the same library crate (`app_lib`).
 
 ### Architecture
 
 ```
-jan (binary, src-tauri/src/bin/jan.rs)
+jan (binary, src-tauri/jan-cli/src/main.rs)
   └── app_lib (library, src-tauri/src/core/)
         └── cli/
               ├── mod.rs       — CLI entry points, thread management
@@ -24,36 +24,35 @@ jan (binary, src-tauri/src/bin/jan.rs)
 
 | File | Purpose |
 |------|---------|
-| `src-tauri/src/bin/jan.rs` | CLI binary entry point (clap argument parsing) |
+| `src-tauri/jan-cli/src/main.rs` | CLI binary entry point (clap argument parsing) |
 | `src-tauri/src/core/cli/mod.rs` | CLI public API + thread listing |
 | `src-tauri/src/core/cli/tui.rs` | Main TUI (~4600+ lines): `App` struct, event loop, rendering, commands |
-| `src-tauri/Cargo.toml` | Crate config; `cli` feature gates TUI dependencies |
+| `src-tauri/Cargo.toml` | Library (`app_lib`) config; `cli` feature gates TUI dependencies |
+| `src-tauri/jan-cli/Cargo.toml` | Standalone CLI crate; its `cli` feature pulls in `app_lib/cli` |
 
 ## Build
 
 ### First Time Setup
 
 ```bash
-# The project is at:
-cd /Users/alandao/Documents/codes/jan-agent
+# Clone the Jan repo, then cd to its root.
 
 # Rust toolchain (already installed):
-rustc --version   # 1.77.2+ (minimum)
+rustc --version   # 1.85+ (minimum)
 ```
 
 ### Build Commands
 
 ```bash
-# Quick check (no binary produced):
+# Quick check of the library (no binary produced):
 cd src-tauri && cargo check --no-default-features --features cli --lib
 
 # Debug build + install to ~/.local/bin:
-cd /Users/alandao/Documents/codes/jan-agent
 ./build-tui.sh            # debug
 ./build-tui.sh release    # release (optimized, slower build)
 
 # Release build (optimized, smaller binary):
-cd src-tauri && cargo build --no-default-features --features cli --bin jan --release
+cd src-tauri/jan-cli && cargo build --features cli --release
 ```
 
 ### Using the Build Script
@@ -68,15 +67,15 @@ The `build-tui.sh` script at the project root automates building and installing:
 ./build-tui.sh help     # show help
 ```
 
-The script installs the binary to `~/.local/bin/jan-agent`. Make sure `~/.local/bin` is in your `PATH`.
+The script installs the binary to `~/.local/bin/jan`. Make sure `~/.local/bin` is in your `PATH`.
 
 ### Binary vs Library
 
 - The **library** (`app_lib`) is what you build in CI/CD for both desktop and CLI,
   but the two are mutually exclusive feature configs: `cli` compiles out every
   Tauri-dependent module, and the Tauri/GTK crates are not even dependencies.
-- The **CLI binary** (`jan`) needs `--no-default-features --features cli` to include TUI dependencies.
-- The **desktop binary** (`jan-desktop`) uses the `desktop` feature (Tauri).
+- The **CLI binary** (`jan`) is built from the standalone `src-tauri/jan-cli` crate (`cargo build --features cli`); its `cli` feature pulls in `app_lib/cli`.
+- The **desktop binary** (`Jan-Desktop`) uses the `desktop` feature (Tauri).
 
 When developing TUI features, use `cargo check --no-default-features --features cli --lib` for the fast inner loop (checks only the library, not binary linking).
 
@@ -261,17 +260,17 @@ The TUI supports Tab-based slash command completion:
 ## Running the TUI
 
 ```bash
-# After building (binary at ~/.local/bin/jan-agent):
-jan-agent tui
+# After building (binary at ~/.local/bin/jan):
+jan tui
 
 # Or from the project:
-cd src-tauri && cargo run --no-default-features --features cli --bin jan -- tui
+cd src-tauri/jan-cli && cargo run --features cli -- tui
 
 # With a specific model:
-jan-agent tui --model my-model
+jan tui --model my-model
 
 # With provider overrides:
-jan-agent tui --provider openai --model gpt-4
+jan tui --provider openai --model gpt-4
 ```
 
 ## Making Changes
@@ -292,7 +291,7 @@ vim src-tauri/src/core/cli/tui.rs
 ./build-tui.sh debug
 
 # 5. Test in terminal
-jan-agent tui
+jan tui
 ```
 
 ### Adding a New Slash Command
@@ -346,7 +345,7 @@ The Rust compiler may run out of memory on large builds. Try:
 
 ```bash
 # Limit parallel codegen units
-cd src-tauri && CARGO_BUILD_JOBS=2 cargo build --no-default-features --features cli --bin jan
+cd src-tauri/jan-cli && CARGO_BUILD_JOBS=2 cargo build --features cli
 ```
 
 ### TUI rendering artifacts
