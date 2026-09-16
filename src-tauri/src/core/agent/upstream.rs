@@ -310,7 +310,14 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
 }
 
 pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
-    messages.retain(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"));
+    // Drop the previous run's rebuilt system prompt, but keep compaction
+    // summaries: they are `system` messages, yet they carry condensed history
+    // that this turn must not throw away. Without this the next turn strips the
+    // summary and compaction only ever helped the run that produced it.
+    messages.retain(|m| {
+        m.get("role").and_then(|r| r.as_str()) != Some("system")
+            || crate::core::agent::compaction::is_compaction_summary(m)
+    });
     messages.insert(
         0,
         serde_json::json!({
@@ -1550,6 +1557,30 @@ mod tests {
         set_system_prompt(&mut next, "STABLE");
         insert_volatile_system(&mut next, "different date");
         assert_eq!(next[0], msgs[0]);
+    }
+
+    #[test]
+    fn compaction_summary_survives_the_next_turn_rebuild() {
+        let marker = crate::core::agent::compaction::SUMMARY_MARKER;
+        // The history a turn inherits after a mid-run compaction: previous
+        // rebuilt system prompt, its volatile message, the summary, kept tail.
+        let mut history = vec![
+            json!({ "role": "system", "content": "OLD STABLE" }),
+            json!({ "role": "system", "content": "old date" }),
+            json!({ "role": "system", "content": format!("{marker}\n\ncondensed") }),
+            json!({ "role": "assistant", "content": "kept" }),
+            json!({ "role": "user", "content": "new question" }),
+        ];
+        set_system_prompt(&mut history, "NEW STABLE");
+        insert_volatile_system(&mut history, "new date");
+        assert_eq!(history[0]["content"], "NEW STABLE");
+        assert_eq!(history[1]["content"], "new date");
+        assert!(history[2]["content"]
+            .as_str()
+            .unwrap()
+            .starts_with(marker));
+        assert_eq!(history[3]["content"], "kept");
+        assert_eq!(history[4]["content"], "new question");
     }
 
     #[test]
