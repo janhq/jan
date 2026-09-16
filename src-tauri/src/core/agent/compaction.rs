@@ -28,6 +28,24 @@ questions. Omit pleasantries and redundant tool output. Write only the summary."
 
 const FALLBACK_NOTE: &str = "[Earlier conversation was omitted to fit the model's context window.]";
 
+/// Leading text of every compaction summary message (the model summary and the
+/// [`FALLBACK_NOTE`] path both carry it). Kept as a constant so
+/// [`is_compaction_summary`] and `set_system_prompt` recognise a summary without
+/// re-hardcoding the string: a summary is a `system` message, but unlike the
+/// rebuilt stable/volatile prompt it must survive the next turn's
+/// `set_system_prompt`, or compaction would save the current run and then throw
+/// its own condensed history away.
+pub(crate) const SUMMARY_MARKER: &str = "[Summary of earlier conversation, condensed to save context]";
+
+/// Whether `msg` is a compaction summary that must be preserved across turns.
+pub(crate) fn is_compaction_summary(msg: &Value) -> bool {
+    role(msg) == "system"
+        && msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .is_some_and(|c| c.starts_with(SUMMARY_MARKER))
+}
+
 /// Character budget for the transcript handed to the summarizer (~12K tokens).
 /// Compaction runs *because* the conversation overflowed, so replaying it whole
 /// would guarantee the summarizer overflows too: the dropped span is rendered to
@@ -99,7 +117,7 @@ pub(crate) async fn compact_conversation(
     out.extend_from_slice(system_msgs);
     out.push(json!({
         "role": "system",
-        "content": format!("[Summary of earlier conversation, condensed to save context]\n\n{summary}")
+        "content": format!("{SUMMARY_MARKER}\n\n{summary}")
     }));
     out.extend_from_slice(kept);
     Ok(out)
