@@ -320,6 +320,29 @@ pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_pr
     );
 }
 
+/// Insert per-turn context as a second system message right after the stable
+/// system prompt, without touching it. The stable prompt (identity, guidelines,
+/// environment, skills, memory catalog) is byte-identical across the turns of a
+/// session, so keeping it as message 0 lets a provider cache that long prefix;
+/// the volatile content (date, query-specific memory recall, plan/todo state)
+/// changes every turn and lives here where it cannot invalidate that prefix.
+/// Assumes `set_system_prompt` has already placed the stable prompt at index 0.
+pub(crate) fn insert_volatile_system(messages: &mut Vec<serde_json::Value>, content: &str) {
+    let has_leading_system = messages
+        .first()
+        .and_then(|m| m.get("role"))
+        .and_then(|r| r.as_str())
+        == Some("system");
+    let idx = usize::from(has_leading_system);
+    messages.insert(
+        idx,
+        serde_json::json!({
+            "role": "system",
+            "content": content
+        }),
+    );
+}
+
 pub(crate) fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
     response
         .get("choices")
@@ -1506,6 +1529,37 @@ fn flush_trailing_line(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn volatile_system_follows_the_stable_prompt_and_leaves_it_byte_stable() {
+        let mut msgs = vec![json!({ "role": "user", "content": "hi" })];
+        set_system_prompt(&mut msgs, "STABLE");
+        insert_volatile_system(&mut msgs, "date + memory");
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "STABLE");
+        assert_eq!(msgs[1]["role"], "system");
+        assert_eq!(msgs[1]["content"], "date + memory");
+        assert_eq!(msgs[2]["role"], "user");
+
+        // A second turn with different volatile content must not disturb node 0.
+        let mut next = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "yo" }),
+            json!({ "role": "user", "content": "again" }),
+        ];
+        set_system_prompt(&mut next, "STABLE");
+        insert_volatile_system(&mut next, "different date");
+        assert_eq!(next[0], msgs[0]);
+    }
+
+    #[test]
+    fn volatile_system_stands_in_as_node_zero_when_no_stable_prompt() {
+        let mut msgs = vec![json!({ "role": "user", "content": "hi" })];
+        insert_volatile_system(&mut msgs, "date only");
+        assert_eq!(msgs[0]["role"], "system");
+        assert_eq!(msgs[0]["content"], "date only");
+        assert_eq!(msgs[1]["role"], "user");
+    }
 
     fn sink() -> (
         mpsc::UnboundedSender<StreamEvent>,

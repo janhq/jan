@@ -21,8 +21,8 @@ use crate::core::agent::upstream::{
     arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
     drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
     load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
-    resolve_api_type_for_model, resolve_upstream_for_model, set_system_prompt,
-    stream_openai_chat_completions,
+    insert_volatile_system, resolve_api_type_for_model, resolve_upstream_for_model,
+    set_system_prompt, stream_openai_chat_completions,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -1997,7 +1997,14 @@ async fn orchestrate_inner(
         .as_deref()
         .map(|root| resolve_run_settings(root, *sandbox));
 
-    let mut system_prompt = build_run_system_prompt(
+    // The stable system prompt: identity, guidelines, environment, skills and
+    // the memory catalog. Byte-identical across the turns of a session (within a
+    // day), so it is kept as system message 0 and never mixed with per-turn
+    // content -- that is what lets a provider cache this long prefix. Volatile
+    // per-turn context (date, query memory recall, plan/todo state) is collected
+    // separately below and emitted as a second system message so it cannot
+    // invalidate the cached prefix above.
+    let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
@@ -2005,30 +2012,24 @@ async fn orchestrate_inner(
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
     );
+
+    let mut volatile_parts: Vec<String> = Vec::new();
+    // Always tell the model today's date, including isolated child runs.
+    volatile_parts.push(format!(
+        "Today's date is {}.",
+        chrono::Local::now().format("%Y-%m-%d")
+    ));
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    system_prompt = Some(match system_prompt {
-                        Some(s) => format!("{s}\n\n{mem}"),
-                        None => mem,
-                    });
+                    volatile_parts.push(mem);
                 }
             }
         }
     }
-    // Always tell the model today's date, including isolated child runs.
-    let date_line = format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
-    );
-    let system_prompt = match system_prompt {
-        Some(sys) => format!("{date_line}\n\n{sys}"),
-        None => date_line,
-    };
-    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -2043,25 +2044,19 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
-        let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        volatile_parts.push(crate::core::agent::plan::plan_mode_prompt_addendum().to_string());
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        // Child (subagent) runs are excluded via `system_prompt_override`, the
-        // same gate the memory-recall block above uses to distinguish a
-        // top-level run from a subagent's isolated context.
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
-    } else {
-        system_prompt
-    };
-    if let Some(sys) = system_prompt {
+        volatile_parts.push(addendum.to_string());
+    }
+
+    if let Some(sys) = stable_system {
         set_system_prompt(&mut conversation_messages, &sys);
+        insert_volatile_system(&mut conversation_messages, &volatile_parts.join("\n\n"));
+    } else {
+        // No stable prompt (an isolated child run with no override): the
+        // volatile block is all there is, so it stands in as message 0.
+        set_system_prompt(&mut conversation_messages, &volatile_parts.join("\n\n"));
     }
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
