@@ -313,7 +313,8 @@ enum AgentCommands {
         #[command(flatten)]
         resume: ResumeRunArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
-        /// object on stdout when the run finishes
+        /// object on stdout when the run finishes; `stream-json` prints one
+        /// JSON event per line as the run proceeds, ending with that object
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
     },
@@ -1132,6 +1133,10 @@ mod tests {
         assert_eq!(
             parsed_output_format(&["--output-format", "json"]),
             OutputFormat::Json
+        );
+        assert_eq!(
+            parsed_output_format(&["--output-format", "stream-json"]),
+            OutputFormat::StreamJson
         );
         assert_eq!(
             parsed_output_format(&["--output-format=text"]),

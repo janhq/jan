@@ -476,7 +476,7 @@ use crate::core::agent::r#loop::{
 };
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
-use crate::core::cli::run_report::{OutputFormat, RunReport};
+use crate::core::cli::run_report::{ndjson_line, OutputFormat, PermissionDecisionRecord, RunReport};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -1135,13 +1135,16 @@ async fn run_agent_loop(
     } = match prepared {
         Ok(prepared) => prepared,
         Err(e) => {
-            if format.is_json() {
-                print_report(RunReport::setup_failure(&e).finish(
-                    None,
-                    "",
-                    started.elapsed().as_millis(),
-                    None,
-                ));
+            if format.is_machine() {
+                print_report(
+                    format,
+                    RunReport::setup_failure(&e).finish(
+                        None,
+                        "",
+                        started.elapsed().as_millis(),
+                        None,
+                    ),
+                );
             }
             return Err(e);
         }
@@ -1179,10 +1182,19 @@ async fn run_agent_loop(
         let mut report = RunReport::default();
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
-            if format.is_json() {
-                resolve_permission_silently(ev, &permission_requests).await;
-            } else {
-                print_event(ev, &permission_requests).await;
+            match format {
+                OutputFormat::Text => print_event(ev, &permission_requests).await,
+                OutputFormat::Json => {
+                    resolve_permission_silently(ev, &permission_requests).await;
+                }
+                OutputFormat::StreamJson => {
+                    print_json_line(&ev);
+                    if let Some((request_id, decision)) =
+                        resolve_permission_silently(ev, &permission_requests).await
+                    {
+                        print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
+                    }
+                }
             }
         }
         report
@@ -1208,7 +1220,7 @@ async fn run_agent_loop(
         }
         match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, None) {
             Ok(id) => {
-                if !format.is_json() {
+                if !format.is_machine() {
                     eprintln!(
                         "\x1b[2m[session {} - resume with `jan --resume={}`]\x1b[0m",
                         short_id(&id),
@@ -1220,13 +1232,16 @@ async fn run_agent_loop(
             Err(e) => eprintln!("(could not save session: {e})"),
         }
     }
-    if format.is_json() {
-        print_report(report.finish(
-            session_id.as_deref().map(short_id).as_deref(),
-            &model,
-            started.elapsed().as_millis(),
-            final_text.as_deref(),
-        ));
+    if format.is_machine() {
+        print_report(
+            format,
+            report.finish(
+                session_id.as_deref().map(short_id).as_deref(),
+                &model,
+                started.elapsed().as_millis(),
+                final_text.as_deref(),
+            ),
+        );
     }
     // The one-shot CLI runs exactly one turn, so its session ends here: wipe
     // the persistent bash `/tmp` scratch this run used.
@@ -1236,21 +1251,41 @@ async fn run_agent_loop(
     result.map(|_| ())
 }
 
-/// Write the result envelope to stdout, the only thing `--output-format json`
-/// puts there. Pretty-printed: these are read by people at least as often as by
-/// programs, and `jq` does not care either way.
-fn print_report(report: run_report::RunResult) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&report).unwrap_or_default()
-    );
+/// Write the result envelope to stdout, the last thing either machine format
+/// puts there. `json` pretty-prints it -- those are read by people at least as
+/// often as by programs, and `jq` does not care either way -- while
+/// `stream-json` must keep it to the one line its contract promises.
+fn print_report(format: OutputFormat, report: run_report::RunResult) {
+    if format.is_stream_json() {
+        print_json_line(&report);
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    }
 }
 
-/// Answer a permission request without printing progress, for the JSON format.
-/// Leaving it unanswered would wedge the run: the loop waits on the reply.
-/// Every other event is silent -- stdout belongs to the envelope.
-async fn resolve_permission_silently(ev: StreamEvent, registry: &PermissionRegistry) {
-    if let StreamEvent::PermissionRequest {
+/// Write one NDJSON record and flush it, so a consumer reading the pipe sees
+/// the event as it happens rather than when the block buffer fills.
+fn print_json_line<T: serde::Serialize>(value: &T) {
+    let Some(line) = ndjson_line(value) else {
+        return;
+    };
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(line.as_bytes());
+    let _ = out.flush();
+}
+
+/// Answer a permission request without printing progress, for the machine
+/// formats. Leaving it unanswered would wedge the run: the loop waits on the
+/// reply. Returns the decision so `stream-json` can report it; with no TTY
+/// `prompt_permission` denies rather than blocking on a terminal nobody is at.
+async fn resolve_permission_silently(
+    ev: StreamEvent,
+    registry: &PermissionRegistry,
+) -> Option<(String, PermissionDecision)> {
+    let StreamEvent::PermissionRequest {
         request_id,
         tool_name,
         capability,
@@ -1258,16 +1293,18 @@ async fn resolve_permission_silently(ev: StreamEvent, registry: &PermissionRegis
         command,
         ..
     } = ev
-    {
-        let detail = command
-            .map(|c| format!(" ({c})"))
-            .or_else(|| path.map(|p| format!(" on {p}")))
-            .unwrap_or_default();
-        let decision = prompt_permission(tool_name, capability, detail).await;
-        if let Some(sender) = registry.lock().await.remove(&request_id) {
-            let _ = sender.send(decision);
-        }
+    else {
+        return None;
+    };
+    let detail = command
+        .map(|c| format!(" ({c})"))
+        .or_else(|| path.map(|p| format!(" on {p}")))
+        .unwrap_or_default();
+    let decision = prompt_permission(tool_name, capability, detail).await;
+    if let Some(sender) = registry.lock().await.remove(&request_id) {
+        let _ = sender.send(decision);
     }
+    Some((request_id, decision))
 }
 
 /// Assistant text of a chat-completion response, if any.
