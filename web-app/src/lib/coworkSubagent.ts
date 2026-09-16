@@ -128,6 +128,34 @@ export function subagentCompletionNotice(opts: {
 }
 
 /**
+ * The single `<SYSTEM>` ping delivered when a multi-phase plan finishes -- the
+ * one time a phased dispatch rings the parent's doorbell (every child ran
+ * silent). Port of the Rust `plan_completion_notice`: each final-phase child
+ * whose answer was saved is pointed at its file; one with no file (unconfined,
+ * or a failure) rides inline, bounded.
+ */
+export function planCompletionNotice(opts: {
+  phaseCount: number
+  totalSubagents: number
+  finalPhase: PlanChildOutcome[]
+}): SubagentNotice {
+  const { phaseCount, totalSubagents, finalPhase } = opts
+  const headline = `Subagent plan finished: ${totalSubagents} subagent(s) across ${phaseCount} phases`
+  const parts = finalPhase.map(({ name, result, savedPath }) => {
+    const body = result.isError
+      ? `failed: ${result.output}`
+      : savedPath
+        ? `see ${savedPath}`
+        : result.output.slice(0, SUBAGENT_INLINE_MAX)
+    return `### ${name}\n\n${body}`
+  })
+  const text = parts.length
+    ? `${headline}. Final phase:\n\n${parts.join('\n\n')}`
+    : `${headline}.`
+  return { headline, text }
+}
+
+/**
  * Completions the parent has not been told about yet, and the count of children
  * that could still produce one.
  *
@@ -821,6 +849,14 @@ export type DispatchPlanCallbacks = {
   ) => void
 }
 
+/** One finished child of a phase: what `runDispatchPlan` returns for the final
+ * phase so the caller can compose the plan's single terminal ping. */
+export type PlanChildOutcome = {
+  name: string
+  result: SubagentResult
+  savedPath: string | null
+}
+
 /**
  * The phase scheduler: run each phase's subagents concurrently, wait for the
  * whole phase, write every real answer to the blackboard AND keep it in memory,
@@ -830,16 +866,20 @@ export type DispatchPlanCallbacks = {
  * Resilient by construction: a failed child yields an error output and the plan
  * proceeds; this never throws (so the caller can release its plan-hold in a
  * `finally`). Each subagent is keyed `${callId}-${name}` for the store.
+ *
+ * Returns the final phase's outcomes so a multi-phase caller can ring the
+ * doorbell once with a consolidated notice (see `planCompletionNotice`).
  */
 export async function runDispatchPlan(
   plan: DispatchPlan,
   callId: string,
   cb: DispatchPlanCallbacks
-): Promise<void> {
+): Promise<PlanChildOutcome[]> {
   let inputs: { name: string; output: string }[] = []
+  let finalPhase: PlanChildOutcome[] = []
   for (const phase of plan.phases) {
-    const results = await Promise.all(
-      phase.subagents.map(async (req) => {
+    const outcomes = await Promise.all(
+      phase.subagents.map(async (req): Promise<PlanChildOutcome> => {
         const id = `${callId}-${req.name}`
         const description = injectInputs(req.description, inputs)
         cb.onDispatch(id, req.name)
@@ -865,15 +905,18 @@ export async function runDispatchPlan(
           ? await cb.writeBlackboard(req.name, result.output)
           : null
         cb.onComplete(id, req.name, result, savedPath)
-        return realAnswer
-          ? { name: req.name, output: capRetainedAnswer(result.output) }
-          : null
+        return { name: req.name, result, savedPath }
       })
     )
-    inputs = results.filter(
-      (r): r is { name: string; output: string } => r !== null
-    )
+    inputs = outcomes
+      .filter((o) => !o.result.isError && o.result.output.trim().length > 0)
+      .map((o) => ({
+        name: o.name,
+        output: capRetainedAnswer(o.result.output),
+      }))
+    finalPhase = outcomes
   }
+  return finalPhase
 }
 
 export const __testing = {

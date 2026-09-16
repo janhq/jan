@@ -135,6 +135,7 @@ import {
   runSubagent,
   runDispatchPlan,
   subagentCompletionNotice,
+  planCompletionNotice,
   SubagentInbox,
   type ResolvedSubagent,
 } from '@/lib/coworkSubagent'
@@ -794,6 +795,12 @@ function CoworkPage() {
                     }
                   }
 
+                  // A single-phase fan-out pings per child the moment it
+                  // finishes; a multi-phase plan keeps every child silent and
+                  // rings the doorbell once, when the last phase finishes
+                  // (mirrors the Rust `notify_on_finish` split).
+                  const multi = plan.phases.length > 1
+
                   // Register the later phases up front as waiting, so the panel
                   // shows them queued behind the phase in flight; each is
                   // promoted by its own start (mirrors the Rust SubagentPlan).
@@ -906,6 +913,12 @@ function CoworkPage() {
                       useCoworkRun
                         .getState()
                         .attachSubagentOutput(sid, id, result.output)
+                      // Multi-phase: decrement the child's slot without a ping;
+                      // the terminal notice below is the plan's one doorbell.
+                      if (multi) {
+                        inbox.abandon()
+                        return
+                      }
                       inbox.finish(
                         subagentCompletionNotice({
                           name,
@@ -917,6 +930,23 @@ function CoworkPage() {
                       )
                     },
                   })
+                    .then((finalPhase) => {
+                      // Ring once for the whole plan, after its last phase. Queue
+                      // the ping (note, not finish) since the plan-hold slot is
+                      // released by the finally below.
+                      if (multi) {
+                        inbox.note(
+                          planCompletionNotice({
+                            phaseCount: plan.phases.length,
+                            totalSubagents: plan.phases.reduce(
+                              (n, p) => n + p.subagents.length,
+                              0
+                            ),
+                            finalPhase,
+                          })
+                        )
+                      }
+                    })
                     // runDispatchPlan never throws; this only guarantees the plan
                     // hold is released even if a callback above does.
                     .catch(() => {})
