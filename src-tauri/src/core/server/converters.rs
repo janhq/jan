@@ -2086,6 +2086,38 @@ mod anthropic_messages_tests {
     }
 
     #[test]
+    fn anthropic_cached_system_block_is_byte_identical_across_turns() {
+        // #344: the cached block (system[0], carrying cache_control) must be
+        // byte-for-byte identical across turns for Anthropic's cache to hit,
+        // even as the volatile block and conversation change.
+        let turn1 = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": "Today's date is 2026-09-16."},
+                {"role": "user", "content": "first"}
+            ]
+        });
+        let turn2 = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": "Today's date is 2026-09-17.\n\nrecalled note"},
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "second"}
+            ]
+        });
+        let block1 = conv().convert_request(&turn1)["system"][0].clone();
+        let block2 = conv().convert_request(&turn2)["system"][0].clone();
+        assert_eq!(
+            serde_json::to_string(&block1).unwrap(),
+            serde_json::to_string(&block2).unwrap()
+        );
+        assert_eq!(block1["cache_control"], json!({"type": "ephemeral"}));
+    }
+
+    #[test]
     fn implicit_converters_emit_no_cache_control() {
         assert_eq!(conv().cache_capability(), CacheCapability::Explicit);
         assert_eq!(

@@ -3056,6 +3056,51 @@ mod tests {
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
 
+    /// The cache-prefix contract from #340: across turns the system prompt at
+    /// message 0 and the tool schema must be byte-identical, so a provider can
+    /// cache them; only the volatile message 1 (date, memory recall, plan state)
+    /// changes. A regression here silently defeats prompt caching, which no
+    /// functional test would catch.
+    #[test]
+    fn system_prefix_and_tools_are_byte_identical_across_turns() {
+        let tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "run a shell command",
+                "parameters": {"type": "object"}
+            }
+        })];
+        let body = json!({});
+
+        let mut turn1 = vec![json!({"role": "user", "content": "first"})];
+        set_system_prompt(&mut turn1, "STABLE PREFIX");
+        insert_volatile_system(&mut turn1, "Today's date is 2026-09-16.");
+        let req1 = build_completion_request("m", &turn1, &tools, &body, None);
+
+        // A later turn: the conversation has grown and the volatile block differs.
+        let mut turn2 = vec![
+            json!({"role": "user", "content": "first"}),
+            json!({"role": "assistant", "content": "reply"}),
+            json!({"role": "user", "content": "second"}),
+        ];
+        set_system_prompt(&mut turn2, "STABLE PREFIX");
+        insert_volatile_system(
+            &mut turn2,
+            "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note",
+        );
+        let req2 = build_completion_request("m", &turn2, &tools, &body, None);
+
+        let node0 = |r: &serde_json::Value| serde_json::to_string(&r["messages"][0]).unwrap();
+        let tools_of = |r: &serde_json::Value| serde_json::to_string(&r["tools"]).unwrap();
+        assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
+        assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
+        assert_ne!(
+            req1["messages"][1], req2["messages"][1],
+            "the volatile block is expected to differ"
+        );
+    }
+
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
         // Every request this mock was invoked with, in order -- lets a test
