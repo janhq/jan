@@ -79,6 +79,7 @@ mod tests {
             prompt_tokens: None,
             completion_tokens: None,
             total_tokens: total,
+            ..Default::default()
         })
     }
 
@@ -91,6 +92,7 @@ mod tests {
             prompt_tokens: Some(prompt_tokens),
             completion_tokens: Some(completion_tokens),
             total_tokens: Some(total_tokens),
+            ..Default::default()
         })
     }
 

@@ -72,12 +72,37 @@ MINGW* | MSYS* | CYGWIN*)
     exit 1
   }
   if ! command -v cl >/dev/null 2>&1; then
-    if [ -n "$want" ]; then
+    # An ARM64 build never puts cl on PATH: the one nvcc needs is the arm64
+    # cross, which build.rs passes by full path as CMAKE_CUDA_HOST_COMPILER.
+    # So there it is VCToolsInstallDir that has to be right, not PATH; probed
+    # the same way build.rs probes it, since arm64 is hosted from either.
+    #
+    # rustc for the arch, not uname: Git for Windows on an ARM64 runner is the
+    # x86-64 build under emulation and reports x86_64. Backslashes to forward
+    # slashes because MSYS resolves a C:/... path and cygpath is not on every
+    # Git for Windows install.
+    host_cl=""
+    case "$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')" in
+    aarch64-*)
+      root=$(printf '%s' "${VCToolsInstallDir:-}" | tr '\\' '/')
+      for h in Hostarm64 Hostx64; do
+        [ -n "$root" ] && [ -f "$root/bin/$h/arm64/cl.exe" ] || continue
+        host_cl="$root/bin/$h/arm64/cl.exe"
+        break
+      done
+      ;;
+    esac
+    if [ -n "$host_cl" ]; then
+      echo "engine toolchain: nvcc host compiler $host_cl"
+    elif [ -n "$want" ]; then
       echo "error: nvcc needs cl on PATH on Windows; run from a Visual Studio developer prompt" >&2
+      echo "       (on ARM64, set VCToolsInstallDir to an MSVC toolset with bin/Host*/arm64/cl.exe;" >&2
+      echo "        VCToolsInstallDir='${VCToolsInstallDir:-}')" >&2
       exit 1
+    else
+      echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
+      echo "         if the build cannot find the MSVC headers and libraries." >&2
     fi
-    echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
-    echo "         if the build cannot find the MSVC headers and libraries." >&2
   fi
   echo "engine toolchain: ninja and clang found"
   ;;

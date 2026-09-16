@@ -25,57 +25,12 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "ls",
-                "description": "List directory contents sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Truncated to the entry limit or 64KB.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": { "type": "string", "description": "Directory to list (default '.')." },
-                        "limit": { "type": "integer", "description": "Maximum number of entries to return (default 500)." }
-                    },
-                    "required": []
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "find",
-                "description": "Search for files by glob pattern, e.g. '*.ts', '**/*.json', or 'src/**/*.rs'. Returns paths relative to the search directory. Respects .gitignore.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": { "type": "string", "description": "Glob pattern to match files." },
-                        "path": { "type": "string", "description": "Directory to search in (default '.')." },
-                        "limit": { "type": "integer", "description": "Maximum number of results (default 1000)." }
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "grep",
-                "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Truncated to the match limit or 64KB.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": { "type": "string", "description": "Search pattern (regex or literal string)." },
-                        "path": { "type": "string", "description": "Directory or file to search (default '.')." },
-                        "glob": { "type": "string", "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.rs'." },
-                        "ignore_case": { "type": "boolean", "description": "Case-insensitive search (default false)." },
-                        "literal": { "type": "boolean", "description": "Treat pattern as a literal string instead of regex (default false)." },
-                        "context": { "type": "integer", "description": "Number of lines to show before and after each match (default 0)." },
-                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }),
+        // ls / find / grep are deliberately NOT advertised: `bash` covers
+        // listing and searching (`ls`, `find`, `grep`/`rg`), so dedicated tools
+        // for them only enlarge the schema a weak model has to handle. They stay
+        // in BUILTIN_TOOLS -- recognized, gated, and executable if named -- so
+        // the change is reversible and the handlers/tests are untouched; they are
+        // just no longer offered to the model.
         #[cfg(feature = "tauri")]
         json!({
             "type": "function",
@@ -138,15 +93,14 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "bash",
-                "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 10000 lines or 256KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background and this call returns a job_id instead of erroring or killing it; call bash again with only job_id set to wait for and collect its output once it finishes.",
+                "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 10000 lines or 256KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background instead of erroring or being killed, and this call returns the path to a file where its full output will be written once it finishes; read that file (with the read tool) to collect the result. The file appears only when the command is done, so its presence means the output is complete.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "command": { "type": "string", "description": "Shell command to run. Omit when polling with job_id." },
-                        "timeout": { "type": "integer", "description": "Seconds to wait before backgrounding the command if it hasn't finished (default 30)." },
-                        "job_id": { "type": "string", "description": "Poll a previously backgrounded command by the job_id it returned, instead of running a new command." }
+                        "command": { "type": "string", "description": "Shell command to run." },
+                        "timeout": { "type": "integer", "description": "Seconds to wait before backgrounding the command if it hasn't finished (default 30)." }
                     },
-                    "required": []
+                    "required": ["command"]
                 }
             }
         }),
@@ -262,11 +216,13 @@ mod tests {
     use super::*;
     use crate::tools::BUILTIN_TOOLS;
 
+    /// ls/find/grep stay in BUILTIN_TOOLS (recognized + executable) but are not
+    /// advertised -- bash covers listing and searching -- so the offered set is
+    /// BUILTIN_TOOLS minus that trio. Every other builtin must be advertised, in
+    /// the same order, so a new one can't be silently added and never offered.
     #[test]
-    fn schemas_match_builtin_tools() {
+    fn advertised_schemas_are_the_builtins_minus_the_unadvertised() {
         let schemas = builtin_tool_schemas();
-        let expected_len = if cfg!(feature = "tauri") { 16 } else { 15 };
-        assert_eq!(schemas.len(), expected_len);
         for schema in &schemas {
             assert_eq!(schema["type"], "function");
         }
@@ -274,7 +230,11 @@ mod tests {
             .iter()
             .map(|s| s["function"]["name"].as_str().unwrap())
             .collect();
-        let expected: Vec<&str> = BUILTIN_TOOLS.iter().map(|t| t.name).collect();
+        let expected: Vec<&str> = BUILTIN_TOOLS
+            .iter()
+            .map(|t| t.name)
+            .filter(|n| !matches!(*n, "ls" | "find" | "grep"))
+            .collect();
         assert_eq!(names, expected);
     }
 }

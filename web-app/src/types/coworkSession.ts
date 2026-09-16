@@ -38,6 +38,11 @@ export type CoworkTurn = {
   isError?: boolean
   diff?: string
   status?: 'running' | 'done'
+  /** Assistant-row only: the model metadata the step finished with, verbatim
+   * from the stream (`usage`, `tokenSpeed`, `finishReason`). `MessageItem` reads
+   * it exactly as it reads the metadata chat persists on a message, so the token
+   * speed popover works here without a second implementation. */
+  metadata?: Record<string, unknown>
 }
 
 /** A pasted or picked image/audio/video, shaped as an AI SDK `file` part. */
@@ -75,11 +80,17 @@ export type Usage = {
 export type SubagentRun = {
   runId: string
   name: string
-  status: 'queued' | 'running' | 'done'
+  /** `waiting`: a later-phase subagent registered up front, not yet dispatched
+   * (it starts only once its phase begins). `queued`: dispatched, waiting for a
+   * concurrency slot. */
+  status: 'waiting' | 'queued' | 'running' | 'done'
   startedAt: number
   endedAt?: number
   /** 1-based FIFO queue position while `queued`; cleared on start. */
   waiting?: number
+  /** 1-based phase this subagent belongs to (from a phased dispatch); drives the
+   * "phase N · waiting" hint and the running-row phase badge. */
+  phase?: number
   /** The subagent's own trace. The final answer is in `finalOutput`, not here. */
   turns: CoworkTurn[]
   finalOutput?: string

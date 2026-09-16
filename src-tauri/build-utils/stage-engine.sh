@@ -39,9 +39,12 @@ newest() {
     | xargs -0 -r ls -dt 2>/dev/null | head -1 || true
 }
 
-# On Windows build.rs may relocate the cmake trees out of OUT_DIR (MAX_PATH)
-# and leave the chosen root in a marker file.
-PREFIX="$(newest -type d -name ggml-prefix)"
+# A prebuilt engine (JAN_LLAMA_PREBUILT_DIR, see engine-prebuilt.sh) has no
+# cmake tree, but its lib/ and bin/ mirror ggml-prefix's, so it stands in for
+# one -- first, so a stale local ggml-prefix cannot win. On Windows build.rs may
+# relocate the cmake trees out of OUT_DIR (MAX_PATH) and leave the chosen root
+# in a marker file.
+PREFIX="${JAN_LLAMA_PREBUILT_DIR:-$(newest -type d -name ggml-prefix)}"
 if [ -z "$PREFIX" ]; then
   MARKER="$(newest -type f -name engine-build-root.txt)"
   if [ -n "$MARKER" ]; then

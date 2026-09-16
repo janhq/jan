@@ -99,12 +99,13 @@ import {
 import {
   getSandboxStatus,
   sandboxEnforces,
-  fillSubagentResult,
+  writeBlackboard,
+  BLACKBOARD_DIR_DISPLAY,
   importAttachment,
-  reserveSubagentResult,
   cancelAgentThreadBash,
   activeAgentMonitorIds,
 } from '@/lib/agentTools'
+import { isPlatformTauri } from '@/lib/platform'
 import { monitorLaneFor, type MonitorLane } from '@/lib/coworkMonitor'
 import { CoworkParkedNotice } from '@/containers/CoworkParkedNotice'
 import type { MonitorView } from '@/types/coworkSession'
@@ -127,13 +128,16 @@ import {
   type SubagentDefinition,
 } from '@/lib/coworkSubagentRegistry'
 import {
-  dispatchedSubagentResult,
-  parseSubagentRequest,
+  formatDispatchedPlan,
+  parseDispatchPlan,
   resolveSubagent,
   parentToolNames,
   runSubagent,
+  runDispatchPlan,
   subagentCompletionNotice,
+  planCompletionNotice,
   SubagentInbox,
+  type ResolvedSubagent,
 } from '@/lib/coworkSubagent'
 import { useSkills } from '@/hooks/useSkills'
 import {
@@ -366,6 +370,12 @@ function CoworkPage() {
   )
 
   const usage = liveUsage ?? session?.lastUsage ?? null
+  // Cowork writes model loads to `useCoworkRun`, keyed by session id, so the
+  // meter cannot see them on its own; hand it the mirror so the launched window
+  // is refetched when the engine reloads.
+  const sessionLoadingModel = useCoworkRun((s) =>
+    currentId ? !!s.loadingModels[currentId] : false
+  )
   const tokenSource = useMemo(
     () => ({
       threadId: session?.id,
@@ -376,8 +386,9 @@ function CoworkPage() {
             totalTokens: usage.total_tokens,
           }
         : undefined,
+      loadingModel: sessionLoadingModel,
     }),
-    [session?.id, usage]
+    [session?.id, usage, sessionLoadingModel]
   )
 
   // Live runs write into the run store; a committed session carries its own.
@@ -597,8 +608,8 @@ function CoworkPage() {
         model: { provider: selectedProvider, id: selectedModel.id },
         planMode: current?.planMode ?? false,
         subagentNames: subagentDefs.map((d) => d.name),
-        // Always on at depth 0, even with nothing saved: a one-off subagent with
-        // an inline `system_prompt` is first-class, as it is in Rust.
+        // Always on at depth 0, even with nothing saved: an unknown name runs as
+        // a focused general-purpose subagent, as it does in Rust.
         allowSubagents: true,
         webSearch,
         workspacePath,
@@ -751,17 +762,9 @@ function CoworkPage() {
                     })
                   }),
                 onTask: async (callId, input) => {
-                  const req = parseSubagentRequest(input)
-                  if (typeof req === 'string') {
-                    return { output: `ERROR: ${req}`, isError: true }
-                  }
-                  const resolved = resolveSubagent(
-                    req,
-                    subagentDefs,
-                    parentToolNames(transport.advertisedTools)
-                  )
-                  if ('error' in resolved) {
-                    return { output: `ERROR: ${resolved.error}`, isError: true }
+                  const plan = parseDispatchPlan(input)
+                  if (typeof plan === 'string') {
+                    return { output: `ERROR: ${plan}`, isError: true }
                   }
                   if (!transport.model) {
                     return {
@@ -770,120 +773,186 @@ function CoworkPage() {
                       isError: true,
                     }
                   }
-                  // Claimed before the child starts: the tool call returns now,
-                  // so the path it reports has to exist now.
-                  const saved = await reserveSubagentResult(
-                    sid,
-                    `${resolved.name}-${callId}`
+                  // Resolve every subagent up front so a tool-allowlist conflict
+                  // fails the whole dispatch atomically, before any child starts
+                  // (as in Rust). Names are unique across the plan.
+                  const parentTools = parentToolNames(transport.advertisedTools)
+                  const resolvedByName = new Map<string, ResolvedSubagent>()
+                  for (const phase of plan.phases) {
+                    for (const req of phase.subagents) {
+                      const resolved = resolveSubagent(
+                        req,
+                        subagentDefs,
+                        parentTools
+                      )
+                      if ('error' in resolved) {
+                        return {
+                          output: `ERROR: ${resolved.error}`,
+                          isError: true,
+                        }
+                      }
+                      resolvedByName.set(req.name, resolved)
+                    }
+                  }
+
+                  // A single-phase fan-out pings per child the moment it
+                  // finishes; a multi-phase plan keeps every child silent and
+                  // rings the doorbell once, when the last phase finishes
+                  // (mirrors the Rust `notify_on_finish` split).
+                  const multi = plan.phases.length > 1
+
+                  // Register the later phases up front as waiting, so the panel
+                  // shows them queued behind the phase in flight; each is
+                  // promoted by its own start (mirrors the Rust SubagentPlan).
+                  const pending = plan.phases.slice(1).flatMap((phase) =>
+                    phase.subagents.map((s) => ({
+                      runId: `${callId}-${s.name}`,
+                      name: s.name,
+                      phase: phase.number,
+                    }))
                   )
+                  if (pending.length > 0) {
+                    useCoworkRun.getState().planSubagents(sid, pending)
+                  }
+
+                  const model = transport.model
+                  // `BLACKBOARD_DIR_DISPLAY` (/tmp/blackboard) is only where the
+                  // scratch surfaces on Linux, where the sandbox binds it over
+                  // /tmp (`scratch_display_path`). On macOS/Windows the scratch
+                  // is a real host path we don't know up front, so advertise no
+                  // dir there and let each completion notice carry the exact
+                  // path `writeBlackboard` returns.
+                  const blackboardDir =
+                    isPlatformTauri() && environment.os === 'linux'
+                      ? BLACKBOARD_DIR_DISPLAY
+                      : null
+
+                  // The plan hold keeps the run alive across the whole plan,
+                  // including the gap between one phase finishing and the next
+                  // dispatching (mirrors the Rust `plans_pending` guard).
+                  // Released once, in the finally below.
                   inbox.begin()
-                  const child = runSubagent({
-                    resolved,
-                    description: req.description,
-                    // The parent's instance: a second one would mean a second
-                    // llama-server load for the same model.
-                    model: transport.model,
-                    parentTools: transport.advertisedTools,
-                    system: {
-                      workspacePath,
-                      readOnlyFolder: current?.folder ?? null,
-                      bashAvailable: sandboxEnforces(),
-                      environment,
+                  void runDispatchPlan(plan, callId, {
+                    runOne: (req, description, id) => {
+                      const resolved = resolvedByName.get(req.name)
+                      if (!resolved) {
+                        // Unreachable: every name was resolved above. Guard for
+                        // types (and never leave the plan hold unbalanced).
+                        return Promise.resolve({
+                          output: `ERROR: subagent '${req.name}' was not resolved`,
+                          usage: null,
+                          isError: true,
+                          sessionTokens: 0,
+                        })
+                      }
+                      return runSubagent({
+                        resolved,
+                        description,
+                        // The parent's instance: a second one would mean a
+                        // second llama-server load for the same model.
+                        model,
+                        parentTools: transport.advertisedTools,
+                        system: {
+                          workspacePath,
+                          readOnlyFolder: current?.folder ?? null,
+                          bashAvailable: sandboxEnforces(),
+                          environment,
+                        },
+                        signal: controller.signal,
+                        sessionTokens: 0,
+                        // A child never gets `todo`/`ask`/`task`, so these refuse
+                        // rather than execute: a model can still emit a call to a
+                        // tool that was never advertised.
+                        dispatch: (call) =>
+                          dispatchCoworkTool(call, {
+                            sessionId: sid,
+                            readOnlyFolder: current?.folder ?? null,
+                            planMode: current?.planMode ?? false,
+                            webSearch,
+                            // A child has no inbox for a watcher to ping.
+                            monitors: null,
+                            onTodo: async () => ({
+                              output:
+                                'The todo list belongs to the agent that dispatched you.',
+                              isError: true,
+                            }),
+                            onAsk: async () => ({
+                              output:
+                                'You cannot ask the user questions. Decide, and say what you assumed.',
+                              isError: true,
+                            }),
+                            onTask: async () => ({
+                              output: 'A subagent cannot dispatch subagents.',
+                              isError: true,
+                            }),
+                          }),
+                        events: {
+                          onQueued: (waiting) =>
+                            useCoworkRun
+                              .getState()
+                              .queueSubagent(sid, id, req.name, waiting),
+                          onStart: () =>
+                            useCoworkRun
+                              .getState()
+                              .startSubagent(sid, id, req.name),
+                          onInner: (event) =>
+                            useCoworkRun
+                              .getState()
+                              .routeIntoSubagent(sid, id, event),
+                          onEnd: (usage) =>
+                            useCoworkRun.getState().endSubagent(sid, id, usage),
+                        },
+                      })
                     },
-                    signal: controller.signal,
-                    sessionTokens: 0,
-                    // A child never gets `todo`/`ask`/`task`, so these refuse
-                    // rather than execute: a model can still emit a call to a
-                    // tool that was never advertised.
-                    dispatch: (call) =>
-                      dispatchCoworkTool(call, {
-                        sessionId: sid,
-                        readOnlyFolder: current?.folder ?? null,
-                        planMode: current?.planMode ?? false,
-                        webSearch,
-                        // A child has no inbox for a watcher to ping.
-                        monitors: null,
-                        onTodo: async () => ({
-                          output:
-                            'The todo list belongs to the agent that dispatched you.',
-                          isError: true,
-                        }),
-                        onAsk: async () => ({
-                          output:
-                            'You cannot ask the user questions. Decide, and say what you assumed.',
-                          isError: true,
-                        }),
-                        onTask: async () => ({
-                          output: 'A subagent cannot dispatch subagents.',
-                          isError: true,
-                        }),
-                      }),
-                    events: {
-                      onQueued: (waiting) =>
-                        useCoworkRun
-                          .getState()
-                          .queueSubagent(sid, callId, resolved.name, waiting),
-                      onStart: () =>
-                        useCoworkRun
-                          .getState()
-                          .startSubagent(sid, callId, resolved.name),
-                      onInner: (event) =>
-                        useCoworkRun
-                          .getState()
-                          .routeIntoSubagent(sid, callId, event),
-                      onEnd: (usage) =>
-                        useCoworkRun.getState().endSubagent(sid, callId, usage),
-                    },
-                  })
-                  // Detached: the errand outlives its tool call, and the parent
-                  // hears about it through the inbox instead.
-                  void child
-                    .then(async (done) => {
+                    writeBlackboard: (name, content) =>
+                      writeBlackboard(sid, name, content),
+                    // begin at dispatch, finish at completion: with the plan hold
+                    // above, inbox.pending() never reads false mid-plan.
+                    onDispatch: () => inbox.begin(),
+                    onComplete: (id, name, result, savedPath) => {
                       useCoworkRun
                         .getState()
-                        .attachSubagentOutput(sid, callId, done.output)
-                      // Only a real answer is filed: an error message in the file
-                      // the parent was told to read would be indistinguishable
-                      // from the answer it expected.
-                      const filed =
-                        saved && !done.isError && done.output.trim()
-                          ? await fillSubagentResult(
-                              sid,
-                              saved.file,
-                              done.output
-                            )
-                          : false
+                        .attachSubagentOutput(sid, id, result.output)
+                      // Multi-phase: decrement the child's slot without a ping;
+                      // the terminal notice below is the plan's one doorbell.
+                      if (multi) {
+                        inbox.abandon()
+                        return
+                      }
                       inbox.finish(
                         subagentCompletionNotice({
-                          name: resolved.name,
-                          callId,
-                          savedPath: filed && saved ? saved.path : null,
-                          output: done.output,
-                          isError: done.isError,
+                          name,
+                          callId: id,
+                          savedPath,
+                          output: result.output,
+                          isError: result.isError,
                         })
                       )
+                    },
+                  })
+                    .then((finalPhase) => {
+                      // Ring once for the whole plan, after its last phase. Queue
+                      // the ping (note, not finish) since the plan-hold slot is
+                      // released by the finally below.
+                      if (multi) {
+                        inbox.note(
+                          planCompletionNotice({
+                            phaseCount: plan.phases.length,
+                            totalSubagents: plan.phases.reduce(
+                              (n, p) => n + p.subagents.length,
+                              0
+                            ),
+                            finalPhase,
+                          })
+                        )
+                      }
                     })
-                    .catch((e) =>
-                      // `runSubagent` does not throw, so this is the loop itself
-                      // failing. The count still has to come down or the run
-                      // would wait on it forever.
-                      inbox.finish(
-                        subagentCompletionNotice({
-                          name: resolved.name,
-                          callId,
-                          savedPath: null,
-                          output: e instanceof Error ? e.message : String(e),
-                          isError: true,
-                        })
-                      )
-                    )
-                  return {
-                    output: dispatchedSubagentResult(
-                      resolved.name,
-                      callId,
-                      saved?.path ?? null
-                    ),
-                  }
+                    // runDispatchPlan never throws; this only guarantees the plan
+                    // hold is released even if a callback above does.
+                    .catch(() => {})
+                    .finally(() => inbox.abandon())
+
+                  return { output: formatDispatchedPlan(plan, blackboardDir) }
                 },
               })
             ),

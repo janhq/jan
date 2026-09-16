@@ -63,6 +63,7 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::sandbox_status,
             commands::subagent_result_reserve,
             commands::subagent_result_fill,
+            commands::blackboard_write,
             commands::attachment_import,
             commands::execute_tool,
             commands::execute_tool_streaming,

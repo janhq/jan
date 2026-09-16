@@ -447,6 +447,37 @@ pub async fn subagent_result_fill(
     Ok(())
 }
 
+/// Write a finished subagent's answer to `<scratch>/blackboard/<name>.md`, the
+/// predictable name-keyed coordination file a phased dispatch's next phase (and
+/// sibling agents) read. Reserve + fill in one call: the Cowork scheduler writes
+/// only after the child has finished, so there is nothing to claim ahead of time.
+/// The name is re-validated and re-resolved under the session scratch; a stale
+/// file from an earlier plan is truncated in place. Returns the model-visible
+/// path (`spill::reserve_blackboard_result`).
+#[tauri::command]
+pub async fn blackboard_write(
+    thread_id: String,
+    name: String,
+    content: String,
+) -> Result<String, AgentToolsError> {
+    let scratch = workspace::ensure_scratch_dir(&thread_id).await?;
+    tokio::task::spawn_blocking(move || {
+        let path = crate::tools::spill::reserve_blackboard_result(&scratch, &name)
+            .ok_or_else(|| {
+                AgentToolsError::from("could not claim a blackboard file".to_string())
+            })?;
+        if crate::tools::spill::fill_subagent_result(&path, &content) {
+            Ok(crate::tools::sandbox::scratch_display_path(Some(&scratch), &path))
+        } else {
+            Err(AgentToolsError::from(
+                "could not write the blackboard file".to_string(),
+            ))
+        }
+    })
+    .await
+    .map_err(|e| AgentToolsError::from(format!("blackboard write failed: {e}")))?
+}
+
 /// An attachment imported into a session workspace: host paths, which are also
 /// the model-visible spelling since the workspace is the tools' root.
 #[derive(serde::Serialize)]

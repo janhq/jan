@@ -21,8 +21,8 @@ use crate::core::agent::upstream::{
     arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
     drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
     load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
-    resolve_api_type_for_model, resolve_upstream_for_model, set_system_prompt,
-    stream_openai_chat_completions,
+    insert_volatile_system, resolve_api_type_for_model, resolve_upstream_for_model,
+    set_system_prompt, stream_openai_chat_completions,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -578,6 +578,34 @@ fn output_sink(
     })
 }
 
+/// The model-facing summary of a phased `dispatch_subagent` call.
+fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> String {
+    let names = d.first_phase_names.join(", ");
+    let where_answers = match &d.blackboard_dir {
+        Some(dir) => format!(
+            " Each answer is written to {dir}/<name>.md; read those files when you need them."
+        ),
+        None => " Each answer rides the note that tells you it finished.".to_string(),
+    };
+    let head = if d.phase_count > 1 {
+        format!(
+            "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running: {}. Later phases \
+             start automatically as each phase finishes, each receiving the previous phase's \
+             results.",
+            d.phase_count, d.total_subagents, names
+        )
+    } else {
+        format!(
+            "Dispatched {} subagent(s) running concurrently in the background: {}.",
+            d.total_subagents, names
+        )
+    };
+    format!(
+        "{head}{where_answers} These tasks are the subagents' now -- do not do them yourself; \
+         you'll be pinged as each finishes."
+    )
+}
+
 impl CompositeToolInvoker {
     /// Whether the monitors owe the model something the run must stay alive
     /// for: any queued ping, plus a still-running watcher when the set dies
@@ -678,7 +706,8 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
+            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            SubagentScope,
         };
         use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
         let Some(ctx) = &self.subagents else {
@@ -690,14 +719,14 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let req = match parse_dispatch_args(args) {
-                    Ok(r) => r,
+                let plan = match parse_dispatch_plan(args) {
+                    Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
-                match spawn_subagent(
+                match spawn_dispatch_plan(
                     &ctx.bg,
                     &ctx.parent_args,
-                    req,
+                    plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
@@ -708,21 +737,7 @@ impl CompositeToolInvoker {
                     // `/tmp`, so there is nowhere sanctioned to spill.
                     self.subagent_scratch(),
                 ) {
-                    Ok(d) => match d.display_path {
-                        Some(path) => format!(
-                            "Subagent started in the background. run_id={}. Its answer will be \
-                             written to {path}; you will be told when it lands, so keep working \
-                             rather than waiting. Read that file when you need the answer, or \
-                             call await_subagent with this run_id to block until it is ready.",
-                            d.run_id
-                        ),
-                        None => format!(
-                            "Subagent started in the background. run_id={}. You will be told when \
-                             it finishes; keep working, then call await_subagent with this run_id \
-                             to collect its result.",
-                            d.run_id
-                        ),
-                    },
+                    Ok(d) => format_dispatched_plan(&d),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -1659,6 +1674,13 @@ fn advertise_local_tools(
                     if permissions.is_denied(name) {
                         continue;
                     }
+                    // await_subagent is not advertised: a finished child's note
+                    // already carries its answer (inline, or a file path to
+                    // read), so blocking to collect is redundant. The handler
+                    // stays (recognized + executable) so a named call still works.
+                    if name == "await_subagent" {
+                        continue;
+                    }
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;
@@ -1975,7 +1997,14 @@ async fn orchestrate_inner(
         .as_deref()
         .map(|root| resolve_run_settings(root, *sandbox));
 
-    let mut system_prompt = build_run_system_prompt(
+    // The stable system prompt: identity, guidelines, environment, skills and
+    // the memory catalog. Byte-identical across the turns of a session (within a
+    // day), so it is kept as system message 0 and never mixed with per-turn
+    // content -- that is what lets a provider cache this long prefix. Volatile
+    // per-turn context (date, query memory recall, plan/todo state) is collected
+    // separately below and emitted as a second system message so it cannot
+    // invalidate the cached prefix above.
+    let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
@@ -1983,30 +2012,24 @@ async fn orchestrate_inner(
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
     );
+
+    let mut volatile_parts: Vec<String> = Vec::new();
+    // Always tell the model today's date, including isolated child runs.
+    volatile_parts.push(format!(
+        "Today's date is {}.",
+        chrono::Local::now().format("%Y-%m-%d")
+    ));
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    system_prompt = Some(match system_prompt {
-                        Some(s) => format!("{s}\n\n{mem}"),
-                        None => mem,
-                    });
+                    volatile_parts.push(mem);
                 }
             }
         }
     }
-    // Always tell the model today's date, including isolated child runs.
-    let date_line = format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
-    );
-    let system_prompt = match system_prompt {
-        Some(sys) => format!("{date_line}\n\n{sys}"),
-        None => date_line,
-    };
-    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -2021,25 +2044,19 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
-        let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        volatile_parts.push(crate::core::agent::plan::plan_mode_prompt_addendum().to_string());
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        // Child (subagent) runs are excluded via `system_prompt_override`, the
-        // same gate the memory-recall block above uses to distinguish a
-        // top-level run from a subagent's isolated context.
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
-    } else {
-        system_prompt
-    };
-    if let Some(sys) = system_prompt {
+        volatile_parts.push(addendum.to_string());
+    }
+
+    if let Some(sys) = stable_system {
         set_system_prompt(&mut conversation_messages, &sys);
+        insert_volatile_system(&mut conversation_messages, &volatile_parts.join("\n\n"));
+    } else {
+        // No stable prompt (an isolated child run with no override): the
+        // volatile block is all there is, so it stands in as message 0.
+        set_system_prompt(&mut conversation_messages, &volatile_parts.join("\n\n"));
     }
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
@@ -2159,9 +2176,9 @@ async fn orchestrate_inner(
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
-            *max_parallel_subagents,
-        ));
+        let bg = std::sync::Arc::new(
+            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
+        );
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -3023,6 +3040,7 @@ async fn run_turn_cycle(
                 );
             }
         }
+
         turn += 1;
     }
 
@@ -3037,6 +3055,51 @@ mod tests {
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
+
+    /// The cache-prefix contract from #340: across turns the system prompt at
+    /// message 0 and the tool schema must be byte-identical, so a provider can
+    /// cache them; only the volatile message 1 (date, memory recall, plan state)
+    /// changes. A regression here silently defeats prompt caching, which no
+    /// functional test would catch.
+    #[test]
+    fn system_prefix_and_tools_are_byte_identical_across_turns() {
+        let tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "run a shell command",
+                "parameters": {"type": "object"}
+            }
+        })];
+        let body = json!({});
+
+        let mut turn1 = vec![json!({"role": "user", "content": "first"})];
+        set_system_prompt(&mut turn1, "STABLE PREFIX");
+        insert_volatile_system(&mut turn1, "Today's date is 2026-09-16.");
+        let req1 = build_completion_request("m", &turn1, &tools, &body, None);
+
+        // A later turn: the conversation has grown and the volatile block differs.
+        let mut turn2 = vec![
+            json!({"role": "user", "content": "first"}),
+            json!({"role": "assistant", "content": "reply"}),
+            json!({"role": "user", "content": "second"}),
+        ];
+        set_system_prompt(&mut turn2, "STABLE PREFIX");
+        insert_volatile_system(
+            &mut turn2,
+            "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note",
+        );
+        let req2 = build_completion_request("m", &turn2, &tools, &body, None);
+
+        let node0 = |r: &serde_json::Value| serde_json::to_string(&r["messages"][0]).unwrap();
+        let tools_of = |r: &serde_json::Value| serde_json::to_string(&r["tools"]).unwrap();
+        assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
+        assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
+        assert_ne!(
+            req1["messages"][1], req2["messages"][1],
+            "the volatile block is expected to differ"
+        );
+    }
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
@@ -6524,10 +6587,10 @@ mod tests {
     }
 
     /// `bash` hands its child to a detached task that keeps the output sink
-    /// alive after the call has returned its `job_id`. The sink must not keep
-    /// the run's event channel open with it: every consumer of that channel --
-    /// the desktop forwarder, the headless printer, a subagent's forwarder --
-    /// finishes only when the channel closes.
+    /// alive after the call has backgrounded. The sink must not keep the run's
+    /// event channel open with it: every consumer of that channel -- the desktop
+    /// forwarder, the headless printer, a subagent's forwarder -- finishes only
+    /// when the channel closes.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
@@ -6546,7 +6609,7 @@ mod tests {
         .await
         .0;
         assert!(
-            out.contains("job_id=bash-"),
+            out.contains("still running in the background"),
             "expected a backgrounded job, got: {out}"
         );
 

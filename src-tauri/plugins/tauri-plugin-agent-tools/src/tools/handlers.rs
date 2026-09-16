@@ -3,10 +3,8 @@
 //! Errors are returned as a String starting with "ERROR" (matching
 //! `execute_mcp_tool_calls`) so the loop flags `is_error` correctly.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
 
 use ignore::WalkBuilder;
 use tokio::sync::oneshot;
@@ -42,18 +40,6 @@ const DEFAULT_BASH_TIMEOUT_SECS: u64 = 30;
 
 /// Counter for unique temp-file names for truncated bash output.
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
-/// Counter for unique bash background job ids.
-static BASH_JOB_COUNTER: AtomicUsize = AtomicUsize::new(0);
-
-/// Commands still running past their `bash` call's timeout, keyed by job_id.
-/// Each receiver resolves with the same formatted output a foreground call
-/// would have returned. Entries are removed once collected via `job_id`;
-/// uncollected jobs live for the process's lifetime, same tradeoff as the
-/// bash-output temp files this module already leaves on disk.
-fn bash_jobs() -> &'static Mutex<HashMap<String, oneshot::Receiver<String>>> {
-    static JOBS: OnceLock<Mutex<HashMap<String, oneshot::Receiver<String>>>> = OnceLock::new();
-    JOBS.get_or_init(|| Mutex::new(HashMap::new()))
-}
 
 fn arg_str<'a>(args: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     args.get(key).and_then(|v| v.as_str())
@@ -825,11 +811,7 @@ pub(crate) fn confined_shell(
 async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(command) = arg_str(args, "command").filter(|command| !command.trim().is_empty())
     else {
-        if let Some(job_id) = arg_str(args, "job_id").filter(|job_id| !job_id.trim().is_empty()) {
-            return await_bash_job(job_id).await;
-        }
-        return "ERROR: missing required argument 'command' (or 'job_id' to poll a backgrounded job)"
-            .to_string();
+        return "ERROR: missing required argument 'command'".to_string();
     };
     let timeout_secs = arg_u64(args, "timeout").unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
@@ -871,7 +853,7 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // bucket the child was registered under.
     let thread_owned = ctx.thread_id.map(str::to_string);
     // Cloned into the detached task, which is what keeps a backgrounded command
-    // reporting after this call has already returned its `job_id`.
+    // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
     // The model writes POSIX commands by default, which `cmd` rejects. Surface
@@ -905,27 +887,62 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     tokio::select! {
         res = &mut rx => res.unwrap_or_else(|_| "ERROR: background command ended without producing output".to_string()),
         _ = tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)) => {
-            let job_id = format!("bash-{}", BASH_JOB_COUNTER.fetch_add(1, Ordering::SeqCst));
-            bash_jobs().lock().unwrap().insert(job_id.clone(), rx);
-            format!(
-                "Command exceeded {timeout_secs}s and is continuing in the background \
-                 (job_id={job_id}). Call bash again with {{\"job_id\": \"{job_id}\"}} (no \
-                 command) to wait for and collect its output once it finishes."
-            )
+            // The command outran its timeout. Rather than killing it or blocking
+            // this call, let it keep running and have the detached task's result
+            // land in a file the agent reads when it is ready -- no second tool
+            // mode, no job registry. `None` means the background file could not
+            // be created; the command still runs, its output just isn't captured.
+            // Flag it in the process registry so the `/shells` inspector lists it
+            // as a detached shell the user can stop.
+            if let Some(pid) = pid {
+                proc::mark_backgrounded(ctx.thread_id, pid);
+            }
+            match new_temp_path(ctx.scratch_root) {
+                Some(path) => {
+                    let display =
+                        crate::tools::sandbox::scratch_display_path(ctx.scratch_root, &path);
+                    tokio::spawn(async move {
+                        let out = rx.await.unwrap_or_else(|_| {
+                            "ERROR: background command ended without producing output".to_string()
+                        });
+                        write_background_output(&path, &out);
+                    });
+                    format!(
+                        "Command exceeded {timeout_secs}s and is still running in the \
+                         background. Its result will be written to {display} once it \
+                         finishes; read that file to collect it (if the output was large \
+                         that file keeps a tail and points to the full log)."
+                    )
+                }
+                None => format!(
+                    "Command exceeded {timeout_secs}s and is still running in the \
+                     background, but a file to capture its output could not be created, \
+                     so the output will not be collected."
+                ),
+            }
         }
     }
 }
 
-/// Wait for a previously backgrounded command to finish and return its
-/// (already-formatted) output, or an error if `job_id` is unknown or was
-/// already collected.
-async fn await_bash_job(job_id: &str) -> String {
-    let rx = bash_jobs().lock().unwrap().remove(job_id);
-    match rx {
-        Some(rx) => rx.await.unwrap_or_else(|_| {
-            "ERROR: background command ended without producing output".to_string()
-        }),
-        None => format!("ERROR: unknown or already-collected job_id '{job_id}'"),
+/// Atomically publish a backgrounded command's formatted output at `path`: write
+/// a sibling `.part` file, then rename it into place, so an agent polling for
+/// `path` never observes a half-written file (existence means complete). Uses
+/// [`open_spill_file`] so the write never follows a symlink; leaves nothing
+/// behind on failure.
+fn write_background_output(path: &Path, content: &str) {
+    use std::io::Write;
+    let part = path.with_extension("part");
+    let Ok(mut file) = open_spill_file(&part) else {
+        return;
+    };
+    if file.write_all(content.as_bytes()).is_err() || file.flush().is_err() {
+        drop(file);
+        remove_spill_file(&part);
+        return;
+    }
+    drop(file);
+    if std::fs::rename(&part, path).is_err() {
+        remove_spill_file(&part);
     }
 }
 
@@ -2906,9 +2923,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A backgrounded command keeps streaming after the call has returned its
-    /// `job_id`: the sink lives in the detached task, which is the whole reason
-    /// waiting on a long job can show progress.
+    /// A backgrounded command keeps streaming after the call has returned: the
+    /// sink lives in the detached task, which is the whole reason a long job can
+    /// show progress while it runs on.
     #[tokio::test]
     async fn a_backgrounded_command_keeps_streaming() {
         let root = unique_root();
@@ -2931,7 +2948,10 @@ mod tests {
         )
         .await
         .0;
-        assert!(out.contains("job_id=bash-"), "should background: {out}");
+        assert!(
+            out.contains("still running in the background"),
+            "should background: {out}"
+        );
         assert!(
             seen.lock().unwrap().is_empty(),
             "nothing printed yet at hand-off"
@@ -2956,13 +2976,16 @@ mod tests {
         )
         .await;
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
-        assert!(out.contains("continuing in the background"), "{out}");
-        assert!(out.contains("job_id=bash-"), "{out}");
+        assert!(out.contains("still running in the background"), "{out}");
+        assert!(out.contains("output will be written to"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The path in the backgrounding notice: the detached task's full formatted
+    /// output lands there when the command finishes, so the agent reads that file
+    /// to collect the result instead of a second tool call.
     #[tokio::test]
-    async fn bash_job_id_waits_for_and_collects_background_output() {
+    async fn backgrounded_output_lands_in_the_reported_file() {
         let root = unique_root();
         let started = execute_builtin(
             lookup("bash").unwrap(),
@@ -2970,58 +2993,33 @@ mod tests {
             &root,
         )
         .await;
-        let job_id = started
-            .split("job_id=")
+        let path = started
+            .split("written to ")
             .nth(1)
-            .unwrap()
-            .split_whitespace()
-            .next()
-            .unwrap()
-            .trim_end_matches(|c: char| !c.is_alphanumeric());
+            .and_then(|rest| rest.split(" once it finishes").next())
+            .map(str::trim)
+            .map(std::path::PathBuf::from)
+            .expect("notice names the output file");
 
-        let collected =
-            execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
-        assert!(collected.contains("done"), "unexpected: {collected}");
-
-        // The job is removed once collected.
-        let again =
-            execute_builtin(lookup("bash").unwrap(), &json!({"job_id": job_id}), &root).await;
-        assert!(
-            again.starts_with("ERROR: unknown or already-collected"),
-            "unexpected: {again}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[tokio::test]
-    async fn bash_unknown_job_id_errors() {
-        let root = unique_root();
-        let out = execute_builtin(lookup("bash").unwrap(), &json!({"job_id": "nope"}), &root).await;
-        assert!(
-            out.starts_with("ERROR: unknown or already-collected"),
-            "unexpected: {out}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[tokio::test]
-    async fn bash_command_takes_precedence_over_spurious_job_id() {
-        let root = unique_root();
-        for job_id in ["", " ", "x"] {
-            let out = execute_builtin(
-                lookup("bash").unwrap(),
-                &json!({"command": "printf hello", "job_id": job_id}),
-                &root,
-            )
-            .await;
-            assert!(out.contains("hello"), "job_id {job_id:?}: {out}");
-            assert!(out.contains("[exit 0]"), "job_id {job_id:?}: {out}");
+        // The file appears only once the command has finished (atomic rename),
+        // so its existence is the completion signal the agent polls for.
+        let mut body = None;
+        for _ in 0..50 {
+            if path.exists() {
+                body = Some(std::fs::read_to_string(&path).unwrap());
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
+        let body = body.expect("output file must appear after the command finishes");
+        assert!(body.contains("done"), "unexpected: {body}");
+        assert!(body.contains("[exit 0]"), "carries the exit marker: {body}");
+        let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
-    async fn bash_missing_command_and_job_id_errors() {
+    async fn bash_missing_command_errors() {
         let root = unique_root();
         let out = execute_builtin(lookup("bash").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");

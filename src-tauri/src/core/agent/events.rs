@@ -50,9 +50,8 @@ pub enum StreamEvent {
     /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
     /// the output size. Chunks are raw fragments and may split a line.
     ///
-    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
-    /// `job_id`, so a long-running job reports progress under the id of the call
-    /// that started it.
+    /// Keeps arriving after a `bash` call has backgrounded itself, so a
+    /// long-running job reports progress under the id of the call that started it.
     ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
@@ -104,6 +103,13 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
     },
+    /// The later phases of a phased dispatch, named up front so a consumer can
+    /// show their subagents as WAITING on an earlier phase before they start.
+    /// Each pending subagent is promoted by its own `SubagentStart` (or
+    /// `SubagentQueued`), matched by `name`, which is unique across a plan.
+    /// Display-only and never journaled; emitted only by the top-level run
+    /// (children cannot dispatch), so it is never wrapped in `Subagent`.
+    SubagentPlan { pending: Vec<PendingSubagent> },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -198,6 +204,16 @@ pub enum StreamEvent {
     },
 }
 
+/// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
+/// across the plan, and its blackboard file) and 1-based phase number. Carried by
+/// [`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase
+/// before it.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct PendingSubagent {
+    pub name: String,
+    pub phase: u32,
+}
+
 /// If `path` targets a file in the agent's skill or memory workspace, return the
 /// kind (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
 fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
@@ -268,20 +284,45 @@ fn arg_name(args: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    /// Prompt tokens served from the provider's prompt cache (a read/hit).
+    /// OpenAI reports it under `prompt_tokens_details.cached_tokens`; Anthropic
+    /// under `cache_read_input_tokens`. A thrashing cache shows here as a low
+    /// value against a high `prompt_tokens`.
+    pub cached_tokens: Option<u64>,
+    /// Prompt tokens written into the provider cache this request (a write).
+    /// Only Anthropic bills this separately (`cache_creation_input_tokens`);
+    /// absent for providers that do not distinguish reads from writes.
+    pub cache_write_tokens: Option<u64>,
 }
 
 impl Usage {
     pub(crate) fn from_completion(completion: &serde_json::Value) -> Option<Self> {
         let usage = completion.get("usage")?;
+        let cached_tokens = usage
+            .get("prompt_tokens_details")
+            .and_then(|d| d.get("cached_tokens"))
+            .and_then(|v| v.as_u64())
+            .or_else(|| usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()));
+        let cache_write_tokens = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64())
+            .or_else(|| {
+                usage
+                    .get("prompt_tokens_details")
+                    .and_then(|d| d.get("cache_creation_tokens"))
+                    .and_then(|v| v.as_u64())
+            });
         Some(Self {
             prompt_tokens: usage.get("prompt_tokens").and_then(|v| v.as_u64()),
             completion_tokens: usage.get("completion_tokens").and_then(|v| v.as_u64()),
             total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
+            cached_tokens,
+            cache_write_tokens,
         })
     }
 }
@@ -514,5 +555,57 @@ mod tests {
         assert_eq!(parsed.total_tokens, Some(15));
 
         assert!(Usage::from_completion(&json!({ "choices": [] })).is_none());
+    }
+
+    #[test]
+    fn usage_parses_openai_cached_tokens() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 5,
+                "total_tokens": 105,
+                "prompt_tokens_details": { "cached_tokens": 80 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(80));
+        assert_eq!(parsed.cache_write_tokens, None);
+    }
+
+    #[test]
+    fn usage_parses_anthropic_cache_read_and_write() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "cache_read_input_tokens": 60,
+                "cache_creation_input_tokens": 40
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(60));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn usage_parses_nested_cache_creation_tokens() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "prompt_tokens_details": { "cached_tokens": 60, "cache_creation_tokens": 40 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(60));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn usage_cache_fields_none_when_absent() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15 }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, None);
+        assert_eq!(parsed.cache_write_tokens, None);
     }
 }

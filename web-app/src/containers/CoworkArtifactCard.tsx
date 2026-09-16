@@ -92,7 +92,10 @@ export function CoworkArtifactCard({
         )}
         {/* min-w-0 on a block box: `truncate` is inert otherwise. */}
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">
+          <span
+            className="block truncate text-sm font-medium"
+            title={artifact.title}
+          >
             {artifact.title}
           </span>
           <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">

@@ -140,8 +140,10 @@ const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited.
 that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
-their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
-targeted tasks where delegating would cost more than it saves.";
+their work doesn't depend on each other; each returns in the background and a note carries its answer when \
+it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
+spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
+yourself for small, targeted tasks where delegating would cost more than it saves.";
 
 /// System-prompt addendum for a `/goal` run with no staged plan: an unattended
 /// loop that keeps firing turns until a condition is met needs the phased list
@@ -505,6 +507,19 @@ mod tests {
         assert!(!without.contains("dispatch_subagent"));
         let with = build_system_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // A delegated task is the child's: the guide must say the dispatcher should
+    // not also do it itself, or a main agent with nothing else queued redoes the
+    // very work it just handed off.
+    #[test]
+    fn subagent_guide_hands_off_ownership_of_a_delegated_task() {
+        let root = scratch_project("subagent-handoff");
+        let with = build_system_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("belongs to that subagent"));
+        assert!(with.contains("do not do the same work yourself"));
+        assert!(!with.contains("keep working rather than waiting"));
         let _ = std::fs::remove_dir_all(&root);
     }
 

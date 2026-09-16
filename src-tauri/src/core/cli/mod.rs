@@ -1384,6 +1384,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
         StreamEvent::SubagentQueued { name, waiting, .. } => {
             eprintln!("\x1b[2m[subagent:{name}] queued ({waiting} waiting)\x1b[0m")
         }
+        StreamEvent::SubagentPlan { pending } => {
+            if let Some(max_phase) = pending.iter().map(|p| p.phase).max() {
+                eprintln!(
+                    "\x1b[2m[plan] {} subagent(s) queued across later phases (through phase {max_phase})\x1b[0m",
+                    pending.len()
+                )
+            }
+        }
         StreamEvent::SubagentEnd { name, error, .. } => match error {
             Some(e) => eprintln!("\x1b[2m[subagent:{name}] failed: {e}\x1b[0m"),
             None => eprintln!("\x1b[2m[subagent:{name}] finished\x1b[0m"),
