@@ -15,6 +15,7 @@ mod path_refs;
 pub mod run_report;
 pub mod providers;
 mod secret_input;
+pub mod stream_input;
 pub mod telemetry;
 pub mod terminal_setup;
 pub mod tokamak;
@@ -472,11 +473,15 @@ use crate::core::agent::project::{
     ensure_project, load_agent_config, permissions_from, set_model_in_agent_toml,
 };
 use crate::core::agent::r#loop::{
-    run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+    run_orchestration_steered, run_orchestration_streamed, OrchestrationArgs, PermissionRegistry,
+    SteeringRequest,
 };
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{ndjson_line, OutputFormat, PermissionDecisionRecord, RunReport};
+use crate::core::cli::stream_input::{
+    parse_input_line, InputErrorRecord, InputFormat, InputMessage, StreamInput,
+};
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -654,8 +659,20 @@ pub async fn cli_agent_run(
     flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
+    input_format: InputFormat,
 ) -> Result<(), String> {
-    run_agent_loop(project, task, model, false, overrides, flags, resume, format).await
+    run_agent_loop(
+        project,
+        task,
+        model,
+        false,
+        overrides,
+        flags,
+        resume,
+        format,
+        input_format,
+    )
+    .await
 }
 
 /// Single-turn run for debugging: the one place a turn cap is still applied,
@@ -676,6 +693,7 @@ pub async fn cli_agent_step(
         flags,
         None,
         OutputFormat::Text,
+        InputFormat::Text,
     )
     .await
 }
@@ -1113,6 +1131,7 @@ async fn run_agent_loop(
     flags: SessionFlags,
     resume: Option<ResumeTarget>,
     format: OutputFormat,
+    input_format: InputFormat,
 ) -> Result<(), String> {
     let started = std::time::Instant::now();
     let prepared = prepare_agent_run(
@@ -1175,6 +1194,16 @@ async fn run_agent_loop(
         }
     }
 
+    // The client on stdin, when there is one: it owns every permission decision
+    // and can steer or stop the run while it is in flight.
+    let input = input_format
+        .is_stream_json()
+        .then(|| Arc::new(StreamInput::default()));
+    let reader = input.as_ref().map(|input| {
+        spawn_input_reader(Arc::clone(input), Arc::clone(&permission_requests), format)
+    });
+    let duplex = input.is_some();
+
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     // The report is folded in both formats from the same stream the printer
     // reads, so the JSON envelope can never disagree with the text output.
@@ -1183,14 +1212,14 @@ async fn run_agent_loop(
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
             match format {
-                OutputFormat::Text => print_event(ev, &permission_requests).await,
+                OutputFormat::Text => print_event(ev, &permission_requests, duplex).await,
                 OutputFormat::Json => {
-                    resolve_permission_silently(ev, &permission_requests).await;
+                    resolve_permission_silently(ev, &permission_requests, duplex).await;
                 }
                 OutputFormat::StreamJson => {
                     print_json_line(&ev);
                     if let Some((request_id, decision)) =
-                        resolve_permission_silently(ev, &permission_requests).await
+                        resolve_permission_silently(ev, &permission_requests, duplex).await
                     {
                         print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
                     }
@@ -1200,7 +1229,18 @@ async fn run_agent_loop(
         report
     });
 
-    let result = run_orchestration_streamed(&tx, &body, &args).await;
+    // `None` when the client aborted: the run produced no completion, but a
+    // deliberate stop is an outcome rather than a failure, so it is reported on
+    // the stream and the process still exits 0.
+    let outcome = match input.as_ref() {
+        Some(input) => run_steered(&tx, &body, &args, input).await,
+        None => Some(run_orchestration_streamed(&tx, &body, &args).await),
+    };
+    if let Some(reader) = reader {
+        reader.abort();
+    }
+    let aborted = outcome.is_none();
+    let result = outcome.unwrap_or_else(|| Err(ABORTED_BY_CLIENT.to_string()));
     drop(tx);
     let report = printer.await.unwrap_or_default();
 
@@ -1248,7 +1288,160 @@ async fn run_agent_loop(
     if let Some(session) = args.session_id.as_deref() {
         let _ = workspace::remove_scratch_dir(session).await;
     }
+    if aborted {
+        return Ok(());
+    }
     result.map(|_| ())
+}
+
+/// Stop reason reported for a run the client ended with an `abort` message, and
+/// the error the run itself returns -- never printed, since an abort exits 0.
+const ABORTED_BY_CLIENT: &str = "aborted by client";
+
+/// Drive the run against a duplex client: the orchestration loop's steering
+/// handshake is answered from the queue the reader fills, and an `abort`
+/// message drops the run. `None` is that abort.
+///
+/// Dropping the orchestration future is what stops the run, so anything it was
+/// awaiting (an upstream request, a tool) is cancelled where it stands; a child
+/// process a `bash` call had already spawned outlives it, as it does on the
+/// TUI's cancel path.
+async fn run_steered(
+    tx: &mpsc::UnboundedSender<StreamEvent>,
+    body: &serde_json::Value,
+    args: &OrchestrationArgs,
+    input: &Arc<StreamInput>,
+) -> Option<Result<serde_json::Value, String>> {
+    let (steering_tx, mut steering_rx) = mpsc::unbounded_channel::<SteeringRequest>();
+    let queue = Arc::clone(input);
+    let steerer = tokio::spawn(async move {
+        while let Some(request) = steering_rx.recv().await {
+            // Empty is the normal answer: the loop asks at every turn boundary.
+            let _ = request.reply.send(queue.take_queued());
+        }
+    });
+    let outcome = tokio::select! {
+        result = run_orchestration_steered(tx, body, args, Some(&steering_tx)) => Some(result),
+        _ = input.aborted() => {
+            // The loop emits its own terminal event; an abort pre-empts it, so
+            // the report is given one here or it would read as a clean stop.
+            let _ = tx.send(StreamEvent::Done {
+                stop_reason: "aborted".to_string(),
+                usage: None,
+            });
+            None
+        }
+    };
+    steerer.abort();
+    outcome
+}
+
+/// What a client line asks the reader to do next.
+#[derive(Debug, PartialEq, Eq)]
+enum InputFlow {
+    Continue,
+    /// A permission request was answered; the id and decision are echoed on the
+    /// stream so it stays a complete account of the run.
+    Decided(String, PermissionDecision),
+    /// An `abort`: stop reading, the run is ending.
+    Stop,
+}
+
+/// Apply one client line. `Err` is the message reported back to the client; it
+/// is never fatal, since this is a peer process's output and one malformed line
+/// must not cost the work already done.
+async fn apply_input_line(
+    line: &str,
+    input: &StreamInput,
+    registry: &PermissionRegistry,
+) -> Result<InputFlow, String> {
+    match parse_input_line(line)? {
+        InputMessage::User(text) => {
+            input.queue_user(text);
+            Ok(InputFlow::Continue)
+        }
+        InputMessage::Abort => {
+            input.abort();
+            Ok(InputFlow::Stop)
+        }
+        InputMessage::Permission {
+            request_id,
+            decision,
+        } => {
+            // Taking the sender is what makes a decision single-use: a second
+            // reply for the same id finds nothing and is reported, rather than
+            // silently overwriting an answer the run already acted on.
+            let sender = registry.lock().await.remove(&request_id);
+            let Some(sender) = sender else {
+                return Err(format!("no permission request '{request_id}' is pending"));
+            };
+            let _ = sender.send(decision);
+            Ok(InputFlow::Decided(request_id, decision))
+        }
+    }
+}
+
+/// Client lines, read on a detached OS thread.
+///
+/// Not `tokio::io::stdin`: that parks the read on the runtime's blocking pool,
+/// which shutdown waits for, so a client that keeps stdin open -- which is what
+/// a duplex client does for the whole run -- leaves the process alive after its
+/// terminal record has been printed. A plain thread dies with the process.
+fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    std::thread::spawn(move || {
+        use std::io::BufRead as _;
+        for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+            if tx.send(line).is_err() {
+                return;
+            }
+        }
+    });
+    rx
+}
+
+/// Consume client messages until `abort` or end of input.
+///
+/// End of input is not an abort: a client that has said everything it means to
+/// say may close the pipe and still want its answer.
+async fn read_input_lines(
+    mut lines: mpsc::UnboundedReceiver<String>,
+    input: Arc<StreamInput>,
+    registry: PermissionRegistry,
+    format: OutputFormat,
+) {
+    while let Some(line) = lines.recv().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match apply_input_line(&line, &input, &registry).await {
+            Ok(InputFlow::Continue) => {}
+            Ok(InputFlow::Decided(request_id, decision)) => {
+                if format.is_stream_json() {
+                    print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
+                }
+            }
+            Ok(InputFlow::Stop) => return,
+            Err(message) => report_input_error(format, &message, &line),
+        }
+    }
+}
+
+fn spawn_input_reader(
+    input: Arc<StreamInput>,
+    registry: PermissionRegistry,
+    format: OutputFormat,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(read_input_lines(stdin_lines(), input, registry, format))
+}
+
+/// Tell the client its line was rejected, on whichever stream it is reading.
+fn report_input_error(format: OutputFormat, message: &str, line: &str) {
+    if format.is_stream_json() {
+        print_json_line(&InputErrorRecord::new(message, line));
+    } else {
+        eprintln!("\x1b[33m[input] {message}\x1b[0m");
+    }
 }
 
 /// Write the result envelope to stdout, the last thing either machine format
@@ -1284,6 +1477,7 @@ fn print_json_line<T: serde::Serialize>(value: &T) {
 async fn resolve_permission_silently(
     ev: StreamEvent,
     registry: &PermissionRegistry,
+    duplex: bool,
 ) -> Option<(String, PermissionDecision)> {
     let StreamEvent::PermissionRequest {
         request_id,
@@ -1296,6 +1490,11 @@ async fn resolve_permission_silently(
     else {
         return None;
     };
+    // With a client on stdin the decision is its call; answering here would
+    // race the reply already on its way.
+    if duplex {
+        return None;
+    }
     let detail = command
         .map(|c| format!(" ({c})"))
         .or_else(|| path.map(|p| format!(" on {p}")))
@@ -1364,7 +1563,7 @@ pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
-async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
+async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: bool) {
     if crate::core::cli::auth::account::take_claude_alias_engaged() {
         eprintln!(
             "\x1b[33m[warning] {}\x1b[0m",
@@ -1484,6 +1683,12 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry) {
             if let Some(diff) = diff {
                 eprintln!("\x1b[2m{diff}\x1b[0m");
             }
+            if duplex {
+                eprintln!(
+                    "\x1b[33m[permission] {capability} via '{tool_name}'{detail} - awaiting '{request_id}' on stdin\x1b[0m"
+                );
+                return;
+            }
             let decision = prompt_permission(tool_name, capability, detail).await;
             if let Some(sender) = registry.lock().await.remove(&request_id) {
                 let _ = sender.send(decision);
@@ -1524,6 +1729,78 @@ async fn prompt_permission(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The duplex channel end to end over a pipe: a follow-up is queued for the
+    /// steering handshake, a permission reply reaches the waiting run, a
+    /// malformed line is survivable, and `abort` stops the reader.
+    ///
+    /// Driven through `read_input_lines` rather than the built binary because a
+    /// cargo test cannot own process stdin; the binary is exercised by hand.
+    #[tokio::test]
+    async fn a_duplex_client_steers_answers_and_aborts_over_one_pipe() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), answer_tx);
+
+        let script = [
+            r#"{"type":"user","text":"also check the tests"}"#,
+            "   ",
+            "{ not json",
+            r#"{"type":"permission","request_id":"perm-1","decision":"allow_once"}"#,
+            r#"{"type":"user","text":"and the docs"}"#,
+            r#"{"type":"abort"}"#,
+            r#"{"type":"user","text":"never read"}"#,
+        ];
+        let (lines_tx, lines) = mpsc::unbounded_channel();
+        for line in script {
+            lines_tx.send(line.to_string()).expect("reader is alive");
+        }
+        drop(lines_tx);
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::clone(&registry),
+            OutputFormat::Json,
+        )
+        .await;
+
+        assert_eq!(
+            answer.await.expect("the run's permission wait is answered"),
+            PermissionDecision::AllowOnce
+        );
+        let queued = input.take_queued();
+        assert_eq!(queued.len(), 2, "the bad line cost neither follow-up");
+        assert_eq!(queued[0]["content"], "also check the tests");
+        assert_eq!(queued[1]["content"], "and the docs");
+        // Lines after `abort` are not read: the run is already ending.
+        assert!(input.take_queued().is_empty());
+        input.aborted().await;
+    }
+
+    /// A decision is single-use. The second reply has no sender left to take,
+    /// which is what keeps a client from answering a request the run already
+    /// acted on.
+    #[tokio::test]
+    async fn a_second_reply_to_one_request_is_rejected() {
+        let input = StreamInput::default();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, _rx) = tokio::sync::oneshot::channel();
+        registry.lock().await.insert("perm-1".to_string(), tx);
+        let line = r#"{"type":"permission","request_id":"perm-1","decision":"deny"}"#;
+
+        assert_eq!(
+            apply_input_line(line, &input, &registry).await,
+            Ok(InputFlow::Decided(
+                "perm-1".to_string(),
+                PermissionDecision::Deny
+            ))
+        );
+        let err = apply_input_line(line, &input, &registry)
+            .await
+            .expect_err("nothing is pending any more");
+        assert!(err.contains("no permission request 'perm-1'"), "{err}");
+    }
 
     /// Signing in to Tokamak is what unlocks the desktop inherit. Without it the
     /// model stays unset so the TUI's sign-in notice fires, instead of the
