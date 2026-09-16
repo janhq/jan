@@ -1,0 +1,22 @@
+{
+  "welcome": "היי, מה שלומך?",
+  "description": "איך אפשר לעזור לך היום?",
+  "temporaryChat": "צ'אט זמני",
+  "temporaryChatDescription": "התחילו שיחה זמנית שלא תישמר בהיסטוריית הצ'אטים שלכם.",
+  "status": {
+    "empty": "לא נמצאו צ'אטים"
+  },
+  "sendMessage": "שליחת הודעה",
+  "newConversation": "שיחה חדשה",
+  "clearHistory": "ניקוי היסטוריה",
+  "embeddings": {
+    "title": "מכינים את המסמכים שלכם",
+    "description": "מאנדקסים את הקבצים המצורפים כדי שיהיה אפשר לחפש בהם ולצטט מהם. זה עשוי לקחת רגע במסמכים גדולים."
+  },
+  "actions": {
+    "regenerate": "יצירת תגובה מחדש",
+    "continue": "המשך יצירה"
+  },
+  "done": "בוצע",
+  "webSources": "{{count}} מקור/ות"
+}
