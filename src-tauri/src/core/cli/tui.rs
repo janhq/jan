@@ -2093,6 +2093,12 @@ struct App {
     turn_output_tokens: u64,
     /// Context size of the current turn's most recent request.
     turn_prompt_tokens: u64,
+    /// Prompt tokens the provider served from its cache on the most recent
+    /// request (a cache read/hit), and the tokens it wrote into the cache.
+    /// Latest request, not a sum: like `turn_prompt_tokens`, each request
+    /// resends the whole prefix. Surfaced in `/context`.
+    turn_cached_tokens: u64,
+    turn_cache_write_tokens: u64,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -2535,6 +2541,8 @@ impl App {
             tokens_per_sec: None,
             turn_output_tokens: 0,
             turn_prompt_tokens: 0,
+            turn_cached_tokens: 0,
+            turn_cache_write_tokens: 0,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -2626,6 +2634,8 @@ impl App {
         // An empty history is exactly known, not an estimate of anything.
         self.tokens_estimated = false;
         self.turn_prompt_tokens = 0;
+        self.turn_cached_tokens = 0;
+        self.turn_cache_write_tokens = 0;
         self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
@@ -2654,6 +2664,8 @@ impl App {
     fn invalidate_token_provenance(&mut self) {
         self.tokens_estimated = true;
         self.turn_prompt_tokens = 0;
+        self.turn_cached_tokens = 0;
+        self.turn_cache_write_tokens = 0;
     }
 
     /// Drop any selection, and with it a copy armed but not yet lifted out of a
@@ -4648,6 +4660,8 @@ impl App {
             },
             tokens_estimated: self.tokens_estimated,
             turn_prompt_tokens: self.turn_prompt_tokens,
+            turn_cached_tokens: self.turn_cached_tokens,
+            turn_cache_write_tokens: self.turn_cache_write_tokens,
         }
     }
 }
@@ -4665,6 +4679,8 @@ struct ContextSnapshot {
     history_estimate: u64,
     tokens_estimated: bool,
     turn_prompt_tokens: u64,
+    turn_cached_tokens: u64,
+    turn_cache_write_tokens: u64,
 }
 
 /// The `/context` breakdown for the current session, computed from an owned
@@ -4779,6 +4795,10 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     });
 
     let reported = !snapshot.tokens_estimated && snapshot.turn_prompt_tokens > 0;
+    // The cache figures share the fill's provenance: they describe the same
+    // measured request, so a fall-back-to-estimate turn has no cache line.
+    let cache_reported =
+        reported && (snapshot.turn_cached_tokens > 0 || snapshot.turn_cache_write_tokens > 0);
     ContextReport {
         model_id: snapshot.model,
         window: snapshot.context_window,
@@ -4789,6 +4809,9 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         },
         fill_reported: reported,
         segments,
+        cache_reported,
+        cached_tokens: snapshot.turn_cached_tokens,
+        cache_write_tokens: snapshot.turn_cache_write_tokens,
     }
 }
 
@@ -5215,6 +5238,13 @@ impl App {
                 // whole conversation, so adding them would be meaningless.
                 if let Some(prompt) = usage.prompt_tokens {
                     self.turn_prompt_tokens = prompt;
+                    // Cache read/write for the same request. Only overwrite when
+                    // the provider reported a value, so a provider that omits the
+                    // fields leaves the last known figures rather than zeroing.
+                    self.turn_cached_tokens = usage.cached_tokens.unwrap_or(self.turn_cached_tokens);
+                    self.turn_cache_write_tokens = usage
+                        .cache_write_tokens
+                        .unwrap_or(self.turn_cache_write_tokens);
                     // Keep the header's context gauge live during the turn
                     // instead of jumping only when the run ends.
                     self.tokens = prompt + usage.completion_tokens.unwrap_or(0);
@@ -5356,6 +5386,8 @@ impl App {
         self.tokens_per_sec = None;
         self.turn_output_tokens = 0;
         self.turn_prompt_tokens = 0;
+        self.turn_cached_tokens = 0;
+        self.turn_cache_write_tokens = 0;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -5931,6 +5963,13 @@ struct ContextReport {
     /// Content categories plus free space and the autocompact buffer. Always
     /// exactly the seven bars rendered by the context view.
     segments: Vec<ContextSegment>,
+    /// Prompt-cache read/write from the most recent request, and whether the
+    /// provider reported either. `false` when the provider surfaces no cache
+    /// fields (every plain OpenAI-compatible endpoint that caches implicitly
+    /// without reporting), which suppresses the cache line entirely.
+    cache_reported: bool,
+    cached_tokens: u64,
+    cache_write_tokens: u64,
 }
 
 impl ContextReport {
@@ -6051,6 +6090,32 @@ fn context_bank_bar(percent: f64, width: usize) -> (String, String) {
     (filled, empty)
 }
 
+/// One-line prompt-cache readout for `/context`, or `None` when the provider
+/// reported no cache activity. `read` as a share of the prompt is the number
+/// that matters: it says how much of the prefix the provider actually served
+/// from cache on the last request, i.e. whether prefix caching is working.
+fn cache_summary_line(report: &ContextReport) -> Option<String> {
+    if !report.cache_reported {
+        return None;
+    }
+    let read_pct = if report.fill > 0 {
+        report.cached_tokens as f64 / report.fill as f64 * 100.0
+    } else {
+        0.0
+    };
+    let read = format_tokens(report.cached_tokens);
+    if report.cache_write_tokens > 0 {
+        Some(format!(
+            "Prompt cache (last request): {read} read ({read_pct:.0}% of prompt), {} written",
+            format_tokens(report.cache_write_tokens)
+        ))
+    } else {
+        Some(format!(
+            "Prompt cache (last request): {read} read ({read_pct:.0}% of prompt)"
+        ))
+    }
+}
+
 /// Plain `/context` summary: current usage and autocompaction threshold first,
 /// followed by seven equal-scale category bars.
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
@@ -6086,11 +6151,14 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 format!("{} before auto-compact", format_tokens(headroom)),
                 Style::new().bold(),
             )],
-            vec![Span::styled(
-                "Context breakdown (estimated)",
-                Style::new().dim(),
-            )],
         ];
+        if let Some(cache) = cache_summary_line(report) {
+            rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+        }
+        rows.push(vec![Span::styled(
+            "Context breakdown (estimated)",
+            Style::new().dim(),
+        )]);
         for (segment, percent) in report
             .segments
             .iter()
@@ -6191,6 +6259,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         ),
         Style::new().bold(),
     )]);
+    if let Some(cache) = cache_summary_line(report) {
+        rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+    }
     rows.push(Vec::new());
     rows.push(vec![Span::styled(
         "Context breakdown (estimated)",
@@ -29884,7 +29955,44 @@ mod tests {
             fill: used,
             fill_reported: false,
             segments,
+            cache_reported: false,
+            cached_tokens: 0,
+            cache_write_tokens: 0,
         }
+    }
+
+    #[test]
+    fn context_view_shows_prompt_cache_when_reported() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_000;
+        report.fill_reported = true;
+        report.cache_reported = true;
+        report.cached_tokens = 90_000;
+        report.cache_write_tokens = 12_000;
+
+        let text = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Prompt cache (last request): 90K read (75% of prompt), 12K written"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn context_view_hides_prompt_cache_when_not_reported() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.fill = 120_000;
+        report.fill_reported = true;
+        // cache_reported stays false (a plain OpenAI-compatible provider).
+        let text = context_lines(&report, 80)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!text.contains("Prompt cache"), "{text}");
     }
 
     #[test]
