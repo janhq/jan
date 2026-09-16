@@ -13,6 +13,7 @@ use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
 use tauri_plugin_agent_tools::tools::spill::{
     compose_subagent_result, fill_subagent_result, reserve_blackboard_result,
+    SUBAGENT_INLINE_MAX_BYTES,
 };
 use tauri_plugin_agent_tools::workspace;
 
@@ -995,6 +996,13 @@ async fn run_subagent(
 /// before the child has produced a word, so the dispatch can report the path the
 /// parent will read it from; the child's own task fills it in and queues the
 /// `<SYSTEM>` ping that tells the parent it is there.
+///
+/// `notify_on_finish` decides whether this child's completion rings the parent's
+/// doorbell: a plain fan-out child pings the moment it finishes, but a child
+/// managed by a multi-phase plan stays silent so the parent is woken exactly
+/// once -- when the plan's last phase finishes (see [`run_phase_plan`]). Silence
+/// suppresses only the `<SYSTEM>` ping; the child still fills its blackboard
+/// file, decrements the running count, and wakes the phase driver's barrier.
 pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
@@ -1002,6 +1010,7 @@ pub(crate) fn spawn_subagent(
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     scratch: Option<&Path>,
+    notify_on_finish: bool,
 ) -> Result<Dispatched, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use std::sync::atomic::Ordering;
@@ -1086,11 +1095,14 @@ pub(crate) fn spawn_subagent(
         }
         finished_task.store(true, Ordering::SeqCst);
         // Queue the ping before releasing the run count, so a parent asking
-        // "is anything still owed to me?" can never see neither.
-        registry.push_notice(
-            &run_id_task,
-            completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
-        );
+        // "is anything still owed to me?" can never see neither. A plan-managed
+        // child stays silent: the phase driver rings the doorbell once at the end.
+        if notify_on_finish {
+            registry.push_notice(
+                &run_id_task,
+                completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
+            );
+        }
         registry.running.fetch_sub(1, Ordering::SeqCst);
         registry.wake.notify_waiters();
         let _ = tx.send(result);
@@ -1251,9 +1263,11 @@ pub(crate) fn spawn_dispatch_plan(
     let first = phases.next().expect("non-empty checked above");
     let mut first_names = Vec::with_capacity(first.subagents.len());
     let mut first_ids = Vec::with_capacity(first.subagents.len());
+    // A single-phase fan-out pings per child (the last phase is the only phase);
+    // a multi-phase plan keeps every child silent and rings once when it ends.
     for req in first.subagents {
         first_names.push(req.name.clone());
-        match spawn_subagent(bg, parent_args, req, parent, events, scratch) {
+        match spawn_subagent(bg, parent_args, req, parent, events, scratch, !multi) {
             Ok(d) => first_ids.push(d.run_id),
             Err(e) => {
                 if multi {
@@ -1272,6 +1286,7 @@ pub(crate) fn spawn_dispatch_plan(
         let driver_events = events.clone();
         let driver_scratch = scratch.map(|s| s.to_path_buf());
         let driver_names = first_names.clone();
+        let driver_dir = blackboard_dir.clone();
         tokio::spawn(async move {
             run_phase_plan(
                 driver_bg,
@@ -1282,6 +1297,11 @@ pub(crate) fn spawn_dispatch_plan(
                 first_ids,
                 driver_names,
                 remaining,
+                PlanSummary {
+                    phase_count,
+                    total_subagents,
+                    blackboard_dir: driver_dir,
+                },
             )
             .await;
         });
@@ -1295,8 +1315,22 @@ pub(crate) fn spawn_dispatch_plan(
     })
 }
 
+/// Plan-wide facts the phase driver needs to compose the single completion ping.
+struct PlanSummary {
+    phase_count: usize,
+    total_subagents: usize,
+    /// The blackboard directory in the model's spelling, or `None` when the run
+    /// is unconfined (no scratch: the final phase's answers ride the ping inline).
+    blackboard_dir: Option<String>,
+}
+
 /// The background driver for a multi-phase plan: wait out each phase, gather its
-/// blackboard results, and spawn the next phase with those results injected.
+/// blackboard results, and spawn the next phase with those results injected. When
+/// the last phase finishes it rings the parent's doorbell once -- every child ran
+/// silent (`notify_on_finish = false`), so on the success path this single ping is
+/// the only wake the parent gets for the whole plan. A later-phase spawn *failure*
+/// is the exception: it pushes its own "could not start" notice, since an error
+/// should wake the parent rather than be swallowed until the terminal ping.
 #[allow(clippy::too_many_arguments)]
 async fn run_phase_plan(
     bg: Arc<BackgroundSubagents>,
@@ -1307,6 +1341,7 @@ async fn run_phase_plan(
     mut prev_ids: Vec<String>,
     mut prev_names: Vec<String>,
     phases: Vec<Phase>,
+    summary: PlanSummary,
 ) {
     for phase in phases {
         bg.await_phase(&prev_ids).await;
@@ -1315,9 +1350,16 @@ async fn run_phase_plan(
         let mut names = Vec::with_capacity(phase.subagents.len());
         for mut req in phase.subagents {
             req.description = inject_inputs(&req.description, &inputs);
-            names.push(req.name.clone());
-            match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref()) {
-                Ok(d) => ids.push(d.run_id),
+            // Push the name only on a successful spawn, so `ids` and `names` stay
+            // aligned: a child that never started has no blackboard file for the
+            // next phase to read and no answer for the terminal notice to report.
+            let name = req.name.clone();
+            match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref(), false)
+            {
+                Ok(d) => {
+                    ids.push(d.run_id);
+                    names.push(name);
+                }
                 Err(e) => bg.push_notice(
                     "plan",
                     format!("A subagent in the next phase could not start: {e}"),
@@ -1327,9 +1369,59 @@ async fn run_phase_plan(
         prev_ids = ids;
         prev_names = names;
     }
-    // The last phase's children keep the run parked via the normal running count;
-    // release the plan hold now that they exist.
+    // Ring the doorbell once, only after the last phase's last child is done.
+    bg.await_phase(&prev_ids).await;
+    let notice = plan_completion_notice(&bg, &prev_ids, &prev_names, &summary).await;
+    bg.push_notice("plan", notice);
+    // Release the plan hold now that the terminal ping is queued.
     bg.end_plan();
+}
+
+/// The single `<SYSTEM>` ping delivered when a multi-phase plan finishes.
+/// Confined: point the parent at the blackboard, where every phase's answers
+/// live. Unconfined: there is no blackboard, so collect and inline the final
+/// phase's answers (bounded), since they have nowhere else to be read from.
+async fn plan_completion_notice(
+    bg: &Arc<BackgroundSubagents>,
+    final_ids: &[String],
+    final_names: &[String],
+    summary: &PlanSummary,
+) -> String {
+    let PlanSummary {
+        phase_count,
+        total_subagents,
+        blackboard_dir,
+    } = summary;
+    match blackboard_dir {
+        Some(dir) => format!(
+            "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases. \
+             The final phase produced: {}. Every answer is on the blackboard at {dir} \
+             (blackboard/<name>.md) -- read the files you need.",
+            final_names.join(", ")
+        ),
+        None => {
+            let mut parts = Vec::with_capacity(final_ids.len());
+            for (id, name) in final_ids.iter().zip(final_names) {
+                // Bounded per answer: the notice concatenates the whole final
+                // phase, so an uncapped inline (what `compose_subagent_result`
+                // returns with no path) could blow the parent's context. Matches
+                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
+                let body = match await_subagent(bg, id).await {
+                    Ok(c) => {
+                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
+                        c.text[..cut].to_string()
+                    }
+                    Err(e) => format!("failed: {e}"),
+                };
+                parts.push(format!("### {name}\n\n{body}"));
+            }
+            format!(
+                "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} \
+                 phases. Final phase answers:\n\n{}",
+                parts.join("\n\n")
+            )
+        }
+    }
 }
 
 /// What goes in the spill file. A failed child writes its failure there rather
@@ -2519,7 +2611,7 @@ mod tests {
         args: &crate::core::agent::r#loop::OrchestrationArgs,
         events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     ) -> String {
-        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None)
+        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None, true)
             .unwrap()
             .run_id
     }
@@ -2715,6 +2807,67 @@ mod tests {
                 && task.contains("alpha")
                 && task.contains("beta"),
             "the collector's brief carries phase 1's blackboard: {task}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The doorbell contract: a multi-phase plan wakes the parent exactly once,
+    /// after the last phase's last child finishes -- not per intermediate child.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_multi_phase_plan_rings_the_doorbell_once_at_the_end() {
+        let root = unique_root("phasering");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None), req("beta", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("gamma", None), req("collector", None)],
+                },
+            ],
+        };
+        spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+
+        let mut all = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                all.extend(bg.take_notices());
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        assert_eq!(
+            all.len(),
+            1,
+            "one ping for the whole plan, not one per child: {all:?}"
+        );
+        assert!(
+            all[0].contains("plan finished") && all[0].contains("blackboard"),
+            "the terminal ping points at the blackboard: {}",
+            all[0]
+        );
+        // The notice names exactly the final phase (from `prev_names`, kept
+        // aligned with `prev_ids`): both of its children, and neither earlier one.
+        assert!(
+            all[0].contains("gamma") && all[0].contains("collector"),
+            "the notice lists the whole final phase: {}",
+            all[0]
+        );
+        assert!(
+            !all[0].contains("alpha") && !all[0].contains("beta"),
+            "the notice does not leak earlier-phase names: {}",
+            all[0]
         );
         let _ = std::fs::remove_dir_all(&root);
     }

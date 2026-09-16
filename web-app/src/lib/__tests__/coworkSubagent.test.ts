@@ -21,6 +21,7 @@ import {
   runSubagent,
   runDispatchPlan,
   subagentCompletionNotice,
+  planCompletionNotice,
   subagentTools,
   SubagentInbox,
   MAX_PARALLEL_SUBAGENTS,
@@ -873,5 +874,65 @@ describe('runDispatchPlan', () => {
     expect(observations.length).toBeGreaterThan(0)
     expect(observations.slice(0, -1).every((p) => p === true)).toBe(true)
     expect(observations.at(-1)).toBe(false)
+  })
+
+  // The doorbell contract, ported from the Rust
+  // `a_multi_phase_plan_rings_the_doorbell_once_at_the_end`: a multi-phase plan
+  // queues exactly one ping (the consolidated terminal notice), not one per child.
+  it('rings the inbox once for a multi-phase plan, at the end', async () => {
+    const inbox = new SubagentInbox()
+    const plan: DispatchPlan = {
+      phases: [
+        { number: 0, subagents: [req('alpha'), req('beta')] },
+        { number: 1, subagents: [req('gamma'), req('collector')] },
+      ],
+    }
+    const multi = plan.phases.length > 1
+    inbox.begin() // the plan hold
+
+    const finalPhase = await runDispatchPlan(plan, 'c1', {
+      runOne: async (r) => okResult(`${r.name} out`),
+      writeBlackboard: async (name) => `/tmp/blackboard/${name}.md`,
+      onDispatch: () => inbox.begin(),
+      // Mirrors the cowork wiring: silent per child for a multi-phase plan.
+      onComplete: () => (multi ? inbox.abandon() : undefined),
+    })
+    inbox.note(
+      planCompletionNotice({
+        phaseCount: plan.phases.length,
+        totalSubagents: 4,
+        finalPhase,
+      })
+    )
+    inbox.abandon() // release the plan hold
+
+    const notices = inbox.take()
+    expect(notices).toHaveLength(1)
+    expect(notices[0].text).toContain('plan finished')
+    expect(notices[0].text).toContain('collector')
+    expect(inbox.pending()).toBe(false)
+  })
+})
+
+describe('planCompletionNotice', () => {
+  const res = (
+    output: string,
+    isError = false
+  ): SubagentResult => ({ output, usage: null, isError, sessionTokens: 0 })
+
+  it('points at saved files and inlines the rest', () => {
+    const out = planCompletionNotice({
+      phaseCount: 2,
+      totalSubagents: 3,
+      finalPhase: [
+        { name: 'saved', result: res('long answer'), savedPath: '/tmp/blackboard/saved.md' },
+        { name: 'inline', result: res('inline answer'), savedPath: null },
+        { name: 'broke', result: res('boom', true), savedPath: null },
+      ],
+    })
+    expect(out.text).toContain('3 subagent(s) across 2 phases')
+    expect(out.text).toContain('see /tmp/blackboard/saved.md')
+    expect(out.text).toContain('inline answer')
+    expect(out.text).toContain('failed: boom')
   })
 })
