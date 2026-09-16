@@ -33,7 +33,7 @@ build() {
     fi
 
     echo "==> Building CLI binary (${profile})..."
-    (cd "$CLI_DIR" && cargo build $flag --features cli)
+    (cd "$CLI_DIR" && cargo build $flag --no-default-features --features cli)
 
     # jan-cli's .cargo/config.toml redirects output into the app's target dir.
     local artifact="$APP_DIR/target/$target_dir/jan"

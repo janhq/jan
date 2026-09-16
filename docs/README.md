@@ -14,13 +14,15 @@ We try to **keep routes consistent** to maintain SEO.
 
 - **`/changelog/`**: A list of changes made to the Jan application with each release.
 
-- **`/blog/`**: Blog posts.
+- **`/blog/`**: The blog index; individual posts live under `/post/`.
 
 - **`/download/`**: Download page.
 
 - **`/support/`**: Support page.
 
 - **`/privacy/`**: Privacy policy.
+
+- **`/tokamak/`**: Tokamak landing page.
 
 ## How to Contribute
 
@@ -51,9 +53,7 @@ This command generates static content into the `out` directory (`next.config.mjs
 
 ### Deployment
 
-Documentation is published to [https://jan.ai/](https://jan.ai/) by the `jan-docs.yml` GitHub Actions workflow when changes land on `main`. That workflow builds the site (`yarn build`, output `out`) and publishes it to Cloudflare Pages. Pull requests get a preview URL automatically.
-
-There is no `yarn deploy` script; deployment is handled entirely by CI.
+There is no `yarn deploy` script; the `jan-docs.yml` workflow builds the site and publishes `out` to Cloudflare Pages.
 
 ### Preview URL, Pre-release and Publishing Documentation
 

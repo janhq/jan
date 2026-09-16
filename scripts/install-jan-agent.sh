@@ -139,9 +139,9 @@ install_binary() {
 build_from_source() {
   command -v cargo >/dev/null 2>&1 || die "cargo not found; install Rust first"
   echo "building the CLI from $REPO_ROOT (release)"
-  # The CLI is a standalone crate (no default features); its `cli` feature
-  # pulls in `app_lib/cli`, which is compiled with default features off.
-  (cd "$REPO_ROOT/src-tauri/jan-cli" && cargo build --features cli --release)
+  # The CLI and the desktop app are mutually exclusive feature configs, so the
+  # default features must stay off.
+  (cd "$REPO_ROOT/src-tauri/jan-cli" && cargo build --no-default-features --features cli --release)
   local built="$REPO_ROOT/src-tauri/target/release/$BINARY_NAME"
   [ -f "$built" ] || die "expected a binary at $built"
   install_binary "$built"
