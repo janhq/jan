@@ -41,6 +41,9 @@ jan <COMMAND>
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
+| `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
+| `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
+| `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--provider <ID>` | Target a specific provider for this run |
 | `--api-key <KEY>` | API key for that provider |
 
@@ -53,6 +56,8 @@ jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
 jan --safe                              # ask before writes and shell commands
 jan --sandbox                           # confine shell commands to the project
+jan -c --fork-session                   # branch the latest session into a new one
+jan --worktree                          # work in a dedicated checkout, not yours
 ```
 
 <Callout type="warning">
@@ -88,6 +93,9 @@ jan cli agent run --safe "run the migration"   # approve each step
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
+| `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
+| `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
+| `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--provider`, `--api-key` | Credential overrides for this run |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object |
 
