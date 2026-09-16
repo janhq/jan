@@ -121,6 +121,11 @@ pub(crate) struct AgentSection {
     /// out of the context budget.
     #[serde(default)]
     pub send_reasoning: Option<bool>,
+    /// Give each session in this project its own git worktree, so the agent's
+    /// edits land in a separate checkout instead of the user's. `None` = defer
+    /// to the global `worktree` setting, then the default, off.
+    #[serde(default)]
+    pub worktree: Option<bool>,
 }
 
 // `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
@@ -269,6 +274,11 @@ pub(crate) struct RunSettings {
     pub env_passthrough: Vec<String>,
     /// `[tools].env_set`: explicit shell-env overrides, sorted by key.
     pub env_set: Vec<(String, String)>,
+    /// `[agent].worktree`: give each session its own git checkout. Merged with
+    /// the global setting and the `--worktree` flag by the caller. CLI-only,
+    /// like the `[agent]` section it comes from.
+    #[cfg(feature = "cli")]
+    pub worktree: Option<bool>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -284,6 +294,8 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         sandbox: cfg.tools.sandbox,
         env_passthrough: cfg.tools.env_passthrough,
         env_set: cfg.tools.env_set.into_iter().collect(),
+        #[cfg(feature = "cli")]
+        worktree: cfg.agent.worktree,
     }
 }
 

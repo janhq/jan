@@ -47,7 +47,10 @@ use super::agent_status::AgentStatusReporter;
 use super::brand;
 use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
-use super::{sort_threads_recent, AgentSession, ResumeTarget, SessionLimits};
+use super::worktree::Worktree;
+use super::{
+    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
+};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
@@ -415,6 +418,12 @@ enum PickerKind {
     ToggleMcp,
     /// Double-Esc rewind: pick a past user message to roll back to.
     RewindMessage,
+    /// `/fork`: pick the past user message to branch before. Same list as
+    /// `RewindMessage`; the cut is written to a new thread instead of this one.
+    ForkMessage,
+    /// `/tree`: the fork forest of this project's saved threads. Enter resumes
+    /// the selected node.
+    ThreadTree,
     /// Second step of a rewind: restore conversation only, or + workspace.
     RewindScope,
     /// Read-only view of `~/.jan/config.toml` providers (`/config`). Enter closes.
@@ -464,6 +473,8 @@ impl Picker {
             PickerKind::LoginProvider => " sign in ",
             PickerKind::ToggleMcp => " mcp servers ",
             PickerKind::RewindMessage => " rewind to message ",
+            PickerKind::ForkMessage => " fork before message ",
+            PickerKind::ThreadTree => " thread tree ",
             PickerKind::RewindScope => " restore ",
             PickerKind::ViewConfig => " provider config ",
             PickerKind::AgentSettings => " agent settings ",
@@ -485,6 +496,8 @@ impl Picker {
                 " ↑/↓ select   Enter open   Space toggle   a add   e edit   d delete   Esc close"
             }
             PickerKind::RewindMessage => " ↑/↓ select   Enter choose   Esc cancel",
+            PickerKind::ForkMessage => " ↑/↓ select   Enter fork   Esc cancel",
+            PickerKind::ThreadTree => " ↑/↓ select   Enter resume   Esc cancel",
             PickerKind::RewindScope => " ↑/↓ select   Enter restore   Esc cancel",
             PickerKind::ViewConfig => " set via: jan config set --provider <id> ...   Esc close",
             PickerKind::AgentSettings => " ↑/↓ select   Enter edit   x unset   Esc close",
@@ -1079,6 +1092,11 @@ struct Banner {
     branch: Option<String>,
     /// How tool calls are approved this session (sandboxed, or `--safe`).
     tools: String,
+    /// The dedicated checkout the tools work in, when the session has one. The
+    /// splash names it because with a worktree the edits do *not* land in the
+    /// directory the user started `jan` in, which is the one thing about this
+    /// mode that must never be a surprise.
+    workspace: Option<String>,
     /// False when `--task` already seeded the first message, so the splash does
     /// not invite one.
     awaiting_first_message: bool,
@@ -1139,6 +1157,9 @@ fn banner_lines(banner: &Banner, width: u16) -> Vec<Line<'static>> {
         None => banner.project.clone(),
     };
     field("project", location);
+    if let Some(workspace) = banner.workspace.as_ref() {
+        field("worktree", workspace.clone());
+    }
     field("tools", banner.tools.clone());
     out.push(Line::raw(""));
 
@@ -1781,6 +1802,15 @@ struct App {
     base_snapshot: Option<String>,
     /// Per-turn workspace checkpoints for the active thread, oldest first.
     checkpoints: Vec<Checkpoint>,
+    /// The git worktree this session's tools work in, when it has one. Fixed for
+    /// the session: it is baked into the frozen `OrchestrationArgs` the runs
+    /// share, so `/resume` onto a thread that used a different one reports the
+    /// mismatch rather than switching under a run.
+    workspace: Option<Worktree>,
+    /// `metadata.forked_from` of the active thread, carried so a later save does
+    /// not drop the parent pointer `fork_thread` wrote (`thread_metadata` owns
+    /// the whole metadata object, not a merge into it).
+    forked_from: Option<serde_json::Value>,
     /// Pending git snapshots, run off the render loop (see `SnapshotJob`).
     snap_queue: std::collections::VecDeque<SnapshotJob>,
     /// Whether a base snapshot has been requested for the active thread (queued,
@@ -2439,6 +2469,8 @@ impl App {
             bg_shells: Vec::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
+            workspace: None,
+            forked_from: None,
             snap_queue: std::collections::VecDeque::new(),
             base_requested: false,
             last_esc: None,
@@ -2607,6 +2639,8 @@ impl App {
         // Detach snapshots; the next submit arms a fresh base + thread id.
         self.base_snapshot = None;
         self.checkpoints.clear();
+        // A fresh session is a root, whatever the one it replaced was.
+        self.forked_from = None;
         self.snap_queue.clear();
         self.base_requested = false;
         self.last_esc = None;
@@ -2702,6 +2736,10 @@ impl App {
             project: tilde_path(&self.project_root),
             branch: self.git_branch.clone(),
             tools: tools.to_string(),
+            workspace: self
+                .workspace
+                .as_ref()
+                .map(|w| format!("{} ⎇ {}", tilde_path(&w.path), w.branch)),
             awaiting_first_message,
         };
         self.gap(Kind::Meta);
@@ -4431,11 +4469,25 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
-        if self.base_snapshot.is_none() && self.goal.is_none() && !planning && self.todos.is_empty()
+        if self.base_snapshot.is_none()
+            && self.goal.is_none()
+            && !planning
+            && self.todos.is_empty()
+            && self.forked_from.is_none()
+            && self.workspace.is_none()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
+        if let Some(workspace) = self.workspace.as_ref() {
+            meta.insert(
+                super::worktree::WORKTREE_KEY.to_string(),
+                super::worktree::to_metadata(workspace),
+            );
+        }
+        if let Some(parent) = self.forked_from.as_ref() {
+            meta.insert(super::FORKED_FROM_KEY.to_string(), parent.clone());
+        }
         if let Some(base) = self.base_snapshot.as_ref() {
             meta.insert("base_snapshot".to_string(), serde_json::json!(base));
             meta.insert(
@@ -8288,7 +8340,7 @@ pub async fn run(
     project_root: PathBuf,
     initial_task: Option<String>,
     initial_images: Vec<String>,
-    resume: Option<ResumeTarget>,
+    resume: Option<ResumeRequest>,
 ) -> Result<(), String> {
     let AgentSession {
         mut args,
@@ -8301,6 +8353,8 @@ pub async fn run(
         send_reasoning,
         mcp_servers,
         mcp_task,
+        workspace,
+        workspace_note,
     } = session;
     let ask_requests = crate::core::agent::interaction::new_registry();
     args.ask_requests = Some(ask_requests.clone());
@@ -8347,8 +8401,14 @@ pub async fn run(
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
     // A git repo enables workspace snapshots (rewind can restore files); a
-    // non-repo runs exactly as before with conversation-only rewind.
-    let repo_root = git::repo_root(&project_root);
+    // non-repo runs exactly as before with conversation-only rewind. With a
+    // worktree the snapshots follow the tools into it, so a rewind restores the
+    // checkout the edits actually landed in.
+    let repo_root = git::repo_root(
+        workspace
+            .as_ref()
+            .map_or(project_root.as_path(), |w| w.path.as_path()),
+    );
     let mut app = App::new(
         model,
         limits,
@@ -8357,6 +8417,7 @@ pub async fn run(
         project_root,
         repo_root,
     );
+    app.workspace = workspace;
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
@@ -8382,6 +8443,9 @@ pub async fn run(
         (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
     };
     app.push_session_banner(!seeded);
+    if let Some(note) = workspace_note {
+        app.note(&note);
+    }
     if app.model.is_empty() {
         app.note("not signed in - run /login to choose a provider");
     } else if let Some(warning) = super::tokamak::expiry_warning() {
@@ -8411,8 +8475,8 @@ pub async fn run(
     }
     // A failed resume is not fatal: the note explains why and the blank session
     // the user already has stays usable.
-    if let Some(target) = &resume {
-        apply_resume(&mut app, target).await;
+    if let Some(request) = &resume {
+        apply_resume(&mut app, request).await;
         if app.thread_id.is_none() {
             app.note("starting a new session");
         }
@@ -10238,7 +10302,9 @@ async fn handle_key(
                 let value = picker.items[picker.selected].value.clone();
                 app.picker = None;
                 match kind {
-                    PickerKind::ResumeThread => resume_thread(app, &value).await,
+                    PickerKind::ResumeThread | PickerKind::ThreadTree => {
+                        resume_thread(app, &value).await
+                    }
                     PickerKind::LoginProvider => {
                         if crate::core::cli::auth::account::AccountProvider::from_credential_provider(&value)
                             .is_some()
@@ -10254,6 +10320,11 @@ async fn handle_key(
                     PickerKind::RewindMessage => {
                         if let Ok(idx) = value.parse::<usize>() {
                             open_rewind_scope(app, idx);
+                        }
+                    }
+                    PickerKind::ForkMessage => {
+                        if let Ok(idx) = value.parse::<usize>() {
+                            fork_at(app, idx).await;
                         }
                     }
                     PickerKind::RewindScope => {
@@ -10889,6 +10960,24 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/fork",
+        hint: "",
+        description: "Branch this session at a past message into a new thread, keeping this one",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/worktree",
+        hint: "",
+        description: "Show the dedicated checkout this session works in, and what changed there",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/tree",
+        hint: "",
+        description: "Show saved threads as a fork tree (bare /threads is the flat list)",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/model",
         hint: "[id]",
         description: "Switch model (bare: pick interactively)",
@@ -11162,6 +11251,9 @@ async fn run_command(
             }
             Err(e) => app.note(&format!("failed to list threads: {e}")),
         },
+        "fork" => open_fork_picker(app),
+        "worktree" => worktree_command(app),
+        "tree" => open_tree_picker(app),
         "resume" => {
             if arg.is_empty() {
                 open_thread_picker(app);
@@ -14586,8 +14678,184 @@ fn restore_todos(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Say so when a loaded thread last worked in a different checkout than this
+/// session does. The session's worktree is baked into the frozen
+/// `OrchestrationArgs` its runs share, so this cannot switch to the thread's --
+/// and silently continuing in the wrong tree would have the model reading files
+/// that do not match the conversation it just loaded.
+fn note_workspace_mismatch(app: &mut App, thread: &serde_json::Value) {
+    let Some(recorded) = super::worktree::from_metadata(thread.get("metadata")) else {
+        return;
+    };
+    let here = match app.workspace.as_ref() {
+        Some(live) if live.path == recorded.path => return,
+        Some(live) => tilde_path(&live.path),
+        None => tilde_path(&app.project_root),
+    };
+    app.note(&format!(
+        "this thread last worked in {}; this session stays in {here}",
+        tilde_path(&recorded.path)
+    ));
+}
+
+/// `/worktree`: what this session is working in, and what has changed there.
+///
+/// Read-only on purpose. Getting the work out is the user's own git: this
+/// session must never write to the branch they left behind.
+fn worktree_command(app: &mut App) {
+    let Some(workspace) = app.workspace.clone() else {
+        app.note(
+            "working in the project directory; start with --worktree for a dedicated checkout",
+        );
+        return;
+    };
+    app.note("worktree:");
+    app.system_detail_text(&format!("path    {}", tilde_path(&workspace.path)));
+    app.system_detail_text(&format!("branch  {}", workspace.branch));
+    let changed = git::changed_paths(&workspace.path);
+    if changed.is_empty() {
+        app.system_detail_text("changes nothing yet");
+        return;
+    }
+    app.system_detail_text(&format!("changes {} file(s)", changed.len()));
+    for path in changed.iter().take(WORKTREE_CHANGE_ROWS) {
+        app.system_detail_text(&format!("        {path}"));
+    }
+    if changed.len() > WORKTREE_CHANGE_ROWS {
+        app.system_detail_text(&format!(
+            "        ... and {} more",
+            changed.len() - WORKTREE_CHANGE_ROWS
+        ));
+    }
+    app.system_detail_text(&format!(
+        "review with: git -C {} diff",
+        workspace.path.display()
+    ));
+}
+
+/// Changed paths `/worktree` lists before eliding; the rest are a `git diff`
+/// away and the point of the row is the shape of the change, not the manifest.
+const WORKTREE_CHANGE_ROWS: usize = 20;
+
+/// Branch the session before its `target`-th user message into a new thread and
+/// switch to it, leaving the source whole on disk. The cut turn lands in the
+/// input, as a rewind's does, so the branch opens ready to re-ask it.
+async fn fork_at(app: &mut App, target: usize) {
+    // The fork is cut from what is on disk, so this turn's history and journal
+    // have to be there first; the journal writer is asynchronous.
+    app.persist();
+    app.join_journal();
+    let Some(source) = app.thread_id.clone() else {
+        return app.note("nothing to fork: this session has not been saved yet");
+    };
+    let fill = super::user_turn_index(&app.history, target)
+        .and_then(|i| app.history.get(i))
+        .and_then(|m| m.get("content"))
+        .map(|c| user_content_parts(c).0)
+        .unwrap_or_default();
+
+    let forked = super::fork_thread(&app.agent_dir, &source, Some(target))
+        .and_then(|id| super::cli_get_thread_in(&app.agent_dir, &id));
+    let thread = match forked {
+        Ok(thread) => thread,
+        Err(e) => return app.note(&format!("fork failed: {e}")),
+    };
+    let id: String = thread
+        .get("id")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .chars()
+        .take(8)
+        .collect();
+    load_thread(app, &thread, "forked").await;
+    app.input_clear();
+    app.input = fill;
+    app.cursor = app.input.len();
+    app.note(&format!(
+        "forked before message #{} into {id}; the original is still in /resume",
+        target + 1
+    ));
+    // The checkout cannot change under a live session, so the branch shares this
+    // one for now. Its thread records no worktree, so opening it later with
+    // worktrees on gets it one of its own.
+    if let Some(workspace) = app.workspace.as_ref() {
+        let path = tilde_path(&workspace.path);
+        app.note(&format!(
+            "both branches share {path} until you reopen this one with --worktree"
+        ));
+    }
+}
+
+/// Indent for a `/tree` row: the branch glyph at its own depth, plain spaces for
+/// the levels above it.
+fn tree_prefix(depth: usize, last: bool) -> String {
+    if depth == 0 {
+        return String::new();
+    }
+    let arm = if last { "└─ " } else { "├─ " };
+    format!("{}{arm}", "   ".repeat(depth - 1))
+}
+
+/// Open `/tree`: this project's saved threads arranged by the forks taken from
+/// them. Enter resumes the selected node; a store with no forks is the flat list
+/// `/resume` shows.
+fn open_tree_picker(app: &mut App) {
+    let threads = match super::list_threads_in(&app.agent_dir) {
+        Ok(threads) => threads,
+        Err(e) => return app.note(&format!("failed to list threads: {e}")),
+    };
+    let base = app.agent_dir.clone();
+    let current = app.thread_id.clone();
+    let items: Vec<PickerItem> = super::thread_forest(threads)
+        .into_iter()
+        .filter_map(|node| {
+            let id = node.thread.get("id").and_then(|v| v.as_str())?.to_string();
+            let name = thread_display_name(
+                &base,
+                &id,
+                node.thread.get("title").and_then(|v| v.as_str()),
+            );
+            let here = if current.as_deref() == Some(id.as_str()) {
+                " (current)"
+            } else {
+                ""
+            };
+            Some(PickerItem {
+                label: format!("{}{name}{here}", tree_prefix(node.depth, node.last)),
+                hint: Some(id.chars().take(8).collect()),
+                value: id,
+                checkbox: None,
+            })
+        })
+        .collect();
+    if items.is_empty() {
+        return app.note("no saved threads found");
+    }
+    let selected = items
+        .iter()
+        .position(|i| current.as_deref() == Some(i.value.as_str()))
+        .unwrap_or(0);
+    app.picker = Some(Picker {
+        kind: PickerKind::ThreadTree,
+        items,
+        selected,
+        armed_delete: None,
+    });
+}
+
 /// Open the double-Esc rewind picker listing the conversation's user messages.
 fn open_rewind_picker(app: &mut App) {
+    open_turn_picker(app, PickerKind::RewindMessage, "nothing to rewind to");
+}
+
+/// Open the `/fork` picker: the same list of user messages, branching before the
+/// chosen one instead of truncating this thread at it.
+fn open_fork_picker(app: &mut App) {
+    open_turn_picker(app, PickerKind::ForkMessage, "nothing to fork");
+}
+
+/// List the conversation's user messages for a picker that acts on a past turn.
+fn open_turn_picker(app: &mut App, kind: PickerKind, empty: &str) {
     let mut items = Vec::new();
     let mut ui = 0usize;
     for m in &app.history {
@@ -14606,11 +14874,11 @@ fn open_rewind_picker(app: &mut App) {
         }
     }
     if items.is_empty() {
-        return app.note("nothing to rewind to");
+        return app.note(empty);
     }
     let selected = items.len() - 1;
     app.picker = Some(Picker {
-        kind: PickerKind::RewindMessage,
+        kind,
         items,
         selected,
         armed_delete: None,
@@ -14647,18 +14915,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
 /// dropping it and everything after. When `restore_workspace`, also hard-reset
 /// the worktree to the checkpoint that preceded that message (or the base commit).
 fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
-    let mut ui = 0usize;
-    let mut cut = None;
-    for (i, m) in app.history.iter().enumerate() {
-        if is_user_turn(m) {
-            if ui == target {
-                cut = Some(i);
-                break;
-            }
-            ui += 1;
-        }
-    }
-    let Some(cut) = cut else {
+    let Some(cut) = super::user_turn_index(&app.history, target) else {
         return app.note("rewind target not found");
     };
 
@@ -14868,22 +15125,27 @@ fn rebuild_transcript(app: &mut App) {
 async fn resume_thread(app: &mut App, id_arg: &str) {
     // Re-brand the fresh view before the saved conversation is replayed.
     app.push_session_banner(false);
-    apply_resume(app, &ResumeTarget::Id(id_arg.to_string())).await;
+    apply_resume(
+        app,
+        &ResumeRequest::resume(ResumeTarget::Id(id_arg.to_string())),
+    )
+    .await;
 }
 
-/// Resolve a resume target and load it into the app, reporting why not when it
+/// Resolve a resume request and load it into the app, reporting why not when it
 /// cannot be resolved. The session is left untouched on failure.
-async fn apply_resume(app: &mut App, target: &ResumeTarget) {
-    match super::find_resume_thread(&app.agent_dir, target) {
-        Ok(thread) => load_thread(app, &thread).await,
+async fn apply_resume(app: &mut App, request: &ResumeRequest) {
+    match super::resolve_resume(&app.agent_dir, request) {
+        Ok(thread) => load_thread(app, &thread, "resumed").await,
         Err(e) => app.note(&e),
     }
 }
 
 /// Replace the live session with a saved thread's state: history, transcript,
 /// snapshots, goal, and model. Only user/assistant text is replayed (tool calls
-/// are not persisted as messages).
-async fn load_thread(app: &mut App, thread: &serde_json::Value) {
+/// are not persisted as messages). `verb` names how the thread was opened, so a
+/// fork does not report itself as a resume.
+async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     let full_id = thread
         .get("id")
         .and_then(|v| v.as_str())
@@ -14916,6 +15178,11 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
     restore_goal(app, thread.get("metadata"));
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
+    app.forked_from = thread
+        .get("metadata")
+        .and_then(|m| m.get(super::FORKED_FROM_KEY))
+        .cloned();
+    note_workspace_mismatch(app, thread);
     // Mirror the reconstructed todos into the shared registry so the model's
     // next `todo` mutation operates on the resumed state, not an empty list.
     if let Some(args) = app.args.as_ref() {
@@ -14969,7 +15236,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value) {
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .unwrap_or("(untitled)");
-    app.note(&format!("resumed \"{title}\" ({count} messages)"));
+    app.note(&format!("{verb} \"{title}\" ({count} messages)"));
     if skipped > 0 {
         app.note(&format!("{skipped} unreadable message(s) were skipped"));
     }
@@ -15134,18 +15401,6 @@ fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value 
 /// Split a user message's `content` into display text and one label per attached
 /// image. Handles plain-string content and the `image_url` content-part array;
 /// data-URL parts carry no filename, so their label is empty.
-/// True for a `user` message the user actually authored. Hidden reminders ride
-/// in on the `user` role but are not turns: a rewind target, a recall entry or a
-/// checkpoint key built from one would be a row the user never typed, and would
-/// shift every later index out of step with the display journal, which holds no
-/// reminder at all.
-fn is_user_turn(m: &serde_json::Value) -> bool {
-    m.get("role").and_then(|v| v.as_str()) == Some("user")
-        && !crate::core::agent::reminder::is_reminder_only(
-            m.get("content").unwrap_or(&serde_json::Value::Null),
-        )
-}
-
 /// What the user typed, recovered from the wire copy: our own reminders
 /// removed, their escaped markers put back.
 fn user_text(wire: &str) -> String {
@@ -18115,29 +18370,30 @@ mod tests {
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
-        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping,
-        brand, build_user_message, clipboard_path, compact_tokens,
-        context_lines, diff_lines, drain_stream_events, estimate_token_count, finish_account_login,
-        finish_compaction, finish_context_report, finish_login, finish_plugin_install,
-        finish_tokamak_login, finish_update_install, format_tokens, group_detail_lines,
-        group_summary, handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans,
-        image_mime, image_mime_of, input_content_lines, is_user_turn, load_first_file_image,
-        load_image_file, message_text, note_update, open_config_screen, open_rewind_picker,
-        pairs_to_str, parse_command, partial_json_field, provider_label_for_model, rebuild_recall,
-        replay_display_log, restore_goal, restore_run_mode, restore_todos, resume_hint, rewind_to,
-        route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width,
-        spawn_branch_poll, split_reasoning, starting_call_lines, startup_modes,
-        strip_system_xml_tags, subagent_activity, subagent_name_from_run_id, summarize_result,
-        sync_output_for, thinking_open, tilde_path, tokens_per_second, tool_activity,
-        tool_finished, transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        wave_sweep_line, with_wave_glyph, without_think_tags, App, CompactKind, ContextReport,
+        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping, brand,
+        build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
+        drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
+        finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
+        finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
+        handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, header_spans, image_mime,
+        image_mime_of, input_content_lines, is_user_turn, load_first_file_image, load_image_file,
+        message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
+        open_tree_picker, pairs_to_str, parse_command, partial_json_field,
+        provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
+        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
+        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
+        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
+        thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
+        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
+        with_wave_glyph, without_think_tags, worktree_command, App, CompactKind, ContextReport,
         ContextSegment, ContextView, CurrentRun, McpField, McpPrompt, MonitorSet, Pending,
-        PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeTarget, Row, RowKind,
-        Selection, SelectionMode, SnapshotJob, Status, AGENT_SETTINGS, ALT_SCROLL_RESTORE,
-        ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG, DIFF_MAX_ROWS,
-        DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON, MAX_IMAGE_BYTES,
-        MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW, SLASH_COMMANDS, SPINNER,
-        SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
+        PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
+        RowKind, Selection, SelectionMode, SnapshotJob, Status, Worktree, AGENT_SETTINGS,
+        ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG,
+        DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON,
+        MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW,
+        SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
@@ -18640,7 +18896,7 @@ mod tests {
         app.join_journal();
         let mut restored = test_app();
         restored.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut restored, &ResumeTarget::Latest).await;
+        apply_resume(&mut restored, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         assert_eq!(
             restored
                 .history
@@ -27945,7 +28201,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
             .iter()
@@ -28018,7 +28274,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
             .iter()
@@ -28054,7 +28310,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
 
         assert_eq!(
             fresh.history, app.history,
@@ -28084,7 +28340,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
             .iter()
@@ -28096,6 +28352,272 @@ mod tests {
             "{resumed}"
         );
         assert!(fresh.display_log.is_empty(), "nothing to journal from");
+    }
+
+    fn test_worktree(path: &str) -> Worktree {
+        Worktree {
+            path: std::path::PathBuf::from(path),
+            branch: "jan/agent/abc12345".to_string(),
+        }
+    }
+
+    /// The worktree belongs to the thread, not just the session: a resume has to
+    /// find its way back to the checkout the conversation was written against.
+    #[tokio::test]
+    async fn a_session_records_its_worktree_and_a_resume_reads_it_back() {
+        let mut app = test_app();
+        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.submit_user("do it".into());
+        app.on_done("stop".into(), None);
+        let id = app.thread_id.clone().expect("saved");
+
+        let thread = super::super::cli_get_thread_in(&app.agent_dir, &id).unwrap();
+        assert_eq!(
+            super::super::worktree::from_metadata(thread.get("metadata")),
+            Some(test_worktree("/tmp/wt-a"))
+        );
+    }
+
+    /// The checkout is frozen in the args a session's runs share, so loading a
+    /// thread from a different one must report the mismatch, not pretend.
+    #[tokio::test]
+    async fn resuming_a_thread_from_another_checkout_says_so() {
+        let mut app = test_app();
+        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.submit_user("do it".into());
+        app.on_done("stop".into(), None);
+
+        let mut elsewhere = test_app();
+        elsewhere.agent_dir = app.agent_dir.clone();
+        elsewhere.workspace = Some(test_worktree("/tmp/wt-b"));
+        apply_resume(&mut elsewhere, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        let notes: String = elsewhere
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            notes.contains("last worked in") && notes.contains("wt-a"),
+            "{notes}"
+        );
+
+        // Same checkout: nothing to warn about.
+        let mut same = test_app();
+        same.agent_dir = app.agent_dir.clone();
+        same.workspace = Some(test_worktree("/tmp/wt-a"));
+        apply_resume(&mut same, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert!(!same
+            .transcript
+            .iter()
+            .map(row_text)
+            .any(|t| t.contains("last worked in")));
+    }
+
+    /// `/new` keeps the checkout: it belongs to the invocation, not the thread.
+    #[test]
+    fn a_new_session_stays_in_the_same_worktree() {
+        let mut app = test_app();
+        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.submit_user("do it".into());
+        app.reset_session();
+        assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
+    }
+
+    #[test]
+    fn worktree_command_without_one_points_at_the_flag() {
+        let mut app = test_app();
+        worktree_command(&mut app);
+        let notes: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(notes.contains("--worktree"), "{notes}");
+    }
+
+    #[test]
+    fn the_banner_names_the_worktree_only_when_there_is_one() {
+        let mut app = test_app();
+        app.push_session_banner(true);
+        let plain = render_rows(&mut app, 100, 40).join("\n");
+        assert!(!plain.contains("worktree"), "{plain}");
+
+        let mut isolated = test_app();
+        isolated.workspace = Some(test_worktree("/tmp/wt-a"));
+        isolated.push_session_banner(true);
+        let shown = render_rows(&mut isolated, 100, 40).join("\n");
+        assert!(
+            shown.contains("worktree") && shown.contains("wt-a"),
+            "the splash must say where the edits land: {shown}"
+        );
+    }
+
+    /// The whole point of a fork over a rewind: the branch opens on the prefix,
+    /// with the tool rows the journal carried, and the source is still there.
+    #[tokio::test]
+    async fn fork_branches_the_prefix_and_leaves_the_source_whole() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+        let source = app.thread_id.clone().expect("saved");
+
+        fork_at(&mut app, 1).await;
+        let forked = app.thread_id.clone().expect("landed on the fork");
+        assert_ne!(forked, source);
+
+        let after: String = app
+            .transcript
+            .iter()
+            .map(row_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            after.contains("✓ Wrote a.txt") && after.contains("@@ created file @@"),
+            "the journal was carried, not just the wire history: {after}"
+        );
+        assert!(!after.contains("Second answer."), "{after}");
+        assert_eq!(
+            app.input, "and again",
+            "the forked-away message is ready to re-ask"
+        );
+
+        // The source is untouched: both turns still resumable from it.
+        let mut back = test_app();
+        back.agent_dir = app.agent_dir.clone();
+        apply_resume(
+            &mut back,
+            &ResumeRequest::resume(ResumeTarget::Id(source.clone())),
+        )
+        .await;
+        assert_eq!(back.thread_id.as_deref(), Some(source.as_str()));
+        assert!(back
+            .transcript
+            .iter()
+            .map(row_text)
+            .any(|t| t.contains("Second answer.")));
+    }
+
+    /// A fork is a rewind that keeps the original, so the branch must render
+    /// exactly what rewinding the source to the same turn would have rendered.
+    #[tokio::test]
+    async fn a_fork_replays_the_rows_a_rewind_to_the_same_turn_leaves() {
+        let mut forked = test_app();
+        record_full_turn(&mut forked);
+        forked.submit_user("and again".to_string());
+        forked.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        forked.on_done("stop".into(), None);
+
+        let mut rewound = test_app();
+        rewound.agent_dir = forked.agent_dir.clone();
+        apply_resume(&mut rewound, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        rewind_to(&mut rewound, 1, false);
+
+        fork_at(&mut forked, 1).await;
+
+        // Notes are transient by design and never journaled, so they are the one
+        // thing the two paths are allowed to disagree on.
+        let rows = |app: &App| {
+            app.transcript
+                .iter()
+                .map(row_text)
+                .filter(|t| !t.trim_start().starts_with('\u{2022}'))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows(&forked), rows(&rewound));
+        assert_eq!(forked.history, rewound.history);
+        assert_eq!(forked.display_log, rewound.display_log);
+    }
+
+    /// The parent pointer has to survive the branch's own first save, which
+    /// rewrites the whole metadata object.
+    #[tokio::test]
+    async fn a_fork_keeps_its_parent_pointer_across_later_saves() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.on_done("stop".into(), None);
+        let source = app.thread_id.clone().expect("saved");
+
+        fork_at(&mut app, 1).await;
+        let forked = app.thread_id.clone().expect("landed on the fork");
+        app.submit_user("a different approach".to_string());
+        app.on_done("stop".into(), None);
+
+        let meta = super::super::cli_get_thread_in(&app.agent_dir, &forked).unwrap();
+        assert_eq!(
+            meta["metadata"][super::super::FORKED_FROM_KEY],
+            json!({ "thread_id": source, "user_turn": 1 })
+        );
+    }
+
+    #[tokio::test]
+    async fn tree_nests_a_fork_under_the_thread_it_came_from() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.on_done("stop".into(), None);
+        fork_at(&mut app, 1).await;
+
+        open_tree_picker(&mut app);
+        let picker = app.picker.as_ref().expect("tree");
+        assert_eq!(picker.kind, PickerKind::ThreadTree);
+        assert_eq!(picker.items.len(), 2);
+        assert!(
+            picker.items[1].label.starts_with("└─ "),
+            "the fork is drawn under its parent: {:?}",
+            picker.items[1].label
+        );
+        assert!(picker.items[1].label.contains("(current)"));
+        assert_eq!(picker.selected, 1, "the session in hand is preselected");
+    }
+
+    /// A store with no forks is the flat list `/resume` already shows.
+    #[test]
+    fn tree_of_an_unforked_store_is_flat() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        open_tree_picker(&mut app);
+        let picker = app.picker.as_ref().expect("tree");
+        assert_eq!(picker.items.len(), 1);
+        assert!(!picker.items[0].label.starts_with("└─"));
+    }
+
+    #[test]
+    fn fork_picker_lists_the_same_turns_as_the_rewind_picker() {
+        let mut app = test_app();
+        app.thread_id = Some("t1".into());
+        app.submit_user("first".into());
+        app.status = Status::Idle;
+        app.submit_user("second".into());
+
+        open_rewind_picker(&mut app);
+        let rewind: Vec<String> = app
+            .picker
+            .take()
+            .expect("picker")
+            .items
+            .iter()
+            .map(|i| i.value.clone())
+            .collect();
+        open_fork_picker(&mut app);
+        let picker = app.picker.as_ref().expect("picker");
+        assert_eq!(picker.kind, PickerKind::ForkMessage);
+        assert_eq!(
+            picker
+                .items
+                .iter()
+                .map(|i| i.value.clone())
+                .collect::<Vec<_>>(),
+            rewind
+        );
     }
 
     #[tokio::test]
@@ -28148,7 +28670,7 @@ mod tests {
 
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
 
         assert_eq!(fresh.thread_id.as_deref(), Some(id.as_str()));
         assert_eq!(fresh.history, history);
@@ -28195,7 +28717,7 @@ mod tests {
         super::super::cli_save_thread(&app.agent_dir, None, "m", &history, None).unwrap();
         let mut fresh = test_app();
         fresh.agent_dir = app.agent_dir.clone();
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
 
         // History keeps the full template (the model needs it on continuation)...
         assert_eq!(fresh.history, history);
@@ -28228,7 +28750,7 @@ mod tests {
         fresh.agent_dir = app.agent_dir.clone();
         // A line typed before the resume belongs to the session being replaced.
         fresh.record_submitted("stale");
-        apply_resume(&mut fresh, &ResumeTarget::Latest).await;
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
 
         assert_eq!(fresh.input_history, vec!["first", "second"]);
         assert!(fresh.recall_prev(), "Up recalls instead of scrolling");
@@ -28241,7 +28763,7 @@ mod tests {
     #[tokio::test]
     async fn apply_resume_notes_when_nothing_to_resume() {
         let mut app = test_app();
-        apply_resume(&mut app, &ResumeTarget::Latest).await;
+        apply_resume(&mut app, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let joined: String = app
             .transcript
             .iter()
