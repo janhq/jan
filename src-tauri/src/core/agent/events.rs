@@ -310,7 +310,13 @@ impl Usage {
             .or_else(|| usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()));
         let cache_write_tokens = usage
             .get("cache_creation_input_tokens")
-            .and_then(|v| v.as_u64());
+            .and_then(|v| v.as_u64())
+            .or_else(|| {
+                usage
+                    .get("prompt_tokens_details")
+                    .and_then(|d| d.get("cache_creation_tokens"))
+                    .and_then(|v| v.as_u64())
+            });
         Some(Self {
             prompt_tokens: usage.get("prompt_tokens").and_then(|v| v.as_u64()),
             completion_tokens: usage.get("completion_tokens").and_then(|v| v.as_u64()),
@@ -573,6 +579,19 @@ mod tests {
                 "prompt_tokens": 100,
                 "cache_read_input_tokens": 60,
                 "cache_creation_input_tokens": 40
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(60));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn usage_parses_nested_cache_creation_tokens() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "prompt_tokens_details": { "cached_tokens": 60, "cache_creation_tokens": 40 }
             }
         }))
         .unwrap();

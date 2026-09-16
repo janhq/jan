@@ -551,14 +551,17 @@ fn completion_json(
             usage_obj.insert("total_tokens".into(), serde_json::json!(v));
         }
         if let Some(details) = u.prompt_tokens_details.as_ref() {
+            // Keep both counters under `prompt_tokens_details` rather than
+            // mixing an Anthropic-native top-level key into a chat-shaped usage.
+            let mut d = serde_json::Map::new();
             if let Some(v) = details.cached_tokens {
-                usage_obj.insert(
-                    "prompt_tokens_details".into(),
-                    serde_json::json!({ "cached_tokens": v }),
-                );
+                d.insert("cached_tokens".into(), serde_json::json!(v));
             }
             if let Some(v) = details.cache_creation_tokens {
-                usage_obj.insert("cache_creation_input_tokens".into(), serde_json::json!(v));
+                d.insert("cache_creation_tokens".into(), serde_json::json!(v));
+            }
+            if !d.is_empty() {
+                usage_obj.insert("prompt_tokens_details".into(), serde_json::Value::Object(d));
             }
         }
         if !usage_obj.is_empty() {

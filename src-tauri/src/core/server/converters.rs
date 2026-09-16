@@ -181,6 +181,11 @@ pub struct StreamState {
     pub finished: bool,
     /// Prompt tokens captured early (Anthropic sends them in `message_start`).
     pub input_tokens: i64,
+    /// Cache read/write tokens, also in `message_start`. Kept beside
+    /// `input_tokens` so the terminal `message_delta` can fold them into the
+    /// chat-shaped usage.
+    pub cache_read_tokens: i64,
+    pub cache_write_tokens: i64,
 }
 
 /// Fronts OpenAI's `/v1/responses` API, exposing it as chat/completions so the
@@ -866,6 +871,14 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
 /// Anthropic requires a `max_tokens`; chat/completions may omit it.
 const ANTHROPIC_DEFAULT_MAX_TOKENS: i64 = 4096;
 
+/// Rough lower bound, in characters, on a prefix Anthropic will actually cache
+/// (~1024 tokens at 4 chars/token, matching the `estimate_token_count`
+/// heuristic used elsewhere). A `cache_control` breakpoint on a block smaller
+/// than this is a no-op Anthropic ignores, so the converter skips it -- which
+/// also avoids marking the small volatile block promoted to index 0 on a bare
+/// child run that has no stable prompt.
+const ANTHROPIC_MIN_CACHEABLE_CHARS: usize = 4096;
+
 /// Fronts Anthropic's `/v1/messages` API. Auth is `x-api-key` plus a fixed
 /// `anthropic-version` header. The registered provider `base_url` should include
 /// the version prefix, e.g. `https://api.anthropic.com/v1`.
@@ -894,17 +907,28 @@ impl AnthropicMessagesConverter {
     /// when an OAuth billing header occupies index 0 -- the agent keeps its long
     /// byte-stable prompt in that first non-header block, while the volatile
     /// per-turn block and any compaction summary follow and are left uncached.
+    ///
+    /// The `Implicit` guard is defensive only: `AnthropicMessagesConverter`
+    /// always reports `Explicit`. It exists so the marker never escapes if a
+    /// future converter reuses this helper -- there is no runtime toggle.
     fn system_value(&self, blocks: Vec<String>) -> Value {
         if self.cache_capability() != CacheCapability::Explicit {
             return json!(blocks.join("\n\n"));
         }
         let stable_idx = usize::from(self.oauth && blocks.len() > 1);
+        // Only breakpoint a block large enough for Anthropic to cache. When the
+        // agent has no stable prompt (a bare child run), the small volatile
+        // block is promoted to index 0; marking it would buy a cache *write*
+        // every turn at the 1.25x rate with a near-zero hit rate, so skip it.
+        let breakpoint = blocks
+            .get(stable_idx)
+            .is_some_and(|b| b.len() >= ANTHROPIC_MIN_CACHEABLE_CHARS);
         let arr: Vec<Value> = blocks
             .into_iter()
             .enumerate()
             .map(|(i, text)| {
                 let mut block = json!({ "type": "text", "text": text });
-                if i == stable_idx {
+                if breakpoint && i == stable_idx {
                     block["cache_control"] = json!({ "type": "ephemeral" });
                 }
                 block
@@ -927,12 +951,40 @@ fn map_anthropic_finish(reason: &str, saw_tool: bool) -> &'static str {
     }
 }
 
-fn anthropic_usage(input_tokens: i64, output_tokens: i64) -> Value {
-    json!({
-        "prompt_tokens": input_tokens,
+fn anthropic_usage(input_tokens: i64, cache_read: i64, cache_write: i64, output_tokens: i64) -> Value {
+    // Anthropic's `input_tokens` excludes both cache figures, whereas
+    // chat/completions `prompt_tokens` includes them (genai normalises the same
+    // way). Without this the prompt count silently shrinks by the cached prefix
+    // the moment caching is enabled, and the cache read/write never reach
+    // `Usage`. Emitted in the chat shape `Usage::from_completion` already reads,
+    // and only when non-zero so a no-cache response is byte-identical to before.
+    let prompt = input_tokens + cache_read + cache_write;
+    let mut usage = json!({
+        "prompt_tokens": prompt,
         "completion_tokens": output_tokens,
-        "total_tokens": input_tokens + output_tokens,
-    })
+        "total_tokens": prompt + output_tokens,
+    });
+    if cache_read > 0 {
+        usage["prompt_tokens_details"] = json!({ "cached_tokens": cache_read });
+    }
+    if cache_write > 0 {
+        usage["cache_creation_input_tokens"] = json!(cache_write);
+    }
+    usage
+}
+
+/// Read Anthropic's two cache counters from a `usage` object (`message_start`
+/// for the stream, the top-level `usage` for a non-stream response).
+fn anthropic_cache_tokens(usage: Option<&Value>) -> (i64, i64) {
+    let read = usage
+        .and_then(|u| u.get("cache_read_input_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    let write = usage
+        .and_then(|u| u.get("cache_creation_input_tokens"))
+        .and_then(|v| v.as_i64())
+        .unwrap_or(0);
+    (read, write)
 }
 
 /// Append `blocks` to the last message when it shares `role`, else start a new
@@ -1177,6 +1229,7 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         let usage = upstream.get("usage");
         let input_tokens = usage.and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
         let output_tokens = usage.and_then(|u| u.get("output_tokens")).and_then(|v| v.as_i64()).unwrap_or(0);
+        let (cache_read, cache_write) = anthropic_cache_tokens(usage);
 
         json!({
             "id": upstream.get("id").cloned().unwrap_or_else(|| json!("chatcmpl-proxy")),
@@ -1188,7 +1241,7 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 "message": message,
                 "finish_reason": finish_reason,
             }],
-            "usage": anthropic_usage(input_tokens, output_tokens),
+            "usage": anthropic_usage(input_tokens, cache_read, cache_write, output_tokens),
         })
     }
 
@@ -1219,6 +1272,9 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     if let Some(t) = msg.get("usage").and_then(|u| u.get("input_tokens")).and_then(|v| v.as_i64()) {
                         state.input_tokens = t;
                     }
+                    let (read, write) = anthropic_cache_tokens(msg.get("usage"));
+                    state.cache_read_tokens = read;
+                    state.cache_write_tokens = write;
                 }
             }
             "content_block_start" => {
@@ -1288,7 +1344,12 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                     .and_then(|u| u.get("output_tokens"))
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
-                let usage = anthropic_usage(state.input_tokens, output_tokens);
+                let usage = anthropic_usage(
+                    state.input_tokens,
+                    state.cache_read_tokens,
+                    state.cache_write_tokens,
+                    output_tokens,
+                );
                 out.push(chunk_str_with_usage(state, json!({}), Some(finish), Some(&usage)));
                 out.push("[DONE]".to_string());
                 state.finished = true;
@@ -1357,11 +1418,24 @@ fn convert_usage(usage: Option<&Value>) -> Value {
         .get("total_tokens")
         .and_then(|v| v.as_i64())
         .unwrap_or(prompt + completion);
-    json!({
+    let mut out = json!({
         "prompt_tokens": prompt,
         "completion_tokens": completion,
         "total_tokens": total,
-    })
+    });
+    // Responses reports cache reads under `input_tokens_details.cached_tokens`,
+    // and unlike Anthropic its `input_tokens` already includes them, so only the
+    // detail is forwarded (no compensation). Surfaced in the chat shape
+    // `Usage::from_completion` reads, so `/context` shows the cache line here too.
+    if let Some(cached) = u
+        .get("input_tokens_details")
+        .and_then(|d| d.get("cached_tokens"))
+        .and_then(|v| v.as_i64())
+        .filter(|c| *c > 0)
+    {
+        out["prompt_tokens_details"] = json!({ "cached_tokens": cached });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1899,6 +1973,12 @@ mod anthropic_messages_tests {
         AnthropicMessagesConverter::new()
     }
 
+    /// A stable system prompt large enough to clear `ANTHROPIC_MIN_CACHEABLE_CHARS`
+    /// so the cache breakpoint is actually placed.
+    fn big_system() -> String {
+        "S".repeat(ANTHROPIC_MIN_CACHEABLE_CHARS + 100)
+    }
+
     #[test]
     fn oauth_auth_and_headers_use_bearer_plus_code_beta() {
         let c = AnthropicMessagesConverter::new_oauth();
@@ -1951,14 +2031,9 @@ mod anthropic_messages_tests {
         });
         let out = conv().convert_request(&body);
         assert_eq!(out["model"], json!("claude-sonnet-4"));
-        assert_eq!(
-            out["system"],
-            json!([{
-                "type": "text",
-                "text": "be brief",
-                "cache_control": {"type": "ephemeral"}
-            }])
-        );
+        // A tiny system prompt is below Anthropic's min cacheable size, so it is
+        // emitted as a block array with no breakpoint.
+        assert_eq!(out["system"], json!([{"type": "text", "text": "be brief"}]));
         assert_eq!(out["max_tokens"], json!(ANTHROPIC_DEFAULT_MAX_TOKENS));
         assert_eq!(
             out["messages"],
@@ -1973,22 +2048,17 @@ mod anthropic_messages_tests {
         // OAuth account token to lightweight models (429 on sonnet) regardless
         // of the account's real plan. The oauth converter must mirror that or
         // heavy models fail under the Claude Code alias.
+        let prompt = big_system();
         let body = json!({
             "model": "claude-sonnet-5",
             "messages": [
-                {"role": "system", "content": "be brief"},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": "hi"}
             ]
         });
         let plain = conv().convert_request(&body);
-        assert_eq!(
-            plain["system"],
-            json!([{
-                "type": "text",
-                "text": "be brief",
-                "cache_control": {"type": "ephemeral"}
-            }])
-        );
+        assert_eq!(plain["system"][0]["text"], json!(prompt));
+        assert_eq!(plain["system"][0]["cache_control"], json!({"type": "ephemeral"}));
 
         let oauth_body = AnthropicMessagesConverter::new_oauth().convert_request(&body);
         let sys = oauth_body["system"].as_array().unwrap();
@@ -1999,7 +2069,7 @@ mod anthropic_messages_tests {
             .unwrap()
             .starts_with("x-anthropic-billing-header: cc_version="));
         assert!(sys[0].get("cache_control").is_none());
-        assert_eq!(sys[1]["text"], json!("be brief"));
+        assert_eq!(sys[1]["text"], json!(prompt));
         assert_eq!(sys[1]["cache_control"], json!({"type": "ephemeral"}));
     }
 
@@ -2068,10 +2138,11 @@ mod anthropic_messages_tests {
         // block, compaction summary -- all system messages. Only the stable
         // first block may carry the breakpoint; volatile and summary change and
         // must stay uncached.
+        let stable = big_system();
         let body = json!({
             "model": "claude-sonnet-4",
             "messages": [
-                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": stable},
                 {"role": "system", "content": "Today's date is 2026-09-16."},
                 {"role": "system", "content": "[Summary of earlier conversation, condensed to save context]\n\nx"},
                 {"role": "user", "content": "hi"}
@@ -2079,7 +2150,7 @@ mod anthropic_messages_tests {
         });
         let sys = conv().convert_request(&body)["system"].as_array().unwrap().clone();
         assert_eq!(sys.len(), 3);
-        assert_eq!(sys[0]["text"], json!("STABLE PROMPT"));
+        assert_eq!(sys[0]["text"], json!(stable));
         assert_eq!(sys[0]["cache_control"], json!({"type": "ephemeral"}));
         assert!(sys[1].get("cache_control").is_none());
         assert!(sys[2].get("cache_control").is_none());
@@ -2090,10 +2161,11 @@ mod anthropic_messages_tests {
         // #344: the cached block (system[0], carrying cache_control) must be
         // byte-for-byte identical across turns for Anthropic's cache to hit,
         // even as the volatile block and conversation change.
+        let stable = big_system();
         let turn1 = json!({
             "model": "claude-sonnet-4",
             "messages": [
-                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": stable},
                 {"role": "system", "content": "Today's date is 2026-09-16."},
                 {"role": "user", "content": "first"}
             ]
@@ -2101,7 +2173,7 @@ mod anthropic_messages_tests {
         let turn2 = json!({
             "model": "claude-sonnet-4",
             "messages": [
-                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": stable},
                 {"role": "system", "content": "Today's date is 2026-09-17.\n\nrecalled note"},
                 {"role": "user", "content": "first"},
                 {"role": "assistant", "content": "reply"},
@@ -2212,6 +2284,42 @@ mod anthropic_messages_tests {
         assert_eq!(finish["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
         assert_eq!(done[1], "[DONE]");
         assert!(state.finished);
+    }
+
+    #[test]
+    fn stream_folds_cache_tokens_into_prompt_tokens() {
+        // Anthropic reports cache read/write in message_start, excluded from
+        // input_tokens. The chat-shaped usage must add them back into
+        // prompt_tokens and expose them where `Usage::from_completion` reads.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {
+                    "input_tokens": 10,
+                    "cache_read_input_tokens": 80,
+                    "cache_creation_input_tokens": 40
+                }}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(130));
+        assert_eq!(usage["total_tokens"], json!(135));
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], json!(80));
+        assert_eq!(usage["cache_creation_input_tokens"], json!(40));
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(80));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+        assert_eq!(parsed.prompt_tokens, Some(130));
     }
 
     #[test]

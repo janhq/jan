@@ -6098,8 +6098,11 @@ fn cache_summary_line(report: &ContextReport) -> Option<String> {
     if !report.cache_reported {
         return None;
     }
+    // Clamped: normally `cached_tokens` is a subset of `fill` (prompt_tokens),
+    // but a raw Anthropic-shaped usage reports a prompt that excludes the cache
+    // read, which would push the share past 100%.
     let read_pct = if report.fill > 0 {
-        report.cached_tokens as f64 / report.fill as f64 * 100.0
+        (report.cached_tokens as f64 / report.fill as f64 * 100.0).min(100.0)
     } else {
         0.0
     };
