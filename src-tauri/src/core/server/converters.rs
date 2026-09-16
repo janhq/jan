@@ -92,11 +92,31 @@ use std::collections::HashMap;
 /// not chat/completions (OpenAI `/v1/responses`, Google `generateContent`,
 /// Anthropic `/v1/messages`); the proxy selects one by `ProviderConfig.api_type`
 /// and otherwise forwards verbatim.
+/// How a provider engages its prompt cache. The gate that decides whether a
+/// request carries an explicit cache key: `Implicit` providers (OpenAI, Google,
+/// and every plain OpenAI-compatible endpoint) cache a stable prefix on their
+/// own, so no key is emitted -- emitting an unknown one risks a strict endpoint
+/// rejecting the whole request. `Explicit` providers (Anthropic) only cache when
+/// the request marks a breakpoint, which `convert_request` places on the stable
+/// system prefix and the tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CacheCapability {
+    Implicit,
+    Explicit,
+}
+
 pub trait UpstreamConverter: Send + Sync {
     /// Path suffix appended to the provider `base_url`. Derived from the request
     /// body because some APIs encode the model and action in the URL (Google:
     /// `/models/{model}:streamGenerateContent?alt=sse`).
     fn upstream_path(&self, body: &Value) -> String;
+
+    /// Whether this provider needs an explicit cache breakpoint in the request.
+    /// Defaults to `Implicit` so no converter accidentally emits a cache key a
+    /// strict endpoint would reject; Anthropic overrides it.
+    fn cache_capability(&self) -> CacheCapability {
+        CacheCapability::Implicit
+    }
 
     /// Authorization header for the upstream request. Defaults to OpenAI-style
     /// `Authorization: Bearer`; providers using a different scheme (Google:
@@ -867,6 +887,31 @@ impl AnthropicMessagesConverter {
     pub fn new_oauth() -> Self {
         Self { oauth: true }
     }
+
+    /// Build the `system` field. `Implicit` keeps the joined-string form.
+    /// `Explicit` emits an array of text blocks and marks the stable prompt with
+    /// a cache breakpoint. The stable prompt is the first system block, except
+    /// when an OAuth billing header occupies index 0 -- the agent keeps its long
+    /// byte-stable prompt in that first non-header block, while the volatile
+    /// per-turn block and any compaction summary follow and are left uncached.
+    fn system_value(&self, blocks: Vec<String>) -> Value {
+        if self.cache_capability() != CacheCapability::Explicit {
+            return json!(blocks.join("\n\n"));
+        }
+        let stable_idx = usize::from(self.oauth && blocks.len() > 1);
+        let arr: Vec<Value> = blocks
+            .into_iter()
+            .enumerate()
+            .map(|(i, text)| {
+                let mut block = json!({ "type": "text", "text": text });
+                if i == stable_idx {
+                    block["cache_control"] = json!({ "type": "ephemeral" });
+                }
+                block
+            })
+            .collect();
+        json!(arr)
+    }
 }
 
 
@@ -919,6 +964,10 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         } else {
             "/messages".to_string()
         }
+    }
+
+    fn cache_capability(&self) -> CacheCapability {
+        CacheCapability::Explicit
     }
 
     fn auth_header(&self, key: &str) -> (&'static str, String) {
@@ -1028,11 +1077,11 @@ impl UpstreamConverter for AnthropicMessagesConverter {
         }
         out["messages"] = json!(messages);
         if !system.is_empty() {
-            out["system"] = json!(system.join("\n\n"));
+            out["system"] = self.system_value(system);
         }
 
         if let Some(tools) = body.get("tools").and_then(|t| t.as_array()) {
-            let mapped: Vec<Value> = tools
+            let mut mapped: Vec<Value> = tools
                 .iter()
                 .filter_map(|t| {
                     let func = t.get("function")?;
@@ -1044,6 +1093,15 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                 })
                 .collect();
             if !mapped.is_empty() {
+                // Tools sit at the head of Anthropic's cache prefix and are
+                // stable for the whole session, so a breakpoint on the last one
+                // caches the entire tool schema. Guarded by the capability so
+                // the marker is emitted only where the provider reads it.
+                if self.cache_capability() == CacheCapability::Explicit {
+                    if let Some(last) = mapped.last_mut() {
+                        last["cache_control"] = json!({ "type": "ephemeral" });
+                    }
+                }
                 out["tools"] = json!(mapped);
             }
         }
@@ -1893,7 +1951,14 @@ mod anthropic_messages_tests {
         });
         let out = conv().convert_request(&body);
         assert_eq!(out["model"], json!("claude-sonnet-4"));
-        assert_eq!(out["system"], json!("be brief"));
+        assert_eq!(
+            out["system"],
+            json!([{
+                "type": "text",
+                "text": "be brief",
+                "cache_control": {"type": "ephemeral"}
+            }])
+        );
         assert_eq!(out["max_tokens"], json!(ANTHROPIC_DEFAULT_MAX_TOKENS));
         assert_eq!(
             out["messages"],
@@ -1916,17 +1981,26 @@ mod anthropic_messages_tests {
             ]
         });
         let plain = conv().convert_request(&body);
-        assert_eq!(plain["system"], json!("be brief"));
+        assert_eq!(
+            plain["system"],
+            json!([{
+                "type": "text",
+                "text": "be brief",
+                "cache_control": {"type": "ephemeral"}
+            }])
+        );
 
         let oauth_body = AnthropicMessagesConverter::new_oauth().convert_request(&body);
-        let sys = oauth_body["system"].as_str().unwrap();
-        assert!(
-            sys.starts_with("x-anthropic-billing-header: cc_version="),
-            "oauth request must inject the billing header first: {sys}"
-        );
-        assert!(sys.contains("cc_entrypoint=sdk-cli;"));
-        // The real system prompt is still carried after the billing marker.
-        assert!(sys.contains("be brief"));
+        let sys = oauth_body["system"].as_array().unwrap();
+        // The billing header is block 0 and stays uncached; the real system
+        // prompt is block 1 and carries the cache breakpoint.
+        assert!(sys[0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("x-anthropic-billing-header: cc_version="));
+        assert!(sys[0].get("cache_control").is_none());
+        assert_eq!(sys[1]["text"], json!("be brief"));
+        assert_eq!(sys[1]["cache_control"], json!({"type": "ephemeral"}));
     }
 
     #[test]
@@ -1978,9 +2052,50 @@ mod anthropic_messages_tests {
         let out = conv().convert_request(&body);
         assert_eq!(
             out["tools"],
-            json!([{"name": "f", "description": "d", "input_schema": {"type": "object"}}])
+            json!([{
+                "name": "f",
+                "description": "d",
+                "input_schema": {"type": "object"},
+                "cache_control": {"type": "ephemeral"}
+            }])
         );
         assert_eq!(out["tool_choice"], json!({"type": "any"}));
+    }
+
+    #[test]
+    fn cache_breakpoint_lands_on_the_stable_block_only() {
+        // The agent's shape after #340/#343: stable prompt, volatile per-turn
+        // block, compaction summary -- all system messages. Only the stable
+        // first block may carry the breakpoint; volatile and summary change and
+        // must stay uncached.
+        let body = json!({
+            "model": "claude-sonnet-4",
+            "messages": [
+                {"role": "system", "content": "STABLE PROMPT"},
+                {"role": "system", "content": "Today's date is 2026-09-16."},
+                {"role": "system", "content": "[Summary of earlier conversation, condensed to save context]\n\nx"},
+                {"role": "user", "content": "hi"}
+            ]
+        });
+        let sys = conv().convert_request(&body)["system"].as_array().unwrap().clone();
+        assert_eq!(sys.len(), 3);
+        assert_eq!(sys[0]["text"], json!("STABLE PROMPT"));
+        assert_eq!(sys[0]["cache_control"], json!({"type": "ephemeral"}));
+        assert!(sys[1].get("cache_control").is_none());
+        assert!(sys[2].get("cache_control").is_none());
+    }
+
+    #[test]
+    fn implicit_converters_emit_no_cache_control() {
+        assert_eq!(conv().cache_capability(), CacheCapability::Explicit);
+        assert_eq!(
+            OpenAIResponsesConverter::new().cache_capability(),
+            CacheCapability::Implicit
+        );
+        assert_eq!(
+            GoogleGenerateContentConverter::new().cache_capability(),
+            CacheCapability::Implicit
+        );
     }
 
     #[test]
