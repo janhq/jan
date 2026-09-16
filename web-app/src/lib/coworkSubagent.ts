@@ -857,6 +857,13 @@ export type PlanChildOutcome = {
   savedPath: string | null
 }
 
+/** A child produced something worth feeding forward and saving: not an error,
+ * and not empty. The one predicate for "write it / inject it", so the blackboard
+ * write and the next-phase injection can never drift apart. */
+function hasRealAnswer(result: SubagentResult): boolean {
+  return !result.isError && result.output.trim().length > 0
+}
+
 /**
  * The phase scheduler: run each phase's subagents concurrently, wait for the
  * whole phase, write every real answer to the blackboard AND keep it in memory,
@@ -900,8 +907,7 @@ export async function runDispatchPlan(
         // error message in the file the next phase reads would be
         // indistinguishable from an answer. (Rust writes the error there too;
         // Cowork keeps the coordination file answer-only.)
-        const realAnswer = !result.isError && result.output.trim().length > 0
-        const savedPath = realAnswer
+        const savedPath = hasRealAnswer(result)
           ? await cb.writeBlackboard(req.name, result.output)
           : null
         cb.onComplete(id, req.name, result, savedPath)
@@ -909,7 +915,7 @@ export async function runDispatchPlan(
       })
     )
     inputs = outcomes
-      .filter((o) => !o.result.isError && o.result.output.trim().length > 0)
+      .filter((o) => hasRealAnswer(o.result))
       .map((o) => ({
         name: o.name,
         output: capRetainedAnswer(o.result.output),

@@ -13,6 +13,7 @@ use tauri_plugin_agent_tools::permissions::ToolPermissions;
 use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
 use tauri_plugin_agent_tools::tools::spill::{
     compose_subagent_result, fill_subagent_result, reserve_blackboard_result,
+    SUBAGENT_INLINE_MAX_BYTES,
 };
 use tauri_plugin_agent_tools::workspace;
 
@@ -1325,9 +1326,11 @@ struct PlanSummary {
 
 /// The background driver for a multi-phase plan: wait out each phase, gather its
 /// blackboard results, and spawn the next phase with those results injected. When
-/// the last phase finishes it rings the parent's doorbell exactly once -- every
-/// child ran silent (`notify_on_finish = false`), so this single ping is the only
-/// wake the parent gets for the whole plan.
+/// the last phase finishes it rings the parent's doorbell once -- every child ran
+/// silent (`notify_on_finish = false`), so on the success path this single ping is
+/// the only wake the parent gets for the whole plan. A later-phase spawn *failure*
+/// is the exception: it pushes its own "could not start" notice, since an error
+/// should wake the parent rather than be swallowed until the terminal ping.
 #[allow(clippy::too_many_arguments)]
 async fn run_phase_plan(
     bg: Arc<BackgroundSubagents>,
@@ -1347,10 +1350,16 @@ async fn run_phase_plan(
         let mut names = Vec::with_capacity(phase.subagents.len());
         for mut req in phase.subagents {
             req.description = inject_inputs(&req.description, &inputs);
-            names.push(req.name.clone());
+            // Push the name only on a successful spawn, so `ids` and `names` stay
+            // aligned: a child that never started has no blackboard file for the
+            // next phase to read and no answer for the terminal notice to report.
+            let name = req.name.clone();
             match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref(), false)
             {
-                Ok(d) => ids.push(d.run_id),
+                Ok(d) => {
+                    ids.push(d.run_id);
+                    names.push(name);
+                }
                 Err(e) => bg.push_notice(
                     "plan",
                     format!("A subagent in the next phase could not start: {e}"),
@@ -1393,8 +1402,15 @@ async fn plan_completion_notice(
         None => {
             let mut parts = Vec::with_capacity(final_ids.len());
             for (id, name) in final_ids.iter().zip(final_names) {
+                // Bounded per answer: the notice concatenates the whole final
+                // phase, so an uncapped inline (what `compose_subagent_result`
+                // returns with no path) could blow the parent's context. Matches
+                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
                 let body = match await_subagent(bg, id).await {
-                    Ok(c) => compose_subagent_result(&c.text, None),
+                    Ok(c) => {
+                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
+                        c.text[..cut].to_string()
+                    }
                     Err(e) => format!("failed: {e}"),
                 };
                 parts.push(format!("### {name}\n\n{body}"));
@@ -2839,6 +2855,18 @@ mod tests {
         assert!(
             all[0].contains("plan finished") && all[0].contains("blackboard"),
             "the terminal ping points at the blackboard: {}",
+            all[0]
+        );
+        // The notice names exactly the final phase (from `prev_names`, kept
+        // aligned with `prev_ids`): both of its children, and neither earlier one.
+        assert!(
+            all[0].contains("gamma") && all[0].contains("collector"),
+            "the notice lists the whole final phase: {}",
+            all[0]
+        );
+        assert!(
+            !all[0].contains("alpha") && !all[0].contains("beta"),
+            "the notice does not leak earlier-phase names: {}",
             all[0]
         );
         let _ = std::fs::remove_dir_all(&root);
