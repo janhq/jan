@@ -10,6 +10,7 @@ import {
   selectDefaultQuant,
 } from '../models'
 import { ModelCapabilities } from '@/types/models'
+import { providerModels } from '@/constants/models'
 
 // Mock the token.js module
 vi.mock('token.js', () => ({
@@ -313,6 +314,18 @@ describe('extractQuantLabel', () => {
 })
 
 describe('getModelCapabilities', () => {
+  it.each(['mistral-small-latest', 'mistral-medium-latest'])(
+    'advertises documented tools and vision capabilities for %s',
+    (modelId) => {
+      expect(getModelCapabilities('mistral', modelId)).toEqual([
+        ModelCapabilities.COMPLETION,
+        ModelCapabilities.TOOLS,
+        ModelCapabilities.VISION,
+      ])
+      expect(providerModels.mistral.models).toContain(modelId)
+    }
+  )
+
   it('returns completion capability for all models', () => {
     const capabilities = getModelCapabilities('openai', 'gpt-5')
     expect(capabilities).toContain(ModelCapabilities.COMPLETION)
