@@ -38,3 +38,9 @@ export function providerHasRemoteApiKeys(provider: {
 }): boolean {
   return providerRemoteApiKeyChain(provider).length > 0
 }
+
+const KEY_OPTIONAL_PROVIDERS = new Set(['lemonade'])
+
+export function providerCanFetchWithoutKey(providerName: string): boolean {
+  return KEY_OPTIONAL_PROVIDERS.has(providerName)
+}

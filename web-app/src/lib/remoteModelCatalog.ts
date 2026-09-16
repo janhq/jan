@@ -4,6 +4,7 @@ export type RemoteCatalogModel = {
   id: string
   capabilities: string[]
   createdMs: number
+  contextLength?: number
 }
 
 type ProviderLike = {
@@ -64,7 +65,7 @@ export function ensureAnthropicHeaders(
   setDefaultHeader(headers, ANTHROPIC_BROWSER_ACCESS_HEADER, 'true')
 }
 
-type CatalogKind = 'openai' | 'anthropic' | 'gemini'
+type CatalogKind = 'openai' | 'anthropic' | 'gemini' | 'lemonade'
 
 /// Resolve which catalog shape a provider speaks. `api_type` is authoritative
 /// (a custom-named Anthropic gateway still lists Claude models), falling back
@@ -75,7 +76,7 @@ function resolveCatalogKind(
   const name = typeof provider === 'string' ? provider : provider.provider
   const apiType = typeof provider === 'string' ? undefined : provider.api_type
   if (apiType === 'anthropic') return 'anthropic'
-  if (name === 'openai' || name === 'anthropic' || name === 'gemini') {
+  if (name === 'openai' || name === 'anthropic' || name === 'gemini' || name === 'lemonade') {
     return name
   }
   return null
@@ -160,6 +161,47 @@ function inferAnthropicCapabilities(id: string): string[] | null {
   return ['completion', 'tools', 'vision']
 }
 
+const NON_CHAT_LABELS = new Set([
+  'transcription',
+  'tts',
+  'image',
+  'embeddings',
+  'reranking',
+  'upscaling',
+])
+
+export function inferLemonadeCapabilities(labels: string[]): string[] | null {
+  if (labels.some((l) => NON_CHAT_LABELS.has(l))) return null
+  const caps: string[] = ['completion']
+  if (labels.includes('vision')) caps.push('vision')
+  if (labels.includes('tool-calling')) caps.push('tools')
+  if (labels.includes('chat-transcription')) caps.push('audio')
+  return caps
+}
+
+function normalizeLemonadeCatalog(rows: unknown[]): RemoteCatalogModel[] {
+  const parsed: RemoteCatalogModel[] = []
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue
+    const row = raw as Record<string, unknown>
+    const id = typeof row.id === 'string' ? row.id : null
+    if (!id) continue
+    const labels = Array.isArray(row.labels)
+      ? (row.labels as unknown[]).filter((l): l is string => typeof l === 'string')
+      : []
+    const caps = inferLemonadeCapabilities(labels)
+    if (!caps) continue
+    const createdMs = parseCreated(row.created, row.created_at)
+    const contextLength =
+      typeof row.max_context_window === 'number' && row.max_context_window > 0
+        ? row.max_context_window
+        : undefined
+    parsed.push({ id, capabilities: caps, createdMs, contextLength })
+  }
+  parsed.sort((a, b) => b.createdMs - a.createdMs || a.id.localeCompare(b.id))
+  return parsed
+}
+
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (key) {
@@ -232,6 +274,9 @@ export async function fetchTopRemoteModels(
 }
 
 function normalizeCatalog(kind: CatalogKind, rows: unknown[]): RemoteCatalogModel[] {
+  if (kind === 'lemonade') {
+    return normalizeLemonadeCatalog(rows)
+  }
   const inferCaps =
     kind === 'openai'
       ? inferOpenAICapabilities
