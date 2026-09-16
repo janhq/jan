@@ -6,7 +6,7 @@
 #[cfg(all(feature = "cli", feature = "tauri-app"))]
 compile_error!(
     "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
-     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+     build the CLI from the standalone crate: `cd src-tauri/jan-cli && cargo build --features cli`"
 );
 
 pub mod core;
