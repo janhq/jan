@@ -28971,6 +28971,7 @@ mod tests {
                         prompt_tokens: Some(12_800 + i as u64 * 12_800),
                         completion_tokens: Some(100),
                         total_tokens: Some(12_900),
+                        ..Default::default()
                     },
                 },
             );
@@ -29671,6 +29672,7 @@ mod tests {
                 prompt_tokens: Some(120),
                 completion_tokens: Some(8),
                 total_tokens: Some(128),
+                ..Default::default()
             }),
         );
         assert_eq!(app.turn_prompt_tokens, 120);
@@ -29697,6 +29699,7 @@ mod tests {
                     prompt_tokens: Some(40_000),
                     completion_tokens: Some(500),
                     total_tokens: Some(40_500),
+                    ..Default::default()
                 },
             });
         }
@@ -30080,6 +30083,7 @@ mod tests {
                 prompt_tokens: Some(90_000),
                 completion_tokens: Some(10),
                 total_tokens: Some(90_010),
+                ..Default::default()
             },
         });
         assert!(
@@ -30104,6 +30108,7 @@ mod tests {
                 prompt_tokens: Some(120_000),
                 completion_tokens: Some(10),
                 total_tokens: Some(120_010),
+                ..Default::default()
             },
         });
         assert!(app.context_report().await.fill_reported);

@@ -35,6 +35,8 @@ pub(crate) struct RunReport {
     num_turns: u32,
     prompt_tokens: u64,
     completion_tokens: u64,
+    cached_tokens: u64,
+    cache_write_tokens: u64,
 }
 
 impl RunReport {
@@ -64,6 +66,8 @@ impl RunReport {
             StreamEvent::TurnUsage { usage } => {
                 self.prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                 self.completion_tokens += usage.completion_tokens.unwrap_or(0);
+                self.cached_tokens += usage.cached_tokens.unwrap_or(0);
+                self.cache_write_tokens += usage.cache_write_tokens.unwrap_or(0);
             }
             // Subagent work is real spend on the same budget, so its usage
             // counts. Its `Step`/`Token` must not: those describe the child's
@@ -114,6 +118,8 @@ impl RunReport {
                 prompt_tokens: self.prompt_tokens,
                 completion_tokens: self.completion_tokens,
                 total_tokens: self.prompt_tokens + self.completion_tokens,
+                cached_tokens: self.cached_tokens,
+                cache_write_tokens: self.cache_write_tokens,
             },
         }
     }
@@ -151,6 +157,8 @@ struct ReportUsage {
     prompt_tokens: u64,
     completion_tokens: u64,
     total_tokens: u64,
+    cached_tokens: u64,
+    cache_write_tokens: u64,
 }
 
 /// A stable, machine-readable code for a failure. The loop stamps every
@@ -178,6 +186,7 @@ mod tests {
             prompt_tokens: Some(prompt),
             completion_tokens: Some(completion),
             total_tokens: Some(prompt + completion),
+            ..Default::default()
         }
     }
 
