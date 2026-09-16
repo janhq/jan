@@ -111,11 +111,11 @@ function Install-FromSource {
     throw 'cargo not found; install Rust first'
   }
   Write-Host "building the CLI from $RepoRoot (release)"
-  Push-Location (Join-Path $RepoRoot 'src-tauri')
+  Push-Location (Join-Path $RepoRoot 'src-tauri\jan-cli')
   try {
-    # The CLI and the desktop app are mutually exclusive feature configs, so
-    # the default features must stay off.
-    cargo build --no-default-features --features cli --bin jan --release
+    # The CLI is a standalone crate (no default features); its `cli` feature
+    # pulls in `app_lib/cli`, which is compiled with default features off.
+    cargo build --features cli --release
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed with exit code $LASTEXITCODE" }
   } finally {
     Pop-Location
