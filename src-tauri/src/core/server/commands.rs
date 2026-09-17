@@ -16,6 +16,7 @@ pub struct StartServerConfig {
     pub api_key: String,
     pub trusted_hosts: Vec<String>,
     pub proxy_timeout: u64,
+    pub cors_enabled: Option<bool>,
     pub enable_server_tool_execution: Option<bool>,
 }
 
@@ -32,6 +33,7 @@ pub async fn start_server<R: Runtime>(
         api_key,
         trusted_hosts,
         proxy_timeout,
+        cors_enabled,
         enable_server_tool_execution,
     } = config;
     let server_handle = state.server_handle.clone();
@@ -59,6 +61,7 @@ pub async fn start_server<R: Runtime>(
         api_key,
         vec![trusted_hosts],
         proxy_timeout,
+        cors_enabled.unwrap_or(true),
         state.provider_configs.clone(),
         state.model_param_defaults.clone(),
         state.mcp_servers.clone(),
@@ -110,4 +113,32 @@ pub async fn get_server_status(state: State<'_, AppState>) -> Result<bool, Strin
     let server_handle = state.server_handle.clone();
 
     Ok(proxy::is_server_running(server_handle).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StartServerConfig;
+    use serde_json::json;
+
+    fn config_with(cors_enabled: Option<bool>) -> StartServerConfig {
+        let mut value = json!({
+            "host": "127.0.0.1",
+            "port": 1337,
+            "prefix": "/v1",
+            "api_key": "",
+            "trusted_hosts": ["localhost"],
+            "proxy_timeout": 600,
+            "enable_server_tool_execution": false
+        });
+        if let Some(enabled) = cors_enabled {
+            value["cors_enabled"] = json!(enabled);
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn cors_enabled_is_optional_and_accepts_false() {
+        assert_eq!(config_with(None).cors_enabled, None);
+        assert_eq!(config_with(Some(false)).cors_enabled, Some(false));
+    }
 }
