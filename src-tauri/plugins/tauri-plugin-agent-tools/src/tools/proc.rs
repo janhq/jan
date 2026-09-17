@@ -206,12 +206,14 @@ const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 /// `cargo test` binary or incremental artifact can pass a gigabyte on its own.
 /// Caps that low break ordinary work long before they stop abuse. `FSIZE` is a
 /// per-file cap enforced with `SIGXFSZ`, so exceeding it kills the writer rather
-/// than returning an error most tools report clearly.
+/// than returning an error most tools report clearly. The resource ids are held
+/// as `u32` because libc types them per platform (`__rlimit_resource_t` on
+/// linux-gnu, `c_int` on macOS); each is cast back at the call site.
 #[cfg(unix)]
 const CHILD_LIMITS: &[(u32, u64)] = &[
-    (nix::libc::RLIMIT_NPROC, 4096),
-    (nix::libc::RLIMIT_NOFILE, 65536),
-    (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
+    (nix::libc::RLIMIT_NPROC as u32, 4096),
+    (nix::libc::RLIMIT_NOFILE as u32, 65536),
+    (nix::libc::RLIMIT_FSIZE as u32, 16 * 1024 * 1024 * 1024),
 ];
 
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
@@ -239,7 +241,7 @@ fn confine_limits(cmd: &mut Command) {
                     rlim_cur: 0,
                     rlim_max: 0,
                 };
-                if nix::libc::getrlimit(resource, &mut r) != 0 {
+                if nix::libc::getrlimit(resource as _, &mut r) != 0 {
                     continue;
                 }
                 // Never exceed the host's hard limit; setrlimit would refuse.
@@ -251,7 +253,7 @@ fn confine_limits(cmd: &mut Command) {
                 r.rlim_cur = ceiling;
                 // Best effort: a setrlimit failure is intentionally ignored so a
                 // kernel that refuses a limit cannot wedge the launch.
-                let _ = nix::libc::setrlimit(resource, &r);
+                let _ = nix::libc::setrlimit(resource as _, &r);
             }
             Ok(())
         });
