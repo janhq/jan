@@ -69,8 +69,14 @@ move between fields and <kbd>k</kbd>/<kbd>j</kbd> type as ordinary characters (A
 them). The base URL must be `https://`, or `http://` for a localhost endpoint, so a key is never
 sent over a plaintext remote connection.
 
-A provider saved with no models is queried for its `GET /models` the next time you open `/model`,
-and the discovered ids are persisted - so a bare provider becomes selectable immediately.
+Providers are queried for their `GET /models` the first time you open `/model` in a session, and the
+ids are persisted - so a provider saved with no models becomes selectable immediately, and one whose
+endpoint has gained models since you signed in picks them up. <kbd>Ctrl</kbd>+<kbd>R</kbd> in the
+picker re-lists on demand; `jan cli models refresh` does the same headlessly.
+
+Whatever the listing says about each model - context window, output cap, per-token prices - is
+cached in `~/.jan/model_catalog.json` and drives the context gauge, `/context` and `/usage`. That
+file is only a cache: delete it and the next refresh rebuilds it.
 
 ## Tokamak
 

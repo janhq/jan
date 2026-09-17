@@ -277,13 +277,42 @@ jan cli models list
     "api_type": "anthropic",
     "base_url": "https://api.anthropic.com/v1",
     "has_api_key": true,
-    "id": "claude-fable-5"
+    "id": "claude-fable-5",
+    "info": {
+      "context_length": 1000000,
+      "max_output_tokens": 128000,
+      "prompt_usd": 0.00001,
+      "completion_usd": 0.00005
+    }
   }
 ]
 ```
 
 This includes providers inherited from Jan Desktop, so it can list models even when
 `jan config list` shows none of its own.
+
+`info` carries whatever the provider published about the model the last time its list was
+refreshed - context window, output cap, per-token prices. It is absent for an endpoint that lists
+ids and nothing else.
+
+### Refreshing the list
+
+A provider's model list is recorded when you sign in, and a gateway gains and retires models after
+that. Re-read it:
+
+```bash
+jan cli models refresh                    # every reachable provider
+jan cli models refresh --provider tokamak # just one
+```
+
+Each provider's stored list is replaced with what its endpoint serves now, and the per-model
+metadata behind `info` is cached alongside. An endpoint that answers with no models at all is
+reported as a failure and its stored list is left alone - an empty answer is far more often an
+outage than a retirement. The command exits non-zero if any provider could not be listed, so a
+partial refresh is never reported as a complete one.
+
+The interactive console does the same thing: opening `/model` re-lists each provider once per
+session, and <kbd>Ctrl</kbd>+<kbd>R</kbd> inside the picker re-lists on demand.
 
 ## `jan cli mcp`
 
