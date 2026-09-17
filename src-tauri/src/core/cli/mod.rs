@@ -997,6 +997,11 @@ fn build_cli_orchestration_args(
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
+        // Filled in by `prepare_agent_session`, which is where the route's
+        // context window is resolved. The desktop paths leave it `None`: their
+        // window lives in the local engine's preset, not in a catalog this
+        // builder can read.
+        compaction: None,
     }
 }
 
