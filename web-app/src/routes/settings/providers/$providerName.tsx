@@ -40,6 +40,10 @@ import { useAppState } from '@/hooks/useAppState'
 import { useShallow } from 'zustand/shallow'
 import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import {
+  isLocalEngineProvider,
+  withRemoteCtxLen,
+} from '@/lib/model-context-size'
+import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
   API_KEY_FALLBACKS_SETTING_KEY,
@@ -505,6 +509,10 @@ function ProviderDetail() {
           capabilities: ['completion'],
           version: '1.0',
         }))
+      }
+
+      if (!isLocalEngineProvider(provider.provider)) {
+        newModels = newModels.map((m) => withRemoteCtxLen(m))
       }
 
       if (supportsRemoteCatalog(provider)) {
@@ -1115,8 +1123,7 @@ function ProviderDetail() {
                               provider={provider}
                               modelId={model.id}
                             />
-                            {model.settings && provider &&
-                              provider.provider === 'llamacpp' && (
+                            {provider && (
                               <ModelSetting provider={provider} model={model} />
                             )}
                             {((provider &&
