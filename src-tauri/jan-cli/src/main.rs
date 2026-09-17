@@ -319,8 +319,9 @@ enum AgentCommands {
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
         /// `stream-json` reads newline-delimited `user`, `permission` and
-        /// `abort` messages on stdin while the run is in flight; `text` (the
-        /// default) does not read stdin at all
+        /// `abort` messages on stdin while the run is in flight, and requires
+        /// `--output-format stream-json`; `text` (the default) does not read
+        /// stdin at all
         #[arg(long, value_enum, default_value_t = InputFormat::Text)]
         input_format: InputFormat,
     },

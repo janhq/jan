@@ -1133,6 +1133,20 @@ async fn run_agent_loop(
     format: OutputFormat,
     input_format: InputFormat,
 ) -> Result<(), String> {
+    // A duplex run switches off both of the CLI's own answer paths, so the
+    // client is the only thing that can resolve a permission request -- and it
+    // can only do that if it is being told the request ids. `text` prints them
+    // to stderr and `json` prints nothing at all until the run ends, so either
+    // pairing leaves a gated call unanswerable. Rejected rather than silently
+    // upgraded: a caller parsing plain text should not have the format changed
+    // under it.
+    if input_format.is_stream_json() && !format.is_stream_json() {
+        return Err(
+            "--input-format stream-json requires --output-format stream-json (the client answers \
+             permission requests, so it must be reading them)"
+                .to_string(),
+        );
+    }
     let started = std::time::Instant::now();
     let prepared = prepare_agent_run(
         project,
@@ -1202,7 +1216,7 @@ async fn run_agent_loop(
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(Arc::clone(input), Arc::clone(&permission_requests), format)
     });
-    let duplex = input.is_some();
+    let client = input.clone();
 
     let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     // The report is folded in both formats from the same stream the printer
@@ -1211,6 +1225,10 @@ async fn run_agent_loop(
         let mut report = RunReport::default();
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
+            // Asked per event, not once per run: the client owns the decision
+            // only while it is still reading. Once stdin has closed, the CLI
+            // takes its own path back, which on a pipe is an auto-deny.
+            let duplex = client.as_ref().is_some_and(|c| !c.client_gone());
             match format {
                 OutputFormat::Text => print_event(ev, &permission_requests, duplex).await,
                 OutputFormat::Json => {
@@ -1243,6 +1261,9 @@ async fn run_agent_loop(
     let result = outcome.unwrap_or_else(|| Err(ABORTED_BY_CLIENT.to_string()));
     drop(tx);
     let report = printer.await.unwrap_or_default();
+    if let Some(input) = input.as_ref() {
+        report_dropped_follow_ups(input, format);
+    }
 
     // Write the turn back so the session stays continuable with --resume.
     let PersistTarget {
@@ -1403,7 +1424,10 @@ fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
 /// Consume client messages until `abort` or end of input.
 ///
 /// End of input is not an abort: a client that has said everything it means to
-/// say may close the pipe and still want its answer.
+/// say may close the pipe and still want its answer. It *is* the end of the
+/// only thing that can answer a permission request, though, so the exit is
+/// latched and anything already waiting is released -- see
+/// [`strand_pending_permissions`].
 async fn read_input_lines(
     mut lines: mpsc::UnboundedReceiver<String>,
     input: Arc<StreamInput>,
@@ -1421,8 +1445,44 @@ async fn read_input_lines(
                     print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
                 }
             }
-            Ok(InputFlow::Stop) => return,
+            Ok(InputFlow::Stop) => break,
             Err(message) => report_input_error(format, &message, &line),
+        }
+    }
+    // Latch first: a request raised between the drain and the latch would
+    // otherwise be recorded as the client's to answer and find no reader.
+    input.mark_client_gone();
+    strand_pending_permissions(&registry, format).await;
+}
+
+/// Name the follow-ups the run ended before reaching. Queued turns are joined
+/// at a turn boundary, so a run that stops first (abort, error, or an answer
+/// the model considered final) never consumes them; reported one by one, since
+/// the text is what the client needs to decide whether to send it again.
+fn report_dropped_follow_ups(input: &StreamInput, format: OutputFormat) {
+    for turn in input.take_queued() {
+        let text = turn["content"].as_str().unwrap_or_default().to_string();
+        report_input_error(format, "run ended before this follow-up was read", &text);
+    }
+}
+
+/// Release every request still waiting on a client that has gone. Dropping the
+/// sender is what resolves the run's `rx.await` to `Deny`, so the run declines
+/// the call and finishes with its result envelope rather than parking forever.
+/// The decision is echoed for the same reason a client-sent one is: the stream
+/// stays a complete account of what the run did.
+async fn strand_pending_permissions(registry: &PermissionRegistry, format: OutputFormat) {
+    let stranded: Vec<String> = registry.lock().await.drain().map(|(id, _)| id).collect();
+    for request_id in stranded {
+        if format.is_stream_json() {
+            print_json_line(&PermissionDecisionRecord::new(
+                &request_id,
+                PermissionDecision::Deny,
+            ));
+        } else {
+            eprintln!(
+                "\x1b[33m[permission] auto-denied '{request_id}' (client closed stdin)\x1b[0m"
+            );
         }
     }
 }
@@ -1800,6 +1860,89 @@ mod tests {
             .await
             .expect_err("nothing is pending any more");
         assert!(err.contains("no permission request 'perm-1'"), "{err}");
+    }
+
+    /// The wedge this guards: with a client on stdin the CLI answers nothing
+    /// itself, so a request still pending when the pipe closes had no way out.
+    /// Dropping the sender is what resolves the run's wait to `Deny`.
+    #[tokio::test]
+    async fn closing_stdin_releases_a_request_the_client_never_answered() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let (answer_tx, answer) = tokio::sync::oneshot::channel();
+        registry
+            .lock()
+            .await
+            .insert("perm-1".to_string(), answer_tx);
+
+        // No lines at all: the client opened the pipe and closed it again.
+        let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+        drop(lines_tx);
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::clone(&registry),
+            OutputFormat::StreamJson,
+        )
+        .await;
+
+        assert!(
+            answer.await.is_err(),
+            "the sender is dropped, which the run reads as Deny"
+        );
+        assert!(registry.lock().await.is_empty());
+        assert!(
+            input.client_gone(),
+            "later requests must not be recorded as the client's to answer"
+        );
+    }
+
+    /// The other half of the same wedge: a request raised *after* the pipe
+    /// closed. The latch is what sends the printer back to its own answer path.
+    #[tokio::test]
+    async fn a_request_raised_after_the_client_left_is_not_left_to_the_client() {
+        let input = StreamInput::default();
+        assert!(!input.client_gone());
+        input.mark_client_gone();
+        assert!(input.client_gone());
+    }
+
+    /// `--input-format stream-json` with any other output format leaves the
+    /// client unable to see the request ids it is expected to answer.
+    #[tokio::test]
+    async fn a_duplex_run_is_refused_unless_the_output_is_stream_json() {
+        for format in [OutputFormat::Text, OutputFormat::Json] {
+            let err = run_agent_loop(
+                ".",
+                "task",
+                None,
+                false,
+                ProviderOverrides::default(),
+                SessionFlags::default(),
+                None,
+                format,
+                InputFormat::StreamJson,
+            )
+            .await
+            .expect_err("the pairing is required");
+            assert!(
+                err.contains("requires --output-format stream-json"),
+                "{err}"
+            );
+        }
+    }
+
+    /// A queued follow-up the run never reached is reported rather than
+    /// vanishing, so the client knows to send it again.
+    #[test]
+    fn follow_ups_the_run_never_read_are_reported() {
+        let input = StreamInput::default();
+        input.queue_user("and the docs".to_string());
+        report_dropped_follow_ups(&input, OutputFormat::StreamJson);
+        assert!(
+            input.take_queued().is_empty(),
+            "reporting drains, so a second call cannot double-report"
+        );
     }
 
     /// Signing in to Tokamak is what unlocks the desktop inherit. Without it the

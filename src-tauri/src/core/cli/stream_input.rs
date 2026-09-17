@@ -130,6 +130,7 @@ pub(crate) struct StreamInput {
     queued: Mutex<VecDeque<serde_json::Value>>,
     aborted: AtomicBool,
     abort: Notify,
+    gone: AtomicBool,
 }
 
 impl StreamInput {
@@ -148,6 +149,17 @@ impl StreamInput {
     /// keeps `queue_user` callable from the reader without an await point.
     fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<serde_json::Value>> {
         self.queued.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The reader has stopped, so nothing on stdin can answer a permission
+    /// request any more. Latched rather than signalled: the question is asked
+    /// once per request, at whatever point in the run it arrives.
+    pub(crate) fn mark_client_gone(&self) {
+        self.gone.store(true, Ordering::SeqCst);
+    }
+
+    pub(crate) fn client_gone(&self) -> bool {
+        self.gone.load(Ordering::SeqCst)
     }
 
     pub(crate) fn abort(&self) {
