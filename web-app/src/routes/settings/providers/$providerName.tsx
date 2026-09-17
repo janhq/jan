@@ -42,6 +42,7 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import {
   providerHasRemoteApiKeys,
   providerRemoteApiKeyChain,
+  customProviderRequiresApiKey,
   API_KEY_FALLBACKS_SETTING_KEY,
   serializeApiKeyFallbacks,
 } from '@/lib/provider-api-keys'
@@ -475,7 +476,13 @@ function ProviderDetail() {
   // This ensures all screens receive the event intermediately
 
   const handleRefreshModels = async () => {
-    if (!provider || !provider.base_url || !providerHasRemoteApiKeys(provider)) {
+    const requiresApiKey =
+      isPredefinedProvider || customProviderRequiresApiKey(provider?.api_type)
+    if (
+      !provider ||
+      !provider.base_url ||
+      (requiresApiKey && !providerHasRemoteApiKeys(provider))
+    ) {
       toast.error(t('providers:models'), {
         description: t('providers:refreshModelsError'),
       })
