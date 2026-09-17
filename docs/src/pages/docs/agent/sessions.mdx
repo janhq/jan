@@ -128,7 +128,20 @@ worktree:
 
 Getting the work back out is your own git - nothing here writes to the branch you left. A session
 remembers its worktree, so resuming returns to it; a fork gets one of its own, branched from where
-the source left off.
+the source left off. A `/fork` taken mid-session is the exception: the checkout can't change under a
+running session, so the branch borrows it until you reopen the fork with `--worktree`, which is when
+it gets its own.
+
+Nothing prunes these. When you're done with a session's work, the checkout and its branch go the
+usual way:
+
+```bash
+git worktree remove ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2
+git branch -D jan/agent/3f7a91c2
+```
+
+Delete the directory by hand instead and the next resume of that session quietly starts over from
+`HEAD`, saying so in the banner.
 
 <Callout type="info">
 Rewinding still restores files, and now restores them in the worktree - the snapshots follow the

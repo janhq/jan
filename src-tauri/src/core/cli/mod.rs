@@ -1220,7 +1220,20 @@ fn resolve_workspace(
     };
     let base = forking.then(|| fork_base(source.as_ref())).flatten();
     match worktree::for_session(project_root, recorded.as_ref(), base.as_deref()) {
-        Ok(workspace) => (Some(workspace), None),
+        // A different path than the one recorded means the checkout was gone and
+        // a fresh one was branched from HEAD: nothing was committed there, so the
+        // resumed conversation now describes edits this tree does not have.
+        Ok(workspace) => {
+            let note = recorded
+                .filter(|old| old.path != workspace.path)
+                .map(|old| {
+                    format!(
+                        "the checkout this thread recorded ({}) is gone; starting fresh from HEAD",
+                        old.path.display()
+                    )
+                });
+            (Some(workspace), note)
+        }
         Err(e) => (None, Some(format!("no worktree for this session: {e}"))),
     }
 }

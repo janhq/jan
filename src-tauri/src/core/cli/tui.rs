@@ -1807,6 +1807,12 @@ struct App {
     /// share, so `/resume` onto a thread that used a different one reports the
     /// mismatch rather than switching under a run.
     workspace: Option<Worktree>,
+    /// The worktree pointer the *active thread* saves, which is not always the
+    /// one the session works in: a fork shares the live checkout without
+    /// claiming it (its own branch is minted when it is reopened), and a resumed
+    /// thread that recorded another checkout keeps that pointer rather than
+    /// having this session's written over it.
+    workspace_record: Option<Worktree>,
     /// `metadata.forked_from` of the active thread, carried so a later save does
     /// not drop the parent pointer `fork_thread` wrote (`thread_metadata` owns
     /// the whole metadata object, not a merge into it).
@@ -2470,6 +2476,7 @@ impl App {
             base_snapshot: None,
             checkpoints: Vec::new(),
             workspace: None,
+            workspace_record: None,
             forked_from: None,
             snap_queue: std::collections::VecDeque::new(),
             base_requested: false,
@@ -2627,6 +2634,14 @@ impl App {
         self.last_kind = next;
     }
 
+    /// Put the session in a checkout and let the active thread claim it. The two
+    /// fields are separate only where a thread must not claim what it works in
+    /// (a fork, a resume from elsewhere); everywhere else they move together.
+    fn set_workspace(&mut self, workspace: Option<Worktree>) {
+        self.workspace_record = workspace.clone();
+        self.workspace = workspace;
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -2639,8 +2654,10 @@ impl App {
         // Detach snapshots; the next submit arms a fresh base + thread id.
         self.base_snapshot = None;
         self.checkpoints.clear();
-        // A fresh session is a root, whatever the one it replaced was.
+        // A fresh session is a root, whatever the one it replaced was, and it
+        // owns the checkout this session is working in.
         self.forked_from = None;
+        self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
         self.last_esc = None;
@@ -4474,12 +4491,12 @@ impl App {
             && !planning
             && self.todos.is_empty()
             && self.forked_from.is_none()
-            && self.workspace.is_none()
+            && self.workspace_record.is_none()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
-        if let Some(workspace) = self.workspace.as_ref() {
+        if let Some(workspace) = self.workspace_record.as_ref() {
             meta.insert(
                 super::worktree::WORKTREE_KEY.to_string(),
                 super::worktree::to_metadata(workspace),
@@ -8417,7 +8434,7 @@ pub async fn run(
         project_root,
         repo_root,
     );
-    app.workspace = workspace;
+    app.set_workspace(workspace);
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
@@ -8477,6 +8494,13 @@ pub async fn run(
     // the user already has stays usable.
     if let Some(request) = &resume {
         apply_resume(&mut app, request).await;
+        // `resolve_workspace` resolved the checkout for *this* thread, so it owns
+        // it even when it had none recorded before (`--worktree` on a thread that
+        // ran in the project directory).
+        app.workspace_record = app
+            .workspace_record
+            .take()
+            .or_else(|| app.workspace.clone());
         if app.thread_id.is_none() {
             app.note("starting a new session");
         }
@@ -15182,6 +15206,10 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
         .cloned();
+    // A loaded thread brings its own worktree pointer, or none: this session
+    // cannot switch checkouts under a frozen run, so writing the live one into a
+    // thread that did not ask for it would hand two conversations one branch.
+    app.workspace_record = super::worktree::from_metadata(thread.get("metadata"));
     note_workspace_mismatch(app, thread);
     // Mirror the reconstructed todos into the shared registry so the model's
     // next `todo` mutation operates on the resumed state, not an empty list.
@@ -28366,7 +28394,7 @@ mod tests {
     #[tokio::test]
     async fn a_session_records_its_worktree_and_a_resume_reads_it_back() {
         let mut app = test_app();
-        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.set_workspace(Some(test_worktree("/tmp/wt-a")));
         app.submit_user("do it".into());
         app.on_done("stop".into(), None);
         let id = app.thread_id.clone().expect("saved");
@@ -28383,13 +28411,13 @@ mod tests {
     #[tokio::test]
     async fn resuming_a_thread_from_another_checkout_says_so() {
         let mut app = test_app();
-        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.set_workspace(Some(test_worktree("/tmp/wt-a")));
         app.submit_user("do it".into());
         app.on_done("stop".into(), None);
 
         let mut elsewhere = test_app();
         elsewhere.agent_dir = app.agent_dir.clone();
-        elsewhere.workspace = Some(test_worktree("/tmp/wt-b"));
+        elsewhere.set_workspace(Some(test_worktree("/tmp/wt-b")));
         apply_resume(&mut elsewhere, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let notes: String = elsewhere
             .transcript
@@ -28405,7 +28433,7 @@ mod tests {
         // Same checkout: nothing to warn about.
         let mut same = test_app();
         same.agent_dir = app.agent_dir.clone();
-        same.workspace = Some(test_worktree("/tmp/wt-a"));
+        same.set_workspace(Some(test_worktree("/tmp/wt-a")));
         apply_resume(&mut same, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         assert!(!same
             .transcript
@@ -28418,7 +28446,7 @@ mod tests {
     #[test]
     fn a_new_session_stays_in_the_same_worktree() {
         let mut app = test_app();
-        app.workspace = Some(test_worktree("/tmp/wt-a"));
+        app.set_workspace(Some(test_worktree("/tmp/wt-a")));
         app.submit_user("do it".into());
         app.reset_session();
         assert_eq!(app.workspace, Some(test_worktree("/tmp/wt-a")));
@@ -28445,7 +28473,7 @@ mod tests {
         assert!(!plain.contains("worktree"), "{plain}");
 
         let mut isolated = test_app();
-        isolated.workspace = Some(test_worktree("/tmp/wt-a"));
+        isolated.set_workspace(Some(test_worktree("/tmp/wt-a")));
         isolated.push_session_banner(true);
         let shown = render_rows(&mut isolated, 100, 40).join("\n");
         assert!(
@@ -28556,6 +28584,61 @@ mod tests {
             meta["metadata"][super::super::FORKED_FROM_KEY],
             json!({ "thread_id": source, "user_turn": 1 })
         );
+    }
+
+    /// A fork borrows the live checkout for the rest of the session but must not
+    /// record it: the branch it opens later is its own, and two conversations on
+    /// one checkout is what a worktree exists to prevent.
+    #[tokio::test]
+    async fn a_fork_never_records_the_checkout_it_borrows() {
+        let mut app = test_app();
+        app.set_workspace(Some(test_worktree("/tmp/wt-a")));
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.on_done("stop".into(), None);
+
+        fork_at(&mut app, 1).await;
+        let forked = app.thread_id.clone().expect("landed on the fork");
+        app.submit_user("a different approach".to_string());
+        app.on_done("stop".into(), None);
+
+        let thread = super::super::cli_get_thread_in(&app.agent_dir, &forked).unwrap();
+        assert_eq!(
+            super::super::worktree::from_metadata(thread.get("metadata")),
+            None,
+            "the fork claimed its source's checkout"
+        );
+        assert_eq!(
+            app.workspace,
+            Some(test_worktree("/tmp/wt-a")),
+            "the tools keep writing where the frozen run args point"
+        );
+    }
+
+    /// The pointer belongs to the thread: resuming one from elsewhere (or with no
+    /// worktree at all) must not overwrite the checkout it recorded.
+    #[tokio::test]
+    async fn a_resumed_thread_keeps_the_checkout_it_recorded() {
+        let mut app = test_app();
+        app.set_workspace(Some(test_worktree("/tmp/wt-a")));
+        app.submit_user("do it".into());
+        app.on_done("stop".into(), None);
+        let id = app.thread_id.clone().expect("saved");
+
+        for live in [Some(test_worktree("/tmp/wt-b")), None] {
+            let mut other = test_app();
+            other.agent_dir = app.agent_dir.clone();
+            other.set_workspace(live);
+            apply_resume(&mut other, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+            other.submit_user("more".into());
+            other.on_done("stop".into(), None);
+
+            let thread = super::super::cli_get_thread_in(&app.agent_dir, &id).unwrap();
+            assert_eq!(
+                super::super::worktree::from_metadata(thread.get("metadata")),
+                Some(test_worktree("/tmp/wt-a"))
+            );
+        }
     }
 
     #[tokio::test]
