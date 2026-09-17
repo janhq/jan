@@ -11887,6 +11887,13 @@ enum AgentSettingKind {
     Bool {
         default: bool,
     },
+    /// Share of something, written as a TOML float: an `Int` row would emit
+    /// `0.8` as `0` and silently turn the knob into "compact on every turn".
+    Float {
+        default: Option<f64>,
+        min: f64,
+        max: f64,
+    },
 }
 
 /// Sentinel row value in the `/settings` picker that opens the provider
@@ -11905,11 +11912,24 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Project,
     },
     AgentSettingDef {
+        key: "compaction_ratio",
+        label: "compaction_ratio",
+        desc: "share of the context window a prompt may fill before compacting",
+        kind: AgentSettingKind::Float {
+            default: Some(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO),
+            min: 0.1,
+            max: 0.99,
+        },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
-        desc: "headroom kept free before compaction",
+        desc: "absolute headroom instead of compaction_ratio, in tokens",
+        // Unset by default: the ratio sets the trigger, and pinning 16K here
+        // would quietly take precedence over it.
         kind: AgentSettingKind::Int {
-            default: Some(16384),
+            default: None,
             min: 0,
         },
         scope: SettingScope::Project,
@@ -12704,6 +12724,29 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                             Err(_) => {
                                 prompt.error =
                                     Some(format!("'{}' is not an integer", prompt.input));
+                                return;
+                            }
+                        }
+                    }
+                }
+                AgentSettingKind::Float { default, min, max } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        match prompt.input.trim().parse::<f64>() {
+                            Ok(n) if n >= min && n <= max => Some(toml_edit::value(n)),
+                            Ok(_) => {
+                                prompt.error = Some(format!(
+                                    "must be between {min} and {max} (default: {})",
+                                    default
+                                        .map(|d| d.to_string())
+                                        .unwrap_or_else(|| "unset".into())
+                                ));
+                                return;
+                            }
+                            Err(_) => {
+                                prompt.error =
+                                    Some(format!("'{}' is not a number", prompt.input));
                                 return;
                             }
                         }
@@ -16934,6 +16977,12 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: >= {min}")
         }
+        AgentSettingKind::Float { default, min, max } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: {min}-{max}")
+        }
         AgentSettingKind::Glyph { default, max } => {
             format!("default: {default} · valid: up to {max} chars, empty = off")
         }
@@ -17537,6 +17586,12 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Float { default, min, max } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: {min}-{max} · current: {current}")
                 }
                 AgentSettingKind::Glyph { default, max } => {
                     format!(
@@ -25018,6 +25073,58 @@ mod tests {
         assert!(err.contains("read-only | deny | allow"), "{err}");
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_writes_a_float_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "0.75".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        // A float, not `0`: an Int row would write `0` here and every turn
+        // would compact.
+        assert!(doc.contains("compaction_ratio = 0.75"), "written: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_a_ratio_outside_the_usable_range() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "1.5".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("between 0.1 and 0.99"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("compaction_ratio"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
