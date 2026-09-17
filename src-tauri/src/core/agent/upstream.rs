@@ -612,15 +612,111 @@ pub(crate) fn copy_optional_chat_params(
     }
 }
 
+/// One MCP tool already rendered into the OpenAI `function` shape, paired with
+/// the tool name used for ordering and for `tool_to_server` lookup.
+type RenderedTool = (String, serde_json::Value);
+
+/// Ordering key for the advertised tool array: `(server name, tool name)`.
+///
+/// The tool array is part of the request *prefix*, and providers cache prefixes
+/// on bytes, so its order has to be a function of configuration alone. Emission
+/// used to follow `servers.iter()`, and that walks a `HashMap` whose iteration
+/// order is randomized per process - so every app restart advertised the same
+/// tools in a different order and paid a cold cache for an otherwise identical
+/// session. Keying on the pair keeps one server's tools contiguous and stays
+/// stable when the same tool name is exposed by two servers.
+fn tool_sort_key<'a>(server_name: &'a str, tool_name: &'a str) -> (&'a str, &'a str) {
+    (server_name, tool_name)
+}
+
+/// Last successful listing per MCP server, for the lifetime of the process.
+fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<RenderedTool>>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Vec<RenderedTool>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Resolve each server's listing attempt against the last-known-good one.
+///
+/// A server that fails or times out reuses its previous listing rather than
+/// dropping out of the array: a transient MCP hiccup would otherwise shrink the
+/// advertised tools mid-session, invalidating the cached prefix on that turn and
+/// again on the turn the server comes back. A server that has never listed
+/// successfully is still omitted - there is nothing to reuse. Cache entries for
+/// servers no longer in `listings` are dropped, so removing a server changes the
+/// array exactly once, at the point of the change.
+fn reuse_last_good_listings(
+    cache: &mut HashMap<String, Vec<RenderedTool>>,
+    listings: Vec<(String, Option<Vec<RenderedTool>>)>,
+) -> Vec<(String, Vec<RenderedTool>)> {
+    let mut resolved = Vec::with_capacity(listings.len());
+
+    for (server_name, tools) in listings {
+        match tools {
+            Some(tools) => {
+                cache.insert(server_name.clone(), tools.clone());
+                resolved.push((server_name, tools));
+            }
+            None => match cache.get(&server_name) {
+                Some(tools) => {
+                    log::warn!(
+                        "Reusing last known tool listing for MCP server {} ({} tools)",
+                        server_name,
+                        tools.len()
+                    );
+                    resolved.push((server_name, tools.clone()));
+                }
+                None => {
+                    log::warn!(
+                        "MCP server {} has no known tool listing; omitting it from this request",
+                        server_name
+                    );
+                }
+            },
+        }
+    }
+
+    let configured: std::collections::HashSet<&str> =
+        resolved.iter().map(|(name, _)| name.as_str()).collect();
+    cache.retain(|name, _| configured.contains(name.as_str()));
+
+    resolved
+}
+
+/// Flatten the per-server listings into the advertised array, ordered by
+/// [`tool_sort_key`], with `tool_to_server` kept consistent with that order.
+fn assemble_tool_array(
+    listings: Vec<(String, Vec<RenderedTool>)>,
+) -> (Vec<serde_json::Value>, HashMap<String, String>) {
+    let mut flattened: Vec<(String, String, serde_json::Value)> = listings
+        .into_iter()
+        .flat_map(|(server_name, tools)| {
+            tools
+                .into_iter()
+                .map(move |(tool_name, tool)| (server_name.clone(), tool_name, tool))
+        })
+        .collect();
+
+    flattened.sort_by(|(a_server, a_tool, _), (b_server, b_tool, _)| {
+        tool_sort_key(a_server, a_tool).cmp(&tool_sort_key(b_server, b_tool))
+    });
+
+    let mut openai_tools = Vec::with_capacity(flattened.len());
+    let mut tool_to_server: HashMap<String, String> = HashMap::new();
+    for (server_name, tool_name, tool) in flattened {
+        tool_to_server.insert(tool_name, server_name);
+        openai_tools.push(tool);
+    }
+
+    (openai_tools, tool_to_server)
+}
+
 pub(crate) async fn collect_mcp_openai_tools(
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
 ) -> Result<(Vec<serde_json::Value>, HashMap<String, String>), String> {
     let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
     let servers = mcp_servers.lock().await;
-
-    let mut openai_tools = Vec::new();
-    let mut tool_to_server: HashMap<String, String> = HashMap::new();
 
     // Probe every server concurrently so one slow/hanging server can't serialize
     // the whole collection behind its timeout (previously each server waited out
@@ -629,7 +725,37 @@ pub(crate) async fn collect_mcp_openai_tools(
         futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
             let result =
                 match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
-                    Ok(Ok(tools)) => Some(tools),
+                    Ok(Ok(tools)) => Some(
+                        tools
+                            .iter()
+                            .map(|tool| {
+                                // Normalize schemas before sending them to strict
+                                // OpenAI-compatible providers. The `get_tools` Tauri
+                                // command still returns raw schemas; the frontend
+                                // normalizes those separately before provider registration.
+                                let mut parameters =
+                                    serde_json::Value::Object((*tool.input_schema).clone());
+                                normalize_openai_tool_parameters_schema(&mut parameters);
+                                let description = tool
+                                    .description
+                                    .as_ref()
+                                    .map(|d| d.to_string())
+                                    .unwrap_or_default();
+
+                                (
+                                    tool.name.to_string(),
+                                    serde_json::json!({
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool.name,
+                                            "description": description,
+                                            "parameters": parameters
+                                        }
+                                    }),
+                                )
+                            })
+                            .collect::<Vec<RenderedTool>>(),
+                    ),
                     Ok(Err(e)) => {
                         log::warn!("MCP server {} failed to list tools: {}", server_name, e);
                         None
@@ -647,34 +773,14 @@ pub(crate) async fn collect_mcp_openai_tools(
         }))
         .await;
 
-    for (server_name, tools) in listings {
-        let Some(tools) = tools else { continue };
-        for tool in tools {
-            tool_to_server.insert(tool.name.to_string(), server_name.clone());
+    let resolved = {
+        let mut cache = last_good_listings()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reuse_last_good_listings(&mut cache, listings)
+    };
 
-            // Normalize schemas before sending them to strict OpenAI-compatible providers.
-            // The `get_tools` Tauri command still returns raw schemas; the frontend
-            // normalizes those separately before provider registration.
-            let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
-            normalize_openai_tool_parameters_schema(&mut parameters);
-            let description = tool
-                .description
-                .as_ref()
-                .map(|d| d.to_string())
-                .unwrap_or_default();
-
-            openai_tools.push(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": description,
-                    "parameters": parameters
-                }
-            }));
-        }
-    }
-
-    Ok((openai_tools, tool_to_server))
+    Ok(assemble_tool_array(resolved))
 }
 
 pub(crate) async fn execute_mcp_tool_calls(
@@ -1590,6 +1696,115 @@ mod tests {
         assert_eq!(msgs[0]["role"], "system");
         assert_eq!(msgs[0]["content"], "date only");
         assert_eq!(msgs[1]["role"], "user");
+    }
+
+    fn rendered(tool_name: &str) -> RenderedTool {
+        (
+            tool_name.to_string(),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": format!("does {tool_name}"),
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            }),
+        )
+    }
+
+    fn advertised_names(tools: &[serde_json::Value]) -> Vec<String> {
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// A different process walks `servers.iter()` in a different order, so the
+    /// cross-process assertion is made here by feeding the same configuration in
+    /// two different orders - within one server too - and requiring the
+    /// serialized array to come out byte-identical. In-process `HashMap`
+    /// stability is never relied on.
+    #[test]
+    fn tool_array_is_byte_identical_whatever_order_the_servers_are_walked_in() {
+        let one = vec![
+            ("fs".to_string(), vec![rendered("write"), rendered("read")]),
+            ("git".to_string(), vec![rendered("commit")]),
+        ];
+        let two = vec![
+            ("git".to_string(), vec![rendered("commit")]),
+            ("fs".to_string(), vec![rendered("read"), rendered("write")]),
+        ];
+
+        let (first, _) = assemble_tool_array(one);
+        let (second, _) = assemble_tool_array(two);
+
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&second).unwrap()
+        );
+        // Sorted on (server, tool), not on listing order.
+        assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
+    }
+
+    #[test]
+    fn tool_to_server_stays_consistent_with_the_reordered_array() {
+        let (tools, tool_to_server) = assemble_tool_array(vec![
+            ("git".to_string(), vec![rendered("commit")]),
+            ("fs".to_string(), vec![rendered("read")]),
+        ]);
+
+        assert_eq!(advertised_names(&tools), ["read", "commit"]);
+        assert_eq!(tool_to_server.get("read").unwrap(), "fs");
+        assert_eq!(tool_to_server.get("commit").unwrap(), "git");
+        assert_eq!(tool_to_server.len(), tools.len());
+    }
+
+    /// A listing timeout must not shrink the advertised array mid-session - the
+    /// prefix would go cold on this turn and again when the server recovers.
+    #[test]
+    fn a_failed_listing_reuses_the_last_known_tools() {
+        let mut cache = HashMap::new();
+        let good = vec![("fs".to_string(), Some(vec![rendered("read")]))];
+        let (before, _) = assemble_tool_array(reuse_last_good_listings(&mut cache, good));
+
+        let timed_out = vec![("fs".to_string(), None)];
+        let (after, mapping) = assemble_tool_array(reuse_last_good_listings(&mut cache, timed_out));
+
+        assert_eq!(
+            serde_json::to_string(&before).unwrap(),
+            serde_json::to_string(&after).unwrap()
+        );
+        assert_eq!(mapping.get("read").unwrap(), "fs");
+    }
+
+    #[test]
+    fn a_server_that_never_listed_successfully_is_omitted() {
+        let mut cache = HashMap::new();
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
+        let (tools, mapping) = assemble_tool_array(resolved);
+
+        assert!(tools.is_empty());
+        assert!(mapping.is_empty());
+    }
+
+    /// Removing a server changes the array exactly once: its cached listing goes
+    /// with it, so re-adding it later can't resurrect a stale set of tools.
+    #[test]
+    fn removing_a_server_drops_its_cached_listing() {
+        let mut cache = HashMap::new();
+        reuse_last_good_listings(
+            &mut cache,
+            vec![
+                ("fs".to_string(), Some(vec![rendered("read")])),
+                ("git".to_string(), Some(vec![rendered("commit")])),
+            ],
+        );
+
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
+        let (tools, _) = assemble_tool_array(resolved);
+
+        assert_eq!(advertised_names(&tools), ["read"]);
+        assert!(!cache.contains_key("git"));
     }
 
     fn sink() -> (
