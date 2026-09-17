@@ -642,13 +642,21 @@ fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<Rendere
 /// dropping out of the array: a transient MCP hiccup would otherwise shrink the
 /// advertised tools mid-session, invalidating the cached prefix on that turn and
 /// again on the turn the server comes back. A server that has never listed
-/// successfully is still omitted - there is nothing to reuse. Cache entries for
-/// servers no longer in `listings` are dropped, so removing a server changes the
-/// array exactly once, at the point of the change.
+/// successfully is still omitted - there is nothing to reuse.
+///
+/// `listings` is assumed to cover every configured server (every caller probes
+/// the whole `SharedMcpServers` map and filters afterwards), so a server absent
+/// from it has been removed and its cached listing is dropped. That keeps the
+/// cache from growing across a long session, and means removing a server changes
+/// the array exactly once, at the point of the change.
 fn reuse_last_good_listings(
     cache: &mut HashMap<String, Vec<RenderedTool>>,
     listings: Vec<(String, Option<Vec<RenderedTool>>)>,
 ) -> Vec<(String, Vec<RenderedTool>)> {
+    let probed: std::collections::HashSet<String> =
+        listings.iter().map(|(name, _)| name.clone()).collect();
+    cache.retain(|name, _| probed.contains(name));
+
     let mut resolved = Vec::with_capacity(listings.len());
 
     for (server_name, tools) in listings {
@@ -675,10 +683,6 @@ fn reuse_last_good_listings(
             },
         }
     }
-
-    let configured: std::collections::HashSet<&str> =
-        resolved.iter().map(|(name, _)| name.as_str()).collect();
-    cache.retain(|name, _| configured.contains(name.as_str()));
 
     resolved
 }
@@ -1744,6 +1748,34 @@ mod tests {
         );
         // Sorted on (server, tool), not on listing order.
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
+    }
+
+    /// Two servers exposing the same tool name is a pre-existing collision the
+    /// array does not dedupe - but which server wins `tool_to_server` used to
+    /// depend on iteration order, so the same call could route to either one
+    /// across restarts. Sorting makes it the last server by name, always.
+    #[test]
+    fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
+        let listings = |flipped: bool| {
+            let fs = ("fs".to_string(), vec![rendered("search")]);
+            let zed = ("zed".to_string(), vec![rendered("search")]);
+            if flipped {
+                vec![zed, fs]
+            } else {
+                vec![fs, zed]
+            }
+        };
+
+        let (first, first_map) = assemble_tool_array(listings(false));
+        let (second, second_map) = assemble_tool_array(listings(true));
+
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&second).unwrap()
+        );
+        assert_eq!(advertised_names(&first), ["search", "search"]);
+        assert_eq!(first_map.get("search").unwrap(), "zed");
+        assert_eq!(first_map, second_map);
     }
 
     #[test]
