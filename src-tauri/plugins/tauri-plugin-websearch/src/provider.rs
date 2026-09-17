@@ -43,7 +43,7 @@ const YOU_COM_USER_AGENT: &str = concat!(
     " (https://github.com/janhq/jan)"
 );
 const YOU_COM_CLIENT_INFO: &str = concat!(
-    "sdk; client=jan-websearch/",
+    "plugin; client=jan-websearch/",
     env!("CARGO_PKG_VERSION"),
     "; ua=rust/unknown"
 );
@@ -1187,7 +1187,7 @@ mod tests {
         // `<source>; client=<name>/<version>; ua=<runtime>/<version>`
         let segments: Vec<&str> = YOU_COM_CLIENT_INFO.split("; ").collect();
         assert_eq!(segments.len(), 3, "unexpected segment count");
-        assert_eq!(segments[0], "sdk");
+        assert_eq!(segments[0], "plugin");
         let client = segments[1]
             .strip_prefix("client=")
             .expect("second segment names the client");
