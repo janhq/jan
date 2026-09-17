@@ -1,12 +1,14 @@
 //! Project-scoped agent memory: retrieve past excerpts into the system prompt
 //! and index the user query + final assistant answer after a run. Backed by the
-//! vector-db plugin's FTS5/BM25 store (`default_base_dir`), so desktop memory
+//! vector-db plugin's FTS5/BM25 store (`paths::vector_db_dir`), so desktop memory
 //! settings and the loop operate on the same DB.
 
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 use tauri_plugin_vector_db::db;
+
+use crate::core::app::paths;
 
 const TOP_K: usize = 3;
 const MAX_EXCERPT_CHARS: usize = 500;
@@ -42,7 +44,7 @@ pub(crate) fn index_message(project_root: &Path, role: &str, text: &str) {
     }
     let pid = project_id(project_root);
     let id = content_id(&pid, role, text);
-    let path = db::collection_path(&db::default_base_dir(), db::MEMORY_COLLECTION);
+    let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION);
     if let Ok(conn) = db::open_or_init_conn(&path) {
         let _ = db::memory_index(&conn, &id, &pid, text, role, now_ts());
     }
@@ -52,7 +54,7 @@ pub(crate) fn index_message(project_root: &Path, role: &str, text: &str) {
 /// for the system prompt. None when nothing is recalled (or the store is empty).
 pub(crate) fn retrieve_block(project_root: &Path, query: &str) -> Option<String> {
     let pid = project_id(project_root);
-    let path = db::collection_path(&db::default_base_dir(), db::MEMORY_COLLECTION);
+    let path = db::collection_path(&paths::vector_db_dir(), db::MEMORY_COLLECTION);
     let conn = db::open_or_init_conn(&path).ok()?;
     let hits = db::memory_search(&conn, &pid, query, TOP_K).ok()?;
     if hits.is_empty() {

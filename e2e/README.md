@@ -3,8 +3,9 @@
 WebDriver-driven end-to-end tests against a real Jan desktop build, using
 [WebdriverIO](https://webdriver.io) and `@wdio/tauri-service`.
 
-**macOS and Linux.** Windows cannot be isolated and the config refuses to run
-there — see [Isolation](#isolation).
+**macOS, Linux and Windows.** Each can have the app's data folder redirected by
+environment — on macOS and Linux through the OS's own variables, on Windows
+through one Jan provides. See [Isolation](#isolation).
 
 On Linux you need the Tauri build dependencies plus a display. `libssl-dev` is
 easy to miss: `openssl-sys` is in the app's default dependency graph, but GitHub
@@ -85,9 +86,11 @@ which is why this is the approach Tauri documents.
 
 On macOS there is no WKWebView driver to attach from outside, so the app hosts
 an **embedded** WebDriver server itself via `tauri-plugin-wdio-webdriver`. Linux
-uses the same embedded provider — it could drive `WebKitWebDriver` through the
-`official` provider instead, but sharing one path means neither platform needs
-`tauri-driver` installed. That plugin is an optional dependency behind the `e2e`
+and Windows use the same embedded provider — they could drive `WebKitWebDriver`
+and `msedgedriver` through the `official` provider instead, but sharing one path
+means no platform needs `tauri-driver` installed. The plugin backs all three
+natively rather than assuming a Unix webview (`src/platform/windows.rs` talks to
+WebView2 through `webview2-com`). That plugin is an optional dependency behind the `e2e`
 cargo feature, and the `e2e` feature is not enabled by any supported build path
 — not `default`, not `desktop`, and not by any command in the `Makefile` or
 `.github/workflows/`.
@@ -116,17 +119,14 @@ server ever bound.
 
 Each run gets a throwaway profile in a temp dir, so tests never touch real Jan
 data. The desktop app resolves its data folder from
-`app_handle.path().data_dir()`; which variables that leaves you needing to
+`core::app::paths::data_dir()`; which variables that leaves you needing to
 override depends on the platform.
-
-`dirs::data_dir()` resolves differently per platform, which is what decides
-where the suite can run at all:
 
 | Platform | `data_dir()` | Redirected by |
 | --- | --- | --- |
 | macOS | `$HOME/Library/Application Support` | `HOME` |
 | Linux | `$XDG_DATA_HOME`, else `$HOME/.local/share` | `HOME` **and** `XDG_DATA_HOME` |
-| Windows | `FOLDERID_RoamingAppData` (Win32 known-folder API) | nothing — no env override exists |
+| Windows | `FOLDERID_RoamingAppData` | nothing the OS provides — see below |
 
 On Linux the harness pins **every** XDG base directory
 (`XDG_DATA_HOME`, `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`) rather
@@ -140,13 +140,77 @@ that variable inherited, a run **deletes** the developer's real
 `~/.config/Jan/settings.json` — confirmed against a decoy, which did not survive
 a single run.
 
-Windows has no equivalent lever, so the config refuses to run there rather than
-write into a real Jan profile.
+On Windows there is no OS lever at all: `dirs` calls
+`SHGetKnownFolderPath(FOLDERID_RoamingAppData, ..)`, which reads the registry and
+takes no environment input. So Jan supplies its own — `core/app/paths.rs` prefers
+`JAN_DATA_ROOT` and falls back to `dirs`.
+
+It is Jan's own variable rather than `%APPDATA%`, which would also have worked.
+The cost is what rules it out: Windows sets `%APPDATA%` for every interactive
+session and processes inherit it, so honouring it would move the data root of
+every existing install onto a value Jan does not control — and the blast radius
+includes the legacy-config migration's `fs::copy` + `fs::remove_file`. A
+dedicated name is unset in every real install, so the shipping binary resolves
+byte-identically to `dirs` on all three platforms.
+
+`paths.rs` honours the variable everywhere — one that silently did nothing on two
+platforms out of three would be a trap — but the harness sets it on Windows only.
+macOS and Linux already have a lever, and pushing them down the override branch
+would stop the suite exercising the `dirs` lookup a real user gets.
+
+That closes the destructive legacy-config migration too, though not because one
+known folder serves both: `dirs::config_dir()` sits behind
+`#[cfg(target_os = "linux")]` in `legacy_app_config_candidate_paths()`, so the
+only Windows candidate comes from `resolve_bundle_app_data_dir()` —
+`paths::data_dir()` joined with the bundle identifier. One variable moves both
+because both go through `paths.rs`.
+
+`APPDATA` is still set alongside it, for agreement rather than because `paths.rs`
+reads it: anything else in the process tree that reads the variable directly
+would otherwise see the real profile.
+
+`USERPROFILE` and `LOCALAPPDATA` are redirected as well, and the harness must
+create `AppData\Roaming` and `AppData\Local` under the throwaway profile before
+the app starts. `SHGetKnownFolderPath` resolves the Roaming and Local known
+folders from `REG_EXPAND_SZ` values of the form `%USERPROFILE%\AppData\...`,
+expands them against the process environment — so the `USERPROFILE` override does
+move them — and then verifies the result exists, because `dirs` does not pass
+`KF_FLAG_DONT_VERIFY`. Miss `AppData\Local` and `dirs::cache_dir()` is `None`,
+which `tauri-plugin-http`'s cookie jar turns into a startup panic
+(`PluginInitialization("http", "unknown path")`, exit 101) before a window
+exists; the embedded driver never binds and the run fails in `onPrepare`
+reporting only `code=101`. The pair also takes the WebView2 user-data folder with
+it, which Tauri puts at `%LOCALAPPDATA%\<identifier>\EBWebView` — keyed on the
+bundle identifier (`jan.ai.app`) rather than on the executable name, so without
+the override a test run and an installed Jan share one browser profile. Those
+registry values are the default rather than a guarantee, though: folder
+redirection or policy can make them literal paths that ignore `USERPROFILE`, so
+isolation still rests on `JAN_DATA_ROOT` and `paths.rs`.
+
+Two things Windows still cannot isolate, both of them accepted gaps enumerated
+in `isolation.ts` next to `XDG_RUNTIME_DIR`:
+
+- `dirs::home_dir()` resolves `FOLDERID_Profile` from the user's token rather
+  than from a `%USERPROFILE%` template, so `USERPROFILE` does not move it the way
+  it moves the AppData pair. The readers under `~/.jan` — `config.toml` and the
+  subagent directory — therefore read the real user profile where `HOME`
+  redirects them on macOS and Linux. The reachable desktop callers are reads, so
+  this is a read leak rather than a destructive one.
+- `updater.json` is written through `tauri-plugin-store`, which resolves its
+  base with Tauri's own resolver rather than `core/app/paths.rs`, landing it in
+  the real `%APPDATA%\jan.ai.app\`. Created only when absent.
+
+Both are residue or reads. The one Windows escape that was destructive —
+deep-link registration, which rewrites the `HKCU` `jan://` handler to point at
+whichever binary is running — is compiled out under the `e2e` feature instead of
+being documented, since no environment variable reaches the registry.
 
 Two things that look like they'd work but don't:
 
-- `JAN_DATA_FOLDER` is read only by `resolve_jan_data_folder()`, the CLI path.
-  The desktop build ignores it.
+- `JAN_DATA_FOLDER` — despite the name, a different variable from
+  `JAN_DATA_ROOT` above: it names the data folder itself rather than the OS root
+  it sits under, and only `resolve_jan_data_folder()` reads it, which is the CLI
+  path. The desktop build ignores it.
 - `CI=e2e` short-circuits `get_app_configurations()` to a hardcoded `"./data"`,
   which would skip the config resolution these tests exist to cover.
 

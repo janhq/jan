@@ -71,7 +71,7 @@ jobs:
 
       - name: Create Tauri resource stubs
         if: matrix.tauri
-        run: ./scripts/stub-tauri-resources.sh
+        run: node scripts/stub-tauri-resources.mjs
 
       - name: cargo check
         run: |

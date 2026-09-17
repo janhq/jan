@@ -166,17 +166,13 @@ test: test-prepare install-rust-targets
 # so we never clobber a real local build or churn the cargo:rerun-if-changed
 # stamps these paths emit.
 #
-# scripts/stub-tauri-resources.sh is the one implementation, shared with the
+# scripts/stub-tauri-resources.mjs is the one implementation, shared with the
 # coverage and rust-check workflows; keeping a second copy here is how the
-# engine worker ended up stubbed in one place and not the other. The PowerShell
-# arm exists only because cmd.exe cannot run it: CI runs make from a shell where
-# sh.exe is on PATH, so it takes the script.
+# engine worker ended up stubbed in one place and not the other. It is Node and
+# not shell so this recipe needs no cmd.exe arm -- `node` is spelled the same
+# whichever shell make picked, and a stock Windows box has no `sh` on PATH.
 stub-resources:
-ifeq ($(RECIPE_SHELL_IS_CMD),yes)
-	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
-else
-	@./scripts/stub-tauri-resources.sh
-endif
+	@node scripts/stub-tauri-resources.mjs
 
 test-ci: test-prepare
 	$(MAKE) test-rust

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Runtime};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpLockFile {
@@ -15,10 +15,8 @@ pub struct McpLockFile {
 }
 
 fn get_lock_file_path<R: Runtime>(app: &AppHandle<R>, port: u16) -> PathBuf {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .expect("Failed to get app data dir");
+    let app_data_dir =
+        crate::core::app::paths::app_data_dir_for(app).expect("Failed to get app data dir");
     app_data_dir.join(format!("mcp_lock_{}.json", port))
 }
 
@@ -148,10 +146,8 @@ pub async fn check_and_cleanup_stale_lock<R: Runtime>(
 }
 
 pub async fn cleanup_all_stale_locks<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .expect("Failed to get app data dir");
+    let app_data_dir =
+        crate::core::app::paths::app_data_dir_for(app).expect("Failed to get app data dir");
 
     let pattern = app_data_dir.join("mcp_lock_*.json");
     let pattern_str = pattern.to_string_lossy();
@@ -181,10 +177,8 @@ pub async fn cleanup_all_stale_locks<R: Runtime>(app: &AppHandle<R>) -> Result<(
 }
 
 pub fn cleanup_own_locks<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .expect("Failed to get app data dir");
+    let app_data_dir =
+        crate::core::app::paths::app_data_dir_for(app).expect("Failed to get app data dir");
 
     let pattern = app_data_dir.join("mcp_lock_*.json");
     let pattern_str = pattern.to_string_lossy();

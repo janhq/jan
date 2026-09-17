@@ -8044,7 +8044,6 @@ dependencies = [
 name = "tauri-plugin-vector-db"
 version = "0.1.0"
 dependencies = [
- "dirs",
  "log",
  "rusqlite",
  "serde",
