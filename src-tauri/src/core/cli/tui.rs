@@ -51,6 +51,7 @@ use super::worktree::Worktree;
 use super::{
     is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
 };
+use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
@@ -1762,8 +1763,12 @@ struct App {
     /// The explicit `[agent].context_window` override copied from the session
     /// limits (`None` when unset). Stays authoritative across model switches.
     configured_context_window: Option<u64>,
-    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
-    reserve_tokens: u64,
+    /// Share of the context window a prompt may fill before the next turn is
+    /// compacted first (`[agent].compaction_ratio`).
+    compaction_ratio: f64,
+    /// Explicit `[agent].compaction_reserve_tokens`, when the user pinned
+    /// absolute headroom. Wins over `compaction_ratio` for the trigger.
+    compaction_reserve_tokens: Option<u64>,
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
@@ -2471,7 +2476,8 @@ impl App {
                 }
                 _ => None,
             },
-            reserve_tokens: limits.reserve_tokens,
+            compaction_ratio: limits.compaction_ratio,
+            compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
             repo_root,
@@ -4785,7 +4791,7 @@ impl App {
             model: self.model.clone(),
             run_mode: self.run_mode,
             context_window: self.context_window,
-            reserve_tokens: self.reserve_tokens,
+            autocompact_buffer: self.autocompact_buffer(),
             history_estimate: if self.history.is_empty() {
                 0
             } else {
@@ -4807,7 +4813,9 @@ struct ContextSnapshot {
     model: String,
     run_mode: crate::core::agent::plan::RunMode,
     context_window: u64,
-    reserve_tokens: u64,
+    /// Window held back behind the compaction trigger, derived from the same
+    /// formula the loop's preflight uses.
+    autocompact_buffer: u64,
     /// The Messages segment's estimate over the live history, precomputed so
     /// the off-loop task need not own a clone of the conversation.
     history_estimate: u64,
@@ -4918,7 +4926,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     // Free space is what is left after the estimated content and the
     // reserved buffer, so the seven segments partition the window exactly
     // and the percentages sum to 100.
-    let buffer = snapshot.reserve_tokens.min(snapshot.context_window);
+    let buffer = snapshot.autocompact_buffer.min(snapshot.context_window);
     let used: u64 = segments.iter().map(|s| s.tokens).sum();
     let free = snapshot.context_window.saturating_sub(used + buffer);
     segments.push(ContextSegment {
@@ -5705,8 +5713,23 @@ impl App {
     /// override, catalog, or fallback), so proactive compaction never silently
     /// stands down on accepted prompt usage.
     fn should_auto_compact(&self) -> bool {
-        let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+        self.tokens > self.compaction_trigger() && self.tokens > 0 && self.history.len() > 4
+    }
+
+    /// Prompt tokens at which the next turn is compacted ahead of dispatching.
+    /// The same formula the agent loop's preflight applies, so a fill that reads
+    /// under the trigger can never be compacted behind the user's back.
+    fn compaction_trigger(&self) -> u64 {
+        trigger_tokens(
+            self.context_window,
+            self.compaction_ratio,
+            self.compaction_reserve_tokens,
+        )
+    }
+
+    /// Window held back behind that trigger, for the `/context` breakdown.
+    fn autocompact_buffer(&self) -> u64 {
+        self.context_window.saturating_sub(self.compaction_trigger())
     }
 
     /// Queue a compaction and a retry for a context-overflow error, reporting
@@ -6035,56 +6058,6 @@ fn gutter_lines(
             Line::from(row)
         })
         .collect()
-}
-
-/// Per-message envelope (role, delimiters) in the estimate below, the usual
-/// OpenAI-accounting constant.
-const TOKENS_PER_MESSAGE: u64 = 4;
-
-/// Rough token count (~4 chars per token) for a history the provider has not
-/// reported usage for: the window between a compaction and the next response.
-/// Counts what actually goes on the wire -- text content including multimodal
-/// text parts, tool-call names and arguments, tool-result ids -- so a
-/// tool-heavy history is not scored as empty. Image parts are left out: their
-/// cost is a provider-specific function of resolution, and inventing a number
-/// there is worse than omitting one.
-fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
-    let mut total_chars: usize = 0;
-    for msg in messages {
-        match msg.get("content") {
-            Some(serde_json::Value::String(text)) => total_chars += text.len(),
-            Some(serde_json::Value::Array(parts)) => {
-                for part in parts {
-                    total_chars += part
-                        .get("text")
-                        .and_then(|t| t.as_str())
-                        .map_or(0, str::len);
-                }
-            }
-            _ => {}
-        }
-        for call in msg
-            .get("tool_calls")
-            .and_then(|c| c.as_array())
-            .into_iter()
-            .flatten()
-        {
-            // Arguments live under `function`, not on the call itself.
-            if let Some(f) = call.get("function") {
-                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
-                total_chars += f
-                    .get("arguments")
-                    .and_then(|a| a.as_str())
-                    .map_or(0, str::len);
-            }
-        }
-        total_chars += msg
-            .get("tool_call_id")
-            .and_then(|v| v.as_str())
-            .map_or(0, str::len);
-    }
-    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
-    ((total_chars / 4) as u64 + envelope).max(1)
 }
 
 /// USD at the precision the amount deserves: sub-cent runs still need to read
@@ -18857,7 +18830,10 @@ mod tests {
             context_window: 128_000,
             context_window_source:
                 crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-            reserve_tokens: 16_384,
+            // An explicit reserve keeps the threshold these tests were written
+            // against (128K - 16K) rather than the ratio's 80% default.
+            compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
         };
@@ -19359,7 +19335,8 @@ mod tests {
                     context_window: 128_000,
                     context_window_source:
                         crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-                    reserve_tokens: 16_384,
+                    compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                    compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
                 },
@@ -24208,6 +24185,7 @@ mod tests {
             session_id: None,
             sandbox: None,
             monitors: Some(app.monitor_set.clone()),
+            compaction: None,
         })
     }
 
@@ -35063,7 +35041,7 @@ mod tests {
     #[test]
     fn should_not_auto_compact_when_below_threshold() {
         let app = test_app();
-        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // Default context_window = 128K, explicit reserve 16K, so limit ~111K.
         // With tokens = 50K and history = 6, no compact.
         assert!(!app.should_auto_compact());
     }
