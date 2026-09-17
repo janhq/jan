@@ -1839,6 +1839,38 @@ mod tests {
         assert!(!cache.contains_key("git"));
     }
 
+    /// A server that stops exposing a tool has to stop advertising it, and the
+    /// cache must not resurrect it on a later hiccup: a stale cache would keep a
+    /// removed tool in the array forever, so every turn would pay for the old
+    /// prefix until the process restarted.
+    #[test]
+    fn a_relisting_replaces_the_cached_tools_instead_of_resurrecting_removed_ones() {
+        let mut cache = HashMap::new();
+        reuse_last_good_listings(
+            &mut cache,
+            vec![(
+                "fs".to_string(),
+                Some(vec![rendered("read"), rendered("write")]),
+            )],
+        );
+
+        // `write` is no longer exposed by the server.
+        let relisted = reuse_last_good_listings(
+            &mut cache,
+            vec![("fs".to_string(), Some(vec![rendered("read")]))],
+        );
+        let (tools, mapping) = assemble_tool_array(relisted);
+        assert_eq!(advertised_names(&tools), ["read"]);
+        assert!(!mapping.contains_key("write"));
+
+        // A later hiccup reuses that listing, not the pre-removal one.
+        let (after_hiccup, _) = assemble_tool_array(reuse_last_good_listings(
+            &mut cache,
+            vec![("fs".to_string(), None)],
+        ));
+        assert_eq!(advertised_names(&after_hiccup), ["read"]);
+    }
+
     fn sink() -> (
         mpsc::UnboundedSender<StreamEvent>,
         mpsc::UnboundedReceiver<StreamEvent>,
