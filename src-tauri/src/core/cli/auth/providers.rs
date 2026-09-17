@@ -51,6 +51,7 @@ pub fn logout(provider: &str) -> Result<(), LoginError> {
     remove_provider(provider).map_err(|e| {
         LoginError::Persist(format!("could not clear the provider configuration: {e}"))
     })?;
+    crate::core::cli::model_catalog::forget(provider);
     Ok(())
 }
 
@@ -101,6 +102,7 @@ pub(crate) async fn discover_models(
             definition.name
         ))
     })?;
+    crate::core::cli::model_catalog::cache_listing(definition.id, &parsed);
     Ok(parse_models(&parsed))
 }
 

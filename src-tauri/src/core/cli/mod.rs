@@ -11,6 +11,7 @@ pub mod journal;
 pub mod login;
 pub mod mcp;
 mod model_capabilities;
+pub mod model_catalog;
 mod path_refs;
 pub mod run_report;
 pub mod providers;
@@ -1389,10 +1390,14 @@ fn prepare_agent_session(
         flags.sandbox,
     );
 
-    // Resolution order: configured `[agent].context_window` override, then the
-    // built-in model catalog, then the 128K fallback.
-    let resolved_window =
-        crate::core::cli::model_capabilities::resolve_context_window(&model, cfg.agent.context_window);
+    // Resolution order: configured `[agent].context_window` override, then what
+    // the provider's own `/models` listing reported, then the built-in model
+    // catalog, then the 128K fallback.
+    let resolved_window = crate::core::cli::model_capabilities::resolve_context_window(
+        &model,
+        cfg.agent.context_window,
+        crate::core::cli::model_capabilities::reported_window(&model),
+    );
 
     Ok(AgentSession {
         args,

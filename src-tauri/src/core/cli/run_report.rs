@@ -94,10 +94,9 @@ pub(crate) struct RunReport {
     stop_reason: Option<String>,
     error: Option<(String, String)>,
     num_turns: u32,
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    cached_tokens: u64,
-    cache_write_tokens: u64,
+    /// Billable tokens across every request of the run, including subagents'.
+    /// The same accumulator `/usage` sums a TUI session with.
+    usage: super::model_catalog::TokenUsage,
 }
 
 impl RunReport {
@@ -124,12 +123,7 @@ impl RunReport {
             // Reasoning is display-only: it must not enter the piped/plain-text
             // report answer, which is reserved for the final completion.
             StreamEvent::Reasoning { .. } => {}
-            StreamEvent::TurnUsage { usage } => {
-                self.prompt_tokens += usage.prompt_tokens.unwrap_or(0);
-                self.completion_tokens += usage.completion_tokens.unwrap_or(0);
-                self.cached_tokens += usage.cached_tokens.unwrap_or(0);
-                self.cache_write_tokens += usage.cache_write_tokens.unwrap_or(0);
-            }
+            StreamEvent::TurnUsage { usage } => self.usage.add(usage),
             // Subagent work is real spend on the same budget, so its usage
             // counts. Its `Step`/`Token` must not: those describe the child's
             // own turns and prose, not this run's.
@@ -176,11 +170,17 @@ impl RunReport {
             num_turns: self.num_turns,
             duration_ms: duration_ms as u64,
             usage: ReportUsage {
-                prompt_tokens: self.prompt_tokens,
-                completion_tokens: self.completion_tokens,
-                total_tokens: self.prompt_tokens + self.completion_tokens,
-                cached_tokens: self.cached_tokens,
-                cache_write_tokens: self.cache_write_tokens,
+                prompt_tokens: self.usage.prompt_tokens,
+                completion_tokens: self.usage.completion_tokens,
+                total_tokens: self.usage.total_tokens(),
+                cached_tokens: self.usage.cached_tokens,
+                cache_write_tokens: self.usage.cache_write_tokens,
+                // Priced from the model catalog the last `/models` listing
+                // cached. Absent for a model whose provider publishes no
+                // prices, rather than reported as zero.
+                estimated_cost_usd: self
+                    .usage
+                    .cost_usd(super::model_catalog::load().get(None, model)),
             },
         }
     }
@@ -220,6 +220,8 @@ struct ReportUsage {
     total_tokens: u64,
     cached_tokens: u64,
     cache_write_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_cost_usd: Option<f64>,
 }
 
 /// A stable, machine-readable code for a failure. The loop stamps every
@@ -377,6 +379,45 @@ mod tests {
         assert_eq!(out["usage"]["prompt_tokens"], 350);
         assert_eq!(out["usage"]["completion_tokens"], 35);
         assert_eq!(out["usage"]["total_tokens"], 385);
+    }
+
+    /// A priced model carries its estimated cost in the envelope, so a script
+    /// can budget without re-deriving prices; an unpriced one omits the field
+    /// rather than reporting the run as free.
+    #[test]
+    fn the_envelope_prices_the_run_when_the_catalog_knows_the_model() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut catalog = crate::core::cli::model_catalog::Catalog::default();
+            catalog.set_provider(
+                "tokamak",
+                std::collections::BTreeMap::from([(
+                    "priced-model".to_string(),
+                    crate::core::cli::model_catalog::ModelInfo {
+                        prompt_usd: Some(0.000001),
+                        completion_usd: Some(0.00001),
+                        ..Default::default()
+                    },
+                )]),
+            );
+            catalog.save().expect("seed catalog");
+
+            let mut report = RunReport::default();
+            report.observe(&StreamEvent::TurnUsage {
+                usage: usage(1_000_000, 100_000),
+            });
+            let out = value(report.finish(None, "priced-model", 1, Some("done")));
+            assert_eq!(out["usage"]["estimated_cost_usd"], 2.0);
+
+            let mut report = RunReport::default();
+            report.observe(&StreamEvent::TurnUsage {
+                usage: usage(1_000, 100),
+            });
+            let out = value(report.finish(None, "unknown-model", 1, Some("done")));
+            assert!(
+                out["usage"].get("estimated_cost_usd").is_none(),
+                "an unpriced model must not report a cost"
+            );
+        });
     }
 
     /// The printed order is part of the contract: a human reading the envelope

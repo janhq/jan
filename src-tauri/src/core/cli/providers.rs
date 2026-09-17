@@ -256,56 +256,146 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
     }
 }
 
-/// Populate model lists for providers that have none configured
-/// (e.g. a provider just added via the `/settings` wizard with the models field
-/// left blank). For each reachable provider with an empty `models` list, query
-/// its OpenAI-compatible `GET {base_url}/models` endpoint and persist the
-/// discovered ids back to `~/.jan/config.toml`, mirroring how `/login` records
-/// Tokamak's model list. Returns `true` if at least one provider was populated.
-/// An unreachable endpoint is not fatal: it yields a warning and is skipped, so
-/// a dead credential never blocks the picker. The configured list is preserved
-/// when a provider already names models (the user's explicit choice wins), and
-/// only providers present in the global store are touched -- writing a
-/// models-only entry for a Desktop-inherited provider would shadow it.
-/// `already_probed` records which `(provider, base_url)` pairs were queried,
-/// so each is touched at most once per session: a dead upstream is not
-/// re-contacted on every picker open.
-pub async fn fetch_missing_models(
+/// One provider's model-list probe outcome, for the caller to report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderModels {
+    pub provider: String,
+    /// How many ids the endpoint listed.
+    pub models: usize,
+    /// Whether that differed from what was already configured. A refresh that
+    /// changes nothing is worth saying so rather than reading as a no-op.
+    pub changed: bool,
+}
+
+/// What a model-list probe did across every provider it touched.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelRefresh {
+    /// Providers whose endpoint answered, in name order.
+    pub listed: Vec<ProviderModels>,
+    /// `(provider, reason)` for each endpoint that could not be listed. Never
+    /// fatal: one dead credential must not block the rest.
+    pub failed: Vec<(String, String)>,
+    /// `default_model`, when this refresh is what stopped a provider from
+    /// offering it. A retired model otherwise surfaces as a 404 on the next
+    /// run, with nothing to connect it to the refresh that dropped it.
+    pub retired_default: Option<String>,
+}
+
+impl ModelRefresh {
+    /// Whether anything was written to disk.
+    pub fn changed_any(&self) -> bool {
+        self.listed.iter().any(|p| p.changed)
+    }
+
+    /// One-line summary for a note or a terminal line.
+    pub fn summary(&self) -> String {
+        let mut parts: Vec<String> = self
+            .listed
+            .iter()
+            .map(|p| {
+                let suffix = if p.changed { "" } else { ", unchanged" };
+                let plural = if p.models == 1 { "" } else { "s" };
+                format!("{}: {} model{plural}{suffix}", p.provider, p.models)
+            })
+            .collect();
+        parts.extend(
+            self.failed
+                .iter()
+                .map(|(provider, reason)| format!("{provider}: {reason}")),
+        );
+        if let Some(model) = &self.retired_default {
+            parts.push(format!(
+                "default model '{model}' is no longer offered - select a different model"
+            ));
+        }
+        if parts.is_empty() {
+            "no providers to refresh".to_string()
+        } else {
+            parts.join(" · ")
+        }
+    }
+}
+
+/// Re-list every reachable provider that has not been probed yet this session,
+/// replacing each stored model list with what its endpoint serves now. This is
+/// what `/model` runs on its first open: a roster captured at sign-in goes stale
+/// as a router-style endpoint gains and retires models, and the picker is where
+/// that is noticed.
+///
+/// `already_probed` records which `(provider, base_url)` pairs were queried, so
+/// each is touched at most once per session -- a dead upstream must not cost the
+/// picker its full request timeout on every open. The explicit
+/// [`refresh_models`] has no such guard.
+pub async fn refresh_models_once(
     project_root: Option<&std::path::Path>,
     already_probed: &mut std::collections::HashSet<String>,
-) -> Result<bool, String> {
+) -> Result<ModelRefresh, String> {
+    probe_models(project_root, |config| mark_probed(already_probed, config)).await
+}
+
+/// Re-list every reachable provider (or just `provider`) and rewrite its model
+/// list, **replacing** a configured one. This is the explicit "my provider added
+/// models since I signed in" action -- a router-style endpoint gains and retires
+/// models continuously, and nothing else in the CLI ever re-reads `/models`
+/// after the list is first populated.
+///
+/// Unlike [`refresh_models_once`] there is no once-per-session guard: the user
+/// asked. Per-model metadata (`context_length`, pricing) is cached alongside in
+/// `~/.jan/model_catalog.json` -- see [`super::model_catalog`].
+pub async fn refresh_models(
+    project_root: Option<&std::path::Path>,
+    provider: Option<&str>,
+) -> Result<ModelRefresh, String> {
+    probe_models(project_root, |config| {
+        provider.is_none_or(|name| config.provider == name)
+    })
+    .await
+}
+
+/// Record `config` in the once-per-session probe set, answering whether it had
+/// not been probed yet.
+fn mark_probed(
+    already_probed: &mut std::collections::HashSet<String>,
+    config: &ProviderConfig,
+) -> bool {
+    let tag = format!(
+        "{}|{}",
+        config.provider,
+        config.base_url.clone().unwrap_or_default()
+    );
+    already_probed.insert(tag)
+}
+
+/// Query `GET {base_url}/models` for every reachable global provider `select`
+/// accepts, and persist what comes back: ids into `~/.jan/config.toml` and
+/// per-model metadata into the model catalog.
+///
+/// Only providers present in the global store are touched -- writing a
+/// models-only entry for a Desktop-inherited provider would shadow it. An
+/// endpoint that cannot be listed is reported in [`ModelRefresh::failed`] rather
+/// than failing the call, so one dead credential never blocks the others.
+async fn probe_models(
+    project_root: Option<&std::path::Path>,
+    mut select: impl FnMut(&ProviderConfig) -> bool,
+) -> Result<ModelRefresh, String> {
     let global = load_global_config()?;
     let configs = load_provider_configs(project_root, &ProviderOverrides::default().with_env())?;
-    let to_fetch: Vec<(String, String, Vec<String>)> = configs
+    let mut to_fetch: Vec<(ProviderConfig, Vec<String>)> = configs
         .values()
-        .filter(|c| {
-            global.contains_key(&c.provider) && is_cli_reachable(c) && c.models.is_empty()
-        })
-        // Probe each provider at most once per session. A provider that still
-        // has an empty list after a probe was unreachable or offered nothing;
-        // re-probing it on every bare `/model` would freeze the render loop
-        // for the full request timeout each time. Filtered before the key is
-        // fetched so a re-open cannot re-prompt for a provider already probed.
-        .filter(|c| {
-            let tag = format!("{}|{}", c.provider, c.base_url.clone().unwrap_or_default());
-            if already_probed.contains(&tag) {
-                return false;
-            }
-            already_probed.insert(tag);
-            true
-        })
+        .filter(|c| global.contains_key(&c.provider) && is_cli_reachable(c))
+        // Filtered before the key is fetched so a re-open cannot re-prompt for
+        // a provider already probed.
+        .filter(|c| select(c))
         .cloned()
         .map(|mut c| {
             hydrate_provider_keys(&mut c);
-            (
-                c.provider.clone(),
-                c.base_url.clone().unwrap_or_default(),
-                c.bearer_key_chain(),
-            )
+            let keys = c.bearer_key_chain();
+            (c, keys)
         })
         .collect();
+    to_fetch.sort_by(|a, b| a.0.provider.cmp(&b.0.provider));
     if to_fetch.is_empty() {
-        return Ok(false);
+        return Ok(ModelRefresh::default());
     }
 
     let client = reqwest::Client::builder()
@@ -315,53 +405,107 @@ pub async fn fetch_missing_models(
     // Probe providers concurrently so a batch of dead upstreams cannot stall
     // the `/model` picker for the sum of their timeouts; the slowest provider
     // bounds the wait.
-    let results = futures::future::join_all(to_fetch.into_iter().map(|(name, base_url, keys)| {
+    let results = futures::future::join_all(to_fetch.into_iter().map(|(config, keys)| {
         let client = &client;
         async move {
-            let models = fetch_models(client, &base_url, &keys).await;
-            (name, base_url, models)
+            let base_url = config.base_url.clone().unwrap_or_default();
+            let listing = fetch_models(client, &base_url, &keys).await;
+            (config, listing)
         }
     }))
     .await;
-    let mut populated = false;
-    for (name, _, result) in results {
-        let models = match result {
-            Ok(m) => m,
+
+    let mut catalog = super::model_catalog::load();
+    let mut catalog_dirty = false;
+    let mut refresh = ModelRefresh::default();
+    let default_model = crate::core::agent::global_config::default_model()
+        .ok()
+        .flatten()
+        .filter(|m| !m.trim().is_empty());
+    let mut default_dropped = false;
+    for (config, result) in results {
+        let listing = match result {
+            Ok(listing) => listing,
             Err(e) => {
-                log::warn!("could not list models for provider '{name}': {e}");
+                refresh.failed.push((config.provider, e));
                 continue;
             }
         };
-        if models.is_empty() {
+        // An endpoint that lists nothing is treated as having said nothing:
+        // wiping a working list over an empty answer is never the right guess.
+        if listing.ids.is_empty() {
+            refresh
+                .failed
+                .push((config.provider, "the endpoint listed no models".to_string()));
             continue;
         }
-        crate::core::agent::global_config::set_provider(
-            &name,
-            crate::core::agent::global_config::ProviderUpdate {
-                api_key: None,
-                base_url: None,
-                clear_api_key: false,
-                models: Some(models),
-                api_type: None,
-                ..Default::default()
-            },
-        )?;
-        populated = true;
+        // Only a provider that *used to* offer the default can retire it; one
+        // that never listed it says nothing about it either way.
+        if let Some(model) = &default_model {
+            if config.models.contains(model) && !listing.ids.contains(model) {
+                default_dropped = true;
+            }
+        }
+        let changed = listing.ids != config.models;
+        if changed {
+            crate::core::agent::global_config::set_provider(
+                &config.provider,
+                crate::core::agent::global_config::ProviderUpdate {
+                    models: Some(listing.ids.clone()),
+                    ..Default::default()
+                },
+            )?;
+        }
+        // Metadata is refreshed even when the id list is unchanged: a price or
+        // a context window can move without the roster moving.
+        catalog.set_provider(&config.provider, listing.info);
+        catalog_dirty = true;
+        refresh.listed.push(ProviderModels {
+            provider: config.provider,
+            models: listing.ids.len(),
+            changed,
+        });
     }
-    Ok(populated)
+    // Another provider may still serve it, which is not a retirement.
+    if default_dropped {
+        if let Some(model) = default_model {
+            let still_offered = load_global_config()
+                .map(|configs| configs.values().any(|c| c.models.contains(&model)))
+                .unwrap_or(true);
+            if !still_offered {
+                refresh.retired_default = Some(model);
+            }
+        }
+    }
+    if catalog_dirty {
+        if let Err(e) = catalog.save() {
+            // The catalog only ever improves a readout, so a failed write is a
+            // warning: the ids it accompanies are already persisted.
+            log::warn!("could not save the model catalog: {e}");
+        }
+    }
+    Ok(refresh)
+}
+
+/// What one `/models` response carried: the ids the config stores, plus the
+/// per-model metadata the catalog caches.
+struct ModelListing {
+    ids: Vec<String>,
+    info: std::collections::BTreeMap<String, super::model_catalog::ModelInfo>,
 }
 
 /// Query an OpenAI-compatible `GET {base_url}/models` with Bearer auth (trying
 /// each key in the chain on 401/403, matching upstream resolution) and return
-/// the parsed, sorted, deduped ids from the response body. A provider with no
-/// key (a keyless local endpoint) is queried unauthenticated. A remote
-/// plaintext-`http` base URL is rejected up front so a bearer key is never
-/// sent over a cleartext connection (loopback `http` is allowed).
+/// the parsed, sorted, deduped ids from the response body plus whatever
+/// per-model metadata it reported. A provider with no key (a keyless local
+/// endpoint) is queried unauthenticated. A remote plaintext-`http` base URL is
+/// rejected up front so a bearer key is never sent over a cleartext connection
+/// (loopback `http` is allowed).
 async fn fetch_models(
     client: &reqwest::Client,
     base_url: &str,
     keys: &[String],
-) -> Result<Vec<String>, String> {
+) -> Result<ModelListing, String> {
     if !(base_url.starts_with("https://")
         || (base_url.starts_with("http://") && is_loopback_url(base_url)))
     {
@@ -390,7 +534,10 @@ async fn fetch_models(
             let body = response.text().await.unwrap_or_default();
             let parsed: serde_json::Value = serde_json::from_str(&body)
                 .map_err(|e| format!("{url} returned a response we could not read: {e}"))?;
-            return Ok(super::tokamak::parse_models(&parsed));
+            return Ok(ModelListing {
+                ids: super::tokamak::parse_models(&parsed),
+                info: super::model_catalog::parse_listing(&parsed),
+            });
         }
         if status != reqwest::StatusCode::UNAUTHORIZED && status != reqwest::StatusCode::FORBIDDEN {
             // A non-auth error (rate limit, upstream down) won't be fixed by
@@ -1108,7 +1255,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_missing_models_populates_and_persists_empty_providers() {
+    fn refresh_models_once_populates_and_persists_empty_providers() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let addr = models_stub(
                 serde_json::json!({"data": [{"id": "m-b"}, {"id": "m-a"}]}).to_string(),
@@ -1128,7 +1275,13 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            let populated = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated);
 
             let configs = load_global_config().unwrap();
@@ -1140,34 +1293,45 @@ mod tests {
         });
     }
 
+    /// A stored list is no longer sacred: the first `/model` open of a session
+    /// re-lists a provider that already names models, which is the only way a
+    /// roster captured at sign-in ever picks up what the endpoint added since.
     #[test]
-    fn fetch_missing_models_leaves_configured_lists_alone() {
+    fn refresh_models_once_re_lists_a_configured_provider() {
         crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}, {"id": "my-model"}]}).to_string(),
+                1,
+            );
             crate::core::agent::global_config::set_provider(
                 "chosen",
                 crate::core::agent::global_config::ProviderUpdate {
                     api_key: Some("k".into()),
-                    base_url: Some("http://127.0.0.1:9/v1".into()), // would refuse
-                    clear_api_key: false,
+                    base_url: Some(format!("http://{addr}/v1")),
                     models: Some(vec!["my-model".into()]),
-                    api_type: None,
-                                    ..Default::default()
+                    ..Default::default()
                 },
             )
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            // Nothing to fetch: the provider already names its models, so the
-            // dead endpoint above must never be contacted.
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
-            assert!(!populated);
+            let refreshed = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch");
+            assert!(refreshed.changed_any());
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("chosen").unwrap().models, vec!["my-model".to_string()]);
+            assert_eq!(
+                configs.get("chosen").unwrap().models,
+                vec!["m-new".to_string(), "my-model".to_string()]
+            );
         });
     }
 
     #[test]
-    fn fetch_missing_models_queries_keyless_loopback_providers() {
+    fn refresh_models_once_queries_keyless_loopback_providers() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let addr = models_stub(
                 serde_json::json!({"data": [{"id": "local-model"}]}).to_string(),
@@ -1187,10 +1351,19 @@ mod tests {
             .unwrap();
 
             let rt = tokio::runtime::Runtime::new().unwrap();
-            let populated = rt.block_on(fetch_missing_models(None, &mut std::collections::HashSet::new())).expect("fetch");
+            let populated = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated, "a keyless endpoint is queried unauthenticated");
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("local").unwrap().models, vec!["local-model".to_string()]);
+            assert_eq!(
+                configs.get("local").unwrap().models,
+                vec!["local-model".to_string()]
+            );
         });
     }
 
@@ -1199,7 +1372,7 @@ mod tests {
     /// implementation (probe one to completion before starting the next)
     /// deadlocks into its 15s timeout and populates only one provider.
     #[test]
-    fn fetch_missing_models_probes_concurrently() {
+    fn refresh_models_once_probes_concurrently() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
             let stub = |models: &str| {
@@ -1240,17 +1413,281 @@ mod tests {
 
             let rt = tokio::runtime::Runtime::new().unwrap();
             let populated = rt
-                .block_on(fetch_missing_models(None, &mut std::collections::HashSet::new()))
-                .expect("fetch");
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch")
+                .changed_any();
             assert!(populated);
             let configs = load_global_config().unwrap();
-            assert_eq!(configs.get("prov-a").unwrap().models, vec!["model-a".to_string()]);
-            assert_eq!(configs.get("prov-b").unwrap().models, vec!["model-b".to_string()]);
+            assert_eq!(
+                configs.get("prov-a").unwrap().models,
+                vec!["model-a".to_string()]
+            );
+            assert_eq!(
+                configs.get("prov-b").unwrap().models,
+                vec!["model-b".to_string()]
+            );
+        });
+    }
+
+    /// The point of the refresh: a provider whose list was captured at sign-in
+    /// picks up models the endpoint has gained since, and its per-model
+    /// metadata is cached alongside for `/context` and `/usage`.
+    #[test]
+    fn refresh_models_replaces_a_configured_list_and_caches_metadata() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [
+                    {"id": "anthropic/claude-opus-5", "context_length": 1000000,
+                     "pricing": {"prompt": "0.000005", "completion": "0.000025"}},
+                    {"id": "openai/gpt-oss-120b-medium", "context_length": 131072},
+                ]})
+                .to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "tokamak",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["stale-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(refreshed.changed_any());
+            assert_eq!(refreshed.failed, Vec::new());
+            assert_eq!(
+                refreshed.listed,
+                vec![ProviderModels {
+                    provider: "tokamak".to_string(),
+                    models: 2,
+                    changed: true,
+                }]
+            );
+
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("tokamak").unwrap().models,
+                vec![
+                    "anthropic/claude-opus-5".to_string(),
+                    "openai/gpt-oss-120b-medium".to_string()
+                ],
+                "a stale list is replaced, not merged"
+            );
+
+            let catalog = crate::core::cli::model_catalog::load();
+            let info = catalog
+                .get(Some("tokamak"), "anthropic/claude-opus-5")
+                .expect("metadata cached");
+            assert_eq!(info.context_length, Some(1_000_000));
+            assert_eq!(info.prompt_usd, Some(0.000005));
+        });
+    }
+
+    /// A refresh that retires the model `default_model` points at must say so:
+    /// otherwise the next run fails with a 404 nothing connects to the refresh.
+    #[test]
+    fn refresh_models_reports_a_retired_default_model() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-retired".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("m-retired").unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert_eq!(refreshed.retired_default.as_deref(), Some("m-retired"));
+            assert!(refreshed.summary().contains("no longer offered"));
+        });
+    }
+
+    /// A default still served by some other provider was not retired, so the
+    /// warning must stay quiet.
+    #[test]
+    fn a_default_another_provider_still_serves_is_not_retired() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(
+                serde_json::json!({"data": [{"id": "m-new"}]}).to_string(),
+                1,
+            );
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["shared".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_provider(
+                "backup",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("https://other.example/v1".into()),
+                    models: Some(vec!["shared".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("shared").unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("prov")))
+                .expect("refresh");
+            assert_eq!(refreshed.retired_default, None);
+        });
+    }
+
+    /// A refresh that finds the same roster must say so rather than reading as
+    /// a failure, and must not rewrite the config.
+    #[test]
+    fn refresh_models_reports_an_unchanged_roster() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-a".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(!refreshed.changed_any());
+            assert_eq!(refreshed.listed[0].models, 1);
+            assert!(
+                refreshed.summary().contains("unchanged"),
+                "{}",
+                refreshed.summary()
+            );
+        });
+    }
+
+    /// One dead upstream must not cost the others their refresh, and must be
+    /// reported rather than silently dropped.
+    #[test]
+    fn refresh_models_reports_failures_without_blocking_the_rest() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            for (name, base) in [
+                ("alive", format!("http://{addr}/v1")),
+                ("dead", "http://127.0.0.1:9/v1".to_string()),
+            ] {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        api_key: Some("k".into()),
+                        base_url: Some(base),
+                        models: Some(vec![]),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            }
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert_eq!(refreshed.listed.len(), 1);
+            assert_eq!(refreshed.listed[0].provider, "alive");
+            assert_eq!(refreshed.failed.len(), 1);
+            assert_eq!(refreshed.failed[0].0, "dead");
+        });
+    }
+
+    /// `--provider` scopes the probe: nothing else is contacted, which is what
+    /// keeps a refresh of one provider from waiting on every other one.
+    #[test]
+    fn refresh_models_can_target_one_provider() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "wanted",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            // A dead endpoint that must never be contacted.
+            crate::core::agent::global_config::set_provider(
+                "other",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some("http://127.0.0.1:9/v1".into()),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("wanted")))
+                .expect("refresh");
+            assert_eq!(refreshed.listed.len(), 1);
+            assert!(
+                refreshed.failed.is_empty(),
+                "the other provider is untouched"
+            );
+        });
+    }
+
+    /// An endpoint that answers with an empty roster must not wipe a working
+    /// list: "nothing listed" is far more often an outage than a retirement.
+    #[test]
+    fn refresh_models_never_wipes_a_list_over_an_empty_answer() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": []}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "prov",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["keep-me".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt.block_on(refresh_models(None, None)).expect("refresh");
+            assert!(refreshed.listed.is_empty());
+            assert_eq!(refreshed.failed.len(), 1);
+            let configs = load_global_config().unwrap();
+            assert_eq!(
+                configs.get("prov").unwrap().models,
+                vec!["keep-me".to_string()]
+            );
         });
     }
 
     #[test]
-    fn fetch_missing_models_short_circuits_already_probed() {
+    fn refresh_models_once_short_circuits_already_probed() {
         crate::core::agent::global_config::with_temp_home(|_| {
             // A dead endpoint: if it were contacted, the 15s timeout would hang.
             crate::core::agent::global_config::set_provider(
@@ -1270,16 +1707,18 @@ mod tests {
             let mut probed = std::collections::HashSet::new();
             // First probe hits the dead endpoint (fast refusal) and warns.
             let populated = rt
-                .block_on(fetch_missing_models(None, &mut probed))
-                .expect("fetch");
+                .block_on(refresh_models_once(None, &mut probed))
+                .expect("fetch")
+                .changed_any();
             assert!(!populated);
             assert_eq!(probed.len(), 1, "dead provider is recorded as probed");
 
             // A second fetch must not re-contact the dead endpoint at all
             // (the probed set short-circuits it), and must not error.
             let again = rt
-                .block_on(fetch_missing_models(None, &mut probed))
-                .expect("second fetch");
+                .block_on(refresh_models_once(None, &mut probed))
+                .expect("second fetch")
+                .changed_any();
             assert!(!again, "already-probed provider is not re-fetched");
         });
     }
