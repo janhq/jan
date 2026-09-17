@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vecdb from '@janhq/tauri-plugin-vector-db-api'
 import * as ragApi from '@janhq/tauri-plugin-rag-api'
-import VectorDBExt from './index'
+import VectorDBExt, { formatUnknownError } from './index'
 
 const mockVecdb = vecdb as unknown as Record<string, ReturnType<typeof vi.fn>>
 const mockRag = ragApi as unknown as Record<string, ReturnType<typeof vi.fn>>
@@ -28,6 +28,28 @@ beforeEach(() => {
   mockVecdb.chunkText.mockResolvedValue([])
   mockRag.parseDocument.mockResolvedValue('')
   ext = new VectorDBExt()
+})
+
+describe('formatUnknownError', () => {
+  it('reads Error.message', () => {
+    expect(formatUnknownError(new Error('boom'))).toBe('boom')
+  })
+
+  it('reads message/error fields from plain objects', () => {
+    expect(formatUnknownError({ message: 'from message' })).toBe('from message')
+    expect(formatUnknownError({ error: 'from error' })).toBe('from error')
+  })
+
+  it('JSON-stringifies objects without a message field', () => {
+    expect(formatUnknownError({ code: 42, reason: 'nope' })).toBe(
+      '{"code":42,"reason":"nope"}'
+    )
+  })
+
+  it('does not collapse objects to [object Object]', () => {
+    expect(formatUnknownError({ message: 'real cause' })).not.toBe('[object Object]')
+    expect(formatUnknownError({ nested: true })).not.toBe('[object Object]')
+  })
 })
 
 describe('lifecycle + passthrough', () => {
@@ -146,6 +168,27 @@ describe('chunk sizing against embedding context', () => {
     )
   })
 
+  it('clampToEmbeddingContext surfaces plain-object probe failures instead of [object Object]', async () => {
+    getByName.mockReturnValue(
+      makeEngine({
+        getEmbeddingContextSize: vi
+          .fn()
+          .mockRejectedValue({ message: 'embedding model failed to load' }),
+      })
+    )
+    const error = await (ext as any)
+      .clampToEmbeddingContext(4000, 100)
+      .then(() => {
+        throw new Error('expected clampToEmbeddingContext to reject')
+      })
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(
+      /embedding context size.*embedding model failed to load/i
+    )
+    expect((error as Error).message).not.toContain('[object Object]')
+  })
+
   it('ensureChunksFitEmbeddingContext propagates a failing ctx-size probe', async () => {
     getByName.mockReturnValue(
       makeEngine({
@@ -166,6 +209,23 @@ describe('chunk sizing against embedding context', () => {
     await expect((ext as any).splitChunkToFit('text', 10, llm)).rejects.toThrow(
       /count embedding tokens.*tokenize 500/i
     )
+  })
+
+  it('splitChunkToFit surfaces plain-object token-count failures instead of [object Object]', async () => {
+    const llm = {
+      countEmbeddingTokens: vi.fn().mockRejectedValue({ error: 'tokenizer unavailable' }),
+    }
+    const error = await (ext as any)
+      .splitChunkToFit('text', 10, llm)
+      .then(() => {
+        throw new Error('expected splitChunkToFit to reject')
+      })
+      .catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toMatch(
+      /count embedding tokens.*tokenizer unavailable/i
+    )
+    expect((error as Error).message).not.toContain('[object Object]')
   })
 })
 
