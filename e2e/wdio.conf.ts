@@ -1,9 +1,18 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { connect } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import type { TauriCapabilities, TauriServiceOptions } from '@wdio/tauri-service'
 import { SevereServiceError } from 'webdriverio'
+import { janUserDataDir } from './helpers/paths.js'
 import { isolationEnv } from './isolation.js'
 
 // The app resolves its data folder through `core::app::paths::data_dir()`, and
@@ -126,6 +135,77 @@ if (process.platform === 'win32') {
   mkdirSync(join(testHome, 'AppData', 'Local'), { recursive: true })
 }
 
+// Pre-seed the one-shot flag that turns off the fallback embedder download, so
+// a fresh profile never fetches a model over the network mid-spec.
+//
+// bootstrapDefaultEmbedder() (extensions/llamacpp-extension/src/index.ts) is a
+// startup install of `sentence-transformer-mini` that returns immediately when
+// getBackendSetting('llamacpp-embedder-bootstrapped') is truthy. That setting
+// comes from the `settings_get` Tauri command, which is backed by
+// src-tauri/src/core/app/settings_store.rs: a flat JSON string->string map at
+// `<jan_data_folder>/settings.json`. Writing the key here, before the app is
+// spawned, is indistinguishable from a previous run having done the bootstrap.
+//
+// Worth doing because the alternative is a ~45MB download to
+// `<jan_data_folder>/llamacpp/models/sentence-transformer-mini/model.gguf` on
+// every single run, and with it a "Download Complete" toast that mounts over
+// the header at a moment set by network speed rather than by the spec. That is
+// a coin flip landing on whatever is being clicked: it produced three
+// consecutive red runs where `add-provider-trigger` was reported "still not
+// clickable" while present, enabled and visible. Seeding removes the download
+// and the toast together; a seeded run leaves a ~112KB profile where an unseeded
+// one leaves ~45MB. It does not make the app offline -- it still makes small
+// metadata requests, the model catalogue among them -- but nothing in these
+// specs waits on one.
+//
+// Not a workaround for a fragile download. A failed bootstrap is already
+// non-fatal -- the whole body is try/caught, logged as "will import on demand",
+// and retried next launch because the flag is only recorded on success -- and
+// nothing in these specs touches the embedder, which serves RAG rather than
+// chat. This is about determinism, not about avoiding a hard failure.
+//
+// Set JAN_E2E_EMBEDDER_DOWNLOAD to skip the seeding and get the real bootstrap
+// back, which is what a spec *about* the embedder needs.
+//
+// Seeded whether or not this process created the profile. Gating it on
+// ownership would let an inherited JAN_E2E_HOME -- a stray export, a CI
+// variable, someone reusing a profile -- quietly take the download and the
+// toast back, with nothing in the log saying so, which is precisely the
+// nondeterminism this block exists to remove. Writing one key into a profile
+// we did not create is acceptable: it is the same key the product writes
+// itself after a successful bootstrap, it only adds to the file, and a caller
+// who wants the real download has the env var above.
+//
+// NOTE this is the backend settings store, at janUserDataDir() -- NOT the app
+// config `settings.json` one directory up at janDataDir(), which is the file
+// smoke.e2e.ts asserts on. Same filename, different file, different owner.
+if (!process.env.JAN_E2E_EMBEDDER_DOWNLOAD) {
+  const backendSettingsDir = janUserDataDir(testHome)
+  const backendSettingsFile = join(backendSettingsDir, 'settings.json')
+  // A fresh mkdtemp profile cannot have one yet, but an inherited profile can,
+  // and a populated one at that -- so merge rather than clobber. An unparseable
+  // file is left untouched, since losing whatever it holds is worse than the
+  // download this avoids.
+  let settings: Record<string, string> | undefined = {}
+  if (existsSync(backendSettingsFile)) {
+    try {
+      settings = JSON.parse(readFileSync(backendSettingsFile, 'utf8'))
+    } catch {
+      settings = undefined
+    }
+  }
+  if (settings) {
+    mkdirSync(backendSettingsDir, { recursive: true })
+    writeFileSync(
+      backendSettingsFile,
+      JSON.stringify({
+        ...settings,
+        'llamacpp-embedder-bootstrapped': 'true',
+      })
+    )
+  }
+}
+
 // Resolved exactly as the service resolves it -- getEmbeddedPort(): the
 // TAURI_WEBDRIVER_PORT env var, else a hardcoded 4445.
 const driverPort = Number(process.env.TAURI_WEBDRIVER_PORT) || 4445
@@ -157,7 +237,27 @@ const tauriServiceOptions: TauriServiceOptions = {
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
-  specs: ['./specs/**/*.e2e.ts'],
+  // Ordered by hand, not globbed. State leaks forwards between spec files, and
+  // further than the shared profile explains. Every spec in a run shares one
+  // on-disk profile: JAN_E2E_HOME is created in the launcher and inherited by
+  // each worker (above), so whatever one spec file writes is still there for
+  // the next. But the embedded provider also spawns *one* app, in the
+  // launcher's onPrepare, and every spec file drives that same process over its
+  // own WebDriver session -- one `Tauri app spawned` line per run, and the
+  // service skips the per-worker spawn for this provider. So a later spec
+  // inherits the live webview as well: its route, its zustand stores, any
+  // dialog left open. Only an explicit browser.refresh() clears that half.
+  //
+  // smoke.e2e.ts asserts the first-run setup wizard, which the app only
+  // renders while no provider is configured, and chat.e2e.ts configures one.
+  // The previous glob left ordering to wdio, which sorts matches
+  // alphabetically -- `chat` ran first and smoke then failed on a provider
+  // another file had written, a reason that has nothing to do with what it
+  // tests.
+  //
+  // The cost is that this list is maintained by hand: a new spec that is not
+  // added here does not run, and nothing reports its absence.
+  specs: ['./specs/smoke.e2e.ts', './specs/chat.e2e.ts'],
   maxInstances: 1,
   capabilities: [
     {
@@ -173,7 +273,39 @@ export const config: WebdriverIO.Config = {
   waitforTimeout: 20_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
-  mochaOpts: { ui: 'bdd', timeout: 120_000 },
+  // Generous on purpose, because this is a backstop rather than the real
+  // deadline. Every wait inside the specs is individually bounded and carries a
+  // timeoutMsg that names what broke; Mocha's timeout carries none, so whenever
+  // it fires first it replaces a diagnosis with "Timeout of Nms exceeded". A
+  // before() hook that walks Add Provider and Add Model has half a dozen phases
+  // and budgets ~30s each, which sums past two minutes on a machine slow enough
+  // to need any of it -- exactly when the message matters most.
+  mochaOpts: { ui: 'bdd', timeout: 300_000 },
+
+  // Suppress the service's per-command window-focus recovery, which this app can
+  // never satisfy and which costs five seconds on every element lookup.
+  //
+  // @wdio/tauri-service's beforeCommand hook calls ensureActiveWindowFocus() for
+  // getTitle/findElement/findElements/$/$$/elementClick. That asks the app for
+  // its window states over `browser.tauri.execute()`, which waits for
+  // `window.__wdio_original_core__` -- a global the plugin's guest JS installs,
+  // and which is absent here for the same reason `browser.tauri.execute()` is
+  // unavailable to specs: `withGlobalTauri` is off. So the probe cannot ever
+  // succeed; it just times out after 5s, per command, and the service logs
+  // "Failed to get window states" and carries on. A spec doing thirty lookups
+  // spends two and a half minutes waiting for a feature that is not there, which
+  // is how a correct spec hits the Mocha timeout in a hook.
+  //
+  // afterCommand treats a successful, non-internal `switchToWindow` as the user
+  // taking charge of window selection and suppresses focus recovery for the rest
+  // of the session -- so switching to the handle we are already on is a no-op
+  // that turns the probe off. Jan runs a single window under test, so there is
+  // nothing for the recovery to recover.
+  //
+  // `before` runs once per worker, before any spec file.
+  before: async (_capabilities, _specs, browser) => {
+    await browser.switchToWindow(await browser.getWindowHandle())
+  },
 
   // The embedded provider spawns the app and then polls
   // http://127.0.0.1:<port>/status until *something* reports ready. It never

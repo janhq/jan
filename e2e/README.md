@@ -218,6 +218,21 @@ Because the profile is always fresh, **every run is a first launch** — no
 providers are configured, so `/` renders `SetupScreen`. The suite asserts that
 rather than working around it.
 
+A first launch used to **download**: Jan fetches its embedding model
+`sentence-transformer-mini` (~45MB) on a profile it has not bootstrapped before,
+and announces it with a toast that mounts over the header at a moment set by
+network speed. `wdio.conf.ts` now pre-seeds the one-shot flag that suppresses
+that bootstrap, so a run neither downloads it nor shows the toast — a kept
+profile is ~112KB rather than ~45MB. Set `JAN_E2E_EMBEDDER_DOWNLOAD=1` to get
+the real bootstrap back, which is what a spec *about* the embedder needs.
+
+That is the one large download removed, not every network call: the app still
+fetches small metadata such as the model catalogue, and no attempt has been made
+to verify the suite on a machine with no network at all. What it buys is
+determinism — the toast was landing on whatever a spec was clicking, and see
+[the analytics prompt section](#the-analytics-prompt-covers-the-composer) for
+what that cost.
+
 ## Writing specs
 
 `browser.tauri.execute()` is unavailable: it needs `window.__TAURI__`, which
@@ -225,7 +240,7 @@ requires `withGlobalTauri: true` in `tauri.conf.json`. That would expose the
 full Tauri API to anything running in the webview, so it stays off. Assert
 through the UI instead — which is closer to what users actually see.
 
-Navigate with the `goto()` helper in `specs/smoke.e2e.ts` rather than
+Navigate with the `goto()` helper in `helpers/navigation.ts` rather than
 `browser.url()`: the Tauri asset protocol has no SPA fallback for deep paths, so
 a hard navigation 404s. The helper pushes history (which TanStack patches to
 notify its own subscribers) and carries `__TSR_index` forward so back/forward
@@ -239,3 +254,220 @@ Prefer `data-testid` selectors — around ten shipped components already carry
 them. Note that a `grep` for `data-testid` turns up many more hits in
 `__tests__` mocks than in real components, so check whether the one you want
 actually exists before assuming it does.
+
+Before asserting that something is **absent** from disk, assert it was there
+first. An "is it gone?" check against a path that was never written passes
+whatever the code does, and it fails silently rather than loudly — nothing about
+the green run says the assertion proved nothing. `specs/chat.e2e.ts` brackets its
+delete this way: it waits for the thread directory to exist, deletes, then waits
+for it to go away.
+
+The same shape applies in time rather than on disk: when you are asserting on
+something produced by a **fire-and-forget background request, assert it before
+doing anything that cancels it**. The generated thread title is the live example,
+and it is product behaviour rather than a harness quirk. The summarizer runs from
+`onFinish` only on a refresh tick — the first assistant message, then every fourth
+(`web-app/src/routes/threads/$threadId.tsx:632-635`,
+`TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4`) — and sending the next message
+aborts whatever title request is in flight (same file, line 957;
+`lib/thread-title-summarizer.ts` swallows the `AbortError` and returns null). With
+two assistant messages there is no second attempt, so a spec that sends again
+before the title lands leaves the row reading "New Thread" permanently, and no
+retry recovers it. `specs/chat.e2e.ts` asserts the title at the end of its first
+test, while the thread has exactly one reply.
+
+### The embedded driver has no real input
+
+`tauri-plugin-wdio-webdriver` synthesizes every interaction in JavaScript. From
+`src/platform/executor.rs` (v1.4):
+
+- `dispatch_pointer_event()` builds a `MouseEvent` (`mousedown`/`mouseup`/
+  `mousemove`, plus a `click` synthesized after a same-spot down+up) and
+  dispatches it at `document.elementFromPoint(x, y)`. It never produces a
+  `PointerEvent`.
+- `click_element()` — what `elementClick`, and so `elem.click()`, maps to — is
+  `el.scrollIntoView(); el.click(); el.focus()`.
+- `send_keys_to_element()` focuses the element and then dispatches synthesized
+  `keydown`/`keyup` at `document.activeElement`.
+
+Three consequences, all of which read as a failure about the wrong thing:
+
+- **CSS `:hover` never applies.** A synthesized `MouseEvent` does not move the
+  hover state, so `moveTo()` cannot reveal hover-only UI, and
+  `browser.action('pointer')` cannot either.
+- **Radix components that open on `pointerdown` never open from a click.**
+  `DropdownMenuTrigger` is the one in Jan's sidebar. `DialogTrigger` and
+  `PopoverTrigger` use `onClick` and are fine.
+- **The workaround for both is the keyboard**, and it is not a hack — it is the
+  route a keyboard user takes. `elementClick` leaves the element focused, which
+  both satisfies a `group-focus-within:opacity-100` rule and gives
+  `browser.keys('Enter')` a target; Radix's trigger opens on Enter.
+  `specs/chat.e2e.ts` does exactly this for the thread overflow menu and carries
+  the long-form comment.
+
+**Do not use `waitForClickable()` in this suite.** WDIO's clickability check
+includes an `elementFromPoint` test; this driver's click does not.
+`click_element()` goes straight through anything painted on top, so the precheck
+can only ever reject clicks that would have succeeded — and on a first launch
+there is plenty painted on top (the analytics consent panel over the composer,
+the download toast over the header; both below). The failure mode is a 30-60s
+timeout naming an element that is fine.
+
+Use `clickWhenReady(selector)` from `specs/chat.e2e.ts` instead:
+`waitForDisplayed()` + `waitForEnabled()` + `click()`. Displayed and enabled are
+still worth waiting for, because they are real states this app uses — Add Model
+stays disabled until the model-id field is non-empty, and the send button is
+*replaced* outright by a stop button while a reply streams, so waiting for it to
+exist is the streaming barrier.
+
+`opacity: 0` is **not** one of the differences, so `clickWhenReady()` is no help
+there: `waitForDisplayed()` runs `checkVisibility({opacityProperty: true})`
+browser-side and rejects a fully transparent element exactly as
+`waitForClickable()` would. Anything revealed only on hover or focus needs
+`waitForExist()` instead — which is what the third test in `specs/chat.e2e.ts`
+does for the thread overflow menu, clicking it to focus it before the
+`opacity-0` rule stops applying.
+
+### The analytics prompt covers the composer
+
+Once a provider makes onboarding complete, `PromptAnalytic`
+(`web-app/src/containers/analytics/`) floats the consent panel at
+`fixed bottom-4 right-4 z-50` — directly over the chat composer's send button.
+The button stays present, enabled and non-zero-sized, so it fails only
+WebDriver's elementFromPoint check and reports as "still not clickable", which
+names an element that is fine.
+
+`specs/chat.e2e.ts` dismisses it in `before()` via
+`[data-testid="analytic-deny"]` — deny rather than allow, because a test run has
+no business opting into telemetry. Any new spec that reaches a post-onboarding
+state has to do the same.
+
+It is not the only thing that floats. The embedding-model download from
+[Isolation](#isolation) completes at a different moment every run depending on
+network speed, and when it lands a sonner toast (*Download Complete — Model
+"sentence-transformer-mini" downloaded and verified successfully*) mounts
+top-right, over the header of whatever page is open. Anything that depends on the
+header being unobstructed is therefore a coin flip. This produced three
+consecutive red runs, with `[data-testid="add-provider-trigger"]` reported as
+"still not clickable" while being present, enabled, visible and 132x32 — which is
+the `waitForClickable()` ban above, in the wild.
+
+A click that arrives in that window has also been seen to simply not take. Once:
+the click on `[data-testid="add-provider-trigger"]` returned and the dialog never
+appeared, while the toast was landing. It has not reproduced, and **why** it did
+not register is not known. The likeliest explanation is that `el.click()` went to
+a node React had just replaced, but that is unverified — the Toaster is a sibling
+of the page in `routes/__root.tsx`, and `routes/settings/providers/index.tsx`
+does not remount its header when the model list changes, so nothing observed says
+a mounting toast re-keys the trigger.
+
+Opening a dialog therefore goes through
+`openDialog(triggerSelector, dialogSelector)` in `specs/chat.e2e.ts`, which
+re-clicks until the dialog is displayed — kept because the retry is cheap and the
+guard makes it safe, not because the cause is understood. The guard is the
+load-bearing part and it *is* verified: Radix mirrors open state onto the trigger
+as `data-state="open"`, and the trigger's `onClick` is a **toggle**, so a blind
+second click would shut a dialog that had in fact opened. The helper skips the
+click whenever the trigger already reads `data-state="open"`.
+
+### Per-command focus recovery is switched off
+
+`@wdio/tauri-service`'s `beforeCommand` hook calls `ensureActiveWindowFocus()`
+for `getTitle`/`findElement`/`findElements`/`$`/`$$`/`elementClick`, which asks
+the app for its window states over `browser.tauri.execute()`. That needs
+`window.__wdio_original_core__`, absent here for the same reason
+`browser.tauri.execute()` is unavailable to specs — `withGlobalTauri` is off — so
+the probe cannot succeed. It times out after 5s **per command**, logging
+`Failed to get window states` each time.
+
+`wdio.conf.ts`'s `before` hook turns it off by doing
+`browser.switchToWindow(await browser.getWindowHandle())`: `afterCommand` treats
+a successful non-internal `switchToWindow` as the user taking charge of window
+selection and suppresses the probe for the rest of the session, so switching to
+the handle we are already on is a no-op that disables it. Jan runs a single
+window under test, so there is nothing to recover. The numbers are the spec
+reporter's own per-file timings on macOS: `smoke.e2e.ts` went from 40.3s to
+~70ms for the same three assertions, and `chat.e2e.ts` from dying on the Mocha
+hook timeout to a few seconds. The work did not get faster — roughly 5s per
+element lookup stopped being spent.
+
+If a future spec is mysteriously slow and the log carries
+`Failed to get window states`, that hook is what to check.
+
+### Shared helpers
+
+`helpers/` holds the pieces more than one spec needs:
+
+- `navigation.ts` — `goto()`, described above.
+- `paths.ts` — two directories, and they are not the same one. Asserting against
+  a real on-disk path is what makes a filesystem check meaningful; asserting
+  against `isolationEnv()` would only restate what the harness injected.
+  - `janDataDir(testHome)` — the directory the Rust side resolves for app data
+    inside the throwaway profile (`data_dir()/Jan`). `settings.json` lives here.
+  - `janUserDataDir(testHome)` — `janDataDir()/data`, which is what
+    `settings.json`'s `data_folder` points at and what the Rust thread code
+    takes as its `data_folder` argument (`core/threads/utils.rs`,
+    `get_thread_dir`). Threads are at `janUserDataDir()/threads/<id>`.
+
+  Picking the wrong one of those is quiet rather than loud, which is why it is
+  worth stating: a path one segment short simply never exists, and an "is it
+  gone?" assertion against it passes for the wrong reason.
+- `mock-openai.ts` — see below.
+
+### Talking to a model without a model
+
+`specs/chat.e2e.ts` covers the loop the product lives or dies by — send, stream a
+reply, keep it across a reload, delete it — against a mock OpenAI-compatible
+server on loopback rather than a real one.
+
+`startMockOpenAI()` binds port 0 on `127.0.0.1` and answers three things, all of
+which the app genuinely asks for:
+
+- `GET /v1/models` — `useProviderModels` → `fetchModelsFromProvider`
+  (`services/providers/tauri.ts`) fetches `${base_url}/models` as soon as the Add
+  Model dialog opens. Without it that dialog renders an error state.
+- `POST /v1/chat/completions` with `stream: true` — SSE, echoing
+  `MOCK_REPLY_PREFIX` plus the last user message back across several chunks.
+  Echoing proves the typed text reached the server and returned; several chunks
+  prove the webview assembles a stream rather than rendering one blob.
+- the same path with a falsy `stream` — the thread-title summarizer, which goes
+  through `generateText`. It answers a fixed `MOCK_TITLE` so the sidebar
+  assertion is deterministic.
+
+This works from Node because Jan issues those requests from Rust
+(`getRuntimeFetch()` → `tauri-plugin-http`), so the server sees an ordinary HTTP
+client: no CORS, no preflight, and the capability set already allows
+`http://*:*`. The provider is registered through the real Add Provider and Add
+Model dialogs, so the configuration path is covered too.
+
+Start the server in `before()` and close it in `after()` — an open listener keeps
+the worker's event loop alive and the run never exits.
+
+What this deliberately does not cover is llama.cpp. A real local model means a
+multi-gigabyte download, minutes per run, and different behaviour on every
+backend; it needs its own platform-specific test rather than a place in the
+critical-path suite.
+
+What the mock removes is the *LLM* download from the chat path, not every
+download. The app still fetches its `sentence-transformer-mini` embedding model
+on a profile that has not been bootstrapped, which the harness now seeds around
+— see [Isolation](#isolation).
+
+### Spec order is maintained by hand
+
+`specs` in `wdio.conf.ts` is an explicit array, not a glob, because state leaks
+forwards between spec files: `smoke.e2e.ts` asserts the first-run setup wizard
+and `chat.e2e.ts` configures a provider, which under an alphabetically sorted
+glob ran first and broke it.
+
+It leaks further than a shared profile would explain. The embedded provider
+spawns **one** app in the launcher's `onPrepare` and every spec file drives that
+same process over its own WebDriver session — the run log carries a single
+`Tauri app spawned (PID: …)` line, not one per file. So a later spec inherits
+not just what an earlier one wrote to disk but the live webview: its route, its
+zustand stores, and any dialog left open. Only an explicit `browser.refresh()`
+clears the in-memory half, and `goto()` does not.
+
+A new spec therefore has to be added to that array, and it is worth thinking
+about where: a spec that needs a pristine profile belongs before anything that
+configures the app.
