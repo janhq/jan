@@ -229,6 +229,10 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
                     custom_headers: Vec::new(),
                     models: entry.models,
                     api_type: entry.api_type,
+                    // `~/.jan/config.toml` describes the desktop app's
+                    // providers, which size compaction from the project's
+                    // `[provider]`/`[agent]` sections instead.
+                    compaction_ratio: None,
                 },
             )
         })

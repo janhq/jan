@@ -54,6 +54,12 @@ pub(crate) struct ProviderSection {
     pub models: Vec<String>,
     #[serde(default)]
     pub api_type: Option<String>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching, for a request served by this provider. Overrides
+    /// `[agent].compaction_ratio`, so a route with a small window can be tuned
+    /// without loosening the setting for every other route.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
 }
 
 /// `[skills]` — which project skills are advertised to the model. An empty
@@ -89,11 +95,20 @@ pub(crate) struct AgentSection {
     #[serde(default)]
     pub context_window: Option<u64>,
     /// Tokens to hold back from the context window when deciding whether to
-    /// compact (defaults to 16K if unset). Compaction triggers at
-    /// `context_window - compaction_reserve_tokens`. This is a compaction
-    /// heuristic only — it is NOT sent to the API as `max_tokens`.
+    /// compact. Compaction triggers at `context_window - compaction_reserve_tokens`,
+    /// and setting this wins over `compaction_ratio`, so an explicit absolute
+    /// headroom is never silently relaxed. This is a compaction heuristic only
+    /// - it is NOT sent to the API as `max_tokens`.
     #[serde(default)]
     pub compaction_reserve_tokens: Option<u64>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching (defaults to 0.8 if unset). Expressed as a ratio rather
+    /// than a fixed reserve so the headroom scales with the window: 16K is 12%
+    /// of a 128K window and 1.6% of a 1M one, which is far too late on the
+    /// large window. Setting `compaction_reserve_tokens` instead pins absolute
+    /// headroom and wins over this.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
     /// Per-request output cap forwarded to the model as the OpenAI-compatible
     /// `max_tokens` field. Limits how many tokens the model may generate in a
     /// single response. Omitted from the request when unset (model default).
@@ -176,7 +191,9 @@ pub(crate) struct ToolsSection {
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
 # context_window = 128000  # tokens; defaults to 128K if unset
-# compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
+# compaction_ratio = 0.8  # share of context_window a prompt may fill before the run
+#                         # compacts ahead of the request; defaults to 0.8
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)

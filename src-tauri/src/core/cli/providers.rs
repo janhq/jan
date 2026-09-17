@@ -746,6 +746,7 @@ fn provider_config_from_section(section: ProviderSection) -> ProviderConfig {
         custom_headers: Vec::new(),
         models: section.models,
         api_type: section.api_type,
+        compaction_ratio: section.compaction_ratio,
     }
 }
 
@@ -879,6 +880,7 @@ fn provider_from_json(p: &serde_json::Value) -> Option<ProviderConfig> {
         custom_headers: Vec::new(),
         models,
         api_type,
+        compaction_ratio: None,
     })
 }
 
@@ -901,6 +903,7 @@ fn apply_overrides(configs: &mut HashMap<String, ProviderConfig>, overrides: &Pr
                     custom_headers: Vec::new(),
                     models: Vec::new(),
                     api_type: None,
+                    compaction_ratio: None,
                 });
             set_key(cfg, api_key);
         }
