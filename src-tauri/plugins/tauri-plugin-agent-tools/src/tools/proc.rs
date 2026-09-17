@@ -201,14 +201,17 @@ const SANDBOX_ENV_ALLOW: &[&str] = &[
 const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 
 /// Soft limits the sandboxed child runs under, each capped by the host's hard
-/// limit. `NOFILE` is deliberately generous: toolchains (linkers, node, cargo)
-/// routinely want tens of thousands of descriptors, and a descriptor cap that
-/// low breaks ordinary work long before it stops abuse.
+/// limit. `NOFILE` and `FSIZE` are deliberately generous: toolchains (linkers,
+/// node, cargo) routinely want tens of thousands of descriptors, and a debug
+/// `cargo test` binary or incremental artifact can pass a gigabyte on its own.
+/// Caps that low break ordinary work long before they stop abuse. `FSIZE` is a
+/// per-file cap enforced with `SIGXFSZ`, so exceeding it kills the writer rather
+/// than returning an error most tools report clearly.
 #[cfg(unix)]
 const CHILD_LIMITS: &[(u32, u64)] = &[
     (nix::libc::RLIMIT_NPROC, 4096),
     (nix::libc::RLIMIT_NOFILE, 65536),
-    (nix::libc::RLIMIT_FSIZE, 1024 * 1024 * 1024),
+    (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
 ];
 
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
@@ -763,29 +766,43 @@ mod tests {
         child.wait_with_output().await.unwrap();
         unregister(None, pid);
 
-        // Spawn a shell that reports its own soft NOFILE limit; confine_limits
-        // sets it to the target, bounded by whatever hard limit the host allows.
-        let child = spawn(shell(), "ulimit -n", &tmp(), None, ShellEnv::default(), None).await.unwrap();
-        let pid = child.id().unwrap();
-        let out = child.wait_with_output().await.unwrap();
-        unregister(None, pid);
-        let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        let mut host = nix::libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: 0,
-        };
-        // # Safety: reads the calling process's own limit into a local.
-        unsafe { nix::libc::getrlimit(nix::libc::RLIMIT_NOFILE, &mut host) };
-        let want = if host.rlim_max == nix::libc::RLIM_INFINITY {
-            65536
-        } else {
-            65536u64.min(host.rlim_max)
-        };
-        assert_eq!(
-            val,
-            want.to_string(),
-            "NOFILE soft limit should be raised to the target, got: {val}"
-        );
+        // Spawn a shell that reports its own soft limits; confine_limits sets
+        // each to the target, bounded by whatever hard limit the host allows.
+        // `ulimit -f` reports FSIZE in 1024-byte blocks, `-n` a raw count.
+        for (name, flag, resource, target, unit) in [
+            ("NOFILE", "-n", nix::libc::RLIMIT_NOFILE, 65536_u64, 1_u64),
+            (
+                "FSIZE",
+                "-f",
+                nix::libc::RLIMIT_FSIZE,
+                16 * 1024 * 1024 * 1024,
+                1024,
+            ),
+        ] {
+            let cmd = format!("ulimit {flag}");
+            let child = spawn(shell(), &cmd, &tmp(), None, ShellEnv::default(), None).await.unwrap();
+            let pid = child.id().unwrap();
+            let out = child.wait_with_output().await.unwrap();
+            unregister(None, pid);
+            let val = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+            let mut host = nix::libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
+            };
+            // # Safety: reads the calling process's own limit into a local.
+            unsafe { nix::libc::getrlimit(resource, &mut host) };
+            let want = if host.rlim_max == nix::libc::RLIM_INFINITY {
+                target
+            } else {
+                target.min(host.rlim_max)
+            };
+            assert_eq!(
+                val,
+                (want / unit).to_string(),
+                "{name} soft limit should be raised to the target, got: {val}"
+            );
+        }
     }
 }
 
