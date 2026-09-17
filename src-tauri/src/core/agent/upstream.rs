@@ -524,10 +524,22 @@ pub(crate) async fn resolve_upstream_for_model(
 /// provider-qualified id (e.g. OpenCode GO) fail with "model not supported".
 /// A slash inside a real model id (e.g. an org-scoped name) is left alone
 /// unless the leading segment is literally a provider key.
+///
+/// A provider that lists the id verbatim wins over the prefix reading, exactly
+/// as resolution orders them: a gateway routing `anthropic/claude-opus-5` is
+/// serving a model whose id contains a slash, and stripping it because some
+/// *other* configured provider happens to be named `anthropic` sends an id the
+/// gateway has never heard of.
 pub(crate) fn strip_provider_prefix(
     model_id: &str,
     provider_configs: &HashMap<String, ProviderConfig>,
 ) -> String {
+    if provider_configs
+        .values()
+        .any(|c| c.models.iter().any(|m| m == model_id))
+    {
+        return model_id.to_string();
+    }
     if let Some(sep_pos) = model_id.find('/') {
         let potential_provider: &str = &model_id[..sep_pos];
         if provider_configs.contains_key(potential_provider) {
@@ -1913,6 +1925,23 @@ mod tests {
         assert_eq!(
             strip_provider_prefix("mistral-technologies/mixtral", &pc),
             "mistral-technologies/mixtral"
+        );
+    }
+
+    /// The gateway that serves `anthropic/claude-opus-5` lists it under that
+    /// full id; the desktop inherit also contributes a provider keyed
+    /// `anthropic`. Stripping there sends `claude-opus-5`, which the gateway
+    /// answers with 404 "model not found in accessible providers".
+    #[test]
+    fn a_verbatim_listed_id_keeps_its_slash_despite_a_same_named_provider() {
+        let mut pc = provider_configs(&[
+            ("tokamak", "https://api.tokamak.sh/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+        ]);
+        pc.get_mut("tokamak").unwrap().models = vec!["anthropic/claude-opus-5".to_string()];
+        assert_eq!(
+            strip_provider_prefix("anthropic/claude-opus-5", &pc),
+            "anthropic/claude-opus-5"
         );
     }
 
