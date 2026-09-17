@@ -34,6 +34,10 @@ The first turn waits for the connecting servers, so the model sees the full tool
 half-connected one. A slow stdio server delays that first turn, not the whole session.
 </Callout>
 
+If a connected server later fails to list its tools - a timeout, a transient error - Jan advertises
+its last known tools instead of dropping it for that turn. The toolset stays the same across the
+hiccup, and so does the prefix your provider is caching.
+
 ## Managing servers
 
 ### In the console
