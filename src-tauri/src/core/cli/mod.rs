@@ -1006,6 +1006,9 @@ fn build_cli_orchestration_args(
 pub(crate) struct PreparedRun {
     pub args: OrchestrationArgs,
     pub body: serde_json::Value,
+    /// The provider serving this run's model, for the per-provider price
+    /// lookup the JSON envelope's `estimated_cost_usd` goes through.
+    pub provider: Option<String>,
     pub permission_requests: PermissionRegistry,
     /// Background connect of `active` MCP servers, awaited before the first turn.
     pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
@@ -1054,6 +1057,10 @@ pub(crate) struct AgentSession {
     pub args: OrchestrationArgs,
     pub permission_requests: PermissionRegistry,
     pub model: String,
+    /// The provider that will serve `model`, when one offers it. Carried so the
+    /// per-provider cached window and prices are read under the provider that
+    /// is actually billed, rather than whichever one the catalog finds first.
+    pub provider: Option<String>,
     /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
     pub smol_model: String,
     pub limits: SessionLimits,
@@ -1343,6 +1350,11 @@ fn prepare_agent_session(
         ));
     }
 
+    // Which provider will serve this model, resolved once here: the cached
+    // window and prices are per provider, and two gateways can list one id.
+    let serving_provider =
+        crate::core::cli::providers::provider_for_model(&model, &provider_configs);
+
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
     // before the first turn (tools are collected once per run), so a race with
@@ -1396,13 +1408,14 @@ fn prepare_agent_session(
     let resolved_window = crate::core::cli::model_capabilities::resolve_context_window(
         &model,
         cfg.agent.context_window,
-        crate::core::cli::model_capabilities::reported_window(&model),
+        crate::core::cli::model_capabilities::reported_window(serving_provider.as_deref(), &model),
     );
 
     Ok(AgentSession {
         args,
         permission_requests,
         model,
+        provider: serving_provider,
         smol_model,
         limits: SessionLimits {
             context_window: resolved_window.tokens,
@@ -1533,6 +1546,7 @@ fn prepare_agent_run(
     Ok(PreparedRun {
         args: session.args,
         body,
+        provider: session.provider,
         permission_requests: session.permission_requests,
         mcp_task: session.mcp_task,
         // Non-interactive runs persist into the same per-project store the TUI
@@ -1593,6 +1607,7 @@ async fn run_agent_loop(
     let PreparedRun {
         args,
         body,
+        provider,
         permission_requests,
         mcp_task,
         persist,
@@ -1603,6 +1618,7 @@ async fn run_agent_loop(
                 print_report(
                     format,
                     RunReport::setup_failure(&e).finish(
+                        None,
                         None,
                         "",
                         started.elapsed().as_millis(),
@@ -1731,6 +1747,7 @@ async fn run_agent_loop(
             format,
             report.finish(
                 session_id.as_deref().map(short_id).as_deref(),
+                provider.as_deref(),
                 &model,
                 started.elapsed().as_millis(),
                 final_text.as_deref(),

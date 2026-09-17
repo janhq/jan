@@ -100,9 +100,13 @@ fn catalog_window(model_id: &str) -> Option<u64> {
 /// The window the provider itself reported for `model_id`, from the cached
 /// `/models` listing. `None` when nothing was cached (a plain
 /// OpenAI-compatible endpoint reports only ids) or the model is unknown to it.
-pub(crate) fn reported_window(model_id: &str) -> Option<u64> {
+///
+/// `provider` is the one that will actually serve the request: two gateways can
+/// list the same id with different deployments, so an unqualified lookup can
+/// report a window the request will not get.
+pub(crate) fn reported_window(provider: Option<&str>, model_id: &str) -> Option<u64> {
     super::model_catalog::load()
-        .get(None, model_id)
+        .get(provider, model_id)
         .and_then(|info| info.context_length)
         .filter(|tokens| *tokens > 0)
 }

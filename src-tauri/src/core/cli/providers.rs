@@ -114,6 +114,27 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
+/// Which provider serves `model`, by the same deterministic rule
+/// `agent::upstream::resolve_upstream_for_model` routes by: an explicit
+/// `<provider>/<model>` prefix, else the reachable credentialed provider
+/// offering the bare id, else any provider offering it. `None` when none does.
+///
+/// Sync and lock-free (the caller holds the map), so a render path or a price
+/// lookup can ask without awaiting the upstream resolver.
+pub fn provider_for_model(model: &str, pc: &HashMap<String, ProviderConfig>) -> Option<String> {
+    if let Some(sep) = model.find('/') {
+        if pc.contains_key(&model[..sep]) {
+            return Some(model[..sep].to_string());
+        }
+    }
+    let offers = |c: &&ProviderConfig| c.models.iter().any(|m| m == model);
+    pc.iter()
+        .filter(|(_, c)| is_cli_reachable(c) && offers(c))
+        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), (*name).clone()))
+        .or_else(|| pc.iter().find(|(_, c)| offers(c)))
+        .map(|(name, _)| name.clone())
+}
+
 /// Log a provider-config load failure at most once per process. Startup probes
 /// this in two independent places (the headless sign-in guard and the model
 /// fallback), and a malformed `~/.jan/config.toml` fails both, so without this
@@ -260,11 +281,27 @@ pub fn list_provider_models(project_root: Option<&std::path::Path>) -> Vec<(Stri
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderModels {
     pub provider: String,
-    /// How many ids the endpoint listed.
+    /// How many ids are configured for this provider after the probe.
     pub models: usize,
     /// Whether that differed from what was already configured. A refresh that
     /// changes nothing is worth saying so rather than reading as a no-op.
     pub changed: bool,
+    /// Configured ids the endpoint did not list, which an additive probe keeps.
+    /// Reported rather than dropped: see [`Roster::Additive`].
+    pub kept_unlisted: usize,
+}
+
+/// What a probe does with configured ids the endpoint did not list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Roster {
+    /// The answer is the roster: an id it omits is dropped. Only the explicit
+    /// refresh, which the user asked for and whose summary reports the result.
+    Replace,
+    /// New ids are added and configured ones are kept. Merely opening `/model`
+    /// runs a probe, and a permission-scoped or paginated `/models` answering
+    /// with a subset must not delete a hand-added alias from
+    /// `~/.jan/config.toml` with no confirmation and no way to re-add it.
+    Additive,
 }
 
 /// What a model-list probe did across every provider it touched.
@@ -295,7 +332,15 @@ impl ModelRefresh {
             .map(|p| {
                 let suffix = if p.changed { "" } else { ", unchanged" };
                 let plural = if p.models == 1 { "" } else { "s" };
-                format!("{}: {} model{plural}{suffix}", p.provider, p.models)
+                let kept = if p.kept_unlisted > 0 {
+                    format!(
+                        ", {} kept but no longer listed - `jan cli models refresh` drops them",
+                        p.kept_unlisted
+                    )
+                } else {
+                    String::new()
+                };
+                format!("{}: {} model{plural}{suffix}{kept}", p.provider, p.models)
             })
             .collect();
         parts.extend(
@@ -317,10 +362,14 @@ impl ModelRefresh {
 }
 
 /// Re-list every reachable provider that has not been probed yet this session,
-/// replacing each stored model list with what its endpoint serves now. This is
+/// **adding** what its endpoint serves now to the stored model list. This is
 /// what `/model` runs on its first open: a roster captured at sign-in goes stale
 /// as a router-style endpoint gains and retires models, and the picker is where
 /// that is noticed.
+///
+/// Additive because the user only asked to *see* the picker: a subset answer
+/// (a permission-scoped key, a paginated gateway) would otherwise delete
+/// configured ids unprompted. Dropping one is [`refresh_models`]'s job.
 ///
 /// `already_probed` records which `(provider, base_url)` pairs were queried, so
 /// each is touched at most once per session -- a dead upstream must not cost the
@@ -330,7 +379,10 @@ pub async fn refresh_models_once(
     project_root: Option<&std::path::Path>,
     already_probed: &mut std::collections::HashSet<String>,
 ) -> Result<ModelRefresh, String> {
-    probe_models(project_root, |config| mark_probed(already_probed, config)).await
+    probe_models(project_root, Roster::Additive, |config| {
+        mark_probed(already_probed, config)
+    })
+    .await
 }
 
 /// Re-list every reachable provider (or just `provider`) and rewrite its model
@@ -346,10 +398,43 @@ pub async fn refresh_models(
     project_root: Option<&std::path::Path>,
     provider: Option<&str>,
 ) -> Result<ModelRefresh, String> {
-    probe_models(project_root, |config| {
+    let mut refresh = probe_models(project_root, Roster::Replace, |config| {
         provider.is_none_or(|name| config.provider == name)
     })
-    .await
+    .await?;
+    // A `--provider` that matched nothing is a failed refresh, not an empty
+    // one: without this the caller prints "no providers to refresh" and exits
+    // 0, so a typo (or a Desktop-inherited name, which has no entry in
+    // `~/.jan/config.toml` to rewrite) reads to a script as a complete refresh.
+    if let Some(name) = provider {
+        if refresh.listed.is_empty() && refresh.failed.is_empty() {
+            refresh
+                .failed
+                .push((name.to_string(), unrefreshable_reason(project_root, name)));
+        }
+    }
+    Ok(refresh)
+}
+
+/// Why `provider` could not be refreshed, for the report above. Reads only
+/// local config: the endpoint was never reached.
+fn unrefreshable_reason(project_root: Option<&std::path::Path>, provider: &str) -> String {
+    let known = load_provider_configs(project_root, &ProviderOverrides::default().with_env())
+        .ok()
+        .and_then(|configs| configs.get(provider).cloned());
+    let Some(config) = known else {
+        return "not a configured provider".to_string();
+    };
+    if !is_cli_reachable(&config) {
+        return "no base_url, so the CLI cannot reach it".to_string();
+    }
+    match load_global_config() {
+        Ok(global) if !global.contains_key(provider) => {
+            "inherited from Jan Desktop, so there is no ~/.jan/config.toml entry to refresh"
+                .to_string()
+        }
+        _ => "could not be listed".to_string(),
+    }
 }
 
 /// Record `config` in the once-per-session probe set, answering whether it had
@@ -376,6 +461,7 @@ fn mark_probed(
 /// than failing the call, so one dead credential never blocks the others.
 async fn probe_models(
     project_root: Option<&std::path::Path>,
+    roster: Roster,
     mut select: impl FnMut(&ProviderConfig) -> bool,
 ) -> Result<ModelRefresh, String> {
     let global = load_global_config()?;
@@ -439,31 +525,56 @@ async fn probe_models(
                 .push((config.provider, "the endpoint listed no models".to_string()));
             continue;
         }
+        let unlisted: Vec<&String> = config
+            .models
+            .iter()
+            .filter(|m| !listing.ids.contains(m))
+            .collect();
+        let stored = match roster {
+            Roster::Replace => listing.ids.clone(),
+            Roster::Additive => {
+                let mut merged = listing.ids.clone();
+                merged.extend(unlisted.iter().map(|m| (*m).clone()));
+                merged.sort();
+                merged.dedup();
+                merged
+            }
+        };
         // Only a provider that *used to* offer the default can retire it; one
-        // that never listed it says nothing about it either way.
+        // that never listed it says nothing about it either way, and an
+        // additive probe drops nothing at all.
         if let Some(model) = &default_model {
-            if config.models.contains(model) && !listing.ids.contains(model) {
+            if config.models.contains(model) && !stored.contains(model) {
                 default_dropped = true;
             }
         }
-        let changed = listing.ids != config.models;
+        let changed = stored != config.models;
         if changed {
             crate::core::agent::global_config::set_provider(
                 &config.provider,
                 crate::core::agent::global_config::ProviderUpdate {
-                    models: Some(listing.ids.clone()),
+                    models: Some(stored.clone()),
                     ..Default::default()
                 },
             )?;
         }
         // Metadata is refreshed even when the id list is unchanged: a price or
-        // a context window can move without the roster moving.
-        catalog.set_provider(&config.provider, listing.info);
-        catalog_dirty = true;
+        // a context window can move without the roster moving. An answer that
+        // carried no metadata at all leaves the cache alone rather than
+        // clearing it: a degraded id-only response is not a statement that the
+        // windows and prices cached earlier are wrong.
+        if !listing.info.is_empty() {
+            catalog.set_provider(&config.provider, listing.info);
+            catalog_dirty = true;
+        }
         refresh.listed.push(ProviderModels {
             provider: config.provider,
-            models: listing.ids.len(),
+            models: stored.len(),
             changed,
+            kept_unlisted: match roster {
+                Roster::Additive => unlisted.len(),
+                Roster::Replace => 0,
+            },
         });
     }
     // Another provider may still serve it, which is not a retirement.
@@ -1330,6 +1441,131 @@ mod tests {
         });
     }
 
+    /// Merely opening `/model` runs the automatic probe, so a subset answer (a
+    /// permission-scoped key, a paginated gateway) must not delete a
+    /// hand-configured id from `~/.jan/config.toml`.
+    #[test]
+    fn an_automatic_probe_keeps_an_id_the_endpoint_stopped_listing() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "gpt-4o"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["gpt-4o".into(), "my-alias".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models_once(
+                    None,
+                    &mut std::collections::HashSet::new(),
+                ))
+                .expect("fetch");
+            assert!(!refreshed.changed_any(), "nothing was added or dropped");
+            assert_eq!(refreshed.listed[0].kept_unlisted, 1);
+            assert!(refreshed.summary().contains("no longer listed"));
+            assert_eq!(
+                load_global_config().unwrap().get("gateway").unwrap().models,
+                vec!["gpt-4o".to_string(), "my-alias".to_string()],
+                "a configured id survives a probe the user did not ask for"
+            );
+        });
+    }
+
+    /// The explicit refresh is the one that drops: the user asked for the
+    /// endpoint's roster, and the summary reports what it did.
+    #[test]
+    fn an_explicit_refresh_drops_an_id_the_endpoint_stopped_listing() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "gpt-4o"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["gpt-4o".into(), "my-alias".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("gateway")))
+                .expect("fetch");
+            assert!(refreshed.changed_any());
+            assert_eq!(refreshed.listed[0].kept_unlisted, 0);
+            assert_eq!(
+                load_global_config().unwrap().get("gateway").unwrap().models,
+                vec!["gpt-4o".to_string()]
+            );
+        });
+    }
+
+    /// `--provider` naming nothing refreshable is a failure, not an empty
+    /// refresh: the caller's exit code reads `failed`, and a typo that exits 0
+    /// tells a script the refresh completed.
+    #[test]
+    fn refreshing_an_unknown_provider_is_reported_as_failed() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            let refreshed = rt
+                .block_on(refresh_models(None, Some("typo")))
+                .expect("call");
+            assert!(refreshed.listed.is_empty());
+            assert_eq!(
+                refreshed.failed,
+                vec![("typo".to_string(), "not a configured provider".to_string())]
+            );
+        });
+    }
+
+    /// A degraded answer that lists ids and no metadata is not a statement that
+    /// the cached windows and prices are wrong, so it must not clear them.
+    #[test]
+    fn an_id_only_listing_keeps_the_cached_metadata() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let addr = models_stub(serde_json::json!({"data": [{"id": "m-a"}]}).to_string(), 1);
+            crate::core::agent::global_config::set_provider(
+                "gateway",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec!["m-a".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let mut catalog = super::super::model_catalog::Catalog::default();
+            catalog.set_provider(
+                "gateway",
+                std::collections::BTreeMap::from([(
+                    "m-a".to_string(),
+                    super::super::model_catalog::ModelInfo {
+                        context_length: Some(200_000),
+                        ..Default::default()
+                    },
+                )]),
+            );
+            catalog.save().unwrap();
+
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(refresh_models(None, Some("gateway")))
+                .expect("fetch");
+            assert_eq!(
+                super::super::model_catalog::load()
+                    .get(Some("gateway"), "m-a")
+                    .and_then(|i| i.context_length),
+                Some(200_000)
+            );
+        });
+    }
+
     #[test]
     fn refresh_models_once_queries_keyless_loopback_providers() {
         crate::core::agent::global_config::with_temp_home(|_| {
@@ -1468,6 +1704,7 @@ mod tests {
                     provider: "tokamak".to_string(),
                     models: 2,
                     changed: true,
+                    kept_unlisted: 0,
                 }]
             );
 

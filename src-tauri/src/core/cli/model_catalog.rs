@@ -46,23 +46,36 @@ impl ModelInfo {
         *self == ModelInfo::default()
     }
 
-    /// Whether this model can be priced at all. Cache rates alone cannot cost a
-    /// request, so they do not count.
+    /// Whether this model can be priced at all. Both sides are required: a
+    /// listing publishing only `completion` would otherwise bill every input
+    /// token at $0 and print that as an ordinary estimate, which reads as a
+    /// cheap model rather than as the half-answer it is. Cache rates alone
+    /// cannot cost a request either, so they do not count.
     pub fn has_pricing(&self) -> bool {
-        self.prompt_usd.is_some() || self.completion_usd.is_some()
+        self.prompt_usd.is_some() && self.completion_usd.is_some()
     }
 
-    /// Estimated USD for one request's token counts. `cached` is the share of
-    /// `prompt` the provider served from its cache, billed at the cache-read
-    /// rate when one is known; the rest is billed at the prompt rate.
+    /// Estimated USD for one request's token counts.
+    ///
+    /// `cached` and `cache_write` are **shares of `prompt`**, not additions to
+    /// it: every pipeline that reaches here normalizes Anthropic's usage the
+    /// OpenAI way, so `prompt_tokens = input + cache_read + cache_write` (genai
+    /// `anthropic/adapter_shared.rs`, and `core::server::converters` for Jan's
+    /// own responses). Each share is billed at its own rate and the remainder
+    /// at the prompt rate; a rate the provider did not publish falls back to
+    /// the prompt rate, which is exactly what a prompt/completion-only price
+    /// list already charges.
     pub fn cost_usd(&self, prompt: u64, completion: u64, cached: u64, cache_write: u64) -> f64 {
         let prompt_rate = self.prompt_usd.unwrap_or(0.0);
+        // Clamped so a provider reporting a share larger than the prompt (or
+        // two shares that together exceed it) cannot underflow the remainder.
         let cached = cached.min(prompt);
-        let fresh = prompt - cached;
+        let written = cache_write.min(prompt - cached);
+        let fresh = prompt - cached - written;
         fresh as f64 * prompt_rate
             + cached as f64 * self.cache_read_usd.unwrap_or(prompt_rate)
+            + written as f64 * self.cache_write_usd.unwrap_or(prompt_rate)
             + completion as f64 * self.completion_usd.unwrap_or(0.0)
-            + cache_write as f64 * self.cache_write_usd.unwrap_or(0.0)
     }
 }
 
@@ -115,6 +128,21 @@ impl TokenUsage {
     }
 }
 
+/// The single entry across `maps` whose id matches `model_id` once the
+/// `<vendor>/` qualifier is stripped from either side. Two vendors serving the
+/// same bare name is an ambiguity, not a hit.
+fn unique_bare_match<'a>(
+    maps: impl Iterator<Item = &'a BTreeMap<String, ModelInfo>>,
+    model_id: &str,
+) -> Option<&'a ModelInfo> {
+    let bare = model_id.rsplit('/').next().unwrap_or(model_id);
+    let mut matches = maps
+        .flatten()
+        .filter(|(id, _)| id.rsplit('/').next() == Some(bare));
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first.1)
+}
+
 /// The whole cache: provider id -> model id -> metadata.
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Catalog {
@@ -154,28 +182,28 @@ impl Catalog {
         self.providers.remove(provider);
     }
 
-    /// Metadata for `model_id`, preferring `provider`'s own entry. Falls back to
-    /// any provider that knows the id, then to a unique match on the bare id
-    /// behind a `<vendor>/` qualifier, since a user may name a model either way.
+    /// Metadata for `model_id` as `provider` reports it, matching the exact id
+    /// first and then a unique match on the bare id behind a `<vendor>/`
+    /// qualifier, since a user may name a model either way.
+    ///
+    /// When `provider` is cached, its answer is the whole answer: two providers
+    /// can serve one id at different prices, so falling through to another
+    /// one's entry would bill a request at rates nobody quoted. Only a provider
+    /// the catalog has never seen (or no provider at all) searches the rest,
+    /// and then only for an unambiguous hit.
     pub fn get(&self, provider: Option<&str>, model_id: &str) -> Option<&ModelInfo> {
-        if let Some(found) = provider
-            .and_then(|p| self.providers.get(p))
-            .and_then(|models| models.get(model_id))
-        {
-            return Some(found);
+        if let Some(models) = provider.and_then(|p| self.providers.get(p)) {
+            return models
+                .get(model_id)
+                .or_else(|| unique_bare_match(std::iter::once(models), model_id));
         }
-        if let Some(found) = self.providers.values().find_map(|m| m.get(model_id)) {
-            return Some(found);
+        let mut exact = self.providers.values().filter_map(|m| m.get(model_id));
+        if let Some(found) = exact.next() {
+            // One provider knowing the id is an answer; several disagreeing
+            // about its price is not, and there is nothing here to choose by.
+            return exact.next().is_none().then_some(found);
         }
-        let bare = model_id.rsplit('/').next().unwrap_or(model_id);
-        let mut matches = self
-            .providers
-            .values()
-            .flatten()
-            .filter(|(id, _)| id.rsplit('/').next() == Some(bare));
-        let first = matches.next()?;
-        // Two vendors serving the same bare name is an ambiguity, not a hit.
-        matches.next().is_none().then_some(first.1)
+        unique_bare_match(self.providers.values(), model_id)
     }
 
     /// Persist the cache, creating `~/.jan` if needed.
@@ -343,30 +371,83 @@ mod tests {
         assert_eq!(info.context_length, Some(200_000));
         assert_eq!(info.prompt_usd, Some(0.001));
         assert_eq!(info.completion_usd, None);
-        assert!(info.has_pricing());
+        // Half a price list cannot cost a request; the entry is still cached
+        // for its window.
+        assert!(!info.has_pricing());
     }
 
-    #[test]
-    fn cost_bills_cached_prompt_tokens_at_the_cache_rate() {
-        let info = ModelInfo {
+    fn priced() -> ModelInfo {
+        ModelInfo {
             prompt_usd: Some(0.000005),
             completion_usd: Some(0.000025),
             cache_read_usd: Some(0.0000005),
             cache_write_usd: Some(0.00000625),
             ..Default::default()
-        };
-        // 1000 prompt of which 800 cached, 100 completion, 200 written.
-        let expected = 200.0 * 0.000005 + 800.0 * 0.0000005 + 100.0 * 0.000025 + 200.0 * 0.00000625;
+        }
+    }
+
+    #[test]
+    fn cost_bills_cached_prompt_tokens_at_the_cache_rate() {
+        let info = priced();
+        // 1000 prompt tokens, of which 800 were cache reads and 200 cache
+        // writes -- both shares of the prompt, per the normalized usage shape.
+        let expected = 800.0 * 0.0000005 + 200.0 * 0.00000625 + 100.0 * 0.000025;
         assert!((info.cost_usd(1000, 100, 800, 200) - expected).abs() < 1e-12);
-        // A cache read count larger than the prompt (an Anthropic-shaped usage,
-        // where the prompt excludes the cache read) must not underflow.
-        assert!(info.cost_usd(100, 0, 500, 0).is_finite());
-        // With no cache rate the cached share falls back to the prompt rate.
+        // With no cache rates both shares fall back to the prompt rate, so a
+        // provider pricing only prompt/completion bills the whole prompt once.
         let flat = ModelInfo {
             prompt_usd: Some(0.001),
+            completion_usd: Some(0.0),
             ..Default::default()
         };
-        assert!((flat.cost_usd(1000, 500, 400, 0) - 1.0).abs() < 1e-12);
+        assert!((flat.cost_usd(1000, 500, 400, 200) - 1.0).abs() < 1e-12);
+    }
+
+    /// The shape every pipeline produces: `prompt_tokens` already contains the
+    /// cache-creation tokens, so they must be billed once, at the write rate.
+    #[test]
+    fn cache_write_tokens_are_a_share_of_the_prompt_not_an_addition() {
+        let info = priced();
+        // 100 fresh input + 2000 cache creation reported as prompt_tokens 2100.
+        let expected = 100.0 * 0.000005 + 2000.0 * 0.00000625 + 100.0 * 0.000025;
+        let cost = info.cost_usd(2100, 100, 0, 2000);
+        assert!((cost - expected).abs() < 1e-12, "{cost} != {expected}");
+        // Billing the writes twice is what this pins against.
+        assert!(cost < expected + 2000.0 * 0.000005 - 1e-12);
+    }
+
+    /// Counts that exceed the prompt (a provider reporting the Anthropic shape
+    /// unnormalized) must clamp rather than underflow the fresh remainder.
+    #[test]
+    fn shares_larger_than_the_prompt_cannot_underflow() {
+        let info = priced();
+        assert!((info.cost_usd(100, 0, 500, 0) - 100.0 * 0.0000005).abs() < 1e-12);
+        assert!((info.cost_usd(100, 0, 0, 500) - 100.0 * 0.00000625).abs() < 1e-12);
+        let both = info.cost_usd(100, 0, 80, 500);
+        assert!((both - (80.0 * 0.0000005 + 20.0 * 0.00000625)).abs() < 1e-12);
+    }
+
+    /// Half a price list is not a price list: billing input at $0 would print
+    /// a confident, wrong estimate instead of "no published price".
+    #[test]
+    fn a_half_published_price_is_not_pricing() {
+        let completion_only = ModelInfo {
+            completion_usd: Some(0.000025),
+            ..Default::default()
+        };
+        assert!(!completion_only.has_pricing());
+        let prompt_only = ModelInfo {
+            prompt_usd: Some(0.000005),
+            ..Default::default()
+        };
+        assert!(!prompt_only.has_pricing());
+        let usage = TokenUsage {
+            prompt_tokens: 1000,
+            completion_tokens: 100,
+            ..Default::default()
+        };
+        assert_eq!(usage.cost_usd(Some(&completion_only)), None);
+        assert!(usage.cost_usd(Some(&priced())).is_some());
     }
 
     #[test]
@@ -405,6 +486,45 @@ mod tests {
         // The bare id resolves while it is unambiguous.
         assert!(catalog.get(None, "claude-opus-5").is_some());
         assert!(catalog.get(None, "nothing-like-this").is_none());
+    }
+
+    /// Two providers can serve one id at two prices, and a request is billed by
+    /// exactly one of them. A cached provider's own answer is therefore the
+    /// whole answer, and an unqualified lookup across disagreeing providers is
+    /// no answer at all rather than whichever sorts first.
+    #[test]
+    fn a_price_is_never_taken_from_another_provider() {
+        let entry = |usd| {
+            BTreeMap::from([(
+                "gpt-4o".to_string(),
+                ModelInfo {
+                    prompt_usd: Some(usd),
+                    completion_usd: Some(usd),
+                    ..Default::default()
+                },
+            )])
+        };
+        let mut catalog = Catalog::default();
+        catalog.set_provider("a-cheap", entry(0.000001));
+        catalog.set_provider("z-dear", entry(0.00001));
+        assert_eq!(
+            catalog
+                .get(Some("z-dear"), "gpt-4o")
+                .and_then(|i| i.prompt_usd),
+            Some(0.00001)
+        );
+        assert!(
+            catalog.get(None, "gpt-4o").is_none(),
+            "with no provider named there is nothing to choose by"
+        );
+        // A provider that offers the model but has never been listed still
+        // falls through, since there is no answer of its own to prefer.
+        catalog.set_provider(
+            "only-vendor",
+            BTreeMap::from([("solo".to_string(), ModelInfo::default())]),
+        );
+        assert!(catalog.get(Some("only-vendor"), "gpt-4o").is_none());
+        assert!(catalog.get(Some("never-listed"), "solo").is_some());
     }
 
     /// Two vendors serving the same bare name is an ambiguity: guessing one

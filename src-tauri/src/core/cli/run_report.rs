@@ -147,6 +147,7 @@ impl RunReport {
     pub(crate) fn finish(
         self,
         session_id: Option<&str>,
+        provider: Option<&str>,
         model: &str,
         duration_ms: u128,
         final_text: Option<&str>,
@@ -180,7 +181,7 @@ impl RunReport {
                 // prices, rather than reported as zero.
                 estimated_cost_usd: self
                     .usage
-                    .cost_usd(super::model_catalog::load().get(None, model)),
+                    .cost_usd(super::model_catalog::load().get(provider, model)),
             },
         }
     }
@@ -279,7 +280,13 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(Some("3f7a91c2"), "tokamak-1-preview", 48213, Some("done")));
+        let out = value(report.finish(
+            Some("3f7a91c2"),
+            None,
+            "tokamak-1-preview",
+            48213,
+            Some("done"),
+        ));
 
         assert_eq!(out["type"], "result");
         assert_eq!(out["is_error"], false);
@@ -311,7 +318,7 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(Some("3f7a91c2"), "tokamak-1-preview", 1204, None));
+        let out = value(report.finish(Some("3f7a91c2"), None, "tokamak-1-preview", 1204, None));
 
         assert_eq!(out["is_error"], true);
         assert_eq!(out["result"], "I started reviewing auth.rs and");
@@ -339,7 +346,7 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(None, "m", 1, None));
+        let out = value(report.finish(None, None, "m", 1, None));
         assert_eq!(out["result"], "second turn prose");
         assert_eq!(out["num_turns"], 2);
         // Unclassifiable messages keep the code the loop stamped.
@@ -373,7 +380,7 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(None, "m", 1, Some("answer")));
+        let out = value(report.finish(None, None, "m", 1, Some("answer")));
         assert_eq!(out["num_turns"], 2);
         assert_eq!(out["result"], "answer");
         assert_eq!(out["usage"]["prompt_tokens"], 350);
@@ -405,14 +412,14 @@ mod tests {
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000_000, 100_000),
             });
-            let out = value(report.finish(None, "priced-model", 1, Some("done")));
+            let out = value(report.finish(None, None, "priced-model", 1, Some("done")));
             assert_eq!(out["usage"]["estimated_cost_usd"], 2.0);
 
             let mut report = RunReport::default();
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000, 100),
             });
-            let out = value(report.finish(None, "unknown-model", 1, Some("done")));
+            let out = value(report.finish(None, None, "unknown-model", 1, Some("done")));
             assert!(
                 out["usage"].get("estimated_cost_usd").is_none(),
                 "an unpriced model must not report a cost"
@@ -430,7 +437,7 @@ mod tests {
             code: "error".to_string(),
             message: "boom".to_string(),
         });
-        let printed = serde_json::to_string(&report.finish(None, "m", 1, None)).unwrap();
+        let printed = serde_json::to_string(&report.finish(None, None, "m", 1, None)).unwrap();
         let order = [
             "\"type\"",
             "\"is_error\"",
@@ -482,7 +489,9 @@ mod tests {
             ))
             .unwrap(),
         );
-        stream.push_str(&ndjson_line(&report.finish(None, "m", 1, Some("done\nand done"))).unwrap());
+        stream.push_str(
+            &ndjson_line(&report.finish(None, None, "m", 1, Some("done\nand done"))).unwrap(),
+        );
 
         assert!(stream.ends_with('\n'));
         let lines: Vec<&str> = stream.lines().collect();
@@ -518,7 +527,7 @@ mod tests {
             code: "error".to_string(),
             message: "[context-overflow] Upstream returned HTTP 400: too long".to_string(),
         });
-        let out = value(report.finish(None, "m", 1, None));
+        let out = value(report.finish(None, None, "m", 1, None));
         assert_eq!(out["error"]["code"], "context_overflow");
     }
 }

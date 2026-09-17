@@ -2137,8 +2137,13 @@ struct App {
     turn_cache_write_tokens: u64,
     /// Billable tokens per model across the whole session, for `/usage`. Summed
     /// over every request, since that is what a provider bills; keyed by model
-    /// because a session that switches models is billed at two price lists.
-    session_usage: std::collections::BTreeMap<String, super::model_catalog::TokenUsage>,
+    /// *and* provider, because a session that switches models is billed at two
+    /// price lists and two providers can serve one id at different rates.
+    session_usage: std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+    /// Memoized `(model, the provider serving it)`. Resolving takes the
+    /// provider-config lock, which a turn in flight can hold, and a row keyed
+    /// on a momentary `None` would split one model's spend in two.
+    model_provider: Option<(String, Option<String>)>,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -2585,6 +2590,7 @@ impl App {
             turn_output_tokens: 0,
             turn_prompt_tokens: 0,
             session_usage: std::collections::BTreeMap::new(),
+            model_provider: None,
             turn_cached_tokens: 0,
             turn_cache_write_tokens: 0,
             transcript_rect: Rect::default(),
@@ -4670,16 +4676,43 @@ impl App {
     /// caller can decide whether a compaction is now warranted. The catalog
     /// matching lives only in `model_capabilities`, never duplicated here.
     fn refresh_context_window(&mut self) -> bool {
+        let provider = self.serving_provider();
         let resolved = crate::core::cli::model_capabilities::resolve_context_window(
             &self.model,
             self.configured_context_window,
-            crate::core::cli::model_capabilities::reported_window(&self.model),
+            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), &self.model),
         );
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
         changed
     }
+    /// The provider serving the current model, memoized against it. `None`
+    /// when nothing offers the model or the provider-config lock is held: the
+    /// last known answer stands until the model changes, so a busy lock cannot
+    /// re-key a session's usage rows mid-run.
+    fn serving_provider(&mut self) -> Option<String> {
+        if let Some((model, provider)) = &self.model_provider {
+            if model == &self.model {
+                return provider.clone();
+            }
+        }
+        let args = self.args.clone()?;
+        let pc = args.provider_configs.try_lock().ok()?;
+        let resolved = super::providers::provider_for_model(&self.model, &pc);
+        drop(pc);
+        self.model_provider = Some((self.model.clone(), resolved.clone()));
+        resolved
+    }
+
+    /// The `/usage` bucket one request bills against.
+    fn usage_key(&mut self) -> UsageKey {
+        UsageKey {
+            model: self.model.clone(),
+            provider: self.serving_provider(),
+        }
+    }
+
     /// Header label for the current selection: `provider/model` when the bare
     /// model id resolves to exactly one provider, so the reader can tell where
     /// it is served from (the picker already shows the pair) instead of a bare
@@ -5318,10 +5351,8 @@ impl App {
             StreamEvent::TurnUsage { usage } => {
                 // Session totals are per model: `/usage` prices each at its own
                 // published rates, and the current model is the one billed.
-                self.session_usage
-                    .entry(self.model.clone())
-                    .or_default()
-                    .add(&usage);
+                let key = self.usage_key();
+                self.session_usage.entry(key).or_default().add(&usage);
                 self.turn_output_tokens += usage.completion_tokens.unwrap_or(0);
                 // Latest request's context, not a sum: each request resends the
                 // whole conversation, so adding them would be meaningless.
@@ -5429,6 +5460,12 @@ impl App {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                 }
+                // A child's tokens are spend on the same account, against the
+                // model the dispatch inherited, so they belong in the session
+                // total. `RunReport` already counts them; without this `/usage`
+                // and the `--output-format json` envelope disagree.
+                let key = self.usage_key();
+                self.session_usage.entry(key).or_default().add(&usage);
             }
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
@@ -6034,8 +6071,38 @@ fn format_usd(amount: f64) -> String {
         format!("${amount:.2}")
     } else if amount >= 0.01 {
         format!("${amount:.3}")
+    } else if amount >= 0.00005 {
+        format!("${amount:.4}")
+    } else if amount > 0.0 {
+        // Below the 4th decimal a fixed precision prints `$0.0000`, which is
+        // the reads-as-free case this helper exists to avoid. Two significant
+        // digits keep a fraction of a cent legible without printing a dozen
+        // zeroes for every cheap session. Zero is excluded from the branch:
+        // `log10(0)` is infinite, and a genuine zero may print as one.
+        let places = ((-amount.log10()).ceil() as usize).saturating_add(1);
+        format!("${amount:.*}", places.min(12))
     } else {
         format!("${amount:.4}")
+    }
+}
+
+/// One `/usage` row's identity: a model plus the provider that billed it.
+/// Ordered by model first so the rows read as a model list even when one model
+/// was served by two providers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct UsageKey {
+    model: String,
+    provider: Option<String>,
+}
+
+impl UsageKey {
+    /// How the row is labelled: `provider/model`, matching the header, unless
+    /// the id already carries its qualifier or no provider is known.
+    fn label(&self) -> String {
+        match &self.provider {
+            Some(provider) if !self.model.contains('/') => format!("{provider}/{}", self.model),
+            _ => self.model.clone(),
+        }
     }
 }
 
@@ -6043,14 +6110,14 @@ fn format_usd(amount: f64) -> String {
 /// left out for want of published prices. `None` when nothing could be priced
 /// at all, which is what suppresses the cost line entirely.
 fn session_cost(
-    usage: &std::collections::BTreeMap<String, super::model_catalog::TokenUsage>,
+    usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
 ) -> Option<(f64, bool)> {
     let catalog = super::model_catalog::load();
     let mut total = 0.0;
     let mut priced = false;
     let mut unpriced = false;
-    for (model, model_usage) in usage {
-        match model_usage.cost_usd(catalog.get(None, model)) {
+    for (key, model_usage) in usage {
+        match model_usage.cost_usd(catalog.get(key.provider.as_deref(), &key.model)) {
             Some(cost) => {
                 total += cost;
                 priced = true;
@@ -6064,7 +6131,7 @@ fn session_cost(
 /// The `/usage` readout: one row per model this session billed against, then a
 /// total. Kept free of `App` so the arithmetic is testable on its own.
 fn usage_lines(
-    usage: &std::collections::BTreeMap<String, super::model_catalog::TokenUsage>,
+    usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
 ) -> Vec<Vec<Span<'static>>> {
     let catalog = super::model_catalog::load();
     let mut rows = Vec::new();
@@ -6072,8 +6139,8 @@ fn usage_lines(
     let mut total_cost = 0.0;
     let mut any_priced = false;
     let mut any_unpriced = false;
-    for (model, model_usage) in usage {
-        let cost = model_usage.cost_usd(catalog.get(None, model));
+    for (key, model_usage) in usage {
+        let cost = model_usage.cost_usd(catalog.get(key.provider.as_deref(), &key.model));
         match cost {
             Some(c) => {
                 total_cost += c;
@@ -6083,7 +6150,7 @@ fn usage_lines(
         }
         totals.merge(model_usage);
         rows.push(vec![
-            Span::styled(format!("{model}  "), Style::new().cyan()),
+            Span::styled(format!("{}  ", key.label()), Style::new().cyan()),
             Span::raw(usage_counts(model_usage)),
             Span::styled(
                 match cost {
@@ -8524,6 +8591,9 @@ pub async fn run(
         mut args,
         permission_requests,
         model,
+        // Re-resolved from `App` as the model changes, so the session's initial
+        // answer is not carried into the picker's later selections.
+        provider: _,
         smol_model,
         limits,
         show_reasoning,
@@ -13484,6 +13554,20 @@ async fn apply_model_refresh(
             if explicit || refreshed.changed_any() || !refreshed.failed.is_empty() {
                 app.note(&refreshed.summary());
             }
+            // A listing can move a model's window without moving the roster,
+            // and both the header gauge and compaction read it, so re-resolve
+            // now rather than leaving the old size until the model is switched.
+            app.model_provider = None;
+            if app.refresh_context_window() {
+                app.note(&format!(
+                    "context window now {}K ({})",
+                    app.context_window / 1000,
+                    app.context_window_source.label()
+                ));
+                if app.should_auto_compact() {
+                    app.compact_request = Some(CompactKind::Auto);
+                }
+            }
         }
         Err(e) => app.note(&format!("could not fetch models: {e}")),
     }
@@ -14472,6 +14556,9 @@ async fn reload_provider_configs(app: &mut App) {
     ) {
         Ok(configs) => {
             *args.provider_configs.lock().await = configs;
+            // The memoized model -> provider answer was resolved against the
+            // snapshot just replaced.
+            app.model_provider = None;
         }
         Err(e) => {
             app.note(&format!(
@@ -17813,25 +17900,11 @@ fn provider_label_for_model(
     model: &str,
     pc: &HashMap<String, crate::core::state::ProviderConfig>,
 ) -> String {
-    use crate::core::cli::providers::is_cli_reachable;
-    // Explicit `<provider>/<model>` form: verify the prefix names a provider.
-    if let Some(sep) = model.find('/') {
-        if pc.contains_key(&model[..sep]) {
-            return model.to_string();
+    match crate::core::cli::providers::provider_for_model(model, pc) {
+        Some(name) if name != model && !model.starts_with(&format!("{name}/")) => {
+            format!("{name}/{model}")
         }
-    }
-    // Bare id: find the (preferentially reachable, credentialed) provider that
-    // offers it, matching `resolve_upstream_for_model`'s deterministic pick.
-    let offers = |c: &&crate::core::state::ProviderConfig| c.models.iter().any(|m| m == model);
-    let reachable = pc
-        .iter()
-        .filter(|(_, c)| is_cli_reachable(c) && offers(c))
-        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), (*name).clone()))
-        .or_else(|| pc.iter().find(|(_, c)| offers(c)));
-    match reachable {
-        Some((name, _)) if name != model => format!("{name}/{model}"),
-        Some(_) => model.to_string(),
-        None => model.to_string(),
+        _ => model.to_string(),
     }
 }
 
@@ -25804,7 +25877,7 @@ mod tests {
             // The metadata rides along, which is what makes the window real
             // rather than the conservative fallback.
             assert_eq!(
-                crate::core::cli::model_capabilities::reported_window("brand-new-model"),
+                crate::core::cli::model_capabilities::reported_window(None, "brand-new-model"),
                 Some(700_000)
             );
         });
@@ -30898,6 +30971,13 @@ mod tests {
         catalog.save().expect("seed catalog");
     }
 
+    fn usage_key(provider: &str, model: &str) -> super::UsageKey {
+        super::UsageKey {
+            model: model.to_string(),
+            provider: Some(provider.to_string()),
+        }
+    }
+
     fn usage_of(
         requests: u64,
         prompt: u64,
@@ -30922,11 +31002,11 @@ mod tests {
             seed_priced_model("tokamak", "anthropic/claude-opus-5");
             let usage = std::collections::BTreeMap::from([
                 (
-                    "anthropic/claude-opus-5".to_string(),
+                    usage_key("tokamak", "anthropic/claude-opus-5"),
                     usage_of(2, 100_000, 10_000, 40_000),
                 ),
                 (
-                    "private-gateway-model".to_string(),
+                    usage_key("private-gateway", "private-gateway-model"),
                     usage_of(1, 5_000, 500, 0),
                 ),
             ]);
@@ -30962,7 +31042,7 @@ mod tests {
     fn an_unpriced_session_reports_no_cost() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let usage = std::collections::BTreeMap::from([(
-                "private-gateway-model".to_string(),
+                usage_key("private-gateway", "private-gateway-model"),
                 usage_of(1, 5_000, 500, 0),
             )]);
             assert_eq!(super::session_cost(&usage), None);
@@ -31020,6 +31100,12 @@ mod tests {
         assert_eq!(super::format_usd(12.3456), "$12.35");
         assert_eq!(super::format_usd(0.4213), "$0.421");
         assert_eq!(super::format_usd(0.0004), "$0.0004");
+        // Under the 4th decimal a fixed width would print `$0.0000`.
+        assert_eq!(super::format_usd(0.0000123), "$0.000012");
+        assert_eq!(super::format_usd(0.0000000456), "$0.000000046");
+        // A priced model that billed nothing yet is the one amount that may
+        // read as free.
+        assert_eq!(super::format_usd(0.0), "$0.0000");
     }
 
     /// The session totals are sums over every request, because that is what is
@@ -31045,7 +31131,8 @@ mod tests {
 
         let recorded = app
             .session_usage
-            .get("anthropic/claude-opus-5")
+            .values()
+            .next()
             .expect("usage recorded under the current model");
         assert_eq!(recorded.requests, 2);
         assert_eq!(
@@ -31060,6 +31147,37 @@ mod tests {
         // A new session starts a new bill.
         app.reset_session();
         assert!(app.session_usage.is_empty());
+    }
+
+    /// A subagent's tokens are spend on the same account, and `RunReport`
+    /// already counts them: leaving them out of `/usage` would make the TUI
+    /// total and the `--output-format json` envelope disagree.
+    #[test]
+    fn subagent_usage_counts_toward_the_session_total() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let usage = |prompt: u64| crate::core::agent::events::Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(10),
+            total_tokens: None,
+            cached_tokens: None,
+            cache_write_tokens: None,
+        };
+        app.apply(StreamEvent::TurnUsage { usage: usage(100) });
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::TurnUsage { usage: usage(400) },
+        );
+
+        let recorded = app.session_usage.values().next().expect("usage recorded");
+        assert_eq!(recorded.requests, 2);
+        assert_eq!(recorded.prompt_tokens, 500);
+        assert_eq!(recorded.completion_tokens, 20);
+        // The parent's own window fill is untouched by the child's request.
+        assert_eq!(app.turn_prompt_tokens, 100);
     }
 
     /// `/usage` with nothing to report says so rather than printing an empty
