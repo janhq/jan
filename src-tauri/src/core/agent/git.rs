@@ -1,6 +1,12 @@
-//! Git-backed workspace snapshots (ticket #164). The agent edits files in place
-//! in the user's working directory; to make a run revertible we snapshot the
-//! state after each turn and can restore it, Claude-Code style.
+//! Git-backed workspace snapshots. The agent edits files in place in the
+//! directory it works in; to make a run revertible we snapshot the state after
+//! each turn and can restore it, Claude-Code style.
+//!
+//! That directory is the user's own checkout by default, and a dedicated
+//! worktree when the session asked for one (`core::cli::worktree`), which the
+//! snapshots follow: the worktree isolates the files, these snapshots make the
+//! turns inside it revertible. The worktree primitives below are the git side
+//! of that, kept here because this module owns every `git` invocation.
 //!
 //! Snapshots never scan the working tree. Each checkpoint stages only the exact
 //! paths the caller reports as touched this turn (`edit`/`write` tool calls);
@@ -232,6 +238,103 @@ pub(crate) fn restore(repo: &Path, target: &str, latest: &str) -> Result<(), Str
     result
 }
 
+/// `HEAD`'s commit sha, or `None` on an unborn branch (or no git).
+#[cfg(feature = "cli")]
+pub(crate) fn head_sha(repo: &Path) -> Option<String> {
+    run(repo, None, &["rev-parse", "HEAD"])
+        .ok()
+        .filter(|s| !s.is_empty())
+}
+
+/// Create a worktree at `path`, checking out a new branch `branch` starting at
+/// `base` (any commit-ish). The parent directory is created first: `git
+/// worktree add` requires the path's parent to exist but refuses the path
+/// itself to.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_add(
+    repo: &Path,
+    path: &Path,
+    branch: &str,
+    base: &str,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    run(
+        repo,
+        None,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            branch,
+            &path.to_string_lossy(),
+            base,
+        ],
+    )
+    .map(|_| ())
+}
+
+/// The worktree checkouts registered with `repo`, main worktree included.
+///
+/// Parsed from `--porcelain`, whose `worktree <path>` lines are the stable
+/// machine-readable form; the human listing pads the path with the sha and
+/// branch, which a path containing spaces makes ambiguous.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_paths(repo: &Path) -> Vec<PathBuf> {
+    run(repo, None, &["worktree", "list", "--porcelain"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// Whether `path` is a checkout `repo` still knows about. Compared after
+/// canonicalization, because git reports the resolved path and the caller's
+/// copy came from a config file or a thread record.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_registered(repo: &Path, path: &Path) -> bool {
+    let Ok(want) = path.canonicalize() else {
+        return false;
+    };
+    worktree_paths(repo)
+        .iter()
+        .filter_map(|p| p.canonicalize().ok())
+        .any(|p| p == want)
+}
+
+/// Forget worktree registrations whose directory the user has deleted. Without
+/// this, `worktree add` refuses a path that a stale registration still claims.
+#[cfg(feature = "cli")]
+pub(crate) fn worktree_prune(repo: &Path) {
+    let _ = run(repo, None, &["worktree", "prune"]);
+}
+
+/// Paths changed in a worktree relative to its own `HEAD`, staged, unstaged and
+/// untracked alike (`status --porcelain`, whose status letters are stripped).
+/// This is the "what has the agent done in there" summary, not a diff.
+///
+/// The status field is split off at its first space rather than by a fixed
+/// width: `run` trims the output, so the leading space of an unstaged-only
+/// line (` M a.txt`) is gone by the time this sees it and a fixed offset would
+/// eat the first character of that one path.
+#[cfg(feature = "cli")]
+pub(crate) fn changed_paths(worktree: &Path) -> Vec<String> {
+    run(worktree, None, &["status", "--porcelain"])
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| l.trim_start().split_once(' '))
+        // A rename reads `R old -> new`; the new name is the path on disk, and
+        // the old one no longer exists, so staging it would be a delete.
+        .map(|(_, path)| match path.trim().split_once(" -> ") {
+            Some((_, to)) => to.to_string(),
+            None => path.trim().to_string(),
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 #[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
@@ -257,6 +360,75 @@ mod tests {
         // a box without one configured) is irrelevant and must be off.
         run(&root, None, &["commit", "-q", "-m", "init", "--no-gpg-sign"]).ok()?;
         repo_root(&root)
+    }
+
+    #[test]
+    fn a_worktree_is_added_registered_and_reports_its_changes() {
+        let Some(root) = init_repo() else { return };
+        let wt = root.parent().unwrap().join(format!(
+            "{}-wt",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+
+        let head = head_sha(&root).expect("a repo with one commit has a HEAD");
+        worktree_add(&root, &wt, "jan/agent/test1", &head).expect("worktree add");
+
+        assert!(wt.join("a.txt").is_file(), "the tree was checked out");
+        assert!(worktree_registered(&root, &wt));
+        assert!(
+            worktree_paths(&root).len() >= 2,
+            "the main checkout and the new one"
+        );
+        assert_eq!(
+            current_branch(&wt).as_deref(),
+            Some("jan/agent/test1"),
+            "the worktree is on its own branch"
+        );
+        // The main checkout is untouched by work done in the worktree.
+        assert!(changed_paths(&wt).is_empty());
+        std::fs::write(wt.join("a.txt"), "edited\n").unwrap();
+        std::fs::write(wt.join("new.txt"), "added\n").unwrap();
+        let mut changed = changed_paths(&wt);
+        changed.sort();
+        assert_eq!(changed, vec!["a.txt".to_string(), "new.txt".to_string()]);
+        assert!(
+            changed_paths(&root).is_empty(),
+            "the user's checkout is clean"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "one\n"
+        );
+
+        // A worktree the user deleted is forgotten, so its path is reusable.
+        std::fs::remove_dir_all(&wt).unwrap();
+        worktree_prune(&root);
+        assert!(!worktree_registered(&root, &wt));
+    }
+
+    /// A worktree can start from any commit, which is how a fork of a session
+    /// picks up where that conversation left off instead of at `HEAD`.
+    #[test]
+    fn a_worktree_can_branch_from_a_snapshot_commit() {
+        let Some(root) = init_repo() else { return };
+        std::fs::write(root.join("a.txt"), "two\n").unwrap();
+        let snap =
+            snapshot(&root, None, "turn 1", "t1", &[PathBuf::from("a.txt")]).expect("snapshot");
+        std::fs::write(root.join("a.txt"), "three\n").unwrap();
+
+        let wt = root.parent().unwrap().join(format!(
+            "{}-snapwt",
+            root.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&wt);
+        worktree_add(&root, &wt, "jan/agent/test2", &snap).expect("worktree add at a snapshot");
+        assert_eq!(
+            std::fs::read_to_string(wt.join("a.txt")).unwrap(),
+            "two\n",
+            "the branch starts from the snapshot, not HEAD and not the live tree"
+        );
+        let _ = std::fs::remove_dir_all(&wt);
     }
 
     #[test]

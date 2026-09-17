@@ -1,7 +1,7 @@
 ---
 title: Sessions
 description: Saved conversations, resuming, rewinding, and queueing messages while the agent works.
-keywords: [Jan, Jan Agent, sessions, threads, resume, rewind, checkpoints, queue]
+keywords: [Jan, Jan Agent, sessions, threads, resume, fork, worktree, rewind, checkpoints, queue]
 ---
 
 import { Callout } from 'nextra/components'
@@ -61,6 +61,93 @@ is the same behaviour minus the file restore.
 This is the escape hatch when the agent goes down a wrong path: rather than arguing it back, rewind
 to before the turn that started it and rephrase.
 
+## Forking
+
+A rewind is destructive: the turns after the point you roll back to are gone. Forking is the same
+cut without losing them - the prefix is copied into a **new** session and the original stays exactly
+as it was.
+
+```
+/fork    # pick a past message; the branch opens with that message back in the input
+/tree    # saved sessions as a tree, Enter resumes one
+```
+
+At startup, to branch instead of continuing:
+
+```bash
+jan -c --fork-session
+jan --resume 3f7a91c2 --fork-session
+jan cli agent run --resume=3f7a91c2 --fork-session "try it the other way"
+```
+
+The branch keeps the transcript, tool calls and diffs of the turns it inherited, and records the
+session it came from - which is what `/tree` draws. Sessions with no forks render as the flat list
+`/resume` shows.
+
+This is what to reach for when a long session has built up context worth keeping and you want to try
+a second approach from the middle of it without destroying the first.
+
+## Working in a git worktree
+
+By default the agent edits your checkout in place. With a worktree it gets its own, on its own
+branch, so a run you don't like costs a `git branch -D` instead of a revert:
+
+```bash
+jan --worktree            # this session only
+jan --no-worktree         # override a persistent setting
+```
+
+Persistently:
+
+```toml
+# .jan/agent/agent.toml - for everyone who checks this project out
+[agent]
+worktree = true
+```
+
+```toml
+# ~/.jan/config.toml - for every project you work on
+worktree = true
+```
+
+A flag beats the project file, which beats the global setting, which beats the default - the same
+order as [`sandbox`](/docs/agent/permissions), and the reason `--no-worktree` exists.
+
+The checkout lives under `~/.jan/worktrees/`, outside your repository, on a `jan/agent/<id>` branch.
+`/worktree` in the console names the path, the branch, and what's changed there.
+
+```
+worktree:
+  path    ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2
+  branch  jan/agent/3f7a91c2
+  changes 2 file(s)
+          src/parser.rs
+          tests/parser.rs
+  review with: git -C ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2 diff
+```
+
+Getting the work back out is your own git - nothing here writes to the branch you left. A session
+remembers its worktree, so resuming returns to it; a fork gets one of its own, branched from where
+the source left off. A `/fork` taken mid-session is the exception: the checkout can't change under a
+running session, so the branch borrows it until you reopen the fork with `--worktree`, which is when
+it gets its own.
+
+Nothing prunes these. When you're done with a session's work, the checkout and its branch go the
+usual way:
+
+```bash
+git worktree remove ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2
+git branch -D jan/agent/3f7a91c2
+```
+
+Delete the directory by hand instead and the next resume of that session quietly starts over from
+`HEAD`, saying so in the banner.
+
+<Callout type="info">
+Rewinding still restores files, and now restores them in the worktree - the snapshots follow the
+agent into whichever checkout it's working in.
+</Callout>
+
 ## Queueing
 
 Type while the agent is working and your message is queued instead of dropped. It's sent as soon as
@@ -94,7 +181,7 @@ Under `<project>/.jan/agent/`:
 
 | Path | Contents |
 | --- | --- |
-| `threads/` | Saved sessions and their messages |
+| `threads/` | Saved sessions and their messages, including which worktree each used |
 | `memory/` | Durable facts, see [Memory](/docs/agent/memory) |
 | `skills/` | Reusable procedures, see [Skills](/docs/agent/skills) |
 
