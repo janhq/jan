@@ -82,14 +82,16 @@ how many of those the provider served from its cache), tokens out, and an estima
 
 ```
 session usage
-  anthropic/claude-opus-5  12 req · 480K in (300K cached) · 21K out  ~$1.42
-  total                    12 req · 480K in (300K cached) · 21K out  ~$1.42
+  tokamak/anthropic/claude-opus-5  12 req · 480K in (300K cached) · 21K out  ~$1.42
+  total                            12 req · 480K in (300K cached) · 21K out  ~$1.42
   estimated from the provider's published prices - not a bill
 ```
 
-Unlike the context window - which describes a single request - these are sums over every request,
-because that is what a provider bills. Prices come from the provider's own model listing, so a model
-it publishes no price for is reported as `(no published price)` and left out of the total rather
+Unlike the context window - which describes a single request - these are sums over every request the
+session made, subagent requests included, because that is what a provider bills. Rows are per
+provider as well as per model: the same id served by two gateways is billed at two price lists.
+Prices come from the provider's own model listing, and a model it publishes only half a price list
+for is treated as unpriced - reported as `(no published price)` and left out of the total rather
 than counted as free. `/new` starts a new session, and a new count.
 
 ## Automatic compaction

@@ -277,7 +277,14 @@ jan cli models list
     "api_type": "anthropic",
     "base_url": "https://api.anthropic.com/v1",
     "has_api_key": true,
-    "id": "claude-fable-5",
+    "id": "claude-fable-5"
+  },
+  {
+    "provider": "tokamak",
+    "api_type": "openai",
+    "base_url": "https://api.tokamak.sh/v1",
+    "has_api_key": true,
+    "id": "anthropic/claude-fable-5",
     "info": {
       "context_length": 1000000,
       "max_output_tokens": 128000,
@@ -293,7 +300,8 @@ This includes providers inherited from Jan Desktop, so it can list models even w
 
 `info` carries whatever the provider published about the model the last time its list was
 refreshed - context window, output cap, per-token prices. It is absent for an endpoint that lists
-ids and nothing else.
+ids and nothing else, which is the common case: a router-style gateway publishes this, while a
+vendor API such as Anthropic's `/v1/models` returns little more than the ids.
 
 ### Refreshing the list
 
@@ -301,18 +309,27 @@ A provider's model list is recorded when you sign in, and a gateway gains and re
 that. Re-read it:
 
 ```bash
-jan cli models refresh                    # every reachable provider
+jan cli models refresh                    # every provider in ~/.jan/config.toml
 jan cli models refresh --provider tokamak # just one
 ```
 
-Each provider's stored list is replaced with what its endpoint serves now, and the per-model
+Each provider's stored list is **replaced** with what its endpoint serves now, and the per-model
 metadata behind `info` is cached alongside. An endpoint that answers with no models at all is
 reported as a failure and its stored list is left alone - an empty answer is far more often an
-outage than a retirement. The command exits non-zero if any provider could not be listed, so a
+outage than a retirement. If the refresh drops the model `default_model` names, the summary says
+so, rather than leaving you to meet it as a 404 on the next run. The command exits non-zero if any
+provider could not be listed - including a `--provider` that names nothing refreshable - so a
 partial refresh is never reported as a complete one.
 
-The interactive console does the same thing: opening `/model` re-lists each provider once per
-session, and <kbd>Ctrl</kbd>+<kbd>R</kbd> inside the picker re-lists on demand.
+Only providers with an entry in `~/.jan/config.toml` are refreshed. A provider inherited from Jan
+Desktop has nothing here to rewrite, so it is left alone; add it with `jan config set` first if you
+want its list kept current.
+
+The interactive console refreshes too, more cautiously: opening `/model` re-lists each provider once
+per session and **adds** what it finds, keeping ids the endpoint did not mention (a
+permission-scoped key or a paginated gateway can answer with a subset, and merely opening the picker
+should not delete a model you configured by hand). The picker's note names how many were kept that
+way. <kbd>Ctrl</kbd>+<kbd>R</kbd> inside the picker runs the full replacing refresh on demand.
 
 ## `jan cli mcp`
 
