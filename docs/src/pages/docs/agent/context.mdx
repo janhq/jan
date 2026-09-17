@@ -41,8 +41,9 @@ purpose: context is the size of the request, output is what came back.
 Opens a centered overlay on top of the live transcript (the turn keeps running behind it).
 Inside is a rail that shows the fill as a percentage of the window, a visual bar with the
 `^` marker at the current usage point and `╳` marking the auto-compact reserve zone, a
-token scale, and a headroom line (`N tokens available before auto-compact`), followed by a
-per-category breakdown: System prompt, System tools, Project context, Skills, and Messages.
+token scale, and a headroom line (`N tokens available before auto-compact`), the
+prompt-cache lines when the route reports any, followed by a per-category breakdown:
+System prompt, System tools, Project context, Skills, and Messages.
 Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to close; closing never
 cancels the turn.
 
@@ -56,6 +57,25 @@ until you open it again.
 When a provider publishes prices for the model, the overlay also carries the session's estimated
 spend (`Session cost (estimated): ~$0.42`). That is every request so far, not the window: see
 [`/usage`](#usage-and-cost) for the per-model breakdown.
+
+### The prompt-cache lines
+
+When the route reports cache usage, the overlay adds the numbers behind the header badge:
+
+```
+Prompt cache (session): 1.2M read (91% of prompt), 140K written
+Prompt cache (last request): 90K read (75% of prompt), 12K written
+```
+
+The session line is `cached / prompt` over every request this process sent - a share of the
+tokens, not a mean of per-turn percentages, since a 10-token request and a 100K one do not
+describe the same prefix. A resumed or forked history's counters start where this process did,
+and the line says `this process` when they do.
+
+A route that reports a cache field with a zero renders `0%`, in the alarm colour. A route that
+reports no cache field at all says `Prompt cache: not reported`, and only once a request has
+been measured. Those are different answers and are never conflated: the first is a cold cache,
+the second is silence.
 
 ## Where the window size comes from
 
