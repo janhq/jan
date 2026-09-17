@@ -18,7 +18,7 @@ use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
-    cli_plugin_remove, cli_plugin_search, ResumeTarget, SessionFlags,
+    cli_plugin_remove, cli_plugin_search, ResumeRequest, SessionFlags,
 };
 use std::fmt::Write as _;
 
@@ -43,6 +43,8 @@ to opt out of both.",
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan -c                                                 # resume the most recent session\n  \
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
+  jan -c --fork-session                                  # branch the most recent session into a new one\n  \
+  jan --worktree                                         # work in a dedicated git worktree, not your checkout\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
@@ -79,6 +81,8 @@ struct Cli {
     plan: bool,
     #[command(flatten)]
     sandbox: SandboxArgs,
+    #[command(flatten)]
+    worktree: WorktreeArgs,
 }
 
 /// Whether this invocation confines the shell, shared by every surface that
@@ -96,6 +100,32 @@ struct SandboxArgs {
     /// Run shell commands unconfined, overriding a persistent sandbox setting
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
+}
+
+/// Whether this invocation works in its own git worktree.
+///
+/// Two flags for the same reason `SandboxArgs` has two: the setting is also
+/// persistent (`[agent].worktree` in agent.toml, `worktree` in
+/// `~/.jan/config.toml`), so there has to be a way out of it for one run.
+#[derive(Args, Clone, Copy)]
+struct WorktreeArgs {
+    /// Work in a dedicated git worktree instead of the project directory
+    #[arg(long)]
+    worktree: bool,
+    /// Work in the project directory, overriding a persistent worktree setting
+    #[arg(long, conflicts_with = "worktree")]
+    no_worktree: bool,
+}
+
+impl WorktreeArgs {
+    /// `None` when neither flag was passed, so the config files decide.
+    fn into_flag(self) -> Option<bool> {
+        match (self.worktree, self.no_worktree) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        }
+    }
 }
 
 impl SandboxArgs {
@@ -120,11 +150,14 @@ struct ResumeArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
 }
 
@@ -139,11 +172,14 @@ struct ResumeRunArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeRunArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
 }
 
@@ -311,6 +347,8 @@ enum AgentCommands {
         providers: ProviderArgs,
         #[command(flatten)]
         sandbox: SandboxArgs,
+        #[command(flatten)]
+        worktree: WorktreeArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
@@ -544,9 +582,10 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
-            cli.resume.into_target(),
+            cli.resume.into_request(),
         )
         .await
         {
@@ -738,6 +777,7 @@ async fn handle_agent(cmd: AgentCommands) {
             safe,
             providers,
             sandbox,
+            worktree,
             resume,
             output_format,
             input_format,
@@ -750,9 +790,10 @@ async fn handle_agent(cmd: AgentCommands) {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    worktree: worktree.into_flag(),
                     ..Default::default()
                 },
-                resume.into_target(),
+                resume.into_request(),
                 output_format,
                 input_format,
             )
