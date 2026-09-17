@@ -77,6 +77,11 @@ reports no cache field at all says `Prompt cache: not reported`, and only once a
 been measured. Those are different answers and are never conflated: the first is a cold cache,
 the second is silence.
 
+One provider-layer caveat: on a `chat/completions` route the upstream client collapses a `0` cache
+counter into "field absent" while parsing, so a provider that honestly reports `cached_tokens: 0`
+reads as `not reported` there - the zero never reaches the readout. Anthropic and Responses
+providers, whose usage Jan translates itself, keep the zero and do render the `0%` alarm.
+
 ## Where the window size comes from
 
 In order of precedence:
