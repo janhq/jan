@@ -13,6 +13,7 @@ use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
+use app_lib::core::cli::stream_input::InputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
@@ -313,9 +314,16 @@ enum AgentCommands {
         #[command(flatten)]
         resume: ResumeRunArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
-        /// object on stdout when the run finishes
+        /// object on stdout when the run finishes; `stream-json` prints one
+        /// JSON event per line as the run proceeds, ending with that object
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// `stream-json` reads newline-delimited `user`, `permission` and
+        /// `abort` messages on stdin while the run is in flight, and requires
+        /// `--output-format stream-json`; `text` (the default) does not read
+        /// stdin at all
+        #[arg(long, value_enum, default_value_t = InputFormat::Text)]
+        input_format: InputFormat,
     },
     /// Run a single turn (debugging)
     Step {
@@ -732,6 +740,7 @@ async fn handle_agent(cmd: AgentCommands) {
             sandbox,
             resume,
             output_format,
+            input_format,
         } => {
             cli_agent_run(
                 &project,
@@ -745,6 +754,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 },
                 resume.into_target(),
                 output_format,
+                input_format,
             )
             .await
         }
@@ -1111,6 +1121,42 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
+    fn parsed_input_format(extra: &[&str]) -> InputFormat {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { input_format, .. },
+                    },
+            }) => input_format,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// Reading stdin is opt-in: a run with no `--input-format` must not consume
+    /// a pipe the caller is using for something else.
+    #[test]
+    fn input_format_parses_and_defaults_to_text() {
+        assert_eq!(parsed_input_format(&[]), InputFormat::Text);
+        assert_eq!(
+            parsed_input_format(&["--input-format", "stream-json"]),
+            InputFormat::StreamJson
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "run",
+            "task",
+            "--input-format",
+            "yaml"
+        ])
+        .is_err());
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
     fn parsed_output_format(extra: &[&str]) -> OutputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1132,6 +1178,10 @@ mod tests {
         assert_eq!(
             parsed_output_format(&["--output-format", "json"]),
             OutputFormat::Json
+        );
+        assert_eq!(
+            parsed_output_format(&["--output-format", "stream-json"]),
+            OutputFormat::StreamJson
         );
         assert_eq!(
             parsed_output_format(&["--output-format=text"]),
