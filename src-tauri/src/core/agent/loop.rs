@@ -15,7 +15,9 @@ use reqwest13::Client;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::core::agent::context::ComposedPrompt;
 use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::upstream::{
     arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
@@ -499,6 +501,9 @@ struct ResolvedSettings {
     sandbox: bool,
     env_passthrough: Vec<String>,
     env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
+    /// rest so composition and `agent status` answer from one parse.
+    prompt: PromptPolicy,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -516,6 +521,7 @@ fn resolve_run_settings(
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
+        prompt: settings.prompt,
     }
 }
 
@@ -2056,10 +2062,16 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
 
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
-/// project-context and tool-use guidance from `build_system_prompt` is still
+/// project-context and tool-use guidance from `compose_system_prompt` is still
 /// built around it when a project is selected — a subagent gets the same
 /// grounding (guidelines, web access, tool docs) as a normal run, not a bare
 /// verbatim prompt with no instruction on how to actually use its tools.
+///
+/// The blocks are split by where `[prompt]` allows them to sit, so the caller
+/// places the prefix above the history and the tail below it. A policy that
+/// cannot be honored — a contributor that varies asked to sit above the cache
+/// line — is an error, not a warning: that is the whole point of resolving
+/// placement at composition.
 fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
@@ -2067,7 +2079,8 @@ fn build_run_system_prompt(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox: bool,
-) -> Option<String> {
+    policy: &PromptPolicy,
+) -> Result<Option<ComposedPrompt>, String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
@@ -2075,24 +2088,32 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
-            crate::core::agent::context::build_system_prompt(
+            crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
                 scratch.as_deref(),
                 subagents_enabled,
+                policy,
             )
+            .map(Some)
         }
-        None => base.map(str::to_string),
+        None => Ok(base.map(|prompt| ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        })),
     }
 }
 
 /// The system prompt the *next* ordinary turn in `project_root` would carry,
 /// built through the exact path a real run takes (`build_run_system_prompt`
-/// with this project's resolved sandbox/scratch). Used by the CLI `/context`
-/// view to size the system segments: routing it through the same builder is
-/// what keeps the reported breakdown from drifting away from what is actually
-/// sent. Excludes the two per-turn additions a run makes on top -- the date
-/// line and query-dependent memory recall -- which are not knowable while idle.
+/// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
+/// the CLI `/context` view to size the system segments: routing it through the
+/// same builder is what keeps the reported breakdown from drifting away from
+/// what is actually sent. Excludes the per-turn additions a run makes on top --
+/// the date, git state, query-dependent memory recall, and plan/todo state --
+/// which are not knowable while idle. `None` when no prompt would be built, or
+/// when the project's `[prompt]` policy cannot be honored (the run itself
+/// reports that failure with the same message).
 #[cfg(feature = "cli")]
 pub(crate) fn context_system_prompt_preview(
     override_prompt: Option<&str>,
@@ -2102,6 +2123,7 @@ pub(crate) fn context_system_prompt_preview(
     sandbox_flag: Option<bool>,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
+    let policy = crate::core::agent::project::prompt_policy(project_root);
     build_run_system_prompt(
         None,
         override_prompt,
@@ -2109,7 +2131,11 @@ pub(crate) fn context_system_prompt_preview(
         session_id,
         subagents_enabled,
         settings.sandbox,
+        &policy,
     )
+    .ok()
+    .flatten()
+    .map(|composed| composed.as_prompt())
 }
 
 /// The tool array the *next* ordinary turn would advertise: the MCP tools
@@ -2153,6 +2179,20 @@ pub(crate) async fn context_advertised_tools(
         todo_enabled,
     );
     tools
+}
+
+/// The git state block: which branch the project is on, so the model knows what
+/// its edits apply to.
+///
+/// A per-turn block rather than part of the environment in the stable prefix:
+/// the answer changes the moment anything checks out another branch, including
+/// the agent itself, and a branch switch inside a turn would otherwise move
+/// every byte behind the cache line.
+fn git_state_block(project_root: &std::path::Path) -> String {
+    match crate::core::agent::git::current_branch(project_root) {
+        Some(branch) => format!("# Git\n\nGit branch: `{branch}`"),
+        None => "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
+    }
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -2308,9 +2348,17 @@ async fn orchestrate_inner(
     // the memory catalog. Byte-identical across the turns of a session (within a
     // day), so it is kept as system message 0 and never mixed with per-turn
     // content -- that is what lets a provider cache this long prefix. Volatile
-    // per-turn context (date, query memory recall, plan/todo state) is collected
-    // separately below and emitted as a second system message so it cannot
-    // invalidate the cached prefix above.
+    // per-turn context (date, git state, query memory recall, plan/todo state)
+    // is collected separately below and emitted as a second system message so it
+    // cannot invalidate the cached prefix above.
+    //
+    // Which blocks land in which half is `[prompt]`'s decision, resolved here:
+    // the composition returns them split rather than joined, and a composer the
+    // policy sends to the tail is emitted below instead of dropped.
+    let prompt_policy = settings
+        .as_ref()
+        .map(|s| s.prompt.clone())
+        .unwrap_or_default();
     let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
@@ -2318,21 +2366,31 @@ async fn orchestrate_inner(
         session_id.as_deref(),
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
-    );
+        &prompt_policy,
+    )?;
 
-    let mut volatile_parts: Vec<String> = Vec::new();
+    let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    volatile_parts.push(format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
+    volatile_parts.push((
+        Composer::Date,
+        format!(
+            "Today's date is {}.",
+            chrono::Local::now().format("%Y-%m-%d")
+        ),
     ));
+    // Which checkout the work applies to. Per-turn rather than part of the
+    // environment block above, because anything that switches branch -- the
+    // agent included -- would otherwise move every byte behind it.
+    if let Some(root) = project_root.as_deref() {
+        volatile_parts.push((Composer::GitState, git_state_block(root)));
+    }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    volatile_parts.push(mem);
+                    volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
         }
@@ -2352,18 +2410,53 @@ async fn orchestrate_inner(
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
     if run_mode == crate::core::agent::plan::RunMode::Plan {
-        volatile_parts.push(crate::core::agent::plan::plan_mode_prompt_addendum().to_string());
+        volatile_parts.push((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
+        ));
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        volatile_parts.push(addendum.to_string());
+        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
     }
 
-    if let Some(sys) = stable_system {
-        set_system_prompt(&mut conversation_messages, &sys);
-        insert_volatile_system(&mut conversation_messages, &volatile_parts.join("\n\n"));
-    } else {
+    // One volatile message, built from every block the policy kept below the
+    // cache line: the composition's tail (a block `[prompt]` moved down) plus
+    // the per-turn blocks above, in registry order so the message's bytes do
+    // not depend on which caller built which block.
+    let mut tail: Vec<(Composer, String)> = stable_system
+        .as_ref()
+        .map(|composed| composed.tail.clone())
+        .unwrap_or_default();
+    for (composer, block) in volatile_parts {
+        if prompt_policy.placement_of(composer)? != Placement::Tail {
+            // Unreachable while these composers vary -- `placement_of` fails
+            // first -- and kept as an explicit error rather than a silent
+            // unwrap, because "per-turn content above the cache line" is
+            // exactly the bug this whole policy exists to prevent.
+            return Err(format!(
+                "`{}` is per-turn content and cannot sit above the cache line",
+                composer.id()
+            ));
+        }
+        tail.push((composer, block));
+    }
+    tail.sort_by_key(|(composer, _)| composer.order());
+    let volatile_block = tail
+        .into_iter()
+        .map(|(_, block)| block)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    match &stable_system {
+        // An allowlist can move every block below the cache line, which leaves
+        // no stable prompt at all: the volatile block then stands in as
+        // message 0 rather than an empty system node preceding it.
+        Some(composed) if !composed.prefix.is_empty() => {
+            set_system_prompt(&mut conversation_messages, &composed.prefix);
+            insert_volatile_system(&mut conversation_messages, &volatile_block);
+        }
         // No stable prompt (an isolated child run with no override): the
         // volatile block is all there is, so it stands in as message 0.
-        set_system_prompt(&mut conversation_messages, &volatile_parts.join("\n\n"));
+        _ => set_system_prompt(&mut conversation_messages, &volatile_block),
     }
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
@@ -3778,8 +3871,11 @@ mod tests {
             Some("test-session"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
 
         assert!(prompt.starts_with("You are a robotics researcher."));
         assert!(!prompt.contains("main assistant"));
@@ -3787,6 +3883,88 @@ mod tests {
         assert!(prompt.contains("# Web Access"));
         assert!(prompt.contains("web_search"));
         assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[prompt]` in agent.toml is what decides which blocks reach the cache
+    /// line: the run resolves the policy from the project's config and composes
+    /// through it, so an allowlist naming two contributors really does move the
+    /// rest below the line.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_narrows_what_reaches_the_cache_line() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"assistant_instructions\", \"tool_schemas\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        assert_eq!(policy.prefix_allow().map(<[String]>::len), Some(2));
+        // ...and the run's resolved settings carry the same policy, which is
+        // what `orchestrate_inner` composes with.
+        assert_eq!(
+            resolve_run_settings(&root, None)
+                .prompt
+                .prefix_allow()
+                .map(<[String]>::len),
+            Some(2)
+        );
+        let composed = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect("prompt")
+        .expect("project prompt");
+
+        // Only the identity is allowed above the line...
+        assert_eq!(composed.prefix, "main assistant");
+        // ...and everything else still reaches the model, from the tail.
+        let tail: Vec<&str> = composed
+            .tail
+            .iter()
+            .map(|(_, block)| block.as_str())
+            .collect();
+        assert!(tail.iter().any(|block| block.contains("# Guidelines")));
+        assert!(tail.iter().any(|block| block.contains("# Web Access")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An allowlist that would put a varying composer above the cache line stops
+    /// the run, rather than costing a cache miss on every turn. The failure is
+    /// the same one `agent status` reports, from the same resolution.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"todo_addendum\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        let error = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect_err("a per-turn composer cannot be allowed above the cache line");
+        assert!(error.contains("todo_addendum"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -6566,8 +6744,11 @@ mod tests {
             Some("s1"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
         let bare = build_run_system_prompt(
             None,
@@ -6576,8 +6757,11 @@ mod tests {
             Some("s1"),
             false,
             false,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(!bare.contains("Scratch:"), "{bare}");
     }
 
