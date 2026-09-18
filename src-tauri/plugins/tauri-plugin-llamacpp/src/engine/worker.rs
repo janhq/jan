@@ -393,9 +393,10 @@ pub async fn spawn(
             cmd.current_dir(dir);
         }
     }
-    cmd.args(&args)
-        .envs(envs)
-        .env(API_KEY_ENV, api_key)
+    let current_ld_library_path = envs.get("LD_LIBRARY_PATH").map(String::as_str);
+    cmd.args(&args).envs(envs);
+    configure_worker_library_path(exe, current_ld_library_path, &mut cmd);
+    cmd.env(API_KEY_ENV, api_key)
         // Piped, not null: dropping our end closes the pipe, which is the
         // shutdown signal the worker waits on. `Stdio::null()` would be an
         // immediate EOF and the worker would exit at once.
@@ -483,6 +484,29 @@ pub async fn spawn(
         #[cfg(windows)]
         _job: job,
     })
+}
+
+fn worker_library_env(
+    exe: &Path,
+    cuda: &jan_utils::system::CudaPaths,
+    current_ld_library_path: Option<&str>,
+) -> jan_utils::system::LibraryEnv {
+    jan_utils::system::library_path_env_with_current(exe.parent(), cuda, current_ld_library_path)
+}
+
+pub(crate) fn configure_worker_library_path(
+    exe: &Path,
+    current_ld_library_path: Option<&str>,
+    command: &mut Command,
+) {
+    let cuda = jan_utils::system::find_cuda_paths().merged(jan_utils::system::find_rocm_paths());
+    let env = worker_library_env(exe, &cuda, current_ld_library_path);
+    for (key, value) in &env.vars {
+        command.env(key, value);
+    }
+    if let Some(dir) = env.current_dir {
+        command.current_dir(dir);
+    }
 }
 
 /// Where the worker lives next to the running executable, which is how Tauri
@@ -591,6 +615,32 @@ mod tests {
                 "--slot-cache-mib",
                 "8192"
             ]
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn worker_library_environment_includes_its_private_library_directory() {
+        let env = worker_library_env(
+            Path::new("/opt/jan/resources/bin/jan-llama-worker"),
+            &jan_utils::system::CudaPaths::default(),
+            None,
+        );
+        assert_eq!(
+            env.vars
+                .first()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+            Some(("LD_LIBRARY_PATH", "/opt/jan/resources/bin"))
+        );
+
+        let env = worker_library_env(
+            Path::new("/opt/jan/resources/bin/jan-llama-worker"),
+            &jan_utils::system::CudaPaths::default(),
+            Some("/custom/cuda/lib"),
+        );
+        assert_eq!(
+            env.vars.first().map(|(_, value)| value.as_str()),
+            Some("/opt/jan/resources/bin:/custom/cuda/lib")
         );
     }
 

@@ -242,7 +242,9 @@ pub async fn engine_devices<R: tauri::Runtime>(
 ) -> Result<Vec<EngineDevice>, String> {
     let exe = resolve_worker_exe(&app_handle)?;
     let mut cmd = tokio::process::Command::new(&exe);
+    let current_ld_library_path = envs.get("LD_LIBRARY_PATH").map(String::as_str);
     cmd.arg("--list-devices").envs(envs);
+    worker::configure_worker_library_path(&exe, current_ld_library_path, &mut cmd);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     jan_utils::system::setup_windows_process_flags(&mut cmd);
