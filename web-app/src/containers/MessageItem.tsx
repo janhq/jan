@@ -553,6 +553,8 @@ export const MessageItem = memo(
 
     return (
       <div
+        data-testid="message-item"
+        data-message-role={message.role}
         className={cn(
           'w-full mb-4 group/message',
           message.role === 'user' && !isFirstMessage && 'mt-8'
