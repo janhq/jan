@@ -183,9 +183,11 @@ pub struct StreamState {
     pub input_tokens: i64,
     /// Cache read/write tokens, also in `message_start`. Kept beside
     /// `input_tokens` so the terminal `message_delta` can fold them into the
-    /// chat-shaped usage.
-    pub cache_read_tokens: i64,
-    pub cache_write_tokens: i64,
+    /// chat-shaped usage. `None` when the upstream has said nothing about
+    /// caching so far, `Some(0)` when it reported a cold prefix: the console's
+    /// cache readout alarms on that zero, so the two must not collapse here.
+    pub cache_read_tokens: Option<i64>,
+    pub cache_write_tokens: Option<i64>,
 }
 
 /// Fronts OpenAI's `/v1/responses` API, exposing it as chat/completions so the
@@ -951,40 +953,55 @@ fn map_anthropic_finish(reason: &str, saw_tool: bool) -> &'static str {
     }
 }
 
-fn anthropic_usage(input_tokens: i64, cache_read: i64, cache_write: i64, output_tokens: i64) -> Value {
+fn anthropic_usage(
+    input_tokens: i64,
+    cache_read: Option<i64>,
+    cache_write: Option<i64>,
+    output_tokens: i64,
+) -> Value {
     // Anthropic's `input_tokens` excludes both cache figures, whereas
     // chat/completions `prompt_tokens` includes them (genai normalises the same
     // way). Without this the prompt count silently shrinks by the cached prefix
     // the moment caching is enabled, and the cache read/write never reach
-    // `Usage`. Emitted in the chat shape `Usage::from_completion` already reads,
-    // and only when non-zero so a no-cache response is byte-identical to before.
-    let prompt = input_tokens + cache_read + cache_write;
+    // `Usage`. Emitted in the chat shape `Usage::from_completion` already reads.
+    //
+    // Emission is keyed on the upstream *having reported* the counter, not on it
+    // being non-zero: `cache_read_input_tokens: 0` is a cold prefix -- the state
+    // the console's cache readout draws in red -- and folding it into the same
+    // "no field" branch as a provider that never mentions caching is what made
+    // that alarm invisible. A response with no cache fields still emits none, so
+    // a no-cache provider stays byte-identical to before.
+    let prompt = input_tokens + cache_read.unwrap_or(0) + cache_write.unwrap_or(0);
     let mut usage = json!({
         "prompt_tokens": prompt,
         "completion_tokens": output_tokens,
         "total_tokens": prompt + output_tokens,
     });
-    if cache_read > 0 {
-        usage["prompt_tokens_details"] = json!({ "cached_tokens": cache_read });
+    if let Some(read) = cache_read {
+        usage["prompt_tokens_details"] = json!({ "cached_tokens": read });
     }
-    if cache_write > 0 {
-        usage["cache_creation_input_tokens"] = json!(cache_write);
+    if let Some(write) = cache_write {
+        usage["cache_creation_input_tokens"] = json!(write);
     }
     usage
 }
 
 /// Read Anthropic's two cache counters from a `usage` object (`message_start`
-/// for the stream, the top-level `usage` for a non-stream response).
-fn anthropic_cache_tokens(usage: Option<&Value>) -> (i64, i64) {
-    let read = usage
-        .and_then(|u| u.get("cache_read_input_tokens"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let write = usage
-        .and_then(|u| u.get("cache_creation_input_tokens"))
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    (read, write)
+/// for the stream, the top-level `usage` for a non-stream response). `None` when
+/// the field is absent -- keep that apart from a reported `0`, which the
+/// readout needs to tell a cold prefix from a silent provider. A negative count
+/// is not a report, so it reads as absent and leaves the prompt sum untouched.
+fn anthropic_cache_tokens(usage: Option<&Value>) -> (Option<i64>, Option<i64>) {
+    let counter = |key: &str| {
+        usage
+            .and_then(|u| u.get(key))
+            .and_then(|v| v.as_i64())
+            .filter(|v| *v >= 0)
+    };
+    (
+        counter("cache_read_input_tokens"),
+        counter("cache_creation_input_tokens"),
+    )
 }
 
 /// Append `blocks` to the last message when it shares `role`, else start a new
@@ -1427,11 +1444,17 @@ fn convert_usage(usage: Option<&Value>) -> Value {
     // and unlike Anthropic its `input_tokens` already includes them, so only the
     // detail is forwarded (no compensation). Surfaced in the chat shape
     // `Usage::from_completion` reads, so `/context` shows the cache line here too.
+    //
+    // Forwarded whenever the field is present, a reported `0` included: that is a
+    // cold prefix, the state the readout exists to alarm on, and filtering it out
+    // left it indistinguishable from a response that never mentions caching. A
+    // response with no `input_tokens_details` still emits nothing, so a no-cache
+    // provider stays byte-identical.
     if let Some(cached) = u
         .get("input_tokens_details")
         .and_then(|d| d.get("cached_tokens"))
         .and_then(|v| v.as_i64())
-        .filter(|c| *c > 0)
+        .filter(|c| *c >= 0)
     {
         out["prompt_tokens_details"] = json!({ "cached_tokens": cached });
     }
@@ -1600,6 +1623,26 @@ mod openai_responses_tests {
         assert_eq!(choice["message"]["reasoning_content"], json!("thinking"));
         assert_eq!(choice["finish_reason"], json!("stop"));
         assert_eq!(out["usage"], json!({"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}));
+    }
+
+    #[test]
+    fn response_keeps_a_reported_cold_prefix_and_omits_an_absent_one() {
+        // `cached_tokens: 0` is Responses saying the prefix was not reused --
+        // the state the console draws as a red `0%`. Dropping it here left that
+        // indistinguishable from a response that never mentions caching, which
+        // the readout can only render as "not reported".
+        let reported =
+            convert_usage(Some(&json!({"input_tokens": 100, "output_tokens": 5, "input_tokens_details": {"cached_tokens": 0}})));
+        assert_eq!(reported["prompt_tokens_details"]["cached_tokens"], json!(0));
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": reported})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(0), "a cold prefix is a report");
+
+        let silent = convert_usage(Some(&json!({"input_tokens": 100, "output_tokens": 5})));
+        assert!(silent.get("prompt_tokens_details").is_none(), "{silent}");
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": silent})).unwrap();
+        assert_eq!(parsed.cached_tokens, None, "silence stays silence");
     }
 
     #[test]
@@ -2320,6 +2363,68 @@ mod anthropic_messages_tests {
         assert_eq!(parsed.cached_tokens, Some(80));
         assert_eq!(parsed.cache_write_tokens, Some(40));
         assert_eq!(parsed.prompt_tokens, Some(130));
+    }
+
+    #[test]
+    fn stream_reports_a_cold_prefix_as_a_zero_read() {
+        // `cache_read_input_tokens: 0` is Anthropic saying the prefix was not
+        // reused. Folded into the "no cache field" branch it rendered as "not
+        // reported", hiding the one state the console's readout alarms on.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {
+                    "input_tokens": 100,
+                    "cache_read_input_tokens": 0,
+                    "cache_creation_input_tokens": 40
+                }}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(140));
+        assert_eq!(usage["prompt_tokens_details"]["cached_tokens"], json!(0));
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, Some(0), "an honest zero survives to Usage");
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn stream_omits_cache_fields_the_upstream_never_reported() {
+        // The other half of the pair: an upstream that says nothing about
+        // caching must yield `None`, not a fabricated zero.
+        let c = conv();
+        let mut state = StreamState::default();
+        c.convert_stream_event(
+            &ev(
+                "message_start",
+                json!({"message": {"id": "m", "model": "claude-sonnet-4", "usage": {"input_tokens": 100}}}),
+            ),
+            &mut state,
+        );
+        let done = c.convert_stream_event(
+            &ev("message_delta", json!({"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 5}})),
+            &mut state,
+        );
+        let usage: Value = serde_json::from_str(&done[0]).unwrap();
+        let usage = &usage["usage"];
+        assert_eq!(usage["prompt_tokens"], json!(100), "no cache figures to add back");
+        assert!(usage.get("prompt_tokens_details").is_none(), "{usage}");
+        assert!(usage.get("cache_creation_input_tokens").is_none(), "{usage}");
+
+        let parsed =
+            crate::core::agent::events::Usage::from_completion(&json!({"usage": usage})).unwrap();
+        assert_eq!(parsed.cached_tokens, None);
+        assert_eq!(parsed.cache_write_tokens, None);
     }
 
     #[test]

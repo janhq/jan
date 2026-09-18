@@ -116,6 +116,15 @@ pub(crate) struct OrchestrationArgs {
     /// child) scopes monitors to the run, which then parks on them. Never
     /// inherited by a child run, which gets its own per-run set.
     pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// When this run compacts ahead of dispatching: the route's context window,
+    /// the share of it a prompt may fill, and any explicitly configured reserve.
+    ///
+    /// `None` when the window cannot be sized - local engines keep theirs inside
+    /// the llamacpp plugin/preset - which leaves those runs on the reactive
+    /// path, compacting only after a provider rejects the request. An unknown
+    /// window must not be guessed at, so this is an `Option` rather than a
+    /// default budget.
+    pub compaction: Option<crate::core::agent::compaction::CompactionBudget>,
 }
 
 #[async_trait]
@@ -1511,6 +1520,9 @@ pub(crate) async fn run_server_side_openai_orchestration(
         session_id: None,
         sandbox: None,
         monitors: None,
+        // Server-side runs take whatever window the proxy's route reports
+        // through its own path, so the loop has none to size against here.
+        compaction: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1981,6 +1993,7 @@ async fn orchestrate_inner(
         session_id,
         monitors: session_monitors,
         sandbox,
+        compaction,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -2334,6 +2347,7 @@ async fn orchestrate_inner(
             todo_registry.as_ref(),
             force_first_tool,
             steering,
+            *compaction,
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -2369,6 +2383,7 @@ async fn orchestrate_inner(
             todo_registry.as_ref(),
             force_first_tool,
             steering,
+            *compaction,
         )
         .await
     }
@@ -2603,6 +2618,10 @@ async fn run_turn_cycle(
     // instead of an easily-ignored suggestion. `None` for every later turn.
     force_first_tool: Option<&str>,
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
+    // Compacts the conversation before dispatching when the request would
+    // outgrow this budget. `None` leaves compaction to a provider rejection,
+    // the only signal a route with an unknown window can give.
+    compaction: Option<crate::core::agent::compaction::CompactionBudget>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` is the normal case: the session token budget and user
     // cancellation are the real guards, so a run isn't cut off mid-task by a
@@ -2670,9 +2689,15 @@ async fn run_turn_cycle(
             publish_monitors(tools, events, &mut shown_monitors);
         }
 
+        // A prompt already past the route's trigger is compacted *before* the
+        // request goes out, so the prefix break lands at a point this run chose
+        // instead of one a provider rejection forced - which costs a round trip
+        // and a summarizer call, and reads to the user as a stall.
+        let mut preflighted = false;
         // On a context-overflow error, compact the conversation and retry.
         // Compaction runs progressively (a smaller kept tail each attempt) and
-        // the loop gives up if a pass fails to shrink the message list.
+        // the loop gives up if a pass fails to shrink the message list. Kept as
+        // the fallback, and the only path for a route whose window is unknown.
         let completion = {
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
@@ -2684,6 +2709,56 @@ async fn run_turn_cycle(
                     json_body,
                     (turn == 0).then_some(force_first_tool).flatten(),
                 );
+                // Once per turn, on the request about to be sent. A prompt still
+                // over the trigger after compacting is sent anyway:
+                // `compact_conversation` returns its input unchanged when there
+                // is nothing safe to drop, and retrying here would spin.
+                if !preflighted {
+                    preflighted = true;
+                    if let Some(budget) = compaction {
+                        let estimate =
+                            crate::core::agent::compaction::estimate_request_tokens(&request_value);
+                        if estimate > budget.trigger_tokens() {
+                            let compacted = crate::core::agent::compaction::compact_conversation(
+                                &conversation_messages,
+                                model_id,
+                                model,
+                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                            )
+                            .await?;
+                            if compacted.len() < conversation_messages.len() {
+                                let dropped = conversation_messages.len() - compacted.len();
+                                log::info!(
+                                    "agent: prompt estimated at {estimate} tokens against a {} \
+                                     token trigger on a {} token window, compacted {} -> {} \
+                                     messages before dispatch",
+                                    budget.trigger_tokens(),
+                                    budget.context_window,
+                                    conversation_messages.len(),
+                                    compacted.len()
+                                );
+                                conversation_messages = compacted;
+                                // Published for the same reason the overflow
+                                // path below publishes: a client holding the
+                                // oversized history would send it again next turn.
+                                let _ = events.send(StreamEvent::MessagesUpdated {
+                                    messages: conversation_messages.clone(),
+                                });
+                                // The one legitimate cache break in a session,
+                                // and the only way the user can tell it apart
+                                // from a stall: say it happened, and why.
+                                let _ = events.send(StreamEvent::Notice {
+                                    text: format!(
+                                        "compacted {dropped} messages into a summary before sending \
+                                         ({estimate} tokens against a {} token budget)",
+                                        budget.trigger_tokens()
+                                    ),
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                }
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
@@ -3507,6 +3582,7 @@ mod tests {
             None,
             None,
             Some(&steering),
+            None,
         )
         .await
         .unwrap();
@@ -3559,6 +3635,7 @@ mod tests {
             None,
             None,
             Some(&steering),
+            None,
         )
         .await
         .unwrap();
@@ -3617,6 +3694,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -3642,6 +3720,175 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    /// The preflight exists so an oversized prompt is compacted *before* it is
+    /// sent: the provider never sees the request it would reject, and the user
+    /// gets one notice instead of a stall followed by a silent retry.
+    #[tokio::test]
+    async fn a_prompt_over_the_trigger_is_compacted_before_the_request_goes_out() {
+        /// Rejects an oversized request the way a real provider does (HTTP 400
+        /// `context_length_exceeded`), counted so the test can assert it was
+        /// never given the chance. `limit` is measured with the same estimator
+        /// the preflight uses, on the same request body.
+        struct OverflowRejectingModel {
+            limit: u64,
+            requests: StdMutex<Vec<serde_json::Value>>,
+            rejections: StdMutex<usize>,
+        }
+        #[async_trait]
+        impl ModelInvoker for OverflowRejectingModel {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                // The summarizer call is tiny by construction; answer it.
+                let summarizing = request["messages"][0]["content"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with("Summarize the AI agent"));
+                if !summarizing {
+                    self.requests.lock().unwrap().push(request.clone());
+                    let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+                    if estimate > self.limit {
+                        *self.rejections.lock().unwrap() += 1;
+                        return Err(
+                            "Upstream returned HTTP 400: context_length_exceeded".to_string()
+                        );
+                    }
+                }
+                let content = if summarizing {
+                    "CONDENSED"
+                } else {
+                    "final answer"
+                };
+                Ok(json!({
+                    "choices": [{ "message": { "content": content }, "finish_reason": "stop" }]
+                }))
+            }
+        }
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // The provider's own ceiling sits between the compacted and the
+        // uncompacted prompt: reachable only after the preflight runs.
+        let model = OverflowRejectingModel {
+            limit: 800,
+            requests: StdMutex::new(Vec::new()),
+            rejections: StdMutex::new(0),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..20 {
+            convo.push(json!({
+                "role": "user",
+                "content": format!("message {i} {}", "x".repeat(200)),
+            }));
+        }
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            convo,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: 1_000,
+                ratio: 0.5,
+                reserve_tokens: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "final answer");
+        assert_eq!(
+            *model.rejections.lock().unwrap(),
+            0,
+            "the compacted request must fit, so the provider never rejects"
+        );
+        // Scoped: the guard is not held across the awaits below, and `sent`
+        // borrows through it.
+        {
+            let requests = model.requests.lock().unwrap();
+            assert_eq!(
+                requests.len(),
+                1,
+                "one dispatch, after the preflight -- never a rejected send"
+            );
+            let sent = requests[0]["messages"].as_array().unwrap();
+            assert!(
+                sent.len() < 20,
+                "the oversized history must be gone before dispatch, sent {} messages",
+                sent.len()
+            );
+            assert!(
+                sent.iter()
+                    .any(|m| m["content"].as_str().unwrap_or("").contains("CONDENSED")),
+                "the summary must replace the dropped middle: {sent:?}"
+            );
+        }
+
+        drop(tx);
+        let mut notices = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            if let StreamEvent::Notice { text } = ev {
+                notices.push(text);
+            }
+        }
+        assert!(
+            notices.iter().any(|n| n.contains("before sending")),
+            "a prefix break the user did not ask for has to be announced: {notices:?}"
+        );
+    }
+
+    /// The other half of the contract: under the trigger nothing is compacted
+    /// and no summarizer call is spent.
+    #[tokio::test]
+    async fn a_prompt_under_the_trigger_is_sent_untouched() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            vec![json!({ "role": "user", "content": "hi" })],
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: 128_000,
+                ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                reserve_tokens: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "no summarizer call under the trigger"
+        );
     }
 
     /// Reads the tool message the loop wrote into the next request's
@@ -3698,6 +3945,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -3758,6 +4006,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -3880,6 +4129,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("sanitized history must be accepted so the session can continue");
@@ -3915,6 +4165,7 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             Some("todo"),
+            None,
             None,
         )
         .await
@@ -4111,6 +4362,7 @@ mod tests {
             Some(&registry),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4188,6 +4440,7 @@ mod tests {
             Some(&registry),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4233,6 +4486,7 @@ mod tests {
             Some(&registry),
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4267,6 +4521,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Plan,
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -4319,6 +4574,7 @@ mod tests {
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
             None,
             None,
         )
@@ -4409,6 +4665,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4459,6 +4716,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -4560,6 +4818,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4605,6 +4864,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -4701,6 +4961,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -4754,6 +5015,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -4861,6 +5123,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .expect("run completes");
@@ -4925,6 +5188,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -5007,6 +5271,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -5052,6 +5317,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -5105,6 +5371,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -5172,6 +5439,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -5229,6 +5497,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -5280,6 +5549,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap();
@@ -5315,6 +5585,7 @@ mod tests {
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
             None,
             None,
             None,
@@ -6108,6 +6379,7 @@ mod tests {
                     model.as_ref(),
                     invoker.as_ref(),
                     crate::core::agent::plan::RunMode::Normal,
+                    None,
                     None,
                     None,
                     None,

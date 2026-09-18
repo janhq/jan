@@ -553,6 +553,20 @@ fn completion_json(
         if let Some(details) = u.prompt_tokens_details.as_ref() {
             // Keep both counters under `prompt_tokens_details` rather than
             // mixing an Anthropic-native top-level key into a chat-shaped usage.
+            //
+            // Caveat worth knowing before trusting a missing field: the client
+            // crate deserializes usage with `zero_as_none` (`PromptTokensDetails
+            // .cached_tokens` included), so a route that honestly reports
+            // `cached_tokens: 0` (a prefix written every turn and never read --
+            // the expensive case) arrives here looking like a route that reports
+            // no cache field at all. Which of the two it was cannot be recovered
+            // at this layer; the console reads it as "not reported", so a
+            // cold-prefix route on this bridge cannot raise the zero-hit alarm.
+            //
+            // Native providers do not come through here: `core::server
+            // ::converters` builds the chat-shaped usage itself and emits the
+            // cache fields whenever the upstream reported them, a zero included,
+            // so Anthropic and Responses routes keep the distinction.
             let mut d = serde_json::Map::new();
             if let Some(v) = details.cached_tokens {
                 d.insert("cached_tokens".into(), serde_json::json!(v));
@@ -909,6 +923,31 @@ mod tests {
         let (_, req) = chat_request_from_body(&body).unwrap();
         assert_eq!(req.system.as_deref(), Some("be terse\n\nand precise"));
         assert_eq!(req.messages.len(), 1, "only the user turn remains");
+    }
+
+    #[test]
+    fn an_appended_system_update_reaches_the_provider_last() {
+        // What the tail-append writer produces: the prompt's earlier bytes stay
+        // put, the update lands behind the history.
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "system", "content": "STABLE v1" },
+                { "role": "system", "content": "date" },
+                { "role": "user", "content": "hi" },
+                { "role": "assistant", "content": "yo" },
+                { "role": "user", "content": "go on" },
+                { "role": "system", "content": "STABLE v2" },
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let system = req.system.expect("an update behind history is not dropped");
+        assert!(system.starts_with("STABLE v1\n\ndate\n\n"), "{system}");
+        assert!(
+            system.ends_with("STABLE v2"),
+            "the update is the last system instruction the model reads: {system}"
+        );
+        assert_eq!(req.messages.len(), 3, "only the conversation remains");
     }
 
     #[test]

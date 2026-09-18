@@ -59,7 +59,8 @@ Point at a different file with `instructions_file` if you already keep conventio
 [agent]
 # model = "Jan-V4"
 # context_window = 128000
-# compaction_reserve_tokens = 16384
+# compaction_ratio = 0.8  # share of the window a prompt may fill before compacting
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
@@ -72,6 +73,7 @@ instructions_file = "AGENT.md"
 # api_key = "sk-..."
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
+# compaction_ratio = 0.6  # override the [agent] ratio for this provider's routes
 
 # The run's only cap: new token spend across all turns (replayed context is not
 # recharged each turn). There is no turn limit. Defaults to 128000 when unset;
@@ -100,7 +102,8 @@ inject = "always"
 | --- | --- | --- |
 | `model` | inherited | Model id. Overridden by `--model` |
 | `context_window` | `128000` | Context limit in tokens |
-| `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
+| `compaction_ratio` | `0.8` | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context). Values outside `0.1`-`0.99` are clamped |
+| `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
@@ -112,6 +115,10 @@ inject = "always"
 
 A project-local provider override, winning over `~/.jan/config.toml` and anything inherited from Jan
 Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-project-override).
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `compaction_ratio` | inherited | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context) for requests this provider serves. Overrides the `[agent]` value, so a route with a small window can be tuned without loosening it for every other route |
 
 ### `[budget]`
 

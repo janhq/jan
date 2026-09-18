@@ -51,6 +51,7 @@ use super::worktree::Worktree;
 use super::{
     is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
 };
+use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
@@ -1762,8 +1763,12 @@ struct App {
     /// The explicit `[agent].context_window` override copied from the session
     /// limits (`None` when unset). Stays authoritative across model switches.
     configured_context_window: Option<u64>,
-    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
-    reserve_tokens: u64,
+    /// Share of the context window a prompt may fill before the next turn is
+    /// compacted first (`[agent].compaction_ratio`).
+    compaction_ratio: f64,
+    /// Explicit `[agent].compaction_reserve_tokens`, when the user pinned
+    /// absolute headroom. Wins over `compaction_ratio` for the trigger.
+    compaction_reserve_tokens: Option<u64>,
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
@@ -2144,6 +2149,41 @@ struct App {
     /// provider-config lock, which a turn in flight can hold, and a row keyed
     /// on a momentary `None` would split one model's spend in two.
     model_provider: Option<(String, Option<String>)>,
+    /// Whether the last request reported any cache field at all, an honest zero
+    /// included. Without it a route that reports zero reads renders identically
+    /// to one that reports nothing, and the zero-hit case is the expensive one:
+    /// a prefix rewritten every turn and never read.
+    turn_cache_reported: bool,
+    /// Session-cumulative prompt tokens: what the provider billed across every
+    /// request this process made, how much of it came from its prompt cache, and
+    /// how much it wrote into that cache. Sums, not means -- the number that
+    /// matters is the share of this session's prompt tokens served from cache,
+    /// and a 10-token request does not weigh the same as a 100K one. Unlike the
+    /// `turn_*` pair above these survive turn boundaries and a compaction, since
+    /// the tokens really were spent; they are dropped only when the conversation
+    /// they describe is gone ([`App::reset_session`]) or replaced wholesale
+    /// ([`load_thread`]).
+    ///
+    /// Parent-loop requests only: a child run has its own prefix and its own
+    /// conversation, so its prompts count towards its panel's context figure and
+    /// its spend towards `--output-format json` (which does fold children in),
+    /// never towards this rate. See [`App::apply_subagent_event`].
+    session_prompt_tokens: u64,
+    session_cached_tokens: u64,
+    session_cache_write_tokens: u64,
+    /// Latched the first time a route reports a cache field, so "this route
+    /// reports zero reads" stays distinguishable from "this route reports
+    /// nothing" on requests that omit the fields. Where the usage is read
+    /// through the OpenAI-shaped client, a reported zero is normalized to
+    /// absent before it reaches us, so a route that has never reported a
+    /// *positive* read still reads as nothing here (see
+    /// `genai_bridge::completion_json`).
+    session_cache_reported: bool,
+    /// Set when the loaded history was not produced by this process (`/resume`,
+    /// a fork of a saved thread). The counters above then start empty, so every
+    /// readout names that scope rather than reporting a rate that silently
+    /// excludes the earlier turns.
+    session_cache_partial: bool,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -2471,7 +2511,8 @@ impl App {
                 }
                 _ => None,
             },
-            reserve_tokens: limits.reserve_tokens,
+            compaction_ratio: limits.compaction_ratio,
+            compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
             repo_root,
@@ -2593,6 +2634,12 @@ impl App {
             model_provider: None,
             turn_cached_tokens: 0,
             turn_cache_write_tokens: 0,
+            turn_cache_reported: false,
+            session_prompt_tokens: 0,
+            session_cached_tokens: 0,
+            session_cache_write_tokens: 0,
+            session_cache_reported: false,
+            session_cache_partial: false,
             transcript_rect: Rect::default(),
             last_scroll: 0,
             row_index: Vec::new(),
@@ -2700,11 +2747,17 @@ impl App {
         self.turn_cache_write_tokens = 0;
         // `/usage` reports the session, and this is a new one.
         self.session_usage.clear();
+        self.turn_cache_reported = false;
         self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
         self.scrollback = 0;
         self.last_kind = Kind::None;
+        // The conversation the session counters described is gone, so they go
+        // with it -- and the session is once again one this process owns from
+        // its first message.
+        self.reset_cache_usage();
+        self.session_cache_partial = false;
         // A fresh session drops the todo projection and reminder state; the
         // model re-declares work with a new `todo init`.
         self.todos = crate::core::agent::todo::TodoList::default();
@@ -2714,6 +2767,17 @@ impl App {
         self.last_todo_reminder = None;
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
+    }
+
+    /// Forget the session-cumulative cache counters, and what the route has
+    /// reported about its cache at all. For the cases where those numbers would
+    /// describe a conversation, or a route, that is no longer the one on screen:
+    /// a session that was cleared, resumed, or forked.
+    fn reset_cache_usage(&mut self) {
+        self.session_prompt_tokens = 0;
+        self.session_cached_tokens = 0;
+        self.session_cache_write_tokens = 0;
+        self.session_cache_reported = false;
     }
 
     /// Drop the provider's token measurement, because the history it measured is
@@ -2730,6 +2794,7 @@ impl App {
         self.turn_prompt_tokens = 0;
         self.turn_cached_tokens = 0;
         self.turn_cache_write_tokens = 0;
+        self.turn_cache_reported = false;
     }
 
     /// Drop any selection, and with it a copy armed but not yet lifted out of a
@@ -4785,7 +4850,7 @@ impl App {
             model: self.model.clone(),
             run_mode: self.run_mode,
             context_window: self.context_window,
-            reserve_tokens: self.reserve_tokens,
+            autocompact_buffer: self.autocompact_buffer(),
             history_estimate: if self.history.is_empty() {
                 0
             } else {
@@ -4796,6 +4861,12 @@ impl App {
             turn_cached_tokens: self.turn_cached_tokens,
             turn_cache_write_tokens: self.turn_cache_write_tokens,
             session_cost: session_cost(&self.session_usage),
+            turn_cache_reported: self.turn_cache_reported,
+            session_prompt_tokens: self.session_prompt_tokens,
+            session_cached_tokens: self.session_cached_tokens,
+            session_cache_write_tokens: self.session_cache_write_tokens,
+            session_cache_reported: self.session_cache_reported,
+            session_cache_partial: self.session_cache_partial,
         }
     }
 }
@@ -4807,7 +4878,9 @@ struct ContextSnapshot {
     model: String,
     run_mode: crate::core::agent::plan::RunMode,
     context_window: u64,
-    reserve_tokens: u64,
+    /// Window held back behind the compaction trigger, derived from the same
+    /// formula the loop's preflight uses.
+    autocompact_buffer: u64,
     /// The Messages segment's estimate over the live history, precomputed so
     /// the off-loop task need not own a clone of the conversation.
     history_estimate: u64,
@@ -4819,6 +4892,17 @@ struct ContextSnapshot {
     /// published price was left out of it. Priced here, on the key path, so the
     /// off-loop task does not re-read the model catalog.
     session_cost: Option<(f64, bool)>,
+    /// Whether the most recent request reported a cache field at all: a reported
+    /// zero counts, an omitted field does not.
+    turn_cache_reported: bool,
+    /// Session-cumulative read/write/prompt totals and whether the route has
+    /// ever reported a cache field, plus whether the counters start after the
+    /// history did (a resume or fork).
+    session_prompt_tokens: u64,
+    session_cached_tokens: u64,
+    session_cache_write_tokens: u64,
+    session_cache_reported: bool,
+    session_cache_partial: bool,
 }
 
 /// The `/context` breakdown for the current session, computed from an owned
@@ -4918,7 +5002,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     // Free space is what is left after the estimated content and the
     // reserved buffer, so the seven segments partition the window exactly
     // and the percentages sum to 100.
-    let buffer = snapshot.reserve_tokens.min(snapshot.context_window);
+    let buffer = snapshot.autocompact_buffer.min(snapshot.context_window);
     let used: u64 = segments.iter().map(|s| s.tokens).sum();
     let free = snapshot.context_window.saturating_sub(used + buffer);
     segments.push(ContextSegment {
@@ -4933,10 +5017,11 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     });
 
     let reported = !snapshot.tokens_estimated && snapshot.turn_prompt_tokens > 0;
-    // The cache figures share the fill's provenance: they describe the same
-    // measured request, so a fall-back-to-estimate turn has no cache line.
-    let cache_reported =
-        reported && (snapshot.turn_cached_tokens > 0 || snapshot.turn_cache_write_tokens > 0);
+    // The last-request figures share the fill's provenance: they describe the
+    // same measured request, so a fall-back-to-estimate turn has no line. The
+    // gate is "that request reported a cache field", not "it reported a non-zero
+    // one": zero reads is the state worth showing.
+    let turn_cache_reported = reported && snapshot.turn_cache_reported;
     ContextReport {
         model_id: snapshot.model,
         window: snapshot.context_window,
@@ -4947,10 +5032,15 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         },
         fill_reported: reported,
         segments,
-        cache_reported,
+        turn_cache_reported,
         cached_tokens: snapshot.turn_cached_tokens,
         cache_write_tokens: snapshot.turn_cache_write_tokens,
         session_cost: snapshot.session_cost,
+        session_cache_reported: snapshot.session_cache_reported,
+        session_cache_partial: snapshot.session_cache_partial,
+        session_prompt_tokens: snapshot.session_prompt_tokens,
+        session_cached_tokens: snapshot.session_cached_tokens,
+        session_cache_write_tokens: snapshot.session_cache_write_tokens,
     }
 }
 
@@ -5377,6 +5467,18 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
                 self.turn_output_tokens += usage.completion_tokens.unwrap_or(0);
+                // Session totals, summed over every request this process sent:
+                // the denominator for the hit rate. A field the provider omits
+                // contributes nothing, but a *reported* zero creates the latch --
+                // that is what keeps an honest zero-hit route distinguishable
+                // from one that says nothing about caching at all.
+                self.session_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
+                self.session_cached_tokens += usage.cached_tokens.unwrap_or(0);
+                self.session_cache_write_tokens += usage.cache_write_tokens.unwrap_or(0);
+                if usage.cached_tokens.is_some() || usage.cache_write_tokens.is_some() {
+                    self.session_cache_reported = true;
+                    self.turn_cache_reported = true;
+                }
                 // Latest request's context, not a sum: each request resends the
                 // whole conversation, so adding them would be meaningless.
                 if let Some(prompt) = usage.prompt_tokens {
@@ -5479,6 +5581,12 @@ impl App {
                     panel.requests += 1;
                 }
             }
+            // The child's own context high-water mark, and deliberately nothing
+            // else: its cache reads stay out of the `session_*` counters and so
+            // out of the header rate, which describes the parent conversation's
+            // prefix (a child has its own). `--output-format json` is the
+            // surface that folds child usage in, because that figure is a bill
+            // rather than a rate.
             StreamEvent::TurnUsage { usage } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
@@ -5537,6 +5645,7 @@ impl App {
         self.turn_prompt_tokens = 0;
         self.turn_cached_tokens = 0;
         self.turn_cache_write_tokens = 0;
+        self.turn_cache_reported = false;
         self.scrollback = 0;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
@@ -5705,8 +5814,23 @@ impl App {
     /// override, catalog, or fallback), so proactive compaction never silently
     /// stands down on accepted prompt usage.
     fn should_auto_compact(&self) -> bool {
-        let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+        self.tokens > self.compaction_trigger() && self.tokens > 0 && self.history.len() > 4
+    }
+
+    /// Prompt tokens at which the next turn is compacted ahead of dispatching.
+    /// The same formula the agent loop's preflight applies, so a fill that reads
+    /// under the trigger can never be compacted behind the user's back.
+    fn compaction_trigger(&self) -> u64 {
+        trigger_tokens(
+            self.context_window,
+            self.compaction_ratio,
+            self.compaction_reserve_tokens,
+        )
+    }
+
+    /// Window held back behind that trigger, for the `/context` breakdown.
+    fn autocompact_buffer(&self) -> u64 {
+        self.context_window.saturating_sub(self.compaction_trigger())
     }
 
     /// Queue a compaction and a retry for a context-overflow error, reporting
@@ -6037,56 +6161,6 @@ fn gutter_lines(
         .collect()
 }
 
-/// Per-message envelope (role, delimiters) in the estimate below, the usual
-/// OpenAI-accounting constant.
-const TOKENS_PER_MESSAGE: u64 = 4;
-
-/// Rough token count (~4 chars per token) for a history the provider has not
-/// reported usage for: the window between a compaction and the next response.
-/// Counts what actually goes on the wire -- text content including multimodal
-/// text parts, tool-call names and arguments, tool-result ids -- so a
-/// tool-heavy history is not scored as empty. Image parts are left out: their
-/// cost is a provider-specific function of resolution, and inventing a number
-/// there is worse than omitting one.
-fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
-    let mut total_chars: usize = 0;
-    for msg in messages {
-        match msg.get("content") {
-            Some(serde_json::Value::String(text)) => total_chars += text.len(),
-            Some(serde_json::Value::Array(parts)) => {
-                for part in parts {
-                    total_chars += part
-                        .get("text")
-                        .and_then(|t| t.as_str())
-                        .map_or(0, str::len);
-                }
-            }
-            _ => {}
-        }
-        for call in msg
-            .get("tool_calls")
-            .and_then(|c| c.as_array())
-            .into_iter()
-            .flatten()
-        {
-            // Arguments live under `function`, not on the call itself.
-            if let Some(f) = call.get("function") {
-                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
-                total_chars += f
-                    .get("arguments")
-                    .and_then(|a| a.as_str())
-                    .map_or(0, str::len);
-            }
-        }
-        total_chars += msg
-            .get("tool_call_id")
-            .and_then(|v| v.as_str())
-            .map_or(0, str::len);
-    }
-    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
-    ((total_chars / 4) as u64 + envelope).max(1)
-}
-
 /// USD at the precision the amount deserves: sub-cent runs still need to read
 /// as a number rather than `$0.00`.
 fn format_usd(amount: f64) -> String {
@@ -6258,16 +6332,26 @@ struct ContextReport {
     /// Content categories plus free space and the autocompact buffer. Always
     /// exactly the seven bars rendered by the context view.
     segments: Vec<ContextSegment>,
-    /// Prompt-cache read/write from the most recent request, and whether the
-    /// provider reported either. `false` when the provider surfaces no cache
-    /// fields (every plain OpenAI-compatible endpoint that caches implicitly
-    /// without reporting), which suppresses the cache line entirely.
-    cache_reported: bool,
+    /// Prompt-cache read/write from the most recent request, and whether that
+    /// request reported a cache field at all -- a reported zero counts, an
+    /// omitted field does not. The last-request line is a sample of one request,
+    /// so it is only meaningful when that request said something about caching.
+    turn_cache_reported: bool,
     cached_tokens: u64,
     cache_write_tokens: u64,
     /// Session spend and whether it is partial, from [`ContextSnapshot`].
     /// `None` suppresses the cost line: no model in play publishes prices.
     session_cost: Option<(f64, bool)>,
+    /// Session-cumulative read/write/prompt totals, and whether the route has
+    /// ever reported a cache field. The session share is the number the epic is
+    /// about; `partial` says the counters start after the history did (a resume
+    /// or fork), so the readout names that scope instead of quietly excluding
+    /// the turns it never saw.
+    session_cache_reported: bool,
+    session_cache_partial: bool,
+    session_prompt_tokens: u64,
+    session_cached_tokens: u64,
+    session_cache_write_tokens: u64,
 }
 
 impl ContextReport {
@@ -6297,6 +6381,16 @@ impl ContextReport {
 fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         return tokens.to_string();
+    }
+    // Session-cumulative cache totals run into the millions, where `1200K` reads
+    // as noise. Same half-up tenths rule as the K branch, so no zero decimal.
+    if tokens >= 1_000_000 {
+        let tenths = (tokens + 50_000) / 100_000;
+        return if tenths % 10 == 0 {
+            format!("{}M", tenths / 10)
+        } else {
+            format!("{}.{}M", tenths / 10, tenths % 10)
+        };
     }
     // Tenths of a thousand, half-up. Exact for every u64 below ~1.8e15.
     let tenths = (tokens + 50) / 100;
@@ -6388,33 +6482,81 @@ fn context_bank_bar(percent: f64, width: usize) -> (String, String) {
     (filled, empty)
 }
 
-/// One-line prompt-cache readout for `/context`, or `None` when the provider
-/// reported no cache activity. `read` as a share of the prompt is the number
-/// that matters: it says how much of the prefix the provider actually served
-/// from cache on the last request, i.e. whether prefix caching is working.
-fn cache_summary_line(report: &ContextReport) -> Option<String> {
-    if !report.cache_reported {
-        return None;
+/// Prompt-cache readout for `/context`: the session's hit rate above the last
+/// request's sample, or a line saying the route reports no cache usage at all.
+///
+/// The session figure is `cached / prompt` over every request this process sent
+/// -- a share of the tokens, not a mean of per-turn percentages, since a
+/// 10-token request and a 100K one do not describe the same prefix. A route that
+/// reports a cache field renders even when the value is zero: `0%` is the
+/// expensive state (a prefix rewritten every turn and never read), and the whole
+/// point of the split is that it cannot be mistaken for a route that reports
+/// nothing, which says so in as many words. The style rides along so the rate
+/// can turn red on a zero hit -- the alarm should read before the number does.
+fn cache_summary_lines(report: &ContextReport) -> Vec<(String, Style)> {
+    let mut lines = Vec::new();
+    if report.session_cache_reported && report.session_prompt_tokens > 0 {
+        let scope = if report.session_cache_partial {
+            ", this process"
+        } else {
+            ""
+        };
+        let read_pct =
+            cache_hit_percent(report.session_cached_tokens, report.session_prompt_tokens);
+        let mut line = format!(
+            "Prompt cache (session{scope}): {} read ({read_pct:.0}% of prompt)",
+            format_tokens(report.session_cached_tokens)
+        );
+        if report.session_cache_write_tokens > 0 {
+            line.push_str(&format!(
+                ", {} written",
+                format_tokens(report.session_cache_write_tokens)
+            ));
+        }
+        let style = if read_pct == 0.0 {
+            Style::new().red().bold()
+        } else {
+            Style::new().cyan()
+        };
+        lines.push((line, style));
     }
-    // Clamped: normally `cached_tokens` is a subset of `fill` (prompt_tokens),
-    // but a raw Anthropic-shaped usage reports a prompt that excludes the cache
-    // read, which would push the share past 100%.
-    let read_pct = if report.fill > 0 {
-        (report.cached_tokens as f64 / report.fill as f64 * 100.0).min(100.0)
-    } else {
-        0.0
-    };
-    let read = format_tokens(report.cached_tokens);
-    if report.cache_write_tokens > 0 {
-        Some(format!(
-            "Prompt cache (last request): {read} read ({read_pct:.0}% of prompt), {} written",
-            format_tokens(report.cache_write_tokens)
-        ))
-    } else {
-        Some(format!(
-            "Prompt cache (last request): {read} read ({read_pct:.0}% of prompt)"
-        ))
+    if report.turn_cache_reported {
+        let read_pct = cache_hit_percent(report.cached_tokens, report.fill);
+        let mut line = format!(
+            "Prompt cache (last request): {} read ({read_pct:.0}% of prompt)",
+            format_tokens(report.cached_tokens)
+        );
+        if report.cache_write_tokens > 0 {
+            line.push_str(&format!(
+                ", {} written",
+                format_tokens(report.cache_write_tokens)
+            ));
+        }
+        lines.push((line, Style::new().cyan()));
     }
+    if lines.is_empty() && report.fill_reported {
+        // A measured request that reported no cache field. Saying so beats
+        // printing a 0% the provider never claimed. Deliberately not "not
+        // reported *by this provider*": the OpenAI-shaped path reads usage
+        // through a client that normalizes a reported `0` to absent (see
+        // `genai_bridge::completion_json`), so what this line can honestly
+        // report is that no cache field arrived, not who withheld it.
+        lines.push((
+            "Prompt cache: not reported".to_string(),
+            Style::new().dim(),
+        ));
+    }
+    lines
+}
+
+/// Share of a prompt the cache served, clamped to 100%: normally a cache read is
+/// a subset of the prompt, but a raw Anthropic-shaped usage reports a prompt that
+/// excludes it, which would push the share past 100%.
+fn cache_hit_percent(cached: u64, prompt: u64) -> f64 {
+    if prompt == 0 {
+        return 0.0;
+    }
+    (cached as f64 / prompt as f64 * 100.0).min(100.0)
 }
 
 /// One-line session-spend readout for `/context`, or `None` when no model in
@@ -6469,8 +6611,8 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 Style::new().bold(),
             )],
         ];
-        if let Some(cache) = cache_summary_line(report) {
-            rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+        for (text, style) in cache_summary_lines(report) {
+            rows.push(vec![Span::styled(text, style)]);
         }
         if let Some(cost) = cost_summary_line(report) {
             rows.push(vec![Span::styled(cost, Style::new().yellow())]);
@@ -6579,8 +6721,8 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         ),
         Style::new().bold(),
     )]);
-    if let Some(cache) = cache_summary_line(report) {
-        rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+    for (text, style) in cache_summary_lines(report) {
+        rows.push(vec![Span::styled(text, style)]);
     }
     if let Some(cost) = cost_summary_line(report) {
         rows.push(vec![Span::styled(cost, Style::new().yellow())]);
@@ -11914,6 +12056,13 @@ enum AgentSettingKind {
     Bool {
         default: bool,
     },
+    /// Share of something, written as a TOML float: an `Int` row would emit
+    /// `0.8` as `0` and silently turn the knob into "compact on every turn".
+    Float {
+        default: Option<f64>,
+        min: f64,
+        max: f64,
+    },
 }
 
 /// Sentinel row value in the `/settings` picker that opens the provider
@@ -11932,11 +12081,24 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Project,
     },
     AgentSettingDef {
+        key: "compaction_ratio",
+        label: "compaction_ratio",
+        desc: "share of the context window a prompt may fill before compacting",
+        kind: AgentSettingKind::Float {
+            default: Some(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO),
+            min: 0.1,
+            max: 0.99,
+        },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
-        desc: "headroom kept free before compaction",
+        desc: "absolute headroom instead of compaction_ratio, in tokens",
+        // Unset by default: the ratio sets the trigger, and pinning 16K here
+        // would quietly take precedence over it.
         kind: AgentSettingKind::Int {
-            default: Some(16384),
+            default: None,
             min: 0,
         },
         scope: SettingScope::Project,
@@ -12731,6 +12893,29 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                             Err(_) => {
                                 prompt.error =
                                     Some(format!("'{}' is not an integer", prompt.input));
+                                return;
+                            }
+                        }
+                    }
+                }
+                AgentSettingKind::Float { default, min, max } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        match prompt.input.trim().parse::<f64>() {
+                            Ok(n) if n >= min && n <= max => Some(toml_edit::value(n)),
+                            Ok(_) => {
+                                prompt.error = Some(format!(
+                                    "must be between {min} and {max} (default: {})",
+                                    default
+                                        .map(|d| d.to_string())
+                                        .unwrap_or_else(|| "unset".into())
+                                ));
+                                return;
+                            }
+                            Err(_) => {
+                                prompt.error =
+                                    Some(format!("'{}' is not a number", prompt.input));
                                 return;
                             }
                         }
@@ -15604,6 +15789,12 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     // any count left over from the thread we were on describes a different
     // conversation entirely. Estimate until a fresh response lands.
     app.invalidate_token_provenance();
+    // The session cache counters describe requests *this* process sent, and the
+    // thread they described is gone: a loaded history's turns were sent by
+    // another run, or by the thread a fork came from. Start them over and mark
+    // the scope, so no readout reports a rate that silently excludes those turns.
+    app.reset_cache_usage();
+    app.session_cache_partial = true;
     app.tokens = estimate_token_count(&app.history);
     let count = app
         .history
@@ -16961,6 +17152,12 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: >= {min}")
         }
+        AgentSettingKind::Float { default, min, max } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: {min}-{max}")
+        }
         AgentSettingKind::Glyph { default, max } => {
             format!("default: {default} · valid: up to {max} chars, empty = off")
         }
@@ -17565,6 +17762,12 @@ fn draw_picker(
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
                 }
+                AgentSettingKind::Float { default, min, max } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: {min}-{max} · current: {current}")
+                }
                 AgentSettingKind::Glyph { default, max } => {
                     format!(
                         "default: {default} · valid: up to {max} chars, empty = off · current: {current}"
@@ -18049,6 +18252,29 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         app.context_window / 1000,
         app.context_window_source.label()
     )));
+    // Live prompt-cache hit rate: the share of this session's prompt tokens the
+    // provider served from its cache, so a session that has begun to thrash is
+    // visible while it runs rather than only from `/context`. Drawn only once
+    // the route has reported a cache field -- no badge means "reports nothing",
+    // never a fabricated 0% -- and red on a zero hit, the expensive state where
+    // the prefix is rewritten every turn and never read.
+    if app.session_cache_reported && app.session_prompt_tokens > 0 {
+        let pct = cache_hit_percent(app.session_cached_tokens, app.session_prompt_tokens);
+        // The counters begin where this process did, so a resumed or forked
+        // history says so instead of implying a figure over turns this process
+        // never sent.
+        let scope = if app.session_cache_partial {
+            " (this process)"
+        } else {
+            ""
+        };
+        let style = if pct == 0.0 {
+            Style::new().red().bold()
+        } else {
+            Style::new().cyan()
+        };
+        spans.push(Span::styled(format!("cache {pct:.0}%{scope}"), style));
+    }
     spans.push(Span::styled(elapsed, Style::new().dim()));
     // Output rate segment: last completed turn's tokens/sec, cached so it holds
     // steady instead of flickering to 0 between turns.
@@ -18777,7 +19003,7 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
+        cache_summary_lines, collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -18857,7 +19083,10 @@ mod tests {
             context_window: 128_000,
             context_window_source:
                 crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-            reserve_tokens: 16_384,
+            // An explicit reserve keeps the threshold these tests were written
+            // against (128K - 16K) rather than the ratio's 80% default.
+            compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
         };
@@ -19359,7 +19588,8 @@ mod tests {
                     context_window: 128_000,
                     context_window_source:
                         crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-                    reserve_tokens: 16_384,
+                    compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                    compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
                 },
@@ -24208,6 +24438,7 @@ mod tests {
             session_id: None,
             sandbox: None,
             monitors: Some(app.monitor_set.clone()),
+            compaction: None,
         })
     }
 
@@ -25040,6 +25271,58 @@ mod tests {
         assert!(err.contains("read-only | deny | allow"), "{err}");
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_writes_a_float_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "0.75".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        // A float, not `0`: an Int row would write `0` here and every turn
+        // would compact.
+        assert!(doc.contains("compaction_ratio = 0.75"), "written: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_a_ratio_outside_the_usable_range() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "1.5".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("between 0.1 and 0.99"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("compaction_ratio"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -28689,6 +28972,39 @@ mod tests {
         app.join_journal();
     }
 
+    /// A resumed thread's turns were sent by another run, so the session cache
+    /// counters -- which describe requests *this* process made -- start over, and
+    /// every readout names that scope instead of reporting a rate that silently
+    /// excludes them.
+    #[tokio::test]
+    async fn resume_scopes_the_session_cache_counters_to_this_process() {
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(1_000),
+                cached_tokens: Some(900),
+                ..Default::default()
+            },
+        });
+        assert_eq!(app.session_cached_tokens, 900);
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+
+        assert_eq!(fresh.session_cached_tokens, 0, "another run's cache reads");
+        assert_eq!(fresh.session_prompt_tokens, 0);
+        assert!(
+            !fresh.session_cache_reported,
+            "the resumed route has not reported yet, so no rate may be claimed"
+        );
+        assert!(
+            fresh.session_cache_partial,
+            "the readout has to name the scope of what it did count"
+        );
+    }
+
     #[tokio::test]
     async fn resume_restores_reasoning_tool_rows_and_diffs() {
         let mut app = test_app();
@@ -31062,10 +31378,15 @@ mod tests {
             fill: used,
             fill_reported: false,
             segments,
-            cache_reported: false,
+            turn_cache_reported: false,
             cached_tokens: 0,
             cache_write_tokens: 0,
             session_cost: None,
+            session_cache_reported: false,
+            session_cache_partial: false,
+            session_prompt_tokens: 0,
+            session_cached_tokens: 0,
+            session_cache_write_tokens: 0,
         }
     }
 
@@ -31307,38 +31628,160 @@ mod tests {
         assert!(transcript_text(&app).contains("no usage yet this session"));
     }
 
-    #[test]
-    fn context_view_shows_prompt_cache_when_reported() {
+    /// A report with a measured fill and no cache fields, the starting point for
+    /// the prompt-cache cases below.
+    fn context_cache_report() -> ContextReport {
         let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
         report.fill = 120_000;
         report.fill_reported = true;
-        report.cache_reported = true;
-        report.cached_tokens = 90_000;
-        report.cache_write_tokens = 12_000;
+        report
+    }
 
-        let text = context_lines(&report, 80)
+    fn context_text(report: &ContextReport) -> String {
+        context_lines(report, 80)
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
-            .join("\n");
+            .join("\n")
+    }
+
+    /// The session share is the number the epic is about: every request this
+    /// process sent, against every prompt token it billed -- not the last
+    /// request's sample, which is one request dressed up as a rate.
+    #[test]
+    fn context_view_shows_the_session_cache_hit_rate() {
+        let mut report = context_cache_report();
+        report.session_cache_reported = true;
+        report.session_prompt_tokens = 1_300_000;
+        report.session_cached_tokens = 1_183_000;
+        report.session_cache_write_tokens = 140_000;
+        report.turn_cache_reported = true;
+        report.cached_tokens = 90_000;
+        report.cache_write_tokens = 12_000;
+
+        let text = context_text(&report);
+        assert!(
+            text.contains("Prompt cache (session): 1.2M read (91% of prompt), 140K written"),
+            "{text}"
+        );
         assert!(
             text.contains("Prompt cache (last request): 90K read (75% of prompt), 12K written"),
             "{text}"
         );
     }
 
+    /// A route that reports zero cache reads renders `0%`, in the alarm colour.
+    /// A prefix written every turn and never read is the most expensive state
+    /// the agent can be in, and it used to render as nothing at all.
     #[test]
-    fn context_view_hides_prompt_cache_when_not_reported() {
-        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
-        report.fill = 120_000;
-        report.fill_reported = true;
-        // cache_reported stays false (a plain OpenAI-compatible provider).
-        let text = context_lines(&report, 80)
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
+    fn context_view_renders_a_zero_hit_rate_as_zero_percent() {
+        let mut report = context_cache_report();
+        report.session_cache_reported = true;
+        report.session_prompt_tokens = 240_000;
+        report.session_cache_write_tokens = 30_000;
+        report.turn_cache_reported = true;
+        report.cache_write_tokens = 30_000;
+
+        let summary = cache_summary_lines(&report);
+        assert_eq!(
+            summary[0].0,
+            "Prompt cache (session): 0 read (0% of prompt), 30K written"
+        );
+        assert_eq!(
+            summary[0].1,
+            Style::new().red().bold(),
+            "a zero hit rate is the state to alarm on"
+        );
+
+        let text = context_text(&report);
+        assert!(
+            text.contains("Prompt cache (last request): 0 read (0% of prompt), 30K written"),
+            "{text}"
+        );
+        assert!(!text.contains("not reported"), "{text}");
+    }
+
+    /// A measured request that reported no cache field says so. Printing a `0%`
+    /// there would be a number the provider never claimed, and the previous
+    /// blank line left an honest zero indistinguishable from this case.
+    #[test]
+    fn context_view_says_not_reported_when_the_route_reports_no_cache_fields() {
+        let report = context_cache_report();
+
+        let text = context_text(&report);
+        assert!(
+            text.contains("Prompt cache: not reported"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("0% of prompt"),
+            "a non-reporting route must not show a fabricated zero: {text}"
+        );
+    }
+
+    /// Nothing is measured yet -- a cold open, or a resumed history before its
+    /// first request -- so there is nothing to claim: no cache line, rather than
+    /// a `0%` or a statement about a provider that has not answered.
+    #[test]
+    fn context_view_omits_the_cache_line_before_any_measurement() {
+        let mut report = context_cache_report();
+        report.fill_reported = false;
+
+        let text = context_text(&report);
         assert!(!text.contains("Prompt cache"), "{text}");
+    }
+
+    /// A history loaded from disk was not sent by this process, so its rate is
+    /// labelled instead of presented as the whole session's.
+    #[test]
+    fn context_view_labels_a_cache_rate_scoped_to_this_process() {
+        let mut report = context_cache_report();
+        report.session_cache_reported = true;
+        report.session_cache_partial = true;
+        report.session_prompt_tokens = 100_000;
+        report.session_cached_tokens = 50_000;
+
+        let text = context_text(&report);
+        assert!(
+            text.contains("Prompt cache (session, this process): 50K read (50% of prompt)"),
+            "{text}"
+        );
+    }
+
+    /// The session counters accumulate across a turn boundary while the per-turn
+    /// sample resets, and a reported zero counts as reported -- otherwise the
+    /// zero-hit state would erase itself from the rate.
+    #[test]
+    fn session_cache_counters_survive_a_turn_boundary() {
+        let mut app = test_app();
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(1_000),
+                cached_tokens: Some(900),
+                ..Default::default()
+            },
+        });
+        app.begin_turn();
+        assert_eq!(app.turn_cached_tokens, 0, "the per-turn sample resets");
+        assert!(!app.turn_cache_reported, "so does its reported flag");
+        assert_eq!(app.session_cached_tokens, 900, "the session total does not");
+
+        app.apply(StreamEvent::TurnUsage {
+            usage: Usage {
+                prompt_tokens: Some(4_000),
+                cached_tokens: Some(0),
+                ..Default::default()
+            },
+        });
+        assert_eq!(app.session_prompt_tokens, 5_000, "both requests billed");
+        assert_eq!(app.session_cached_tokens, 900);
+        assert_eq!(app.turn_cached_tokens, 0, "the latest request served none");
+        assert!(app.session_cache_reported);
+        assert!(
+            app.turn_cache_reported,
+            "a reported zero is still a report, and the last-request line must \
+             show it rather than vanish"
+        );
     }
 
     #[test]
@@ -31696,6 +32139,21 @@ mod tests {
         assert_eq!(format_tokens(9_950), "10K");
         assert_eq!(format_tokens(999), "999");
         assert_eq!(format_tokens(2_100), "2.1K");
+        // Session-cumulative cache totals reach the millions, where `1200K`
+        // reads as noise. Same rule up there: no zero decimal either.
+        for tokens in (1_000_000..=3_000_000u64).step_by(997) {
+            let text = format_tokens(tokens);
+            assert!(
+                !text.contains(".0M"),
+                "{tokens} rendered as {text}: a zero decimal at the M boundary too"
+            );
+        }
+        assert_eq!(format_tokens(1_000_000), "1M");
+        assert_eq!(format_tokens(1_050_000), "1.1M");
+        assert_eq!(format_tokens(1_183_000), "1.2M");
+        assert_eq!(format_tokens(1_949_999), "1.9M");
+        assert_eq!(format_tokens(1_950_000), "2M");
+        assert_eq!(format_tokens(12_345_678), "12.3M");
     }
 
     /// An over-full estimate clamps free space to zero; the category banks
@@ -35063,7 +35521,7 @@ mod tests {
     #[test]
     fn should_not_auto_compact_when_below_threshold() {
         let app = test_app();
-        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // Default context_window = 128K, explicit reserve 16K, so limit ~111K.
         // With tokens = 50K and history = 6, no compact.
         assert!(!app.should_auto_compact());
     }
@@ -35505,6 +35963,70 @@ mod tests {
         assert!(
             text.contains("effort low"),
             "badge must track the level: {text}"
+        );
+    }
+
+    fn header_text(app: &App) -> String {
+        header_spans(app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect::<String>()
+    }
+
+    /// The session hit rate is on the status line, so a session that starts
+    /// thrashing is visible while it runs instead of only behind `/context`.
+    #[test]
+    fn header_shows_the_live_cache_hit_rate() {
+        let mut app = test_app();
+        app.session_cache_reported = true;
+        app.session_prompt_tokens = 200_000;
+        app.session_cached_tokens = 150_000;
+
+        assert!(header_text(&app).contains("cache 75%"), "{}", header_text(&app));
+    }
+
+    /// No badge means the route reports no cache usage at all -- never a `0%`
+    /// the provider did not claim.
+    #[test]
+    fn header_shows_no_cache_rate_when_the_route_reports_none() {
+        let app = test_app();
+        assert!(
+            !header_text(&app).contains("cache"),
+            "{}",
+            header_text(&app)
+        );
+    }
+
+    /// A zero hit rate is in the alarm colour: the prefix is being written every
+    /// turn and never read, which is the state worth interrupting for.
+    #[test]
+    fn header_marks_a_zero_hit_rate_in_red() {
+        let mut app = test_app();
+        app.session_cache_reported = true;
+        app.session_prompt_tokens = 100_000;
+
+        let span = header_spans(&app)
+            .into_iter()
+            .find(|s| s.content.contains("cache"))
+            .expect("the badge must render once the route reports");
+        assert_eq!(span.content, "cache 0%");
+        assert_eq!(span.style, Style::new().red().bold());
+    }
+
+    /// The counters begin where the process did, so a resumed history's badge
+    /// says which turns it covers.
+    #[test]
+    fn header_scopes_the_cache_rate_on_a_resumed_history() {
+        let mut app = test_app();
+        app.session_cache_reported = true;
+        app.session_cache_partial = true;
+        app.session_prompt_tokens = 100_000;
+        app.session_cached_tokens = 90_000;
+
+        assert!(
+            header_text(&app).contains("cache 90% (this process)"),
+            "{}",
+            header_text(&app)
         );
     }
 

@@ -309,45 +309,132 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
     dropped
 }
 
-pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
-    // Drop the previous run's rebuilt system prompt, but keep compaction
-    // summaries: they are `system` messages, yet they carry condensed history
-    // that this turn must not throw away. Without this the next turn strips the
-    // summary and compaction only ever helped the run that produced it.
-    messages.retain(|m| {
-        m.get("role").and_then(|r| r.as_str()) != Some("system")
-            || crate::core::agent::compaction::is_compaction_summary(m)
-    });
-    messages.insert(
-        0,
-        serde_json::json!({
-            "role": "system",
-            "content": system_prompt
-        }),
-    );
+fn system_node(content: &str) -> serde_json::Value {
+    serde_json::json!({ "role": "system", "content": content })
 }
 
-/// Insert per-turn context as a second system message right after the stable
-/// system prompt, without touching it. The stable prompt (identity, guidelines,
-/// environment, skills, memory catalog) is byte-identical across the turns of a
-/// session, so keeping it as message 0 lets a provider cache that long prefix;
-/// the volatile content (date, query-specific memory recall, plan/todo state)
-/// changes every turn and lives here where it cannot invalidate that prefix.
-/// Assumes `set_system_prompt` has already placed the stable prompt at index 0.
+fn is_system_node(message: &serde_json::Value) -> bool {
+    message.get("role").and_then(|r| r.as_str()) == Some("system")
+}
+
+fn system_text(message: &serde_json::Value) -> Option<&str> {
+    message.get("content").and_then(|c| c.as_str())
+}
+
+/// A node this module wrote to carry per-turn context rather than history: a
+/// `system` message that is not a compaction summary.
+fn is_volatile_node(message: &serde_json::Value) -> bool {
+    is_system_node(message) && !crate::core::agent::compaction::is_compaction_summary(message)
+}
+
+/// Where the per-turn volatile block belongs: index 1 once a stable prompt
+/// holds index 0, else index 0. One slot, because the stable prompt is only
+/// ever placed at index 0 or appended behind it - so this is the single
+/// position a per-turn block can be rewritten in without disturbing the bytes
+/// an earlier request already sent as its head.
+fn volatile_slot(messages: &[serde_json::Value]) -> usize {
+    usize::from(messages.first().is_some_and(is_system_node))
+}
+
+/// Index of the stable prompt node the next request would extend: the last
+/// `system` node this module owns, i.e. neither the volatile slot nor a
+/// compaction summary (condensed history that happens to carry the same role).
+///
+/// The layout is `[stable, volatile, ..history..]`, so before any update this
+/// resolves to index 0; after one it resolves to the node appended at the tail.
+/// That is what makes a repeated turn a no-op instead of a second append, and
+/// what keeps an update from being mistaken for the volatile block and vice
+/// versa.
+fn live_stable_index(messages: &[serde_json::Value]) -> Option<usize> {
+    let slot = volatile_slot(messages);
+    messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(index, message)| is_volatile_node(message) && *index != slot)
+        .map(|(index, _)| index)
+}
+
+/// Apply the session's stable system prompt, append-only.
+///
+/// The head of a request is the region a provider can reuse, and it only reuses
+/// bytes that are identical to the previous request. Rewriting message 0 - one
+/// word of assistant instructions, a skill installed mid-session, an edited
+/// project config, a mode switch - invalidated everything behind it, tool
+/// schemas included, on every turn it happened. A prompt that changed is
+/// therefore appended as a new `system` node at the tail instead: the request
+/// keeps the bytes it already sent, and the update lands where the cached
+/// prefix is still intact.
+///
+/// An appended node is not ignored: a request's system nodes are concatenated in
+/// array order (`genai_bridge::messages_from_body`) and dispatched as one system
+/// instruction per provider, so the newest prompt is the last thing the model
+/// reads rather than a duplicate of an earlier one.
+///
+/// The invariants this keeps, which the tests assert directly:
+/// - an unchanged prompt mutates nothing at all;
+/// - a changed prompt leaves every index it does not append to byte-identical;
+/// - index 0 is written once and never rewritten;
+/// - nothing is deleted by role, so history a producer stored under `system`
+///   (a compaction summary) survives a rebuild.
+pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
+    match live_stable_index(messages) {
+        // Already the live prompt: zero mutations, so a turn that changed
+        // nothing cannot invalidate its own prefix.
+        Some(index) if system_text(&messages[index]) == Some(system_prompt) => {}
+        // A conversation that has been sent before: append the update.
+        Some(_) => messages.push(system_node(system_prompt)),
+        // No system node at all (a fresh conversation, or history loaded
+        // without a prompt): the prompt is the head, so it is written there.
+        None => messages.insert(0, system_node(system_prompt)),
+    }
+}
+
+/// Replace the conversation's system prompt in place, for the API server's
+/// proxy path.
+///
+/// That path is stateless and authoritative: it parses a caller-supplied
+/// conversation and applies the assistant's configured prompt to it, so the
+/// caller's own `system` message is what is being replaced. There is no
+/// conversation to keep byte-stable across turns - the caller sends a fresh
+/// body each request - so this keeps the older replace-at-head semantics rather
+/// than appending a second prompt behind the caller's.
+///
+/// Desktop-only, like the proxy that is its only caller.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn replace_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
+    // Drop the previous prompt, but keep compaction summaries: they are
+    // `system` messages, yet they carry condensed history that this turn must
+    // not throw away.
+    messages.retain(|m| {
+        !is_system_node(m) || crate::core::agent::compaction::is_compaction_summary(m)
+    });
+    messages.insert(0, system_node(system_prompt));
+}
+
+/// Place the per-turn context block (today's date, query-specific memory
+/// recall, plan/todo state) in the conversation's volatile slot, leaving the
+/// stable prompt ahead of it untouched.
+///
+/// The block is the same on every turn between its own changes, so the slot is
+/// rewritten only when the content differs. That matters for the same reason
+/// the stable prompt is append-only: rewriting it ends the reusable prefix
+/// there, so a turn that changed nothing but the conversation's tail must not
+/// rewrite it either.
+///
+/// Assumes `set_system_prompt` has already placed the stable prompt.
 pub(crate) fn insert_volatile_system(messages: &mut Vec<serde_json::Value>, content: &str) {
-    let has_leading_system = messages
-        .first()
-        .and_then(|m| m.get("role"))
-        .and_then(|r| r.as_str())
-        == Some("system");
-    let idx = usize::from(has_leading_system);
-    messages.insert(
-        idx,
-        serde_json::json!({
-            "role": "system",
-            "content": content
-        }),
-    );
+    let slot = volatile_slot(messages);
+    match messages.get(slot) {
+        // This turn's block is already in place: leave every byte alone.
+        Some(existing) if is_volatile_node(existing) && system_text(existing) == Some(content) => {}
+        // A block from an earlier turn (or a caller's own second system
+        // message) holds the slot. It is per-turn content, so it is replaced
+        // rather than accumulated; a summary that landed here is not, which is
+        // why the guard above asks for a volatile node.
+        Some(existing) if is_volatile_node(existing) => messages[slot] = system_node(content),
+        _ => messages.insert(slot, system_node(content)),
+    }
 }
 
 pub(crate) fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
@@ -1701,7 +1788,7 @@ mod tests {
     }
 
     #[test]
-    fn compaction_summary_survives_the_next_turn_rebuild() {
+    fn compaction_summary_survives_a_system_prompt_update() {
         let marker = crate::core::agent::compaction::SUMMARY_MARKER;
         // The history a turn inherits after a mid-run compaction: previous
         // rebuilt system prompt, its volatile message, the summary, kept tail.
@@ -1712,16 +1799,26 @@ mod tests {
             json!({ "role": "assistant", "content": "kept" }),
             json!({ "role": "user", "content": "new question" }),
         ];
+        let before = serde_json::to_string(&history[2]).unwrap();
         set_system_prompt(&mut history, "NEW STABLE");
         insert_volatile_system(&mut history, "new date");
-        assert_eq!(history[0]["content"], "NEW STABLE");
+
+        // The head keeps the bytes the previous request already sent: that is
+        // the whole point of appending the update instead of rewriting node 0.
+        assert_eq!(history[0]["content"], "OLD STABLE");
         assert_eq!(history[1]["content"], "new date");
-        assert!(history[2]["content"]
-            .as_str()
-            .unwrap()
-            .starts_with(marker));
+        assert_eq!(
+            serde_json::to_string(&history[2]).unwrap(),
+            before,
+            "nothing deletes by role, so the summary is untouched"
+        );
         assert_eq!(history[3]["content"], "kept");
         assert_eq!(history[4]["content"], "new question");
+        // The update is the newest system node, so it is the one the model
+        // reads last rather than a duplicate of the head.
+        let newest = history.last().unwrap();
+        assert_eq!(newest["role"], "system");
+        assert_eq!(newest["content"], "NEW STABLE");
     }
 
     #[test]
@@ -1731,6 +1828,141 @@ mod tests {
         assert_eq!(msgs[0]["role"], "system");
         assert_eq!(msgs[0]["content"], "date only");
         assert_eq!(msgs[1]["role"], "user");
+    }
+
+    /// The system nodes a request carries, in the order the provider
+    /// concatenates them.
+    fn system_contents(messages: &[serde_json::Value]) -> Vec<String> {
+        messages
+            .iter()
+            .filter(|m| m["role"] == "system")
+            .map(|m| m["content"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn serialized(messages: &[serde_json::Value]) -> Vec<String> {
+        messages
+            .iter()
+            .map(|m| serde_json::to_string(m).unwrap())
+            .collect()
+    }
+
+    /// The prompt is applied on every turn. A turn that changed nothing must
+    /// therefore mutate nothing - otherwise every request invalidates its own
+    /// prefix, which is the bug this writer exists to prevent.
+    #[test]
+    fn a_repeated_turn_mutates_nothing() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "STABLE" }),
+            json!({ "role": "system", "content": "date" }),
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "yo" }),
+            json!({ "role": "user", "content": "again" }),
+        ];
+        let before = serde_json::to_string(&conversation).unwrap();
+
+        set_system_prompt(&mut conversation, "STABLE");
+        insert_volatile_system(&mut conversation, "date");
+
+        assert_eq!(serde_json::to_string(&conversation).unwrap(), before);
+    }
+
+    /// A prompt that changed mid-session appends behind what was already sent.
+    /// Every index the provider has seen keeps its exact bytes, so the reusable
+    /// prefix survives the change instead of restarting at byte 0.
+    #[test]
+    fn a_changed_system_prompt_appends_behind_bytes_already_sent() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "STABLE v1" }),
+            json!({ "role": "system", "content": "date" }),
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "yo" }),
+            json!({ "role": "user", "content": "go on" }),
+        ];
+        let sent = serialized(&conversation);
+
+        set_system_prompt(&mut conversation, "STABLE v2");
+        insert_volatile_system(&mut conversation, "date");
+
+        assert_eq!(conversation.len(), sent.len() + 1, "one appended update");
+        assert_eq!(
+            serialized(&conversation)[..sent.len()],
+            sent[..],
+            "every index below the update is byte-identical"
+        );
+        assert_eq!(conversation.last().unwrap()["content"], "STABLE v2");
+
+        // The next turn applies the same prompt again: no second copy of it.
+        set_system_prompt(&mut conversation, "STABLE v2");
+        insert_volatile_system(&mut conversation, "date");
+        assert_eq!(conversation.len(), sent.len() + 1);
+        assert_eq!(conversation.last().unwrap()["content"], "STABLE v2");
+    }
+
+    /// An appended update is not decoration: a request's system nodes
+    /// concatenate in array order, so the newest prompt is the last system
+    /// instruction the model reads. `genai_bridge` asserts the concatenated
+    /// form the provider is actually handed.
+    #[test]
+    fn an_appended_update_is_the_last_system_node() {
+        let mut conversation = vec![json!({ "role": "user", "content": "hi" })];
+        set_system_prompt(&mut conversation, "STABLE v1");
+        insert_volatile_system(&mut conversation, "date");
+        set_system_prompt(&mut conversation, "STABLE v2");
+
+        assert_eq!(
+            system_contents(&conversation),
+            vec!["STABLE v1", "date", "STABLE v2"]
+        );
+        // ...and the history it was appended behind is still there.
+        assert_eq!(conversation[2]["content"], "hi");
+    }
+
+    /// Nothing is deleted by role: history another producer stored under
+    /// `system` - a compaction summary, or a caller's own prompt - is not this
+    /// writer's to remove.
+    #[test]
+    fn a_system_node_written_by_another_producer_is_not_deleted() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "caller's own prompt" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        set_system_prompt(&mut conversation, "STABLE");
+        assert_eq!(conversation[0]["content"], "caller's own prompt");
+        assert_eq!(
+            system_contents(&conversation),
+            vec!["caller's own prompt", "STABLE"]
+        );
+    }
+
+    /// The empty-conversation case still places the prompt first, and the
+    /// per-turn block follows it rather than displacing it.
+    #[test]
+    fn an_empty_conversation_places_the_prompt_first() {
+        let mut messages: Vec<serde_json::Value> = Vec::new();
+        set_system_prompt(&mut messages, "STABLE");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], "STABLE");
+
+        insert_volatile_system(&mut messages, "date");
+        assert_eq!(messages[0]["content"], "STABLE");
+        assert_eq!(messages[1]["content"], "date");
+    }
+
+    /// The layout both writers depend on: the stable prompt owns index 0, the
+    /// per-turn block owns the slot behind it, and a new day rewrites only
+    /// that slot.
+    #[test]
+    fn the_per_turn_block_never_displaces_the_stable_prompt() {
+        let mut messages = vec![json!({ "role": "user", "content": "hi" })];
+        set_system_prompt(&mut messages, "STABLE");
+        for day in ["day 1", "day 2", "day 3"] {
+            insert_volatile_system(&mut messages, day);
+            assert_eq!(messages[0]["content"], "STABLE");
+            assert_eq!(messages[1]["content"], day);
+            assert_eq!(messages.len(), 3, "the block is replaced, not stacked");
+        }
     }
 
     fn rendered(tool_name: &str) -> RenderedTool {
