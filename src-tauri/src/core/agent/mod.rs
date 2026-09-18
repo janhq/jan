@@ -33,3 +33,7 @@ pub mod skills;
 pub mod subagent;
 pub mod todo;
 pub mod upstream;
+
+// Byte-level prefix-stability tests: the regression suite for epic #8956.
+#[cfg(test)]
+mod prefix_stability;
