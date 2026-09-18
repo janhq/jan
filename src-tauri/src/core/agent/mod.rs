@@ -31,4 +31,5 @@ pub mod skill_hub;
 pub mod skills;
 pub mod subagent;
 pub mod todo;
+pub mod transcript;
 pub mod upstream;
