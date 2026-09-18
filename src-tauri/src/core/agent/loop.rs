@@ -2405,7 +2405,7 @@ fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::
 }
 
 /// Build one OpenAI chat-completion request from the current conversation.
-fn build_completion_request(
+pub(crate) fn build_completion_request(
     model_id: &str,
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
