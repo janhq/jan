@@ -30,8 +30,8 @@ pub(crate) use crate::core::agent::r#loop::run_server_side_openai_orchestration;
 pub(crate) use crate::core::agent::upstream::{
     call_openai_chat_completions, collect_mcp_openai_tools, copy_optional_chat_params,
     execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
-    parse_openai_messages, repair_dangling_tool_calls, resolve_upstream_for_model,
-    set_system_prompt,
+    parse_openai_messages, repair_dangling_tool_calls, replace_system_prompt,
+    resolve_upstream_for_model,
 };
 use crate::core::openai_schema::{
     http_status_indicates_api_key_retry, normalize_openai_tools_in_chat_body,
@@ -1242,7 +1242,10 @@ async fn proxy_request(
                 };
 
             if let Some(sys) = assistant_instructions {
-                set_system_prompt(&mut conversation_messages, &sys);
+                // The caller's own `system` message is the one this replaces:
+                // the request is stateless, so there is no earlier request to
+                // keep byte-stable.
+                replace_system_prompt(&mut conversation_messages, &sys);
             }
 
             // Resolve model to use for orchestration.

@@ -118,6 +118,25 @@ provider as well as per model: the same id served by two gateways is billed at t
 Prices come from the provider's own model listing, and a model it publishes only half a price list
 for is treated as unpriced - reported as `(no published price)` and left out of the total rather
 than counted as free. `/new` starts a new session, and a new count.
+## Cache-friendly layout
+
+Providers cache a request by prefix: the reusable part is the leading run of bytes identical to the
+previous request. Jan Agent keeps that run intact, because the system prompt and the tool schemas
+sit at the front of every request.
+
+- The stable part of the system prompt (identity, guidelines, working directory, skills, memory
+  catalog) is written once at the head of the conversation and never rewritten.
+- Per-turn context (today's date, memory recall, plan and todo state) lives in its own slot behind
+  it, and is rewritten only when its content changes.
+- A system prompt that changes mid-session - an edited `agent.toml`, a skill installed while the
+  session is open, a mode switch - is appended as a new system message instead of overwriting the
+  head. The provider keeps the cached prefix, and the model still reads the update last, so the
+  change is honored without re-sending the whole conversation as new bytes.
+- The advertised tool array is ordered deterministically, so a restart that advertises the same
+  tools advertises them as the same bytes.
+
+Nothing is deleted by role: a compaction summary is a `system` message carrying condensed history,
+and it survives every one of these updates.
 
 ## Automatic compaction
 
