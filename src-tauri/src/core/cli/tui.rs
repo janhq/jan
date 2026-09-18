@@ -9559,29 +9559,55 @@ fn selection_text(buf: &Buffer, sel: Selection, area: Rect) -> String {
         .join("\n")
 }
 
-/// Drop the box-drawing chrome the transcript draws around content -- the tool
-/// (`│`) and reasoning (`┊`) gutters, the image gutter, and the diff/exec panel
-/// frame (`┌─┐└┘│`) -- so a copied selection is the text, not the furniture.
-/// A leading gutter/border owns exactly one padding space (the frame's single
-/// fill space); code indentation past that is content and is kept. A line that
-/// was pure chrome (a panel's top/bottom rule, a horizontal separator) yields
-/// `None` and drops out, while a genuinely blank content line (no box glyph)
-/// stays. ASCII markers like the `> ` user prompt are left alone: they are
+/// Is `c` a glyph the TUI draws as furniture rather than as content: the box
+/// frames and gutters, the block-element meters, the geometric status/marker
+/// shapes (`▸ ○ ● ◈ ◎ ◔ ▶`), the braille spinner, and the handful of stray
+/// symbols used as row tags (`✓ ✗ ☐ • › ⚙ ⏳ ...`). Arrows are deliberately
+/// absent: the agent writes `→` and `↑/↓` inside real content.
+fn is_chrome_glyph(c: char) -> bool {
+    matches!(c,
+        '\u{2500}'..='\u{257f}' // box drawing: frames, gutters, tree arms
+        | '\u{2580}'..='\u{259f}' // block elements: context meter, cursor bar
+        | '\u{25a0}'..='\u{25ff}' // geometric shapes: status and select markers
+        | '\u{2800}'..='\u{28ff}' // braille: spinner frames
+        | '\u{2022}' // bullet
+        | '\u{203a}' // single right angle quote: list marker
+        | '\u{2713}'..='\u{2718}' // check and cross marks
+        | '\u{2610}'..='\u{2612}' // ballot boxes: todo checkboxes
+        | '\u{2315}' // telephone recorder: search glyph
+        | '\u{2387}' // alternative key: branch glyph
+        | '\u{2699}' // gear
+        | '\u{26a1}' // high voltage
+        | '\u{23e9}' | '\u{23f1}' | '\u{23f3}' // fast-forward, timer, hourglass
+    )
+}
+
+/// Drop the chrome the transcript draws around content -- the tool (`│`) and
+/// reasoning (`┊`) gutters, the image gutter, the diff/exec panel frame
+/// (`┌─┐└┘│`), and the leading status glyphs and spinner frames of a row -- so
+/// a copied selection is the text, not the furniture.
+/// A leading gutter/border/marker owns exactly one padding space (the frame's
+/// single fill space); code indentation past that is content and is kept. A line
+/// that was pure chrome (a panel's top/bottom rule, a horizontal separator, a
+/// lone spinner) yields `None` and drops out, while a genuinely blank content
+/// line (no chrome glyph) stays. Trailing chrome is trimmed for box glyphs only,
+/// since a closing border is furniture but a text ending in `✓` is content.
+/// ASCII markers like the `> ` user prompt are left alone: they are
 /// indistinguishable from a `>` in copied content.
 fn strip_row_chrome(line: &str) -> Option<String> {
     let is_box = |c: char| ('\u{2500}'..='\u{257f}').contains(&c);
     let chars: Vec<char> = line.chars().collect();
-    let had_box = chars.iter().copied().any(is_box);
+    let had_chrome = chars.iter().copied().any(is_chrome_glyph);
 
-    let mut last_box = None;
+    let mut last_chrome = None;
     let mut i = 0;
-    while i < chars.len() && (is_box(chars[i]) || chars[i] == ' ') {
-        if is_box(chars[i]) {
-            last_box = Some(i);
+    while i < chars.len() && (is_chrome_glyph(chars[i]) || chars[i] == ' ') {
+        if is_chrome_glyph(chars[i]) {
+            last_chrome = Some(i);
         }
         i += 1;
     }
-    let start = match last_box {
+    let start = match last_chrome {
         Some(idx) => {
             let after = idx + 1;
             if chars.get(after) == Some(&' ') {
@@ -9607,7 +9633,7 @@ fn strip_row_chrome(line: &str) -> Option<String> {
 
     let content: String = chars[start..end].iter().collect();
     let content = content.trim_end().to_string();
-    if had_box && content.is_empty() {
+    if had_chrome && content.is_empty() {
         None
     } else {
         Some(content)
@@ -29550,6 +29576,32 @@ mod tests {
         // Gutters and the panel border are gone, the pure-frame row drops out,
         // and the two-space indent past the frame's fill space survives.
         assert_eq!(selection_text(&buf, all, area), "tool output\n  code");
+    }
+
+    /// Status marks, select markers, spinner frames and meter blocks are
+    /// furniture too, so a copied row is the label without its glyph.
+    #[test]
+    fn selection_text_strips_status_and_marker_glyphs() {
+        let area = Rect::new(0, 0, 20, 5);
+        let mut buf = Buffer::empty(area);
+        buf.set_string(0, 0, "\u{2502} \u{2713} Read 3 files", Style::new());
+        buf.set_string(0, 1, "\u{2502}   \u{25b8} grep pattern", Style::new());
+        buf.set_string(0, 2, "\u{28cb} working", Style::new());
+        buf.set_string(0, 3, "\u{2588}\u{2588}\u{2591}\u{2591}", Style::new());
+        buf.set_string(0, 4, "\u{2022} note text", Style::new());
+
+        let all = Selection {
+            anchor: (0, 0),
+            head: (19, 4),
+            mode: SelectionMode::Linear,
+            dragging: false,
+            moved: true,
+        };
+        // The pure-meter row is all chrome and drops out entirely.
+        assert_eq!(
+            selection_text(&buf, all, area),
+            "Read 3 files\ngrep pattern\nworking\nnote text"
+        );
     }
 
     #[test]
