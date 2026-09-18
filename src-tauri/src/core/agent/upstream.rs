@@ -397,18 +397,22 @@ fn credentialed(config: &ProviderConfig) -> bool {
     config.api_key.is_some() || !config.api_keys.is_empty()
 }
 
-/// Resolve `model_id` to an upstream URL + key chain. The desktop build also
-/// resolves local engines (MLX session, llama-server router); the `cli` build is
-/// remote-only, so a model with no provider entry is unresolvable.
-pub(crate) async fn resolve_upstream_for_model(
+/// Which provider serves `model_id`, given the provider map. The single
+/// implementation of the routing order, so anything that *reports* on a
+/// request (its price, its context window, its header label) names the
+/// provider the request is actually sent to:
+///
+/// 1. a provider listing the id verbatim - reachable and credentialed first,
+///    then any, so a keyless twin does not shadow the signed-in entry;
+/// 2. a `<provider>/` prefix naming a configured provider;
+/// 3. a provider whose key *is* the model id (a local engine alias).
+///
+/// Sync and lock-free (the caller holds the map), so a render path or a price
+/// lookup can ask without awaiting the async resolver.
+pub(crate) fn pick_provider_for_model(
     model_id: &str,
-    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
-    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
-    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
-) -> Result<(String, Vec<String>), String> {
-    let destination_path = "/chat/completions";
-
-    let pc = provider_configs.lock().await;
+    pc: &HashMap<String, ProviderConfig>,
+) -> Option<String> {
     let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
 
     // The same model id can be listed by several providers, e.g. a cloud
@@ -432,7 +436,7 @@ pub(crate) async fn resolve_upstream_for_model(
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
 
-    let provider_name = first_match
+    first_match
         .map(|(_, config)| config.provider.clone())
         .or_else(|| {
             if let Some(sep_pos) = model_id.find('/') {
@@ -442,7 +446,22 @@ pub(crate) async fn resolve_upstream_for_model(
                 }
             }
             pc.get(model_id).map(|c| c.provider.clone())
-        });
+        })
+}
+
+/// Resolve `model_id` to an upstream URL + key chain. The desktop build also
+/// resolves local engines (MLX session, llama-server router); the `cli` build is
+/// remote-only, so a model with no provider entry is unresolvable.
+pub(crate) async fn resolve_upstream_for_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<(String, Vec<String>), String> {
+    let destination_path = "/chat/completions";
+
+    let pc = provider_configs.lock().await;
+    let provider_name = pick_provider_for_model(model_id, &pc);
     drop(pc);
 
     if let Some(provider) = provider_name {
@@ -524,10 +543,22 @@ pub(crate) async fn resolve_upstream_for_model(
 /// provider-qualified id (e.g. OpenCode GO) fail with "model not supported".
 /// A slash inside a real model id (e.g. an org-scoped name) is left alone
 /// unless the leading segment is literally a provider key.
+///
+/// A provider that lists the id verbatim wins over the prefix reading, exactly
+/// as resolution orders them: a gateway routing `anthropic/claude-opus-5` is
+/// serving a model whose id contains a slash, and stripping it because some
+/// *other* configured provider happens to be named `anthropic` sends an id the
+/// gateway has never heard of.
 pub(crate) fn strip_provider_prefix(
     model_id: &str,
     provider_configs: &HashMap<String, ProviderConfig>,
 ) -> String {
+    if provider_configs
+        .values()
+        .any(|c| c.models.iter().any(|m| m == model_id))
+    {
+        return model_id.to_string();
+    }
     if let Some(sep_pos) = model_id.find('/') {
         let potential_provider: &str = &model_id[..sep_pos];
         if provider_configs.contains_key(potential_provider) {
@@ -1916,6 +1947,23 @@ mod tests {
         );
     }
 
+    /// The gateway that serves `anthropic/claude-opus-5` lists it under that
+    /// full id; the desktop inherit also contributes a provider keyed
+    /// `anthropic`. Stripping there sends `claude-opus-5`, which the gateway
+    /// answers with 404 "model not found in accessible providers".
+    #[test]
+    fn a_verbatim_listed_id_keeps_its_slash_despite_a_same_named_provider() {
+        let mut pc = provider_configs(&[
+            ("tokamak", "https://api.tokamak.sh/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+        ]);
+        pc.get_mut("tokamak").unwrap().models = vec!["anthropic/claude-opus-5".to_string()];
+        assert_eq!(
+            strip_provider_prefix("anthropic/claude-opus-5", &pc),
+            "anthropic/claude-opus-5"
+        );
+    }
+
     /// A bare model id (no slash) is returned unchanged.
     #[test]
     fn bare_model_id_is_unchanged() {
@@ -2245,6 +2293,70 @@ mod tests {
             .expect("the credentialed provider is selected");
         assert_eq!(url, "https://opencode.ai/zen/v1/chat/completions");
         assert_eq!(keys, vec!["sk-opencode"]);
+    }
+
+    /// The reporting path (price, context window, header label) must name the
+    /// provider the request is routed to. A gateway listing a slashed id
+    /// verbatim wins over a provider whose key happens to match the prefix, on
+    /// both sides: reading the prefix first would price a Jan Router request
+    /// against an `anthropic` entry that publishes neither window nor price.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_verbatim_listed_slashed_id_is_reported_against_the_gateway_that_serves_it() {
+        let mut configs = provider_configs(&[
+            ("tokamak", "https://api.tokamak.sh/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+        ]);
+        configs.get_mut("tokamak").unwrap().models = vec!["anthropic/claude-opus-5".to_string()];
+
+        assert_eq!(
+            pick_provider_for_model("anthropic/claude-opus-5", &configs),
+            Some("tokamak".to_string())
+        );
+        let (url, _) =
+            resolve_upstream_for_model("anthropic/claude-opus-5", Arc::new(Mutex::new(configs)))
+                .await
+                .expect("the gateway listing the id serves it");
+        assert_eq!(url, "https://api.tokamak.sh/v1/chat/completions");
+    }
+
+    /// A provider credentialed through the `api_keys` chain rather than a bare
+    /// `api_key` is still the one routed to, so it must be the one reported:
+    /// naming its keyless twin prices the request at the wrong rates and, on
+    /// the window, against an entry that never published one.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_key_chain_credential_is_reported_like_it_is_routed() {
+        let mut configs = provider_configs(&[
+            ("aaa-keyless", "https://keyless.test/v1"),
+            ("zzz-keychain", "https://keychain.test/v1"),
+        ]);
+        configs.get_mut("aaa-keyless").unwrap().models = vec!["shared-model".to_string()];
+        let keychain = configs.get_mut("zzz-keychain").unwrap();
+        keychain.models = vec!["shared-model".to_string()];
+        keychain.api_keys = vec!["sk-chain".to_string()];
+
+        assert_eq!(
+            pick_provider_for_model("shared-model", &configs),
+            Some("zzz-keychain".to_string())
+        );
+        let (url, _) = resolve_upstream_for_model("shared-model", Arc::new(Mutex::new(configs)))
+            .await
+            .expect("the credentialed provider is selected");
+        assert_eq!(url, "https://keychain.test/v1/chat/completions");
+    }
+
+    /// A provider keyed by the model id (a local engine alias) is routable, so
+    /// the reporting path must name it too rather than leaving the row
+    /// unqualified and priced against whatever else lists the id.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_provider_keyed_by_the_model_id_is_named() {
+        let configs = provider_configs(&[("my-local-model", "http://127.0.0.1:1337/v1")]);
+        assert_eq!(
+            pick_provider_for_model("my-local-model", &configs),
+            Some("my-local-model".to_string())
+        );
     }
 
     /// Holds the secret-store serialization guard, the temp data folder and the

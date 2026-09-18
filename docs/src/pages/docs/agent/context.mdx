@@ -16,11 +16,12 @@ summarizing the older part of the conversation rather than failing.
 The header carries live usage:
 
 ```
- jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+ jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K fallback   30.1/s   [ready]
 ```
 
-`ctx 6K/128K` is context used against the window. It updates as each request lands, not only when a
-turn ends.
+`ctx 6K/128K` is context used against the window, and the word after it says where the window size
+came from (see [below](#where-the-window-size-comes-from)). It updates as each request lands, not
+only when a turn ends.
 
 At the end of a turn you get a receipt:
 
@@ -51,6 +52,47 @@ rewind, or resume the provider count is reset, so the number falls back to an es
 
 The report is a point-in-time snapshot taken when `/context` is typed, so numbers stay fixed
 until you open it again.
+
+When a provider publishes prices for the model, the overlay also carries the session's estimated
+spend (`Session cost (estimated): ~$0.42`). That is every request so far, not the window: see
+[`/usage`](#usage-and-cost) for the per-model breakdown.
+
+## Where the window size comes from
+
+In order of precedence:
+
+1. `[agent].context_window` in the project's `agent.toml` - an explicit override always wins.
+2. What the provider reported for that model in its `GET /models` listing, cached when the model
+   list was last refreshed. A gateway serving a 1M-token variant of a model is believed over any
+   built-in guess.
+3. A built-in table of known model families.
+4. A conservative 128K fallback for a model nothing recognizes.
+
+The header names which one is in force (`ctx 6K/1000K provider`). Refreshing the model list with
+<kbd>Ctrl</kbd>+<kbd>R</kbd> in `/model` (or `jan cli models refresh`) is what populates step 2.
+
+## Usage and cost
+
+```
+/usage
+```
+
+Lists what this session has spent, one row per model plus a total: requests, prompt tokens in (and
+how many of those the provider served from its cache), tokens out, and an estimated cost.
+
+```
+session usage
+  tokamak/anthropic/claude-opus-5  12 req · 480K in (300K cached) · 21K out  ~$1.42
+  total                            12 req · 480K in (300K cached) · 21K out  ~$1.42
+  estimated from the provider's published prices - not a bill
+```
+
+Unlike the context window - which describes a single request - these are sums over every request the
+session made, subagent requests included, because that is what a provider bills. Rows are per
+provider as well as per model: the same id served by two gateways is billed at two price lists.
+Prices come from the provider's own model listing, and a model it publishes only half a price list
+for is treated as unpriced - reported as `(no published price)` and left out of the total rather
+than counted as free. `/new` starts a new session, and a new count.
 
 ## Automatic compaction
 

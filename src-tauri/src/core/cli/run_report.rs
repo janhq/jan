@@ -94,10 +94,9 @@ pub(crate) struct RunReport {
     stop_reason: Option<String>,
     error: Option<(String, String)>,
     num_turns: u32,
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    cached_tokens: u64,
-    cache_write_tokens: u64,
+    /// Billable tokens across every request of the run, including subagents'.
+    /// The same accumulator `/usage` sums a TUI session with.
+    usage: super::model_catalog::TokenUsage,
 }
 
 impl RunReport {
@@ -124,12 +123,7 @@ impl RunReport {
             // Reasoning is display-only: it must not enter the piped/plain-text
             // report answer, which is reserved for the final completion.
             StreamEvent::Reasoning { .. } => {}
-            StreamEvent::TurnUsage { usage } => {
-                self.prompt_tokens += usage.prompt_tokens.unwrap_or(0);
-                self.completion_tokens += usage.completion_tokens.unwrap_or(0);
-                self.cached_tokens += usage.cached_tokens.unwrap_or(0);
-                self.cache_write_tokens += usage.cache_write_tokens.unwrap_or(0);
-            }
+            StreamEvent::TurnUsage { usage } => self.usage.add(usage),
             // Subagent work is real spend on the same budget, so its usage
             // counts. Its `Step`/`Token` must not: those describe the child's
             // own turns and prose, not this run's.
@@ -153,6 +147,7 @@ impl RunReport {
     pub(crate) fn finish(
         self,
         session_id: Option<&str>,
+        provider: Option<&str>,
         model: &str,
         duration_ms: u128,
         final_text: Option<&str>,
@@ -176,11 +171,17 @@ impl RunReport {
             num_turns: self.num_turns,
             duration_ms: duration_ms as u64,
             usage: ReportUsage {
-                prompt_tokens: self.prompt_tokens,
-                completion_tokens: self.completion_tokens,
-                total_tokens: self.prompt_tokens + self.completion_tokens,
-                cached_tokens: self.cached_tokens,
-                cache_write_tokens: self.cache_write_tokens,
+                prompt_tokens: self.usage.prompt_tokens,
+                completion_tokens: self.usage.completion_tokens,
+                total_tokens: self.usage.total_tokens(),
+                cached_tokens: self.usage.cached_tokens,
+                cache_write_tokens: self.usage.cache_write_tokens,
+                // Priced from the model catalog the last `/models` listing
+                // cached. Absent for a model whose provider publishes no
+                // prices, rather than reported as zero.
+                estimated_cost_usd: self
+                    .usage
+                    .cost_usd(super::model_catalog::load().get(provider, model)),
             },
         }
     }
@@ -220,6 +221,8 @@ struct ReportUsage {
     total_tokens: u64,
     cached_tokens: u64,
     cache_write_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_cost_usd: Option<f64>,
 }
 
 /// A stable, machine-readable code for a failure. The loop stamps every
@@ -277,7 +280,13 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(Some("3f7a91c2"), "tokamak-1-preview", 48213, Some("done")));
+        let out = value(report.finish(
+            Some("3f7a91c2"),
+            None,
+            "tokamak-1-preview",
+            48213,
+            Some("done"),
+        ));
 
         assert_eq!(out["type"], "result");
         assert_eq!(out["is_error"], false);
@@ -309,7 +318,7 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(Some("3f7a91c2"), "tokamak-1-preview", 1204, None));
+        let out = value(report.finish(Some("3f7a91c2"), None, "tokamak-1-preview", 1204, None));
 
         assert_eq!(out["is_error"], true);
         assert_eq!(out["result"], "I started reviewing auth.rs and");
@@ -337,7 +346,7 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(None, "m", 1, None));
+        let out = value(report.finish(None, None, "m", 1, None));
         assert_eq!(out["result"], "second turn prose");
         assert_eq!(out["num_turns"], 2);
         // Unclassifiable messages keep the code the loop stamped.
@@ -371,12 +380,51 @@ mod tests {
         ] {
             report.observe(&ev);
         }
-        let out = value(report.finish(None, "m", 1, Some("answer")));
+        let out = value(report.finish(None, None, "m", 1, Some("answer")));
         assert_eq!(out["num_turns"], 2);
         assert_eq!(out["result"], "answer");
         assert_eq!(out["usage"]["prompt_tokens"], 350);
         assert_eq!(out["usage"]["completion_tokens"], 35);
         assert_eq!(out["usage"]["total_tokens"], 385);
+    }
+
+    /// A priced model carries its estimated cost in the envelope, so a script
+    /// can budget without re-deriving prices; an unpriced one omits the field
+    /// rather than reporting the run as free.
+    #[test]
+    fn the_envelope_prices_the_run_when_the_catalog_knows_the_model() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut catalog = crate::core::cli::model_catalog::Catalog::default();
+            catalog.set_provider(
+                "tokamak",
+                std::collections::BTreeMap::from([(
+                    "priced-model".to_string(),
+                    crate::core::cli::model_catalog::ModelInfo {
+                        prompt_usd: Some(0.000001),
+                        completion_usd: Some(0.00001),
+                        ..Default::default()
+                    },
+                )]),
+            );
+            catalog.save().expect("seed catalog");
+
+            let mut report = RunReport::default();
+            report.observe(&StreamEvent::TurnUsage {
+                usage: usage(1_000_000, 100_000),
+            });
+            let out = value(report.finish(None, None, "priced-model", 1, Some("done")));
+            assert_eq!(out["usage"]["estimated_cost_usd"], 2.0);
+
+            let mut report = RunReport::default();
+            report.observe(&StreamEvent::TurnUsage {
+                usage: usage(1_000, 100),
+            });
+            let out = value(report.finish(None, None, "unknown-model", 1, Some("done")));
+            assert!(
+                out["usage"].get("estimated_cost_usd").is_none(),
+                "an unpriced model must not report a cost"
+            );
+        });
     }
 
     /// The printed order is part of the contract: a human reading the envelope
@@ -389,7 +437,7 @@ mod tests {
             code: "error".to_string(),
             message: "boom".to_string(),
         });
-        let printed = serde_json::to_string(&report.finish(None, "m", 1, None)).unwrap();
+        let printed = serde_json::to_string(&report.finish(None, None, "m", 1, None)).unwrap();
         let order = [
             "\"type\"",
             "\"is_error\"",
@@ -441,7 +489,9 @@ mod tests {
             ))
             .unwrap(),
         );
-        stream.push_str(&ndjson_line(&report.finish(None, "m", 1, Some("done\nand done"))).unwrap());
+        stream.push_str(
+            &ndjson_line(&report.finish(None, None, "m", 1, Some("done\nand done"))).unwrap(),
+        );
 
         assert!(stream.ends_with('\n'));
         let lines: Vec<&str> = stream.lines().collect();
@@ -477,7 +527,7 @@ mod tests {
             code: "error".to_string(),
             message: "[context-overflow] Upstream returned HTTP 400: too long".to_string(),
         });
-        let out = value(report.finish(None, "m", 1, None));
+        let out = value(report.finish(None, None, "m", 1, None));
         assert_eq!(out["error"]["code"], "context_overflow");
     }
 }

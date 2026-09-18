@@ -2135,6 +2135,15 @@ struct App {
     /// resends the whole prefix. Surfaced in `/context`.
     turn_cached_tokens: u64,
     turn_cache_write_tokens: u64,
+    /// Billable tokens per model across the whole session, for `/usage`. Summed
+    /// over every request, since that is what a provider bills; keyed by model
+    /// *and* provider, because a session that switches models is billed at two
+    /// price lists and two providers can serve one id at different rates.
+    session_usage: std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+    /// Memoized `(model, the provider serving it)`. Resolving takes the
+    /// provider-config lock, which a turn in flight can hold, and a row keyed
+    /// on a momentary `None` would split one model's spend in two.
+    model_provider: Option<(String, Option<String>)>,
     /// Transcript viewport rect from the last draw, for mapping mouse clicks
     /// to rows.
     transcript_rect: Rect,
@@ -2580,6 +2589,8 @@ impl App {
             tokens_per_sec: None,
             turn_output_tokens: 0,
             turn_prompt_tokens: 0,
+            session_usage: std::collections::BTreeMap::new(),
+            model_provider: None,
             turn_cached_tokens: 0,
             turn_cache_write_tokens: 0,
             transcript_rect: Rect::default(),
@@ -2687,6 +2698,8 @@ impl App {
         self.turn_prompt_tokens = 0;
         self.turn_cached_tokens = 0;
         self.turn_cache_write_tokens = 0;
+        // `/usage` reports the session, and this is a new one.
+        self.session_usage.clear();
         self.tokens_per_sec = None;
         self.turn = (0, 0);
         self.detail.clear();
@@ -4663,15 +4676,66 @@ impl App {
     /// caller can decide whether a compaction is now warranted. The catalog
     /// matching lives only in `model_capabilities`, never duplicated here.
     fn refresh_context_window(&mut self) -> bool {
+        let provider = self.serving_provider();
         let resolved = crate::core::cli::model_capabilities::resolve_context_window(
             &self.model,
             self.configured_context_window,
+            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), &self.model),
         );
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
         changed
     }
+    /// Mark the memoized model -> provider answer as needing re-resolution
+    /// while keeping the answer itself. The value survives because
+    /// [`Self::serving_provider`] falls back to it when the provider-config
+    /// lock is busy; dropping the entry outright would hand that path a `None`
+    /// and split the model's spend across two `/usage` rows.
+    fn invalidate_serving_provider(&mut self) {
+        if let Some((model, _)) = self.model_provider.as_mut() {
+            // No real model id is empty, so this never matches on lookup.
+            model.clear();
+        }
+    }
+
+    /// The provider serving the current model, memoized against it. A busy
+    /// provider-config lock keeps the last known answer rather than falling to
+    /// `None`: an unqualified row prices the model against whichever provider
+    /// happens to list it, so a momentarily contended lock would otherwise
+    /// split one model's spend across two `/usage` rows, one of them priced
+    /// wrong or reported as unpriced. The memo is refreshed on the next call
+    /// that does get the lock.
+    fn serving_provider(&mut self) -> Option<String> {
+        if let Some((model, provider)) = &self.model_provider {
+            if model == &self.model {
+                return provider.clone();
+            }
+        }
+        let last_known = self
+            .model_provider
+            .as_ref()
+            .and_then(|(_, provider)| provider.clone());
+        let Some(args) = self.args.clone() else {
+            return last_known;
+        };
+        let Ok(pc) = args.provider_configs.try_lock() else {
+            return last_known;
+        };
+        let resolved = super::providers::provider_for_model(&self.model, &pc);
+        drop(pc);
+        self.model_provider = Some((self.model.clone(), resolved.clone()));
+        resolved
+    }
+
+    /// The `/usage` bucket one request bills against.
+    fn usage_key(&mut self) -> UsageKey {
+        UsageKey {
+            model: self.model.clone(),
+            provider: self.serving_provider(),
+        }
+    }
+
     /// Header label for the current selection: `provider/model` when the bare
     /// model id resolves to exactly one provider, so the reader can tell where
     /// it is served from (the picker already shows the pair) instead of a bare
@@ -4731,6 +4795,7 @@ impl App {
             turn_prompt_tokens: self.turn_prompt_tokens,
             turn_cached_tokens: self.turn_cached_tokens,
             turn_cache_write_tokens: self.turn_cache_write_tokens,
+            session_cost: session_cost(&self.session_usage),
         }
     }
 }
@@ -4750,6 +4815,10 @@ struct ContextSnapshot {
     turn_prompt_tokens: u64,
     turn_cached_tokens: u64,
     turn_cache_write_tokens: u64,
+    /// This session's estimated spend so far, and whether a model with no
+    /// published price was left out of it. Priced here, on the key path, so the
+    /// off-loop task does not re-read the model catalog.
+    session_cost: Option<(f64, bool)>,
 }
 
 /// The `/context` breakdown for the current session, computed from an owned
@@ -4881,6 +4950,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         cache_reported,
         cached_tokens: snapshot.turn_cached_tokens,
         cache_write_tokens: snapshot.turn_cache_write_tokens,
+        session_cost: snapshot.session_cost,
     }
 }
 
@@ -5302,6 +5372,10 @@ impl App {
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
             StreamEvent::TurnUsage { usage } => {
+                // Session totals are per model: `/usage` prices each at its own
+                // published rates, and the current model is the one billed.
+                let key = self.usage_key();
+                self.session_usage.entry(key).or_default().add(&usage);
                 self.turn_output_tokens += usage.completion_tokens.unwrap_or(0);
                 // Latest request's context, not a sum: each request resends the
                 // whole conversation, so adding them would be meaningless.
@@ -5409,6 +5483,12 @@ impl App {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                 }
+                // A child's tokens are spend on the same account, against the
+                // model the dispatch inherited, so they belong in the session
+                // total. `RunReport` already counts them; without this `/usage`
+                // and the `--output-format json` envelope disagree.
+                let key = self.usage_key();
+                self.session_usage.entry(key).or_default().add(&usage);
             }
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
@@ -6007,6 +6087,152 @@ fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
     ((total_chars / 4) as u64 + envelope).max(1)
 }
 
+/// USD at the precision the amount deserves: sub-cent runs still need to read
+/// as a number rather than `$0.00`.
+fn format_usd(amount: f64) -> String {
+    if amount >= 1.0 {
+        format!("${amount:.2}")
+    } else if amount >= 0.01 {
+        format!("${amount:.3}")
+    } else if amount >= 0.00005 {
+        format!("${amount:.4}")
+    } else if amount > 0.0 {
+        // Below the 4th decimal a fixed precision prints `$0.0000`, which is
+        // the reads-as-free case this helper exists to avoid. Two significant
+        // digits keep a fraction of a cent legible without printing a dozen
+        // zeroes for every cheap session. Zero is excluded from the branch:
+        // `log10(0)` is infinite, and a genuine zero may print as one.
+        let places = ((-amount.log10()).ceil() as usize).saturating_add(1);
+        format!("${amount:.*}", places.min(12))
+    } else {
+        format!("${amount:.4}")
+    }
+}
+
+/// One `/usage` row's identity: a model plus the provider that billed it.
+/// Ordered by model first so the rows read as a model list even when one model
+/// was served by two providers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
+struct UsageKey {
+    model: String,
+    provider: Option<String>,
+}
+
+impl UsageKey {
+    /// How the row is labelled: `provider/model`, matching the header, unless
+    /// the id already carries its qualifier or no provider is known.
+    fn label(&self) -> String {
+        match &self.provider {
+            Some(provider) if !self.model.contains('/') => format!("{provider}/{}", self.model),
+            _ => self.model.clone(),
+        }
+    }
+}
+
+/// Total estimated cost across every model used, and whether any model was
+/// left out for want of published prices. `None` when nothing could be priced
+/// at all, which is what suppresses the cost line entirely.
+fn session_cost(
+    usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+) -> Option<(f64, bool)> {
+    let catalog = super::model_catalog::load();
+    let mut total = 0.0;
+    let mut priced = false;
+    let mut unpriced = false;
+    for (key, model_usage) in usage {
+        match model_usage.cost_usd(catalog.get(key.provider.as_deref(), &key.model)) {
+            Some(cost) => {
+                total += cost;
+                priced = true;
+            }
+            None => unpriced = true,
+        }
+    }
+    priced.then_some((total, unpriced))
+}
+
+/// The `/usage` readout: one row per model this session billed against, then a
+/// total. Kept free of `App` so the arithmetic is testable on its own.
+fn usage_lines(
+    usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+) -> Vec<Vec<Span<'static>>> {
+    let catalog = super::model_catalog::load();
+    let mut rows = Vec::new();
+    let mut totals = super::model_catalog::TokenUsage::default();
+    let mut total_cost = 0.0;
+    let mut any_priced = false;
+    let mut any_unpriced = false;
+    for (key, model_usage) in usage {
+        let cost = model_usage.cost_usd(catalog.get(key.provider.as_deref(), &key.model));
+        match cost {
+            Some(c) => {
+                total_cost += c;
+                any_priced = true;
+            }
+            None => any_unpriced = true,
+        }
+        totals.merge(model_usage);
+        rows.push(vec![
+            Span::styled(format!("{}  ", key.label()), Style::new().cyan()),
+            Span::raw(usage_counts(model_usage)),
+            Span::styled(
+                match cost {
+                    Some(c) => format!("  ~{}", format_usd(c)),
+                    // A model the provider publishes no prices for: say so,
+                    // rather than let a total imply it cost nothing.
+                    None => "  (no published price)".to_string(),
+                },
+                Style::new().yellow(),
+            ),
+        ]);
+    }
+    if rows.len() > 1 || any_priced {
+        rows.push(vec![
+            Span::styled("total  ", Style::new().bold()),
+            Span::raw(usage_counts(&totals)),
+            Span::styled(
+                if any_priced {
+                    format!("  ~{}", format_usd(total_cost))
+                } else {
+                    String::new()
+                },
+                Style::new().yellow().bold(),
+            ),
+        ]);
+    }
+    if any_unpriced && any_priced {
+        rows.push(vec![Span::styled(
+            "the total excludes models with no published price",
+            Style::new().dim(),
+        )]);
+    }
+    rows
+}
+
+/// `N req · 12.3K in (8.1K cached) · 3.4K out`, the shape both the per-model
+/// rows and the total use.
+fn usage_counts(usage: &super::model_catalog::TokenUsage) -> String {
+    let mut line = format!(
+        "{} req · {} in",
+        usage.requests,
+        format_tokens(usage.prompt_tokens)
+    );
+    if usage.cached_tokens > 0 {
+        line.push_str(&format!(" ({} cached)", format_tokens(usage.cached_tokens)));
+    }
+    line.push_str(&format!(
+        " · {} out",
+        format_tokens(usage.completion_tokens)
+    ));
+    if usage.cache_write_tokens > 0 {
+        line.push_str(&format!(
+            " · {} cache write",
+            format_tokens(usage.cache_write_tokens)
+        ));
+    }
+    line
+}
+
 /// One bank in the `/context` breakdown. `key` is the monochrome-safe category
 /// marker; `label` is the compact uppercase name shown beside its bar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -6039,6 +6265,9 @@ struct ContextReport {
     cache_reported: bool,
     cached_tokens: u64,
     cache_write_tokens: u64,
+    /// Session spend and whether it is partial, from [`ContextSnapshot`].
+    /// `None` suppresses the cost line: no model in play publishes prices.
+    session_cost: Option<(f64, bool)>,
 }
 
 impl ContextReport {
@@ -6188,6 +6417,22 @@ fn cache_summary_line(report: &ContextReport) -> Option<String> {
     }
 }
 
+/// One-line session-spend readout for `/context`, or `None` when no model in
+/// play publishes prices. The window is a single request; this is what every
+/// request so far has cost, which is the number `/usage` breaks down per model.
+fn cost_summary_line(report: &ContextReport) -> Option<String> {
+    let (total, partial) = report.session_cost?;
+    let suffix = if partial {
+        " (excludes models with no published price)"
+    } else {
+        ""
+    };
+    Some(format!(
+        "Session cost (estimated): ~{}{suffix} - /usage for the breakdown",
+        format_usd(total)
+    ))
+}
+
 /// Plain `/context` summary: current usage and autocompaction threshold first,
 /// followed by seven equal-scale category bars.
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
@@ -6226,6 +6471,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
         ];
         if let Some(cache) = cache_summary_line(report) {
             rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+        }
+        if let Some(cost) = cost_summary_line(report) {
+            rows.push(vec![Span::styled(cost, Style::new().yellow())]);
         }
         rows.push(vec![Span::styled(
             "Context breakdown (estimated)",
@@ -6333,6 +6581,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     )]);
     if let Some(cache) = cache_summary_line(report) {
         rows.push(vec![Span::styled(cache, Style::new().cyan())]);
+    }
+    if let Some(cost) = cost_summary_line(report) {
+        rows.push(vec![Span::styled(cost, Style::new().yellow())]);
     }
     rows.push(Vec::new());
     rows.push(vec![Span::styled(
@@ -8363,6 +8614,9 @@ pub async fn run(
         mut args,
         permission_requests,
         model,
+        // Re-resolved from `App` as the model changes, so the session's initial
+        // answer is not carried into the picker's later selections.
+        provider: _,
         smol_model,
         limits,
         show_reasoning,
@@ -9814,11 +10068,18 @@ fn clipboard_text() -> Result<String, String> {
     super::secret_input::clipboard_text()
 }
 
-fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+async fn handle_model_picker_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if key.code == KeyCode::Esc
         || (ctrl && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('d')))
     {
         app.model_picker = None;
+        return;
+    }
+
+    // Re-list every provider from its endpoint. `Ctrl-R` rather than `r`: the
+    // models pane takes every unmodified character as search input.
+    if ctrl && key.code == KeyCode::Char('r') {
+        refresh_model_picker(app).await;
         return;
     }
 
@@ -10043,7 +10304,7 @@ async fn handle_key(
     }
 
     if app.model_picker.is_some() {
-        handle_model_picker_key(app, key, ctrl);
+        handle_model_picker_key(app, key, ctrl).await;
         return;
     }
 
@@ -10948,6 +11209,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/usage",
+        hint: "",
+        description: "Show this session's tokens and estimated cost, per model",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/context",
         hint: "",
         description: "Show what is filling the context window, by category",
@@ -11253,6 +11520,7 @@ async fn run_command(
         }
         "compact" => compact_command(app),
         "context" => context_command(app),
+        "usage" => usage_command(app),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -11353,6 +11621,25 @@ async fn run_command(
 fn context_command(app: &mut App) {
     app.context_view = Some(ContextView::Loading);
     app.context_request = true;
+}
+
+/// `/usage`: what this session has actually spent, per model. Unlike
+/// `/context` -- which describes the *current* window, a single request's worth
+/// -- these are sums across every request, because that is what a provider
+/// bills. Prices come from the provider's own `/models` listing (cached by
+/// [`super::model_catalog`]), so a model it publishes no price for is reported
+/// as such rather than counted as free. Local to the transcript: nothing is
+/// sent upstream, and no account-level spend is available to ask for.
+fn usage_command(app: &mut App) {
+    if app.session_usage.is_empty() {
+        app.note("no usage yet this session");
+        return;
+    }
+    app.note("session usage");
+    for row in usage_lines(&app.session_usage) {
+        app.system_detail(row);
+    }
+    app.system_detail_text("estimated from the provider's published prices - not a bill");
 }
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
@@ -13247,21 +13534,71 @@ fn open_thread_picker(app: &mut App) {
 
 /// Open the `/model` hub listing the `provider / model` pairs this build can
 /// actually run, with the current raw model pre-highlighted.
+///
+/// Opening it re-lists every provider not yet probed this session, so a roster
+/// captured at sign-in picks up what the endpoint has added since; `Ctrl-R`
+/// inside the picker forces that again ([`refresh_model_picker`]).
 async fn open_model_picker(app: &mut App) {
     let project_root = app.project_root.clone();
-    match super::providers::fetch_missing_models(Some(&project_root), &mut app.probed_models).await
-    {
-        Ok(true) => {
-            // The discovered ids now live on disk; refresh the session's
-            // in-memory provider snapshot so a picked model resolves on the
-            // next run without a restart (#8688 parallels the /login reload).
-            reload_provider_configs(app).await;
-            app.note("fetched models for provider(s) with no configured list");
+    let refreshed =
+        super::providers::refresh_models_once(Some(&project_root), &mut app.probed_models).await;
+    apply_model_refresh(app, refreshed, false).await;
+    show_model_picker(app);
+}
+
+/// `Ctrl-R` in the picker: re-list every reachable provider, ignoring the
+/// once-per-session guard (the user asked, and the guard exists only to keep an
+/// automatic probe cheap), then rebuild the picker in place.
+async fn refresh_model_picker(app: &mut App) {
+    let project_root = app.project_root.clone();
+    app.probed_models.clear();
+    let refreshed = super::providers::refresh_models(Some(&project_root), None).await;
+    apply_model_refresh(app, refreshed, true).await;
+    show_model_picker(app);
+}
+
+/// Report a probe and reload the session's provider snapshot when it changed
+/// anything. `explicit` is a user-triggered refresh, which reports its outcome
+/// even when nothing moved -- an automatic probe stays silent instead, since it
+/// runs on every first `/model` of a session.
+async fn apply_model_refresh(
+    app: &mut App,
+    refreshed: Result<super::providers::ModelRefresh, String>,
+    explicit: bool,
+) {
+    match refreshed {
+        Ok(refreshed) => {
+            if refreshed.changed_any() {
+                // The discovered ids now live on disk; refresh the session's
+                // in-memory provider snapshot so a picked model resolves on the
+                // next run without a restart (#8688 parallels the /login reload).
+                reload_provider_configs(app).await;
+            }
+            if explicit || refreshed.changed_any() || !refreshed.failed.is_empty() {
+                app.note(&refreshed.summary());
+            }
+            // A listing can move a model's window without moving the roster,
+            // and both the header gauge and compaction read it, so re-resolve
+            // now rather than leaving the old size until the model is switched.
+            app.invalidate_serving_provider();
+            if app.refresh_context_window() {
+                app.note(&format!(
+                    "context window now {}K ({})",
+                    app.context_window / 1000,
+                    app.context_window_source.label()
+                ));
+                if app.should_auto_compact() {
+                    app.compact_request = Some(CompactKind::Auto);
+                }
+            }
         }
-        Ok(_) => {}
         Err(e) => app.note(&format!("could not fetch models: {e}")),
     }
-    let pairs = super::providers::list_provider_models(Some(&project_root));
+}
+
+/// Build the picker from what is currently configured, replacing any open one.
+fn show_model_picker(app: &mut App) {
+    let pairs = super::providers::list_provider_models(Some(&app.project_root));
     match ModelPicker::from_pairs(pairs, &app.model) {
         Some(picker) => {
             app.picker = None;
@@ -14242,6 +14579,9 @@ async fn reload_provider_configs(app: &mut App) {
     ) {
         Ok(configs) => {
             *args.provider_configs.lock().await = configs;
+            // The memoized model -> provider answer was resolved against the
+            // snapshot just replaced.
+            app.invalidate_serving_provider();
         }
         Err(e) => {
             app.note(&format!(
@@ -16984,7 +17324,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     let rows = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).split(inner);
     let body = rows[0];
     let help = truncate(
-        "Enter choose · Left/Right panes · Up/Down move · type to search · Esc close",
+        "Enter choose · Left/Right panes · Up/Down move · type to search · Ctrl-R refresh · Esc close",
         rows[1].width as usize,
     );
     f.render_widget(
@@ -17583,25 +17923,11 @@ fn provider_label_for_model(
     model: &str,
     pc: &HashMap<String, crate::core::state::ProviderConfig>,
 ) -> String {
-    use crate::core::cli::providers::is_cli_reachable;
-    // Explicit `<provider>/<model>` form: verify the prefix names a provider.
-    if let Some(sep) = model.find('/') {
-        if pc.contains_key(&model[..sep]) {
-            return model.to_string();
+    match crate::core::cli::providers::provider_for_model(model, pc) {
+        Some(name) if name != model && !model.starts_with(&format!("{name}/")) => {
+            format!("{name}/{model}")
         }
-    }
-    // Bare id: find the (preferentially reachable, credentialed) provider that
-    // offers it, matching `resolve_upstream_for_model`'s deterministic pick.
-    let offers = |c: &&crate::core::state::ProviderConfig| c.models.iter().any(|m| m == model);
-    let reachable = pc
-        .iter()
-        .filter(|(_, c)| is_cli_reachable(c) && offers(c))
-        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), (*name).clone()))
-        .or_else(|| pc.iter().find(|(_, c)| offers(c)));
-    match reachable {
-        Some((name, _)) if name != model => format!("{name}/{model}"),
-        Some(_) => model.to_string(),
-        None => model.to_string(),
+        _ => model.to_string(),
     }
 }
 
@@ -23760,36 +24086,7 @@ mod tests {
             let mut app = test_app();
             // Give the app a provider_configs map that is stale (empty, as it
             // would be on a fresh launch before login).
-            let provider_configs: std::collections::HashMap<
-                String,
-                crate::core::state::ProviderConfig,
-            > = std::collections::HashMap::new();
-            let args = std::sync::Arc::new(super::OrchestrationArgs {
-                client: crate::core::agent::upstream::agent_http_client(),
-                provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
-                mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    std::collections::HashMap::new(),
-                )),
-                mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    crate::core::mcp::models::McpSettings::default(),
-                )),
-                jan_data_folder: String::new(),
-                permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::default(),
-                project_root: Some(app.project_root.clone()),
-                permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    std::collections::HashMap::new(),
-                )),
-                ask_requests: None,
-                todo_registry: None,
-                system_prompt_override: None,
-                subagents_enabled: true,
-                max_parallel_subagents: 4,
-                auto_approve: false,
-                run_mode: crate::core::agent::plan::RunMode::Normal,
-                session_id: None,
-                sandbox: None,
-                monitors: Some(app.monitor_set.clone()),
-            });
+            let args = test_args(&app, std::collections::HashMap::new());
             app.args = Some(args.clone());
 
             // Build a dedicated multi-threaded runtime so we can .await
@@ -23814,6 +24111,78 @@ mod tests {
             );
             assert!(tokamak.models.iter().any(|m| m == "tokamak-1-preview"));
         });
+    }
+
+    /// A contended provider-config lock must not re-key the session's usage
+    /// rows: without the last-known fallback the same model bills into a
+    /// `(model, Some(provider))` row and a `(model, None)` one, and the
+    /// unqualified row prices against whatever else lists the id - or reports
+    /// "(no published price)" for a model whose provider publishes prices.
+    #[test]
+    fn a_busy_provider_lock_keeps_the_usage_row_on_one_provider() {
+        let mut app = test_app();
+        app.model = "shared-model".into();
+        let mut provider_configs = std::collections::HashMap::new();
+        provider_configs.insert(
+            "tokamak".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "tokamak".into(),
+                base_url: Some("https://api.tokamak.sh/v1".into()),
+                api_key: Some("tk".into()),
+                models: vec!["shared-model".into()],
+                ..Default::default()
+            },
+        );
+        let args = test_args(&app, provider_configs);
+        app.args = Some(args.clone());
+
+        assert_eq!(app.usage_key().provider.as_deref(), Some("tokamak"));
+
+        // The config snapshot is being replaced (a refresh or a /login
+        // reload); the render path asks mid-write.
+        app.invalidate_serving_provider();
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let held = rt.block_on(args.provider_configs.lock());
+        assert_eq!(
+            app.usage_key().provider.as_deref(),
+            Some("tokamak"),
+            "a busy lock must keep the last known provider, not fall back to None"
+        );
+        drop(held);
+    }
+
+    /// Minimal `OrchestrationArgs` around a provider map, for tests that only
+    /// exercise provider resolution.
+    fn test_args(
+        app: &App,
+        provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+    ) -> std::sync::Arc<super::OrchestrationArgs> {
+        std::sync::Arc::new(super::OrchestrationArgs {
+            client: crate::core::agent::upstream::agent_http_client(),
+            provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
+            mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::core::mcp::models::McpSettings::default(),
+            )),
+            jan_data_folder: String::new(),
+            permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::default(),
+            project_root: Some(app.project_root.clone()),
+            permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            ask_requests: None,
+            todo_registry: None,
+            system_prompt_override: None,
+            subagents_enabled: true,
+            max_parallel_subagents: 4,
+            auto_approve: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            session_id: None,
+            sandbox: None,
+            monitors: Some(app.monitor_set.clone()),
+        })
     }
 
     #[test]
@@ -25498,6 +25867,84 @@ mod tests {
                     .iter()
                     .map(|i| &i.model)
                     .collect::<Vec<_>>()
+            );
+        });
+    }
+
+    /// `Ctrl-R` in the picker re-lists from the endpoint, so a roster that grew
+    /// since the session started is picked up without a restart -- and the `r`
+    /// must not land in the search query, which every other character does.
+    #[test]
+    fn model_picker_ctrl_r_relists_from_the_endpoint() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            // Two connections: the automatic probe on open, then the Ctrl-R.
+            let bodies = [
+                serde_json::json!({"data": [{"id": "old-model"}]}).to_string(),
+                serde_json::json!({"data": [
+                    {"id": "old-model"},
+                    {"id": "brand-new-model", "context_length": 700000}
+                ]})
+                .to_string(),
+            ];
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap();
+            std::thread::spawn(move || {
+                for (body, stream) in bodies.into_iter().zip(listener.incoming()) {
+                    let Ok(mut stream) = stream else { continue };
+                    let _ = std::io::Read::read(&mut stream, &mut [0u8; 4096]);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+                }
+            });
+            crate::core::agent::global_config::set_provider(
+                "myprovider",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("k".into()),
+                    base_url: Some(format!("http://{addr}/v1")),
+                    models: Some(vec![]),
+                    ..Default::default()
+                },
+            )
+            .expect("seed provider");
+
+            let mut app = test_app();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::run_command(&mut app, "model", &no_mcp()));
+            let picker = app.model_picker.as_ref().expect("model picker opened");
+            assert!(picker
+                .all_items
+                .iter()
+                .all(|i| i.model != "brand-new-model"));
+
+            rt.block_on(async {
+                press(&mut app, KeyCode::Char('r'), KeyModifiers::CONTROL).await;
+            });
+            let picker = app.model_picker.as_ref().expect("picker rebuilt");
+            assert!(
+                picker.query.is_empty(),
+                "Ctrl-R must not type into the search box"
+            );
+            assert!(
+                picker
+                    .all_items
+                    .iter()
+                    .any(|i| i.model == "brand-new-model"),
+                "the re-listed model must be offered: {:?}",
+                picker
+                    .all_items
+                    .iter()
+                    .map(|i| &i.model)
+                    .collect::<Vec<_>>()
+            );
+            // The metadata rides along, which is what makes the window real
+            // rather than the conservative fallback.
+            assert_eq!(
+                crate::core::cli::model_capabilities::reported_window(None, "brand-new-model"),
+                Some(700_000)
             );
         });
     }
@@ -30566,7 +31013,246 @@ mod tests {
             cache_reported: false,
             cached_tokens: 0,
             cache_write_tokens: 0,
+            session_cost: None,
         }
+    }
+
+    /// Seed the model catalog with one priced model, the way a refresh or a
+    /// sign-in would.
+    fn seed_priced_model(provider: &str, model: &str) {
+        let mut catalog = crate::core::cli::model_catalog::Catalog::default();
+        catalog.set_provider(
+            provider,
+            std::collections::BTreeMap::from([(
+                model.to_string(),
+                crate::core::cli::model_catalog::ModelInfo {
+                    context_length: Some(1_000_000),
+                    prompt_usd: Some(0.000005),
+                    completion_usd: Some(0.000025),
+                    cache_read_usd: Some(0.0000005),
+                    ..Default::default()
+                },
+            )]),
+        );
+        catalog.save().expect("seed catalog");
+    }
+
+    fn usage_key(provider: &str, model: &str) -> super::UsageKey {
+        super::UsageKey {
+            model: model.to_string(),
+            provider: Some(provider.to_string()),
+        }
+    }
+
+    fn usage_of(
+        requests: u64,
+        prompt: u64,
+        completion: u64,
+        cached: u64,
+    ) -> crate::core::cli::model_catalog::TokenUsage {
+        crate::core::cli::model_catalog::TokenUsage {
+            requests,
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            cached_tokens: cached,
+            cache_write_tokens: 0,
+        }
+    }
+
+    /// `/usage` prices each model at its own published rates and refuses to
+    /// count an unpriced one as free -- a total that silently omitted it would
+    /// read as the whole bill.
+    #[test]
+    fn usage_prices_each_model_and_flags_the_unpriced_ones() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            seed_priced_model("tokamak", "anthropic/claude-opus-5");
+            let usage = std::collections::BTreeMap::from([
+                (
+                    usage_key("tokamak", "anthropic/claude-opus-5"),
+                    usage_of(2, 100_000, 10_000, 40_000),
+                ),
+                (
+                    usage_key("private-gateway", "private-gateway-model"),
+                    usage_of(1, 5_000, 500, 0),
+                ),
+            ]);
+
+            let text: Vec<String> = super::usage_lines(&usage)
+                .iter()
+                .map(|row| row.iter().map(|s| s.content.to_string()).collect())
+                .collect();
+            let joined = text.join("\n");
+            assert!(joined.contains("2 req"), "{joined}");
+            assert!(joined.contains("(40K cached)"), "{joined}");
+            assert!(
+                joined.contains("no published price"),
+                "an unpriced model must say so: {joined}"
+            );
+            assert!(
+                joined.contains("the total excludes models with no published price"),
+                "{joined}"
+            );
+
+            // 60K fresh prompt + 40K cached + 10K completion, at the seeded rates.
+            let expected = 60_000.0 * 0.000005 + 40_000.0 * 0.0000005 + 10_000.0 * 0.000025;
+            let (total, partial) = super::session_cost(&usage).expect("a priced model");
+            assert!((total - expected).abs() < 1e-9, "{total} vs {expected}");
+            assert!(partial, "the unpriced model makes the total partial");
+            assert!(joined.contains(&super::format_usd(expected)), "{joined}");
+        });
+    }
+
+    /// With nothing priced there is no cost line at all, rather than a `$0.00`
+    /// that would read as a free session.
+    #[test]
+    fn an_unpriced_session_reports_no_cost() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let usage = std::collections::BTreeMap::from([(
+                usage_key("private-gateway", "private-gateway-model"),
+                usage_of(1, 5_000, 500, 0),
+            )]);
+            assert_eq!(super::session_cost(&usage), None);
+            let mut report = context_report(234_000, 35_000, [1, 1, 1, 1, 1]);
+            report.session_cost = None;
+            assert_eq!(super::cost_summary_line(&report), None);
+        });
+    }
+
+    /// The `/context` overlay carries the session spend, since the window it
+    /// describes is one request and the spend is every request so far.
+    #[test]
+    fn context_view_shows_the_session_cost() {
+        let mut report = context_report(234_000, 35_000, [6_049, 9_000, 2_149, 8_049, 95_253]);
+        report.session_cost = Some((0.4213, false));
+        let line = super::cost_summary_line(&report).expect("a priced session");
+        assert!(line.contains("$0.421"), "{line}");
+        assert!(line.contains("/usage"), "{line}");
+        assert!(!line.contains("excludes"), "{line}");
+
+        report.session_cost = Some((0.4213, true));
+        assert!(super::cost_summary_line(&report)
+            .expect("line")
+            .contains("excludes"));
+
+        let text = super::context_lines(&report, 100)
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Session cost (estimated)"), "{text}");
+        // The narrow layout carries it too: a small terminal still needs it.
+        let narrow = super::context_lines(&report, 30)
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(narrow.contains("Session cost"), "{narrow}");
+    }
+
+    /// Sub-cent spends must stay legible: `$0.00` is indistinguishable from
+    /// free, which is the one thing a cost readout may not imply.
+    #[test]
+    fn small_amounts_keep_enough_digits_to_read() {
+        assert_eq!(super::format_usd(12.3456), "$12.35");
+        assert_eq!(super::format_usd(0.4213), "$0.421");
+        assert_eq!(super::format_usd(0.0004), "$0.0004");
+        // Under the 4th decimal a fixed width would print `$0.0000`.
+        assert_eq!(super::format_usd(0.0000123), "$0.000012");
+        assert_eq!(super::format_usd(0.0000000456), "$0.000000046");
+        // A priced model that billed nothing yet is the one amount that may
+        // read as free.
+        assert_eq!(super::format_usd(0.0), "$0.0000");
+    }
+
+    /// The session totals are sums over every request, because that is what is
+    /// billed -- unlike `/context`'s window fill, which is the latest request
+    /// alone.
+    #[test]
+    fn session_usage_sums_every_request_of_the_turn() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let usage = |prompt, completion| crate::core::agent::events::Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(completion),
+            total_tokens: None,
+            cached_tokens: Some(10),
+            cache_write_tokens: None,
+        };
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage(100, 20),
+        });
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage(300, 40),
+        });
+
+        let recorded = app
+            .session_usage
+            .values()
+            .next()
+            .expect("usage recorded under the current model");
+        assert_eq!(recorded.requests, 2);
+        assert_eq!(
+            recorded.prompt_tokens, 400,
+            "prompts are summed, not latched"
+        );
+        assert_eq!(recorded.completion_tokens, 60);
+        assert_eq!(recorded.cached_tokens, 20);
+        // The window fill stays the latest request's prompt.
+        assert_eq!(app.turn_prompt_tokens, 300);
+
+        // A new session starts a new bill.
+        app.reset_session();
+        assert!(app.session_usage.is_empty());
+    }
+
+    /// A subagent's tokens are spend on the same account, and `RunReport`
+    /// already counts them: leaving them out of `/usage` would make the TUI
+    /// total and the `--output-format json` envelope disagree.
+    #[test]
+    fn subagent_usage_counts_toward_the_session_total() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let usage = |prompt: u64| crate::core::agent::events::Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(10),
+            total_tokens: None,
+            cached_tokens: None,
+            cache_write_tokens: None,
+        };
+        app.apply(StreamEvent::TurnUsage { usage: usage(100) });
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::TurnUsage { usage: usage(400) },
+        );
+
+        let recorded = app.session_usage.values().next().expect("usage recorded");
+        assert_eq!(recorded.requests, 2);
+        assert_eq!(recorded.prompt_tokens, 500);
+        assert_eq!(recorded.completion_tokens, 20);
+        // The parent's own window fill is untouched by the child's request.
+        assert_eq!(app.turn_prompt_tokens, 100);
+    }
+
+    /// `/usage` with nothing to report says so rather than printing an empty
+    /// table.
+    #[test]
+    fn usage_command_with_no_requests_notes_it() {
+        let mut app = test_app();
+        super::usage_command(&mut app);
+        assert!(transcript_text(&app).contains("no usage yet this session"));
     }
 
     #[test]
@@ -34582,45 +35268,55 @@ mod tests {
 
     #[test]
     fn moving_to_a_larger_window_does_not_compact() {
-        let mut app = test_app();
-        app.context_window = 200_000;
-        app.context_window_source =
-            crate::core::cli::model_capabilities::ContextWindowSource::Catalog;
-        app.tokens = 500_000;
-        for i in 0..6 {
-            app.history.push(serde_json::json!({
-                "role": "user",
-                "content": format!("msg{i}")
-            }));
-        }
-        app.set_model("claude-sonnet-4-6".to_string());
+        // Isolated for the same reason as `set_model_notes_the_context_source`:
+        // the new window must come from the catalog, not a cached listing.
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.context_window = 200_000;
+            app.context_window_source =
+                crate::core::cli::model_capabilities::ContextWindowSource::Catalog;
+            app.tokens = 500_000;
+            for i in 0..6 {
+                app.history.push(serde_json::json!({
+                    "role": "user",
+                    "content": format!("msg{i}")
+                }));
+            }
+            app.set_model("claude-sonnet-4-6".to_string());
 
-        assert_eq!(app.context_window, 1_000_000);
-        assert!(
-            !app.should_auto_compact(),
-            "the window grew past current usage"
-        );
-        assert_eq!(app.compact_request, None);
+            assert_eq!(app.context_window, 1_000_000);
+            assert!(
+                !app.should_auto_compact(),
+                "the window grew past current usage"
+            );
+            assert_eq!(app.compact_request, None);
+        });
     }
 
+    /// Isolated from the real `~/.jan`: a cached `/models` listing there would
+    /// resolve these windows as `provider` and shadow the source under test.
     #[test]
     fn set_model_notes_the_context_source() {
-        let mut app = test_app();
-        app.set_model("claude-sonnet-4-6".to_string());
-        let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(text.contains("claude-sonnet-4-6"), "got: {text}");
-        assert!(text.contains("(context 1000K, catalog)"), "got: {text}");
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.set_model("claude-sonnet-4-6".to_string());
+            let text: String = app.transcript.iter().map(row_text).collect();
+            assert!(text.contains("claude-sonnet-4-6"), "got: {text}");
+            assert!(text.contains("(context 1000K, catalog)"), "got: {text}");
+        });
     }
 
     #[test]
     fn unknown_model_resolves_to_the_fallback_window() {
-        let mut app = test_app();
-        app.set_model("private-gateway-model".to_string());
-        assert_eq!(app.context_window, 128_000);
-        assert_eq!(
-            app.context_window_source,
-            crate::core::cli::model_capabilities::ContextWindowSource::Fallback
-        );
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            app.set_model("private-gateway-model".to_string());
+            assert_eq!(app.context_window, 128_000);
+            assert_eq!(
+                app.context_window_source,
+                crate::core::cli::model_capabilities::ContextWindowSource::Fallback
+            );
+        });
     }
 
     #[test]

@@ -47,6 +47,7 @@ to opt out of both.",
   jan --worktree                                         # work in a dedicated git worktree, not your checkout\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
+  jan cli models refresh                                 # re-read every provider's model list\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
   jan cli mcp list                                      # list configured MCP servers\n  \
   jan cli mcp add my-server --command npx --arg -y --arg my-mcp \n  \
@@ -456,6 +457,15 @@ enum ModelsCommands {
     /// Print every configured provider's models as JSON (API keys redacted)
     List {
         /// Only show models from this provider (e.g. anthropic)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Project root whose agent.toml [provider] override is applied
+        #[arg(long, default_value = ".")]
+        project: String,
+    },
+    /// Re-read every provider's /models endpoint, replacing the stored list
+    Refresh {
+        /// Only refresh this provider (e.g. tokamak)
         #[arg(long)]
         provider: Option<String>,
         /// Project root whose agent.toml [provider] override is applied
@@ -990,19 +1000,28 @@ async fn handle_models(cmd: ModelsCommands) {
                     std::process::exit(1);
                 }
             };
+            let catalog = app_lib::core::cli::model_catalog::load();
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
                 .filter(|c| provider.as_ref().is_none_or(|p| &c.provider == p))
                 .flat_map(|c| {
+                    let catalog = &catalog;
                     c.models.iter().map(move |m| {
-                        serde_json::json!({
+                        let mut entry = serde_json::json!({
                             "id": m,
                             "provider": c.provider,
                             "base_url": c.base_url,
                             "api_type": c.api_type,
                             "has_api_key": app_lib::core::cli::providers::has_credential(c),
-                        })
+                        });
+                        // Whatever the provider's own listing reported, when a
+                        // refresh (or a sign-in) has cached it. Absent for a
+                        // plain endpoint that lists ids and nothing else.
+                        if let Some(info) = catalog.get(Some(&c.provider), m) {
+                            entry["info"] = serde_json::to_value(info).unwrap_or_default();
+                        }
+                        entry
                     })
                 })
                 .collect();
@@ -1011,6 +1030,28 @@ async fn handle_models(cmd: ModelsCommands) {
                     .cmp(&(b["provider"].as_str(), b["id"].as_str()))
             });
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        ModelsCommands::Refresh { provider, project } => {
+            match app_lib::core::cli::providers::refresh_models(
+                Some(std::path::Path::new(&project)),
+                provider.as_deref(),
+            )
+            .await
+            {
+                Ok(refreshed) => {
+                    println!("{}", refreshed.summary());
+                    // A provider that could not be listed leaves its stored list
+                    // in place, so the exit code has to say the refresh was
+                    // partial or a script would read it as complete.
+                    if !refreshed.failed.is_empty() {
+                        std::process::exit(1);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
