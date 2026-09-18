@@ -4687,18 +4687,41 @@ impl App {
         self.context_window_source = resolved.source;
         changed
     }
-    /// The provider serving the current model, memoized against it. `None`
-    /// when nothing offers the model or the provider-config lock is held: the
-    /// last known answer stands until the model changes, so a busy lock cannot
-    /// re-key a session's usage rows mid-run.
+    /// Mark the memoized model -> provider answer as needing re-resolution
+    /// while keeping the answer itself. The value survives because
+    /// [`Self::serving_provider`] falls back to it when the provider-config
+    /// lock is busy; dropping the entry outright would hand that path a `None`
+    /// and split the model's spend across two `/usage` rows.
+    fn invalidate_serving_provider(&mut self) {
+        if let Some((model, _)) = self.model_provider.as_mut() {
+            // No real model id is empty, so this never matches on lookup.
+            model.clear();
+        }
+    }
+
+    /// The provider serving the current model, memoized against it. A busy
+    /// provider-config lock keeps the last known answer rather than falling to
+    /// `None`: an unqualified row prices the model against whichever provider
+    /// happens to list it, so a momentarily contended lock would otherwise
+    /// split one model's spend across two `/usage` rows, one of them priced
+    /// wrong or reported as unpriced. The memo is refreshed on the next call
+    /// that does get the lock.
     fn serving_provider(&mut self) -> Option<String> {
         if let Some((model, provider)) = &self.model_provider {
             if model == &self.model {
                 return provider.clone();
             }
         }
-        let args = self.args.clone()?;
-        let pc = args.provider_configs.try_lock().ok()?;
+        let last_known = self
+            .model_provider
+            .as_ref()
+            .and_then(|(_, provider)| provider.clone());
+        let Some(args) = self.args.clone() else {
+            return last_known;
+        };
+        let Ok(pc) = args.provider_configs.try_lock() else {
+            return last_known;
+        };
         let resolved = super::providers::provider_for_model(&self.model, &pc);
         drop(pc);
         self.model_provider = Some((self.model.clone(), resolved.clone()));
@@ -13557,7 +13580,7 @@ async fn apply_model_refresh(
             // A listing can move a model's window without moving the roster,
             // and both the header gauge and compaction read it, so re-resolve
             // now rather than leaving the old size until the model is switched.
-            app.model_provider = None;
+            app.invalidate_serving_provider();
             if app.refresh_context_window() {
                 app.note(&format!(
                     "context window now {}K ({})",
@@ -14558,7 +14581,7 @@ async fn reload_provider_configs(app: &mut App) {
             *args.provider_configs.lock().await = configs;
             // The memoized model -> provider answer was resolved against the
             // snapshot just replaced.
-            app.model_provider = None;
+            app.invalidate_serving_provider();
         }
         Err(e) => {
             app.note(&format!(
@@ -24063,36 +24086,7 @@ mod tests {
             let mut app = test_app();
             // Give the app a provider_configs map that is stale (empty, as it
             // would be on a fresh launch before login).
-            let provider_configs: std::collections::HashMap<
-                String,
-                crate::core::state::ProviderConfig,
-            > = std::collections::HashMap::new();
-            let args = std::sync::Arc::new(super::OrchestrationArgs {
-                client: crate::core::agent::upstream::agent_http_client(),
-                provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
-                mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    std::collections::HashMap::new(),
-                )),
-                mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    crate::core::mcp::models::McpSettings::default(),
-                )),
-                jan_data_folder: String::new(),
-                permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::default(),
-                project_root: Some(app.project_root.clone()),
-                permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
-                    std::collections::HashMap::new(),
-                )),
-                ask_requests: None,
-                todo_registry: None,
-                system_prompt_override: None,
-                subagents_enabled: true,
-                max_parallel_subagents: 4,
-                auto_approve: false,
-                run_mode: crate::core::agent::plan::RunMode::Normal,
-                session_id: None,
-                sandbox: None,
-                monitors: Some(app.monitor_set.clone()),
-            });
+            let args = test_args(&app, std::collections::HashMap::new());
             app.args = Some(args.clone());
 
             // Build a dedicated multi-threaded runtime so we can .await
@@ -24117,6 +24111,78 @@ mod tests {
             );
             assert!(tokamak.models.iter().any(|m| m == "tokamak-1-preview"));
         });
+    }
+
+    /// A contended provider-config lock must not re-key the session's usage
+    /// rows: without the last-known fallback the same model bills into a
+    /// `(model, Some(provider))` row and a `(model, None)` one, and the
+    /// unqualified row prices against whatever else lists the id - or reports
+    /// "(no published price)" for a model whose provider publishes prices.
+    #[test]
+    fn a_busy_provider_lock_keeps_the_usage_row_on_one_provider() {
+        let mut app = test_app();
+        app.model = "shared-model".into();
+        let mut provider_configs = std::collections::HashMap::new();
+        provider_configs.insert(
+            "tokamak".to_string(),
+            crate::core::state::ProviderConfig {
+                provider: "tokamak".into(),
+                base_url: Some("https://api.tokamak.sh/v1".into()),
+                api_key: Some("tk".into()),
+                models: vec!["shared-model".into()],
+                ..Default::default()
+            },
+        );
+        let args = test_args(&app, provider_configs);
+        app.args = Some(args.clone());
+
+        assert_eq!(app.usage_key().provider.as_deref(), Some("tokamak"));
+
+        // The config snapshot is being replaced (a refresh or a /login
+        // reload); the render path asks mid-write.
+        app.invalidate_serving_provider();
+        let rt = tokio::runtime::Runtime::new().expect("runtime");
+        let held = rt.block_on(args.provider_configs.lock());
+        assert_eq!(
+            app.usage_key().provider.as_deref(),
+            Some("tokamak"),
+            "a busy lock must keep the last known provider, not fall back to None"
+        );
+        drop(held);
+    }
+
+    /// Minimal `OrchestrationArgs` around a provider map, for tests that only
+    /// exercise provider resolution.
+    fn test_args(
+        app: &App,
+        provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+    ) -> std::sync::Arc<super::OrchestrationArgs> {
+        std::sync::Arc::new(super::OrchestrationArgs {
+            client: crate::core::agent::upstream::agent_http_client(),
+            provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
+            mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            mcp_settings: std::sync::Arc::new(tokio::sync::Mutex::new(
+                crate::core::mcp::models::McpSettings::default(),
+            )),
+            jan_data_folder: String::new(),
+            permissions: tauri_plugin_agent_tools::permissions::ToolPermissions::default(),
+            project_root: Some(app.project_root.clone()),
+            permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            ask_requests: None,
+            todo_registry: None,
+            system_prompt_override: None,
+            subagents_enabled: true,
+            max_parallel_subagents: 4,
+            auto_approve: false,
+            run_mode: crate::core::agent::plan::RunMode::Normal,
+            session_id: None,
+            sandbox: None,
+            monitors: Some(app.monitor_set.clone()),
+        })
     }
 
     #[test]

@@ -114,25 +114,15 @@ pub fn is_cli_reachable(config: &ProviderConfig) -> bool {
     config.base_url.as_deref().is_some_and(|u| !u.is_empty())
 }
 
-/// Which provider serves `model`, by the same deterministic rule
-/// `agent::upstream::resolve_upstream_for_model` routes by: an explicit
-/// `<provider>/<model>` prefix, else the reachable credentialed provider
-/// offering the bare id, else any provider offering it. `None` when none does.
+/// Which provider serves `model`. Delegates to the routing order itself
+/// (`agent::upstream::pick_provider_for_model`) rather than restating it, so a
+/// price, a context window or a header label can never name a provider other
+/// than the one the request is sent to. `None` when nothing offers the model.
 ///
 /// Sync and lock-free (the caller holds the map), so a render path or a price
 /// lookup can ask without awaiting the upstream resolver.
 pub fn provider_for_model(model: &str, pc: &HashMap<String, ProviderConfig>) -> Option<String> {
-    if let Some(sep) = model.find('/') {
-        if pc.contains_key(&model[..sep]) {
-            return Some(model[..sep].to_string());
-        }
-    }
-    let offers = |c: &&ProviderConfig| c.models.iter().any(|m| m == model);
-    pc.iter()
-        .filter(|(_, c)| is_cli_reachable(c) && offers(c))
-        .min_by_key(|(name, c)| (std::cmp::Reverse(c.api_key.is_some()), (*name).clone()))
-        .or_else(|| pc.iter().find(|(_, c)| offers(c)))
-        .map(|(name, _)| name.clone())
+    crate::core::agent::upstream::pick_provider_for_model(model, pc)
 }
 
 /// Log a provider-config load failure at most once per process. Startup probes
