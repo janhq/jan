@@ -26,6 +26,11 @@ pub(crate) struct AgentToml {
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+    /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
+    /// prompts, sessions and compactions. An array of tables rather than a
+    /// `[hooks]` map because several hooks may share one event.
+    #[serde(default)]
+    pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in

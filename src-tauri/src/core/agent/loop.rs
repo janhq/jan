@@ -186,6 +186,15 @@ pub(crate) trait ToolInvoker: Send + Sync {
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
         Vec::new()
     }
+
+    /// Fire the run's `PreCompact` hooks, just before `message_count` messages
+    /// are summarized away.
+    ///
+    /// On the invoker rather than passed into `compact_conversation` because
+    /// the invoker is what holds the run's resolved hooks and its tool context;
+    /// the default does nothing, which is right for every invoker that has no
+    /// project and therefore no hook files to read.
+    async fn pre_compact(&self, _message_count: usize) {}
 }
 
 /// Emit [`StreamEvent::Monitors`] when the set differs from what was last
@@ -359,6 +368,19 @@ struct CompositeToolInvoker {
     monitors_outlive_run: bool,
     auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
+    /// The run's resolved lifecycle hooks (`hooks_config::resolve_hooks`),
+    /// snapshotted once per run like every other config-derived field: a hook
+    /// edited mid-run must not change what a call in flight is judged by.
+    hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+    /// Tools the installed plugins declare. Dispatched here rather than through
+    /// `execute_builtin`: they are not built-ins, and like MCP tools their
+    /// capability is unknowable, so they are prompted and hidden in Plan mode.
+    plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet,
+    /// `context` answers and failure notices raised by hooks during this run,
+    /// drained into `<SYSTEM>` reminders alongside the monitor's. `Arc` because
+    /// the tool-event hooks fire inside the toolset and report through a sink
+    /// that outlives the call (see [`CompositeToolInvoker::hook_sink`]).
+    hook_notices_queue: std::sync::Arc<std::sync::Mutex<Vec<BackgroundNotice>>>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -630,6 +652,41 @@ impl CompositeToolInvoker {
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
+        .with_hooks(
+            &self.hooks,
+            self.run_mode == crate::core::agent::plan::RunMode::Plan,
+            Some(self.hook_sink()),
+        )
+    }
+
+    /// Where the `PreToolUse`/`PostToolUse` hooks fired inside
+    /// [`tauri_plugin_agent_tools::tools::handlers::execute_builtin`] send their
+    /// context answers and failure notices: the same queue `fire_hooks` uses,
+    /// drained into `<SYSTEM>` reminders at the top of the next turn.
+    fn hook_sink(&self) -> tauri_plugin_agent_tools::tools::HookSink {
+        // The queue is shared rather than borrowed because the sink outlives
+        // the call that created it, the way an output sink does.
+        let queue = self.hook_notices_queue.clone();
+        std::sync::Arc::new(
+            move |report: tauri_plugin_agent_tools::tools::hooks::HookReport| {
+                let mut queued = Vec::new();
+                for context in report.context {
+                    queued.push(BackgroundNotice {
+                        headline: None,
+                        text: context,
+                    });
+                }
+                for notice in report.notices {
+                    let message = notice.message();
+                    log::warn!("agent: {message}");
+                    queued.push(BackgroundNotice {
+                        headline: Some(message.clone()),
+                        text: message,
+                    });
+                }
+                queue.lock().unwrap().extend(queued);
+            },
+        )
     }
 
     /// A tool context whose output streams to the run's event channel as
@@ -642,6 +699,52 @@ impl CompositeToolInvoker {
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         self.tool_context()
             .with_output_sink(output_sink(&self.events, id))
+    }
+
+    /// Fire the hooks for `event` and fold their answers into the run: a
+    /// `context` answer and every failure notice become `<SYSTEM>` reminders
+    /// queued alongside the monitor's, and the deny (if any) is returned for
+    /// the caller to act on.
+    ///
+    /// Hooks see this run's plan mode, so a `PreToolUse` command is inert in
+    /// Plan for the same reason the write tools are withheld there.
+    async fn fire_hooks(
+        &self,
+        event: tauri_plugin_agent_tools::tools::hooks::HookEvent,
+        payload: tauri_plugin_agent_tools::tools::hooks::HookPayload,
+    ) -> Option<String> {
+        if self.hooks.is_empty() {
+            return None;
+        }
+        let outcome = tauri_plugin_agent_tools::tools::hooks::run_hooks(
+            &self.hooks,
+            event,
+            &payload,
+            &self.tool_context(),
+            self.run_mode == crate::core::agent::plan::RunMode::Plan,
+        )
+        .await;
+        let mut queued = Vec::new();
+        for context in outcome.context {
+            queued.push(BackgroundNotice {
+                // No headline: a hook's context is guidance for the model, not
+                // an event the user needs announced, unlike a monitor match.
+                headline: None,
+                text: context,
+            });
+        }
+        for notice in outcome.notices {
+            let message = notice.message();
+            log::warn!("agent: {message}");
+            queued.push(BackgroundNotice {
+                headline: Some(message.clone()),
+                text: message,
+            });
+        }
+        if !queued.is_empty() {
+            self.hook_notices_queue.lock().unwrap().extend(queued);
+        }
+        outcome.denied
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -1073,6 +1176,18 @@ fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path)
 
 /// Rejection message for a mutation-capable tool call attempted in
 /// `RunMode::Plan`. Authoritative: the tool never actually runs.
+/// A `PreToolUse` hook refused the call.
+///
+/// Deliberately the same `ERROR: tool '<name>' denied ...` shape every other
+/// refusal uses (see [`denied_by_policy_msg`] and the user-deny arm in
+/// `invoke`), so the model reads a hook denial as the ordinary denial it is
+/// and the TUI renders it in the same row -- there is no second refusal shape
+/// to teach either of them. The hook's reason is what distinguishes it, which
+/// is the part the user wrote to be read.
+fn hook_denied_msg(name: &str, reason: &str) -> String {
+    format!("ERROR: tool '{name}' denied: {reason}")
+}
+
 fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
 }
@@ -1100,6 +1215,12 @@ impl ToolInvoker for CompositeToolInvoker {
                     text: u.text,
                 }),
         );
+        // Hook output rides the same channel: a `context` answer has to reach
+        // the model as a reminder, and a hook that failed has to be visible
+        // rather than silently skipped.
+        out.extend(std::mem::take(
+            &mut *self.hook_notices_queue.lock().unwrap(),
+        ));
         out
     }
 
@@ -1108,10 +1229,22 @@ impl ToolInvoker for CompositeToolInvoker {
             .as_ref()
             .is_some_and(|ctx| ctx.bg.has_pending_work())
             || self.monitors_owed()
+            // A queued hook answer is owed to the model the same way a monitor
+            // match is: the turn that would end must deliver it first.
+            || !self.hook_notices_queue.lock().unwrap().is_empty()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
         self.monitors.snapshot()
+    }
+
+    async fn pre_compact(&self, message_count: usize) {
+        crate::core::agent::compaction::fire_pre_compact(
+            &self.hooks,
+            &self.tool_context(),
+            message_count,
+        )
+        .await;
     }
 
     async fn await_background(&self) {
@@ -1240,6 +1373,90 @@ impl ToolInvoker for CompositeToolInvoker {
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
+            // Plugin-declared tools are dispatched ahead of the MCP fallback:
+            // they are neither built-ins nor MCP, but their capability is just
+            // as opaque, so they get the MCP treatment -- prompted rather than
+            // auto-allowed, and withheld entirely in read-only Plan mode.
+            if self.plugin_tools.is_plugin_tool(name) {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                if self.permissions.is_denied(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        denied_by_policy_msg(name, &self.project_root),
+                    ));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let approved = self.auto_approve
+                    || self.grants.lock().unwrap().covers_mcp(name)
+                    || match self.prompt_mcp_permission(name).await {
+                        PermissionDecision::AllowOnce => true,
+                        PermissionDecision::AllowAlways => {
+                            self.grants.lock().unwrap().grant_mcp(name);
+                            true
+                        }
+                        PermissionDecision::Deny => false,
+                    };
+                if !approved {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' denied by user"),
+                    ));
+                    continue;
+                }
+                // `execute_builtin`'s hook bracket does not cover this path, so
+                // the tool events are fired here -- a plugin tool is still a
+                // tool call, and a PreToolUse policy that cannot see it would
+                // have a hole exactly where a third party's code runs.
+                let payload = tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    tool_name: Some(name.to_string()),
+                    tool_input: Some(args.clone()),
+                    ..Default::default()
+                };
+                if let Some(reason) = self
+                    .fire_hooks(
+                        tauri_plugin_agent_tools::tools::hooks::HookEvent::PreToolUse,
+                        payload.clone(),
+                    )
+                    .await
+                {
+                    out.push(ToolOutcome::plain(id, hook_denied_msg(name, &reason)));
+                    continue;
+                }
+                let tool = self
+                    .plugin_tools
+                    .get(name)
+                    .expect("is_plugin_tool implies get");
+                let content = tauri_plugin_agent_tools::tools::plugin_tools::execute(
+                    tool,
+                    &args,
+                    &self.streaming_tool_context(&id),
+                )
+                .await;
+                self.fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::PostToolUse,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        tool_result: Some(content.clone()),
+                        ..payload
+                    },
+                )
+                .await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             if !is_builtin(name) {
                 let id = tc
                     .get("id")
@@ -1337,12 +1554,19 @@ impl ToolInvoker for CompositeToolInvoker {
                 let allow_home_read = self.allow_home_read;
                 let sandbox = self.sandbox;
                 let scratch = self.scratch_root.clone();
+                // Hooks come along: a read is still a tool call, and a
+                // PreToolUse policy that stopped applying to whatever happened
+                // to be batched concurrently would be no policy at all.
+                let hooks = self.hooks.clone();
+                let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+                let hook_sink = self.hook_sink();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
-                        .with_scratch_root(&scratch);
+                        .with_scratch_root(&scratch)
+                        .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -1698,6 +1922,24 @@ fn advertise_local_tools(
                 && allowed_names.is_none_or(|allowed| allowed.contains(name))
             {
                 openai_tools.push(tauri_plugin_agent_tools::tools::monitor::monitor_tool_schema());
+            }
+        }
+        // Plugin-declared tools run a third party's command, so they are
+        // advertised on exactly the terms opaque MCP tools are: never in
+        // read-only Plan mode, and subject to the same deny list.
+        if !planning {
+            if let Some(root) = project_root {
+                for tool in crate::core::agent::hooks_config::resolve_plugin_tools(root).all() {
+                    if permissions.is_denied(&tool.qualified_name) {
+                        continue;
+                    }
+                    if let Some(allow) = allowed_names {
+                        if !allow.contains(&tool.qualified_name) {
+                            continue;
+                        }
+                    }
+                    openai_tools.push(tool.schema());
+                }
             }
         }
     }
@@ -2226,7 +2468,46 @@ async fn orchestrate_inner(
             monitors_outlive_run: session_monitors.is_some(),
             auto_approve: *auto_approve,
             run_mode,
+            // Resolved once per run, like every other config-derived field: a
+            // hook file edited mid-run must not change what a call already in
+            // flight is judged by.
+            hooks: crate::core::agent::hooks_config::resolve_hooks(root),
+            plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
+            hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         };
+        // SessionStart before the first model call and SessionEnd after the
+        // last, so a hook brackets exactly the work the run did. A context
+        // answer from SessionStart is queued here and drained into the first
+        // turn's reminders, which is why it fires before `run_turn_cycle`.
+        tools
+            .fire_hooks(
+                tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,
+                tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    session_id: session_id.clone(),
+                    message_count: Some(conversation_messages.len()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        // UserPromptSubmit fires here rather than in each surface's submit
+        // handler: the TUI, the headless run and the stream-json duplex all
+        // funnel through this one function, and a hook wired to three call
+        // sites would inevitably grow a fourth it was never added to. `deny` is
+        // not honored -- there is no tool call to stop -- but `context` is,
+        // which is what a prompt hook is for.
+        if let Some(prompt) = latest_user_text(&conversation_messages) {
+            tools
+                .fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::UserPromptSubmit,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        prompt: Some(prompt),
+                        session_id: session_id.clone(),
+                        message_count: Some(conversation_messages.len()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
         let result = run_turn_cycle(
             events,
             json_body,
@@ -2249,6 +2530,19 @@ async fn orchestrate_inner(
         if result.is_ok() {
             bg.join_all().await;
         }
+        // Fired on failure too: a SessionEnd hook that only ran on the happy
+        // path could not be used for the cleanup or audit it exists for. Its
+        // answers cannot reach the model (the run is over) and are logged by
+        // `fire_hooks` instead.
+        tools
+            .fire_hooks(
+                tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionEnd,
+                tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    session_id: session_id.clone(),
+                    ..Default::default()
+                },
+            )
+            .await;
         if index_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
@@ -2597,6 +2891,7 @@ async fn run_turn_cycle(
                         if crate::core::agent::upstream::is_context_overflow_error(&e)
                             && attempts < MAX_COMPACTION_ATTEMPTS =>
                     {
+                        tools.pre_compact(conversation_messages.len()).await;
                         let compacted = crate::core::agent::compaction::compact_conversation(
                             &conversation_messages,
                             model_id,
@@ -2752,6 +3047,7 @@ async fn run_turn_cycle(
             // input untouched when there is too little to drop, and publishing
             // an unchanged history would spend a summarizer call for nothing.
             if budget.exhausted() {
+                tools.pre_compact(conversation_messages.len()).await;
                 match crate::core::agent::compaction::compact_conversation(
                     &conversation_messages,
                     model_id,
@@ -5256,7 +5552,397 @@ mod tests {
             monitors_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
+            hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
+            plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new(),
+            hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
+    }
+
+    fn hooks_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_hooks_{tag}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create root");
+        root
+    }
+
+    fn invoker_with_hooks(
+        root: std::path::PathBuf,
+        hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+        plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet,
+        run_mode: crate::core::agent::plan::RunMode,
+    ) -> CompositeToolInvoker {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root, tx, PermissionRegistry::default());
+        // Unconfined and auto-approved so the assertions are about the hook and
+        // plugin-tool wiring, not about a sandbox backend or a prompt that has
+        // no one to answer it.
+        invoker.sandbox = false;
+        invoker.auto_approve = true;
+        invoker.hooks = hooks;
+        invoker.plugin_tools = plugin_tools;
+        invoker.run_mode = run_mode;
+        invoker
+    }
+
+    fn hooked_tool_call(name: &str, arguments: &str) -> serde_json::Value {
+        json!({
+            "id": "c1",
+            "type": "function",
+            "function": { "name": name, "arguments": arguments }
+        })
+    }
+
+    fn hook_set(
+        entries: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    ) -> tauri_plugin_agent_tools::tools::hooks::HookSet {
+        let mut set = tauri_plugin_agent_tools::tools::hooks::HookSet::new();
+        set.extend_from(entries, std::path::Path::new("test"));
+        set
+    }
+
+    fn hook_entry(
+        event: &str,
+        matcher: Option<&str>,
+        command: &str,
+    ) -> tauri_plugin_agent_tools::tools::hooks::HookEntry {
+        tauri_plugin_agent_tools::tools::hooks::HookEntry {
+            event: event.to_string(),
+            matcher: matcher.map(str::to_string),
+            command: command.to_string(),
+            timeout_secs: None,
+        }
+    }
+
+    fn plugin_tool_set(
+        entries: Vec<tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry>,
+    ) -> tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet {
+        let mut set = tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new();
+        set.extend_from("p", entries, std::path::Path::new("test"));
+        set
+    }
+
+    fn plugin_tool_entry(
+        name: &str,
+        command: &str,
+    ) -> tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry {
+        tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry {
+            name: name.to_string(),
+            description: "a plugin tool".to_string(),
+            parameters: None,
+            command: command.to_string(),
+            timeout_secs: None,
+        }
+    }
+
+    /// The acceptance requirement that a hook denial is indistinguishable from
+    /// a gate denial in the transcript: same `ERROR: tool '<name>' denied`
+    /// prefix, carried back as an ordinary tool result rather than a run error.
+    #[tokio::test]
+    async fn a_hook_denial_reaches_the_model_as_an_ordinary_denial() {
+        let root = hooks_root("deny");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("write"),
+                r#"echo '{"decision":"deny","reason":"writes are frozen"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].content.starts_with("ERROR: tool 'write' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("writes are frozen"));
+        assert!(
+            !root.join("out.txt").exists(),
+            "the denied write must not have happened"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `context` answer becomes a background notice, which is what
+    /// `run_turn_cycle` turns into a `<SYSTEM>` reminder via `reminder::attach`.
+    #[tokio::test]
+    async fn a_hook_context_answer_is_queued_as_a_background_notice() {
+        let root = hooks_root("context");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PostToolUse",
+                Some("write"),
+                r#"echo '{"context":"remember to update the changelog"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        assert!(!invoker.background_pending());
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "{}", out[0].content);
+        assert!(
+            invoker.background_pending(),
+            "the answer is owed to the model"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].text, "remember to update the changelog");
+        assert!(
+            notices[0].headline.is_none(),
+            "hook guidance is for the model, not an announcement"
+        );
+        assert!(
+            !invoker.background_pending(),
+            "draining must clear the queue"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A hook that fails is reported once and the tool call still succeeds:
+    /// a broken hook must never be able to wedge a run.
+    #[tokio::test]
+    async fn a_failing_hook_notices_but_does_not_stop_the_call() {
+        let root = hooks_root("failing");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry("PreToolUse", None, "exit 9")]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "{}", out[0].content);
+        assert!(
+            root.join("out.txt").exists(),
+            "the write must have happened"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].text.contains("exited 9"), "{}", notices[0].text);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode withholds write tools, so the hooks bracketing them have
+    /// nothing to bracket and must not run either.
+    #[tokio::test]
+    async fn tool_hooks_are_inert_in_plan_mode() {
+        let root = hooks_root("plan");
+        let marker = root.join("hook-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                None,
+                &format!("touch {}", marker.to_string_lossy()),
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
+        assert!(!marker.exists(), "a tool hook must not run in plan mode");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Phase 2: a plugin-declared tool is dispatched, runs its command with the
+    /// call's arguments on stdin, and returns its stdout as the tool result.
+    #[tokio::test]
+    async fn a_plugin_declared_tool_is_dispatched_and_returns_its_output() {
+        let root = hooks_root("plugintool");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry("echo", "cat")]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__echo", r#"{"value":42}"#)])
+            .await
+            .unwrap();
+        assert_eq!(out.len(), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(parsed["value"], 42);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin tool's capability is as opaque as an MCP tool's, so Plan mode
+    /// hard-denies it the same way.
+    #[tokio::test]
+    async fn a_plugin_tool_is_withheld_in_plan_mode() {
+        let root = hooks_root("plugintoolplan");
+        let marker = root.join("tool-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry(
+                "touch",
+                &format!("touch {}", marker.to_string_lossy()),
+            )]),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__touch", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
+        assert!(!marker.exists(), "a plugin tool must not run in plan mode");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hooks cover plugin tools too: a third party's command is exactly
+    /// where a PreToolUse policy most needs to apply.
+    #[tokio::test]
+    async fn a_hook_can_deny_a_plugin_tool() {
+        let root = hooks_root("plugintooldeny");
+        let marker = root.join("tool-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("plugin__*"),
+                r#"echo '{"decision":"deny","reason":"third-party tools are off"}'"#,
+            )]),
+            plugin_tool_set(vec![plugin_tool_entry(
+                "touch",
+                &format!("touch {}", marker.to_string_lossy()),
+            )]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__touch", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0]
+                .content
+                .starts_with("ERROR: tool 'plugin__p__touch' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("third-party tools are off"));
+        assert!(!marker.exists(), "the denied plugin tool must not have run");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A deny-listed plugin tool is refused by the same policy path an MCP
+    /// tool's deny takes.
+    #[tokio::test]
+    async fn a_denied_plugin_tool_is_refused_by_policy() {
+        let root = hooks_root("plugintoolpolicy");
+        let mut invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry("echo", "cat")]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        invoker.permissions = ToolPermissions::new(
+            PermissionDefault::ReadOnly,
+            &[],
+            &["plugin__p__echo".to_string()],
+            &[],
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__echo", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("denied by project policy"),
+            "{}",
+            out[0].content
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The three session-lifecycle events go through `fire_hooks` rather than
+    /// the toolset's `execute_builtin` bracket, so they are pinned here: each
+    /// fires, each receives its payload, and each is still live in Plan mode
+    /// (unlike the tool events above).
+    #[tokio::test]
+    async fn session_and_prompt_hooks_fire_with_their_payloads() {
+        let root = hooks_root("lifecycle");
+        let seen = root.join("seen");
+        std::fs::create_dir_all(&seen).unwrap();
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![
+                hook_entry(
+                    "SessionStart",
+                    None,
+                    &format!("cat > {}/start.json", seen.to_string_lossy()),
+                ),
+                hook_entry(
+                    "UserPromptSubmit",
+                    None,
+                    &format!("cat > {}/prompt.json", seen.to_string_lossy()),
+                ),
+                hook_entry(
+                    "SessionEnd",
+                    None,
+                    &format!("cat > {}/end.json", seen.to_string_lossy()),
+                ),
+            ]),
+            Default::default(),
+            // Plan mode on purpose: a lifecycle hook is not a tool call, so it
+            // must still fire where the tool hooks go inert.
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        use tauri_plugin_agent_tools::tools::hooks::{HookEvent, HookPayload};
+        invoker
+            .fire_hooks(
+                HookEvent::SessionStart,
+                HookPayload {
+                    session_id: Some("s1".to_string()),
+                    message_count: Some(3),
+                    ..Default::default()
+                },
+            )
+            .await;
+        invoker
+            .fire_hooks(
+                HookEvent::UserPromptSubmit,
+                HookPayload {
+                    prompt: Some("ship it".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        invoker
+            .fire_hooks(
+                HookEvent::SessionEnd,
+                HookPayload {
+                    session_id: Some("s1".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(seen.join(name)).unwrap()).unwrap()
+        };
+        let start = read("start.json");
+        assert_eq!(start["event"], "SessionStart");
+        assert_eq!(start["session_id"], "s1");
+        assert_eq!(start["message_count"], 3);
+        let prompt = read("prompt.json");
+        assert_eq!(prompt["event"], "UserPromptSubmit");
+        assert_eq!(prompt["prompt"], "ship it");
+        assert_eq!(read("end.json")["event"], "SessionEnd");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The whole point of the setting: what agent.toml says has to survive the

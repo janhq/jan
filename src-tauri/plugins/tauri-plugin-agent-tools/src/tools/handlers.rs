@@ -121,7 +121,55 @@ fn collapse_carriage_returns(s: &str) -> String {
 /// an image file, the base64 `image_url` content parts the model needs to see
 /// the image. Errors are returned as a String STARTING WITH "ERROR" rather than
 /// as Err.
+///
+/// The run's `PreToolUse` and `PostToolUse` hooks wrap this function rather
+/// than the caller's invoker. The invoker sits above it, so a surface that
+/// builds its own -- the desktop IPC command today, an out-of-process caller
+/// tomorrow -- would otherwise bypass every hook, including a `PreToolUse`
+/// deny. A denial returns here in the ERROR form the gate's denials take, so
+/// the model and the transcript cannot tell the two apart.
 pub async fn execute_builtin(
+    tool: &BuiltinTool,
+    args: &serde_json::Value,
+    ctx: &ToolContext<'_>,
+) -> (String, Option<Vec<ImageContentPart>>) {
+    let payload = crate::tools::hooks::HookPayload {
+        tool_name: Some(tool.name.to_string()),
+        tool_input: Some(args.clone()),
+        ..Default::default()
+    };
+    if let Some(reason) = crate::tools::hooks::fire_from_context(
+        crate::tools::hooks::HookEvent::PreToolUse,
+        &payload,
+        ctx,
+    )
+    .await
+    {
+        return (
+            format!("ERROR: tool '{}' denied: {reason}", tool.name),
+            None,
+        );
+    }
+    let (content, images) = execute_builtin_unhooked(tool, args, ctx).await;
+    let post = crate::tools::hooks::HookPayload {
+        tool_result: Some(content.clone()),
+        ..payload
+    };
+    // A PostToolUse deny is meaningless -- the call already happened -- so the
+    // return is dropped here; `run_hooks` only honors a deny for PreToolUse.
+    let _ = crate::tools::hooks::fire_from_context(
+        crate::tools::hooks::HookEvent::PostToolUse,
+        &post,
+        ctx,
+    )
+    .await;
+    (content, images)
+}
+
+/// The tool dispatch itself, without the hook wrapping. Split out so
+/// [`execute_builtin`] can name the un-hooked call once instead of duplicating
+/// the `read`-plus-images shape inside its own hook bracket.
+async fn execute_builtin_unhooked(
     tool: &BuiltinTool,
     args: &serde_json::Value,
     ctx: &ToolContext<'_>,

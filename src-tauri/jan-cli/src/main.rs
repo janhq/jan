@@ -741,19 +741,37 @@ fn format_plugin_list(plugins: &[InstalledPlugin]) -> String {
         .max()
         .unwrap_or(0)
         .max("AGENTS".len());
+    let tools_width = plugins
+        .iter()
+        .map(|plugin| plugin.tools.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("TOOLS".len());
+    let hooks_width = plugins
+        .iter()
+        .map(|plugin| plugin.hooks.to_string().len())
+        .max()
+        .unwrap_or(0)
+        .max("HOOKS".len());
 
     let mut output = String::new();
     writeln!(
         output,
-        "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
-        "PLUGIN", "VERSION", "SKILLS", "COMMANDS", "AGENTS"
+        "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}  {:>tools_width$}  {:>hooks_width$}",
+        "PLUGIN", "VERSION", "SKILLS", "COMMANDS", "AGENTS", "TOOLS", "HOOKS"
     )
     .unwrap();
     for plugin in plugins {
         writeln!(
             output,
-            "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}",
-            plugin.name, plugin.version, plugin.skills, plugin.commands, plugin.agents
+            "{:<name_width$}  {:<version_width$}  {:>skills_width$}  {:>commands_width$}  {:>agents_width$}  {:>tools_width$}  {:>hooks_width$}",
+            plugin.name,
+            plugin.version,
+            plugin.skills,
+            plugin.commands,
+            plugin.agents,
+            plugin.tools,
+            plugin.hooks
         )
         .unwrap();
     }

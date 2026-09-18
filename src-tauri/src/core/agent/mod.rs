@@ -18,6 +18,7 @@ pub mod git;
 pub mod global_config;
 #[cfg(feature = "cli")]
 pub mod goal;
+pub mod hooks_config;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;

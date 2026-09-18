@@ -343,6 +343,28 @@ pub async fn spawn(
     env: ShellEnv<'_>,
     thread: Option<&str>,
 ) -> std::io::Result<Child> {
+    spawn_with_stdin(cfg, command, cwd, scratch, env, thread, None).await
+}
+
+/// [`spawn`] plus a string fed to the child on stdin and then closed. Used by
+/// the hook and plugin-tool runners, whose contract is "JSON in on stdin, JSON
+/// out on stdout".
+///
+/// On a `via_stdin` shell (legacy WSL `bash.exe`, which cannot take `-c`) stdin
+/// already carries the command itself, so the payload is written on the lines
+/// after it. That is still readable -- the shell consumes its script line by
+/// line and leaves the rest of the descriptor to the script -- but it is the
+/// one shell where a hook reading stdin sees the payload only after its own
+/// source text has been consumed.
+pub async fn spawn_with_stdin(
+    cfg: &ShellConfig,
+    command: &str,
+    cwd: &Path,
+    scratch: Option<&Path>,
+    env: ShellEnv<'_>,
+    thread: Option<&str>,
+    stdin_payload: Option<&str>,
+) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
     if !cfg.via_stdin {
@@ -378,7 +400,7 @@ pub async fn spawn(
     cmd.current_dir(cwd)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(if cfg.via_stdin {
+        .stdin(if cfg.via_stdin || stdin_payload.is_some() {
             Stdio::piped()
         } else {
             Stdio::null()
@@ -390,11 +412,17 @@ pub async fn spawn(
 
     let mut child = cmd.spawn()?;
 
-    if cfg.via_stdin {
+    if cfg.via_stdin || stdin_payload.is_some() {
         if let Some(mut stdin) = child.stdin.take() {
             use tokio::io::AsyncWriteExt;
-            let _ = stdin.write_all(command.as_bytes()).await;
-            let _ = stdin.write_all(b"\n").await;
+            if cfg.via_stdin {
+                let _ = stdin.write_all(command.as_bytes()).await;
+                let _ = stdin.write_all(b"\n").await;
+            }
+            if let Some(payload) = stdin_payload {
+                let _ = stdin.write_all(payload.as_bytes()).await;
+                let _ = stdin.write_all(b"\n").await;
+            }
             let _ = stdin.shutdown().await;
         }
     }
