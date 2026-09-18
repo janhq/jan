@@ -718,7 +718,10 @@ pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     result
 }
 
-#[cfg(test)]
+// The suite covers the provider records and the TUI's settings writers, which
+// only the `cli` build compiles; the module itself is shared so the desktop can
+// read the user's `[[hooks]]`.
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
 

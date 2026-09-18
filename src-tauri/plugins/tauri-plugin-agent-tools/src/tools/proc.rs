@@ -356,6 +356,10 @@ pub async fn spawn(
 /// line and leaves the rest of the descriptor to the script -- but it is the
 /// one shell where a hook reading stdin sees the payload only after its own
 /// source text has been consumed.
+///
+/// The write itself happens on a detached task, so this function returns as
+/// soon as the child is spawned and the caller's timeout covers the whole
+/// exchange. See the comment at the write site.
 pub async fn spawn_with_stdin(
     cfg: &ShellConfig,
     command: &str,
@@ -414,16 +418,30 @@ pub async fn spawn_with_stdin(
 
     if cfg.via_stdin || stdin_payload.is_some() {
         if let Some(mut stdin) = child.stdin.take() {
-            use tokio::io::AsyncWriteExt;
-            if cfg.via_stdin {
-                let _ = stdin.write_all(command.as_bytes()).await;
-                let _ = stdin.write_all(b"\n").await;
-            }
-            if let Some(payload) = stdin_payload {
-                let _ = stdin.write_all(payload.as_bytes()).await;
-                let _ = stdin.write_all(b"\n").await;
-            }
-            let _ = stdin.shutdown().await;
+            // Written from a detached task, never awaited here: a payload
+            // larger than the pipe buffer blocks until the child reads it, and
+            // a child that never reads its stdin would wedge the caller *before*
+            // it could arm its timeout. A PostToolUse hook carries a whole tool
+            // result, so this is the common size, not a corner case. Detached,
+            // the write simply fails when the child is killed or exits.
+            let script = cfg.via_stdin.then(|| command.to_string());
+            let payload = stdin_payload.map(str::to_string);
+            tokio::spawn(async move {
+                use tokio::io::AsyncWriteExt;
+                if let Some(script) = script {
+                    if stdin.write_all(script.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = stdin.write_all(b"\n").await;
+                }
+                if let Some(payload) = payload {
+                    if stdin.write_all(payload.as_bytes()).await.is_err() {
+                        return;
+                    }
+                    let _ = stdin.write_all(b"\n").await;
+                }
+                let _ = stdin.shutdown().await;
+            });
         }
     }
 

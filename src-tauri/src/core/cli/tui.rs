@@ -8567,9 +8567,32 @@ fn finish_plugin_install(
             }
             for p in plugins {
                 app.note(&format!(
-                    "installed plugin '{}' ({} skills)",
-                    p.name, p.skills
+                    "installed plugin '{}' ({} skills, {} commands, {} agents, {} tools, {} hooks)",
+                    p.name, p.skills, p.commands, p.agents, p.tools, p.hooks
                 ));
+                // Named, not just counted: a hook runs a third party's command
+                // on every matching tool call from here on, so the user is told
+                // exactly what was installed and how to switch it off.
+                if p.hooks > 0 || p.tools > 0 {
+                    let dir =
+                        crate::core::agent::skills::plugins_dir(&app.project_root).join(&p.name);
+                    for hook in
+                        tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&dir).0
+                    {
+                        app.note(&format!(
+                            "  hook {} ({}): {}",
+                            hook.event,
+                            hook.matcher.as_deref().unwrap_or("*"),
+                            hook.command
+                        ));
+                    }
+                    for tool in crate::core::agent::hooks_config::plugin_tool_entries(&dir) {
+                        app.note(&format!("  tool {}: {}", tool.name, tool.command));
+                    }
+                    app.note(
+                        "  disable with [plugins] hooks = false / tools = false in agent.toml",
+                    );
+                }
             }
         }
         Ok(GitInstall::Collection(candidates)) => {
@@ -13317,6 +13340,23 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 "{} agent{}",
                 p.agents,
                 if p.agents == 1 { "" } else { "s" }
+            ));
+        }
+        // Tools and hooks are listed even though the three counts above are
+        // markdown: these are commands a third party gets to run on this
+        // machine, so "what did I just install" has to answer for them.
+        if p.tools > 0 {
+            bits.push(format!(
+                "{} tool{}",
+                p.tools,
+                if p.tools == 1 { "" } else { "s" }
+            ));
+        }
+        if p.hooks > 0 {
+            bits.push(format!(
+                "{} hook{}",
+                p.hooks,
+                if p.hooks == 1 { "" } else { "s" }
             ));
         }
         if bits.is_empty() {
@@ -34782,6 +34822,51 @@ mod tests {
         );
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// Installing a plugin that ships hooks and tools means a third party's
+    /// commands run on this machine from then on, so the install note names
+    /// each one and says how to switch them off. A count alone would let the
+    /// most consequential thing a plugin can carry arrive unannounced.
+    #[tokio::test]
+    async fn installing_a_plugin_lists_the_hooks_and_tools_it_brings() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        let dir = crate::core::agent::skills::plugins_dir(&app.project_root).join("auditor");
+        std::fs::create_dir_all(dir.join("hooks")).unwrap();
+        std::fs::write(
+            dir.join("hooks").join("hooks.json"),
+            r#"[{"event":"PreToolUse","matcher":"bash","command":"./audit.sh"}]"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            "name = \"auditor\"\n\n[[tools]]\nname = \"scan\"\ncommand = \"./scan.sh\"\n",
+        )
+        .unwrap();
+
+        finish_plugin_install(
+            &mut app,
+            None,
+            Ok(crate::core::agent::plugins::GitInstall::Installed(vec![
+                crate::core::agent::plugins::InstalledPlugin {
+                    name: "auditor".to_string(),
+                    description: String::new(),
+                    version: "1.0.0".to_string(),
+                    repo: String::new(),
+                    skills: 0,
+                    commands: 0,
+                    agents: 0,
+                    tools: 1,
+                    hooks: 1,
+                },
+            ])),
+        );
+        let text = transcript_text(&app);
+        assert!(text.contains("1 tools, 1 hooks"), "{text}");
+        assert!(text.contains("hook PreToolUse (bash): ./audit.sh"), "{text}");
+        assert!(text.contains("tool scan: ./scan.sh"), "{text}");
+        assert!(text.contains("[plugins] hooks = false"), "{text}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Drive `PickerKind::PluginSelect` end to end: open it via a collection

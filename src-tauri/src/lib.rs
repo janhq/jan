@@ -257,6 +257,15 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     tauri::mobile_entry_point
 )]
 pub fn run() {
+    // Installed before any plugin: the toolset crate owns no config format, so
+    // the `execute_tool` IPC command can only reach a user's `[[hooks]]`
+    // through a resolver the app hands it. Without this the desktop is the one
+    // surface where a configured hook silently never fires, since the webview
+    // drives its own tool loop and never builds the CLI's invoker.
+    tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
+        crate::core::agent::hooks_config::resolve_hooks_for(project)
+    }));
+
     let builder = tauri::Builder::default();
     // Shadowed rather than mutated: under `e2e` the plugin below is the only
     // thing that touched `builder`, and a `mut` binding would then be unused --

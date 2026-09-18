@@ -1,0 +1,334 @@
+---
+title: Hooks
+description: Shell commands the agent runs at fixed points of a run, to enforce a policy the model cannot ignore.
+keywords: [Jan, Jan Agent, hooks, lifecycle, PreToolUse, PostToolUse, policy, audit, plugin tools]
+---
+
+import { Callout } from 'nextra/components'
+
+# Hooks
+
+A hook is a shell command Jan runs at a fixed point of a run: before a tool call, after it, when a
+prompt is submitted, when a session starts or ends, and before a compaction. The payload arrives on
+stdin as JSON and the command's stdout is its answer.
+
+The point is to make a team policy enforceable rather than merely requested. "Run `cargo fmt` after
+every `edit`", "never let `bash` touch `infra/`", "log every tool call to our audit sink" used to
+have only one lever - a line in the system prompt, which the model is free to ignore. A hook is not
+advice. A `PreToolUse` hook that answers `deny` stops the call.
+
+A hook is a shell command, not a plugin runtime. It runs through the same confinement `bash` gets,
+so nothing here is a new execution primitive.
+
+## A first hook
+
+`.jan/agent/agent.toml`:
+
+```toml
+[[hooks]]
+event = "PostToolUse"
+matcher = "edit"
+command = "cargo fmt --quiet"
+```
+
+Every `edit` the model makes is now followed by a format pass, for everyone who checks the project
+out. `event` and `command` are the only required fields, so the smallest useful hook is two lines.
+
+## Events
+
+| Event | Fires |
+| --- | --- |
+| `PreToolUse` | Before a tool call executes. The only event whose `deny` is honored |
+| `PostToolUse` | After a tool call returns, with its result text in the payload |
+| `UserPromptSubmit` | A user prompt was submitted, before the turn starts |
+| `SessionStart` | A session began, before the first model call |
+| `SessionEnd` | A session ended, after the last one. Fires on failure and on cancellation too |
+| `PreCompact` | Before the conversation is compacted, whether by the automatic overflow retry or `/compact` |
+
+Names are case-sensitive: they are a wire contract shared with plugin `hooks.json`, and quietly
+accepting `pretooluse` would make a typo in one file behave differently from the same typo in
+another. An unrecognized name is dropped at load with a notice.
+
+`PreToolUse` and `PostToolUse` are inert in [Plan mode](/docs/agent/run-modes). Plan mode withholds
+every write- and exec-capable tool from the model, so running an arbitrary shell command around one
+would reintroduce exactly the capability that mode exists to remove - and with the tool withheld
+there is nothing left to wrap. The four lifecycle events stay live: a run still starts, still ends,
+still takes a prompt and still compacts while planning, and none of those is a mutation Plan mode
+is meant to stop.
+
+## Where hooks come from
+
+Three sources, merged least specific first:
+
+1. an installed plugin's `<plugin>/hooks/hooks.json` - shipped by a third party
+2. `~/.jan/config.toml` `[[hooks]]` - this user, every project
+3. `<project>/.jan/agent/agent.toml` `[[hooks]]` - this project
+
+They all run. Merge order is run order, so the project's hook runs last and its `context` answer
+lands nearest the call. The set is resolved once per run, so a hook file edited mid-run cannot
+change what a call already in flight is judged by.
+
+A deny is not a precedence question. `PreToolUse` stops at the **first** hook that denies and the
+hooks behind it are never run, so any layer can veto a call and no later layer can overturn it. A
+veto a more specific file could quietly undo would not be a policy. It does mean a plugin's hook can
+deny a call the project's own hooks never see; `[plugins] hooks = false` is the way out.
+
+A missing or malformed source contributes nothing rather than failing the run. One bad line in a
+shared config does not take the other hooks down with it - it is dropped, with a notice.
+
+### Plugin hooks
+
+`hooks/hooks.json` in a plugin is a bare JSON array of the same entries:
+
+```json
+[
+  { "event": "PreToolUse", "matcher": "bash", "command": "./hooks/audit.sh", "timeout_secs": 10 },
+  { "event": "SessionEnd", "command": "./hooks/report.sh" }
+]
+```
+
+### Global hooks
+
+`~/.jan/config.toml` takes the same `[[hooks]]` array and applies it to every project you work on:
+
+```toml
+[[hooks]]
+event = "SessionEnd"
+command = "logger -t jan 'agent session finished'"
+```
+
+## Fields
+
+| Field | Meaning |
+| --- | --- |
+| `event` | One of the six names above. Required |
+| `matcher` | Glob over the tool name. Defaults to `*` (every tool) |
+| `command` | The shell command to run. Required; a blank one is dropped |
+| `timeout_secs` | Seconds before the hook is killed. Defaults to 60 |
+
+`matcher` is only consulted for the two tool events - a session-lifecycle hook has no tool name to
+match and always fires. It is an ordinary glob, so `*write*` catches `write`, `memory_write` and
+`skill_write`, while `edit` catches only `edit`. An invalid glob is dropped at load with a notice
+rather than kept: a pattern that cannot parse can only ever answer "no", which reads exactly like a
+hook written for a tool that was never called.
+
+## The payload
+
+One JSON object on stdin. `event` and `project_root` are always present; the rest appear when the
+event has them:
+
+```json
+{
+  "event": "PreToolUse",
+  "project_root": "/home/you/code/app",
+  "tool_name": "bash",
+  "tool_input": { "command": "rm -rf infra/" },
+  "session_id": "01J9...",
+  "message_count": 24
+}
+```
+
+| Key | Present for |
+| --- | --- |
+| `event`, `project_root` | Always |
+| `tool_name`, `tool_input` | `PreToolUse`, `PostToolUse` |
+| `tool_result` | `PostToolUse` - the result text the tool produced |
+| `prompt` | `UserPromptSubmit` |
+| `session_id` | `SessionStart`, `SessionEnd`, `UserPromptSubmit` |
+| `message_count` | `SessionStart`, `UserPromptSubmit`, `PreCompact` |
+
+## The answer
+
+Whatever the command writes to stdout, up to 64KB.
+
+| Stdout | Effect |
+| --- | --- |
+| Empty | Proceed unchanged. The common case |
+| `{"decision":"deny","reason":"..."}` | Block the call. Honored for `PreToolUse` only |
+| `{"context":"..."}` | The text is folded into the next turn as a `<SYSTEM>` reminder |
+
+Anything that is not a JSON object is an error, not consent: a hook that meant to deny and mistyped
+its JSON must never be read as approval. Stderr is drained and discarded - only stdout is the
+protocol.
+
+A hook can only tighten policy, never grant. `"decision":"allow"` does nothing; a tool the
+[permission gate](/docs/agent/permissions) would have withheld stays withheld. A `deny` from any
+event other than `PreToolUse` is ignored, because the call has already happened and there is nothing
+left to stop.
+
+When a `PreToolUse` hook denies, the model sees the same refusal shape every other denial uses, with
+the hook's reason attached:
+
+```
+ERROR: tool 'bash' denied: infra/ is managed by terraform, not by the agent
+```
+
+A worked example - refuse shell commands that touch a protected directory:
+
+```toml
+[[hooks]]
+event = "PreToolUse"
+matcher = "bash"
+command = "jq -e '.tool_input.command | test(\"infra/\") | not' >/dev/null || echo '{\"decision\":\"deny\",\"reason\":\"infra/ is managed by terraform, not by the agent\"}'"
+```
+
+And one that feeds the model a fact at the start of every turn:
+
+```bash
+#!/usr/bin/env bash
+# .jan/agent/hooks/branch.sh
+printf '{"context":"current branch: %s"}' "$(git rev-parse --abbrev-ref HEAD)"
+```
+
+```toml
+[[hooks]]
+event = "UserPromptSubmit"
+command = "./.jan/agent/hooks/branch.sh"
+```
+
+`context` from `PreCompact` and `SessionEnd` is logged rather than delivered: a compaction is not a
+turn, and after `SessionEnd` there is no turn left to attach a reminder to.
+
+## When a hook misbehaves
+
+Failure is never fatal. A hook that exits nonzero, outruns its `timeout_secs`, cannot be started, or
+writes unparseable stdout produces one notice and the run carries on:
+
+```
+Hook PreToolUse ('./hooks/audit.sh') exited 3
+Hook PostToolUse ('cargo fmt --quiet') timed out after 60s
+Hook PreToolUse ('./hooks/check.sh') emitted stdout that is not a JSON object
+```
+
+The notice is logged, shown to you, and handed to the model as a reminder. A hook must not be able
+to wedge a session, and a silent skip would be worse than a visible complaint - a user who believes
+their policy is in force deserves to know it is not. A timed-out hook has its whole process tree
+killed and reaped.
+
+Entries dropped while loading - a bad event name, a blank command, an invalid matcher glob - are
+reported the same way, once per run, before anything fires.
+
+<Callout type="info">
+Hooks run confined exactly the way `bash` does. Under a sandboxed run a hook is sandboxed; on the
+CLI, where the sandbox is off by default, a hook runs with your own access. The shell environment is
+the same minimal one, so a hook does not see your secrets unless `[tools] env_passthrough` or
+`[tools] env_set` names them. See [Tool Permissions](/docs/agent/permissions#the-shell-environment).
+</Callout>
+
+## Which surfaces fire hooks
+
+All of them. The `jan` CLI and the interactive TUI, the OpenAI-compatible API server, subagent runs,
+and the desktop app share one resolution path, so a hook you configure cannot silently be live on one
+surface and dead on another.
+
+- `jan` CLI and TUI: the project's three layers, resolved from the project root
+- API server: the same, for the project a request runs against
+- [Subagents](/docs/agent/subagents): a subagent run resolves the same hooks as its parent, so a
+  `PreToolUse` veto cannot be escaped by delegating the call
+- Desktop app: the app installs the resolver at startup, so tool calls driven from the webview fire
+  hooks too. A desktop chat thread has no project root, so it gets the `~/.jan/config.toml` layer -
+  the one that is about the user rather than the checkout
+
+## Plugin-declared tools
+
+A plugin can declare tools as well as hooks. A `[[tools]]` entry in its `plugin.toml` names a
+description, a JSON Schema and a command:
+
+```toml
+name = "release-tools"
+
+[[tools]]
+name = "changelog"
+description = "Render the changelog between two tags"
+command = "./bin/changelog.sh"
+timeout_secs = 180
+
+[tools.parameters]
+type = "object"
+required = ["from"]
+
+[tools.parameters.properties.from]
+type = "string"
+description = "Start tag"
+
+[tools.parameters.properties.to]
+type = "string"
+description = "End tag, defaults to HEAD"
+```
+
+The model sees it as `plugin__release-tools__changelog`. The `plugin__<plugin>__<tool>` form is
+mandatory so a plugin cannot shadow a built-in like `bash` or `edit`, or collide with an MCP tool.
+Names are ASCII alphanumerics, `_` and `-`, may not contain `__`, and the whole qualified name must
+be 64 characters or shorter - several providers reject a longer function name, and reject the entire
+request rather than the one tool. An entry that breaks a rule is dropped; where two plugins declare
+the same qualified name, the first wins.
+
+Arguments arrive on the command's stdin as one JSON object and its stdout becomes the tool result.
+Stderr is appended under a `[stderr]` marker rather than discarded, so a tool that explains a failure
+there has the explanation reach the model. Output is capped at 128KB with a truncation note, a
+nonzero exit becomes an `ERROR: plugin tool '...' exited ...` result, and the default timeout is 120
+seconds (longer than a hook's: this is the call the model is waiting on, not a check beside it).
+Omit `[tools.parameters]` and the tool is advertised as taking no arguments.
+
+Plugin tools are gated exactly like opaque MCP tools, because their capability is just as
+unknowable from the outside: they are prompted rather than auto-approved, they honor `[tools] deny`,
+and they are withheld entirely in read-only Plan mode. Their calls fire `PreToolUse` and
+`PostToolUse` like any other, so a hook policy covers them too.
+
+## Turning a plugin's hooks and tools off
+
+Both default to on - a plugin that ships hooks is usually installed for them - and both switch off in
+`agent.toml` without uninstalling the plugin and losing its skills, commands and agents:
+
+```toml
+[plugins]
+hooks = false    # ignore every installed plugin's hooks/hooks.json
+tools = false    # withhold every plugin-declared tool from the model
+```
+
+<Callout type="warning">
+Installing a plugin that ships hooks means a third party's commands run on your tool calls, on every
+session, with whatever access the run has. On the CLI, where the sandbox is off by default, that is
+your own access. Read a plugin's `hooks/hooks.json` and its `[[tools]]` before you install it, or
+set `hooks = false` and `tools = false` and keep only its skills.
+</Callout>
+
+## Debugging
+
+`jan cli agent status` lists every resolved hook, in merge order, with the file it came from:
+
+```bash
+jan cli agent status --project ~/code/app
+```
+
+```json
+"hooks": [
+  {
+    "event": "PreToolUse",
+    "matcher": "bash",
+    "command": "./hooks/audit.sh",
+    "timeout_secs": 10,
+    "source": "/home/you/code/app/.jan/agent/plugins/auditor/hooks/hooks.json"
+  },
+  {
+    "event": "PostToolUse",
+    "matcher": "edit",
+    "command": "cargo fmt --quiet",
+    "timeout_secs": 60,
+    "source": "/home/you/code/app/.jan/agent/agent.toml"
+  }
+],
+"plugin_tools": [
+  {
+    "name": "plugin__release-tools__changelog",
+    "plugin": "release-tools",
+    "description": "Render the changelog between two tags",
+    "command": "./bin/changelog.sh",
+    "source": "/home/you/code/app/.jan/agent/plugins/release-tools"
+  }
+]
+```
+
+A hook missing from that list was dropped at load; the reason was printed as a notice when the run
+started. A hook present but apparently not firing is usually a `matcher` that does not match the tool
+name, or a tool event in Plan mode.

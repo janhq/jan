@@ -27,11 +27,40 @@
 //! worse than a visible complaint.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::tools::ToolContext;
+
+/// Resolves the hooks that apply to a run in the given project (`None` for a
+/// surface with no project, which still gets the user's global ones).
+///
+/// The config formats live in the app crate, not here, so this crate cannot
+/// read them itself. A surface that owns a run resolves them directly; the IPC
+/// command cannot, because it is handed one tool call with no run around it.
+/// Hence this injection point: the app installs its resolver once at startup
+/// and every invoker, including the desktop's, inherits the same hooks.
+pub type HookResolver = Arc<dyn Fn(Option<&Path>) -> HookSet + Send + Sync>;
+
+static RESOLVER: OnceLock<HookResolver> = OnceLock::new();
+
+/// Install the process-wide hook resolver. First call wins; later ones are
+/// ignored, so a second plugin init cannot swap a run's policy out from under
+/// it.
+pub fn set_resolver(resolver: HookResolver) {
+    let _ = RESOLVER.set(resolver);
+}
+
+/// The hooks that apply to `project`, or an empty set when no resolver was
+/// installed (the toolset used standalone, as the tests use it).
+pub fn resolve_for(project: Option<&Path>) -> HookSet {
+    RESOLVER
+        .get()
+        .map(|resolve| resolve(project))
+        .unwrap_or_default()
+}
 
 /// Per-hook wall clock. Matches the monitor's condition-script overrun
 /// (`monitor::EVAL_TIMEOUT`): a hook is the same kind of short side command,
@@ -42,6 +71,12 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
 /// JSON object; anything past this is a runaway and is truncated rather than
 /// buffered without limit.
 const OUTPUT_MAX_BYTES: usize = 64 * 1024;
+
+/// How long a killed child is waited on before it is given up as unreapable.
+/// SIGKILL on a healthy process is near-instant; the bound only exists so a
+/// child stuck in uninterruptible state cannot turn the timeout path into a
+/// second hang.
+const REAP_GRACE: Duration = Duration::from_secs(2);
 
 /// The lifecycle points a hook can attach to.
 ///
@@ -130,6 +165,9 @@ impl Hook {
         if self.matcher.is_empty() || self.matcher == "*" {
             return true;
         }
+        // An unparseable matcher cannot reach here: `HookSet::extend_from`
+        // drops such an entry with a notice rather than letting it match
+        // nothing forever.
         glob::Pattern::new(&self.matcher)
             .map(|p| p.matches(tool_name))
             .unwrap_or(false)
@@ -159,6 +197,11 @@ pub struct HookEntry {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct HookSet {
     hooks: Vec<Hook>,
+    /// One line per entry dropped while loading: a bad event name, a blank
+    /// command, an unparseable matcher. Reported once per run rather than
+    /// swallowed, because a hook that silently does not fire is worse than one
+    /// that complains -- the user believes their policy is in force.
+    load_notices: Vec<String>,
 }
 
 impl HookSet {
@@ -178,26 +221,54 @@ impl HookSet {
         &self.hooks
     }
 
+    /// Entries that were dropped at load time, each already a full sentence.
+    /// See [`Self::load_notices`].
+    pub fn load_notices(&self) -> &[String] {
+        &self.load_notices
+    }
+
     /// Append entries from one source, skipping any whose event name is not
-    /// recognized or whose command is blank. A malformed entry is dropped
-    /// rather than failing the load: one bad line in a shared config must not
-    /// take every other hook down with it.
+    /// recognized, whose command is blank, or whose matcher is not a valid
+    /// glob. A malformed entry is dropped rather than failing the load: one bad
+    /// line in a shared config must not take every other hook down with it. Each
+    /// drop leaves a line in [`Self::load_notices`], so "dropped" never means
+    /// "unnoticed".
     pub fn extend_from(&mut self, entries: Vec<HookEntry>, source: &Path) {
+        let where_ = source.display();
         for entry in entries {
             let Some(event) = HookEvent::parse(entry.event.trim()) else {
+                self.load_notices.push(format!(
+                    "Hook in {where_} ignored: '{}' is not a hook event",
+                    entry.event.trim()
+                ));
                 continue;
             };
             let command = entry.command.trim().to_string();
             if command.is_empty() {
+                self.load_notices.push(format!(
+                    "Hook {} in {where_} ignored: its command is empty",
+                    event.as_str()
+                ));
+                continue;
+            }
+            let matcher = entry
+                .matcher
+                .unwrap_or_else(|| "*".to_string())
+                .trim()
+                .to_string();
+            // Checked here, not at match time: `matches` can only answer
+            // "no" for a bad pattern, which reads exactly like a hook the user
+            // wrote for a tool that was never called.
+            if !matcher.is_empty() && matcher != "*" && glob::Pattern::new(&matcher).is_err() {
+                self.load_notices.push(format!(
+                    "Hook {} in {where_} ignored: matcher '{matcher}' is not a valid glob",
+                    event.as_str()
+                ));
                 continue;
             }
             self.hooks.push(Hook {
                 event,
-                matcher: entry
-                    .matcher
-                    .unwrap_or_else(|| "*".to_string())
-                    .trim()
-                    .to_string(),
+                matcher,
                 command,
                 timeout_secs: entry.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS),
                 source: source.to_path_buf(),
@@ -457,6 +528,11 @@ async fn run_one(hook: &Hook, body: &str, ctx: &ToolContext<'_>) -> Result<HookR
             if let Some(pid) = pid {
                 crate::tools::proc::kill_tree(pid);
             }
+            // Killing is not reaping: without a `wait` the killed child stays a
+            // zombie for the life of the process. Bounded, because a child
+            // wedged in uninterruptible state would otherwise trade one hang
+            // for another.
+            let _ = tokio::time::timeout(REAP_GRACE, child.wait()).await;
             return Err(format!("timed out after {}s", hook.timeout_secs));
         }
     };
@@ -880,6 +956,84 @@ mod tests {
         assert_eq!(outcome.notices.len(), 1);
         assert!(outcome.notices[0].detail.contains("timed out"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The regression the detached stdin write exists for. A PostToolUse hook
+    /// carries the whole tool result; a hook that never drains stdin used to
+    /// block the parent in `write_all` once the pipe buffer filled, outside the
+    /// timeout and with no kill path. The payload here is far past any pipe
+    /// buffer, and the hook reads none of it.
+    #[tokio::test]
+    async fn a_hook_that_never_reads_a_large_payload_still_times_out() {
+        let root = unique_root("stdinwedge");
+        let store = root.join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        let empty: Vec<String> = Vec::new();
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![HookEntry {
+                event: "PostToolUse".to_string(),
+                matcher: None,
+                command: "sleep 30".to_string(),
+                timeout_secs: Some(1),
+            }],
+            Path::new("x"),
+        );
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(15),
+            run_hooks(
+                &set,
+                HookEvent::PostToolUse,
+                &HookPayload {
+                    tool_name: Some("bash".to_string()),
+                    tool_result: Some("x".repeat(4 * 1024 * 1024)),
+                    ..Default::default()
+                },
+                &ctx(&root, &store, &empty),
+                false,
+            ),
+        )
+        .await
+        .expect("the write blocked the parent past the hook's own timeout");
+        assert_eq!(outcome.notices.len(), 1);
+        assert!(outcome.notices[0].detail.contains("timed out"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A matcher that cannot compile would otherwise match nothing forever,
+    /// which reads exactly like a hook written for a tool that is never called.
+    #[test]
+    fn an_invalid_matcher_is_dropped_with_a_notice() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUse", Some("ba[sh"), "true"),
+                entry("PreToolUse", Some("ba*"), "true"),
+            ],
+            Path::new("/tmp/agent.toml"),
+        );
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.load_notices().len(), 1);
+        let notice = &set.load_notices()[0];
+        assert!(notice.contains("ba[sh"), "{notice}");
+        assert!(notice.contains("/tmp/agent.toml"), "{notice}");
+    }
+
+    /// Every other drop is reported too, for the same reason.
+    #[test]
+    fn an_unknown_event_or_blank_command_is_dropped_with_a_notice() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUsage", None, "true"),
+                entry("PreToolUse", None, "   "),
+            ],
+            Path::new("/tmp/agent.toml"),
+        );
+        assert!(set.is_empty());
+        assert_eq!(set.load_notices().len(), 2);
+        assert!(set.load_notices()[0].contains("PreToolUsage"));
+        assert!(set.load_notices()[1].contains("command is empty"));
     }
 
     #[tokio::test]

@@ -1280,6 +1280,9 @@ impl ToolInvoker for CompositeToolInvoker {
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
+        // id -> (tool name, arguments) for the MCP calls that passed the gate,
+        // so their PostToolUse hooks can be fired once the batch returns.
+        let mut mcp_hook_inputs: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         // Auto-allowed read-only built-ins (no prompt, no filesystem mutation)
         // are deferred and executed concurrently after the gating pass. Anything
         // that prompts, writes, execs, or dispatches stays sequential so
@@ -1478,21 +1481,54 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
-                if self.auto_approve || self.grants.lock().unwrap().covers_mcp(name) {
-                    mcp_calls.push(tc.clone());
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                // An MCP tool is a tool call like any other, so it gets the same
+                // bracket the built-ins and plugin tools get: a PreToolUse
+                // policy that could not see `mcp__*` would have its hole exactly
+                // where a third party's server runs. Fired before the permission
+                // prompt (unlike the built-in path, whose bracket lives inside
+                // `execute_builtin`), so a hook deny does not first cost the
+                // user an answer.
+                if let Some(reason) = self
+                    .fire_hooks(
+                        tauri_plugin_agent_tools::tools::hooks::HookEvent::PreToolUse,
+                        tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                            tool_name: Some(name.to_string()),
+                            tool_input: Some(args.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    out.push(ToolOutcome::plain(id, hook_denied_msg(name, &reason)));
                     continue;
                 }
-                match self.prompt_mcp_permission(name).await {
-                    PermissionDecision::AllowOnce => mcp_calls.push(tc.clone()),
-                    PermissionDecision::AllowAlways => {
-                        self.grants.lock().unwrap().grant_mcp(name);
-                        mcp_calls.push(tc.clone());
-                    }
-                    PermissionDecision::Deny => out.push(ToolOutcome::plain(
+                let approved = self.auto_approve
+                    || self.grants.lock().unwrap().covers_mcp(name)
+                    || match self.prompt_mcp_permission(name).await {
+                        PermissionDecision::AllowOnce => true,
+                        PermissionDecision::AllowAlways => {
+                            self.grants.lock().unwrap().grant_mcp(name);
+                            true
+                        }
+                        PermissionDecision::Deny => false,
+                    };
+                if !approved {
+                    out.push(ToolOutcome::plain(
                         id,
                         format!("ERROR: tool '{name}' denied by user"),
-                    )),
+                    ));
+                    continue;
                 }
+                // Kept alongside the call so PostToolUse can name the tool and
+                // carry its result: the batch `invoke` answers by id only.
+                mcp_hook_inputs.insert(id, (name.to_string(), args));
+                mcp_calls.push(tc.clone());
                 continue;
             }
             let id = tc
@@ -1676,7 +1712,23 @@ impl ToolInvoker for CompositeToolInvoker {
             out.extend(futures::future::join_all(read_futures).await);
         }
         if !mcp_calls.is_empty() {
-            out.extend(self.mcp.invoke(&mcp_calls).await?);
+            let results = self.mcp.invoke(&mcp_calls).await?;
+            for outcome in &results {
+                let Some((name, args)) = mcp_hook_inputs.get(&outcome.id) else {
+                    continue;
+                };
+                self.fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::PostToolUse,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        tool_name: Some(name.clone()),
+                        tool_input: Some(args.clone()),
+                        tool_result: Some(outcome.content.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+            out.extend(results);
         }
         let order: HashMap<&str, usize> = tool_calls
             .iter()
@@ -2475,6 +2527,40 @@ async fn orchestrate_inner(
             plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         };
+        // Entries dropped while loading the hook files are reported once here,
+        // before anything fires: a user whose matcher is a bad glob otherwise
+        // watches a hook never run and has nothing to tell them why.
+        {
+            let dropped: Vec<BackgroundNotice> = tools
+                .hooks
+                .load_notices()
+                .iter()
+                .map(|message| {
+                    log::warn!("agent: {message}");
+                    BackgroundNotice {
+                        headline: Some(message.clone()),
+                        text: message.clone(),
+                    }
+                })
+                .collect();
+            if !dropped.is_empty() {
+                tools.hook_notices_queue.lock().unwrap().extend(dropped);
+            }
+        }
+        // Cancellation aborts this future at its next await point, so the
+        // SessionEnd call below is simply never reached -- a hole exactly for
+        // the "log every session" hooks SessionEnd exists for. The guard closes
+        // it: dropped without being disarmed, it fires the event from a detached
+        // task. Disarmed on the normal path, so the event still fires there
+        // inline and in order.
+        let mut session_end = SessionEndGuard {
+            hooks: tools.hooks.clone(),
+            project_root: root.clone(),
+            store_root: tools.store_root.clone(),
+            sandbox: tools.sandbox,
+            session_id: session_id.clone(),
+            armed: true,
+        };
         // SessionStart before the first model call and SessionEnd after the
         // last, so a hook brackets exactly the work the run did. A context
         // answer from SessionStart is queued here and drained into the first
@@ -2533,7 +2619,9 @@ async fn orchestrate_inner(
         // Fired on failure too: a SessionEnd hook that only ran on the happy
         // path could not be used for the cleanup or audit it exists for. Its
         // answers cannot reach the model (the run is over) and are logged by
-        // `fire_hooks` instead.
+        // `fire_hooks` instead. Disarm first: this inline call is the ordered
+        // one, and the guard is only the cancellation fallback.
+        session_end.armed = false;
         tools
             .fire_hooks(
                 tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionEnd,
@@ -2645,6 +2733,65 @@ fn build_completion_request(
     serde_json::Value::Object(completion_map)
 }
 
+/// Fires `SessionEnd` if the run is cancelled before it reaches its own call.
+///
+/// A cancelled future is dropped, not unwound past an await, so the only way to
+/// run anything after it is a `Drop` impl. Hooks are async and `Drop` is not,
+/// hence the detached task; it owns everything it needs so nothing borrowed from
+/// the dying run outlives it. Best-effort by construction: on process exit the
+/// task may not get to run, which is the honest limit of the guarantee.
+struct SessionEndGuard {
+    hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+    project_root: std::path::PathBuf,
+    store_root: std::path::PathBuf,
+    sandbox: bool,
+    session_id: Option<String>,
+    /// Cleared by the normal path, which fires the event itself and in order.
+    armed: bool,
+}
+
+impl Drop for SessionEndGuard {
+    fn drop(&mut self) {
+        if !self.armed || self.hooks.is_empty() {
+            return;
+        }
+        let hooks = std::mem::take(&mut self.hooks);
+        let project_root = std::mem::take(&mut self.project_root);
+        let store_root = std::mem::take(&mut self.store_root);
+        let sandbox = self.sandbox;
+        let session_id = self.session_id.take();
+        // `spawn` rather than `block_on`: this drop can run on the runtime's own
+        // worker, where blocking would deadlock it.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(
+                    &project_root,
+                    &store_root,
+                    &[],
+                )
+                .with_sandbox(sandbox)
+                .with_hooks(&hooks, false, None);
+                let outcome = tauri_plugin_agent_tools::tools::hooks::run_hooks(
+                    &hooks,
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionEnd,
+                    &tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        session_id,
+                        ..Default::default()
+                    },
+                    &ctx,
+                    false,
+                )
+                .await;
+                // Logged, not queued: the run is gone, so there is no turn left
+                // to fold a context answer or a notice into.
+                for notice in outcome.notices {
+                    log::warn!("agent: {}", notice.message());
+                }
+            });
+        }
+    }
+}
+
 /// Manually compact `messages` for the given model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
@@ -2656,6 +2803,18 @@ pub(crate) async fn compact_history(
     messages: &[serde_json::Value],
     keep_recent: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
+    // `/compact` discards conversation exactly as the in-loop overflow retry
+    // does, so it owes PreCompact the same warning. This path has no invoker to
+    // hang the hooks off (it holds args and a model id, nothing more), so they
+    // are resolved here.
+    if let Some(root) = args.project_root.as_deref() {
+        let hooks = crate::core::agent::hooks_config::resolve_hooks(root);
+        let store = tauri_plugin_agent_tools::workspace::project_store(root);
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(root, &store, &[])
+            .with_sandbox(effective_sandbox(root))
+            .with_hooks(&hooks, false, None);
+        crate::core::agent::compaction::fire_pre_compact(&hooks, &ctx, messages.len()).await;
+    }
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         model_id,
         args.provider_configs.clone(),
@@ -5836,6 +5995,73 @@ mod tests {
         );
         assert!(out[0].content.contains("third-party tools are off"));
         assert!(!marker.exists(), "the denied plugin tool must not have run");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The bypass this closes: an MCP call went straight to `mcp.invoke_tool`,
+    /// so a deny hook stopped `bash` and `plugin__*` but never `mcp__*` -- a
+    /// hole exactly where a third party's server runs.
+    #[tokio::test]
+    async fn a_hook_can_deny_an_mcp_tool() {
+        let root = hooks_root("mcpdeny");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("mcp__*"),
+                r#"echo '{"decision":"deny","reason":"no mcp today"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        // The invoker's MCP registry is empty, so reaching the call at all
+        // would surface as a transport error rather than this deny message:
+        // the assertion distinguishes "stopped by the hook" from "failed".
+        let out = invoker
+            .invoke(&[hooked_tool_call("mcp__srv__doit", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0]
+                .content
+                .starts_with("ERROR: tool 'mcp__srv__doit' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("no mcp today"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A hook that does not deny leaves the MCP call alone, and its input
+    /// reaches the hook: a PreToolUse audit hook is useless if it cannot see
+    /// what was asked for.
+    #[tokio::test]
+    async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
+        let root = hooks_root("mcpallow");
+        let seen = root.join("seen.json");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("mcp__*"),
+                &format!("cat > {}", seen.to_string_lossy()),
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        // The call goes on to the empty MCP registry and fails there, which is
+        // the point: the hook did not stop it.
+        let _ = invoker
+            .invoke(&[hooked_tool_call(
+                "mcp__srv__doit",
+                r#"{"path":"a.rs"}"#,
+            )])
+            .await;
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seen).expect("hook ran")).unwrap();
+        assert_eq!(written["event"], "PreToolUse");
+        assert_eq!(written["tool_name"], "mcp__srv__doit");
+        assert_eq!(written["tool_input"]["path"], "a.rs");
         let _ = std::fs::remove_dir_all(&root);
     }
 

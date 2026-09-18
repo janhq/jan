@@ -845,11 +845,13 @@ async fn execute_tool_inner(
     // store. (Equivalent to the old `resolve_store(.., None)`, which is what every
     // caller passed.)
     let store = workspace::permanent_store(Path::new(&data_folder));
-    let skill_project: Option<PathBuf> = project
+    let project_dir: Option<PathBuf> = project
         .as_deref()
         .map(str::trim)
         .filter(|p| !p.is_empty())
-        .map(|p| workspace::project_store(Path::new(p)));
+        .map(PathBuf::from);
+    let skill_project: Option<PathBuf> =
+        project_dir.as_deref().map(workspace::project_store);
     // Plural from the outset so attaching a second folder later is not another
     // signature change.
     let attached: Vec<PathBuf> = match read_only_project.as_deref() {
@@ -956,7 +958,18 @@ async fn execute_tool_inner(
     }
 
     let enabled = enabled_skills.unwrap_or_default();
+    // The hooks that apply to this call, resolved through the app-installed
+    // resolver (`hooks::set_resolver`): this command is handed one tool call
+    // with no run around it, so unlike the CLI loop it has no run-start
+    // snapshot to carry. Without this the desktop would be the one surface a
+    // user's `[[hooks]]` silently did not reach.
+    //
+    // `project` is the attached folder Cowork passes, which is the only project
+    // this surface knows about; chat has none and gets the user's global hooks
+    // alone.
+    let hooks = crate::tools::hooks::resolve_for(project_dir.as_deref());
     let mut ctx = ToolContext::new(&root, &store, &enabled)
+        .with_hooks(&hooks, false, None)
         .with_network(allow_network.unwrap_or(false))
         .with_confined_writes(true)
         .with_mask_root(Path::new(&data_folder))

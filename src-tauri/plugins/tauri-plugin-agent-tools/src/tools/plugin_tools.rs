@@ -33,10 +33,25 @@ pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// able to blow up the context window.
 const OUTPUT_MAX_BYTES: usize = 128 * 1024;
 
+/// Appended when [`OUTPUT_MAX_BYTES`] cut the output, so a model reading a
+/// capped result knows it is not the whole of it. Silent truncation is the
+/// worse failure: the model believes it read everything and acts on a
+/// fragment.
+const TRUNCATION_NOTE: &str = "\n\n[output truncated: the tool produced more than 128KB]";
+
+/// How long a killed child is waited on before it is given up as unreapable.
+const REAP_GRACE: Duration = Duration::from_secs(2);
+
 /// Prefix every plugin tool's advertised name carries, so a plugin cannot
 /// shadow a built-in (`bash`, `edit`) or collide with an MCP tool. The model
 /// sees the qualified name and calls it by that.
 pub const NAME_PREFIX: &str = "plugin__";
+
+/// Cap on the advertised `plugin__<plugin>__<tool>` name. OpenAI, Anthropic and
+/// several OpenAI-compatible servers reject a function name past 64 characters,
+/// and they reject the *request*, not just the tool -- so a name over this is
+/// dropped at load rather than allowed to break every call in the run.
+const MAX_NAME_LEN: usize = 64;
 
 /// One `[[tools]]` entry in a plugin's `plugin.toml`.
 #[derive(Debug, Clone, Deserialize)]
@@ -126,6 +141,13 @@ impl PluginToolSet {
     /// registered is dropped too: first declaration wins, so installing a
     /// second plugin cannot silently take over the first one's tool.
     pub fn extend_from(&mut self, plugin: &str, entries: Vec<PluginToolEntry>, source: &Path) {
+        // The directory name becomes part of the advertised function name, so it
+        // is held to the same rule as the tool name: a directory with a space,
+        // a `__`, or non-ASCII would produce a name providers reject, and the
+        // whole plugin's tools would fail at the first call rather than here.
+        if !is_safe_name(plugin) {
+            return;
+        }
         for entry in entries {
             let name = entry.name.trim();
             let command = entry.command.trim();
@@ -133,6 +155,12 @@ impl PluginToolSet {
                 continue;
             }
             let qualified_name = format!("{NAME_PREFIX}{plugin}__{name}");
+            // Several providers cap a function name at 64 characters and reject
+            // the whole request over it, so one over-long plugin tool would take
+            // every other tool in the run down with it.
+            if qualified_name.len() > MAX_NAME_LEN {
+                continue;
+            }
             if self.get(&qualified_name).is_some() {
                 continue;
             }
@@ -154,10 +182,12 @@ fn empty_schema() -> serde_json::Value {
     serde_json::json!({ "type": "object", "properties": {} })
 }
 
-/// Tool names are restricted to what every provider accepts in a function name
-/// and what cannot be confused with the `__` qualifier separator.
+/// Tool and plugin-directory names are restricted to what every provider
+/// accepts in a function name and what cannot be confused with the `__`
+/// qualifier separator.
 fn is_safe_name(name: &str) -> bool {
-    !name.contains("__")
+    !name.is_empty()
+        && !name.contains("__")
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
@@ -205,15 +235,20 @@ pub async fn execute(tool: &PluginTool, args: &serde_json::Value, ctx: &ToolCont
         (child.wait().await, out, err)
     })
     .await;
+
     if let Some(pid) = pid {
         crate::tools::proc::unregister(ctx.thread_id, pid);
     }
-    let (status, out, err) = match collected {
+    let (status, (out, out_cut), (err, err_cut)) = match collected {
         Ok(triple) => triple,
         Err(_) => {
             if let Some(pid) = pid {
                 crate::tools::proc::kill_tree(pid);
             }
+            // Killing is not reaping: without this `wait` the killed child
+            // stays a zombie for the life of the process. Bounded so a child
+            // stuck in uninterruptible state cannot hang the caller again.
+            let _ = tokio::time::timeout(REAP_GRACE, child.wait()).await;
             return format!(
                 "ERROR: plugin tool '{}' timed out after {}s",
                 tool.qualified_name, tool.timeout_secs
@@ -222,14 +257,23 @@ pub async fn execute(tool: &PluginTool, args: &serde_json::Value, ctx: &ToolCont
     };
     let stdout = String::from_utf8_lossy(&out).trim().to_string();
     let stderr = String::from_utf8_lossy(&err).trim().to_string();
+    // One note for the whole result rather than one per stream: the model only
+    // needs to know the result is not complete.
+    let note = if out_cut || err_cut {
+        TRUNCATION_NOTE
+    } else {
+        ""
+    };
     match status {
         Ok(status) if status.success() => {
             if stdout.is_empty() && stderr.is_empty() {
                 format!("(plugin tool '{}' produced no output)", tool.qualified_name)
             } else if stderr.is_empty() {
-                stdout
+                format!("{stdout}{note}")
             } else {
-                format!("{stdout}\n[stderr]\n{stderr}").trim().to_string()
+                format!("{stdout}\n[stderr]\n{stderr}{note}")
+                    .trim()
+                    .to_string()
             }
         }
         Ok(status) => {
@@ -251,9 +295,12 @@ pub async fn execute(tool: &PluginTool, args: &serde_json::Value, ctx: &ToolCont
 }
 
 /// Drain one pipe up to [`OUTPUT_MAX_BYTES`], continuing to read (and discard)
-/// past the cap so the child never blocks on a full pipe.
-async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> Vec<u8> {
+/// past the cap so the child never blocks on a full pipe. The flag says whether
+/// anything was discarded, so the caller can mark the result as cut rather than
+/// hand the model a fragment that looks whole.
+async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> (Vec<u8>, bool) {
     let mut head = Vec::new();
+    let mut truncated = false;
     if let Some(mut pipe) = pipe {
         use tokio::io::AsyncReadExt;
         let mut buf = [0u8; 8192];
@@ -263,11 +310,12 @@ async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> Vec<u8>
                 Ok(n) => {
                     let room = OUTPUT_MAX_BYTES.saturating_sub(head.len());
                     head.extend_from_slice(&buf[..n.min(room)]);
+                    truncated |= n > room;
                 }
             }
         }
     }
-    head
+    (head, truncated)
 }
 
 #[cfg(test)]
@@ -339,6 +387,82 @@ mod tests {
         );
         assert_eq!(set.len(), 1);
         assert_eq!(set.all()[0].qualified_name, "plugin__p__fine");
+    }
+
+    /// The directory name is half the advertised function name, so a directory
+    /// a provider would reject takes the whole plugin's tools with it rather
+    /// than failing at the first call.
+    #[test]
+    fn an_unsafe_plugin_directory_name_drops_its_tools() {
+        for plugin in ["has spaces", "has__sep", "nai\u{0308}ve", ""] {
+            let mut set = PluginToolSet::new();
+            set.extend_from(plugin, vec![entry("t", "true")], Path::new("p"));
+            assert!(set.is_empty(), "plugin directory '{plugin}' was accepted");
+        }
+    }
+
+    /// Providers reject the whole request over an over-long function name, so
+    /// one such tool would break every other tool in the run.
+    #[test]
+    fn an_over_long_qualified_name_is_dropped() {
+        let mut set = PluginToolSet::new();
+        let long = "t".repeat(MAX_NAME_LEN);
+        set.extend_from(
+            "p",
+            vec![entry(&long, "true"), entry("short", "true")],
+            Path::new("p"),
+        );
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.all()[0].qualified_name, "plugin__p__short");
+        assert!(set.all()[0].qualified_name.len() <= MAX_NAME_LEN);
+    }
+
+    /// A capped result the model reads as complete is the failure this note
+    /// exists to prevent.
+    #[tokio::test]
+    async fn output_past_the_cap_is_marked_as_truncated() {
+        let root = unique_root("truncate");
+        let store = root.join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        let empty: Vec<String> = Vec::new();
+        let mut set = PluginToolSet::new();
+        // 4KB per line, well past the 128KB cap over 40 lines.
+        set.extend_from(
+            "p",
+            vec![entry(
+                "flood",
+                "i=0; while [ $i -lt 40 ]; do head -c 4096 /dev/zero | tr '\\0' 'x'; echo; i=$((i+1)); done",
+            )],
+            Path::new("p"),
+        );
+        let out = execute(
+            set.get("plugin__p__flood").unwrap(),
+            &serde_json::json!({}),
+            &ctx(&root, &store, &empty),
+        )
+        .await;
+        assert!(out.contains("output truncated"), "no truncation note: {out:.200}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Output that fits must not be labelled as cut: a spurious note would tell
+    /// the model to distrust a complete result.
+    #[tokio::test]
+    async fn output_within_the_cap_carries_no_truncation_note() {
+        let root = unique_root("nocut");
+        let store = root.join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        let empty: Vec<String> = Vec::new();
+        let mut set = PluginToolSet::new();
+        set.extend_from("p", vec![entry("small", "echo hello")], Path::new("p"));
+        let out = execute(
+            set.get("plugin__p__small").unwrap(),
+            &serde_json::json!({}),
+            &ctx(&root, &store, &empty),
+        )
+        .await;
+        assert_eq!(out, "hello");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

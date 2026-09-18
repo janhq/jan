@@ -8,11 +8,22 @@
 //! than re-derived at each call site.
 //!
 //! Merge order is least specific first, so the most specific source runs last
-//! and therefore has the final word on a deny:
+//! and its `context` answers land nearest the call:
 //!
 //! 1. installed plugins' `hooks/hooks.json` (shipped by a third party)
 //! 2. `~/.jan/config.toml` `[[hooks]]` (this user, every project)
 //! 3. `<project>/.jan/agent/agent.toml` `[[hooks]]` (this project)
+//!
+//! A deny is not a precedence question: `run_hooks` stops at the *first* hook
+//! that denies, so any layer can veto a call and no later layer can overturn
+//! it. That is deliberate -- a veto that a more specific file could quietly
+//! undo would not be a policy -- but it does mean a plugin's hook can deny a
+//! call the project's own hooks never see. `[plugins] hooks = false` in
+//! `agent.toml` is the way out.
+//!
+//! A plugin's hooks and its `[[tools]]` are each switchable there
+//! (`[plugins] hooks` / `[plugins] tools`, both defaulting to on), so a plugin
+//! installed for its skills need not also bring third-party commands.
 
 use std::path::Path;
 
@@ -27,18 +38,29 @@ use tauri_plugin_agent_tools::tools::plugin_tools::{PluginToolEntry, PluginToolS
 /// fewer.
 pub(crate) fn resolve_hooks(project_root: &Path) -> HookSet {
     let mut set = HookSet::new();
-    for (dir, name) in plugin_dirs(project_root) {
-        let _ = name;
-        let (entries, source) = hooks::plugin_hook_entries(&dir);
-        set.extend_from(entries, &source);
-    }
-    #[cfg(feature = "cli")]
+    let config = crate::core::agent::project::load_agent_config(project_root).ok();
+    // Plugin hooks are third-party commands that fire on every tool call, so
+    // the project keeps a switch for them that does not cost it the plugin's
+    // skills and commands. Default on: a plugin shipping hooks is normally
+    // installed for them.
+    if config
+        .as_ref()
+        .and_then(|c| c.plugins.hooks)
+        .unwrap_or(true)
     {
-        if let Ok(path) = crate::core::agent::global_config::global_config_path() {
-            set.extend_from(crate::core::agent::global_config::hook_entries(), &path);
+        for (dir, name) in plugin_dirs(project_root) {
+            let _ = name;
+            let (entries, source) = hooks::plugin_hook_entries(&dir);
+            set.extend_from(entries, &source);
         }
     }
-    if let Ok(cfg) = crate::core::agent::project::load_agent_config(project_root) {
+    // Not gated on `cli`: `~/.jan/config.toml` is the user's own layer and has
+    // to mean the same thing in the desktop app and the API server, or a hook
+    // `jan cli agent status` lists would silently not run elsewhere.
+    if let Ok(path) = crate::core::agent::global_config::global_config_path() {
+        set.extend_from(crate::core::agent::global_config::hook_entries(), &path);
+    }
+    if let Some(cfg) = config {
         set.extend_from(
             cfg.hooks,
             &crate::core::agent::project::agent_toml_path(project_root),
@@ -47,9 +69,36 @@ pub(crate) fn resolve_hooks(project_root: &Path) -> HookSet {
     set
 }
 
+/// [`resolve_hooks`] for a surface that may have no project: the desktop's IPC
+/// command, whose chat threads have no project root at all and whose Cowork
+/// sessions have only an attached folder. A projectless run still gets the
+/// user's global `~/.jan/config.toml` hooks, which is the layer that is about
+/// the user rather than the checkout.
+pub fn resolve_hooks_for(project_root: Option<&Path>) -> HookSet {
+    match project_root {
+        Some(root) => resolve_hooks(root),
+        None => {
+            let mut set = HookSet::new();
+            if let Ok(path) = crate::core::agent::global_config::global_config_path() {
+                set.extend_from(crate::core::agent::global_config::hook_entries(), &path);
+            }
+            set
+        }
+    }
+}
+
 /// Every tool the installed plugins declare, in plugin-directory order.
 pub(crate) fn resolve_plugin_tools(project_root: &Path) -> PluginToolSet {
     let mut set = PluginToolSet::new();
+    // `[plugins] tools = false` withholds them all, the counterpart of the
+    // hook switch above.
+    if !crate::core::agent::project::load_agent_config(project_root)
+        .ok()
+        .and_then(|c| c.plugins.tools)
+        .unwrap_or(true)
+    {
+        return set;
+    }
     for (dir, name) in plugin_dirs(project_root) {
         set.extend_from(&name, plugin_tool_entries(&dir), &dir);
     }
@@ -201,6 +250,86 @@ command = "from-project"
         assert!(resolve_hooks(&root).is_empty());
         assert!(resolve_plugin_tools(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin's hooks are third-party commands that fire on every tool call,
+    /// so a project must be able to refuse them without also losing the
+    /// plugin's skills and commands.
+    #[test]
+    fn a_project_can_switch_off_plugin_hooks_without_uninstalling() {
+        let root = unique_root("pluginhooksoff");
+        write_plugin(
+            &root,
+            "auditor",
+            Some(r#"[{"event":"PreToolUse","command":"audit.sh"}]"#),
+            None,
+        );
+        write_agent_toml(
+            &root,
+            r#"
+[plugins]
+hooks = false
+
+[[hooks]]
+event = "PreToolUse"
+command = "mine"
+"#,
+        );
+        let set = resolve_hooks(&root);
+        // The project's own hook is untouched: only the plugin layer is off.
+        assert_eq!(set.len(), 1);
+        assert_eq!(set.all()[0].command, "mine");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The same switch for the other half of what a plugin can contribute.
+    #[test]
+    fn a_project_can_switch_off_plugin_tools_without_uninstalling() {
+        let root = unique_root("plugintoolsoff");
+        write_plugin(
+            &root,
+            "fmt",
+            None,
+            Some("name = \"fmt\"\n\n[[tools]]\nname = \"format\"\ncommand = \"cargo fmt\"\n"),
+        );
+        assert_eq!(resolve_plugin_tools(&root).len(), 1, "on by default");
+        write_agent_toml(&root, "[plugins]\ntools = false\n");
+        assert!(resolve_plugin_tools(&root).is_empty());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Absent config means on: a plugin that ships hooks is normally installed
+    /// for them, so the switch is an opt-out and not an opt-in.
+    #[test]
+    fn plugin_hooks_and_tools_default_to_on() {
+        let root = unique_root("plugindefault");
+        write_plugin(
+            &root,
+            "auditor",
+            Some(r#"[{"event":"PreToolUse","command":"audit.sh"}]"#),
+            Some("name = \"auditor\"\n\n[[tools]]\nname = \"t\"\ncommand = \"true\"\n"),
+        );
+        write_agent_toml(&root, "[plugins]\nmarketplace = \"https://example.com\"\n");
+        assert_eq!(resolve_hooks(&root).len(), 1);
+        assert_eq!(resolve_plugin_tools(&root).len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The desktop's IPC command has no project for a chat thread, but the
+    /// user's own global layer still applies: it is about the user, not the
+    /// checkout.
+    #[test]
+    fn a_projectless_surface_still_resolves_the_global_layer() {
+        // Only the shape is asserted: the global file is the real `~/.jan`,
+        // which this test must not write to.
+        let set = resolve_hooks_for(None);
+        for hook in set.all() {
+            assert!(
+                hook.source.ends_with("config.toml"),
+                "a projectless resolve must contribute only the global file, got {:?}",
+                hook.source
+            );
+        }
     }
 
     #[test]

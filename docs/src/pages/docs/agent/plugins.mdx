@@ -10,8 +10,9 @@ import { Callout } from 'nextra/components'
 
 A plugin is a set of [skills](/docs/agent/skills) installed from a git repository. Any repo that
 looks like a skill collection - or is a single skill - can be installed with one command, without
-copying files by hand or trusting a download step. Installing a plugin never runs its code: a
-plugin carries instructions plus optional metadata, nothing executable.
+copying files by hand or trusting a download step. Installing a plugin never runs its code: the
+install step only clones and moves files. A plugin that declares [tools or hooks](/docs/agent/hooks)
+runs commands later, once a session uses it.
 
 ## Where they live
 
@@ -34,6 +35,7 @@ A plugin's payload is discovered conventionally, so a repo needs no manifest to 
 - `SKILL.md` at the repo root - a repo that is itself one skill
 - `commands/` - slash-invocable prompt templates (`<name>.md`, nested directories included)
 - `agents/` - dispatchable subagent definitions (`<name>.md`, nested directories included)
+- `hooks/hooks.json` - optional [lifecycle hooks](/docs/agent/hooks)
 - `plugin.toml` or `.claude-plugin/plugin.json` - optional metadata: `name`, `description`, `version`,
   and `repo`. The directory name is the plugin's identity; the manifest's `name` is what
   `plugin list` shows when present.
@@ -163,6 +165,33 @@ jan plugin search prepare --project ~/code/app
 
 Removal is a directory delete under the same name guard as everything else in the agent: a name
 can never escape the plugins directory.
+
+## Plugin tools and hooks
+
+Beyond instructions, a plugin can carry two executable payloads. Both are covered in full on the
+[hooks](/docs/agent/hooks) page; the short form:
+
+- `[[tools]]` in `plugin.toml` declares a tool. Each entry names a `description`, a JSON Schema in
+  `[tools.parameters]`, and a `command`. The model calls it as `plugin__<plugin>__<tool>`, the
+  arguments arrive on the command's stdin as JSON, and its stdout becomes the tool result. Plugin
+  tools are gated like MCP tools: prompted rather than auto-approved, and withheld in Plan mode.
+- `hooks/hooks.json` declares [lifecycle hooks](/docs/agent/hooks) - commands that run before and
+  after tool calls, at prompt submit, at session start and end, and before a compaction. A
+  `PreToolUse` hook can deny a call outright.
+
+Both are on by default and both switch off in `agent.toml` without uninstalling the plugin:
+
+```toml
+[plugins]
+hooks = false
+tools = false
+```
+
+<Callout type="warning">
+Installing a plugin that ships hooks means a third party's commands run on your tool calls, with
+whatever access the run has. Read its `hooks/hooks.json` and `[[tools]]` before installing, or turn
+them off and keep only its skills.
+</Callout>
 
 ## Marketplace
 

@@ -3025,7 +3025,7 @@ mod tests {
         .await;
         assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(out.contains("still running in the background"), "{out}");
-        assert!(out.contains("output will be written to"), "{out}");
+        assert!(out.contains("result will be written to"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

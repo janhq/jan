@@ -41,6 +41,17 @@ pub(crate) struct PluginsSection {
     /// Unset disables name-based installs; direct git URLs still work.
     #[serde(default)]
     pub marketplace: Option<String>,
+    /// Whether an installed plugin's `hooks/hooks.json` is honored. On by
+    /// default -- a plugin that ships hooks is usually installed *for* them --
+    /// but a plugin's hooks are third-party commands that fire on every tool
+    /// call, so `hooks = false` must be able to switch them off without
+    /// uninstalling the plugin and losing its skills and commands.
+    #[serde(default)]
+    pub hooks: Option<bool>,
+    /// Whether an installed plugin's `[[tools]]` are advertised to the model.
+    /// Same default and same rationale as [`Self::hooks`].
+    #[serde(default)]
+    pub tools: Option<bool>,
 }
 
 /// `[provider]` — project-local override of a single provider's config,
