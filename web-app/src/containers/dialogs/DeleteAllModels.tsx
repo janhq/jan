@@ -88,7 +88,7 @@ export const DialogDeleteAllModels = ({
             // best-effort stop; continue with delete
           }
         }
-        removeFavorite(id)
+        removeFavorite(id, provider.provider)
         deleteModelCache(id)
         await serviceHub.models().deleteModel(id, provider.provider)
       } catch (err) {
