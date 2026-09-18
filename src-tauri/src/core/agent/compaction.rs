@@ -1,11 +1,21 @@
-//! Reactive context compaction. The agent loop has no reliable view of a
-//! model's context window at request time (local windows live inside the
-//! llamacpp plugin/preset; remote windows are unknown), so compaction is
-//! triggered by an upstream context-overflow error rather than a proactive
-//! token estimate. Given the conversation, we preserve the leading system
-//! message(s) and a recent tail, summarize the dropped middle via one model
-//! call, and splice the summary back in. If summarization fails the middle is
-//! replaced with a short note, so the run always makes forward progress.
+//! Context compaction, in two layers.
+//!
+//! Before a request is dispatched, the loop estimates the prompt and compares
+//! it to the route's [`CompactionBudget`]; past the trigger it compacts *then*,
+//! so the prefix break happens at a point the run chose instead of at one the
+//! provider forced with a rejection. The estimate is a chars-per-token
+//! approximation ([`estimate_token_count`]), and a route whose window is
+//! unknown - a local engine keeps its window inside the llamacpp
+//! plugin/preset - carries no budget, which leaves it on the second layer.
+//!
+//! The second layer is reactive: a provider that rejects the request as too
+//! long is caught by the caller, which compacts and retries. It stays because
+//! an estimate is an estimate.
+//!
+//! Either way, given the conversation we preserve the leading system message(s)
+//! and a recent tail, summarize the dropped middle via one model call, and
+//! splice the summary back in. If summarization fails the middle is replaced
+//! with a short note, so the run always makes forward progress.
 
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -15,6 +25,145 @@ use crate::core::agent::upstream::extract_choice_message;
 
 /// Default number of most-recent non-system messages kept verbatim.
 pub(crate) const DEFAULT_KEEP_RECENT: usize = 8;
+
+/// Per-message envelope (role, delimiters) in [`estimate_token_count`], the
+/// usual OpenAI-accounting constant. CLI-only, like the estimator that reads it:
+/// nothing in the desktop config estimates a history, since the providers
+/// report the real prompt count there.
+#[cfg(feature = "cli")]
+const TOKENS_PER_MESSAGE: u64 = 4;
+
+/// Share of the context window a prompt may fill before a run compacts ahead of
+/// dispatching. `[agent].compaction_ratio` overrides it, per route if the
+/// provider entry carries its own.
+pub(crate) const DEFAULT_COMPACTION_RATIO: f64 = 0.80;
+
+/// Ratios outside this range are clamped: below it a run would compact on
+/// almost every turn, above it the trigger sits at or past the window, where
+/// the preflight can never fire in time to be worth having.
+const RATIO_RANGE: (f64, f64) = (0.10, 0.99);
+
+/// Prompt tokens at which a preflight compaction fires.
+///
+/// The ratio is the primary expression because it scales with the window. A
+/// fixed reserve does not: 16K is 12% of a 128K window and 1.6% of a 1M one, so
+/// the same config compacts far too late on the large window, leaving the
+/// prompt to grow into a rejection. An explicit `compaction_reserve_tokens`
+/// still wins, so a config that asked for absolute headroom keeps the number it
+/// asked for rather than having the ratio silently override it.
+///
+/// A non-finite ratio falls back to [`DEFAULT_COMPACTION_RATIO`] rather than
+/// propagating into the comparison, where a NaN would make every prompt look
+/// over the trigger.
+pub(crate) fn trigger_tokens(context_window: u64, ratio: f64, reserve_tokens: Option<u64>) -> u64 {
+    match reserve_tokens {
+        Some(reserve) => context_window.saturating_sub(reserve),
+        None => {
+            let ratio = if ratio.is_finite() {
+                ratio.clamp(RATIO_RANGE.0, RATIO_RANGE.1)
+            } else {
+                DEFAULT_COMPACTION_RATIO
+            };
+            (context_window as f64 * ratio).floor() as u64
+        }
+    }
+}
+
+/// Where a run compacts before dispatching: the route's window, the share of it
+/// a prompt may fill, and whether the user pinned an absolute reserve instead.
+///
+/// Optional on a run because the window is not always knowable - local engines
+/// keep theirs inside the llamacpp plugin/preset - and an unknown window must
+/// leave compaction reactive rather than guess.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CompactionBudget {
+    pub(crate) context_window: u64,
+    pub(crate) ratio: f64,
+    /// An explicit `[agent].compaction_reserve_tokens`, which wins over `ratio`.
+    pub(crate) reserve_tokens: Option<u64>,
+}
+
+impl CompactionBudget {
+    /// Prompt tokens at which this run compacts ahead of dispatching.
+    pub(crate) fn trigger_tokens(&self) -> u64 {
+        trigger_tokens(self.context_window, self.ratio, self.reserve_tokens)
+    }
+}
+
+/// Rough token count for a whole request body (~4 chars per token), tool
+/// schemas and system prompt included.
+///
+/// The preflight measures the body it is about to send rather than the message
+/// list alone: a handful of MCP servers adds several thousand tokens of schemas
+/// that sit *behind* the prompt, and ignoring them would let a run sail past
+/// the trigger it thinks it is respecting.
+pub(crate) fn estimate_request_tokens(request: &Value) -> u64 {
+    (json_text_len(request) as u64 / 4).max(1)
+}
+
+/// Total length of every string in `value`, at any depth. Walks the value
+/// instead of serializing it: this runs on the first dispatch of every turn,
+/// and the request is already the largest allocation in the loop.
+fn json_text_len(value: &Value) -> usize {
+    match value {
+        Value::String(text) => text.len(),
+        Value::Array(items) => items.iter().map(json_text_len).sum(),
+        Value::Object(fields) => fields.values().map(json_text_len).sum(),
+        _ => 0,
+    }
+}
+
+/// Rough token count (~4 chars per token) for a history the provider has not
+/// reported usage for. Counts what actually goes on the wire -- text content
+/// including multimodal text parts, tool-call names and arguments, tool-result
+/// ids -- so a tool-heavy history is not scored as empty. Image parts are left
+/// out: their cost is a provider-specific function of resolution, and inventing
+/// a number there is worse than omitting one.
+///
+/// CLI-only: it backs the feed's fill indicator, the `/context` view and the
+/// TUI's auto-compact, all of which must agree with [`trigger_tokens`] - a fill
+/// reading under the trigger while the loop compacts would be a bug the user
+/// sees as "it compacted for no reason". The desktop reads the provider's own
+/// `prompt_tokens` instead, so it has no caller for this.
+#[cfg(feature = "cli")]
+pub(crate) fn estimate_token_count(messages: &[Value]) -> u64 {
+    let mut total_chars: usize = 0;
+    for msg in messages {
+        match msg.get("content") {
+            Some(Value::String(text)) => total_chars += text.len(),
+            Some(Value::Array(parts)) => {
+                for part in parts {
+                    total_chars += part
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map_or(0, str::len);
+                }
+            }
+            _ => {}
+        }
+        for call in msg
+            .get("tool_calls")
+            .and_then(|c| c.as_array())
+            .into_iter()
+            .flatten()
+        {
+            // Arguments live under `function`, not on the call itself.
+            if let Some(f) = call.get("function") {
+                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
+                total_chars += f
+                    .get("arguments")
+                    .and_then(|a| a.as_str())
+                    .map_or(0, str::len);
+            }
+        }
+        total_chars += msg
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .map_or(0, str::len);
+    }
+    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
+    ((total_chars / 4) as u64 + envelope).max(1)
+}
 
 /// Recent tail kept when the user explicitly runs `/compact`. Smaller than the
 /// automatic threshold so a deliberate compaction is honoured on short threads.
@@ -610,6 +759,67 @@ mod tests {
             role(first_kept),
             "tool",
             "kept tail must not start with a tool result"
+        );
+    }
+
+    #[test]
+    fn the_ratio_scales_the_trigger_with_the_window() {
+        assert_eq!(
+            trigger_tokens(128_000, DEFAULT_COMPACTION_RATIO, None),
+            102_400
+        );
+        assert_eq!(
+            trigger_tokens(1_000_000, DEFAULT_COMPACTION_RATIO, None),
+            800_000
+        );
+    }
+
+    #[test]
+    fn an_explicit_reserve_wins_over_the_ratio() {
+        // 16K is 12% of a 128K window but 1.6% of a 1M one, so a config that
+        // pinned absolute headroom keeps the number it asked for on both.
+        assert_eq!(trigger_tokens(128_000, 0.5, Some(16_384)), 111_616);
+        assert_eq!(trigger_tokens(1_000_000, 0.5, Some(16_384)), 983_616);
+    }
+
+    #[test]
+    fn an_unusable_ratio_still_yields_a_sane_trigger() {
+        // A ratio at or past 1 puts the trigger at the window itself, where the
+        // preflight can never fire in time; a NaN would make every prompt look
+        // over the trigger and compact on the first turn of every run.
+        assert_eq!(trigger_tokens(100_000, 1.5, None), 99_000);
+        assert_eq!(trigger_tokens(100_000, 0.0, None), 10_000);
+        assert_eq!(trigger_tokens(100_000, f64::NAN, None), 80_000);
+    }
+
+    #[test]
+    fn a_reserve_larger_than_the_window_does_not_underflow() {
+        assert_eq!(
+            trigger_tokens(1_000, DEFAULT_COMPACTION_RATIO, Some(5_000)),
+            0
+        );
+    }
+
+    #[test]
+    fn the_request_estimate_counts_the_tool_schemas() {
+        let bare = json!({
+            "model": "m",
+            "messages": [{ "role": "user", "content": "hi" }],
+        });
+        let with_schemas = json!({
+            "model": "m",
+            "messages": [{ "role": "user", "content": "hi" }],
+            "tools": [{
+                "type": "function",
+                "function": { "name": "read", "description": "x".repeat(8_000) },
+            }],
+        });
+        // The schemas sit in the request prefix, ahead of the conversation:
+        // measuring the message list alone would let a run sail past the
+        // trigger it believes it is respecting.
+        assert!(
+            estimate_request_tokens(&with_schemas) > estimate_request_tokens(&bare) + 1_000,
+            "tool schemas must count toward the preflight estimate"
         );
     }
 }

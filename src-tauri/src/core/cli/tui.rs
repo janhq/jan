@@ -51,6 +51,7 @@ use super::worktree::Worktree;
 use super::{
     is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
 };
+use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
 use crate::core::agent::git;
 use crate::core::agent::r#loop::{
@@ -1762,8 +1763,12 @@ struct App {
     /// The explicit `[agent].context_window` override copied from the session
     /// limits (`None` when unset). Stays authoritative across model switches.
     configured_context_window: Option<u64>,
-    /// Tokens to reserve for the model's response (compaction triggers at limit - reserve).
-    reserve_tokens: u64,
+    /// Share of the context window a prompt may fill before the next turn is
+    /// compacted first (`[agent].compaction_ratio`).
+    compaction_ratio: f64,
+    /// Explicit `[agent].compaction_reserve_tokens`, when the user pinned
+    /// absolute headroom. Wins over `compaction_ratio` for the trigger.
+    compaction_reserve_tokens: Option<u64>,
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
@@ -2506,7 +2511,8 @@ impl App {
                 }
                 _ => None,
             },
-            reserve_tokens: limits.reserve_tokens,
+            compaction_ratio: limits.compaction_ratio,
+            compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
             repo_root,
@@ -4844,7 +4850,7 @@ impl App {
             model: self.model.clone(),
             run_mode: self.run_mode,
             context_window: self.context_window,
-            reserve_tokens: self.reserve_tokens,
+            autocompact_buffer: self.autocompact_buffer(),
             history_estimate: if self.history.is_empty() {
                 0
             } else {
@@ -4872,7 +4878,9 @@ struct ContextSnapshot {
     model: String,
     run_mode: crate::core::agent::plan::RunMode,
     context_window: u64,
-    reserve_tokens: u64,
+    /// Window held back behind the compaction trigger, derived from the same
+    /// formula the loop's preflight uses.
+    autocompact_buffer: u64,
     /// The Messages segment's estimate over the live history, precomputed so
     /// the off-loop task need not own a clone of the conversation.
     history_estimate: u64,
@@ -4994,7 +5002,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     // Free space is what is left after the estimated content and the
     // reserved buffer, so the seven segments partition the window exactly
     // and the percentages sum to 100.
-    let buffer = snapshot.reserve_tokens.min(snapshot.context_window);
+    let buffer = snapshot.autocompact_buffer.min(snapshot.context_window);
     let used: u64 = segments.iter().map(|s| s.tokens).sum();
     let free = snapshot.context_window.saturating_sub(used + buffer);
     segments.push(ContextSegment {
@@ -5806,8 +5814,23 @@ impl App {
     /// override, catalog, or fallback), so proactive compaction never silently
     /// stands down on accepted prompt usage.
     fn should_auto_compact(&self) -> bool {
-        let limit = self.context_window.saturating_sub(self.reserve_tokens);
-        self.tokens > limit && self.tokens > 0 && self.history.len() > 4
+        self.tokens > self.compaction_trigger() && self.tokens > 0 && self.history.len() > 4
+    }
+
+    /// Prompt tokens at which the next turn is compacted ahead of dispatching.
+    /// The same formula the agent loop's preflight applies, so a fill that reads
+    /// under the trigger can never be compacted behind the user's back.
+    fn compaction_trigger(&self) -> u64 {
+        trigger_tokens(
+            self.context_window,
+            self.compaction_ratio,
+            self.compaction_reserve_tokens,
+        )
+    }
+
+    /// Window held back behind that trigger, for the `/context` breakdown.
+    fn autocompact_buffer(&self) -> u64 {
+        self.context_window.saturating_sub(self.compaction_trigger())
     }
 
     /// Queue a compaction and a retry for a context-overflow error, reporting
@@ -6136,56 +6159,6 @@ fn gutter_lines(
             Line::from(row)
         })
         .collect()
-}
-
-/// Per-message envelope (role, delimiters) in the estimate below, the usual
-/// OpenAI-accounting constant.
-const TOKENS_PER_MESSAGE: u64 = 4;
-
-/// Rough token count (~4 chars per token) for a history the provider has not
-/// reported usage for: the window between a compaction and the next response.
-/// Counts what actually goes on the wire -- text content including multimodal
-/// text parts, tool-call names and arguments, tool-result ids -- so a
-/// tool-heavy history is not scored as empty. Image parts are left out: their
-/// cost is a provider-specific function of resolution, and inventing a number
-/// there is worse than omitting one.
-fn estimate_token_count(messages: &[serde_json::Value]) -> u64 {
-    let mut total_chars: usize = 0;
-    for msg in messages {
-        match msg.get("content") {
-            Some(serde_json::Value::String(text)) => total_chars += text.len(),
-            Some(serde_json::Value::Array(parts)) => {
-                for part in parts {
-                    total_chars += part
-                        .get("text")
-                        .and_then(|t| t.as_str())
-                        .map_or(0, str::len);
-                }
-            }
-            _ => {}
-        }
-        for call in msg
-            .get("tool_calls")
-            .and_then(|c| c.as_array())
-            .into_iter()
-            .flatten()
-        {
-            // Arguments live under `function`, not on the call itself.
-            if let Some(f) = call.get("function") {
-                total_chars += f.get("name").and_then(|n| n.as_str()).map_or(0, str::len);
-                total_chars += f
-                    .get("arguments")
-                    .and_then(|a| a.as_str())
-                    .map_or(0, str::len);
-            }
-        }
-        total_chars += msg
-            .get("tool_call_id")
-            .and_then(|v| v.as_str())
-            .map_or(0, str::len);
-    }
-    let envelope = TOKENS_PER_MESSAGE * messages.len() as u64;
-    ((total_chars / 4) as u64 + envelope).max(1)
 }
 
 /// USD at the precision the amount deserves: sub-cent runs still need to read
@@ -12083,6 +12056,13 @@ enum AgentSettingKind {
     Bool {
         default: bool,
     },
+    /// Share of something, written as a TOML float: an `Int` row would emit
+    /// `0.8` as `0` and silently turn the knob into "compact on every turn".
+    Float {
+        default: Option<f64>,
+        min: f64,
+        max: f64,
+    },
 }
 
 /// Sentinel row value in the `/settings` picker that opens the provider
@@ -12101,11 +12081,24 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Project,
     },
     AgentSettingDef {
+        key: "compaction_ratio",
+        label: "compaction_ratio",
+        desc: "share of the context window a prompt may fill before compacting",
+        kind: AgentSettingKind::Float {
+            default: Some(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO),
+            min: 0.1,
+            max: 0.99,
+        },
+        scope: SettingScope::Project,
+    },
+    AgentSettingDef {
         key: "compaction_reserve_tokens",
         label: "compaction_reserve_tokens",
-        desc: "headroom kept free before compaction",
+        desc: "absolute headroom instead of compaction_ratio, in tokens",
+        // Unset by default: the ratio sets the trigger, and pinning 16K here
+        // would quietly take precedence over it.
         kind: AgentSettingKind::Int {
-            default: Some(16384),
+            default: None,
             min: 0,
         },
         scope: SettingScope::Project,
@@ -12900,6 +12893,29 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                             Err(_) => {
                                 prompt.error =
                                     Some(format!("'{}' is not an integer", prompt.input));
+                                return;
+                            }
+                        }
+                    }
+                }
+                AgentSettingKind::Float { default, min, max } => {
+                    if prompt.input.trim().is_empty() {
+                        None
+                    } else {
+                        match prompt.input.trim().parse::<f64>() {
+                            Ok(n) if n >= min && n <= max => Some(toml_edit::value(n)),
+                            Ok(_) => {
+                                prompt.error = Some(format!(
+                                    "must be between {min} and {max} (default: {})",
+                                    default
+                                        .map(|d| d.to_string())
+                                        .unwrap_or_else(|| "unset".into())
+                                ));
+                                return;
+                            }
+                            Err(_) => {
+                                prompt.error =
+                                    Some(format!("'{}' is not a number", prompt.input));
                                 return;
                             }
                         }
@@ -17136,6 +17152,12 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: >= {min}")
         }
+        AgentSettingKind::Float { default, min, max } => {
+            let d = default
+                .map(|d| d.to_string())
+                .unwrap_or_else(|| "unset".to_string());
+            format!("default: {d} · valid: {min}-{max}")
+        }
         AgentSettingKind::Glyph { default, max } => {
             format!("default: {default} · valid: up to {max} chars, empty = off")
         }
@@ -17739,6 +17761,12 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: >= {min} · current: {current}")
+                }
+                AgentSettingKind::Float { default, min, max } => {
+                    let d = default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".to_string());
+                    format!("default: {d} · valid: {min}-{max} · current: {current}")
                 }
                 AgentSettingKind::Glyph { default, max } => {
                     format!(
@@ -19055,7 +19083,10 @@ mod tests {
             context_window: 128_000,
             context_window_source:
                 crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-            reserve_tokens: 16_384,
+            // An explicit reserve keeps the threshold these tests were written
+            // against (128K - 16K) rather than the ratio's 80% default.
+            compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
         };
@@ -19557,7 +19588,8 @@ mod tests {
                     context_window: 128_000,
                     context_window_source:
                         crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
-                    reserve_tokens: 16_384,
+                    compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                    compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
                 },
@@ -24406,6 +24438,7 @@ mod tests {
             session_id: None,
             sandbox: None,
             monitors: Some(app.monitor_set.clone()),
+            compaction: None,
         })
     }
 
@@ -25238,6 +25271,58 @@ mod tests {
         assert!(err.contains("read-only | deny | allow"), "{err}");
         let doc = std::fs::read_to_string(&toml_path).unwrap();
         assert!(doc.contains("default = \"read-only\""), "unchanged: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_writes_a_float_key() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "0.75".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        // A float, not `0`: an Int row would write `0` here and every turn
+        // would compact.
+        assert!(doc.contains("compaction_ratio = 0.75"), "written: {doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    #[test]
+    fn settings_prompt_rejects_a_ratio_outside_the_usable_range() {
+        let mut app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        let toml_path = app.agent_dir.join("agent.toml");
+        std::fs::write(&toml_path, "[agent]\ncontext_window = 128000\n").unwrap();
+
+        let def = AGENT_SETTINGS
+            .iter()
+            .find(|d| d.key == "compaction_ratio")
+            .unwrap();
+        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
+        for ch in "1.5".chars() {
+            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.settings_prompt.is_some(), "dock stays open on error");
+        let err = app
+            .settings_prompt
+            .as_ref()
+            .and_then(|p| p.error.clone())
+            .expect("error recorded");
+        assert!(err.contains("between 0.1 and 0.99"), "{err}");
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(!doc.contains("compaction_ratio"), "unchanged: {doc}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
@@ -35436,7 +35521,7 @@ mod tests {
     #[test]
     fn should_not_auto_compact_when_below_threshold() {
         let app = test_app();
-        // Default context_window = 128K, reserve_tokens = 16K, so limit ~111K.
+        // Default context_window = 128K, explicit reserve 16K, so limit ~111K.
         // With tokens = 50K and history = 6, no compact.
         assert!(!app.should_auto_compact());
     }

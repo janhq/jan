@@ -121,20 +121,39 @@ than counted as free. `/new` starts a new session, and a new count.
 
 ## Automatic compaction
 
-As the conversation approaches the window, older turns are summarized to make room. The reserve is
-the headroom kept free so compaction has space to work in:
+As the conversation approaches the window, older turns are summarized to make room. The trigger is a
+share of the window, not a fixed number of tokens:
 
 ```toml
 [agent]
-context_window = 128000            # defaults to 128K
-compaction_reserve_tokens = 16384  # defaults to 16K
+context_window = 128000  # defaults to 128K
+compaction_ratio = 0.8   # share of the window the prompt may fill; defaults to 0.8
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens
 ```
 
-Compaction triggers as usage nears `context_window - compaction_reserve_tokens`. When it runs, the
-session history is replaced with the compacted version and the console says so:
+Compaction fires when the request about to be sent reaches `context_window * compaction_ratio` - 80%
+of a 128K window is ~102K. The ratio is the default because it scales with the window: a fixed 16K
+reserve is 12% of a 128K window but only 1.6% of a 1M one, where the prompt would grow into a
+provider rejection before anything triggered. Setting `compaction_reserve_tokens` pins absolute
+headroom instead, and wins over the ratio.
+
+A provider entry can override the ratio for its own routes - windows differ by an order of magnitude
+across providers, so one number cannot suit them all:
+
+```toml
+[provider]
+name = "small-window"
+compaction_ratio = 0.6
+```
+
+The check runs on the request itself, before it is dispatched, so the break lands at a point the
+session chose rather than after a provider rejects an oversized prompt and the run retries. When it
+runs, the session history is replaced with the compacted version, the transcript is told, and the
+console says so:
 
 ```
 auto-compacted 84 -> 31 messages (ctx 96K/128K)
+compacted 84 messages into a summary before sending (104K tokens against a 102K token budget)
 ```
 
 ## Compacting on purpose
@@ -153,9 +172,10 @@ preserves the thread of the conversation, including the parts that sent it off c
 
 ## Context overflow
 
-If a request overflows anyway, the loop compacts and retries rather than erroring out. Each retry
-keeps a smaller tail of recent messages. If a pass fails to shrink the conversation at all, it gives
-up rather than looping.
+If a request overflows anyway, the loop compacts and retries rather than erroring out. That path is
+still needed: a route served by a local engine carries no window the loop can read, and an estimate
+is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
+conversation at all, it gives up rather than looping.
 
 ## Capping output
 

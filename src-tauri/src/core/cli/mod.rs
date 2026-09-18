@@ -997,6 +997,11 @@ fn build_cli_orchestration_args(
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
+        // Filled in by `prepare_agent_session`, which is where the route's
+        // context window is resolved. The desktop paths leave it `None`: their
+        // window lives in the local engine's preset, not in a catalog this
+        // builder can read.
+        compaction: None,
     }
 }
 
@@ -1039,9 +1044,14 @@ pub(crate) struct SessionLimits {
     pub context_window: u64,
     /// Where `context_window` came from: configured override, catalog, or fallback.
     pub context_window_source: crate::core::cli::model_capabilities::ContextWindowSource,
-    /// Tokens reserved for the model's response. Defaults to 16K if unset.
-    /// Compaction triggers at `context_window - reserve_tokens`.
-    pub reserve_tokens: u64,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching. Resolved from the route's own `compaction_ratio`, then
+    /// `[agent].compaction_ratio`, then the default.
+    pub compaction_ratio: f64,
+    /// An explicit `[agent].compaction_reserve_tokens`. `Some` pins absolute
+    /// headroom and wins over the ratio; `None` - the default - lets the ratio
+    /// set the trigger, so it scales with the window.
+    pub compaction_reserve_tokens: Option<u64>,
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
@@ -1389,7 +1399,18 @@ fn prepare_agent_session(
         .as_ref()
         .map(|w| w.path.clone())
         .unwrap_or_else(|| project_root.clone());
-    let args = build_cli_orchestration_args(
+    // A provider that names its own ratio wins over the project's: context
+    // windows differ by an order of magnitude across providers, so one ratio
+    // cannot be right for all of them. Resolved through the same selection the
+    // upstream resolution makes, so the ratio always describes the route that
+    // will actually serve this request.
+    let compaction_ratio =
+        crate::core::agent::upstream::pick_provider_for_model(&model, &provider_configs)
+            .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
+            .or(cfg.agent.compaction_ratio)
+            .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO);
+
+    let mut args = build_cli_orchestration_args(
         tool_root,
         permissions,
         provider_configs,
@@ -1410,6 +1431,14 @@ fn prepare_agent_session(
         cfg.agent.context_window,
         crate::core::cli::model_capabilities::reported_window(serving_provider.as_deref(), &model),
     );
+    // The CLI is remote-only, so a window always resolves and a budget always
+    // exists: a request that outgrows it is compacted before it is sent rather
+    // than after the provider rejects it.
+    args.compaction = Some(crate::core::agent::compaction::CompactionBudget {
+        context_window: resolved_window.tokens,
+        ratio: compaction_ratio,
+        reserve_tokens: cfg.agent.compaction_reserve_tokens,
+    });
 
     Ok(AgentSession {
         args,
@@ -1420,7 +1449,8 @@ fn prepare_agent_session(
         limits: SessionLimits {
             context_window: resolved_window.tokens,
             context_window_source: resolved_window.source,
-            reserve_tokens: cfg.agent.compaction_reserve_tokens.unwrap_or(16_384),
+            compaction_ratio,
+            compaction_reserve_tokens: cfg.agent.compaction_reserve_tokens,
             max_tokens: cfg.agent.max_tokens,
             max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
         },
