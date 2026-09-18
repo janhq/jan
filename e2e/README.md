@@ -471,3 +471,17 @@ clears the in-memory half, and `goto()` does not.
 A new spec therefore has to be added to that array, and it is worth thinking
 about where: a spec that needs a pristine profile belongs before anything that
 configures the app.
+
+### A green run still logs errors
+
+Both spec files leave `no such element` and `stale element reference` lines in
+the wdio log even when every test passes — on a two-run Linux check, 14 and 23
+of them respectively; on Windows, 53. They are `INFO webdriver: RESULT`
+responses, not failures: `waitForDisplayed()`, `waitUntil()` and `openDialog()`
+all work by polling, so every attempt before the one that succeeds is logged as
+an error the client then swallows. React swapping a node under a held reference
+produces the stale ones.
+
+The consequence is that grepping a run for `error` tells you nothing. Read the
+`✓`/`✗` lines and the `Spec Files:` summary instead, and treat the exit code as
+the verdict.

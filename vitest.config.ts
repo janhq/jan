@@ -31,6 +31,9 @@ export default defineConfig({
         '**/src/**/*.test.tsx',
         '**/src/test/**/*',
         'src-tauri',
+        // The e2e suite is a separate package driven by WebdriverIO, not by
+        // vitest, so every line of it reads as uncovered and dilutes the total.
+        'e2e/**',
       ],
     },
   },
