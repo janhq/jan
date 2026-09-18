@@ -912,6 +912,31 @@ mod tests {
     }
 
     #[test]
+    fn an_appended_system_update_reaches_the_provider_last() {
+        // What the tail-append writer produces: the prompt's earlier bytes stay
+        // put, the update lands behind the history.
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "system", "content": "STABLE v1" },
+                { "role": "system", "content": "date" },
+                { "role": "user", "content": "hi" },
+                { "role": "assistant", "content": "yo" },
+                { "role": "user", "content": "go on" },
+                { "role": "system", "content": "STABLE v2" },
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let system = req.system.expect("an update behind history is not dropped");
+        assert!(system.starts_with("STABLE v1\n\ndate\n\n"), "{system}");
+        assert!(
+            system.ends_with("STABLE v2"),
+            "the update is the last system instruction the model reads: {system}"
+        );
+        assert_eq!(req.messages.len(), 3, "only the conversation remains");
+    }
+
+    #[test]
     fn assistant_reasoning_and_tool_calls_survive_the_round_trip() {
         let body = json!({
             "model": "m",

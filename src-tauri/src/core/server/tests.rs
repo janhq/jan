@@ -917,12 +917,12 @@ mod server_tests {
     }
 
     #[test]
-    fn set_system_prompt_replaces_existing_system() {
+    fn replace_system_prompt_replaces_existing_system() {
         let mut messages = vec![
             json!({"role": "system", "content": "old"}),
             json!({"role": "user", "content": "hi"}),
         ];
-        proxy::set_system_prompt(&mut messages, "new");
+        proxy::replace_system_prompt(&mut messages, "new");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "new");
@@ -930,9 +930,9 @@ mod server_tests {
     }
 
     #[test]
-    fn set_system_prompt_inserts_when_absent() {
+    fn replace_system_prompt_inserts_when_absent() {
         let mut messages = vec![json!({"role": "user", "content": "hi"})];
-        proxy::set_system_prompt(&mut messages, "system!");
+        proxy::replace_system_prompt(&mut messages, "system!");
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0]["role"], "system");
         assert_eq!(messages[0]["content"], "system!");
