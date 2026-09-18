@@ -313,7 +313,7 @@ fn system_node(content: &str) -> serde_json::Value {
     serde_json::json!({ "role": "system", "content": content })
 }
 
-fn is_system_node(message: &serde_json::Value) -> bool {
+pub(crate) fn is_system_node(message: &serde_json::Value) -> bool {
     message.get("role").and_then(|r| r.as_str()) == Some("system")
 }
 
