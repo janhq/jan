@@ -97,6 +97,12 @@ pub(crate) struct RunReport {
     /// Billable tokens across every request of the run, including subagents'.
     /// The same accumulator `/usage` sums a TUI session with.
     usage: super::model_catalog::TokenUsage,
+    /// Cache totals, `None` until some request reports the field. A route that
+    /// reports no cache fields must not serialize as `0`: that is byte-identical
+    /// to an honest zero, and an honest zero -- a prefix written every turn and
+    /// never read -- is the alarm this counter exists to raise.
+    cached_tokens: Option<u64>,
+    cache_write_tokens: Option<u64>,
 }
 
 impl RunReport {
@@ -123,7 +129,11 @@ impl RunReport {
             // Reasoning is display-only: it must not enter the piped/plain-text
             // report answer, which is reserved for the final completion.
             StreamEvent::Reasoning { .. } => {}
-            StreamEvent::TurnUsage { usage } => self.usage.add(usage),
+StreamEvent::TurnUsage { usage } => {
+                self.usage.add(usage);
+                accumulate(&mut self.cached_tokens, usage.cached_tokens);
+                accumulate(&mut self.cache_write_tokens, usage.cache_write_tokens);
+            }
             // Subagent work is real spend on the same budget, so its usage
             // counts. Its `Step`/`Token` must not: those describe the child's
             // own turns and prose, not this run's.
@@ -174,8 +184,8 @@ impl RunReport {
                 prompt_tokens: self.usage.prompt_tokens,
                 completion_tokens: self.usage.completion_tokens,
                 total_tokens: self.usage.total_tokens(),
-                cached_tokens: self.usage.cached_tokens,
-                cache_write_tokens: self.usage.cache_write_tokens,
+                cached_tokens: self.cached_tokens,
+                cache_write_tokens: self.cache_write_tokens,
                 // Priced from the model catalog the last `/models` listing
                 // cached. Absent for a model whose provider publishes no
                 // prices, rather than reported as zero.
@@ -219,10 +229,22 @@ struct ReportUsage {
     prompt_tokens: u64,
     completion_tokens: u64,
     total_tokens: u64,
-    cached_tokens: u64,
-    cache_write_tokens: u64,
+    /// `null` on a route that reports no cache fields at all; `0` when it
+    /// reported zero reads. Piped consumers branch on the difference.
+    cached_tokens: Option<u64>,
+    cache_write_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     estimated_cost_usd: Option<f64>,
+}
+
+/// Fold one request's optional cache total into the run's. An absent field adds
+/// nothing -- there is no number to attribute -- so the total stays `None` until
+/// a route reports one, while a reported zero creates it. `unwrap_or(0)` here
+/// would erase exactly the distinction [ReportUsage] exists to keep.
+fn accumulate(total: &mut Option<u64>, reported: Option<u64>) {
+    if let Some(value) = reported {
+        *total = Some(total.unwrap_or(0) + value);
+    }
 }
 
 /// A stable, machine-readable code for a failure. The loop stamps every
@@ -352,6 +374,45 @@ mod tests {
         // Unclassifiable messages keep the code the loop stamped.
         assert_eq!(out["error"]["code"], "error");
         assert_eq!(out["session_id"], serde_json::Value::Null);
+    }
+
+    /// A route that reports no cache fields leaves both totals `null`; a route
+    /// that honestly reports zero reads reports `0`. `unwrap_or(0)` upstream
+    /// would make them the same byte, erasing the one case worth alerting on.
+    #[test]
+    fn cache_totals_distinguish_a_reported_zero_from_no_report() {
+        let envelope = |events: Vec<StreamEvent>| {
+            let mut report = RunReport::default();
+            for ev in events {
+                report.observe(&ev);
+            }
+            value(report.finish(None, None, "m", 1, Some("done")))
+        };
+        let turn = |usage| StreamEvent::TurnUsage { usage };
+
+        let silent = envelope(vec![turn(usage(1_000, 10))]);
+        assert!(silent["usage"]["cached_tokens"].is_null(), "{silent}");
+        assert!(silent["usage"]["cache_write_tokens"].is_null(), "{silent}");
+
+        let reported = envelope(vec![turn(Usage {
+            cached_tokens: Some(0),
+            cache_write_tokens: Some(40),
+            ..usage(1_000, 10)
+        })]);
+        assert_eq!(reported["usage"]["cached_tokens"], 0);
+        assert_eq!(reported["usage"]["cache_write_tokens"], 40);
+
+        // A later request that omits the fields adds nothing and does not erase
+        // what an earlier one reported: the session total still describes the
+        // tokens that were really spent.
+        let mixed = envelope(vec![
+            turn(Usage {
+                cached_tokens: Some(900),
+                ..usage(1_000, 10)
+            }),
+            turn(usage(1_000, 10)),
+        ]);
+        assert_eq!(mixed["usage"]["cached_tokens"], 900);
     }
 
     #[test]

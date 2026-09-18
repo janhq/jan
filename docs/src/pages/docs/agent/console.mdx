@@ -41,7 +41,7 @@ jan --task "..."    # with a first message already sent
 
 | Region | What it shows |
 | --- | --- |
-| Header | Model, reasoning effort, clock, turn count, context usage, throughput, state |
+| Header | Model, reasoning effort, clock, turn count, context usage, prompt-cache hit rate, throughput, state |
 | Transcript | The conversation, with tool calls folded into summary rows |
 | Receipt | Per turn: context sent, tokens produced, elapsed, rate |
 | Input | Where you type |
@@ -82,6 +82,23 @@ To go back to the plain Braille throbber - if your terminal lacks the font and d
 missing-character box - clear the field in `/settings` and save. That writes `wave = ""`, which is
 the off switch. Pressing <kbd>x</kbd> on the row is the other direction: it removes the key, so the
 default 👋 comes back.
+
+### The prompt-cache hit rate
+
+Providers cache the front of a request, so a turn that reuses it costs a fraction of a cold one. The
+header carries the share of this session's prompt tokens that came from the cache:
+
+```
+ jan agent   tokamak-1-preview  effort medium   10:40:49   turn 1/400   ctx 6K/128K   cache 75%   [ready]
+```
+
+The segment appears only once a route has reported a cache field: a route that reports nothing shows
+no badge at all, rather than a fabricated `0%`. A rate that reads `0%` is drawn in red, because a
+prefix rewritten every turn and never read is the state worth interrupting for. After a resumed or
+forked history the badge adds `(this process)`, since the counters begin where this process did.
+
+`/context` carries the full numbers - a session total and the last request's sample - see
+[Context and compaction](/docs/agent/context#the-prompt-cache-lines).
 
 ## Reasoning
 
