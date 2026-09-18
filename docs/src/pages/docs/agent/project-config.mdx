@@ -64,6 +64,7 @@ Point at a different file with `instructions_file` if you already keep conventio
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
 # send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
+# worktree = true         # give each session its own git checkout instead of editing this one
 instructions_file = "AGENT.md"
 
 # [provider]
@@ -104,6 +105,7 @@ inject = "always"
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
 | `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
+| `worktree` | `false` | Run each session in its own git worktree under `~/.jan/worktrees`, on a `jan/agent/` branch, instead of editing this checkout. Overridden by `--worktree` / `--no-worktree`. See [Sessions](/docs/agent/sessions) |
 | `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`

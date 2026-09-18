@@ -90,11 +90,27 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@9e57365e36de1e26dea5145e57d471261468d9f7 # cargo-llvm-cov
 
-      # The same script the coverage job uses. It stubs the engine worker and a
-      # libggml* too, which the bundle config now requires and this inline copy
-      # did not.
+      # This job is the one place two trees meet: the steps are this workflow's,
+      # from the PR, but the checkout above is the base branch's. So a step that
+      # runs a script out of the repo gets the base tree's copy -- which is the
+      # one that does not have whatever the PR just changed. Take the script from
+      # the PR head, and put it in `scripts/` rather than running it in place:
+      # it resolves the repo root from its own location, so a copy sitting
+      # anywhere else would stub that directory instead.
+      - name: Check out this PR's stub script
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          sparse-checkout: scripts/stub-tauri-resources.mjs
+          sparse-checkout-cone-mode: false
+          path: .pr-head
+
+      # Stubs the engine worker and a libggml* as well, which the bundle config
+      # requires.
       - name: Create Tauri resource stubs for CI
-        run: ./scripts/stub-tauri-resources.sh
+        run: |
+          cp .pr-head/scripts/stub-tauri-resources.mjs scripts/
+          node scripts/stub-tauri-resources.mjs
 
       - name: Run Rust test coverage
         run: |

@@ -41,6 +41,9 @@ jan <COMMAND>
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume [ID]` | Resume the most recent session, or one whose id starts with `ID` |
 | `-c`, `--continue` | Resume the most recent session |
+| `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
+| `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
+| `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--provider <ID>` | Target a specific provider for this run |
 | `--api-key <KEY>` | API key for that provider |
 
@@ -53,6 +56,8 @@ jan --resume 3f7a91c2                   # resume by id prefix
 jan --plan                              # read-only
 jan --safe                              # ask before writes and shell commands
 jan --sandbox                           # confine shell commands to the project
+jan -c --fork-session                   # branch the latest session into a new one
+jan --worktree                          # work in a dedicated checkout, not yours
 ```
 
 <Callout type="warning">
@@ -88,8 +93,12 @@ jan cli agent run --safe "run the migration"   # approve each step
 | `--no-sandbox` | Run shell commands unconfined, overriding a persistent `sandbox` setting |
 | `--resume[=ID]` | Resume the most recent session, or one by id |
 | `-c`, `--continue` | Resume the most recent session |
+| `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
+| `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
+| `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--provider`, `--api-key` | Credential overrides for this run |
-| `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object |
+| `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
+| `--input-format <FORMAT>` | `text` (default) ignores stdin; `stream-json` reads client messages while the run is in flight. Requires `--output-format stream-json` |
 
 <Callout type="info">
 `run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
@@ -147,6 +156,32 @@ had said before it broke as `result`:
 | `usage` | Summed over every request the run made, subagents included |
 
 The process exit code is unchanged: `0` on success, `1` on failure.
+
+#### Streaming JSON, in both directions
+
+`--output-format stream-json` prints one JSON object per line as the run proceeds -- assistant
+text, tool calls, tool results, permission requests -- and ends with the same `result` object
+`--output-format json` prints on its own.
+
+`--input-format stream-json` opens the other direction: newline-delimited messages read on stdin
+for the run's lifetime. It requires `--output-format stream-json`, because the client is the only
+thing that can answer a permission request and it needs to be reading them.
+
+| Message | Shape |
+| --- | --- |
+| Follow-up turn | `{"type":"user","text":"also check the tests"}` |
+| Permission answer | `{"type":"permission","request_id":"perm-1","decision":"allow_once"}` |
+| Stop the run | `{"type":"abort"}` |
+
+A follow-up joins the run at the next turn boundary. `decision` is `allow_once`, `allow_always`, or
+`deny`, and each `request_id` is answerable once. A line that parses as none of these is reported
+as an `input_error` record and skipped, so one bad line cannot end a healthy run.
+
+<Callout type="info">
+Closing stdin is not an abort -- the run finishes and still prints its `result`. But it does end the
+only thing that can approve a gated tool call, so any request still pending is denied, as is any
+that comes afterwards. Keep the pipe open for as long as you want a say.
+</Callout>
 
 ### `step`
 

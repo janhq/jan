@@ -13,11 +13,12 @@ use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
+use app_lib::core::cli::stream_input::InputFormat;
 use app_lib::core::cli::{
     cli_agent_config_list, cli_agent_config_path, cli_agent_config_set, cli_agent_config_unset,
     cli_agent_run, cli_agent_status, cli_agent_step, cli_agent_ui, cli_delete_thread,
     cli_get_thread, cli_list_messages, cli_list_threads, cli_plugin_install, cli_plugin_list,
-    cli_plugin_remove, cli_plugin_search, ResumeTarget, SessionFlags,
+    cli_plugin_remove, cli_plugin_search, ResumeRequest, SessionFlags,
 };
 use std::fmt::Write as _;
 
@@ -42,6 +43,8 @@ to opt out of both.",
   jan --task \"fix the failing test\"                      # seed the TUI with a first message\n  \
   jan -c                                                 # resume the most recent session\n  \
   jan --resume 3f7a91c2                                  # resume a session by id (or id prefix)\n  \
+  jan -c --fork-session                                  # branch the most recent session into a new one\n  \
+  jan --worktree                                         # work in a dedicated git worktree, not your checkout\n  \
   jan cli agent run \"fix the failing test\"               # run the agent non-interactively\n  \
   jan cli models list                                    # show every configured provider model\n  \
   jan cli threads list                                   # list saved conversation threads\n  \
@@ -78,6 +81,8 @@ struct Cli {
     plan: bool,
     #[command(flatten)]
     sandbox: SandboxArgs,
+    #[command(flatten)]
+    worktree: WorktreeArgs,
 }
 
 /// Whether this invocation confines the shell, shared by every surface that
@@ -95,6 +100,32 @@ struct SandboxArgs {
     /// Run shell commands unconfined, overriding a persistent sandbox setting
     #[arg(long, conflicts_with = "sandbox")]
     no_sandbox: bool,
+}
+
+/// Whether this invocation works in its own git worktree.
+///
+/// Two flags for the same reason `SandboxArgs` has two: the setting is also
+/// persistent (`[agent].worktree` in agent.toml, `worktree` in
+/// `~/.jan/config.toml`), so there has to be a way out of it for one run.
+#[derive(Args, Clone, Copy)]
+struct WorktreeArgs {
+    /// Work in a dedicated git worktree instead of the project directory
+    #[arg(long)]
+    worktree: bool,
+    /// Work in the project directory, overriding a persistent worktree setting
+    #[arg(long, conflicts_with = "worktree")]
+    no_worktree: bool,
+}
+
+impl WorktreeArgs {
+    /// `None` when neither flag was passed, so the config files decide.
+    fn into_flag(self) -> Option<bool> {
+        match (self.worktree, self.no_worktree) {
+            (true, _) => Some(true),
+            (_, true) => Some(false),
+            _ => None,
+        }
+    }
 }
 
 impl SandboxArgs {
@@ -119,11 +150,14 @@ struct ResumeArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
 }
 
@@ -138,11 +172,14 @@ struct ResumeRunArgs {
     /// Resume the most recent session (alias for a bare --resume)
     #[arg(long = "continue", short = 'c', conflicts_with = "resume")]
     continue_session: bool,
+    /// Open the resumed session as a new thread, leaving the original resumable
+    #[arg(long)]
+    fork_session: bool,
 }
 
 impl ResumeRunArgs {
-    fn into_target(self) -> Option<ResumeTarget> {
-        ResumeTarget::from_flags(self.resume, self.continue_session)
+    fn into_request(self) -> Option<ResumeRequest> {
+        ResumeRequest::from_flags(self.resume, self.continue_session, self.fork_session)
     }
 }
 
@@ -311,11 +348,20 @@ enum AgentCommands {
         #[command(flatten)]
         sandbox: SandboxArgs,
         #[command(flatten)]
+        worktree: WorktreeArgs,
+        #[command(flatten)]
         resume: ResumeRunArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
-        /// object on stdout when the run finishes
+        /// object on stdout when the run finishes; `stream-json` prints one
+        /// JSON event per line as the run proceeds, ending with that object
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
+        /// `stream-json` reads newline-delimited `user`, `permission` and
+        /// `abort` messages on stdin while the run is in flight, and requires
+        /// `--output-format stream-json`; `text` (the default) does not read
+        /// stdin at all
+        #[arg(long, value_enum, default_value_t = InputFormat::Text)]
+        input_format: InputFormat,
     },
     /// Run a single turn (debugging)
     Step {
@@ -536,9 +582,10 @@ async fn main() {
                 auto_approve: !cli.safe,
                 plan: cli.plan,
                 sandbox: cli.sandbox.into_flag(),
+                worktree: cli.worktree.into_flag(),
                 ..Default::default()
             },
-            cli.resume.into_target(),
+            cli.resume.into_request(),
         )
         .await
         {
@@ -730,8 +777,10 @@ async fn handle_agent(cmd: AgentCommands) {
             safe,
             providers,
             sandbox,
+            worktree,
             resume,
             output_format,
+            input_format,
         } => {
             cli_agent_run(
                 &project,
@@ -741,10 +790,12 @@ async fn handle_agent(cmd: AgentCommands) {
                 SessionFlags {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
+                    worktree: worktree.into_flag(),
                     ..Default::default()
                 },
-                resume.into_target(),
+                resume.into_request(),
                 output_format,
+                input_format,
             )
             .await
         }
@@ -1111,6 +1162,42 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
+    fn parsed_input_format(extra: &[&str]) -> InputFormat {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { input_format, .. },
+                    },
+            }) => input_format,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// Reading stdin is opt-in: a run with no `--input-format` must not consume
+    /// a pipe the caller is using for something else.
+    #[test]
+    fn input_format_parses_and_defaults_to_text() {
+        assert_eq!(parsed_input_format(&[]), InputFormat::Text);
+        assert_eq!(
+            parsed_input_format(&["--input-format", "stream-json"]),
+            InputFormat::StreamJson
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "run",
+            "task",
+            "--input-format",
+            "yaml"
+        ])
+        .is_err());
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
     fn parsed_output_format(extra: &[&str]) -> OutputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1132,6 +1219,10 @@ mod tests {
         assert_eq!(
             parsed_output_format(&["--output-format", "json"]),
             OutputFormat::Json
+        );
+        assert_eq!(
+            parsed_output_format(&["--output-format", "stream-json"]),
+            OutputFormat::StreamJson
         );
         assert_eq!(
             parsed_output_format(&["--output-format=text"]),

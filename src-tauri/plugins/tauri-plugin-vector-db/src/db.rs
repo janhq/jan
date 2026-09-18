@@ -49,10 +49,16 @@ pub struct MinimalChunkInput {
 // ============================================================================
 
 /// Canonical base directory for all vector-db collections (RAG chunks and the
-/// agent memory store). Single source of truth shared by `VectorDBState` and any
-/// out-of-plugin consumer so they operate on the same `.db` files.
-pub fn default_base_dir() -> PathBuf {
-    let mut base = dirs::data_dir().unwrap_or_else(|| PathBuf::from("."));
+/// agent memory store), given the OS app-data root. Single source of truth
+/// shared by `VectorDBState` and any out-of-plugin consumer so they operate on
+/// the same `.db` files.
+///
+/// The root is passed in rather than looked up here: this crate is a workspace
+/// member and cannot see the app's `core::app::paths`, which is where the
+/// Windows `%APPDATA%` override lives. Resolving `dirs::data_dir()` locally
+/// would put the plugin -- and only the plugin -- back on the real profile.
+pub fn base_dir_in(data_root: &Path) -> PathBuf {
+    let mut base = data_root.to_path_buf();
     base.push("Jan");
     base.push("data");
     base.push("db");

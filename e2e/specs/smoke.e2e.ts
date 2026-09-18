@@ -83,8 +83,8 @@ describe('Jan desktop app', () => {
 // stopped passing that env to the app at all.
 //
 // This asserts the opposite end: a file the Rust side wrote, at a path the Rust
-// side resolved through dirs::data_dir(). It only exists here if the overridden
-// environment actually reached the app process.
+// side resolved through core::app::paths::data_dir(). It only exists here if the
+// overridden environment actually reached the app process.
 describe('on-disk isolation', () => {
   it('wrote its config inside the throwaway profile', async () => {
     // app_data_dir_with_fallback() -> data_dir()/Jan, + CONFIGURATION_FILE_NAME
@@ -92,7 +92,9 @@ describe('on-disk isolation', () => {
     const settings =
       process.platform === 'darwin'
         ? join(testHome, 'Library/Application Support/Jan/settings.json')
-        : join(testHome, '.local/share/Jan/settings.json')
+        : process.platform === 'win32'
+          ? join(testHome, 'AppData/Roaming/Jan/settings.json')
+          : join(testHome, '.local/share/Jan/settings.json')
 
     await browser.waitUntil(() => existsSync(settings), {
       timeout: 30_000,

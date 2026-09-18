@@ -5,8 +5,26 @@
 //! is over, so a caller can branch on `is_error` and read `result` without
 //! parsing terminal chatter. The object is assembled from the same
 //! [`StreamEvent`]s the printer consumes -- there is no second source of truth.
+//!
+//! `--output-format stream-json` is the same envelope preceded by the trace:
+//! one JSON object per line on stdout, flushed as each event is produced, with
+//! the envelope as the last line. The wire shape of a trace line is
+//! [`StreamEvent`]'s own `#[serde(tag = "type")]` serialization, so the tags a
+//! consumer matches on are the snake_case variant names: `token`, `reasoning`,
+//! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
+//! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
+//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
+//! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
+//! `turn_usage`, `done`, `error`, `permission_request`. Two tags are minted
+//! here rather than by the loop: `permission_decision` (how this CLI answered a
+//! `permission_request`) and the terminal `result`.
+//!
+//! `monitors`, `parked` and `notice` are display-only progress; a consumer that
+//! only wants the outcome can read the last line alone. Unknown tags must be
+//! ignored rather than treated as an error -- new variants are additive.
 
 use crate::core::agent::events::StreamEvent;
+use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 
 /// How a non-interactive run reports itself.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -16,11 +34,54 @@ pub enum OutputFormat {
     Text,
     /// A single result object on stdout when the run finishes.
     Json,
+    /// One NDJSON record per event on stdout, terminated by the result object.
+    StreamJson,
 }
 
 impl OutputFormat {
-    pub(crate) fn is_json(self) -> bool {
-        matches!(self, OutputFormat::Json)
+    /// Stdout belongs to a program rather than a person: no prose, no spinner,
+    /// and the result envelope is printed even when the run failed at setup.
+    pub(crate) fn is_machine(self) -> bool {
+        matches!(self, OutputFormat::Json | OutputFormat::StreamJson)
+    }
+
+    pub(crate) fn is_stream_json(self) -> bool {
+        matches!(self, OutputFormat::StreamJson)
+    }
+}
+
+/// One NDJSON record: the compact serialization plus its terminating newline.
+/// Serialization of a `StreamEvent` is infallible in practice; an encoding
+/// failure yields no line rather than a truncated one a consumer would choke on.
+pub(crate) fn ndjson_line<T: serde::Serialize>(value: &T) -> Option<String> {
+    serde_json::to_string(value).ok().map(|mut s| {
+        s.push('\n');
+        s
+    })
+}
+
+/// How the CLI answered a [`StreamEvent::PermissionRequest`]. The loop does not
+/// emit this: the decision is made here, and without it a piped consumer sees
+/// the request and never learns that the run was denied.
+#[derive(serde::Serialize)]
+pub(crate) struct PermissionDecisionRecord<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    request_id: &'a str,
+    decision: &'static str,
+}
+
+impl<'a> PermissionDecisionRecord<'a> {
+    pub(crate) fn new(request_id: &'a str, decision: PermissionDecision) -> Self {
+        Self {
+            kind: "permission_decision",
+            request_id,
+            decision: match decision {
+                PermissionDecision::AllowOnce => "allow_once",
+                PermissionDecision::AllowAlways => "allow_always",
+                PermissionDecision::Deny => "deny",
+            },
+        }
     }
 }
 
@@ -348,6 +409,65 @@ mod tests {
                 .unwrap_or_else(|| panic!("{key} missing or out of order in {printed}"));
             at += found + key.len();
         }
+    }
+
+    /// The stream-json contract: every record is independently parseable on its
+    /// own line, carries a `type` tag, and the envelope is the last one.
+    #[test]
+    fn the_ndjson_stream_parses_line_by_line_and_ends_with_the_result() {
+        let events = [
+            StreamEvent::Step { index: 1, max: 0 },
+            StreamEvent::ToolCall {
+                id: "call_1".to_string(),
+                name: "bash".to_string(),
+                args: serde_json::json!({ "command": "echo \"hi\"\nls" }),
+            },
+            token("done\nand done"),
+            StreamEvent::Done {
+                stop_reason: "end_turn".to_string(),
+                usage: None,
+            },
+        ];
+        let mut report = RunReport::default();
+        let mut stream = String::new();
+        for ev in &events {
+            report.observe(ev);
+            stream.push_str(&ndjson_line(ev).unwrap());
+        }
+        stream.push_str(
+            &ndjson_line(&PermissionDecisionRecord::new(
+                "perm-1",
+                PermissionDecision::Deny,
+            ))
+            .unwrap(),
+        );
+        stream.push_str(&ndjson_line(&report.finish(None, "m", 1, Some("done\nand done"))).unwrap());
+
+        assert!(stream.ends_with('\n'));
+        let lines: Vec<&str> = stream.lines().collect();
+        assert_eq!(lines.len(), events.len() + 2);
+        let parsed: Vec<serde_json::Value> = lines
+            .iter()
+            .map(|line| serde_json::from_str(line).expect("each line parses on its own"))
+            .collect();
+        let tags: Vec<&str> = parsed
+            .iter()
+            .map(|v| v["type"].as_str().expect("every record is tagged"))
+            .collect();
+        assert_eq!(
+            tags,
+            [
+                "step",
+                "tool_call",
+                "token",
+                "done",
+                "permission_decision",
+                "result"
+            ]
+        );
+        assert_eq!(parsed[4]["decision"], "deny");
+        assert_eq!(parsed[4]["request_id"], "perm-1");
+        assert_eq!(parsed[5]["result"], "done\nand done");
     }
 
     #[test]
