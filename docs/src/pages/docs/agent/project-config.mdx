@@ -140,6 +140,37 @@ off by default on the CLI.
 | `env_passthrough` | `[]` | Host environment variables the shell may inherit beyond the minimal base (exact names or a `*` wildcard). Merged with `~/.jan/config.toml`. A secret-looking name is never copied by a wildcard - see [The shell environment](/docs/agent/permissions#the-shell-environment) |
 | `env_set` | `{}` | Explicit `key = "value"` pairs for the shell env, as a `[tools.env_set]` table. Wins over `env_passthrough` and the global value; the way to inject a secret-named variable on purpose |
 
+### `[prompt]`
+
+Which contributor to the system prompt may sit above the **cache line**. A provider reuses a request
+prefix only while its bytes are identical to the previous request, so a contributor that changes per
+turn belongs below the conversation, not in front of it. Placement is deny-wins, like `[tools]`:
+nothing reaches the prefix without being allowed there, and the safe answer for a contributor no
+policy mentions is the tail.
+
+```toml
+[prompt]
+# Only these may sit above the cache line. Unset keeps each contributor's own
+# placement; setting it moves everything else below the line.
+prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Placement for a contributor no policy mentions (default: tail).
+# default = "tail"
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
+| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+
+```bash
+jan cli agent status   # the resolved placement of every contributor, and why
+```
+
+Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `runtime_environment`,
+`subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`, `memory_catalog`,
+`tool_schemas`, `date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`. See
+[Context and Compaction](/docs/agent/context) for what the split buys.
+
 ### `[skills]`
 
 See [Skills](/docs/agent/skills#controlling-which-are-active).

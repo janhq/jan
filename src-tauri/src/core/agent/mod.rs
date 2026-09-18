@@ -25,6 +25,7 @@ pub mod plan;
 pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
+pub mod prompt;
 pub mod reminder;
 pub mod session;
 pub mod skill_hub;
@@ -32,3 +33,7 @@ pub mod skills;
 pub mod subagent;
 pub mod todo;
 pub mod upstream;
+
+// Byte-level prefix-stability tests: the regression suite for epic #8956.
+#[cfg(test)]
+mod prefix_stability;

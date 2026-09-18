@@ -771,6 +771,26 @@ pub fn cli_agent_status(
     let cfg = load_agent_config(&project_root)?;
     let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
 
+    // Resolved once, and reported for every registered composer: "which of my
+    // contributors is writing into the cached prefix" is one command, not an
+    // investigation. An unusable `[prompt]` policy (an allowlist naming
+    // something that varies, or a typo) fails here with the same message
+    // composition would give.
+    let prompt_policy = crate::core::agent::project::prompt_policy(&project_root);
+    let prompt_components: Vec<serde_json::Value> = prompt_policy
+        .placements()?
+        .into_iter()
+        .map(|(composer, placement)| {
+            serde_json::json!({
+                "id": composer.id(),
+                "placement": placement.as_str(),
+                "constant": composer.constant(),
+                "source": composer.source().as_str(),
+                "what": composer.what(),
+            })
+        })
+        .collect();
+
     // Only providers this build can reach: local-engine entries inherited from
     // the desktop store have no upstream here (see `is_cli_reachable`).
     let mut providers: Vec<serde_json::Value> = provider_configs
@@ -809,6 +829,14 @@ pub fn cli_agent_status(
         "sandbox": {
             "enabled": crate::core::agent::r#loop::effective_sandbox(&project_root),
             "backend": tauri_plugin_agent_tools::tools::jail::backend().as_str(),
+        },
+        // Who may write above the cache line, and where each registered
+        // contributor actually lands: the code-level placement, narrowed by
+        // `[prompt].prefix_allow`.
+        "prompt": {
+            "default": prompt_policy.default_placement().as_str(),
+            "prefix_allow": prompt_policy.prefix_allow(),
+            "components": prompt_components,
         },
         "providers": providers,
     }))

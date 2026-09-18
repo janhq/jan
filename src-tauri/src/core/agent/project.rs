@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::core::agent::prompt::{Placement, PromptPolicy};
 use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
 /// `[tools]`/`[skills]` are always modeled. `[agent]` and `[budget]` are only
@@ -23,9 +24,29 @@ pub(crate) struct AgentToml {
     #[serde(default)]
     pub tools: ToolsSection,
     #[serde(default)]
+    pub prompt: PromptSection,
+    #[serde(default)]
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+}
+
+/// `[prompt]` — where each contributor to the system prompt may sit. Deny-wins,
+/// like `[tools]`: nothing reaches the cache line without being allowed there,
+/// and the safe answer for a composer no policy mentions is the tail.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PromptSection {
+    /// Placement for a composer no policy mentions, `tail` by default. A
+    /// composer that varies within a session stays in the tail whatever this
+    /// says: the constancy rule outranks it.
+    #[serde(default)]
+    pub default: Placement,
+    /// Composer ids allowed above the cache line (`assistant_instructions`,
+    /// `skills`, ...). Unset keeps each composer's own placement; setting it
+    /// narrows the prefix to exactly the ids listed. An unknown id is an error,
+    /// not a silent no-op.
+    #[serde(default)]
+    pub prefix_allow: Option<Vec<String>>,
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
@@ -253,6 +274,23 @@ allow_write = []
 enabled = []
 # always | relevance
 inject = "always"
+
+# Where each contributor to the system prompt may sit, deny-wins like [tools].
+# Above the cache line ("prefix") a contributor must be constant for the whole
+# session: a provider only reuses a prefix whose bytes are identical to the
+# previous request, so per-turn content belongs in the tail. `jan cli agent
+# status` prints the resolved placement of every contributor.
+[prompt]
+# Unset keeps each composer's own placement. Setting it narrows the prefix to
+# exactly the ids listed -- everything else moves below the cache line whatever
+# it asks for. Ids: assistant_instructions, guidelines, working_directory,
+# runtime_environment, subagent_guide, skill_guide, web_tools_guide,
+# project_context, skills, memory_catalog, tool_schemas (the tool array is a
+# request field and is always above the cache line).
+# prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Placement for a composer no policy mentions: tail (the default) or prefix.
+# A composer that varies within a session stays in the tail regardless.
+# default = "tail"
 "#;
 
 /// Path to `<project_root>/.jan/agent/agent.toml`.
@@ -291,6 +329,9 @@ pub(crate) struct RunSettings {
     pub env_passthrough: Vec<String>,
     /// `[tools].env_set`: explicit shell-env overrides, sorted by key.
     pub env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved here so
+    /// composition and `agent status` answer the same question from one parse.
+    pub prompt: PromptPolicy,
     /// `[agent].worktree`: give each session its own git checkout. Merged with
     /// the global setting and the `--worktree` flag by the caller. CLI-only,
     /// like the `[agent]` section it comes from.
@@ -311,6 +352,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         sandbox: cfg.tools.sandbox,
         env_passthrough: cfg.tools.env_passthrough,
         env_set: cfg.tools.env_set.into_iter().collect(),
+        prompt: PromptPolicy::new(cfg.prompt.default, cfg.prompt.prefix_allow),
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
@@ -318,6 +360,15 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
     run_settings(project_root).enabled_skills
+}
+
+/// The `[prompt]` placement policy for `project_root`, or the defaults when the
+/// project has no agent.toml. A thin read of [`run_settings`] for the callers
+/// that need only this: the status report and the `/context` sizing. Both are
+/// CLI surfaces, hence the desktop-build allowance.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) fn prompt_policy(project_root: &Path) -> PromptPolicy {
+    run_settings(project_root).prompt
 }
 
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
@@ -451,6 +502,7 @@ pub(crate) fn set_skills_enabled_in_agent_toml(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::agent::prompt::Composer;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -585,6 +637,60 @@ mod tests {
         ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
+        // The scaffolded `[prompt]` section is all comments: the defaults it
+        // documents are what a fresh project gets.
+        assert_eq!(cfg.prompt.default, Placement::Tail);
+        assert_eq!(cfg.prompt.prefix_allow, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("[prompt]"));
+        assert!(AGENT_TOML_TEMPLATE.contains("prefix_allow"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_defaults_to_the_declared_placements() {
+        let root = unique_root("prompt_default");
+        write_agent_toml(&root, "[skills]\nenabled = []\n");
+        let policy = prompt_policy(&root);
+        assert_eq!(policy.default_placement(), Placement::Tail);
+        assert_eq!(
+            policy.prefix_allow(),
+            None,
+            "an absent allowlist keeps each composer's own placement"
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Date).unwrap(),
+            Placement::Tail
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_reads_the_allowlist_and_the_default() {
+        let root = unique_root("prompt_allow");
+        write_agent_toml(
+            &root,
+            "[prompt]\ndefault = \"tail\"\nprefix_allow = [\"assistant_instructions\"]\n",
+        );
+        let policy = prompt_policy(&root);
+        assert_eq!(
+            policy.prefix_allow(),
+            Some(&["assistant_instructions".to_string()][..])
+        );
+        assert_eq!(
+            policy
+                .placement_of(Composer::AssistantInstructions)
+                .unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Tail,
+            "the allowlist denies a declared-prefix composer it does not name"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
