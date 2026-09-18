@@ -732,7 +732,7 @@ pub(crate) fn copy_optional_chat_params(
 
 /// One MCP tool already rendered into the OpenAI `function` shape, paired with
 /// the tool name used for ordering and for `tool_to_server` lookup.
-type RenderedTool = (String, serde_json::Value);
+pub(crate) type RenderedTool = (String, serde_json::Value);
 
 /// Ordering key for the advertised tool array: `(server name, tool name)`.
 ///
@@ -767,7 +767,7 @@ fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<Rendere
 /// from it has been removed and its cached listing is dropped. That keeps the
 /// cache from growing across a long session, and means removing a server changes
 /// the array exactly once, at the point of the change.
-fn reuse_last_good_listings(
+pub(crate) fn reuse_last_good_listings(
     cache: &mut HashMap<String, Vec<RenderedTool>>,
     listings: Vec<(String, Option<Vec<RenderedTool>>)>,
 ) -> Vec<(String, Vec<RenderedTool>)> {
@@ -807,7 +807,7 @@ fn reuse_last_good_listings(
 
 /// Flatten the per-server listings into the advertised array, ordered by
 /// [`tool_sort_key`], with `tool_to_server` kept consistent with that order.
-fn assemble_tool_array(
+pub(crate) fn assemble_tool_array(
     listings: Vec<(String, Vec<RenderedTool>)>,
 ) -> (Vec<serde_json::Value>, HashMap<String, String>) {
     let mut flattened: Vec<(String, String, serde_json::Value)> = listings
