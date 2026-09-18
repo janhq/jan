@@ -44,9 +44,57 @@ export const MOCK_REPLY_PREFIX = 'mock reply to: '
  */
 export const MOCK_TITLE = 'Mock Thread Title'
 
+export type MockOptions = {
+  /**
+   * What `GET /v1/models` advertises, and so what a spec types into Add Model.
+   *
+   * Worth overriding when a second spec configures a second provider: both
+   * providers stay in the profile (nothing deletes the first), and the chat
+   * model dropdown keys its option testid on the model id alone
+   * (DropdownModelProvider.tsx), so two providers offering the same id put two
+   * matching elements on the page and `model-option-<id>` stops identifying one.
+   */
+  modelId?: string
+  /**
+   * Milliseconds to wait between streamed chunks.
+   *
+   * The default of 0 flushes the whole reply as fast as the socket takes it,
+   * which is what a spec asserting on the finished text wants. A spec that has
+   * to act on a reply *while it is still streaming* -- pressing stop -- needs
+   * the stream to outlive the round trip that clicks the button, and this is
+   * the only knob that makes that deterministic rather than a race against
+   * loopback.
+   */
+  chunkDelayMs?: number
+}
+
 export type MockOpenAI = {
   /** Feed this to the Add Provider dialog verbatim. */
   baseUrl: string
+  /** What this instance advertises; echoes back `modelId`, or the default. */
+  modelId: string
+  /**
+   * How long the server pauses between streamed chunks, from now on.
+   *
+   * Writable, and read fresh for every chunk, so one test can slow the stream
+   * down and the next can put it back without standing up a second server on a
+   * second port and reconfiguring a second provider to reach it. The stop test
+   * is the only caller: everything else wants a reply that has already finished
+   * by the time it is asserted on.
+   */
+  chunkDelayMs: number
+  /**
+   * The last user turn of every *streaming* completion asked for so far, oldest
+   * first. Live -- read it again to see later requests.
+   *
+   * This is how a spec tells "the UI re-rendered something it already had" from
+   * "the UI asked the model again", which is the whole of what Regenerate
+   * claims to do and is invisible from the DOM: a regenerated reply to an
+   * unchanged prompt is byte-identical to the one it replaced. Title-summarizer
+   * calls are deliberately excluded -- they are not conversation turns, and
+   * they fire on a schedule of their own.
+   */
+  streamedPrompts: string[]
   close: () => Promise<void>
 }
 
@@ -99,6 +147,11 @@ function sendJson(res: ServerResponse, status: number, payload: unknown) {
 
 const completionId = 'chatcmpl-jan-e2e'
 
+/** Resolves after `ms`; used only to pace a deliberately slow stream. */
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 /**
  * Stream the echo back as SSE, in several chunks.
  *
@@ -106,8 +159,20 @@ const completionId = 'chatcmpl-jan-e2e'
  * rendered a whole response, which is precisely the part of the pipeline worth
  * covering. The trailing usage-only chunk is what OpenAI emits under
  * stream_options.include_usage, which model-factory.ts sets (includeUsage: true).
+ *
+ * Bails out the moment the socket is gone. Two callers destroy it: the app,
+ * when a spec presses stop (tauri-plugin-http aborts the request), and close()
+ * below. Without the check a stopped stream goes on writing into a dead
+ * response for the rest of its chunk budget, and with a chunkDelayMs set that
+ * is long enough to outlive the test that pressed stop -- so the abort would
+ * look like it worked while the server disagreed.
  */
-function streamCompletion(res: ServerResponse, reply: string) {
+async function streamCompletion(
+  res: ServerResponse,
+  reply: string,
+  modelId: string,
+  chunkDelay: () => number
+) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -116,13 +181,14 @@ function streamCompletion(res: ServerResponse, reply: string) {
   })
 
   const created = Math.floor(Date.now() / 1000)
+  const gone = () => res.destroyed || res.writableEnded
   const chunk = (delta: Record<string, unknown>, finish: string | null) =>
     res.write(
       `data: ${JSON.stringify({
         id: completionId,
         object: 'chat.completion.chunk',
         created,
-        model: MOCK_MODEL_ID,
+        model: modelId,
         choices: [{ index: 0, delta, finish_reason: finish }],
       })}\n\n`
     )
@@ -131,8 +197,12 @@ function streamCompletion(res: ServerResponse, reply: string) {
   // Words, not characters: enough pieces to be a real stream, few enough to keep
   // the transcript readable when a run is being debugged with logLevel debug.
   for (const piece of reply.match(/\S+\s*/g) ?? [reply]) {
+    if (gone()) return
     chunk({ content: piece }, null)
+    const pause = chunkDelay()
+    if (pause > 0) await sleep(pause)
   }
+  if (gone()) return
   chunk({}, 'stop')
 
   res.write(
@@ -140,7 +210,7 @@ function streamCompletion(res: ServerResponse, reply: string) {
       id: completionId,
       object: 'chat.completion.chunk',
       created,
-      model: MOCK_MODEL_ID,
+      model: modelId,
       choices: [],
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
     })}\n\n`
@@ -149,7 +219,13 @@ function streamCompletion(res: ServerResponse, reply: string) {
   res.end()
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse) {
+async function handle(
+  req: IncomingMessage,
+  res: ServerResponse,
+  modelId: string,
+  chunkDelay: () => number,
+  streamedPrompts: string[]
+) {
   const url = req.url ?? '/'
 
   if (req.method === 'OPTIONS') {
@@ -170,7 +246,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       object: 'list',
       data: [
         {
-          id: MOCK_MODEL_ID,
+          id: modelId,
           object: 'model',
           created: Math.floor(Date.now() / 1000),
           owned_by: 'jan-e2e',
@@ -199,7 +275,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
         id: completionId,
         object: 'chat.completion',
         created: Math.floor(Date.now() / 1000),
-        model: MOCK_MODEL_ID,
+        model: modelId,
         choices: [
           {
             index: 0,
@@ -212,7 +288,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       return
     }
 
-    streamCompletion(res, MOCK_REPLY_PREFIX + lastUserText(body.messages ?? []))
+    const prompt = lastUserText(body.messages ?? [])
+    // Recorded before the reply is written, so a spec that counts requests sees
+    // this one even if the stream it opens is aborted halfway through.
+    streamedPrompts.push(prompt)
+    await streamCompletion(res, MOCK_REPLY_PREFIX + prompt, modelId, chunkDelay)
     return
   }
 
@@ -233,9 +313,24 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
  * Start it in the spec's before() and close it in after(): an open listener keeps
  * the wdio worker's event loop alive and the run never exits.
  */
-export function startMockOpenAI(): Promise<MockOpenAI> {
+export function startMockOpenAI(
+  options: MockOptions = {}
+): Promise<MockOpenAI> {
+  const modelId = options.modelId ?? MOCK_MODEL_ID
+  const streamedPrompts: string[] = []
+  // Held in one place the handle also points at, so assigning to
+  // `mock.chunkDelayMs` mid-spec changes the next chunk rather than only the
+  // next server.
+  const state = { chunkDelayMs: options.chunkDelayMs ?? 0 }
+
   const server: Server = createServer((req, res) => {
-    handle(req, res).catch((error) => {
+    handle(
+      req,
+      res,
+      modelId,
+      () => state.chunkDelayMs,
+      streamedPrompts
+    ).catch((error) => {
       if (res.headersSent) {
         res.end()
         return
@@ -250,6 +345,14 @@ export function startMockOpenAI(): Promise<MockOpenAI> {
       const { port } = server.address() as AddressInfo
       resolve({
         baseUrl: `http://127.0.0.1:${port}/v1`,
+        modelId,
+        streamedPrompts,
+        get chunkDelayMs() {
+          return state.chunkDelayMs
+        },
+        set chunkDelayMs(ms: number) {
+          state.chunkDelayMs = ms
+        },
         close: () =>
           new Promise<void>((done, fail) => {
             // closeAllConnections() first: close() only stops new connections and
