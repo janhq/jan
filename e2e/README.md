@@ -77,6 +77,29 @@ lockfile, because it shares no code with `core`/`web-app` and adding it to the
 root workspaces put ~180MB of driver tooling into every `yarn install` — including
 the release-build jobs that never run this suite.
 
+## In CI
+
+Two workflows, deliberately split by cost:
+
+- `.github/workflows/e2e-check.yml` runs on every PR that touches `e2e/**`. It
+  type-checks this package and enforces `--immutable` against its lockfile. It
+  does not build the app, so it cannot run the suite.
+- `.github/workflows/e2e-suite.yml` builds the app and runs the suite on
+  ubuntu-latest, macos-latest, windows-latest and windows-11-arm. Nightly on
+  Mon/Tue/Wed, plus `workflow_dispatch` taking a platform argument so one leg
+  can be re-run by hand. Not per-PR: the suite is seconds, the build is minutes.
+
+Hosted Linux runners have no display -- `$DISPLAY` is empty -- but do ship
+`/usr/bin/xvfb-run`, so that leg wraps the run and installs no extra package.
+The macOS runner is a real Aqua session and both Windows runners get an
+interactive window station, so those three launch the app unwrapped. There is no
+headless mode to use instead: the driver is compiled into the app and drives its
+own webview, so there is no separate browser process to run headless.
+
+Every leg uploads `e2e/logs` and the run's profile as `e2e-logs-<platform>`,
+on success as well as failure -- a green log is what you diff against when a
+later run goes red.
+
 ## How it works
 
 Tauri renders in the OS webview (WKWebView on macOS, WebKitGTK on Linux,
@@ -485,3 +508,8 @@ produces the stale ones.
 The consequence is that grepping a run for `error` tells you nothing. Read the
 `✓`/`✗` lines and the `Spec Files:` summary instead, and treat the exit code as
 the verdict.
+
+Those lines no longer reach the terminal at all: `outputDir` sends the driver
+log to `logs/<spec>-<cid>.log` instead of the console, so what you see live is
+the spec reporter alone. The lines are still worth reading when something does
+fail — that file is where the last attempt before the give-up is recorded.

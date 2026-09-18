@@ -82,3 +82,6 @@ JAN.md
 # Vendored llama.cpp: a shallow clone of the pinned tag, fetched by
 # `make engine-source`. Never committed -- the pin lives in build.rs.
 src-tauri/plugins/tauri-plugin-llamacpp/vendor/
+
+# wdio writes per-session driver logs here (e2e/wdio.conf.ts outputDir).
+e2e/logs

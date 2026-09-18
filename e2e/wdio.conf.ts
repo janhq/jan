@@ -270,6 +270,14 @@ export const config: WebdriverIO.Config = {
   framework: 'mocha',
   reporters: ['spec'],
   logLevel: 'info',
+  // Setting this MOVES the driver log off stdout rather than copying it: wdio
+  // points WDIO_LOG_PATH at a per-session file, leaving only the spec reporter
+  // on the console. That is the point twice over. The console becomes just the
+  // pass/fail list, and the command exchange -- which is the only thing that
+  // says which selector a polling helper gave up on -- survives as a file CI
+  // can upload after the runner is gone. A local run of the two specs writes
+  // ~630 webdriver lines here and none to the terminal.
+  outputDir: join(import.meta.dirname, 'logs'),
   waitforTimeout: 20_000,
   connectionRetryTimeout: 120_000,
   connectionRetryCount: 3,
