@@ -23,6 +23,7 @@
   "contributing-providers": "Contributing a Provider",
   "project-config": "Project Config",
   "permissions": "Tool Permissions",
+  "hooks": "Hooks",
   "mcp": "MCP",
   "reference-separator": { "title": "Reference", "type": "separator" },
   "cli": "CLI"

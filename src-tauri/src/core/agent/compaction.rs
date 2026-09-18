@@ -232,6 +232,48 @@ fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
     (cut >= 2).then_some(cut)
 }
 
+/// Fire the run's `PreCompact` hooks for a conversation about to be compacted.
+/// The project is the one `ctx` already points at.
+///
+/// Compaction is the one lifecycle point that discards conversation, so a team
+/// that wants a transcript archived or a summary pinned has to be told before
+/// it happens rather than after. It lives here, beside the compaction itself,
+/// so every path that compacts fires it: the reactive overflow retry, the
+/// end-of-run budget pass, and the TUI's `/compact`.
+///
+/// A deny is not honored -- refusing to compact would leave the run wedged on
+/// an oversized history it cannot send -- so only `context` and the failure
+/// notices come back, and they are logged rather than returned: a compaction is
+/// not a turn, so there is no reminder slot to attach them to.
+pub(crate) async fn fire_pre_compact(
+    hooks: &tauri_plugin_agent_tools::tools::hooks::HookSet,
+    ctx: &tauri_plugin_agent_tools::tools::ToolContext<'_>,
+    message_count: usize,
+) {
+    if hooks.is_empty() {
+        return;
+    }
+    let outcome = tauri_plugin_agent_tools::tools::hooks::run_hooks(
+        hooks,
+        tauri_plugin_agent_tools::tools::hooks::HookEvent::PreCompact,
+        &tauri_plugin_agent_tools::tools::hooks::HookPayload {
+            message_count: Some(message_count),
+            ..Default::default()
+        },
+        ctx,
+        // Never inert: PreCompact is not a tool event, and a Plan-mode run
+        // compacts exactly like any other.
+        false,
+    )
+    .await;
+    for context in outcome.context {
+        log::info!("agent: PreCompact hook context: {context}");
+    }
+    for notice in outcome.notices {
+        log::warn!("agent: {}", notice.message());
+    }
+}
+
 /// Compact `messages` so the result is meaningfully smaller than the input.
 /// Returns the input unchanged when there is nothing safe to compact (so the
 /// caller can detect a no-op and stop retrying).
@@ -382,6 +424,65 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
+
+    /// The `PreCompact` call site: the hook runs, and it is told how much
+    /// conversation is about to be summarized away -- the one fact a hook that
+    /// archives a transcript needs.
+    #[tokio::test]
+    async fn pre_compact_hooks_fire_with_the_message_count() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_precompact_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let seen = root.join("seen.json");
+        let mut hooks = tauri_plugin_agent_tools::tools::hooks::HookSet::new();
+        hooks.extend_from(
+            vec![tauri_plugin_agent_tools::tools::hooks::HookEntry {
+                event: "PreCompact".to_string(),
+                matcher: None,
+                command: format!("cat > {}", seen.to_string_lossy()),
+                timeout_secs: None,
+            }],
+            std::path::Path::new("test"),
+        );
+        let empty: Vec<String> = Vec::new();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(&root, &root, &empty)
+            .with_sandbox(false);
+        fire_pre_compact(&hooks, &ctx, 42).await;
+        let written: Value =
+            serde_json::from_str(&std::fs::read_to_string(&seen).unwrap()).unwrap();
+        assert_eq!(written["event"], "PreCompact");
+        assert_eq!(written["message_count"], 42);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run with no hooks must not pay for the machinery, and must not create
+    /// anything on the way past.
+    #[tokio::test]
+    async fn pre_compact_is_a_no_op_without_hooks() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_precompact_none_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let empty: Vec<String> = Vec::new();
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(&root, &root, &empty)
+            .with_sandbox(false);
+        fire_pre_compact(
+            &tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
+            &ctx,
+            10,
+        )
+        .await;
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     struct StubModel {
         summary: String,

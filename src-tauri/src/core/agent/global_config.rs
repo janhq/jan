@@ -135,6 +135,16 @@ struct GlobalConfigToml {
     /// inject a secret-named variable on purpose.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     env_set: BTreeMap<String, String>,
+    /// `[[hooks]]` -- lifecycle commands run around tool calls, prompts,
+    /// sessions and compactions, for every project this user opens. Merged
+    /// under a project's own `[[hooks]]`, which run after these.
+    ///
+    /// Declared before `providers` because `toml` renders an array of tables
+    /// after plain values but before sub-tables; putting it after would emit it
+    /// past the `[providers.*]` headers, where a re-read would still find it
+    /// but a human appending to the file would not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -334,6 +344,14 @@ pub(crate) fn env_set_setting() -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
+/// The user's global `[[hooks]]`, merged under a project's own. Empty on an
+/// unreadable or malformed config: a hook is a policy refinement, and a config
+/// the user cannot parse must not be what blocks a session from starting --
+/// the same fail-open rationale as [`sandbox_setting`].
+pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry> {
+    load_raw().map(|config| config.hooks).unwrap_or_default()
+}
+
 /// Whether inline `<think>` tags in model content are parsed as reasoning
 /// (`think_tags` in `~/.jan/config.toml`), defaulting to on. `false` makes the
 /// tags ordinary prose: rendered verbatim, kept in the answer sent back as
@@ -455,6 +473,7 @@ const ROOT_KEYS: &[&str] = &[
     "ask_timeout_secs",
     "terminal_hint",
     "wave",
+    "hooks",
 ];
 
 /// Render a TOML parse failure with a fix, not just a location. `toml`'s own
@@ -703,7 +722,10 @@ pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     result
 }
 
-#[cfg(test)]
+// The suite covers the provider records and the TUI's settings writers, which
+// only the `cli` build compiles; the module itself is shared so the desktop can
+// read the user's `[[hooks]]`.
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
 

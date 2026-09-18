@@ -26,6 +26,11 @@ pub(crate) struct AgentToml {
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+    /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
+    /// prompts, sessions and compactions. An array of tables rather than a
+    /// `[hooks]` map because several hooks may share one event.
+    #[serde(default)]
+    pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
@@ -36,6 +41,17 @@ pub(crate) struct PluginsSection {
     /// Unset disables name-based installs; direct git URLs still work.
     #[serde(default)]
     pub marketplace: Option<String>,
+    /// Whether an installed plugin's `hooks/hooks.json` is honored. On by
+    /// default -- a plugin that ships hooks is usually installed *for* them --
+    /// but a plugin's hooks are third-party commands that fire on every tool
+    /// call, so `hooks = false` must be able to switch them off without
+    /// uninstalling the plugin and losing its skills and commands.
+    #[serde(default)]
+    pub hooks: Option<bool>,
+    /// Whether an installed plugin's `[[tools]]` are advertised to the model.
+    /// Same default and same rationale as [`Self::hooks`].
+    #[serde(default)]
+    pub tools: Option<bool>,
 }
 
 /// `[provider]` — project-local override of a single provider's config,

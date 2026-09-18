@@ -14,10 +14,16 @@ pub mod context;
 pub mod events;
 pub mod genai_bridge;
 pub mod git;
-#[cfg(feature = "cli")]
+// Not cli-gated: `~/.jan/config.toml` is the user's own layer, and its
+// `[[hooks]]` have to mean the same thing in the desktop app and the API
+// server as they do in the CLI. The rest of the module (provider records, the
+// TUI's settings writers) has no consumer outside the CLI, hence the allow
+// rather than a second gate per item.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
 pub mod global_config;
 #[cfg(feature = "cli")]
 pub mod goal;
+pub mod hooks_config;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;

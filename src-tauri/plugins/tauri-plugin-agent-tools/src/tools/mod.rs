@@ -11,11 +11,18 @@ pub mod attachments;
 pub mod cmdscan;
 pub mod gate;
 pub mod handlers;
+/// Declarative lifecycle hooks: user shell commands fired around tool calls,
+/// prompts, sessions and compactions. Lives here rather than in `core/agent/`
+/// because `handlers::confined_shell` is `pub(crate)`.
+pub mod hooks;
 pub mod image;
 pub mod jail;
 /// The `monitor` tool's core: file watching + condition-script evaluation.
 /// Loop-dispatched (like the subagent tools), so it is not in `BUILTIN_TOOLS`.
 pub mod monitor;
+/// Tools an installed plugin declares in its `plugin.toml`. Loop-dispatched
+/// like the monitor tool, so they are not in `BUILTIN_TOOLS`.
+pub mod plugin_tools;
 pub mod proc;
 /// Path containment for the filesystem tools. Distinct from [`jail`], which is
 /// kernel-level confinement for spawned commands.
@@ -155,6 +162,18 @@ pub struct ToolContext<'a> {
     /// headless Chrome; the desktop injects a webview-backed renderer. See
     /// [`ScreenshotBackend`].
     pub screenshot_backend: Option<ScreenshotBackend>,
+    /// The run's lifecycle hooks. Carried on the context rather than passed to
+    /// the dispatcher so `PreToolUse`/`PostToolUse` wrap
+    /// [`crate::tools::handlers::execute_builtin`] itself: every caller of the
+    /// toolset reaches it through this one function, so a hook attached here
+    /// cannot be bypassed by a surface that builds its own invoker.
+    pub hooks: Option<&'a crate::tools::hooks::HookSet>,
+    /// Whether the run is in read-only Plan mode, which makes the tool hooks
+    /// inert (see [`crate::tools::hooks::HookEvent::inert_in_plan_mode`]).
+    pub plan_mode: bool,
+    /// Where a hook's `context` answer and failure notices go. `None` drops
+    /// them, which is what a caller with nowhere to show them wants.
+    pub hook_sink: Option<HookSink>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -180,6 +199,9 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("env_passthrough", &self.env_passthrough)
             .field("env_set", &self.env_set)
             .field("screenshot_backend", &self.screenshot_backend.is_some())
+            .field("hooks", &self.hooks.map(|h| h.len()).unwrap_or(0))
+            .field("plan_mode", &self.plan_mode)
+            .field("hook_sink", &self.hook_sink.is_some())
             .finish()
     }
 }
@@ -187,6 +209,11 @@ impl std::fmt::Debug for ToolContext<'_> {
 /// A tool's live-output channel: called with each chunk as it arrives, in order.
 /// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
 pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
+
+/// Where a hook's non-blocking output goes: `context` answers to fold into the
+/// next turn, and notices about hooks that failed. `Arc` for the same reason
+/// [`OutputSink`] is one -- the toolset hands it to code that outlives the call.
+pub type HookSink = std::sync::Arc<dyn Fn(crate::tools::hooks::HookReport) + Send + Sync>;
 
 /// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
 ///
@@ -227,7 +254,24 @@ impl<'a> ToolContext<'a> {
             env_passthrough: &[],
             env_set: &[],
             screenshot_backend: None,
+            hooks: None,
+            plan_mode: false,
+            hook_sink: None,
         }
+    }
+
+    /// Attach the run's lifecycle hooks, the plan-mode flag they honor, and
+    /// where their non-blocking output goes. See [`Self::hooks`].
+    pub fn with_hooks(
+        mut self,
+        hooks: &'a crate::tools::hooks::HookSet,
+        plan_mode: bool,
+        sink: Option<HookSink>,
+    ) -> Self {
+        self.hooks = Some(hooks);
+        self.plan_mode = plan_mode;
+        self.hook_sink = sink;
+        self
     }
 
     /// Inject the `screenshot` PNG renderer. See [`Self::screenshot_backend`].

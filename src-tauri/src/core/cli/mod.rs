@@ -787,6 +787,35 @@ pub fn cli_agent_status(
         .collect();
     providers.sort_by(|a, b| a["provider"].as_str().cmp(&b["provider"].as_str()));
 
+    let hooks: Vec<serde_json::Value> =
+        crate::core::agent::hooks_config::resolve_hooks(&project_root)
+            .all()
+            .iter()
+            .map(|hook| {
+                serde_json::json!({
+                    "event": hook.event.as_str(),
+                    "matcher": hook.matcher,
+                    "command": hook.command,
+                    "timeout_secs": hook.timeout_secs,
+                    "source": hook.source.to_string_lossy(),
+                })
+            })
+            .collect();
+    let plugin_tools: Vec<serde_json::Value> =
+        crate::core::agent::hooks_config::resolve_plugin_tools(&project_root)
+            .all()
+            .iter()
+            .map(|tool| {
+                serde_json::json!({
+                    "name": tool.qualified_name,
+                    "plugin": tool.plugin,
+                    "description": tool.description,
+                    "command": tool.command,
+                    "source": tool.source.to_string_lossy(),
+                })
+            })
+            .collect();
+
     Ok(serde_json::json!({
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
@@ -810,6 +839,11 @@ pub fn cli_agent_status(
             "enabled": crate::core::agent::r#loop::effective_sandbox(&project_root),
             "backend": tauri_plugin_agent_tools::tools::jail::backend().as_str(),
         },
+        // The resolved hook set in merge order, each with the file it came
+        // from: a hook that surprises the user is worth nothing to debug
+        // unless they can tell which of the three layers installed it.
+        "hooks": hooks,
+        "plugin_tools": plugin_tools,
         "providers": providers,
     }))
 }
