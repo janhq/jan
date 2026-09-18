@@ -2158,6 +2158,11 @@ struct App {
     /// the tokens really were spent; they are dropped only when the conversation
     /// they describe is gone ([`App::reset_session`]) or replaced wholesale
     /// ([`load_thread`]).
+    ///
+    /// Parent-loop requests only: a child run has its own prefix and its own
+    /// conversation, so its prompts count towards its panel's context figure and
+    /// its spend towards `--output-format json` (which does fold children in),
+    /// never towards this rate. See [`App::apply_subagent_event`].
     session_prompt_tokens: u64,
     session_cached_tokens: u64,
     session_cache_write_tokens: u64,
@@ -5568,6 +5573,12 @@ impl App {
                     panel.requests += 1;
                 }
             }
+            // The child's own context high-water mark, and deliberately nothing
+            // else: its cache reads stay out of the `session_*` counters and so
+            // out of the header rate, which describes the parent conversation's
+            // prefix (a child has its own). `--output-format json` is the
+            // surface that folds child usage in, because that figure is a bill
+            // rather than a rate.
             StreamEvent::TurnUsage { usage } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
