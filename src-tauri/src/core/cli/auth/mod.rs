@@ -105,6 +105,17 @@ pub fn provider_catalog() -> Vec<ProviderDefinition> {
                 open_in_browser: false,
             },
         },
+        ProviderDefinition {
+            id: "y-api",
+            name: "Y-API",
+            default_base_url: "https://api.y-api.bestvirtualgoods.com/v1".to_string(),
+            transport: Transport::OpenAi,
+            api_key: ApiKeyMetadata {
+                keys_url: "https://y-api.bestvirtualgoods.com/app/keys",
+                hint: "get a key at y-api.bestvirtualgoods.com/app/keys",
+                open_in_browser: false,
+            },
+        },
     ];
     catalog
 }
@@ -151,13 +162,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_the_five_providers_in_picker_order() {
+    fn catalog_lists_the_six_providers_in_picker_order() {
         let ids: Vec<&str> = provider_catalog().iter().map(|p| p.id).collect();
         assert_eq!(
             ids,
-            vec!["openai", "anthropic", "opencode", "deepseek", "tokamak"]
+            vec![
+                "openai",
+                "anthropic",
+                "opencode",
+                "deepseek",
+                "tokamak",
+                "y-api"
+            ]
         );
         assert_eq!(provider_by_id("deepseek").unwrap().name, "DeepSeek");
+        assert_eq!(provider_by_id("y-api").unwrap().name, "Y-API");
         assert!(provider_by_id("nope").is_none());
     }
 
