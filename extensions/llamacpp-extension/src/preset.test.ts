@@ -810,3 +810,53 @@ describe('generatePreset spec type', () => {
     )
   })
 })
+
+describe('threadCacheDir separator handling', () => {
+  const WIN_EXT = '\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan-nightly\\data\\llamacpp'
+
+  it('joins a POSIX path with a forward slash', () => {
+    expect(threadCacheDir('/p')).toBe('/p/thread-cache')
+    expect(threadCacheDir('/home/u/.local/share/Jan/data/llamacpp')).toBe(
+      '/home/u/.local/share/Jan/data/llamacpp/thread-cache'
+    )
+  })
+
+  it('joins a Windows extended path with a backslash', () => {
+    // Win32 normalizes `/` to `\` for ordinary paths but not for `\\?\` ones,
+    // where a `/` is a literal name character -- so create_dir_all fails with
+    // ERROR_INVALID_NAME (os error 123) and the worker exits 7 before serving.
+    expect(threadCacheDir(WIN_EXT)).toBe(`${WIN_EXT}\\thread-cache`)
+    expect(threadCacheDir(WIN_EXT)).not.toContain('/')
+  })
+
+  it('joins a plain Windows path with a backslash', () => {
+    expect(threadCacheDir('C:\\Users\\u\\llamacpp')).toBe(
+      'C:\\Users\\u\\llamacpp\\thread-cache'
+    )
+  })
+
+  it('does not read a backslash in a POSIX name as a Windows separator', () => {
+    // `\` is a legal filename character on Linux, so the separator follows the
+    // path's root rather than whether a backslash appears anywhere in it.
+    expect(threadCacheDir('/home/u/od\\d/llamacpp')).toBe(
+      '/home/u/od\\d/llamacpp/thread-cache'
+    )
+  })
+
+  it('does not double an existing trailing separator', () => {
+    expect(threadCacheDir('/p/')).toBe('/p/thread-cache')
+    expect(threadCacheDir('C:\\p\\')).toBe('C:\\p\\thread-cache')
+  })
+
+  it('is the one definition the preset and the erase path both use', async () => {
+    // index.ts's forgetThreadCache passes threadCacheDir(providerPath) as
+    // cacheDir, and llama.cpp joins state file names onto slot-save-path, so a
+    // preset that derived the directory differently would erase from a
+    // directory the worker never wrote to.
+    await generatePreset(WIN_EXT, 'C:\\jan', CONFIG)
+    const ini = Object.entries(writtenFiles).find(([p]) =>
+      p.endsWith('router.preset.ini')
+    )?.[1] as string
+    expect(ini).toContain(`slot-save-path = ${threadCacheDir(WIN_EXT)}`)
+  })
+})
