@@ -143,6 +143,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/mistral.svg'
     case 'openrouter':
       return '/images/model-provider/open-router.svg'
+    case 'gitgot':
+      return '/images/model-provider/gitgot.svg'
     case 'groq':
       return '/images/model-provider/groq.svg'
     case 'cohere':
