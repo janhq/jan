@@ -1,0 +1,79 @@
+# Guards the release-update feeds that the in-app updater polls
+# (apps.jan.ai/update-check for stable, delta.jan.ai/nightly/latest.json for
+# nightly). The updater only fires when the feed is well-formed -- semver
+# version, one manifest entry per shipped platform, live asset URLs, valid
+# signatures -- and any drift silently disables the update prompt for part of
+# the user base. This is the "old version never updates" bug class, caught
+# without installing anything.
+#
+# Two jobs:
+#   - fixtures: the committed feed recordings under
+#     scripts/fixtures/update-feeds/, checked on every push and PR that
+#     touches the checker (fast, no network).
+#   - live: fetches the real feeds and probes every advertised asset URL.
+#
+# The 23:00 UTC slot is deliberate: jan-tauri-build-nightly starts at 20:00 UTC
+# (cron '0 20 * * 1,2,3'), so on the nights it runs this validates the feed
+# users are actually being pointed at rather than the previous one. Note the
+# publish is Mon/Tue/Wed only while this check is daily -- on the other four
+# mornings it is re-validating an unchanged feed, which is still worth doing
+# (an asset can 404 without the feed changing) but is not evidence of a fresh
+# build. (Follow-up: also run the live check as the final step of the publish
+# job itself, for same-minute feedback.) Cancel-in-progress stays off so a
+# checker push cannot eat an in-flight nightly verification.
+#
+# Scope limit worth knowing: the live mode probes the feeds this script lists --
+# apps.jan.ai/update-check and delta.jan.ai/nightly/latest.json. Nightly builds
+# point the updater at apps-nightly.jan.ai/update-check first, and stable has a
+# GitHub releases fallback (tauri.conf.json); neither is probed here yet.
+#
+# Fixture mode only re-checks the schema, not the current truth: re-record the
+# fixtures whenever the feed schema evolves, and keep the required-platform
+# sets in scripts/check-update-feeds.mjs in sync with what the release
+# pipelines actually ship.
+name: update feed check
+
+# Nothing here writes: the checks read feeds and probe asset URLs.
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: '0 23 * * *'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/check-update-feeds.mjs'
+      - 'scripts/fixtures/update-feeds/**'
+      - '.github/workflows/update-feed-check.yml'
+  pull_request:
+    paths:
+      - 'scripts/check-update-feeds.mjs'
+      - 'scripts/fixtures/update-feeds/**'
+      - '.github/workflows/update-feed-check.yml'
+
+concurrency:
+  group: update-feed-check-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - name: Check recorded feed fixtures
+        run: node scripts/check-update-feeds.mjs
+
+  live:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+      - name: Check live update feeds
+        run: node scripts/check-update-feeds.mjs --live
