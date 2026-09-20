@@ -467,7 +467,7 @@ jobs:
       - name: Config Yarn
         run: |
           corepack enable
-          corepack prepare yarn@4.5.3 --activate
+          corepack prepare yarn@4.10.3 --activate
           yarn config set -H enableImmutableInstalls false
 
       # Links a cached build of the pinned llama.cpp instead of compiling it

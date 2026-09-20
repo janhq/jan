@@ -19,7 +19,7 @@
     "typescript": "^5.6.0",
     "webdriverio": "^9.30.0"
   },
-  "packageManager": "yarn@4.5.3",
+  "packageManager": "yarn@4.10.3",
   "engines": {
     "node": ">=20.11"
   }
