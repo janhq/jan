@@ -42,7 +42,7 @@
     "errorInvalidType": "'{{serverName}}' sunucusu için '{{type}}' türü geçersiz. Tür 'stdio', 'http' veya 'sse' olmalıdır",
     "save": "Kaydet"
   },
-  "checkParams": "Lütfen parametreleri öğreticiye göre kontrol edin.",
+  "checkParams": "Lütfen parametreleri kılavuza göre kontrol edin.",
   "title": "MCP Sunucuları",
   "experimental": "Deneysel",
   "editAllJson": "Tüm Sunucuların JSON'ını Düzenle",

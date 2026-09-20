@@ -98,7 +98,7 @@
     "renderHtmlArtifacts": "HTML ve SVG üretimlerini oluştur",
     "renderHtmlArtifactsDesc": "HTML ve SVG kod bloklarına bir Önizleme sekmesi ekleyin. HTML, modelin ürettiği sayfayı, kendi betiklerini çalıştıran ancak Jan'e, dosyalarınıza veya ağa erişemeyen korumalı bir çerçevede çalıştırır; SVG betikler devre dışı bırakılmış şekilde statik olarak oluşturulur. Varsayılan olarak kapalıdır.",
     "autoGenerateTitle": "Sohbet başlığını otomatik oluştur",
-    "autoGenerateTitleDesc": "Yeni konuşmaları otomatik olarak bir konu başlığında özetleyin. Başlığı kendiniz yeniden adlandırana kadar varsayılan başlığı korumak için kapatın.",
+    "autoGenerateTitleDesc": "Yeni konuşmaları otomatik olarak bir konu başlığıyla özetler. Siz yeniden adlandırana kadar varsayılan başlığı korumak için bu seçeneği kapatın.",
     "windowBackground": "Pencere Arka Planı",
     "windowBackgroundDesc": "Uygulama penceresinin arka plan rengini ayarlayın.",
     "appMainView": "Uygulama Ana Görünümü",
@@ -201,7 +201,7 @@
     "apiKeyRequired": "Gerekli. {{provider}} sonuç döndürmek için bir API anahtarı gerektirir.",
     "apiKeyPlaceholder": "{{provider}} API anahtarınızı girin",
     "endpoint": "{{provider}} Örnek URL'si",
-    "endpointDesc": "Gerekli. JSON API etkinleştirilmiş {{provider}} örneğinizin temel URL'si.",
+    "endpointDesc": "Gerekli. JSON API'si etkinleştirilmiş {{provider}} sunucunuzun temel URL'si.",
     "endpointPlaceholder": "https://searx.example.com"
   },
   "cowork": {
@@ -222,7 +222,7 @@
     "editMemory": "Anıyı Düzenle",
     "editMemoryDesc": "Not başına bir konu. Modeller bunları memory_read aracıyla geri okur.",
     "editSkill": "Beceriyi Düzenle",
-    "editSkillDesc": "İsteğe bağlı olarak YAML ön cümlesinde bir açıklamayla birlikte Markdown talimatları. Açıklama, modelin beceriyi yüklemeden önce gördüğü şeydir.",
+    "editSkillDesc": "İsteğe bağlı olarak YAML ön bilgisinde açıklama içeren Markdown yönergeleri. Model, beceriyi yüklemeden önce bu açıklamayı görür.",
     "namePlaceholder": "Ad",
     "contentPlaceholder": "İçerik",
     "loadFailed": "Ajan çalışma alanı yüklenemedi",
@@ -266,7 +266,7 @@
     "verboseLogsDesc": "Hata ayıklama için ayrıntılı sunucu günlüklerini etkinleştirin.",
     "proxyTimeout": "İstek zaman aşımı",
     "proxyTimeoutDesc": "Yerel modelden yanıt beklenme süresi, saniye.",
-    "defaultModel": "Varsayılan Model Yerel API Sunucusu",
+    "defaultModel": "Yerel API Sunucusunun Varsayılan Modeli",
     "defaultModelDesc": "Sunucu başladığında otomatik olarak yüklenecek yerel model.",
     "defaultModelPlaceholder": "Bir yerel model seçin"
   },
@@ -280,7 +280,7 @@
     "promise1": "Sohbetleriniz gizli ve cihazınızda kalır",
     "promise2": "Kişisel bilgilerinizi veya sohbet içeriğinizi asla toplamıyoruz",
     "promise3": "Tüm veri paylaşımı anonim ve topludur",
-    "promise4": "İşlevsellik kaybetmeden istediğiniz zaman çıkabilirsiniz",
+    "promise4": "Herhangi bir işlev kaybı olmadan veri paylaşımını istediğiniz zaman kapatabilirsiniz",
     "promise5": "Ne topladığımız ve neden topladığımız konusunda şeffafız"
   },
   "general": {
@@ -355,7 +355,7 @@
     "parseModeEmbeddings": "Gömme olarak işle",
     "parseModePrompt": "Her seferinde sor",
     "autoInlineThreshold": "Otomatik satır içi eşiği",
-    "autoInlineThresholdDesc": "Yerel modellerde ayrıştırılan dosyaları satır içine alma kesmesi olarak kullanılan model bağlamının kesri.",
+    "autoInlineThresholdDesc": "Yerel modellerde ayrıştırılan dosyaların doğrudan sohbete eklenmesi için eşik olarak kullanılan model bağlamı oranı.",
     "limitsTitle": "Sınırlar",
     "maxFile": "Maks. Dosya Boyutu (MB)",
     "maxFileDesc": "Dosya başına azami boyut. Yükleme ve işleme sırasında uygulanır.",

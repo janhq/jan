@@ -54,7 +54,7 @@
   "deleteModel": {
     "title": "Modeli Sil: {{modelId}}",
     "description": "Bu modeli silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
-    "importedDescription": "Bu içe aktarılan modeli Jan'den kaldırsın mı? Disk üzerindeki yerel dosyanız silinmeyecek.",
+    "importedDescription": "İçe aktarılan bu modeli Jan'den kaldırmak istiyor musunuz? Diskteki yerel dosyanız silinmeyecek.",
     "removeFromJan": "Jan'den Kaldır",
     "success": "{{modelId}} modeli kalıcı olarak silindi.",
     "cancel": "Vazgeç",
@@ -75,7 +75,7 @@
   },
   "deleteProvider": {
     "title": "Sağlayıcıyı Sil",
-    "description": "Bu sağlayıcıyı ve tüm modellerini silin. Bu işlem geri alınamaz.",
+    "description": "Bu sağlayıcı ve tüm modelleri silinecek. Bu işlem geri alınamaz.",
     "success": "{{provider}} sağlayıcısı kalıcı olarak silindi.",
     "confirmTitle": "Sağlayıcıyı Sil: {{provider}}",
     "confirmDescription": "Bu sağlayıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",

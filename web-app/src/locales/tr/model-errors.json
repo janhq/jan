@@ -1,6 +1,32 @@
 {
-  "title": "BaÄŸlam dÄ±ÅŸÄ± hatasÄ±",
-  "description": "Bu sohbet, tÄ±pkÄ± dolan bir beyaz tahta gibi yapay zekÃ¢nÄ±n bellek sÄ±nÄ±rÄ±na ulaÅŸÄ±yor. Bellek penceresini (baÄŸlam boyutu olarak adlandÄ±rÄ±lÄ±r) geniÅŸletebiliriz, bÃ¶ylece daha fazlasÄ±nÄ± hatÄ±rlar, ancak bilgisayarÄ±nÄ±zÄ±n belleÄŸini daha fazla kullanabilir. AyrÄ±ca girdiyi kÄ±saltabiliriz; bu da yeni mesajlara yer aÃ§mak iÃ§in sohbet geÃ§miÅŸinin bir kÄ±smÄ±nÄ± unutacaÄŸÄ± anlamÄ±na gelir.",
+  "title": "BaÄŸlam sÄ±nÄ±rÄ± hatasÄ±",
+  "description": "Bu sohbet, dolmak Ã¼zere olan bir beyaz tahta gibi yapay zekÃ¢nÄ±n bellek sÄ±nÄ±rÄ±na yaklaÅŸÄ±yor. Daha fazlasÄ±nÄ± hatÄ±rlamasÄ± iÃ§in bellek penceresini (baÄŸlam boyutunu) geniÅŸletebiliriz; ancak bu iÅŸlem bilgisayarÄ±nÄ±zda daha fazla bellek kullanabilir. Yeni mesajlara yer aÃ§mak iÃ§in sohbet geÃ§miÅŸinin bir bÃ¶lÃ¼mÃ¼nÃ¼ unutmasÄ± anlamÄ±na gelen girdi kÄ±saltma iÅŸlemini de uygulayabiliriz.",
   "increaseContextSizeDescription": "BaÄŸlam boyutunu artÄ±rmak istiyor musunuz?",
   "truncateInput": "Girdiyi KÄ±salt",
-  "increaseContextSize": "BaÄŸÛ[H›Ş]][H\1,\ˆ‹ˆ›\İ™\]Y\İİ™\™›İÙYˆ”ÛÛˆ\İZÈ˜q'Û[H[˜Ù\™\Ú[šHqgİ1,Kˆ‹ˆ˜ÛÛ^İ™\™›İÑ]Z[ˆH\İZÈŞÜ™\]Y\İ_H™]ÛˆÙ\™Zİ\š^[Ü™H[˜ØZÈ[Ù[[ˆ˜q'Û[H[˜Ù\™\ÚHX[1,^˜ØHŞØÛÛ^_H]^[Ü‹ˆ‹ˆ˜ÛÛ^İ™\™›İÑÙ[™\šXÈˆ±,İZËY]˜İ]˜q'öÆÒ&÷—WGVçRYüK–÷"â"À¢&Væv–æR#¢°¢'Væ¶æ÷vâ#¢$ÖöFVÂÖ÷F÷'R&V¶ÆVæÖW–Vâ&—"†F&–ÆF—&F’â"À¢$ÔôDTÅôÄôEôd”ÄTB#¢$ÖöFVÂœ;Æ¶ÆVæVÖVF’â"À¢$ÔôDTÅô$4…ôäõEõ5Uõ%DTB#¢$'RÖöFVÆ–âÖ–Ö&—6’v\:vW&Æ’Ö÷F÷"F&lKæFâFW7FV¶ÆVæÖ—–÷"â–&Æ"vFâÖ÷F÷"|;Ææ6VÆÆVæ—'6RFW7FV²V¶ÆVæV&–Æ—"â"À¢$ÔôDTÅôÄôEõD”ÔTEôõUB#¢$ÖöFVÆ–âœ;Æ¶ÆVæÖW6’:vö²W§Vâ<;Ç&L;ÂfRGW&GW'VÆGRâvVæVÆÆ–¶ÆRF†¼;Ì:|;Æ²&—"ÖöFVÂfW–F†¼;Ì:|;Æ²&—"&IöÆÒ&÷—WGR–&LKÖ<KöÇW"â"À¢$Ô•54”äuõ4„$TEôÄ”%$%’#¢$Ö÷F÷'Vâ–‡F—–:rGW–G\I÷R&—"¶—FÌK²V·6–²öÆG\I÷VæFâ&YöÆLKÆÜK–÷"â"À¢$uUôE$•dU%õDôõôôÄB#¢$uR<;Ç,;Æ<;Æì;Ç¢'RÖ÷F÷":vö²W6¶’â<;Ç,;Æ<;Çœ;Â|;Ææ6VÆÆVÖV²fW––&Æ"vFâ5RÖ÷F÷'Væv\:vÖV²'VçR:|;g¦V6V·F—"â"À¢$õUEôôeôÔTÔõ%’#¢$'RÖöFVÆ’:vÌKY÷LK&Ö²œ:v–â–WFW&Æ’&VÆÆV²–ö²âvVæVÆÆ–¶ÆRF†¼;Ì:|;Æ²&—"ÖöFVÂfW–F†¼;Ì:|;Æ²&—"&IöÆÒ&÷—WGR–&LKÖ<KöÇW"â"À¢$”ådÄ”Eô$uTÔTåB#¢$ÖöFVÆ–â–&Æ,KæFâ&—&’v\:vW&Æ’F\Iö–Ââ"À¢$”õôU%$õ"#¢$ÖöFVÂ&YöÆLKÌK&¶Vâ&—"F÷7–ö·VæÖLKfW––¬KÆÖLKâ"À¢$”åDU$äÅôU%$õ"#¢$¦âœ:v–æFRÖöFVÂ&IöÆLKÌK&¶Vâ&—"YöW–ÆW"FW'2v—GF’â ¢ÒÀ¢&Væv–æTÖ—76–ætÆ–'&&–W2#¢$V·6–³¢·¶Æ–'&&–W7×Ò"À¢&Væv–æU&W÷'FVDFWF–Â#¢$Ö÷F÷"Y÷VæÆ,K&–ÆF—&F“¢·¶FWF–Ç×Ò"À¢'7F'DÖöFVÄf–ÆVB#¢$ÖöFVÂ&YöÆLKÆÖLK¢··&V6öç×Ò"À¢&7&VFTÖöFVÄf–ÆVB#¢$ÖöFVÂöÇ\Y÷GW'VÆÖLK¢··&V6öç×Ò"À¢&æõ'Vææ–æu6W76–öâ#¢$ÖöFVÂœ:v–â:vÌKYöâ÷GW'VÒ'VÇVæÖLK¢·¶ÖöFVÇ×Ò"À¢'6W'fW%÷'Dö67W–VB#¢$&IöÆçLKæö·F<K·VÆÆìKÖF"À¢'6W'fW%÷'Dö67W–VDFW67&—F–öâ#¢'··÷'G×Ò&IöÆçLKæö·F<K¦FVâ·VÆÆìKÖFâÌ;ÇFfVâf&¶ÌK&—"&IöÆçLKæö·F<KFVæW––ââ"À¢'6W'fW$–çfÆ–DÖöFVÅF‚#¢$v\:vW'6—¢fW–W&œYö–ÆVÖW–VâÖöFVÂ–öÇR"À¢'6W'fW%7F'DÖöFVÄf–ÆVB#¢$ÖöFVÂ&YöÆLKÆÖLK"À¢'6W'fW%7F'Df–ÆVB#¢%7VçV7R&YöÆLKÆÖLK §
+  "increaseContextSize": "BaÄŸlam Boyutunu ArtÄ±r",
+  "lastRequestOverflowed": "Son istek baÄŸlam penceresini aÅŸtÄ±.",
+  "contextOverflowDetail": "Bu istek {{request}} jeton gerektiriyor ancak modelin baÄŸlam penceresi yalnÄ±zca {{context}} jeton alabiliyor.",
+  "contextOverflowGeneric": "Ä°stek, kullanÄ±labilir baÄŸlam boyutunu aÅŸÄ±yor.",
+  "engine": {
+    "unknown": "Model motoru beklenmeyen bir hata bildirdi.",
+    "MODEL_LOAD_FAILED": "Model yÃ¼klenemedi.",
+    "MODEL_ARCH_NOT_SUPPORTED": "Bu modelin mimarisi mevcut motor tarafÄ±ndan desteklenmiyor. Motoru Ayarlar'dan gÃ¼ncellemek destek saÄŸlayabilir.",
+    "MODEL_LOAD_TIMED_OUT": "Modelin yÃ¼klenmesi Ã§ok uzun sÃ¼rdÃ¼ÄŸÃ¼ iÃ§in iÅŸlem durduruldu. Daha kÃ¼Ã§Ã¼k bir model veya baÄŸlam boyutu genellikle yardÄ±mcÄ± olur.",
+    "MISSING_SHARED_LIBRARY": "Motorun ihtiyaÃ§ duyduÄŸu bir kitaplÄ±k eksik olduÄŸundan motor baÅŸlatÄ±lamÄ±yor.",
+    "GPU_DRIVER_TOO_OLD": "GPU sÃ¼rÃ¼cÃ¼nÃ¼z bu motor iÃ§in Ã§ok eski. SÃ¼rÃ¼cÃ¼yÃ¼ gÃ¼ncellemek veya Ayarlar'dan CPU motoruna geÃ§mek sorunu Ã§Ã¶zecektir.",
+    "OUT_OF_MEMORY": "Bu modeli Ã§alÄ±ÅŸtÄ±rmak iÃ§in yeterli bellek yok. Daha kÃ¼Ã§Ã¼k bir model veya baÄŸlam boyutu genellikle yardÄ±mcÄ± olur.",
+    "INVALID_ARGUMENT": "Model ayarlarÄ±ndan biri geÃ§ersiz.",
+    "IO_ERROR": "Model baÅŸlatÄ±lÄ±rken bir dosya okunamadÄ± veya dosyaya yazÄ±lamadÄ±.",
+    "INTERNAL_ERROR": "Model baÅŸlatÄ±lÄ±rken Jan iÃ§inde bir hata oluÅŸtu."
+  },
+  "engineMissingLibraries": "Eksik: {{libraries}}",
+  "engineReportedDetail": "Motorun bildirdiÄŸi hata: {{detail}}",
+  "startModelFailed": "Model baÅŸlatÄ±lamadÄ±: {{reason}}",
+  "createModelFailed": "Model oluÅŸturulamadÄ±: {{reason}}",
+  "noRunningSession": "Model iÃ§in Ã§alÄ±ÅŸan oturum bulunamadÄ±: {{model}}",
+  "serverPortOccupied": "BaÄŸlantÄ± noktasÄ± kullanÄ±mda",
+  "serverPortOccupiedDescription": "{{port}} baÄŸlantÄ± noktasÄ± zaten kullanÄ±lÄ±yor. LÃ¼tfen farklÄ± bir baÄŸlantÄ± noktasÄ± deneyin.",
+  "serverInvalidModelPath": "Model yolu geÃ§ersiz veya eriÅŸilemiyor",
+  "serverStartModelFailed": "Model baÅŸlatÄ±lamadÄ±",
+  "serverStartFailed": "Sunucu baÅŸlatÄ±lamadÄ±"
+}

@@ -19,7 +19,7 @@
   "browse": "Gözat",
   "moreControls": "Diğer kontrol araçları…",
   "starting": "Başlatılıyor…",
-  "activeSuffix": "eski",
+  "activeSuffix": " (Etkin)",
   "extensions": "Uzantılar",
   "attachments": "Ekler",
   "general": "Genel",
@@ -50,7 +50,7 @@
   "cmdModelsHint": "/models yazıp listeden bir model seçin",
   "cmdModelSwitched": "Model {{name}} olarak değiştirildi",
   "cmdUnknown": "Bilinmeyen komut: {{name}}",
-  "cmdBusy": "Kimlik doğrulama gerekli!",
+  "cmdBusy": "Ajan çalışırken bu işlem yapılamaz",
   "cmdCompact": "Kısa bağlam kullan",
   "cmdCompacted": "{{before}} → {{after}} mesajına kısaltıldı",
   "cmdNothingToCompact": "Kısaltacak bir şey yok",
@@ -351,7 +351,7 @@
       "enable": "Spekülatif kod çözmeyi etkinleştir",
       "enableDescription": "Her adımda birkaç jeton taslağı çıkarın ve hepsini tek geçişte doğrulayın; bu, üretimi hızlandırır. Modelin yerleşik MTP başlıklarını veya onunla indirilen taslak modelini (MTP, Eagle3, DFlash veya DSpark) kullanır.",
       "nMax": "Maks. taslak jetonu",
-      "nMaxDescription": "Adım başına çizilecek maksimum jeton sayısı. Varsayılan 16.",
+      "nMaxDescription": "Adım başına üretilecek azami taslak jeton sayısı. Varsayılan değer 16'dır.",
       "nMin": "Min. taslak jetonu",
       "nMinDescription": "Adım başına çizilecek minimum jeton sayısı. Varsayılan 0.",
       "pMin": "Min. taslak olasılığı",
@@ -430,7 +430,7 @@
     "selectAssistant": "Asistan seç",
     "noAssistantAssigned": "Bu projeye asistan atanmamış",
     "files": "Dosyalar",
-    "filesDescription": "Bu projede başvurmak için PDF, belge veya diğer metinleri ekleyin.",
+    "filesDescription": "Bu projede kaynak olarak kullanmak üzere PDF, belge veya başka metinler ekleyin.",
     "uploadingFiles": "Dosyalar işleniyor…",
     "processButton": "Ekle",
     "deleteProjectDialog": {
@@ -444,7 +444,7 @@
       "successWithName": "\"{{projectName}}\" projesi başarıyla silindi",
       "successWithoutName": "Proje başarıyla silindi",
       "error": "Proje silinemedi. Lütfen tekrar deneyin.",
-      "ariaLabel": "{{projectName}} konusunu sil"
+      "ariaLabel": "{{projectName}} projesini sil"
     },
     "addProjectDialog": {
       "createTitle": "Yeni Proje Oluştur",
@@ -625,7 +625,7 @@
     },
     "unsupportedFileType": {
       "title": "Desteklenmeyen Dosya Türü",
-      "description": "\".{{extension}}\" dosya uzantısı Proje başvurusu için desteklenmiyor."
+      "description": "\".{{extension}}\" dosya uzantısı proje kaynağı olarak desteklenmiyor."
     },
     "attachmentsDisabledInfo": {
       "title": "Ekler Devre Dışı",
@@ -673,8 +673,8 @@
   "monitorTimedOut": "Zaman aşımı",
   "monitorStopped": "Durduruldu",
   "monitorEnded": "İzleme sona erdi",
-  "coworkWatching_one": "{{count}} izleyici izleniyor",
-  "coworkWatching_other": "{{count}} yol izleniyor",
+  "coworkWatching_one": "{{count}} izleyici takip ediliyor…",
+  "coworkWatching_other": "{{count}} izleyici takip ediliyor…",
   "coworkWaitingBackground": "Görev arka planda çalışıyor",
   "noBackgroundTasks": "Arka plan görevi yok",
   "running": "Çalışıyor",
@@ -687,7 +687,7 @@
   "taskWorking": "Çalışılıyor…",
   "taskNoOutput": "Çıktı yok",
   "subagentToolUses_one": "{{count}} araç kullanımı",
-  "subagentToolUses_other": "{{count}} araç kullanıldı",
+  "subagentToolUses_other": "{{count}} araç kullanımı",
   "artifactGroupCode": "Kod",
   "artifactGroupImage": "Görüntüler",
   "artifactGroupDocument": "Belgeler",

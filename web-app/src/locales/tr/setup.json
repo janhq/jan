@@ -1,11 +1,11 @@
 {
-  "description": "Sohbet etmeye baÅŸlamak iÃ§in Ã¶nerilen modeli indirin veya Hub'da baÅŸka bir model arayÄ±n.",
-  "quickStartFailed": "Bir ÅŸeyler ters gitti. LÃ¼tfen tekrar deneyin.",
-  "exploreHub": "Hub'da digÃ¼r modellere gÃ¶z atÄ±n",
+  "description": "Sohbete baÅŸlamak iÃ§in Ã¶nerilen modeli indirin veya baÅŸka bir model iÃ§in Hub'a gÃ¶z atÄ±n.",
+  "quickStartFailed": "Bir sorun oluÅŸtu. LÃ¼tfen yeniden deneyin.",
+  "exploreHub": "Hub'daki diÄŸer modellere gÃ¶z at",
   "download": "Ä°ndir",
-  "modelInstalled": "Kuruldu",
+  "modelInstalled": "YÃ¼klendi",
   "capabilityGeneral": "Genel",
-  "capabilityMultimodal": "Ã‡ok Modlu",
+  "capabilityMultimodal": "Ã‡ok modlu",
   "fallbackModelName": "Jan Modeli",
   "stageModel": "Ä°lk modeliniz",
   "checkModelResolving": "Ã–nerilen model bulunuyor...",
@@ -15,25 +15,39 @@
   "stageChecking": "Kontrol ediliyor...",
   "checkSystemGpu": "{{gpus}}, sÃ¼rÃ¼cÃ¼ {{driver}}",
   "checkSystemGpuNoDriver": "{{gpus}}",
-  "checkSystemCpuOnly": "{{cpu}}, GPU algÄ±lanamadÄ±",
+  "checkSystemCpuOnly": "{{cpu}}, GPU algÄ±lanmadÄ±",
   "checkSystemFailed": "DonanÄ±m ayrÄ±ntÄ±larÄ± okunamadÄ±",
   "checkEnginePreparing": "Ã‡Ä±karÄ±m motoru hazÄ±rlanÄ±yor...",
   "checkEngineGpu": "{{backend}}",
   "checkEngineCpu": "{{backend}}, CPU Ã¼zerinde Ã§alÄ±ÅŸÄ±yor",
-  "checkEngineGpuUnused": "{{backend}} yalnÄ±zca CPU destekli bir derleme olduÄŸundan {{gpus}} boÅŸta kalacak. Kullanmak iÃ§in Ayarlar'dan bir GPU arka ucu seÃ§in.",
-  "checkEngineVendorMismatch": "{{backend}} bir {{vendor}} GPU gerektiriyor, ancak Jan {{gpus}} buldu. Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak.",
-  "checkEngineRuntimeUnreachable": "{{backend}} GPU'nuza erieÅŸmiyor, bu yÃ¼zden Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak. Bu genellikle GPU sÃ¼rÃ¼cÃ¼nÃ¼n veya Ã§alÄ±ÅŸma zamanÄ±nÄ±n gÃ¼ncellenmesi gerektiÄŸi anlamÄ±na gelir.",
-  "checkEngineMissingLibrary": "{{backend}}, gerekli bir kitaplÄ±k eksik olduq'u iÃ§in baÅŸlatÄ±lamÄ±yor ({{libraries}}), bu yÃ¼zden Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak.",
+  "checkEngineGpuUnused": "{{backend}} yalnÄ±zca CPU iÃ§in derlenmiÅŸ olduÄŸundan {{gpus}} kullanÄ±lmayacak. GPU'yu kullanmak iÃ§in Ayarlar'dan bir GPU arka ucu seÃ§in.",
+  "checkEngineVendorMismatch": "{{backend}}, {{vendor}} GPU gerektiriyor ancak Jan {{gpus}} buldu. Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak.",
+  "checkEngineRuntimeUnreachable": "{{backend}} GPU'nuza eriÅŸemediÄŸinden Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak. Bu durum genellikle GPU sÃ¼rÃ¼cÃ¼sÃ¼nÃ¼n veya Ã§alÄ±ÅŸma zamanÄ±nÄ±n gÃ¼ncellenmesi gerektiÄŸi anlamÄ±na gelir.",
+  "checkEngineMissingLibrary": "Gerekli bir kitaplÄ±k ({{libraries}}) eksik olduÄŸundan {{backend}} baÅŸlatÄ±lamÄ±yor. Jan CPU Ã¼zerinde Ã§alÄ±ÅŸacak.",
   "checkEngineProbeFailed": "Motorun GPU'nuzu kullanabildiÄŸi doÄŸrulanamadÄ±",
   "checkEngineUnavailable": "Bu motor derlemesi GPU durumunu bildiremiyor",
   "checkSearchPreparing": "GÃ¶mme modeli indiriliyor...",
   "checkSearchReady": "{{model}}, {{dimension}} boyut",
-  "checkSearchNoVector": "GÃ¶mme modeli sonuÃ§ dÃ¶ndÃ¼rmedi, bu yÃ¼zden dosya aramasÄ± henÃ¼z Ã§alÄ±ÅŸmayacak",
-  "checkSearchInvalidVector": "GÃ¶mme modeli KullanÄ±landa sonuÅ‡ dÃ§fÃ¼rdÃ¼, bu yÃ¼zden dosya aramasÄ± 'hiÃ§bir ÅŸey dÃ¶ndÃ¼remeyebilir",
-  "checkSearchProbeFailed": "GÃ¶mme model doÄŸrulanamadÄ±",
-  "checkSearchUnavailable": "Bu motor derlemesi gÃ¶mme modelini doÄŸrulayalÄ±yor",
+  "checkSearchNoVector": "GÃ¶mme modeli sonuÃ§ dÃ¶ndÃ¼rmediÄŸi iÃ§in dosya aramasÄ± henÃ¼z Ã§alÄ±ÅŸmayacak",
+  "checkSearchInvalidVector": "GÃ¶mme modeli kullanÄ±lamayan bir sonuÃ§ dÃ¶ndÃ¼rdÃ¼ÄŸÃ¼ iÃ§in dosya aramasÄ± sonuÃ§ vermeyebilir",
+  "checkSearchProbeFailed": "GÃ¶mme modeli doÄŸrulanamadÄ±",
+  "checkSearchUnavailable": "Bu motor derlemesi gÃ¶mme modelini doÄŸrulayamÄ±yor",
   "showDetails": "AyrÄ±ntÄ±larÄ± gÃ¶ster",
   "hideDetails": "AyrÄ±ntÄ±larÄ± gizle",
-  "continueAnyway": "Devam Et",
+  "continueAnyway": "Devam et",
   "retryChecks": "Kontrolleri yeniden Ã§alÄ±ÅŸtÄ±r",
-  "stepCounter": "{{total}} adÄ±mdan {{current}}. adq[ˆ‹ˆœİYÙPÛÛœÙ[ˆ’˜[‰ÚHÙ[qgİ\›Y^YHX\™1,[HY[ˆ‹ˆœÚÚ\İ\ˆ±gšr&Y[ZÈ]H‹ˆÙ[ÛÛYU]Hˆ’˜[‰Ú[ˆÚ\İ[Z[š^™Hİ\[[HX\X\ñ,HÙ\™ZÚ^[Üˆ‹ˆÙ[ÛÛYP›ÙHˆHš\šØpéÈZÚZØHğï™\ˆ˜[‹0áñ,ZØ\±,[H[İÜ[H™HÜŞXH\˜[X\ñ,HpéÚ[ˆğï0éğïÈš\ˆ[Ù[H[™\š\‹ˆHñ,\˜YHš[Ú\Ø^X\±,[±,^±,Hİ[[›X^XH]˜[HYXš[\œÚ[š^‹ˆ‹ˆœİ\Ù]\ˆ˜qgÛ^X[1,[š|'ã"‹ˆœİYÙTÙ]\ˆ–Y\™[[İÜˆ^X\›[\İ‹ˆ˜˜YÙQÜHˆ‘ÔKÛ^Hİ[[˜XØZÈ‹ˆ˜˜YÙPÜHˆÔHpé™\š[™H0éØ[1,qgØXØZÈ‹ˆ˜˜YÙQÜU[šÛ›İÛˆˆ‘ÔH\İq'ÚHÛÛ›ÛY[^[Ü‹‹‹ˆ‹ˆ›İ\•Ø\›š[™ÜÈˆŞØÛİ[_Hq'Ù\ˆÛÛ›ÛH[ÚHÙ\™Zİ\š^[Ü‹ˆ‹ˆ˜ÛÛ[YTİ\ˆ‘]˜[H]‹ˆœİYÙTÙ]\Û™Hˆ“[İÜˆ^±,\ˆ‹ˆœÙ]\Û™P›ÙHˆ’˜[‹Y\™[[Ù[\šH[XK˜Ü[H0éØ[1,qgİ1,\˜XØZËˆ‚Ÿ
+  "stepCounter": "{{total}} adÄ±mÄ±n {{current}}. adÄ±mÄ±",
+  "stageConsent": "Jan'i geliÅŸtirmemize yardÄ±mcÄ± olun",
+  "skipStep": "Åimdilik atla",
+  "welcomeTitle": "Jan'in sisteminizde kurulum yapmasÄ± gerekiyor",
+  "welcomeBody": "Bu iÅŸlem birkaÃ§ dakika sÃ¼rer: Jan, Ã§Ä±karÄ±m motorunu ve dosya aramasÄ± iÃ§in kÃ¼Ã§Ã¼k bir modeli indirir. Ä°ÅŸlem sÃ¼rerken bilgisayarÄ±nÄ±zÄ± kullanmaya devam edebilirsiniz.",
+  "startSetup": "BaÅŸlayalÄ±m",
+  "stageSetup": "Yerel motor kuruluyor",
+  "badgeGpu": "GPU'nuzu kullanacak",
+  "badgeCpu": "CPU Ã¼zerinde Ã§alÄ±ÅŸacak",
+  "badgeGpuUnknown": "GPU desteÄŸi kontrol ediliyor...",
+  "otherWarnings": "DiÄŸer {{count}} kontrol de ilgilenmenizi gerektiriyor.",
+  "continueStep": "Devam et",
+  "stageSetupDone": "Motor hazÄ±r",
+  "setupDoneBody": "Jan, yerel modelleri llama.cpp ile Ã§alÄ±ÅŸtÄ±racak."
+}
