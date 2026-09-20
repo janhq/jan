@@ -1,0 +1,101 @@
+{
+  "editServer": "MCP Sunucusunu Düzenle",
+  "addServer": "MCP Sunucusu Ekle",
+  "browserExtension": {
+    "connecting": {
+      "checking": "Uzantı durumu kontrol ediliyor..."
+    },
+    "notInstalled": {
+      "title": "Jan, tarayıcınızda görevleri tamamlar",
+      "description": "Jan'a tarayıcı erişimi vermek için uzantıyı yükleyin",
+      "getExtension": "Uzantıyı Al"
+    }
+  },
+  "serverName": "Sunucu Adı",
+  "enterServerName": "Sunucu adı girin",
+  "command": "Komut",
+  "enterCommand": "Komut girin (uvx veya npx)",
+  "arguments": "Bağımsız Değişkenler",
+  "argument": "Bağımsız Değişken {{index}}",
+  "envVars": "Ortam Değişkenleri",
+  "key": "Anahtar",
+  "value": "Değer",
+  "save": "Kaydet",
+  "status": "Durum",
+  "connected": "Bağlı",
+  "disconnected": "Bağlı değil",
+  "deleteServer": {
+    "title": "MCP Sunucusunu Sil",
+    "description": "{{serverName}} MCP sunucusunu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
+    "delete": "Sil",
+    "success": "{{serverName}} MCP sunucusu başarıyla silindi"
+  },
+  "editJson": {
+    "title": "MCP Sunucusu JSON'ını Düzenle: {{serverName}}",
+    "titleAll": "Tüm MCP Sunucuları JSON'ını Düzenle",
+    "placeholder": "JSON yapılandırması girin",
+    "errorParse": "Başlangıç verileri ayrıştırılamadı",
+    "errorPaste": "Yapıştırılan içerikte geçersiz JSON biçimi",
+    "errorFormat": "Geçersiz JSON biçimi",
+    "errorServerName": "Sunucu adı zorunludur ve boş olamaz",
+    "errorMissingServerNameKey": "JSON, {\"serverName\": {config}} şeklinde yapılandırılmış olmalıdır - sunucu adı anahtarı eksik",
+    "errorInvalidType": "'{{serverName}}' sunucusu için '{{type}}' türü geçersiz. Tür 'stdio', 'http' veya 'sse' olmalıdır",
+    "save": "Kaydet"
+  },
+  "checkParams": "Lütfen parametreleri öğreticiye göre kontrol edin.",
+  "title": "MCP Sunucuları",
+  "experimental": "Deneysel",
+  "editAllJson": "Tüm Sunucuların JSON'ını Düzenle",
+  "findMore": "Daha fazla MCP sunucusu bul",
+  "allowPermissions": "Tüm MCP Araç İzinlerine İzin Ver",
+  "allowPermissionsDesc": "Etkinleştirildiğinde, tüm MCP araç çağrıları izin diyalogları gösterilmeden otomatik olarak onaylanır. Bu ayar, yeni sohbetler dahil tüm konuşmalar için geçerlidir.",
+  "noServers": "MCP sunucusu bulunamadı",
+  "args": "Argümanlar",
+  "env": "Ortam",
+  "serverStatusActive": "{{serverKey}} sunucusu başarıyla etkinleştirildi",
+  "serverStatusInactive": "{{serverKey}} sunucusu başarıyla devre dışı bırakıldı",
+  "runtimeSettings": {
+    "title": "Çalışma Zamanı Ayarları",
+    "description": "Jan'in MCP sunucularını nasıl yönettiğini ve yeniden denediğini yapılandırın.",
+    "toolCallTimeout": "Araç çağrısı zaman aşımı (saniye)",
+    "toolCallTimeoutDesc": "Zaman aşımından önce bir MCP araç yanıtı için beklenecek azami süre.",
+    "maxToolOutputChars": "Azami araç çıktısı karakter sayısı",
+    "maxToolOutputCharsDesc": "Konuşmada tutulan en uzun araç sonucu. Bunun ötesindeki her şey kırpılır ve kesilmiş olarak işaretlenir; böylece tek bir büyük sonuç modelin bağlamını tüketemez. Sonuçları bütün tutmak için 0 olarak ayarlayın.",
+    "smartToolRouting": "Akıllı MCP araç yönlendirmesi",
+    "smartToolRoutingDesc": "Etkinleştirildiğinde Jan, araçları yüklemeden önce ilgili MCP sunucularını seçer. Kapatıldığında tüm MCP araç listesi her zaman yüklenir.",
+    "useLightweightRouterModel": "Yönlendirme için ayrı bir model kullan",
+    "useLightweightRouterModelDesc": "Akıllı yönlendirme açıkken yönlendirme adımını sohbet modeli yerine ayrı (genellikle daha küçük) bir modelle çalıştırın. Yönlendirme için her zaman etkin sohbet modelini kullanmak üzere kapatın.",
+    "routerModel": "Yönlendirme modeli",
+    "routerModelDesc": "Sağlayıcıyı ve modeli tek yerden seçin. Yönlendirme hızlı ve ucuz kalsın diye yalnızca hafif modeller listelenir.",
+    "selectRouterModelPlaceholder": "Yönlendirme modeli seçin…",
+    "routerModelSearchPlaceholder": "Model ara…",
+    "routerModelEmptyList": "Kullanılabilir hafif model yok. Daha küçük bir model ekleyin veya Modeller bölümünde API anahtarlarını yapılandırın.",
+    "routerModelEmptySearch": "“{{query}}” için sonuç yok."
+  },
+  "auth": {
+    "label": "Kimlik Doğrulama:",
+    "state": {
+      "notApplicable": "gerekli değil",
+      "staticHeader": "Yetkilendirme başlığı",
+      "authenticated": "doğrulanmış",
+      "expired": "süresi dolmuş",
+      "staleResource": "başka bir URL için düzenlenmiş",
+      "unauthenticated": "doğrulanmamış"
+    },
+    "expiresIn": "{{duration}} içinde süresi doluyor",
+    "authenticate": "Oturum aç",
+    "reauthenticate": "Yeniden oturum aç",
+    "clear": "Kimlik doğrulamayı temizle",
+    "waiting": "Tarayıcı bekleniyor...",
+    "openSignInPage": "Oturum açma sayfasını aç",
+    "needsAuth": "{{serverName}} kimlik doğrulaması gerektiriyor",
+    "needsAuthHint": "Bağlanmak için bu sunucuda oturum açın.",
+    "authorized": "{{serverName}} sunucusunda oturum açıldı",
+    "authorizeFailed": "{{serverName}} sunucusunda oturum açılamadı",
+    "cleared": "{{serverName}} için saklanan kimlik bilgileri temizlendi",
+    "nothingToClear": "{{serverName}} için saklanan kimlik bilgisi yok",
+    "clearFailed": "{{serverName}} için kimlik bilgileri temizlenemedi",
+    "renew": "Oturumu yenile",
+    "expiredAgo": "{{duration}} önce süresi doldu"
+  }
+}
