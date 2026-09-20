@@ -1,0 +1,18 @@
+{
+  "addProvider": "Sağlayıcı Ekle",
+  "addOpenAIProvider": "Özel Sağlayıcı Ekle",
+  "enterNameForProvider": "Sağlayıcı adı (örn. my-llm-server)",
+  "apiTypeLabel": "API biçimi",
+  "apiTypeOpenAI": "OpenAI uyumlu",
+  "apiTypeAnthropic": "Anthropic uyumlu",
+  "baseUrlLabel": "Temel URL",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "API anahtarı",
+  "apiKeyPlaceholder": "API anahtarınızı yapıştırın",
+  "invalidBaseUrl": "Temel URL geçerli bir http(s) URL'si olmalıdır",
+  "globalSettings": "Genel ayarlar",
+  "stripReasoning": "Bağlamdan muhakemeyi kaldır",
+  "stripReasoningDesc": "Geçmişi yeniden göndermeden önce önceki turların düşünme/muhakeme içeriğini tüm sağlayıcılarda kaldırır. Yerel modellerde KV-önbellek yeniden kullanımını iyileştirir, ancak bazı modeller (örn. daha yeni Qwen sürümleri) daha iyi çok turlu muhakeme için korumanızı önerir.",
+  "providerAlreadyExists": "{{name}} adında bir sağlayıcı zaten mevcut."
+}
