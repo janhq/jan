@@ -70,7 +70,7 @@
     },
     {
       "identifier": "opener:allow-open-path",
-      "description": "Open a Cowork artifact in the OS default application. Scoped to any path because a Cowork project folder is user-chosen and can live anywhere; the same breadth the assetProtocol scope already has.",
+      "description": "Open a Cowork artifact in the OS default application. Scoped to any path because a Cowork project folder is user-chosen and can live anywhere; the same breadth the assetProtocol scope already has. Depends on plugins.opener.requireLiteralLeadingDot=false in tauri.conf.json: the Unix default makes `**` refuse dot-led components, and every Cowork workspace sits under ~/.local/share on Linux, so without it this scope matches nothing there.",
       "windows": ["*"],
       "allow": [
         {

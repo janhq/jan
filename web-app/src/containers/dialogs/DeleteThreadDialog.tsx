@@ -107,6 +107,7 @@ export function DeleteThreadDialog({
               </Button>
             </DialogClose>
             <Button
+              data-testid="confirm-delete-thread"
               ref={deleteButtonRef}
               variant="destructive"
               onClick={handleDelete}

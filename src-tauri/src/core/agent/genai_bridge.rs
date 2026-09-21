@@ -550,6 +550,34 @@ fn completion_json(
         if let Some(v) = u.total_tokens {
             usage_obj.insert("total_tokens".into(), serde_json::json!(v));
         }
+        if let Some(details) = u.prompt_tokens_details.as_ref() {
+            // Keep both counters under `prompt_tokens_details` rather than
+            // mixing an Anthropic-native top-level key into a chat-shaped usage.
+            //
+            // Caveat worth knowing before trusting a missing field: the client
+            // crate deserializes usage with `zero_as_none` (`PromptTokensDetails
+            // .cached_tokens` included), so a route that honestly reports
+            // `cached_tokens: 0` (a prefix written every turn and never read --
+            // the expensive case) arrives here looking like a route that reports
+            // no cache field at all. Which of the two it was cannot be recovered
+            // at this layer; the console reads it as "not reported", so a
+            // cold-prefix route on this bridge cannot raise the zero-hit alarm.
+            //
+            // Native providers do not come through here: `core::server
+            // ::converters` builds the chat-shaped usage itself and emits the
+            // cache fields whenever the upstream reported them, a zero included,
+            // so Anthropic and Responses routes keep the distinction.
+            let mut d = serde_json::Map::new();
+            if let Some(v) = details.cached_tokens {
+                d.insert("cached_tokens".into(), serde_json::json!(v));
+            }
+            if let Some(v) = details.cache_creation_tokens {
+                d.insert("cache_creation_tokens".into(), serde_json::json!(v));
+            }
+            if !d.is_empty() {
+                usage_obj.insert("prompt_tokens_details".into(), serde_json::Value::Object(d));
+            }
+        }
         if !usage_obj.is_empty() {
             completion.insert("usage".into(), serde_json::Value::Object(usage_obj));
         }
@@ -898,6 +926,61 @@ mod tests {
     }
 
     #[test]
+    fn an_appended_system_update_reaches_the_provider_last() {
+        // What the tail-append writer produces: the prompt's earlier bytes stay
+        // put, the update lands behind the history.
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "system", "content": "STABLE v1" },
+                { "role": "system", "content": "date" },
+                { "role": "user", "content": "hi" },
+                { "role": "assistant", "content": "yo" },
+                { "role": "user", "content": "go on" },
+                { "role": "system", "content": "STABLE v2" },
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let system = req.system.expect("an update behind history is not dropped");
+        assert!(system.starts_with("STABLE v1\n\ndate\n\n"), "{system}");
+        assert!(
+            system.ends_with("STABLE v2"),
+            "the update is the last system instruction the model reads: {system}"
+        );
+        assert_eq!(req.messages.len(), 3, "only the conversation remains");
+    }
+
+    #[test]
+    fn prompt_tail_stays_after_history_in_the_provider_request() {
+        let mut messages = vec![
+            json!({"role": "system", "content": "Stable instructions."}),
+            json!({"role": "user", "content": "first question"}),
+            json!({"role": "assistant", "content": "first answer"}),
+            json!({"role": "user", "content": "second question"}),
+        ];
+        crate::core::agent::upstream::append_prompt_tail(
+            &mut messages,
+            "Today's date is 2026-09-21.",
+        );
+        let (_, request) = chat_request_from_body(&json!({
+            "model": "m",
+            "messages": messages,
+        }))
+        .unwrap();
+
+        assert_eq!(request.system.as_deref(), Some("Stable instructions."));
+        assert_eq!(request.messages[0].role, ChatRole::User);
+        assert_eq!(request.messages[1].role, ChatRole::Assistant);
+        assert_eq!(request.messages[2].role, ChatRole::User);
+        let tail = request.messages.last().unwrap();
+        assert_eq!(tail.role, ChatRole::User);
+        assert_eq!(
+            tail.content.first_text(),
+            Some("<SYSTEM>\nToday's date is 2026-09-21.\n</SYSTEM>")
+        );
+    }
+
+    #[test]
     fn assistant_reasoning_and_tool_calls_survive_the_round_trip() {
         let body = json!({
             "model": "m",
@@ -1134,6 +1217,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn usage_only_tail_is_reconstructed_for_the_tui() {
+        let (url, server) = serve(vec![Some(sse_response(&[
+            r#"{"choices":[{"delta":{"content":"ok"}}]}"#,
+            r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            r#"{"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":3,"total_tokens":45}}"#,
+        ]))])
+        .await;
+
+        let (tx, _) = sink();
+        let completion = run(&url, &[], &tx).await.expect("stream succeeds");
+        assert_eq!(completion["usage"]["prompt_tokens"], 42);
+        assert_eq!(completion["usage"]["completion_tokens"], 3);
+        assert_eq!(completion["usage"]["total_tokens"], 45);
+        server.await.expect("server");
+    }
+
+    #[tokio::test]
     async fn streams_tokens_and_reconstructs_the_completion() {
         let (url, server) = serve(vec![Some(sse_response(&[
             r#"{"choices":[{"delta":{"content":"He"}}]}"#,
@@ -1147,6 +1247,8 @@ mod tests {
 
         assert_eq!(completion["choices"][0]["message"]["content"], "Hello");
         assert_eq!(completion["choices"][0]["finish_reason"], "stop");
+        assert_eq!(completion["usage"]["prompt_tokens"], 3);
+        assert_eq!(completion["usage"]["completion_tokens"], 2);
         assert_eq!(completion["usage"]["total_tokens"], 5);
 
         drop(tx);

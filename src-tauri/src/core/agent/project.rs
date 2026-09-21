@@ -1,9 +1,11 @@
 //! `agent.toml` project config parsing and `.jan/agent/` scaffolding.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
+use crate::core::agent::prompt::{Placement, PromptPolicy};
 use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
 /// `[tools]`/`[skills]` are always modeled. `[agent]` and `[budget]` are only
@@ -22,9 +24,35 @@ pub(crate) struct AgentToml {
     #[serde(default)]
     pub tools: ToolsSection,
     #[serde(default)]
+    pub prompt: PromptSection,
+    #[serde(default)]
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+    /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
+    /// prompts, sessions and compactions. An array of tables rather than a
+    /// `[hooks]` map because several hooks may share one event.
+    #[serde(default)]
+    pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+}
+
+/// `[prompt]` — where each contributor to the system prompt may sit. Deny-wins,
+/// like `[tools]`: nothing reaches the cache line without being allowed there,
+/// and the safe answer for a composer no policy mentions is the tail.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PromptSection {
+    /// Placement for a composer no policy mentions, `tail` by default. A
+    /// composer that varies within a session stays in the tail whatever this
+    /// says: the constancy rule outranks it. All current composers already
+    /// declare a placement or vary, so this fallback has no effect today.
+    #[serde(default)]
+    pub default: Placement,
+    /// Composer ids allowed above the cache line (`assistant_instructions`,
+    /// `skills`, ...). Unset keeps each composer's own placement; setting it
+    /// narrows the prefix to exactly the ids listed. An unknown id is an error,
+    /// not a silent no-op.
+    #[serde(default)]
+    pub prefix_allow: Option<Vec<String>>,
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
@@ -35,6 +63,17 @@ pub(crate) struct PluginsSection {
     /// Unset disables name-based installs; direct git URLs still work.
     #[serde(default)]
     pub marketplace: Option<String>,
+    /// Whether an installed plugin's `hooks/hooks.json` is honored. On by
+    /// default -- a plugin that ships hooks is usually installed *for* them --
+    /// but a plugin's hooks are third-party commands that fire on every tool
+    /// call, so `hooks = false` must be able to switch them off without
+    /// uninstalling the plugin and losing its skills and commands.
+    #[serde(default)]
+    pub hooks: Option<bool>,
+    /// Whether an installed plugin's `[[tools]]` are advertised to the model.
+    /// Same default and same rationale as [`Self::hooks`].
+    #[serde(default)]
+    pub tools: Option<bool>,
 }
 
 /// `[provider]` — project-local override of a single provider's config,
@@ -53,6 +92,12 @@ pub(crate) struct ProviderSection {
     pub models: Vec<String>,
     #[serde(default)]
     pub api_type: Option<String>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching, for a request served by this provider. Overrides
+    /// `[agent].compaction_ratio`, so a route with a small window can be tuned
+    /// without loosening the setting for every other route.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
 }
 
 /// `[skills]` — which project skills are advertised to the model. An empty
@@ -88,11 +133,20 @@ pub(crate) struct AgentSection {
     #[serde(default)]
     pub context_window: Option<u64>,
     /// Tokens to hold back from the context window when deciding whether to
-    /// compact (defaults to 16K if unset). Compaction triggers at
-    /// `context_window - compaction_reserve_tokens`. This is a compaction
-    /// heuristic only — it is NOT sent to the API as `max_tokens`.
+    /// compact. Compaction triggers at `context_window - compaction_reserve_tokens`,
+    /// and setting this wins over `compaction_ratio`, so an explicit absolute
+    /// headroom is never silently relaxed. This is a compaction heuristic only
+    /// - it is NOT sent to the API as `max_tokens`.
     #[serde(default)]
     pub compaction_reserve_tokens: Option<u64>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching (defaults to 0.8 if unset). Expressed as a ratio rather
+    /// than a fixed reserve so the headroom scales with the window: 16K is 12%
+    /// of a 128K window and 1.6% of a 1M one, which is far too late on the
+    /// large window. Setting `compaction_reserve_tokens` instead pins absolute
+    /// headroom and wins over this.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
     /// Per-request output cap forwarded to the model as the OpenAI-compatible
     /// `max_tokens` field. Limits how many tokens the model may generate in a
     /// single response. Omitted from the request when unset (model default).
@@ -120,6 +174,11 @@ pub(crate) struct AgentSection {
     /// out of the context budget.
     #[serde(default)]
     pub send_reasoning: Option<bool>,
+    /// Give each session in this project its own git worktree, so the agent's
+    /// edits land in a separate checkout instead of the user's. `None` = defer
+    /// to the global `worktree` setting, then the default, off.
+    #[serde(default)]
+    pub worktree: Option<bool>,
 }
 
 // `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
@@ -156,12 +215,23 @@ pub(crate) struct ToolsSection {
     /// checks it out.
     #[serde(default)]
     pub sandbox: Option<bool>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist, merged over `~/.jan/config.toml`. Empty
+    /// by default; a secret-looking name is never copied by a glob.
+    #[serde(default)]
+    pub env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over the global value for the same key.
+    #[serde(default)]
+    pub env_set: BTreeMap<String, String>,
 }
 
 const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # model = "Jan-V4"
 # context_window = 128000  # tokens; defaults to 128K if unset
-# compaction_reserve_tokens = 16384  # headroom before auto-compaction; defaults to 16K
+# compaction_ratio = 0.8  # share of context_window a prompt may fill before the run
+#                         # compacts ahead of the request; defaults to 0.8
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
@@ -207,11 +277,37 @@ allow_write = []
 # ~/.jan/config.toml; the desktop always confines. Set it here to require
 # confinement for anyone working in this project.
 # sandbox = true
+# Host environment variables the shell may inherit beyond the minimal base
+# (PATH, HOME, TMPDIR, ...). Names are exact or use a "*" wildcard; merged with
+# ~/.jan/config.toml. A secret-looking name (*KEY*, *TOKEN*, ...) is never
+# copied by a wildcard -- inject one deliberately with env_set below.
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
+# Explicit values for the shell env; win over env_passthrough and the global
+# value for the same key.
+# [tools.env_set]
+# RUST_LOG = "info"
 
 [skills]
 enabled = []
 # always | relevance
 inject = "always"
+
+# Where each contributor to the system prompt may sit, deny-wins like [tools].
+# Above the cache line ("prefix") a contributor must be constant for the whole
+# session: a provider only reuses a prefix whose bytes are identical to the
+# previous request, so per-turn content belongs in the tail. `jan cli agent
+# status` prints the resolved placement of every contributor.
+[prompt]
+# Unset keeps each composer's own placement. Setting it narrows the prefix to
+# exactly the ids listed -- everything else moves below the cache line whatever
+# it asks for. Ids: assistant_instructions, guidelines, working_directory,
+# runtime_environment, subagent_guide, skill_guide, web_tools_guide,
+# project_context, skills, memory_catalog, tool_schemas (the tool array is a
+# request field and is always above the cache line).
+# prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Fallback for a future unclassified composer: tail (the default) or prefix.
+# No effect on current composers. Use prefix_allow to narrow today's prefix.
+# default = "tail"
 "#;
 
 /// Path to `<project_root>/.jan/agent/agent.toml`.
@@ -245,6 +341,19 @@ pub(crate) struct RunSettings {
     /// `[tools].sandbox`; `None` when unset, so the caller applies the default
     /// appropriate to its surface.
     pub sandbox: Option<bool>,
+    /// `[tools].env_passthrough`: host env-var names/globs the shell may inherit
+    /// beyond the base allowlist. Merged with the global setting by the caller.
+    pub env_passthrough: Vec<String>,
+    /// `[tools].env_set`: explicit shell-env overrides, sorted by key.
+    pub env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved here so
+    /// composition and `agent status` answer the same question from one parse.
+    pub prompt: PromptPolicy,
+    /// `[agent].worktree`: give each session its own git checkout. Merged with
+    /// the global setting and the `--worktree` flag by the caller. CLI-only,
+    /// like the `[agent]` section it comes from.
+    #[cfg(feature = "cli")]
+    pub worktree: Option<bool>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -258,11 +367,25 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         allow_network: cfg.tools.allow_network,
         allow_home_read: cfg.tools.allow_home_read,
         sandbox: cfg.tools.sandbox,
+        env_passthrough: cfg.tools.env_passthrough,
+        env_set: cfg.tools.env_set.into_iter().collect(),
+        prompt: PromptPolicy::new(cfg.prompt.default, cfg.prompt.prefix_allow),
+        #[cfg(feature = "cli")]
+        worktree: cfg.agent.worktree,
     }
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
     run_settings(project_root).enabled_skills
+}
+
+/// The `[prompt]` placement policy for `project_root`, or the defaults when the
+/// project has no agent.toml. A thin read of [`run_settings`] for the callers
+/// that need only this: the status report and the `/context` sizing. Both are
+/// CLI surfaces, hence the desktop-build allowance.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) fn prompt_policy(project_root: &Path) -> PromptPolicy {
+    run_settings(project_root).prompt
 }
 
 /// Build a `ToolPermissions` from the parsed `[tools]` section.
@@ -396,6 +519,7 @@ pub(crate) fn set_skills_enabled_in_agent_toml(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::agent::prompt::Composer;
     use std::sync::atomic::{AtomicU32, Ordering};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -530,6 +654,60 @@ mod tests {
         ensure_project(&root).expect("scaffold");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
+        // The scaffolded `[prompt]` section is all comments: the defaults it
+        // documents are what a fresh project gets.
+        assert_eq!(cfg.prompt.default, Placement::Tail);
+        assert_eq!(cfg.prompt.prefix_allow, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("[prompt]"));
+        assert!(AGENT_TOML_TEMPLATE.contains("prefix_allow"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_defaults_to_the_declared_placements() {
+        let root = unique_root("prompt_default");
+        write_agent_toml(&root, "[skills]\nenabled = []\n");
+        let policy = prompt_policy(&root);
+        assert_eq!(policy.default_placement(), Placement::Tail);
+        assert_eq!(
+            policy.prefix_allow(),
+            None,
+            "an absent allowlist keeps each composer's own placement"
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Date).unwrap(),
+            Placement::Tail
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_reads_the_allowlist_and_the_default() {
+        let root = unique_root("prompt_allow");
+        write_agent_toml(
+            &root,
+            "[prompt]\ndefault = \"tail\"\nprefix_allow = [\"assistant_instructions\"]\n",
+        );
+        let policy = prompt_policy(&root);
+        assert_eq!(
+            policy.prefix_allow(),
+            Some(&["assistant_instructions".to_string()][..])
+        );
+        assert_eq!(
+            policy
+                .placement_of(Composer::AssistantInstructions)
+                .unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Tail,
+            "the allowlist denies a declared-prefix composer it does not name"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

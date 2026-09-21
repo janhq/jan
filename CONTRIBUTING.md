@@ -223,6 +223,37 @@ fix: resolve memory leak in model loading
 docs: update installation instructions
 ```
 
+### Signed Commits
+
+We ask that you **sign your commits** so we can verify that changes really come from you. Git supports signing with a GPG/SSH key or, on Linux, a PGP key via `git commit -S`.
+
+**1. Create and publish your key** (if you don't have one):
+```bash
+# Generate a GPG key (follow the prompts, add your email)
+gpg --full-generate-key
+
+# List your key IDs
+gpg --list-secret-keys --keyid-format=long
+```
+
+**2. Register the key on GitHub**
+- Export your public key: `gpg --armor --export YOUR_KEY_ID > public.gpg`
+- Go to GitHub → **Settings** → **SSH and GPG keys** → **New GPG key** and paste the contents
+- Add your key ID to Git:
+```bash
+git config --global user.signingkey YOUR_KEY_ID
+git config --global commit.gpgsign true
+```
+
+**3. Sign your commits**
+```bash
+git commit -S -m 'feat: add support for Qwen models'
+```
+
+The `-S` flag signs the commit; `commit.gpgsign true` (above) makes it the default. Signed commits show a green **Verified** badge on GitHub once your key is registered. See [Git's signing docs](https://git-scm.com/book/en/v2/Git-Tools-Signing-Your-Work) for details.
+
+> **SSH signing**: If you prefer SSH over GPG, follow [GitHub's SSH signing guide](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits-with-ssh) and commit with `git commit -S` as well.
+
 ### Pull Request Requirements
 - Include a screenshot or screen recording in your PR description showing the change in action
 - For bug fixes: show both the **before** (broken behavior) and **after** (fixed behavior)

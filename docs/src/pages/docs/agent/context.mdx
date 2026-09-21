@@ -16,11 +16,12 @@ summarizing the older part of the conversation rather than failing.
 The header carries live usage:
 
 ```
- jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K   30.1/s   [ready]
+ jan agent   tokamak-1-preview   10:40:49   turn 1/400   ctx 6K/128K fallback   30.1/s   [ready]
 ```
 
-`ctx 6K/128K` is context used against the window. It updates as each request lands, not only when a
-turn ends.
+`ctx 6K/128K` is context used against the window, and the word after it says where the window size
+came from (see [below](#where-the-window-size-comes-from)). It updates as each request lands, not
+only when a turn ends.
 
 At the end of a turn you get a receipt:
 
@@ -40,8 +41,9 @@ purpose: context is the size of the request, output is what came back.
 Opens a centered overlay on top of the live transcript (the turn keeps running behind it).
 Inside is a rail that shows the fill as a percentage of the window, a visual bar with the
 `^` marker at the current usage point and `╳` marking the auto-compact reserve zone, a
-token scale, and a headroom line (`N tokens available before auto-compact`), followed by a
-per-category breakdown: System prompt, System tools, Project context, Skills, and Messages.
+token scale, and a headroom line (`N tokens available before auto-compact`), the
+prompt-cache lines when the route reports any, followed by a per-category breakdown:
+System prompt, System tools, Project context, Skills, and Messages.
 Press <kbd>Esc</kbd>, <kbd>q</kbd>, or <kbd>Ctrl</kbd>+<kbd>C</kbd> to close; closing never
 cancels the turn.
 
@@ -52,22 +54,128 @@ rewind, or resume the provider count is reset, so the number falls back to an es
 The report is a point-in-time snapshot taken when `/context` is typed, so numbers stay fixed
 until you open it again.
 
+When a provider publishes prices for the model, the overlay also carries the session's estimated
+spend (`Session cost (estimated): ~$0.42`). That is every request so far, not the window: see
+[`/usage`](#usage-and-cost) for the per-model breakdown.
+
+### The prompt-cache lines
+
+When the route reports cache usage, the overlay adds the numbers behind the header badge:
+
+```
+Prompt cache (session): 1.2M read (91% of prompt), 140K written
+Prompt cache (last request): 90K read (75% of prompt), 12K written
+```
+
+The session line is `cached / prompt` over every request this process sent - a share of the
+tokens, not a mean of per-turn percentages, since a 10-token request and a 100K one do not
+describe the same prefix. A resumed or forked history's counters start where this process did,
+and the line says `this process` when they do.
+
+A route that reports a cache field with a zero renders `0%`, in the alarm colour. A route that
+reports no cache field at all says `Prompt cache: not reported`, and only once a request has
+been measured. Those are different answers and are never conflated: the first is a cold cache,
+the second is silence.
+
+One provider-layer caveat: on a `chat/completions` route the upstream client collapses a `0` cache
+counter into "field absent" while parsing, so a provider that honestly reports `cached_tokens: 0`
+reads as `not reported` there - the zero never reaches the readout. Anthropic and Responses
+providers, whose usage Jan translates itself, keep the zero and do render the `0%` alarm.
+
+## Where the window size comes from
+
+In order of precedence:
+
+1. `[agent].context_window` in the project's `agent.toml` - an explicit override always wins.
+2. What the provider reported for that model in its `GET /models` listing, cached when the model
+   list was last refreshed. A gateway serving a 1M-token variant of a model is believed over any
+   built-in guess.
+3. A built-in table of known model families.
+4. A conservative 128K fallback for a model nothing recognizes.
+
+The header names which one is in force (`ctx 6K/1000K provider`). Refreshing the model list with
+<kbd>Ctrl</kbd>+<kbd>R</kbd> in `/model` (or `jan cli models refresh`) is what populates step 2.
+
+## Usage and cost
+
+```
+/usage
+```
+
+Lists what this session has spent, one row per model plus a total: requests, prompt tokens in (and
+how many of those the provider served from its cache), tokens out, and an estimated cost.
+
+```
+session usage
+  tokamak/anthropic/claude-opus-5  12 req · 480K in (300K cached) · 21K out  ~$1.42
+  total                            12 req · 480K in (300K cached) · 21K out  ~$1.42
+  estimated from the provider's published prices - not a bill
+```
+
+Unlike the context window - which describes a single request - these are sums over every request the
+session made, subagent requests included, because that is what a provider bills. Rows are per
+provider as well as per model: the same id served by two gateways is billed at two price lists.
+Prices come from the provider's own model listing, and a model it publishes only half a price list
+for is treated as unpriced - reported as `(no published price)` and left out of the total rather
+than counted as free. `/new` starts a new session, and a new count.
+## Cache-friendly layout
+
+Providers cache a request by prefix: the reusable part is the leading run of bytes identical to the
+previous request. Jan Agent keeps that run intact, because the system prompt and the tool schemas
+sit at the front of every request.
+
+- The stable part of the system prompt (identity, guidelines, working directory, skills, memory
+  catalog) is written once at the head of the conversation and never rewritten.
+- Per-run context (today's date, memory recall, plan and todo state) starts after the
+  conversation as marked guidance. Once a request succeeds, that block stays at the position
+  the model received it, including across tool steps and saved-session resumes. A new run adds
+  fresh guidance after history; old blocks are bounded by normal compaction. Provider adapters
+  do not lift this guidance into the system prompt.
+- A stable prompt that changes mid-session - an edited `agent.toml`, a skill installed while
+  the session is open, a mode switch - is retained as a new system message. Providers combine
+  system messages into one instruction field, so a change to these prefix contributors still
+  invalidates the cached conversation. Use tail placement for changing context.
+- The advertised tool array is ordered deterministically, so a restart that advertises the same
+  tools advertises them as the same bytes.
+
+Nothing is deleted by role: a compaction summary is a `system` message carrying condensed history,
+and it survives every one of these updates.
+
 ## Automatic compaction
 
-As the conversation approaches the window, older turns are summarized to make room. The reserve is
-the headroom kept free so compaction has space to work in:
+As the conversation approaches the window, older turns are summarized to make room. The trigger is a
+share of the window, not a fixed number of tokens:
 
 ```toml
 [agent]
-context_window = 128000            # defaults to 128K
-compaction_reserve_tokens = 16384  # defaults to 16K
+context_window = 128000  # defaults to 128K
+compaction_ratio = 0.8   # share of the window the prompt may fill; defaults to 0.8
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens
 ```
 
-Compaction triggers as usage nears `context_window - compaction_reserve_tokens`. When it runs, the
-session history is replaced with the compacted version and the console says so:
+Compaction fires when the request about to be sent reaches `context_window * compaction_ratio` - 80%
+of a 128K window is ~102K. The ratio is the default because it scales with the window: a fixed 16K
+reserve is 12% of a 128K window but only 1.6% of a 1M one, where the prompt would grow into a
+provider rejection before anything triggered. Setting `compaction_reserve_tokens` pins absolute
+headroom instead, and wins over the ratio.
+
+A provider entry can override the ratio for its own routes - windows differ by an order of magnitude
+across providers, so one number cannot suit them all:
+
+```toml
+[provider]
+name = "small-window"
+compaction_ratio = 0.6
+```
+
+The check runs on the request itself, before it is dispatched, so the break lands at a point the
+session chose rather than after a provider rejects an oversized prompt and the run retries. When it
+runs, the session history is replaced with the compacted version, the transcript is told, and the
+console says so:
 
 ```
 auto-compacted 84 -> 31 messages (ctx 96K/128K)
+compacted 84 messages into a summary before sending (104K tokens against a 102K token budget)
 ```
 
 ## Compacting on purpose
@@ -86,9 +194,10 @@ preserves the thread of the conversation, including the parts that sent it off c
 
 ## Context overflow
 
-If a request overflows anyway, the loop compacts and retries rather than erroring out. Each retry
-keeps a smaller tail of recent messages. If a pass fails to shrink the conversation at all, it gives
-up rather than looping.
+If a request overflows anyway, the loop compacts and retries rather than erroring out. That path is
+still needed: a route served by a local engine carries no window the loop can read, and an estimate
+is an estimate. Each retry keeps a smaller tail of recent messages. If a pass fails to shrink the
+conversation at all, it gives up rather than looping.
 
 ## Capping output
 

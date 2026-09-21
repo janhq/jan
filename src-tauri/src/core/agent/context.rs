@@ -1,12 +1,16 @@
-//! Assembles system-prompt additions from a project's context. Today this is
-//! skill loading: markdown files under `.jan/agent/skills/` concatenated
-//! Claude-style into a single block appended to the agent's system prompt.
+//! Assembles the system prompt from named composers, and decides -- through the
+//! `[prompt]` placement policy -- which of them are allowed to sit above the
+//! cache line.
+//!
+//! Every block of the prompt is a [`Composer`]: one named contributor with a
+//! declared placement and an id the policy can name. [`compose_system_prompt`]
+//! walks the registry, renders each block, and routes it by the resolved
+//! placement, so "who writes above the cache line" is answered by config and by
+//! one exhaustive match rather than by whoever edited the builder last.
 
 use std::path::Path;
 
-use chrono::Local;
-
-use crate::core::agent::git;
+use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use tauri_plugin_agent_tools::{memory, workspace};
 
 /// Default persona used only when no assistant instructions are supplied, so a
@@ -140,8 +144,10 @@ const SUBAGENT_GUIDE: &str = "# Subagents\n\nYour own context window is limited.
 that could pull in a lot of file content or tool output (broad codebase search, reading files, many \
 multi-step research), prefer `dispatch_subagent` over doing it inline: the subagent absorbs that context \
 in its own window and returns only the distilled answer. Dispatch independent subagents in parallel when \
-their work doesn't depend on each other, then `await_subagent` each. Do inline work yourself for small, \
-targeted tasks where delegating would cost more than it saves.";
+their work doesn't depend on each other; each returns in the background and a note carries its answer when \
+it finishes. Once you delegate a task it belongs to that subagent -- do not do the same work yourself; \
+spend the wait on other steps, and only `await_subagent` when nothing else is left to do. Do inline work \
+yourself for small, targeted tasks where delegating would cost more than it saves.";
 
 /// System-prompt addendum for a `/goal` run with no staged plan: an unattended
 /// loop that keeps firing turns until a condition is met needs the phased list
@@ -174,11 +180,13 @@ fn display_path(path: &Path) -> String {
 }
 
 /// Build a compact runtime environment block injected into the system prompt at
-/// session start so the agent is grounded from turn one. Mirrors the
-/// `<workstation>` / cwd / date context blocks that harnesses like this one
-/// already inject. Fields: working directory, OS/platform/arch, date, shell, and
-/// git state (branch name when the project is inside a git repo). Kept short —
-/// a few lines, not a wall of text.
+/// session start so the agent is grounded from turn one. Fields: working
+/// directory, OS/platform/arch, shell, and scratch space.
+///
+/// Deliberately carries nothing that varies within a session -- today's date and
+/// the current git branch have their own tail composers ([`Composer::Date`] and
+/// [`Composer::GitState`]) -- so this block stays constant for the session and
+/// can sit above the cache line. Kept short: a few lines, not a wall of text.
 fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
     let cwd = display_path(project_root);
 
@@ -188,18 +196,9 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         std::env::consts::ARCH
     );
 
-    let now = Local::now();
-    let date = now.format("%Y-%m-%d").to_string();
-
     let shell = std::env::var("SHELL")
         .or_else(|_| std::env::var("COMSPEC"))
         .unwrap_or_else(|_| "unknown".to_string());
-
-    let git_branch = git::current_branch(project_root);
-    let git_line = match &git_branch {
-        Some(branch) => format!("Git branch: `{branch}`"),
-        None => "Git: not a git repository (or no commits yet)".to_string(),
-    };
 
     // Where to do temporary work. Named by the one spelling that resolves from
     // both `bash` and the filesystem tools on this platform: `/tmp` where the
@@ -218,9 +217,7 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         "# Runtime Environment\n\n\
 Work directory: `{cwd}`\n\
 OS: `{os}`\n\
-Date: `{date}`\n\
-Shell: `{shell}`\n\
-{git_line}{scratch_line}"
+Shell: `{shell}`{scratch_line}"
     )
 }
 
@@ -234,7 +231,8 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
     }
     let list = entries
         .iter()
-        .map(|(name, description)| {
+        .map(|entry| {
+            let (name, description) = (&entry.name, &entry.summary);
             if description.is_empty() {
                 format!("- `{name}` - no summary")
             } else {
@@ -248,41 +246,114 @@ pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
     ))
 }
 
-/// Assemble the project system prompt: the optional base prompt, the always-on
-/// built-in skills/memory guide, then any project-authored skills. The guide is
-/// always present for project runs, so this never returns None.
-pub(crate) fn build_system_prompt(
+/// Everything the prompt-block composers read.
+struct CompositionInputs<'a> {
+    base: Option<&'a str>,
+    project_root: &'a Path,
+    scratch: Option<&'a Path>,
+    subagents_enabled: bool,
+}
+
+/// The system prompt, split by where the placement policy sent each block.
+#[derive(Debug, Clone)]
+pub(crate) struct ComposedPrompt {
+    /// Above the cache line, in [`Composer::ALL`] order.
+    pub prefix: String,
+    /// The blocks the policy kept below the cache line, each with the composer
+    /// that rendered it so a run can merge its own per-turn blocks and re-sort
+    /// into one deterministic order.
+    pub tail: Vec<(Composer, String)>,
+}
+
+impl ComposedPrompt {
+    /// The whole prompt as one string, prefix first. For callers that only need
+    /// the bytes: the CLI's `/context` sizing, and the tests that assert on
+    /// content rather than placement.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    pub(crate) fn as_prompt(&self) -> String {
+        let mut blocks: Vec<&str> = vec![self.prefix.as_str()];
+        blocks.extend(self.tail.iter().map(|(_, block)| block.as_str()));
+        blocks.join("\n\n")
+    }
+}
+
+/// Render one composer's block, or `None` when it has nothing to contribute to
+/// this project (no JAN.md, no skills, no memory notes).
+///
+/// Exhaustive over the registry on purpose: a new composer does not compile
+/// until somebody decides what it writes, which is the same review that decides
+/// where it goes.
+fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
+    match composer {
+        Composer::AssistantInstructions => {
+            Some(inputs.base.unwrap_or(DEFAULT_IDENTITY).to_string())
+        }
+        Composer::Guidelines => Some(GUIDELINES.to_string()),
+        Composer::WorkingDirectory => Some(format!(
+            "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
+            inputs.project_root.display()
+        )),
+        Composer::RuntimeEnvironment => {
+            Some(runtime_environment_block(inputs.project_root, inputs.scratch))
+        }
+        Composer::SubagentGuide => inputs.subagents_enabled.then(|| SUBAGENT_GUIDE.to_string()),
+        Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
+        Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
+        Composer::ProjectContext => load_context_files(inputs.project_root),
+        Composer::Skills => load_skills(inputs.project_root),
+        Composer::MemoryCatalog => load_memory_catalog(inputs.project_root),
+        // Built where the request is assembled, because they need state the
+        // composition has no access to: the tool array is a request field, the
+        // date and git state are the run's own clock and checkout, and the last
+        // three read per-turn state (a query, the todo registry).
+        Composer::ToolSchemas
+        | Composer::Date
+        | Composer::GitState
+        | Composer::MemoryRecall
+        | Composer::PlanAddendum
+        | Composer::TodoAddendum => None,
+    }
+}
+
+/// Assemble the project system prompt through the placement policy: the base
+/// prompt (or the default identity), the always-on guides, the environment, then
+/// any project-authored context, skills, and memory.
+///
+/// Every composer's placement is resolved here, so a policy that cannot be
+/// honored -- a contributor that varies asked to sit above the cache line --
+/// fails the run instead of quietly costing a cache miss per turn. Blocks the
+/// policy sends to the tail are returned rather than dropped: they reach the
+/// model, just below the conversation instead of in front of it.
+pub(crate) fn compose_system_prompt(
     base: Option<&str>,
     project_root: &Path,
     scratch: Option<&Path>,
     subagents_enabled: bool,
-) -> Option<String> {
-    let mut blocks: Vec<String> = Vec::new();
-    match base {
-        Some(b) => blocks.push(b.to_string()),
-        None => blocks.push(DEFAULT_IDENTITY.to_string()),
+    policy: &PromptPolicy,
+) -> Result<ComposedPrompt, String> {
+    let inputs = CompositionInputs {
+        base,
+        project_root,
+        scratch,
+        subagents_enabled,
+    };
+    policy.validate()?;
+    let mut prefix: Vec<String> = Vec::new();
+    let mut tail: Vec<(Composer, String)> = Vec::new();
+    for composer in Composer::ALL.iter().copied() {
+        let placement = policy.placement_of(composer)?;
+        let Some(block) = render(composer, &inputs) else {
+            continue;
+        };
+        match placement {
+            Placement::Prefix => prefix.push(block),
+            Placement::Tail => tail.push((composer, block)),
+        }
     }
-    blocks.push(GUIDELINES.to_string());
-    blocks.push(format!(
-        "# Working Directory\n\nCurrent project directory: `{}`\n\nAll relative paths in tool calls resolve against this directory unless stated otherwise.",
-        project_root.display()
-    ));
-    blocks.push(runtime_environment_block(project_root, scratch));
-    if subagents_enabled {
-        blocks.push(SUBAGENT_GUIDE.to_string());
-    }
-    blocks.push(DEFAULT_SKILL_GUIDE.trim().to_string());
-    blocks.push(WEB_TOOLS_GUIDE.to_string());
-    if let Some(context) = load_context_files(project_root) {
-        blocks.push(context);
-    }
-    if let Some(skills) = load_skills(project_root) {
-        blocks.push(skills);
-    }
-    if let Some(memory) = load_memory_catalog(project_root) {
-        blocks.push(memory);
-    }
-    Some(blocks.join("\n\n"))
+    Ok(ComposedPrompt {
+        prefix: prefix.join("\n\n"),
+        tail,
+    })
 }
 
 #[cfg(test)]
@@ -290,6 +361,26 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// The prompt a project gets with no `[prompt]` policy: every composer where
+    /// the registry declares it should sit, as one string. What the content
+    /// assertions below read; placement itself is asserted on `ComposedPrompt`.
+    fn default_prompt(
+        base: Option<&str>,
+        root: &Path,
+        scratch: Option<&Path>,
+        subagents_enabled: bool,
+    ) -> Option<String> {
+        compose_system_prompt(
+            base,
+            root,
+            scratch,
+            subagents_enabled,
+            &PromptPolicy::default(),
+        )
+        .ok()
+        .map(|composed| composed.as_prompt())
+    }
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 
@@ -409,7 +500,7 @@ mod tests {
     fn build_system_prompt_orders_base_guide_then_skills() {
         let root = scratch_project("merge");
         write_skill(&root, "s.md", "Do the thing.");
-        let out = build_system_prompt(Some("You are Jan."), &root, None, false).expect("prompt");
+        let out = default_prompt(Some("You are Jan."), &root, None, false).expect("prompt");
         assert!(out.starts_with("You are Jan."));
         assert!(out.contains("Do the thing."));
         // Guide sits between the base prompt and the project skills.
@@ -422,7 +513,7 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_native_web_tools() {
         let root = scratch_project("web");
-        let out = build_system_prompt(None, &root, None, false).expect("prompt");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Web Access"));
         assert!(out.contains("web_search"));
         assert!(out.contains("web_fetch"));
@@ -440,13 +531,13 @@ mod tests {
     fn build_system_prompt_always_includes_guide() {
         let root = scratch_project("guide");
         // No base and no project skills: the built-in guide is still injected.
-        let out = build_system_prompt(None, &root, None, false).expect("guide always present");
+        let out = default_prompt(None, &root, None, false).expect("guide always present");
         assert!(out.contains("Skills and Project Memory"));
         assert!(out.contains("skill_write"));
         assert!(out.contains("memory_write"));
 
         // Base is preserved and precedes the guide.
-        let with_base = build_system_prompt(Some("base"), &root, None, false).expect("prompt");
+        let with_base = default_prompt(Some("base"), &root, None, false).expect("prompt");
         assert!(with_base.starts_with("base"));
         assert!(with_base.contains("Skills and Project Memory"));
         let _ = std::fs::remove_dir_all(&root);
@@ -455,7 +546,7 @@ mod tests {
     #[test]
     fn default_identity_and_guidelines_present_without_base() {
         let root = scratch_project("identity");
-        let out = build_system_prompt(None, &root, None, false).expect("prompt");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
         assert!(out.starts_with("You're currently running on Jan agent harness"));
         assert!(out.contains("# Guidelines"));
         assert!(out.contains("Be concise"));
@@ -483,7 +574,7 @@ mod tests {
         // Nearest (nested) file wins by appearing last.
         assert!(block.find("ROOT_RULES").unwrap() < block.find("NESTED_RULES").unwrap());
 
-        let prompt = build_system_prompt(None, &nested, None, false).expect("prompt");
+        let prompt = default_prompt(None, &nested, None, false).expect("prompt");
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
@@ -500,10 +591,23 @@ mod tests {
     #[test]
     fn build_system_prompt_advertises_subagents_only_when_enabled() {
         let root = scratch_project("subagents");
-        let without = build_system_prompt(None, &root, None, false).expect("prompt");
+        let without = default_prompt(None, &root, None, false).expect("prompt");
         assert!(!without.contains("dispatch_subagent"));
-        let with = build_system_prompt(None, &root, None, true).expect("prompt");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
         assert!(with.contains("dispatch_subagent"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    // A delegated task is the child's: the guide must say the dispatcher should
+    // not also do it itself, or a main agent with nothing else queued redoes the
+    // very work it just handed off.
+    #[test]
+    fn subagent_guide_hands_off_ownership_of_a_delegated_task() {
+        let root = scratch_project("subagent-handoff");
+        let with = default_prompt(None, &root, None, true).expect("prompt");
+        assert!(with.contains("belongs to that subagent"));
+        assert!(with.contains("do not do the same work yourself"));
+        assert!(!with.contains("keep working rather than waiting"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -517,13 +621,15 @@ mod tests {
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
         assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
-        // Must contain the key sections.
+        // Must contain the key sections. Today's date and the git branch are
+        // deliberately NOT here: they vary within a session, so they are their
+        // own per-turn composers rather than part of this cache-line block.
         assert!(block.contains("# Runtime Environment"));
         assert!(block.contains("Work directory:"));
         assert!(block.contains("OS:"));
-        assert!(block.contains("Date:"));
         assert!(block.contains("Shell:"));
-        assert!(block.contains("Git:"));
+        assert!(!block.contains("Date:"));
+        assert!(!block.contains("Git:"));
         // Must reference actual compile-time constants.
         assert!(block.contains(std::env::consts::OS));
         assert!(block.contains(std::env::consts::ARCH));
@@ -534,7 +640,7 @@ mod tests {
     fn runtime_environment_block_injected_into_system_prompt() {
         let root = scratch_project("inject");
         std::fs::create_dir_all(&root).unwrap();
-        let out = build_system_prompt(None, &root, None, false).expect("prompt");
+        let out = default_prompt(None, &root, None, false).expect("prompt");
         assert!(out.contains("# Runtime Environment"));
         assert!(out.contains("Work directory:"));
         // The block sits right after the Working Directory section.
@@ -545,16 +651,138 @@ mod tests {
     }
 
     #[test]
-    fn runtime_environment_block_answers_os_date_cwd() {
+    fn runtime_environment_block_answers_os_and_cwd() {
         let root = scratch_project("answer");
         std::fs::create_dir_all(&root).unwrap();
         let block = runtime_environment_block(&root, None);
-        // The date field must be a real-looking ISO date.
-        assert!(block.contains("Date: `20"), "date should be a 20xx year");
         // The OS field must identify the host platform.
         assert!(block.contains(format!("OS: `{}", std::env::consts::OS).as_str()));
         // Work directory should be present and non-empty.
         assert!(!block.contains("Work directory: ``"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The date is per-turn content: it belongs in the volatile block, not in
+    /// the stable prefix, or a run that crosses midnight moves every byte behind
+    /// the cache line.
+    #[test]
+    fn the_date_is_a_tail_composer() {
+        let root = scratch_project("date-tail");
+        std::fs::create_dir_all(&root).unwrap();
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
+            .expect("default policy");
+        assert!(
+            !composed.prefix.contains("Today's date"),
+            "the date must not sit above the cache line: {}",
+            composed.prefix
+        );
+        assert!(
+            composed
+                .tail
+                .iter()
+                .all(|(composer, _)| *composer != Composer::Date),
+            "the date is rendered by the run, not by this composition"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A policy can narrow the prefix: a block it does not allow is emitted below
+    /// the cache line instead of in front of it, so the config decides what a
+    /// provider can cache. The blanket `default` is deliberately hostile here --
+    /// `prefix` -- because a list has to hold whatever it says.
+    #[test]
+    fn a_policy_moves_a_disallowed_block_below_the_cache_line() {
+        let root = scratch_project("narrow");
+        write_skill(&root, "s.md", "Do the thing.");
+        let policy = PromptPolicy::new(
+            Placement::Prefix,
+            Some(vec![
+                "assistant_instructions".to_string(),
+                "guidelines".to_string(),
+            ]),
+        );
+        let composed = compose_system_prompt(None, &root, None, false, &policy).expect("policy");
+
+        assert!(composed.prefix.contains("# Guidelines"));
+        assert!(
+            !composed.prefix.contains("Do the thing."),
+            "a disallowed block must not reach the prefix: {}",
+            composed.prefix
+        );
+        assert!(
+            !composed.prefix.contains("# Web Access"),
+            "a disallowed block must not reach the prefix: {}",
+            composed.prefix
+        );
+        // ...and it still reaches the model, from the tail.
+        let tail: Vec<&str> = composed
+            .tail
+            .iter()
+            .map(|(_, block)| block.as_str())
+            .collect();
+        assert!(tail.iter().any(|block| block.contains("Do the thing.")));
+        assert!(tail.iter().any(|block| block.contains("# Web Access")));
+        assert!(composed.tail.iter().any(|(c, _)| *c == Composer::Skills));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hard failure, at the composition the run actually goes through: a
+    /// policy that would put a varying composer above the cache line stops the
+    /// run instead of costing a cache miss every turn.
+    #[test]
+    fn a_policy_that_allows_a_varying_composer_fails_composition() {
+        let root = scratch_project("varying");
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["date".to_string()]));
+        let error = compose_system_prompt(None, &root, None, false, &policy)
+            .expect_err("a per-turn composer cannot be allowed into the prefix");
+        assert!(error.contains("date"), "{error}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An allowlist that names something that is not a composer is a typo, not a
+    /// silently empty prefix policy.
+    #[test]
+    fn an_unknown_allowlist_entry_fails_composition() {
+        let root = scratch_project("typo");
+        std::fs::create_dir_all(&root).unwrap();
+        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["skils".to_string()]));
+        let error = compose_system_prompt(None, &root, None, false, &policy)
+            .expect_err("an unknown id must not read as a policy");
+        assert!(error.contains("skils"), "{error}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The default policy is today's layout: the same blocks, in the same order,
+    /// in the prefix -- the policy formalizes what the builder already did rather
+    /// than changing it.
+    #[test]
+    fn the_default_policy_keeps_the_prefix_in_registry_order() {
+        let root = scratch_project("order");
+        write_skill(&root, "s.md", "Do the thing.");
+        std::fs::write(root.join("JAN.md"), "PROJECT_RULES").unwrap();
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
+            .expect("default policy");
+
+        // Every block the registry declares for the prefix is present, in the
+        // order it declares them.
+        let mut cursor = 0;
+        for marker in [
+            "You're currently running on Jan agent harness",
+            "# Guidelines",
+            "# Working Directory",
+            "# Runtime Environment",
+            "# Web Access",
+            "<project_context>",
+            "## Skill: s",
+        ] {
+            let at = composed
+                .prefix
+                .find(marker)
+                .unwrap_or_else(|| panic!("{marker} missing from the prefix"));
+            assert!(at >= cursor, "{marker} is out of order");
+            cursor = at;
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

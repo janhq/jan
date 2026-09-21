@@ -141,7 +141,7 @@ build_from_source() {
   echo "building the CLI from $REPO_ROOT (release)"
   # The CLI and the desktop app are mutually exclusive feature configs, so the
   # default features must stay off.
-  (cd "$REPO_ROOT/src-tauri" && cargo build --no-default-features --features cli --bin jan --release)
+  (cd "$REPO_ROOT/src-tauri/jan-cli" && cargo build --no-default-features --features cli --release)
   local built="$REPO_ROOT/src-tauri/target/release/$BINARY_NAME"
   [ -f "$built" ] || die "expected a binary at $built"
   install_binary "$built"

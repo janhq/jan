@@ -141,6 +141,35 @@ permanently would leave no way to run a single command without it.
 `backend` is the confinement that *would* be used. `none` means none is available on this machine -
 with `enabled: true` that combination is what withholds `bash` entirely.
 
+### The shell environment
+
+The shell does **not** inherit your full environment. Jan starts it from a minimal base -
+`PATH`, `HOME`, `TMPDIR`, locale, and the Windows system keys - so a secret in your environment
+(`OPENAI_API_KEY`, `SSH_AUTH_SOCK`, and the like) never reaches a command the model runs, whether or
+not the sandbox is on. This is deliberate, but it also means a command that needs a variable you
+rely on (a proxy setting, `git` config, a toolchain home) will not see it.
+
+Two keys widen it, without giving up the default:
+
+```toml
+# .jan/agent/agent.toml (per project) or ~/.jan/config.toml (all projects)
+[tools]
+# Host variables the shell may inherit. Exact names or a "*" wildcard.
+env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
+
+# Explicit values, set regardless of your environment.
+[tools.env_set]
+RUST_LOG = "info"
+```
+
+- `env_passthrough` copies the named host variables in if they are set. The two scopes merge: the
+  global list and the project list both apply.
+- A **secret-looking** name (containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, or
+  `CREDENTIAL`, case-insensitive) is never copied by a wildcard - so a broad `GIT_*` cannot leak a
+  `GIT_TOKEN`. To pass one deliberately, name it in `env_set`, which is not filtered.
+- `env_set` wins over `env_passthrough` and over the global value for the same key. Under the
+  sandbox, `TMPDIR`/`TMP`/`TEMP` are always pointed at the run's scratch directory regardless.
+
 ## Network access
 
 Network access is a property of the sandbox, so it applies when the sandbox is on. Unconfined, a

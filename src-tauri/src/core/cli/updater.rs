@@ -79,6 +79,7 @@ fn platform_key() -> Option<&'static str> {
         ("linux", "aarch64") => Some("linux-aarch64"),
         ("macos", _) => Some("darwin-universal"),
         ("windows", "x86_64") => Some("windows-x86_64"),
+        ("windows", "aarch64") => Some("windows-aarch64"),
         _ => None,
     }
 }

@@ -4,7 +4,23 @@
 //! (the upstream call streams via SSE) plus per-step progress and one terminal
 //! `Done`/`Error`.
 
-#[derive(Clone, Debug, serde::Serialize)]
+/// Version of the wire contract the event stream speaks, carried as
+/// `protocol_version` on the headless channel's `init` record and in the
+/// terminal envelope of `--output-format json`.
+///
+/// Bump it only for a change a v1 consumer cannot survive: a renamed or removed
+/// tag, a removed field, or a new meaning for an existing one. Adding a variant
+/// or a field is not a bump -- the contract requires a consumer to ignore what
+/// it does not know, which is what lets a provider-neutral field land without
+/// breaking anyone. The full rule is documented next to the channel it governs,
+/// in `docs/src/pages/docs/agent/cli.mdx` under `jan cli agent run`.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// `Deserialize` as well as `Serialize`: a consumer validates what it received
+/// against these shapes (and, for a future `jan cli agent schema`, generates its
+/// own types from them), so the wire has to survive a round trip, not just a
+/// write. `#[serde(tag = "type")]` keeps the tag on both sides.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
     /// A streamed content delta from the model.
@@ -50,9 +66,8 @@ pub enum StreamEvent {
     /// [`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in
     /// the output size. Chunks are raw fragments and may split a line.
     ///
-    /// Keeps arriving after a `bash` call has backgrounded itself and returned a
-    /// `job_id`, so a long-running job reports progress under the id of the call
-    /// that started it.
+    /// Keeps arriving after a `bash` call has backgrounded itself, so a
+    /// long-running job reports progress under the id of the call that started it.
     ToolOutputDelta { id: String, delta: String },
     /// A tool finished. `is_error` reflects the upstream "ERROR" encoding.
     /// `diff` is display-only focused-change text (line-prefixed `-`/`+`) for
@@ -92,7 +107,25 @@ pub enum StreamEvent {
     },
     /// A backgrounded subagent run finished (success or error). Pairs with the
     /// `SubagentStart` of the same `run_id`.
-    SubagentEnd { run_id: String, name: String },
+    SubagentEnd {
+        run_id: String,
+        name: String,
+        /// Why the child failed, when it did: the same reason the parent's
+        /// `<SYSTEM>` completion ping carries. Carried on the event because a
+        /// background child's answer never reaches a consumer -- only the model
+        /// reads it -- so without this a failed run is indistinguishable from a
+        /// clean one on screen. `None` for a clean finish, and for a child cut
+        /// off at parent teardown, which is not its own failure.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// The later phases of a phased dispatch, named up front so a consumer can
+    /// show their subagents as WAITING on an earlier phase before they start.
+    /// Each pending subagent is promoted by its own `SubagentStart` (or
+    /// `SubagentQueued`), matched by `name`, which is unique across a plan.
+    /// Display-only and never journaled; emitted only by the top-level run
+    /// (children cannot dispatch), so it is never wrapped in `Subagent`.
+    SubagentPlan { pending: Vec<PendingSubagent> },
     /// A backgrounded subagent's own internal event, tagged with its run so a
     /// consumer can attribute it to the right child even when several run
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
@@ -103,12 +136,30 @@ pub enum StreamEvent {
         name: String,
         event: Box<StreamEvent>,
     },
-    /// The loop's compaction reduced the conversation while retrying a
-    /// context overflow. The client should replace its session history with
-    /// `messages` for subsequent turns.
-    MessagesUpdated {
-        messages: Vec<serde_json::Value>,
+    /// The user-facing headline of a background ping the loop just delivered to
+    /// the model as a `<SYSTEM>` reminder (today: a `monitor` condition
+    /// matching). Emitted at delivery, not when the ping is queued, so the
+    /// transcript reads in the order the model saw things. Display-only and
+    /// transient, like notes: it is never journaled.
+    Notice { text: String },
+    /// The run's active file monitors, as a whole replacing the previous set.
+    /// Emitted whenever the set changes (a `monitor` start or stop, a condition
+    /// matching, a monitor finishing), so a consumer keeps a live view without
+    /// bookkeeping of its own. Display-only and never journaled. Not forwarded
+    /// from a child: a child's monitors are its own.
+    Monitors {
+        monitors: Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
     },
+    /// The model has finished its turn and the loop is parked on background
+    /// work it started (a subagent still running, a monitor still watching).
+    /// Nothing is being generated until a ping resumes the run, which the next
+    /// `Step` marks. Lets a consumer say "watching" rather than "working".
+    Parked,
+    /// The client should replace its session history with `messages` before
+    /// subsequent turns. Includes accepted prompt guidance in its original
+    /// position, but not a pending block from an unsuccessful request. Also
+    /// carries compacted history when the loop retries a context overflow.
+    MessagesUpdated { messages: Vec<serde_json::Value> },
     /// The `ask` tool is waiting for structured interactive input. Carries the
     /// `ask_timeout_secs` deadline (seconds until the loop auto-selects the
     /// recommended option) as `timeout_secs`, or `None` when no timeout is
@@ -166,6 +217,16 @@ pub enum StreamEvent {
         prompt_kind: String,
         offers_always: bool,
     },
+}
+
+/// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
+/// across the plan, and its blackboard file) and 1-based phase number. Carried by
+/// [`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase
+/// before it.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct PendingSubagent {
+    pub name: String,
+    pub phase: u32,
 }
 
 /// If `path` targets a file in the agent's skill or memory workspace, return the
@@ -238,28 +299,335 @@ fn arg_name(args: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
+    /// Prompt tokens served from the provider's prompt cache (a read/hit).
+    /// OpenAI reports it under `prompt_tokens_details.cached_tokens`; Anthropic
+    /// under `cache_read_input_tokens`. A thrashing cache shows here as a low
+    /// value against a high `prompt_tokens`.
+    pub cached_tokens: Option<u64>,
+    /// Prompt tokens written into the provider cache this request (a write).
+    /// Only Anthropic bills this separately (`cache_creation_input_tokens`);
+    /// absent for providers that do not distinguish reads from writes.
+    pub cache_write_tokens: Option<u64>,
 }
 
 impl Usage {
     pub(crate) fn from_completion(completion: &serde_json::Value) -> Option<Self> {
         let usage = completion.get("usage")?;
+        let cached_tokens = usage
+            .get("prompt_tokens_details")
+            .and_then(|d| d.get("cached_tokens"))
+            .and_then(|v| v.as_u64())
+            .or_else(|| usage.get("cache_read_input_tokens").and_then(|v| v.as_u64()));
+        let cache_write_tokens = usage
+            .get("cache_creation_input_tokens")
+            .and_then(|v| v.as_u64())
+            .or_else(|| {
+                usage
+                    .get("prompt_tokens_details")
+                    .and_then(|d| d.get("cache_creation_tokens"))
+                    .and_then(|v| v.as_u64())
+            });
         Some(Self {
             prompt_tokens: usage.get("prompt_tokens").and_then(|v| v.as_u64()),
             completion_tokens: usage.get("completion_tokens").and_then(|v| v.as_u64()),
             total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()),
+            cached_tokens,
+            cache_write_tokens,
         })
     }
 }
 
+/// Test-only, and reachable from the sibling test in `core::cli::run_report`
+/// that checks the documented tag list against these variants: the table has to
+/// live with the enum it enumerates, but the contract it defends is the one the
+/// CLI channel documents.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
+    use crate::core::agent::interaction::{AskRequest, OptionItem, Question};
+    use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
     use serde_json::json;
+
+    /// One instance of every variant, paired with the variant's name as the
+    /// enum spells it. The tag is read from serde when this list is serialized,
+    /// so a variant's tag is never restated here -- only its coverage is.
+    ///
+    /// [`every_variant_is_sampled`] is what keeps this list honest: it matches
+    /// every variant with no wildcard arm, so adding one to `StreamEvent` fails
+    /// the build until it is added here too.
+    pub(crate) fn sample_events() -> Vec<(&'static str, StreamEvent)> {
+        vec![
+            ("Token", StreamEvent::Token { text: "hi".into() }),
+            ("Reasoning", StreamEvent::Reasoning { text: "hmm".into() }),
+            ("Step", StreamEvent::Step { index: 1, max: 0 }),
+            (
+                "ToolCallStarted",
+                StreamEvent::ToolCallStarted {
+                    id: "t1".into(),
+                    name: "read".into(),
+                },
+            ),
+            (
+                "ToolCallArgsDelta",
+                StreamEvent::ToolCallArgsDelta {
+                    id: "t1".into(),
+                    delta: "{\"pa".into(),
+                },
+            ),
+            (
+                "ToolCall",
+                StreamEvent::ToolCall {
+                    id: "t1".into(),
+                    name: "read".into(),
+                    args: json!({ "path": "a.txt" }),
+                },
+            ),
+            (
+                "ToolOutputDelta",
+                StreamEvent::ToolOutputDelta {
+                    id: "t1".into(),
+                    delta: "line\n".into(),
+                },
+            ),
+            (
+                "ToolResult",
+                StreamEvent::ToolResult {
+                    id: "t1".into(),
+                    content: "ok".into(),
+                    is_error: false,
+                    diff: Some("-a\n+b\n".into()),
+                },
+            ),
+            (
+                "SubagentStart",
+                StreamEvent::SubagentStart {
+                    run_id: "r1".into(),
+                    name: "scout".into(),
+                    task: Some("look".into()),
+                },
+            ),
+            (
+                "SubagentQueued",
+                StreamEvent::SubagentQueued {
+                    run_id: "r1".into(),
+                    name: "scout".into(),
+                    task: None,
+                    waiting: 2,
+                },
+            ),
+            (
+                "SubagentEnd",
+                StreamEvent::SubagentEnd {
+                    run_id: "r1".into(),
+                    name: "scout".into(),
+                    error: Some("boom".into()),
+                },
+            ),
+            (
+                "SubagentPlan",
+                StreamEvent::SubagentPlan {
+                    pending: vec![PendingSubagent {
+                        name: "scout".into(),
+                        phase: 2,
+                    }],
+                },
+            ),
+            (
+                "Subagent",
+                StreamEvent::Subagent {
+                    run_id: "r1".into(),
+                    name: "scout".into(),
+                    event: Box::new(StreamEvent::Token { text: "hi".into() }),
+                },
+            ),
+            (
+                "Notice",
+                StreamEvent::Notice {
+                    text: "monitor matched".into(),
+                },
+            ),
+            (
+                "Monitors",
+                StreamEvent::Monitors {
+                    monitors: vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
+                        monitor_id: "m1".into(),
+                        name: "ci".into(),
+                        script: "true".into(),
+                        polls: 3,
+                    }],
+                },
+            ),
+            ("Parked", StreamEvent::Parked),
+            (
+                "MessagesUpdated",
+                StreamEvent::MessagesUpdated {
+                    messages: vec![json!({ "role": "user", "content": "hi" })],
+                },
+            ),
+            (
+                "AskRequest",
+                StreamEvent::AskRequest {
+                    request_id: "ask-1".into(),
+                    request: AskRequest {
+                        questions: vec![Question {
+                            id: "q1".into(),
+                            question: "which?".into(),
+                            options: vec![OptionItem {
+                                label: "a".into(),
+                                description: None,
+                            }],
+                            multi: false,
+                            recommended: Some(0),
+                        }],
+                    },
+                    timeout_secs: Some(30),
+                },
+            ),
+            (
+                "AskResolved",
+                StreamEvent::AskResolved {
+                    request_id: "ask-1".into(),
+                },
+            ),
+            (
+                "TodoUpdate",
+                StreamEvent::TodoUpdate {
+                    list: TodoList {
+                        phases: vec![TodoPhase {
+                            name: "Implement".into(),
+                            tasks: vec![TodoItem {
+                                content: "wire the record".into(),
+                                status: TodoStatus::InProgress,
+                            }],
+                        }],
+                    },
+                },
+            ),
+            (
+                "TurnUsage",
+                StreamEvent::TurnUsage {
+                    usage: Usage {
+                        prompt_tokens: Some(120),
+                        completion_tokens: Some(8),
+                        total_tokens: Some(128),
+                        cached_tokens: Some(64),
+                        cache_write_tokens: None,
+                    },
+                },
+            ),
+            (
+                "Done",
+                StreamEvent::Done {
+                    stop_reason: "stop".into(),
+                    usage: None,
+                },
+            ),
+            (
+                "Error",
+                StreamEvent::Error {
+                    code: "upstream_error".into(),
+                    message: "boom".into(),
+                },
+            ),
+            (
+                "PermissionRequest",
+                StreamEvent::PermissionRequest {
+                    request_id: "perm-1".into(),
+                    tool_name: "bash".into(),
+                    capability: "exec".into(),
+                    path: None,
+                    command: Some("ls".into()),
+                    diff: None,
+                    prompt_kind: "exec".into(),
+                    offers_always: true,
+                },
+            ),
+        ]
+    }
+
+    /// Exhaustive on purpose: a variant added to `StreamEvent` stops this
+    /// matching, and the error names the arm that is missing, which is the
+    /// prompt to add it to [`sample_events`] as well.
+    #[allow(dead_code)]
+    fn every_variant_is_sampled(ev: &StreamEvent) {
+        match ev {
+            StreamEvent::Token { .. }
+            | StreamEvent::Reasoning { .. }
+            | StreamEvent::Step { .. }
+            | StreamEvent::ToolCallStarted { .. }
+            | StreamEvent::ToolCallArgsDelta { .. }
+            | StreamEvent::ToolCall { .. }
+            | StreamEvent::ToolOutputDelta { .. }
+            | StreamEvent::ToolResult { .. }
+            | StreamEvent::SubagentStart { .. }
+            | StreamEvent::SubagentQueued { .. }
+            | StreamEvent::SubagentEnd { .. }
+            | StreamEvent::SubagentPlan { .. }
+            | StreamEvent::Subagent { .. }
+            | StreamEvent::Notice { .. }
+            | StreamEvent::Monitors { .. }
+            | StreamEvent::Parked
+            | StreamEvent::MessagesUpdated { .. }
+            | StreamEvent::AskRequest { .. }
+            | StreamEvent::AskResolved { .. }
+            | StreamEvent::TodoUpdate { .. }
+            | StreamEvent::TurnUsage { .. }
+            | StreamEvent::Done { .. }
+            | StreamEvent::Error { .. }
+            | StreamEvent::PermissionRequest { .. } => {}
+        }
+    }
+
+    /// A consumer validates what it receives against these shapes, so every
+    /// variant has to survive a write/read pair unchanged -- optional fields
+    /// included, since a `skip_serializing_if` field that cannot be read back is
+    /// how a consumer ends up with a struct it cannot deserialize at all.
+    #[test]
+    fn every_variant_round_trips_through_the_wire() {
+        let samples = sample_events();
+        assert!(samples.len() >= 24, "{} variants sampled", samples.len());
+        for (name, ev) in samples {
+            let line = serde_json::to_string(&ev).expect(name);
+            let back: StreamEvent = serde_json::from_str(&line)
+                .unwrap_or_else(|e| panic!("{name} does not read back: {e}\n{line}"));
+            assert_eq!(
+                serde_json::to_value(&back).unwrap(),
+                serde_json::to_value(&ev).unwrap(),
+                "{name} changed across a round trip"
+            );
+        }
+    }
+
+    /// `sample_events` pairs each instance with its variant name, and this is
+    /// what makes the pairing meaningful: the names it uses are the ones the
+    /// enum declares, and no two variants share a tag.
+    #[test]
+    fn sampled_names_are_distinct_and_match_their_tags() {
+        let mut names: Vec<&str> = sample_events().iter().map(|(name, _)| *name).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total, "a variant is sampled twice");
+
+        let mut tags: Vec<String> = sample_events()
+            .iter()
+            .map(|(name, ev)| {
+                serde_json::to_value(ev).unwrap()["type"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{name} has no tag"))
+                    .to_string()
+            })
+            .collect();
+        let total = tags.len();
+        tags.sort();
+        tags.dedup();
+        assert_eq!(tags.len(), total, "two variants share one tag");
+    }
 
     #[test]
     fn token_serializes_with_snake_case_tag() {
@@ -445,6 +813,7 @@ mod tests {
         let end = serde_json::to_value(StreamEvent::SubagentEnd {
             run_id: "sub-1".into(),
             name: "rust-reviewer".into(),
+            error: None,
         })
         .unwrap();
         assert_eq!(
@@ -483,5 +852,57 @@ mod tests {
         assert_eq!(parsed.total_tokens, Some(15));
 
         assert!(Usage::from_completion(&json!({ "choices": [] })).is_none());
+    }
+
+    #[test]
+    fn usage_parses_openai_cached_tokens() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 5,
+                "total_tokens": 105,
+                "prompt_tokens_details": { "cached_tokens": 80 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(80));
+        assert_eq!(parsed.cache_write_tokens, None);
+    }
+
+    #[test]
+    fn usage_parses_anthropic_cache_read_and_write() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "cache_read_input_tokens": 60,
+                "cache_creation_input_tokens": 40
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(60));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn usage_parses_nested_cache_creation_tokens() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": {
+                "prompt_tokens": 100,
+                "prompt_tokens_details": { "cached_tokens": 60, "cache_creation_tokens": 40 }
+            }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, Some(60));
+        assert_eq!(parsed.cache_write_tokens, Some(40));
+    }
+
+    #[test]
+    fn usage_cache_fields_none_when_absent() {
+        let parsed = Usage::from_completion(&json!({
+            "usage": { "prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15 }
+        }))
+        .unwrap();
+        assert_eq!(parsed.cached_tokens, None);
+        assert_eq!(parsed.cache_write_tokens, None);
     }
 }

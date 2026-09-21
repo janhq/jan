@@ -15,9 +15,8 @@ use std::process::Stdio;
 use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{
-        sse_client::{SseClient, SseClientConfig},
         streamable_http_client::{StreamableHttpClient, StreamableHttpClientTransportConfig},
-        SseClientTransport, StreamableHttpClientTransport, TokioChildProcess,
+        StreamableHttpClientTransport, TokioChildProcess,
     },
     ServiceExt,
 };
@@ -414,11 +413,18 @@ async fn connect_in(
                     detail,
                 })?;
             let authorized = auth.is_some();
-            let result = match (transport, auth) {
-                ("http", Some(client)) => serve_http(client, url, name).await,
-                ("http", None) => serve_http(base, url, name).await,
-                (_, Some(client)) => serve_sse(client, url, name).await,
-                (_, None) => serve_sse(base, url, name).await,
+            // rmcp 3.x dropped the SSE client transport (MCP deprecated HTTP+SSE
+            // for Streamable HTTP), so a legacy `sse` config connects over the
+            // streamable-http client instead.
+            if transport == "sse" {
+                log::warn!(
+                    "MCP server '{name}' uses the deprecated 'sse' transport; \
+                     connecting over Streamable HTTP instead"
+                );
+            }
+            let result = match auth {
+                Some(client) => serve_http(client, url, name).await,
+                None => serve_http(base, url, name).await,
             };
             match result {
                 Ok(service) => service,
@@ -484,10 +490,7 @@ where
 {
     let transport = StreamableHttpClientTransport::with_client(
         client,
-        StreamableHttpClientTransportConfig {
-            uri: url.to_string().into(),
-            ..Default::default()
-        },
+        StreamableHttpClientTransportConfig::with_uri(url.to_string()),
     );
     Ok(RunningServiceEnum::WithInit(
         client_info()
@@ -497,59 +500,31 @@ where
     ))
 }
 
-/// `serve_http`'s counterpart for the legacy SSE transport.
-async fn serve_sse<C>(client: C, url: &str, name: &str) -> Result<RunningServiceEnum, String>
-where
-    C: SseClient + Send + Sync + 'static,
-{
-    let transport = SseClientTransport::start_with_client(
-        client,
-        SseClientConfig {
-            sse_endpoint: url.to_string().into(),
-            ..Default::default()
-        },
-    )
-    .await
-    .map_err(|e| format!("failed to start SSE transport for '{name}': {e}"))?;
-    Ok(RunningServiceEnum::WithInit(
-        client_info()
-            .serve(transport)
-            .await
-            .map_err(|e| format!("failed to connect to '{name}': {e}"))?,
-    ))
-}
-
 fn client_info() -> ClientInfo {
-    ClientInfo {
-        protocol_version: Default::default(),
-        capabilities: ClientCapabilities::default(),
-        client_info: Implementation {
-            name: "Jan CLI Client".to_string(),
-            version: "0.0.1".to_string(),
-            title: None,
-            website_url: None,
-            icons: None,
-        },
-    }
+    ClientInfo::new(
+        ClientCapabilities::default(),
+        Implementation::new("Jan CLI Client", "0.0.1"),
+    )
 }
 
 /// Build a reqwest client that sends the configured `headers` on every request
-/// (http/sse auth). Non-string header names/values are skipped.
+/// (http auth). Non-string header names/values are skipped. Uses `reqwest13`
+/// because rmcp's streamable-http transport is implemented for reqwest 0.13.
 fn http_client(
     headers: &serde_json::Map<String, Value>,
-) -> Result<reqwest::Client, String> {
-    let mut map = reqwest::header::HeaderMap::new();
+) -> Result<reqwest13::Client, String> {
+    let mut map = reqwest13::header::HeaderMap::new();
     for (key, value) in headers.iter() {
         if let Some(v) = value.as_str() {
             if let (Ok(name), Ok(val)) = (
-                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
-                reqwest::header::HeaderValue::from_str(v),
+                reqwest13::header::HeaderName::from_bytes(key.as_bytes()),
+                reqwest13::header::HeaderValue::from_str(v),
             ) {
                 map.insert(name, val);
             }
         }
     }
-    reqwest::Client::builder()
+    reqwest13::Client::builder()
         .default_headers(map)
         .build()
         .map_err(|e| e.to_string())
@@ -670,10 +645,10 @@ pub async fn describe(name: &str, servers: &SharedMcpServers) -> Option<ServerDe
                 capabilities.push(label);
             }
         }
-        implementation = Some(format!(
-            "{} {}",
-            peer.server_info.name, peer.server_info.version
-        ));
+        implementation = peer
+            .server_info
+            .as_ref()
+            .map(|si| format!("{} {}", si.name, si.version));
     }
 
     Some(ServerDetail {

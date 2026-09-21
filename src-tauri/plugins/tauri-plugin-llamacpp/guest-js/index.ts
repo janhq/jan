@@ -5,6 +5,7 @@ import {
   UnloadResult,
   ReloadReport,
   EngineInfo,
+  EngineVersion,
   GgufMetadata,
 } from './types'
 
@@ -116,6 +117,17 @@ export async function stopEngine(): Promise<void> {
 /** Null when no worker is running, including after one died. */
 export async function getEngineInfo(): Promise<EngineInfo | null> {
   return await invoke('plugin:llamacpp|get_engine_info')
+}
+
+/**
+ * The bundled engine's identity, from compile-time constants.
+ *
+ * Unlike `getEngineInfo`, this answers whether or not a worker is running --
+ * the engine is linked into the app, so its version is a property of the build
+ * rather than of any process.
+ */
+export async function getEngineVersion(): Promise<EngineVersion> {
+  return await invoke('plugin:llamacpp|get_engine_version')
 }
 
 /**

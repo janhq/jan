@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use reqwest::Client;
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 #[cfg(not(feature = "cli"))]
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
@@ -196,25 +196,64 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
     repaired
 }
 
-/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
-/// `function.arguments` is not parsable JSON. A model (observed with
-/// DeepSeek/vLLM) can end a stream mid-argument while still reporting
-/// `finish_reason: "tool_calls"`, so the truncated call is persisted into the
-/// thread. Every later turn resends it, and an OpenAI-compatible upstream
-/// rejects the whole request with 422 -- the session is wedged, because the
-/// poison is in the history the agent keeps replaying.
+/// Drops `role: "tool"` messages whose `tool_call_id` matches no tool call in
+/// the same array.
 ///
-/// Removal, not reconstruction: a truncated argument cannot be recovered, and
-/// inventing one would run a tool the model never actually asked for. The call
-/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id`,
-/// so no orphaned result is left behind. Valid sibling calls in the same turn
-/// survive; an assistant turn whose calls are ALL dropped keeps its text and
-/// loses only the `tool_calls` key (and is removed entirely if that leaves it
-/// empty, which would otherwise be a contentless assistant turn some providers
-/// reject). Returns the number of calls dropped.
+/// [`drop_malformed_tool_calls`] removes the results of the calls it refuses,
+/// but nothing else in this module looks at a result whose call was never
+/// there: a caller's stored thread can carry a tool reply left behind by a
+/// dropped call, or one whose call lost its id, and a strict upstream rejects
+/// the entire request over that single orphan (Anthropic is the loudest, but
+/// OpenAI-compatible routes reject it too). This is the mirror of
+/// [`repair_dangling_tool_calls`] -- that pass fills a call that lost its
+/// result, this one removes a result that lost its call -- and the two together
+/// are what make the adoption boundary's history wire-shaped. Returns the
+/// number of results dropped.
+pub(crate) fn drop_orphaned_tool_results(messages: &mut Vec<serde_json::Value>) -> usize {
+    let mut called: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for message in messages.iter() {
+        let Some(calls) = message.get("tool_calls").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for call in calls {
+            if let Some(id) = pairable_tool_call_id(call) {
+                called.insert(id.to_string());
+            }
+        }
+    }
+    let before = messages.len();
+    messages.retain(|message| {
+        if message.get("role").and_then(|v| v.as_str()) != Some("tool") {
+            return true;
+        }
+        message
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .is_some_and(|id| !id.is_empty() && called.contains(id))
+    });
+    before - messages.len()
+}
+
+/// The id a tool call's result has to answer with, or `None` when the call
+/// cannot be paired at all.
 ///
-/// Runs before [`repair_dangling_tool_calls`], so a surviving call that lost
-/// its result still gets the synthetic error reply from that pass.
+/// The result of a call is a `role: "tool"` message carrying the call's id, and
+/// a strict upstream rejects a request where the two do not line up. A call
+/// whose `id` is missing, not a string, or empty has nothing for its result to
+/// carry, so it is neither executed nor recorded -- see
+/// [`drop_malformed_tool_calls`] for the history side of the same rule.
+pub(crate) fn pairable_tool_call_id(call: &serde_json::Value) -> Option<&str> {
+    call.get("id")
+        .and_then(|id| id.as_str())
+        .filter(|id| !id.is_empty())
+}
+
+/// A call the record may hold: its result can be paired with it, and its
+/// arguments are a plain JSON object.
+pub(crate) fn tool_call_is_usable(call: &serde_json::Value) -> bool {
+    pairable_tool_call_id(call).is_some() && arguments_are_executable(call)
+}
+
 /// Whether a tool call's arguments are safe to execute and to keep in
 /// provider-visible history.
 ///
@@ -245,42 +284,39 @@ pub(crate) fn arguments_are_executable(tc: &serde_json::Value) -> bool {
     )
 }
 
+/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
+/// `function.arguments` is not parsable JSON, or which has no non-empty id for
+/// its result to carry. A model (observed with DeepSeek/vLLM) can end a stream
+/// mid-argument while still reporting `finish_reason: "tool_calls"`, so the
+/// truncated call is persisted into the thread. Every later turn resends it,
+/// and an OpenAI-compatible upstream rejects the whole request with 422 -- the
+/// session is wedged, because the poison is in the history the agent keeps
+/// replaying.
+///
+/// Removal, not reconstruction: a truncated argument cannot be recovered, and
+/// inventing one would run a tool the model never actually asked for. The call
+/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id` -
+/// including the empty id an unpaired result carries - so no orphaned result is
+/// left behind. Valid sibling calls in the same turn survive; an assistant turn
+/// whose calls are ALL dropped keeps its text and loses only the `tool_calls`
+/// key (and is removed entirely if that leaves it empty, which would otherwise
+/// be a contentless assistant turn some providers reject). Returns the number
+/// of calls dropped.
+///
+/// Runs before [`drop_orphaned_tool_results`] and
+/// [`repair_dangling_tool_calls`], so a surviving call that lost its result
+/// still gets the synthetic error reply from that pass.
 pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
-    // A call is poison when its arguments are not a plain JSON object. An
-    // absent or empty `arguments` is the well-formed "no arguments" spelling
-    // several providers use, and is left alone.
-    let is_malformed = |call: &serde_json::Value| !arguments_are_executable(call);
-
+    // A call is refused when the record could not hold it: an unparsable
+    // `arguments` is the truncated-stream shape, and an absent or empty `id` is
+    // one nothing can pair a result with. An absent or empty `arguments` is the
+    // well-formed "no arguments" spelling several providers use, and is left
+    // alone.
     let mut dropped_ids: Vec<String> = Vec::new();
-    let mut dropped = 0;
     for msg in messages.iter_mut() {
-        let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        if !calls.iter().any(is_malformed) {
-            continue;
-        }
-        let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
-        for call in calls {
-            if is_malformed(call) {
-                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                    dropped_ids.push(id.to_string());
-                }
-                dropped += 1;
-            } else {
-                kept.push(call.clone());
-            }
-        }
-        let Some(obj) = msg.as_object_mut() else {
-            continue;
-        };
-        if kept.is_empty() {
-            obj.remove("tool_calls");
-        } else {
-            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
-        }
+        dropped_ids.extend(prune_unusable_tool_calls(msg));
     }
-    if dropped == 0 {
+    if dropped_ids.is_empty() {
         return 0;
     }
     // Drop the results that answered a dropped call, then any assistant turn
@@ -300,24 +336,148 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
         }
         // Keep a turn that still says something; a content-null/empty one is
         // now an empty shell left by the dropped call.
-        match m.get("content") {
-            Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
-            Some(serde_json::Value::Array(a)) => !a.is_empty(),
-            _ => false,
-        }
+        !content_says_nothing(m)
     });
-    dropped
+    dropped_ids.len()
 }
 
+/// Refuse the tool calls in `message` the wire cannot carry, naming each.
+///
+/// This is the per-message half of [`drop_malformed_tool_calls`], and the same
+/// rule the live record applies as it accepts an assistant turn (see
+/// `loop::record_assistant_turn`): a call is refused when its result could not
+/// be paired with it, which is why a refused call with no id is still named
+/// here - its result carries the empty id, and skipping it would leave the
+/// orphan this pass exists to prevent. The `tool_calls` key is removed when
+/// every call went, and left untouched when none did, so a message with
+/// nothing to refuse is not rewritten. Returns the refused ids, empty id
+/// included, or an empty list when the message has no calls to refuse.
+pub(crate) fn prune_unusable_tool_calls(message: &mut serde_json::Value) -> Vec<String> {
+    let Some(calls) = message.get("tool_calls").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    if calls.iter().all(tool_call_is_usable) {
+        return Vec::new();
+    }
+    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
+    let mut refused: Vec<String> = Vec::new();
+    for call in calls {
+        if tool_call_is_usable(call) {
+            kept.push(call.clone());
+        } else {
+            refused.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
+        }
+    }
+    if let Some(obj) = message.as_object_mut() {
+        if kept.is_empty() {
+            obj.remove("tool_calls");
+        } else {
+            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
+        }
+    }
+    refused
+}
+
+/// Whether a message's content carries nothing: no text, or text that is only
+/// whitespace, or an empty parts array. An absent or null content says nothing,
+/// which is what makes an assistant turn that lost its calls an empty shell
+/// rather than a message worth resending.
+pub(crate) fn content_says_nothing(message: &serde_json::Value) -> bool {
+    match message.get("content") {
+        Some(serde_json::Value::String(text)) => text.trim().is_empty(),
+        Some(serde_json::Value::Array(parts)) => parts.is_empty(),
+        _ => true,
+    }
+}
+
+fn system_node(content: &str) -> serde_json::Value {
+    serde_json::json!({ "role": "system", "content": content })
+}
+
+pub(crate) fn is_system_node(message: &serde_json::Value) -> bool {
+    message.get("role").and_then(|r| r.as_str()) == Some("system")
+}
+
+fn system_text(message: &serde_json::Value) -> Option<&str> {
+    message.get("content").and_then(|c| c.as_str())
+}
+
+/// The most recent stable prompt, excluding condensed conversation history.
+fn live_stable_index(messages: &[serde_json::Value]) -> Option<usize> {
+    messages.iter().rposition(|message| {
+        is_system_node(message) && !crate::core::agent::compaction::is_compaction_summary(message)
+    })
+}
+
+/// Apply the session's stable system prompt, append-only.
+///
+/// The head of a request is the region a provider can reuse, and it only reuses
+/// bytes that are identical to the previous request. Rewriting message 0 - one
+/// word of assistant instructions, a skill installed mid-session, an edited
+/// project config, a mode switch - invalidated everything behind it, tool
+/// schemas included, on every turn it happened. A prompt that changed is
+/// therefore appended as a new `system` node at the tail instead: the request
+/// keeps the bytes it already sent, and the update lands where the cached
+/// prefix is still intact.
+///
+/// An appended node is not ignored: a request's system nodes are concatenated in
+/// array order (`genai_bridge::messages_from_body`) and dispatched as one system
+/// instruction per provider, so the newest prompt is the last thing the model
+/// reads rather than a duplicate of an earlier one.
+///
+/// The invariants this keeps, which the tests assert directly:
+/// - an unchanged prompt mutates nothing at all;
+/// - a changed prompt leaves every index it does not append to byte-identical;
+/// - index 0 is written once and never rewritten;
+/// - nothing is deleted by role, so history a producer stored under `system`
+///   (a compaction summary) survives a rebuild.
 pub(crate) fn set_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
-    messages.retain(|m| m.get("role").and_then(|r| r.as_str()) != Some("system"));
-    messages.insert(
-        0,
-        serde_json::json!({
-            "role": "system",
-            "content": system_prompt
-        }),
-    );
+    match live_stable_index(messages) {
+        // Already the live prompt: zero mutations, so a turn that changed
+        // nothing cannot invalidate its own prefix.
+        Some(index) if system_text(&messages[index]) == Some(system_prompt) => {}
+        // A conversation that has been sent before: append the update.
+        Some(_) => messages.push(system_node(system_prompt)),
+        // No system node at all (a fresh conversation, or history loaded
+        // without a prompt): the prompt is the head, so it is written there.
+        None => messages.insert(0, system_node(system_prompt)),
+    }
+}
+
+/// Replace the conversation's system prompt in place, for the API server's
+/// proxy path.
+///
+/// That path is stateless and authoritative: it parses a caller-supplied
+/// conversation and applies the assistant's configured prompt to it, so the
+/// caller's own `system` message is what is being replaced. There is no
+/// conversation to keep byte-stable across turns - the caller sends a fresh
+/// body each request - so this keeps the older replace-at-head semantics rather
+/// than appending a second prompt behind the caller's.
+///
+/// Desktop-only, like the proxy that is its only caller.
+#[cfg(not(feature = "cli"))]
+pub(crate) fn replace_system_prompt(messages: &mut Vec<serde_json::Value>, system_prompt: &str) {
+    // Drop the previous prompt, but keep compaction summaries: they are
+    // `system` messages, yet they carry condensed history that this turn must
+    // not throw away.
+    messages.retain(|m| {
+        !is_system_node(m) || crate::core::agent::compaction::is_compaction_summary(m)
+    });
+    messages.insert(0, system_node(system_prompt));
+}
+
+/// Append changing guidance after accepted history, using the same trusted
+/// marker as turn reminders. A system-role message would be hoisted into the
+/// provider's system field and invalidate the conversation's cached prefix.
+/// Keep a separate message even after a user turn: that turn may already have
+/// been sent, and its bytes must not be rewritten.
+pub(crate) fn append_prompt_tail(messages: &mut Vec<serde_json::Value>, content: &str) {
+    if !content.is_empty() {
+        messages.push(serde_json::json!({
+            "role": "user",
+            "content": crate::core::agent::reminder::wrap(content),
+        }));
+    }
 }
 
 pub(crate) fn extract_tool_calls(response: &serde_json::Value) -> Vec<serde_json::Value> {
@@ -367,18 +527,22 @@ fn credentialed(config: &ProviderConfig) -> bool {
     config.api_key.is_some() || !config.api_keys.is_empty()
 }
 
-/// Resolve `model_id` to an upstream URL + key chain. The desktop build also
-/// resolves local engines (MLX session, llama-server router); the `cli` build is
-/// remote-only, so a model with no provider entry is unresolvable.
-pub(crate) async fn resolve_upstream_for_model(
+/// Which provider serves `model_id`, given the provider map. The single
+/// implementation of the routing order, so anything that *reports* on a
+/// request (its price, its context window, its header label) names the
+/// provider the request is actually sent to:
+///
+/// 1. a provider listing the id verbatim - reachable and credentialed first,
+///    then any, so a keyless twin does not shadow the signed-in entry;
+/// 2. a `<provider>/` prefix naming a configured provider;
+/// 3. a provider whose key *is* the model id (a local engine alias).
+///
+/// Sync and lock-free (the caller holds the map), so a render path or a price
+/// lookup can ask without awaiting the async resolver.
+pub(crate) fn pick_provider_for_model(
     model_id: &str,
-    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
-    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
-    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
-) -> Result<(String, Vec<String>), String> {
-    let destination_path = "/chat/completions";
-
-    let pc = provider_configs.lock().await;
+    pc: &HashMap<String, ProviderConfig>,
+) -> Option<String> {
     let offers = |config: &ProviderConfig| config.models.iter().any(|m| m == model_id);
 
     // The same model id can be listed by several providers, e.g. a cloud
@@ -402,7 +566,7 @@ pub(crate) async fn resolve_upstream_for_model(
     #[cfg(not(feature = "cli"))]
     let first_match = pc.iter().find(|(_, config)| offers(config));
 
-    let provider_name = first_match
+    first_match
         .map(|(_, config)| config.provider.clone())
         .or_else(|| {
             if let Some(sep_pos) = model_id.find('/') {
@@ -412,7 +576,22 @@ pub(crate) async fn resolve_upstream_for_model(
                 }
             }
             pc.get(model_id).map(|c| c.provider.clone())
-        });
+        })
+}
+
+/// Resolve `model_id` to an upstream URL + key chain. The desktop build also
+/// resolves local engines (MLX session, llama-server router); the `cli` build is
+/// remote-only, so a model with no provider entry is unresolvable.
+pub(crate) async fn resolve_upstream_for_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<(String, Vec<String>), String> {
+    let destination_path = "/chat/completions";
+
+    let pc = provider_configs.lock().await;
+    let provider_name = pick_provider_for_model(model_id, &pc);
     drop(pc);
 
     if let Some(provider) = provider_name {
@@ -494,10 +673,22 @@ pub(crate) async fn resolve_upstream_for_model(
 /// provider-qualified id (e.g. OpenCode GO) fail with "model not supported".
 /// A slash inside a real model id (e.g. an org-scoped name) is left alone
 /// unless the leading segment is literally a provider key.
+///
+/// A provider that lists the id verbatim wins over the prefix reading, exactly
+/// as resolution orders them: a gateway routing `anthropic/claude-opus-5` is
+/// serving a model whose id contains a slash, and stripping it because some
+/// *other* configured provider happens to be named `anthropic` sends an id the
+/// gateway has never heard of.
 pub(crate) fn strip_provider_prefix(
     model_id: &str,
     provider_configs: &HashMap<String, ProviderConfig>,
 ) -> String {
+    if provider_configs
+        .values()
+        .any(|c| c.models.iter().any(|m| m == model_id))
+    {
+        return model_id.to_string();
+    }
     if let Some(sep_pos) = model_id.find('/') {
         let potential_provider: &str = &model_id[..sep_pos];
         if provider_configs.contains_key(potential_provider) {
@@ -582,15 +773,115 @@ pub(crate) fn copy_optional_chat_params(
     }
 }
 
+/// One MCP tool already rendered into the OpenAI `function` shape, paired with
+/// the tool name used for ordering and for `tool_to_server` lookup.
+pub(crate) type RenderedTool = (String, serde_json::Value);
+
+/// Ordering key for the advertised tool array: `(server name, tool name)`.
+///
+/// The tool array is part of the request *prefix*, and providers cache prefixes
+/// on bytes, so its order has to be a function of configuration alone. Emission
+/// used to follow `servers.iter()`, and that walks a `HashMap` whose iteration
+/// order is randomized per process - so every app restart advertised the same
+/// tools in a different order and paid a cold cache for an otherwise identical
+/// session. Keying on the pair keeps one server's tools contiguous and stays
+/// stable when the same tool name is exposed by two servers.
+fn tool_sort_key<'a>(server_name: &'a str, tool_name: &'a str) -> (&'a str, &'a str) {
+    (server_name, tool_name)
+}
+
+/// Last successful listing per MCP server, for the lifetime of the process.
+fn last_good_listings() -> &'static std::sync::Mutex<HashMap<String, Vec<RenderedTool>>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Vec<RenderedTool>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Resolve each server's listing attempt against the last-known-good one.
+///
+/// A server that fails or times out reuses its previous listing rather than
+/// dropping out of the array: a transient MCP hiccup would otherwise shrink the
+/// advertised tools mid-session, invalidating the cached prefix on that turn and
+/// again on the turn the server comes back. A server that has never listed
+/// successfully is still omitted - there is nothing to reuse.
+///
+/// `listings` is assumed to cover every configured server (every caller probes
+/// the whole `SharedMcpServers` map and filters afterwards), so a server absent
+/// from it has been removed and its cached listing is dropped. That keeps the
+/// cache from growing across a long session, and means removing a server changes
+/// the array exactly once, at the point of the change.
+pub(crate) fn reuse_last_good_listings(
+    cache: &mut HashMap<String, Vec<RenderedTool>>,
+    listings: Vec<(String, Option<Vec<RenderedTool>>)>,
+) -> Vec<(String, Vec<RenderedTool>)> {
+    let probed: std::collections::HashSet<String> =
+        listings.iter().map(|(name, _)| name.clone()).collect();
+    cache.retain(|name, _| probed.contains(name));
+
+    let mut resolved = Vec::with_capacity(listings.len());
+
+    for (server_name, tools) in listings {
+        match tools {
+            Some(tools) => {
+                cache.insert(server_name.clone(), tools.clone());
+                resolved.push((server_name, tools));
+            }
+            None => match cache.get(&server_name) {
+                Some(tools) => {
+                    log::warn!(
+                        "Reusing last known tool listing for MCP server {} ({} tools)",
+                        server_name,
+                        tools.len()
+                    );
+                    resolved.push((server_name, tools.clone()));
+                }
+                None => {
+                    log::warn!(
+                        "MCP server {} has no known tool listing; omitting it from this request",
+                        server_name
+                    );
+                }
+            },
+        }
+    }
+
+    resolved
+}
+
+/// Flatten the per-server listings into the advertised array, ordered by
+/// [`tool_sort_key`], with `tool_to_server` kept consistent with that order.
+pub(crate) fn assemble_tool_array(
+    listings: Vec<(String, Vec<RenderedTool>)>,
+) -> (Vec<serde_json::Value>, HashMap<String, String>) {
+    let mut flattened: Vec<(String, String, serde_json::Value)> = listings
+        .into_iter()
+        .flat_map(|(server_name, tools)| {
+            tools
+                .into_iter()
+                .map(move |(tool_name, tool)| (server_name.clone(), tool_name, tool))
+        })
+        .collect();
+
+    flattened.sort_by(|(a_server, a_tool, _), (b_server, b_tool, _)| {
+        tool_sort_key(a_server, a_tool).cmp(&tool_sort_key(b_server, b_tool))
+    });
+
+    let mut openai_tools = Vec::with_capacity(flattened.len());
+    let mut tool_to_server: HashMap<String, String> = HashMap::new();
+    for (server_name, tool_name, tool) in flattened {
+        tool_to_server.insert(tool_name, server_name);
+        openai_tools.push(tool);
+    }
+
+    (openai_tools, tool_to_server)
+}
+
 pub(crate) async fn collect_mcp_openai_tools(
     mcp_servers: &SharedMcpServers,
     mcp_settings: &Arc<Mutex<McpSettings>>,
 ) -> Result<(Vec<serde_json::Value>, HashMap<String, String>), String> {
     let timeout_duration = mcp_settings.lock().await.tool_call_timeout_duration();
     let servers = mcp_servers.lock().await;
-
-    let mut openai_tools = Vec::new();
-    let mut tool_to_server: HashMap<String, String> = HashMap::new();
 
     // Probe every server concurrently so one slow/hanging server can't serialize
     // the whole collection behind its timeout (previously each server waited out
@@ -599,7 +890,37 @@ pub(crate) async fn collect_mcp_openai_tools(
         futures_util::future::join_all(servers.iter().map(|(server_name, service)| async move {
             let result =
                 match tokio::time::timeout(timeout_duration, service.list_all_tools()).await {
-                    Ok(Ok(tools)) => Some(tools),
+                    Ok(Ok(tools)) => Some(
+                        tools
+                            .iter()
+                            .map(|tool| {
+                                // Normalize schemas before sending them to strict
+                                // OpenAI-compatible providers. The `get_tools` Tauri
+                                // command still returns raw schemas; the frontend
+                                // normalizes those separately before provider registration.
+                                let mut parameters =
+                                    serde_json::Value::Object((*tool.input_schema).clone());
+                                normalize_openai_tool_parameters_schema(&mut parameters);
+                                let description = tool
+                                    .description
+                                    .as_ref()
+                                    .map(|d| d.to_string())
+                                    .unwrap_or_default();
+
+                                (
+                                    tool.name.to_string(),
+                                    serde_json::json!({
+                                        "type": "function",
+                                        "function": {
+                                            "name": tool.name,
+                                            "description": description,
+                                            "parameters": parameters
+                                        }
+                                    }),
+                                )
+                            })
+                            .collect::<Vec<RenderedTool>>(),
+                    ),
                     Ok(Err(e)) => {
                         log::warn!("MCP server {} failed to list tools: {}", server_name, e);
                         None
@@ -617,34 +938,14 @@ pub(crate) async fn collect_mcp_openai_tools(
         }))
         .await;
 
-    for (server_name, tools) in listings {
-        let Some(tools) = tools else { continue };
-        for tool in tools {
-            tool_to_server.insert(tool.name.to_string(), server_name.clone());
+    let resolved = {
+        let mut cache = last_good_listings()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reuse_last_good_listings(&mut cache, listings)
+    };
 
-            // Normalize schemas before sending them to strict OpenAI-compatible providers.
-            // The `get_tools` Tauri command still returns raw schemas; the frontend
-            // normalizes those separately before provider registration.
-            let mut parameters = serde_json::Value::Object((*tool.input_schema).clone());
-            normalize_openai_tool_parameters_schema(&mut parameters);
-            let description = tool
-                .description
-                .as_ref()
-                .map(|d| d.to_string())
-                .unwrap_or_default();
-
-            openai_tools.push(serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": description,
-                    "parameters": parameters
-                }
-            }));
-        }
-    }
-
-    Ok((openai_tools, tool_to_server))
+    Ok(assemble_tool_array(resolved))
 }
 
 pub(crate) async fn execute_mcp_tool_calls(
@@ -709,10 +1010,9 @@ pub(crate) async fn execute_mcp_tool_calls(
             continue;
         };
 
-        let tool_call = service.call_tool(CallToolRequestParam {
-            name: tool_name.clone().into(),
-            arguments: Some(args_map),
-        });
+        let tool_call = service.call_tool(
+            CallToolRequestParams::new(tool_name.clone()).with_arguments(args_map),
+        );
 
         let result = match tokio::time::timeout(timeout_duration, tool_call).await {
             Ok(call_result) => call_result.map_err(|e| e.to_string()),
@@ -1508,6 +1808,323 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn compaction_summary_survives_a_system_prompt_update() {
+        let marker = crate::core::agent::compaction::SUMMARY_MARKER;
+        // The history a turn inherits after a mid-run compaction: previous
+        // rebuilt system prompt, its marked guidance, the summary, kept tail.
+        let mut history = vec![
+            json!({ "role": "system", "content": "OLD STABLE" }),
+            json!({ "role": "user", "content": crate::core::agent::reminder::wrap("old date") }),
+            json!({ "role": "system", "content": format!("{marker}\n\ncondensed") }),
+            json!({ "role": "assistant", "content": "kept" }),
+            json!({ "role": "user", "content": "new question" }),
+        ];
+        let before = history.clone();
+        set_system_prompt(&mut history, "NEW STABLE");
+        append_prompt_tail(&mut history, "new date");
+
+        // The head keeps the bytes the previous request already sent: that is
+        // the whole point of appending the update instead of rewriting node 0.
+        assert_eq!(history[0]["content"], "OLD STABLE");
+        assert_eq!(&history[..before.len()], before.as_slice());
+        assert_eq!(history[3]["content"], "kept");
+        assert_eq!(history[4]["content"], "new question");
+        // The update is the newest system node, so it is the one the model
+        // reads last rather than a duplicate of the head.
+        let newest = history.iter().rev().find(|m| is_system_node(m)).unwrap();
+        assert_eq!(newest["role"], "system");
+        assert_eq!(newest["content"], "NEW STABLE");
+    }
+
+    /// The system nodes a request carries, in the order the provider
+    /// concatenates them.
+    fn system_contents(messages: &[serde_json::Value]) -> Vec<String> {
+        messages
+            .iter()
+            .filter(|m| m["role"] == "system")
+            .map(|m| m["content"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    fn serialized(messages: &[serde_json::Value]) -> Vec<String> {
+        messages
+            .iter()
+            .map(|m| serde_json::to_string(m).unwrap())
+            .collect()
+    }
+
+    /// The prompt is applied on every turn. A turn that changed nothing must
+    /// therefore mutate nothing - otherwise every request invalidates its own
+    /// prefix, which is the bug this writer exists to prevent.
+    #[test]
+    fn a_repeated_turn_mutates_nothing() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "STABLE" }),
+            json!({ "role": "user", "content": crate::core::agent::reminder::wrap("date") }),
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "yo" }),
+            json!({ "role": "user", "content": "again" }),
+        ];
+        let before = serde_json::to_string(&conversation).unwrap();
+
+        set_system_prompt(&mut conversation, "STABLE");
+
+        assert_eq!(serde_json::to_string(&conversation).unwrap(), before);
+    }
+
+    /// A prompt that changed mid-session appends behind what was already sent.
+    /// Every index the provider has seen keeps its exact bytes, so the reusable
+    /// prefix survives the change instead of restarting at byte 0.
+    #[test]
+    fn a_changed_system_prompt_appends_behind_bytes_already_sent() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "STABLE v1" }),
+            json!({ "role": "user", "content": crate::core::agent::reminder::wrap("date") }),
+            json!({ "role": "user", "content": "hi" }),
+            json!({ "role": "assistant", "content": "yo" }),
+            json!({ "role": "user", "content": "go on" }),
+        ];
+        let sent = serialized(&conversation);
+
+        set_system_prompt(&mut conversation, "STABLE v2");
+
+        assert_eq!(conversation.len(), sent.len() + 1, "one appended update");
+        assert_eq!(
+            serialized(&conversation)[..sent.len()],
+            sent[..],
+            "every index below the update is byte-identical"
+        );
+        assert_eq!(conversation.last().unwrap()["content"], "STABLE v2");
+
+        // The next turn applies the same prompt again: no second copy of it.
+        set_system_prompt(&mut conversation, "STABLE v2");
+        assert_eq!(conversation.len(), sent.len() + 1);
+        assert_eq!(conversation.last().unwrap()["content"], "STABLE v2");
+    }
+
+    /// An appended update is not decoration: a request's system nodes
+    /// concatenate in array order, so the newest prompt is the last system
+    /// instruction the model reads. `genai_bridge` asserts the concatenated
+    /// form the provider is actually handed.
+    #[test]
+    fn an_appended_update_is_the_last_system_node() {
+        let mut conversation = vec![json!({ "role": "user", "content": "hi" })];
+        set_system_prompt(&mut conversation, "STABLE v1");
+        append_prompt_tail(&mut conversation, "date");
+        set_system_prompt(&mut conversation, "STABLE v2");
+
+        assert_eq!(
+            system_contents(&conversation),
+            vec!["STABLE v1", "STABLE v2"]
+        );
+        // ...and the history it was appended behind is still there.
+        assert_eq!(conversation[1]["content"], "hi");
+    }
+
+    /// Nothing is deleted by role: history another producer stored under
+    /// `system` - a compaction summary, or a caller's own prompt - is not this
+    /// writer's to remove.
+    #[test]
+    fn a_system_node_written_by_another_producer_is_not_deleted() {
+        let mut conversation = vec![
+            json!({ "role": "system", "content": "caller's own prompt" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        set_system_prompt(&mut conversation, "STABLE");
+        assert_eq!(conversation[0]["content"], "caller's own prompt");
+        assert_eq!(
+            system_contents(&conversation),
+            vec!["caller's own prompt", "STABLE"]
+        );
+    }
+
+    /// The empty-conversation case still places the prompt first, and the
+    /// per-turn block follows it rather than displacing it.
+    #[test]
+    fn an_empty_conversation_places_the_prompt_first() {
+        let mut messages: Vec<serde_json::Value> = Vec::new();
+        set_system_prompt(&mut messages, "STABLE");
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages[0]["content"], "STABLE");
+
+        append_prompt_tail(&mut messages, "date");
+        assert_eq!(messages[0]["content"], "STABLE");
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &messages[1]["content"]
+        ));
+    }
+
+    fn rendered(tool_name: &str) -> RenderedTool {
+        (
+            tool_name.to_string(),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": tool_name,
+                    "description": format!("does {tool_name}"),
+                    "parameters": { "type": "object", "properties": {} }
+                }
+            }),
+        )
+    }
+
+    fn advertised_names(tools: &[serde_json::Value]) -> Vec<String> {
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// A different process walks `servers.iter()` in a different order, so the
+    /// cross-process assertion is made here by feeding the same configuration in
+    /// two different orders - within one server too - and requiring the
+    /// serialized array to come out byte-identical. In-process `HashMap`
+    /// stability is never relied on.
+    #[test]
+    fn tool_array_is_byte_identical_whatever_order_the_servers_are_walked_in() {
+        let one = vec![
+            ("fs".to_string(), vec![rendered("write"), rendered("read")]),
+            ("git".to_string(), vec![rendered("commit")]),
+        ];
+        let two = vec![
+            ("git".to_string(), vec![rendered("commit")]),
+            ("fs".to_string(), vec![rendered("read"), rendered("write")]),
+        ];
+
+        let (first, _) = assemble_tool_array(one);
+        let (second, _) = assemble_tool_array(two);
+
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&second).unwrap()
+        );
+        // Sorted on (server, tool), not on listing order.
+        assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
+    }
+
+    /// Two servers exposing the same tool name is a pre-existing collision the
+    /// array does not dedupe - but which server wins `tool_to_server` used to
+    /// depend on iteration order, so the same call could route to either one
+    /// across restarts. Sorting makes it the last server by name, always.
+    #[test]
+    fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
+        let listings = |flipped: bool| {
+            let fs = ("fs".to_string(), vec![rendered("search")]);
+            let zed = ("zed".to_string(), vec![rendered("search")]);
+            if flipped {
+                vec![zed, fs]
+            } else {
+                vec![fs, zed]
+            }
+        };
+
+        let (first, first_map) = assemble_tool_array(listings(false));
+        let (second, second_map) = assemble_tool_array(listings(true));
+
+        assert_eq!(
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&second).unwrap()
+        );
+        assert_eq!(advertised_names(&first), ["search", "search"]);
+        assert_eq!(first_map.get("search").unwrap(), "zed");
+        assert_eq!(first_map, second_map);
+    }
+
+    #[test]
+    fn tool_to_server_stays_consistent_with_the_reordered_array() {
+        let (tools, tool_to_server) = assemble_tool_array(vec![
+            ("git".to_string(), vec![rendered("commit")]),
+            ("fs".to_string(), vec![rendered("read")]),
+        ]);
+
+        assert_eq!(advertised_names(&tools), ["read", "commit"]);
+        assert_eq!(tool_to_server.get("read").unwrap(), "fs");
+        assert_eq!(tool_to_server.get("commit").unwrap(), "git");
+        assert_eq!(tool_to_server.len(), tools.len());
+    }
+
+    /// A listing timeout must not shrink the advertised array mid-session - the
+    /// prefix would go cold on this turn and again when the server recovers.
+    #[test]
+    fn a_failed_listing_reuses_the_last_known_tools() {
+        let mut cache = HashMap::new();
+        let good = vec![("fs".to_string(), Some(vec![rendered("read")]))];
+        let (before, _) = assemble_tool_array(reuse_last_good_listings(&mut cache, good));
+
+        let timed_out = vec![("fs".to_string(), None)];
+        let (after, mapping) = assemble_tool_array(reuse_last_good_listings(&mut cache, timed_out));
+
+        assert_eq!(
+            serde_json::to_string(&before).unwrap(),
+            serde_json::to_string(&after).unwrap()
+        );
+        assert_eq!(mapping.get("read").unwrap(), "fs");
+    }
+
+    #[test]
+    fn a_server_that_never_listed_successfully_is_omitted() {
+        let mut cache = HashMap::new();
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
+        let (tools, mapping) = assemble_tool_array(resolved);
+
+        assert!(tools.is_empty());
+        assert!(mapping.is_empty());
+    }
+
+    /// Removing a server changes the array exactly once: its cached listing goes
+    /// with it, so re-adding it later can't resurrect a stale set of tools.
+    #[test]
+    fn removing_a_server_drops_its_cached_listing() {
+        let mut cache = HashMap::new();
+        reuse_last_good_listings(
+            &mut cache,
+            vec![
+                ("fs".to_string(), Some(vec![rendered("read")])),
+                ("git".to_string(), Some(vec![rendered("commit")])),
+            ],
+        );
+
+        let resolved = reuse_last_good_listings(&mut cache, vec![("fs".to_string(), None)]);
+        let (tools, _) = assemble_tool_array(resolved);
+
+        assert_eq!(advertised_names(&tools), ["read"]);
+        assert!(!cache.contains_key("git"));
+    }
+
+    /// A server that stops exposing a tool has to stop advertising it, and the
+    /// cache must not resurrect it on a later hiccup: a stale cache would keep a
+    /// removed tool in the array forever, so every turn would pay for the old
+    /// prefix until the process restarted.
+    #[test]
+    fn a_relisting_replaces_the_cached_tools_instead_of_resurrecting_removed_ones() {
+        let mut cache = HashMap::new();
+        reuse_last_good_listings(
+            &mut cache,
+            vec![(
+                "fs".to_string(),
+                Some(vec![rendered("read"), rendered("write")]),
+            )],
+        );
+
+        // `write` is no longer exposed by the server.
+        let relisted = reuse_last_good_listings(
+            &mut cache,
+            vec![("fs".to_string(), Some(vec![rendered("read")]))],
+        );
+        let (tools, mapping) = assemble_tool_array(relisted);
+        assert_eq!(advertised_names(&tools), ["read"]);
+        assert!(!mapping.contains_key("write"));
+
+        // A later hiccup reuses that listing, not the pre-removal one.
+        let (after_hiccup, _) = assemble_tool_array(reuse_last_good_listings(
+            &mut cache,
+            vec![("fs".to_string(), None)],
+        ));
+        assert_eq!(advertised_names(&after_hiccup), ["read"]);
+    }
+
     fn sink() -> (
         mpsc::UnboundedSender<StreamEvent>,
         mpsc::UnboundedReceiver<StreamEvent>,
@@ -1550,6 +2167,23 @@ mod tests {
         assert_eq!(
             strip_provider_prefix("mistral-technologies/mixtral", &pc),
             "mistral-technologies/mixtral"
+        );
+    }
+
+    /// The gateway that serves `anthropic/claude-opus-5` lists it under that
+    /// full id; the desktop inherit also contributes a provider keyed
+    /// `anthropic`. Stripping there sends `claude-opus-5`, which the gateway
+    /// answers with 404 "model not found in accessible providers".
+    #[test]
+    fn a_verbatim_listed_id_keeps_its_slash_despite_a_same_named_provider() {
+        let mut pc = provider_configs(&[
+            ("tokamak", "https://api.tokamak.sh/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+        ]);
+        pc.get_mut("tokamak").unwrap().models = vec!["anthropic/claude-opus-5".to_string()];
+        assert_eq!(
+            strip_provider_prefix("anthropic/claude-opus-5", &pc),
+            "anthropic/claude-opus-5"
         );
     }
 
@@ -1884,6 +2518,70 @@ mod tests {
         assert_eq!(keys, vec!["sk-opencode"]);
     }
 
+    /// The reporting path (price, context window, header label) must name the
+    /// provider the request is routed to. A gateway listing a slashed id
+    /// verbatim wins over a provider whose key happens to match the prefix, on
+    /// both sides: reading the prefix first would price a Jan Router request
+    /// against an `anthropic` entry that publishes neither window nor price.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_verbatim_listed_slashed_id_is_reported_against_the_gateway_that_serves_it() {
+        let mut configs = provider_configs(&[
+            ("tokamak", "https://api.tokamak.sh/v1"),
+            ("anthropic", "https://api.anthropic.com/v1"),
+        ]);
+        configs.get_mut("tokamak").unwrap().models = vec!["anthropic/claude-opus-5".to_string()];
+
+        assert_eq!(
+            pick_provider_for_model("anthropic/claude-opus-5", &configs),
+            Some("tokamak".to_string())
+        );
+        let (url, _) =
+            resolve_upstream_for_model("anthropic/claude-opus-5", Arc::new(Mutex::new(configs)))
+                .await
+                .expect("the gateway listing the id serves it");
+        assert_eq!(url, "https://api.tokamak.sh/v1/chat/completions");
+    }
+
+    /// A provider credentialed through the `api_keys` chain rather than a bare
+    /// `api_key` is still the one routed to, so it must be the one reported:
+    /// naming its keyless twin prices the request at the wrong rates and, on
+    /// the window, against an entry that never published one.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_key_chain_credential_is_reported_like_it_is_routed() {
+        let mut configs = provider_configs(&[
+            ("aaa-keyless", "https://keyless.test/v1"),
+            ("zzz-keychain", "https://keychain.test/v1"),
+        ]);
+        configs.get_mut("aaa-keyless").unwrap().models = vec!["shared-model".to_string()];
+        let keychain = configs.get_mut("zzz-keychain").unwrap();
+        keychain.models = vec!["shared-model".to_string()];
+        keychain.api_keys = vec!["sk-chain".to_string()];
+
+        assert_eq!(
+            pick_provider_for_model("shared-model", &configs),
+            Some("zzz-keychain".to_string())
+        );
+        let (url, _) = resolve_upstream_for_model("shared-model", Arc::new(Mutex::new(configs)))
+            .await
+            .expect("the credentialed provider is selected");
+        assert_eq!(url, "https://keychain.test/v1/chat/completions");
+    }
+
+    /// A provider keyed by the model id (a local engine alias) is routable, so
+    /// the reporting path must name it too rather than leaving the row
+    /// unqualified and priced against whatever else lists the id.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_provider_keyed_by_the_model_id_is_named() {
+        let configs = provider_configs(&[("my-local-model", "http://127.0.0.1:1337/v1")]);
+        assert_eq!(
+            pick_provider_for_model("my-local-model", &configs),
+            Some("my-local-model".to_string())
+        );
+    }
+
     /// Holds the secret-store serialization guard, the temp data folder and the
     /// `JAN_DATA_FOLDER` restore together, so an async test can keep all three
     /// alive across `.await` without holding a bare lock guard over it.
@@ -2178,6 +2876,54 @@ mod tests {
         // Only the poisoned call's result was dropped.
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1]["tool_call_id"], "ok");
+    }
+
+    #[test]
+    fn sanitize_drops_a_call_without_an_id_and_the_result_that_cannot_carry_one() {
+        // A call nothing can pair: its result goes out with an empty
+        // `tool_call_id`, which is an orphan on every later turn.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "run it" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "type": "function",
+                    "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "", "content": "output" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        // The unpaired call, the empty shell it left, and its result are gone.
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["content"], "run it");
+    }
+
+    #[test]
+    fn orphan_tool_result_with_no_call_in_the_history_is_dropped() {
+        // What the sanitizer cannot see: a result whose call was never in the
+        // array at all (a caller's stored thread, a half-written replay). The
+        // pass is the mirror of `repair_dangling_tool_calls`, which fills the
+        // opposite gap.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "carry on" }),
+            json!({ "role": "tool", "tool_call_id": "", "content": "left behind" }),
+            json!({ "role": "tool", "tool_call_id": "call_gone", "content": "also left behind" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": { "name": "read", "arguments": "{}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_1", "content": "contents" }),
+        ];
+        assert_eq!(drop_orphaned_tool_results(&mut messages), 2);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["tool_call_id"], "call_1");
     }
 
     /// The full fixture matrix behind the plain-object invariant: what the

@@ -53,7 +53,7 @@ import Fuse from 'fuse.js'
 import {
   cleanHubSearchQuery,
   prioritizeExactModelMatches,
-} from './searchRanking'
+} from './-searchRanking'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { DownloadButtonPlaceholder } from '@/containers/DownloadButton'
 import { useShallow } from 'zustand/shallow'

@@ -173,6 +173,18 @@ export const modelSettings = {
       type: 'number',
     },
   },
+  n_cpu_ffn: {
+    key: 'n_cpu_ffn',
+    title: 'Number of dense FFN weights in the CPU',
+    description:
+      'Keep the dense feed-forward weights of the first N layers in the CPU (if GPU is used). For dense models; MoE experts use the setting above.',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '24',
+      type: 'number',
+    },
+  },
   override_tensor_buffer_t: {
     key: 'override_tensor_buffer_t',
     title: 'Override Tensor Buffer Type',

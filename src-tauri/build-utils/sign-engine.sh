@@ -60,6 +60,13 @@ MINGW* | MSYS* | CYGWIN*)
     signed=$((signed + 1))
   done
   [ "$signed" -gt 0 ] || give_up "no engine binaries in $DEST to sign."
+  # The CUDA runtime ships under NVIDIA's own Authenticode signature; re-signing
+  # would replace it, so it is verified rather than signed.
+  for target in "$DEST"/cudart64_*.dll "$DEST"/cublas*.dll; do
+    [ -f "$target" ] || continue
+    status=$(powershell -NoProfile -Command "(Get-AuthenticodeSignature '$target').Status" | tr -d '\r')
+    [ "$status" = "Valid" ] || give_up "$(basename "$target") has no valid Authenticode signature ($status)."
+  done
   echo "Signed $signed engine binaries"
   ;;
 esac

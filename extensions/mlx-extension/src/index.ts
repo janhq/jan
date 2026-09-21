@@ -137,6 +137,35 @@ export default class mlx_extension extends AIEngine {
     } as modelInfo
   }
 
+  async getModelContextLimit(modelId: string): Promise<number | undefined> {
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
+    })
+    const modelPath = isAbsoluteModelPath(modelConfig.model_path)
+      ? modelConfig.model_path
+      : await joinPath([await getJanDataFolderPath(), modelConfig.model_path])
+    let value: unknown
+    if (modelPath.endsWith('.gguf')) {
+      const { metadata } = await readGgufMetadata(modelPath)
+      value = metadata?.[`${metadata?.['general.architecture']}.context_length`]
+    } else {
+      const directory = (await fs.fileStat(modelPath)).isDirectory
+        ? modelPath
+        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+      const config = JSON.parse(
+        await invoke<string>('read_file_sync', {
+          args: [await joinPath([directory, 'config.json'])],
+        })
+      ) as {
+        max_position_embeddings?: number
+        text_config?: { max_position_embeddings?: number }
+      }
+      value = config.text_config?.max_position_embeddings ?? config.max_position_embeddings
+    }
+    const limit = Number(value)
+    return Number.isInteger(limit) && limit > 0 ? limit : undefined
+  }
+
   override async list(): Promise<modelInfo[]> {
     const modelsDir = await joinPath([await this.getProviderPath(), 'models'])
     if (!(await fs.existsSync(modelsDir))) {

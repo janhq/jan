@@ -147,29 +147,30 @@ export const providerModels = {
 } as const
 
 /**
- * llama.cpp slot pins. Jan sends every chat turn to slot 0 so a thread reuses
- * its cached KV prefix across turns, every background task (title generation,
- * subagents) to slot 1 so it can never overwrite that cache, and every Cowork
- * turn to slot 2.
+ * The one llama.cpp slot Jan pins, and the thread identities that share it.
  *
- * Cowork needs its own slot because one agent turn re-prefills a growing prompt
- * dozens of times; sharing slot 0 would evict the viewed thread's prefix on
- * every step, and vice versa. Subagents deliberately reuse the background slot
- * rather than taking a fourth: their prefixes are worth nothing to preserve
- * (each has a different system prompt, so concurrent subagents evict each other
- * regardless), and all that matters is that a dispatch cannot evict the
- * *parent's* prefix on slot 2. Reserving one slot instead of two keeps the KV
- * cache split three ways rather than four.
+ * Every surface -- chat, Cowork, background tasks -- sends `id_slot: 0` plus a
+ * `thread_id`. Jan reserves no slot of its own, so the emitted "Parallel
+ * Sequences" count is exactly what the user configured (llama.cpp's own default
+ * when unset). What keeps the surfaces from destroying each other's KV cache is
+ * not a slot each but the engine's per-`thread_id` slot-cache park/restore
+ * (`engine/http.rs`'s `SlotHint`): a claim by a different identity saves the
+ * outgoing thread's prefix before overwriting it, and restores it on return.
  *
- * Both are fixed indices rather than values derived from the "Parallel
- * Sequences" setting, because upstream *wraps* an out-of-range `id_slot`
- * instead of rejecting it (`get_slot_by_id`: `id_slot = id_slot % slots.size()`)
- * -- so a pin computed from a stale or differently-resolved slot count silently
- * lands back on slot 0. The extension's RESERVED_BACKGROUND_SLOTS keeps the
- * emitted `parallel` at 2 or more unconditionally, which is what guarantees
- * slot 1 exists; nothing else pins to it, so it is free even when the user
- * raised the sequence count.
+ * Slot 0 specifically, and a fixed index rather than one derived from the
+ * sequence count, because upstream *wraps* an out-of-range `id_slot` instead of
+ * rejecting it (`get_slot_by_id`: `id_slot = id_slot % slots.size()`) -- so any
+ * pin above 0 silently lands back here whenever the resolved count disagrees.
+ * Slot 0 is the only index guaranteed to exist.
+ *
+ * A `thread_id` is required for the park to happen at all: a request without one
+ * yields no `SlotHint`, so it overwrites whatever the slot held with no save.
+ * That is why background work has an identity of its own instead of no field.
  */
 export const CHAT_SLOT_ID = 0
-export const BACKGROUND_SLOT_ID = 1
-export const COWORK_SLOT_ID = 2
+
+/** Thread identity for background work (title generation) sharing slot 0. */
+export const BACKGROUND_THREAD_ID = 'background'
+
+/** Thread identity for a Cowork session sharing slot 0 with the chat it names. */
+export const coworkThreadId = (threadId?: string) => `cowork:${threadId ?? ''}`

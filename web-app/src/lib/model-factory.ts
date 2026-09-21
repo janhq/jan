@@ -62,6 +62,10 @@ import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { hasAudioSentinel, splitAudioSentinels } from './audio-sentinel'
 import { hasVideoSentinel, splitVideoSentinels } from './video-sentinel'
+import {
+  hasToolImageSentinel,
+  splitToolImageSentinels,
+} from './tool-image-sentinel'
 import { filterDefaultSseEvents } from './sseEventTypeFilter'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { providerRemoteApiKeyChain } from '@/lib/provider-api-keys'
@@ -471,6 +475,7 @@ export function createCustomFetch(
     if (!includeOurParams) {
       decodeAudioSentinelsInBody(rawBody)
       decodeVideoSentinelsInBody(rawBody)
+      decodeToolImageSentinelsInBody(rawBody)
       return rawBody
     }
     const normalised: Record<string, unknown> = {}
@@ -507,6 +512,7 @@ export function createCustomFetch(
     }
     decodeAudioSentinelsInBody(merged)
     decodeVideoSentinelsInBody(merged)
+    decodeToolImageSentinelsInBody(merged)
     return merged
   }
 
@@ -795,6 +801,25 @@ export function decodeVideoSentinelsInBody(body: Record<string, unknown>): void 
       next.push(part)
     }
     if (touched) m.content = next
+  }
+}
+
+// Rewrites a sentinel-bearing `role: tool` message (planted by Cowork's
+// `assistantMessageFor` for a tool that returned images) into a text part plus
+// OpenAI `image_url` parts, the shape the CLI loop sends for a `read` of an
+// image. Mutates `body.messages` in place.
+export function decodeToolImageSentinelsInBody(
+  body: Record<string, unknown>
+): void {
+  const messages = body.messages
+  if (!Array.isArray(messages)) return
+  for (const msg of messages) {
+    if (!msg || typeof msg !== 'object') continue
+    const m = msg as { role?: string; content?: unknown }
+    if (m.role !== 'tool' || typeof m.content !== 'string') continue
+    if (!hasToolImageSentinel(m.content)) continue
+    const split = splitToolImageSentinels(m.content)
+    if (split) m.content = split
   }
 }
 

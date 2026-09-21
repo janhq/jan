@@ -77,7 +77,6 @@ install-ios-rust-targets:
 dev: install-and-build
 	yarn download:bin
 	$(MAKE) build-mlx-server-if-exists
-	$(MAKE) build-cli-dev
 	$(MAKE) build-engine-dev-if-possible
 	yarn dev
 
@@ -87,17 +86,17 @@ install-web-app:
 
 dev-web-app: install-web-app
 	yarn build:core
-	yarn dev:web-app
+	yarn dev:web
 
 build-web-app: install-web-app
 	yarn build:core
-	yarn build:web-app
+	yarn build:web
 
 serve-web-app:
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 build-serve-web-app: build-web-app
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 # Mobile
 dev-android: install-and-build install-android-rust-targets
@@ -167,29 +166,36 @@ test: test-prepare install-rust-targets
 # so we never clobber a real local build or churn the cargo:rerun-if-changed
 # stamps these paths emit.
 #
-# scripts/stub-tauri-resources.sh is the one implementation, shared with the
+# scripts/stub-tauri-resources.mjs is the one implementation, shared with the
 # coverage and rust-check workflows; keeping a second copy here is how the
-# engine worker ended up stubbed in one place and not the other. The PowerShell
-# arm exists only because cmd.exe cannot run it: CI runs make from a shell where
-# sh.exe is on PATH, so it takes the script.
+# engine worker ended up stubbed in one place and not the other. It is Node and
+# not shell so this recipe needs no cmd.exe arm -- `node` is spelled the same
+# whichever shell make picked, and a stock Windows box has no `sh` on PATH.
 stub-resources:
-ifeq ($(RECIPE_SHELL_IS_CMD),yes)
-	-powershell -Command "New-Item -ItemType Directory -Force -Path src-tauri/resources/bin | Out-Null; foreach ($$f in @('jan-cli.exe','jan-llama-worker.exe','ggml-base.dll')) { $$p = Join-Path 'src-tauri/resources/bin' $$f; if (-not (Test-Path $$p)) { New-Item -ItemType File -Path $$p | Out-Null } }"
-else
-	@./scripts/stub-tauri-resources.sh
-endif
+	@node scripts/stub-tauri-resources.mjs
 
 test-ci: test-prepare
 	$(MAKE) test-rust
 
-# Cheap compile guard for the CLI feature set, covering what test-ci no longer
-# builds. `make build` still builds the real binary on every platform.
+# Compile and test guard for the CLI feature set. The `jan` CLI is no longer
+# bundled with the app; `make test` still builds the real binary via build-cli.
+#
+# This is the only job that compiles jan-cli at all: it is a standalone crate
+# and not a dependency of src-tauri, so the rust-check `cli` matrix entry never
+# reaches it (that entry's --all-targets covers app_lib's own
+# cfg(feature = "cli") test modules, which is a different crate). A bare
+# `cargo check` here built the bin but not the #[cfg(test)] module, which is
+# how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
+# `cargo test` builds and runs those targets, so it subsumes that check.
 check-cli:
-	cd src-tauri && cargo check --locked --no-default-features --features cli --bin jan
+	cd src-tauri/jan-cli && cargo test --locked --no-default-features --features cli
 
-# Build MLX server (macOS Apple Silicon only) - always builds
+# Build MLX server (macOS Apple Silicon only) - always builds, unless
+# JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
+# (build-utils/mlx-prebuilt.sh), which is then staged and signed the same way
 build-mlx-server:
 ifeq ($(DETECTED_OS),Darwin)
+ifeq ($(JAN_MLX_PREBUILT_DIR),)
 	@echo "Building MLX server for Apple Silicon..."
 	# mlx-swift's Metal shaders are compiled by the PrepareMetalShaders
 	# plugin, which only runs under Xcode -- `swift build` produces a
@@ -197,8 +203,9 @@ ifeq ($(DETECTED_OS),Darwin)
 	# https://github.com/ml-explore/mlx-swift README ("SwiftPM (command
 	# line) cannot build the Metal shaders").
 	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
+endif
 	@echo "Finding build products..."
-	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
+	@DERIVED_DATA=$${JAN_MLX_PREBUILT_DIR:-$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1)}; \
 	if [ -z "$$DERIVED_DATA" ] || [ ! -f "$$DERIVED_DATA/mlx-server" ]; then \
 		echo "Error: Could not find xcodebuild products under DerivedData"; \
 		exit 1; \
@@ -250,8 +257,8 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan --target x86_64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target aarch64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target x86_64-apple-darwin
 	lipo -create \
 		src-tauri/target/aarch64-apple-darwin/release/jan \
 		src-tauri/target/x86_64-apple-darwin/release/jan \
@@ -271,10 +278,10 @@ ifeq ($(DETECTED_OS),Darwin)
 
 	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
 else
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
 endif
 
@@ -326,6 +333,12 @@ JAN_ENGINE_VULKAN_FALLBACK ?= 1
 #     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_CUDA_ARCHS=86-real
 JAN_ENGINE_CUDA_ARCHS ?=
 export JAN_ENGINE_CUDA_ARCHS
+
+# Overrides the AMD GPUs a HIP build targets (cmake GPU_TARGETS). Empty means
+# the list build.rs carries over from the previous engine's releases:
+#     make build-engine JAN_ENGINE_VARIANT=rocm JAN_ENGINE_HIP_TARGETS=gfx1100
+JAN_ENGINE_HIP_TARGETS ?=
+export JAN_ENGINE_HIP_TARGETS
 
 # One token to one cargo feature. `engine` alone is the CPU-only worker, and it
 # is implied by every other feature, so `cpu` maps to it and the GPU tokens do
@@ -479,6 +492,11 @@ endif
 check-engine-toolchain:
 	bash src-tauri/build-utils/check-engine-toolchain.sh $(JAN_ENGINE_VARIANT) $(ENGINE_FEATURES)
 
+# The S3 cache key for what build-engine would compile. Run through make so the
+# script sees the same resolved features and exported environment cargo gets.
+engine-prebuilt-key:
+	@bash src-tauri/build-utils/engine-prebuilt.sh key $(ENGINE_FEATURES)
+
 # Release worker plus the ggml runtime it loads.
 build-engine: engine-source check-engine-toolchain
 	@echo "Building llama.cpp engine worker (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
@@ -518,16 +536,6 @@ else
 	bash src-tauri/build-utils/stage-engine.sh debug
 endif
 
-# Debug build for local dev (faster, native arch only)
-build-cli-dev:
-	$(call MKDIR,'src-tauri/resources/bin')	
-	cd src-tauri && cargo build --no-default-features --features cli --bin jan
-ifeq ($(DETECTED_OS),Windows)
-	copy src-tauri\target\debug\jan.exe src-tauri\resources\bin\jan.exe
-else
-	install -m755 src-tauri/target/debug/jan src-tauri/resources/bin/jan
-endif
-
 # Build the Jan agent CLI (the `jan` binary with the `cli` feature)
 # The compiled binary lives at two locations after build:
 #   1. src-tauri/resources/bin/jan[.exe] (bundled copy)
@@ -539,13 +547,13 @@ agent: build-agent
 # and then installed to src-tauri/resources/bin/jan[.exe] for bundling.
 build-agent:
 ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	copy src-tauri\target\release\jan.exe src-tauri\resources\bin\jan.exe
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan.exe"
 	@echo "  src-tauri/target/release/jan.exe"
 else
-	cd src-tauri && cargo build --release --no-default-features --features cli --bin jan
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
 	install -m755 src-tauri/target/release/jan src-tauri/resources/bin/jan
 	@echo "Jan agent built at:"
 	@echo "  src-tauri/resources/bin/jan"

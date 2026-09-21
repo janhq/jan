@@ -20,6 +20,21 @@ pub enum DisplayEntry {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<String>,
     },
+    /// A user turn the transcript does not show verbatim: a skill or plugin
+    /// command, rendered as the compact `[skill:foo] args` row `label` holds,
+    /// or a hidden canned prompt (`/init`), whose `label` is empty and which
+    /// renders nothing. Journaled anyway because it *is* a turn: the rewind
+    /// picker, recall and checkpoints count it in the conversation, so a
+    /// journal that skipped it would put every later cut one entry out.
+    Invocation {
+        /// The `[skill:foo]` tag, styled on its own. Empty for a hidden prompt,
+        /// which renders no row at all.
+        #[serde(default)]
+        label: String,
+        /// What followed it on the row: the user's args, else `- <description>`.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        detail: String,
+    },
     /// Answer prose exactly as streamed. Reasoning is not inlined into it:
     /// natively streamed `reasoning_content` rides along in `reasoning`, while
     /// an inline-tag provider's `<think>` markers are simply part of the prose
@@ -29,6 +44,11 @@ pub enum DisplayEntry {
         text: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         reasoning: Vec<ReasoningSeg>,
+        /// Milliseconds the turn spent reasoning, for the `Thought for Ns`
+        /// label. Absent in a journal written before it existed, which replays
+        /// as a plain `Thought`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reasoning_ms: Option<u64>,
     },
     ToolCall {
         id: String,
@@ -52,6 +72,10 @@ pub enum DisplayEntry {
         /// `SubagentEnd`, which the row reports as `interrupted`.
         #[serde(default = "default_true")]
         finished: bool,
+        /// Why a child that ended on its own ended badly. `None` is a clean
+        /// finish; a journal written before this field existed replays as one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
 }
 
@@ -163,12 +187,17 @@ impl Drop for Writer {
     }
 }
 
-/// Index just past the `target`-th (0-based) user entry's turn, i.e. the length
-/// the log keeps when a rewind drops that message and everything after it.
+/// Index just past the `target`-th (0-based) user turn, i.e. the length the log
+/// keeps when a rewind drops that message and everything after it. `Invocation`
+/// counts alongside `User`: `target` comes from `is_user_turn` over the
+/// conversation, which counts a skill, command or hidden prompt as a turn too.
 pub fn truncate_at_user(entries: &[DisplayEntry], target: usize) -> usize {
     let mut seen = 0;
     for (i, e) in entries.iter().enumerate() {
-        if matches!(e, DisplayEntry::User { .. }) {
+        if matches!(
+            e,
+            DisplayEntry::User { .. } | DisplayEntry::Invocation { .. }
+        ) {
             if seen == target {
                 return i;
             }
@@ -195,6 +224,7 @@ mod tests {
             DisplayEntry::Assistant {
                 text: "<think>plan</think>".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             },
             DisplayEntry::ToolCall {
                 id: "c1".into(),
@@ -211,10 +241,12 @@ mod tests {
                 name: "scout".into(),
                 calls: vec!["Read a.txt".into()],
                 finished: true,
+                error: None,
             },
             DisplayEntry::Assistant {
                 text: "Done.".into(),
                 reasoning: Vec::new(),
+                reasoning_ms: None,
             },
         ]
     }
@@ -271,6 +303,7 @@ mod tests {
         entries.push(DisplayEntry::Assistant {
             text: "more".into(),
             reasoning: Vec::new(),
+            reasoning_ms: None,
         });
         assert_eq!(truncate_at_user(&entries, 0), 0);
         assert_eq!(truncate_at_user(&entries, 1), 6, "cuts at the second user");
@@ -279,6 +312,28 @@ mod tests {
             entries.len(),
             "an out-of-range target keeps the log"
         );
+    }
+
+    /// A skill/command/hidden turn is a turn the rewind picker offers, so it
+    /// has to advance the journal's count as well or every later cut lands one
+    /// turn late.
+    #[test]
+    fn truncate_at_user_counts_invocations_as_turns() {
+        let entries = vec![
+            user("first"),
+            DisplayEntry::Invocation {
+                label: "[skill:deploy]".into(),
+                detail: String::new(),
+            },
+            DisplayEntry::Assistant {
+                text: "ok".into(),
+                reasoning: Vec::new(),
+                reasoning_ms: None,
+            },
+            user("third"),
+        ];
+        assert_eq!(truncate_at_user(&entries, 1), 1, "cuts at the invocation");
+        assert_eq!(truncate_at_user(&entries, 2), 3);
     }
 
     #[test]

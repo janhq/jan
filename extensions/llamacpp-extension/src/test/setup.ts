@@ -1,5 +1,26 @@
 import { vi } from 'vitest'
 
+// `Promise.withResolvers` (Node 22+) is used by tests that resolve a promise
+// from outside its executor. Polyfilled for the Node 20 runtime; a no-op where
+// the runtime already ships it.
+if (typeof (Promise as { withResolvers?: unknown }).withResolvers !== 'function') {
+  (
+    Promise as unknown as { withResolvers: <T>() => {
+      promise: Promise<T>
+      resolve: (value: T | PromiseLike<T>) => void
+      reject: (reason?: unknown) => void
+    } }
+  ).withResolvers = function withResolvers<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void
+    let reject!: (reason?: unknown) => void
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res
+      reject = rej
+    })
+    return { promise, resolve, reject }
+  }
+}
+
 // Mock localStorage
 const localStorageMock = {
   getItem: vi.fn(),

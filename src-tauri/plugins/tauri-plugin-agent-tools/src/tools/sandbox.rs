@@ -94,6 +94,43 @@ pub fn escapes_read_roots(
     Ok(true)
 }
 
+/// True iff `raw` escapes every root a *write* may legitimately reach: the
+/// project, the scratch, or any attached root the caller marked writable.
+///
+/// The mirror image of [`escapes_read_roots`], layered on [`escapes_project`]
+/// for the same reason: a writable root can only ever widen what writes reach,
+/// and a caller that passes none keeps today's exact check. A root that cannot
+/// be canonicalized grants nothing.
+pub fn escapes_write_roots(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    write_roots: &[PathBuf],
+    raw: &str,
+) -> Result<bool, String> {
+    if !escapes_project(project_root, scratch, raw)? {
+        return Ok(false);
+    }
+    if write_roots.is_empty() {
+        return Ok(true);
+    }
+    let abs = if Path::new(raw).is_absolute() {
+        PathBuf::from(raw)
+    } else {
+        // Relative paths belong to the workspace, never to an attached folder
+        // -- the same rule reads follow, so one path means one place to both.
+        project_root.join(raw)
+    };
+    let resolved = canonicalize_lenient(&abs)?;
+    for root in write_roots {
+        if let Ok(root) = root.canonicalize() {
+            if resolved.starts_with(&root) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(true)
+}
+
 /// Resolve a tool-supplied path to its on-disk location, forwarding an absolute
 /// `/tmp/...` path into the session scratch when one is set (and only on Linux,
 /// where the bash sandbox binds the scratch over `/tmp`). This keeps every

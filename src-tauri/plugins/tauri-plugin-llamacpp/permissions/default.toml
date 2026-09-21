@@ -16,6 +16,7 @@ permissions = [
     "allow-start-engine",
     "allow-stop-engine",
     "allow-get-engine-info",
+    "allow-get-engine-version",
     "allow-reload-engine-models",
     "allow-engine-devices",
     "allow-force-stop-engine",

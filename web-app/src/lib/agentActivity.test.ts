@@ -3,11 +3,8 @@ import {
   toolActivityText,
   completedToolLabel,
   usedSkillNames,
-  activeToolPart,
-  subagentActivityLabel,
   awaitsModel,
 } from './agentActivity'
-import type { SubagentRun } from '@/hooks/useCoworkSessions'
 import type { CoworkTurn } from '@/types/coworkSession'
 
 describe('toolActivityText', () => {
@@ -97,109 +94,6 @@ describe('usedSkillNames', () => {
   })
 })
 
-describe('activeToolPart', () => {
-  it('returns null when no part is pending', () => {
-    const parts = [
-      { type: 'text', state: undefined },
-      {
-        type: 'tool-write',
-        state: 'output-available',
-        toolCallId: 'c1',
-        input: { path: 'a.ts' },
-      },
-    ]
-    expect(activeToolPart(parts)).toBeNull()
-  })
-
-  it('returns the pending tool part text and id', () => {
-    const parts = [
-      {
-        type: 'tool-write',
-        state: 'input-available',
-        toolCallId: 'c1',
-        input: { path: 'report.html' },
-      },
-    ]
-    expect(activeToolPart(parts)).toEqual({
-      toolCallId: 'c1',
-      toolName: 'write',
-      text: 'Writing report.html',
-    })
-  })
-
-  it('ignores non-tool parts', () => {
-    const parts = [{ type: 'text', state: 'input-available' }]
-    expect(activeToolPart(parts)).toBeNull()
-  })
-})
-
-describe('subagentActivityLabel', () => {
-  it('returns null when no subagent is running', () => {
-    const subagents: SubagentRun[] = [
-      {
-        runId: 'r1',
-        name: 'Researcher',
-        status: 'done',
-        startedAt: 1,
-        turns: [],
-      },
-    ]
-    expect(subagentActivityLabel(subagents)).toBeNull()
-  })
-
-  it('labels a single running subagent with its own tool activity', () => {
-    const subagents: SubagentRun[] = [
-      {
-        runId: 'r1',
-        name: 'Researcher',
-        status: 'running',
-        startedAt: 1000,
-        turns: [
-          {
-            role: 'tool',
-            content: '',
-            name: 'write',
-            args: { path: 'notes.md' },
-            status: 'running',
-          },
-        ],
-      },
-    ]
-    expect(subagentActivityLabel(subagents)).toEqual({
-      text: 'Researcher: Writing notes.md',
-      startedAt: 1000,
-    })
-  })
-
-  it('labels a single running subagent with "working" when it has no tool turn', () => {
-    const subagents: SubagentRun[] = [
-      {
-        runId: 'r1',
-        name: 'Researcher',
-        status: 'running',
-        startedAt: 1000,
-        turns: [],
-      },
-    ]
-    expect(subagentActivityLabel(subagents)).toEqual({
-      text: 'Researcher: working',
-      startedAt: 1000,
-    })
-  })
-
-  it('labels multiple running subagents with a count and earliest startedAt', () => {
-    const subagents: SubagentRun[] = [
-      { runId: 'r1', name: 'A', status: 'running', startedAt: 2000, turns: [] },
-      { runId: 'r2', name: 'B', status: 'running', startedAt: 1000, turns: [] },
-      { runId: 'r3', name: 'C', status: 'done', startedAt: 500, turns: [] },
-    ]
-    expect(subagentActivityLabel(subagents)).toEqual({
-      text: '2 subagents working',
-      startedAt: 1000,
-    })
-  })
-})
-
 describe('awaitsModel', () => {
   const tool = (status: CoworkTurn['status']): CoworkTurn => ({
     role: 'tool',
@@ -230,5 +124,11 @@ describe('awaitsModel', () => {
     expect(awaitsModel(true, [{ role: 'assistant', content: 'thinking' }])).toBe(
       false
     )
+  })
+
+  /// A note the run just folded in is followed by a model call, with nothing on
+  /// screen until it answers -- the same gap a question leaves.
+  it('waits on the model after a system note', () => {
+    expect(awaitsModel(true, [{ role: 'system', content: 'done' }])).toBe(true)
   })
 })
