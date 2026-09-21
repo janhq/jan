@@ -349,6 +349,8 @@ impl Usage {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+    use crate::core::agent::interaction::{AskRequest, OptionItem, Question};
+    use crate::core::agent::todo::{TodoItem, TodoList, TodoPhase, TodoStatus};
     use serde_json::json;
 
     /// One instance of every variant, paired with the variant's name as the
@@ -471,11 +473,11 @@ pub(crate) mod tests {
                 "AskRequest",
                 StreamEvent::AskRequest {
                     request_id: "ask-1".into(),
-                    request: crate::core::agent::interaction::AskRequest {
-                        questions: vec![crate::core::agent::interaction::Question {
+                    request: AskRequest {
+                        questions: vec![Question {
                             id: "q1".into(),
                             question: "which?".into(),
-                            options: vec![crate::core::agent::interaction::OptionItem {
+                            options: vec![OptionItem {
                                 label: "a".into(),
                                 description: None,
                             }],
@@ -495,12 +497,12 @@ pub(crate) mod tests {
             (
                 "TodoUpdate",
                 StreamEvent::TodoUpdate {
-                    list: crate::core::agent::todo::TodoList {
-                        phases: vec![crate::core::agent::todo::TodoPhase {
+                    list: TodoList {
+                        phases: vec![TodoPhase {
                             name: "Implement".into(),
-                            tasks: vec![crate::core::agent::todo::TodoItem {
+                            tasks: vec![TodoItem {
                                 content: "wire the record".into(),
-                                status: crate::core::agent::todo::TodoStatus::InProgress,
+                                status: TodoStatus::InProgress,
                             }],
                         }],
                     },
