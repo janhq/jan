@@ -19,10 +19,11 @@ use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
 use crate::core::agent::upstream::{
-    collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
-    extract_choice_message, extract_tool_calls, load_assistant_config, pairable_tool_call_id,
-    parse_openai_messages, resolve_api_type_for_model, resolve_upstream_for_model,
-    stream_openai_chat_completions, tool_call_is_usable,
+    collect_mcp_openai_tools, content_says_nothing, copy_optional_chat_params,
+    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
+    pairable_tool_call_id, parse_openai_messages, prune_unusable_tool_calls,
+    resolve_api_type_for_model, resolve_upstream_for_model, stream_openai_chat_completions,
+    tool_call_is_usable,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -2991,47 +2992,23 @@ fn projected_message_count(
 /// Record the assistant turn, minus the tool calls that may not be resent, and
 /// report the ids of the calls that were dropped.
 ///
-/// This mirrors the per-message half of
-/// [`crate::core::agent::upstream::drop_malformed_tool_calls`], which used to
-/// clean these out by rewriting the live list on the next turn. The record is
-/// never rewritten, so an unusable call is refused entry instead: one whose
-/// arguments do not decode to a plain JSON object, or which has no non-empty id
-/// for its result to carry, is a turn a strict upstream rejects the whole
-/// request over -- and the run that emitted it cannot resend its own history
-/// until it is gone. The caller uses the returned ids to skip the results that
-/// answered those calls, which is the other half of the same repair: an
-/// orphaned `tool` message is invalid on its own.
+/// The refusal rule itself is [`crate::core::agent::upstream::prune_unusable_tool_calls`],
+/// the same one [`crate::core::agent::upstream::drop_malformed_tool_calls`]
+/// applies to an incoming history: it used to clean these out of the live list
+/// on the next turn. The record is never rewritten, so an unusable call is
+/// refused entry instead: one whose arguments do not decode to a plain JSON
+/// object, or which has no non-empty id for its result to carry, is a turn a
+/// strict upstream rejects the whole request over -- and the run that emitted
+/// it cannot resend its own history until it is gone. The caller uses the
+/// returned ids to skip the results that answered those calls, which is the
+/// other half of the same repair: an orphaned `tool` message is invalid on its
+/// own.
 fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Value) -> Vec<String> {
     let mut message = message.clone();
-    let mut dropped = Vec::new();
-    if let Some(calls) = message.get("tool_calls").and_then(|c| c.as_array()) {
-        let mut kept = Vec::with_capacity(calls.len());
-        for call in calls {
-            if tool_call_is_usable(call) {
-                kept.push(call.clone());
-            } else {
-                // A refused call still has to be named here, empty id included:
-                // the result it produces carries that empty id, and the caller
-                // below skips what this returns.
-                dropped.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
-            }
-        }
-        if let Some(object) = message.as_object_mut() {
-            if kept.is_empty() {
-                object.remove("tool_calls");
-            } else {
-                object.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
-            }
-        }
-    }
+    let dropped = prune_unusable_tool_calls(&mut message);
     // An assistant turn left with neither text nor calls is not a valid message
     // to resend, and recording it would only make the next request invalid.
-    let says_nothing = match message.get("content") {
-        Some(serde_json::Value::String(text)) => text.trim().is_empty(),
-        Some(serde_json::Value::Array(parts)) => parts.is_empty(),
-        _ => true,
-    };
-    if message.get("tool_calls").is_none() && says_nothing {
+    if message.get("tool_calls").is_none() && content_says_nothing(&message) {
         return dropped;
     }
     transcript.record_message(message);

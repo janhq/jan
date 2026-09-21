@@ -312,39 +312,11 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
     // one nothing can pair a result with. An absent or empty `arguments` is the
     // well-formed "no arguments" spelling several providers use, and is left
     // alone.
-    let is_malformed = |call: &serde_json::Value| !tool_call_is_usable(call);
-
     let mut dropped_ids: Vec<String> = Vec::new();
-    let mut dropped = 0;
     for msg in messages.iter_mut() {
-        let Some(calls) = msg.get("tool_calls").and_then(|v| v.as_array()) else {
-            continue;
-        };
-        if !calls.iter().any(is_malformed) {
-            continue;
-        }
-        let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
-        for call in calls {
-            if is_malformed(call) {
-                // A refused call with no id still has to be named here: its
-                // result carries the empty id, and skipping it would leave the
-                // orphan this pass exists to prevent.
-                dropped_ids.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
-                dropped += 1;
-            } else {
-                kept.push(call.clone());
-            }
-        }
-        let Some(obj) = msg.as_object_mut() else {
-            continue;
-        };
-        if kept.is_empty() {
-            obj.remove("tool_calls");
-        } else {
-            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
-        }
+        dropped_ids.extend(prune_unusable_tool_calls(msg));
     }
-    if dropped == 0 {
+    if dropped_ids.is_empty() {
         return 0;
     }
     // Drop the results that answered a dropped call, then any assistant turn
@@ -364,13 +336,58 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
         }
         // Keep a turn that still says something; a content-null/empty one is
         // now an empty shell left by the dropped call.
-        match m.get("content") {
-            Some(serde_json::Value::String(s)) => !s.trim().is_empty(),
-            Some(serde_json::Value::Array(a)) => !a.is_empty(),
-            _ => false,
-        }
+        !content_says_nothing(m)
     });
-    dropped
+    dropped_ids.len()
+}
+
+/// Refuse the tool calls in `message` the wire cannot carry, naming each.
+///
+/// This is the per-message half of [`drop_malformed_tool_calls`], and the same
+/// rule the live record applies as it accepts an assistant turn (see
+/// `loop::record_assistant_turn`): a call is refused when its result could not
+/// be paired with it, which is why a refused call with no id is still named
+/// here - its result carries the empty id, and skipping it would leave the
+/// orphan this pass exists to prevent. The `tool_calls` key is removed when
+/// every call went, and left untouched when none did, so a message with
+/// nothing to refuse is not rewritten. Returns the refused ids, empty id
+/// included, or an empty list when the message has no calls to refuse.
+pub(crate) fn prune_unusable_tool_calls(message: &mut serde_json::Value) -> Vec<String> {
+    let Some(calls) = message.get("tool_calls").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    if calls.iter().all(tool_call_is_usable) {
+        return Vec::new();
+    }
+    let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
+    let mut refused: Vec<String> = Vec::new();
+    for call in calls {
+        if tool_call_is_usable(call) {
+            kept.push(call.clone());
+        } else {
+            refused.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
+        }
+    }
+    if let Some(obj) = message.as_object_mut() {
+        if kept.is_empty() {
+            obj.remove("tool_calls");
+        } else {
+            obj.insert("tool_calls".to_string(), serde_json::Value::Array(kept));
+        }
+    }
+    refused
+}
+
+/// Whether a message's content carries nothing: no text, or text that is only
+/// whitespace, or an empty parts array. An absent or null content says nothing,
+/// which is what makes an assistant turn that lost its calls an empty shell
+/// rather than a message worth resending.
+pub(crate) fn content_says_nothing(message: &serde_json::Value) -> bool {
+    match message.get("content") {
+        Some(serde_json::Value::String(text)) => text.trim().is_empty(),
+        Some(serde_json::Value::Array(parts)) => parts.is_empty(),
+        _ => true,
+    }
 }
 
 fn system_node(content: &str) -> serde_json::Value {
