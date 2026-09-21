@@ -43,7 +43,8 @@ pub(crate) struct AgentToml {
 pub(crate) struct PromptSection {
     /// Placement for a composer no policy mentions, `tail` by default. A
     /// composer that varies within a session stays in the tail whatever this
-    /// says: the constancy rule outranks it.
+    /// says: the constancy rule outranks it. All current composers already
+    /// declare a placement or vary, so this fallback has no effect today.
     #[serde(default)]
     pub default: Placement,
     /// Composer ids allowed above the cache line (`assistant_instructions`,
@@ -304,8 +305,8 @@ inject = "always"
 # project_context, skills, memory_catalog, tool_schemas (the tool array is a
 # request field and is always above the cache line).
 # prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
-# Placement for a composer no policy mentions: tail (the default) or prefix.
-# A composer that varies within a session stays in the tail regardless.
+# Fallback for a future unclassified composer: tail (the default) or prefix.
+# No effect on current composers. Use prefix_allow to narrow today's prefix.
 # default = "tail"
 "#;
 

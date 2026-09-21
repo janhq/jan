@@ -157,6 +157,8 @@ policy mentions is the tail.
 Tail blocks are sent as `<SYSTEM>`-marked guidance after the conversation, including when the
 allowlist leaves no stable prompt. They are not system-role messages: provider adapters would
 move those ahead of history and defeat the placement policy.
+Once sent successfully, a tail block remains in accepted history at that position rather than
+moving after each tool result. Fresh run context is appended after it; compaction bounds growth.
 
 ```toml
 [prompt]
@@ -171,6 +173,10 @@ prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"
 | --- | --- | --- |
 | `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
 | `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+
+All current contributors either declare their placement or vary, so changing `default` alone has
+no effect today. Use `prefix_allow` to narrow the current prefix. The tool schemas are a request
+field rather than a prompt block and always remain above the cache line, even with an empty list.
 
 ```bash
 jan cli agent status   # the resolved placement of every contributor, and why
