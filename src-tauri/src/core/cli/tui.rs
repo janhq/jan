@@ -3202,6 +3202,11 @@ impl App {
     /// run -- a stranded block spins in the dock on an idle session -- but a
     /// child that did work still earns its summary row, so the calls it made are
     /// accounted for rather than vanishing with the panel.
+    ///
+    /// Clears `Status::Parked` but deliberately does not publish: every caller
+    /// is a run-end path that goes on to set `Status::Idle` and publish once,
+    /// so publishing here would emit an extra intermediate state. A new caller
+    /// that does not follow that pattern owns the `publish_agent_status()`.
     fn close_live_background(&mut self) {
         for panel in std::mem::take(&mut self.subagents) {
             // A later-phase subagent that never started has no run to summarize;
@@ -5644,13 +5649,19 @@ impl App {
     fn publish_agent_status(&mut self) {
         use super::agent_status::AgentStatusState as S;
         let state = match self.status {
-            // Parked reports `done` like idle: the model has stopped and the
-            // session takes input again, which is what a status consumer waits
-            // for. The run's background work is not the agent working.
-            Status::Idle | Status::Parked => S::Done,
-            Status::Running if !self.pending_queue.is_empty() => S::Blocked,
-            Status::Running if !self.ask_queue.is_empty() => S::Waiting,
+            Status::Idle => S::Done,
+            // A live prompt outranks the turn status. A parked run still owns
+            // its background work, and a subagent's permission request is
+            // forwarded to the parent and queued here while the parent is
+            // parked -- reporting `done` there would tell a status consumer the
+            // session is free when it is in fact waiting on the user.
+            _ if !self.pending_queue.is_empty() => S::Blocked,
+            _ if !self.ask_queue.is_empty() => S::Waiting,
             Status::Running => S::Working,
+            // Nothing is asking: parked reports `done` like idle, because the
+            // model has stopped and the session takes input again. The run's
+            // background work is not the agent working.
+            Status::Parked => S::Done,
         };
         let prompt = match state {
             S::Waiting => self
@@ -11889,10 +11900,11 @@ Then report what you wrote and why, briefly.";
 /// the normal toolset, permission gate, and transcript. The prompt body itself
 /// is hidden -- the note below is what the user asked for, the canned text is
 /// not. Idle-only, like the other commands that start a turn -- queueing it
-/// behind a running turn would have it survey a project mid-change.
+/// behind a running turn would have it survey a project mid-change. A parked
+/// run counts as running here: its background work can still change the tree.
 fn init_command(app: &mut App) {
-    if app.status != Status::Idle {
-        app.note("/init is only available while idle");
+    if app.run_is_live() {
+        app.note("/init is only available once the run has finished");
         return;
     }
     let existing = crate::core::agent::context::has_context_file(&app.project_root);
@@ -13240,8 +13252,8 @@ fn handle_provider_prompt_key(app: &mut App, key: KeyEvent, ctrl: bool) {
 /// `App::body()` and persists it.
 fn plan_command(app: &mut App, arg: &str) {
     use crate::core::agent::plan::RunMode;
-    if app.status != Status::Idle {
-        app.note("plan mode is only settable while idle");
+    if app.run_is_live() {
+        app.note("plan mode is only settable once the run has finished");
         return;
     }
     let arg = arg.trim();
@@ -13724,8 +13736,8 @@ fn show_goal_status(app: &mut App) {
 /// condition is the first prompt). Replaces any existing goal.
 fn set_goal(app: &mut App, condition: &str) {
     use crate::core::agent::goal::GoalState;
-    if app.status != Status::Idle {
-        app.note("cannot set a goal while a turn is running");
+    if app.run_is_live() {
+        app.note("cannot set a goal while a run is live");
         return;
     }
     let goal = GoalState::new(condition);
@@ -32122,7 +32134,7 @@ mod tests {
         );
         let text: String = app.transcript.iter().map(row_text).collect();
         assert!(
-            !text.contains("only available while idle"),
+            !text.contains("only available once the run has finished"),
             "no idle refusal may be emitted: {text}"
         );
         assert!(
@@ -33186,7 +33198,27 @@ mod tests {
         run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
         let text: String = app.transcript.iter().map(row_text).collect();
-        assert!(text.contains("only settable while idle"), "note: {text}");
+        assert!(
+            text.contains("only settable once the run has finished"),
+            "note: {text}"
+        );
+    }
+
+    /// A parked run is still a live run: the commands that start a turn stay
+    /// refused, so the slash popup that `accepts_input()` now opens while
+    /// parked cannot be used to race the background work.
+    #[tokio::test]
+    async fn turn_starting_commands_are_refused_while_parked() {
+        use crate::core::agent::plan::RunMode;
+        let mut app = test_app();
+        app.status = Status::Parked;
+        run_command(&mut app, "plan", &no_mcp()).await;
+        assert_eq!(app.run_mode, RunMode::Normal, "must not switch while parked");
+        let text: String = app.transcript.iter().map(row_text).collect();
+        assert!(
+            text.contains("only settable once the run has finished"),
+            "the refusal must not claim the session is busy-until-idle: {text}"
+        );
     }
 
     #[tokio::test]
@@ -33990,7 +34022,11 @@ mod tests {
             app.monitors.is_empty(),
             "run end re-reads the session set, which has nothing running"
         );
-        assert!(app.status != Status::Parked);
+        assert_eq!(
+            app.status,
+            Status::Idle,
+            "a run that errored out is idle, not merely un-parked"
+        );
         assert!(header(&mut app).contains("[ready]"));
     }
 
@@ -34026,6 +34062,48 @@ mod tests {
         // A ping resumes the turn: back to working.
         app.apply(StreamEvent::Step { index: 2, max: 0 });
         assert_eq!(app.agent_status.last_state(), Some(S::Working));
+    }
+
+    /// Parked reports `done` only when nothing is asking. A subagent still
+    /// running under a parked parent can raise a permission prompt, which is
+    /// forwarded to the parent and queued while the status is `Parked`; saying
+    /// `done` there would tell a status consumer the session is free when it is
+    /// actually blocked on the user.
+    #[test]
+    fn a_parked_run_blocked_on_a_prompt_reports_blocked() {
+        use super::super::agent_status::AgentStatusState as S;
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::Parked);
+        assert_eq!(app.agent_status.last_state(), Some(S::Done));
+
+        // The child is still working under the parked parent and needs a tool
+        // approved. It arrives as a forwarded subagent event, the real path.
+        app.apply(StreamEvent::Subagent {
+            run_id: "child-1".into(),
+            name: "scout".into(),
+            event: Box::new(StreamEvent::PermissionRequest {
+                request_id: "perm-1".into(),
+                tool_name: "write".into(),
+                capability: "write".into(),
+                path: Some("notes.md".into()),
+                command: None,
+                diff: None,
+                prompt_kind: "write".into(),
+                offers_always: true,
+            }),
+        });
+        assert_eq!(app.status, Status::Parked, "the parent is still parked");
+        assert_eq!(
+            app.agent_status.last_state(),
+            Some(S::Blocked),
+            "a live permission prompt outranks the parked mapping"
+        );
+
+        // Answering it puts the parked run back to `done`.
+        app.pending_queue.clear();
+        app.publish_agent_status();
+        assert_eq!(app.agent_status.last_state(), Some(S::Done));
     }
 
     fn session_monitor_spec(script: &str) -> tauri_plugin_agent_tools::tools::monitor::MonitorSpec {
