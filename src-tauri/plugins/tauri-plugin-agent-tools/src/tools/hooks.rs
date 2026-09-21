@@ -603,6 +603,14 @@ mod tests {
         }
     }
 
+    /// Render a path for embedding in a hook's shell command. On Windows the
+    /// resolved shell is git-bash, which eats the backslashes of a native
+    /// `C:\Users\...` path and writes to a mangled name; forward slashes work
+    /// there too, and the quotes keep a path with spaces a single word.
+    fn shq(path: &Path) -> String {
+        format!("'{}'", path.to_string_lossy().replace('\\', "/"))
+    }
+
     fn unique_root(tag: &str) -> PathBuf {
         use std::sync::atomic::{AtomicU32, Ordering};
         static COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -777,11 +785,7 @@ mod tests {
         set.extend_from(
             vec![
                 entry("PreToolUse", None, r#"echo '{"decision":"deny"}'"#),
-                entry(
-                    "PreToolUse",
-                    None,
-                    &format!("touch {}", marker.to_string_lossy()),
-                ),
+                entry("PreToolUse", None, &format!("touch {}", shq(&marker))),
             ],
             Path::new("x"),
         );
@@ -867,7 +871,7 @@ mod tests {
             vec![entry(
                 "PreToolUse",
                 None,
-                &format!("cat > {}", out.to_string_lossy()),
+                &format!("cat > {}", shq(&out)),
             )],
             Path::new("x"),
         );
@@ -1045,11 +1049,7 @@ mod tests {
         let empty: Vec<String> = Vec::new();
         let mut set = HookSet::new();
         set.extend_from(
-            vec![entry(
-                "PreToolUse",
-                None,
-                &format!("touch {}", marker.to_string_lossy()),
-            )],
+            vec![entry("PreToolUse", None, &format!("touch {}", shq(&marker)))],
             Path::new("x"),
         );
         let outcome = run_hooks(
@@ -1143,7 +1143,7 @@ mod tests {
             vec![entry(
                 "PostToolUse",
                 Some("read"),
-                &format!("cat > {}", seen.to_string_lossy()),
+                &format!("cat > {}", shq(&seen)),
             )],
             Path::new("x"),
         );
