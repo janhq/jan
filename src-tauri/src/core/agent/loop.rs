@@ -19,10 +19,10 @@ use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
 use crate::core::agent::upstream::{
-    arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
-    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
+    collect_mcp_openai_tools, copy_optional_chat_params, execute_mcp_tool_calls,
+    extract_choice_message, extract_tool_calls, load_assistant_config, pairable_tool_call_id,
     parse_openai_messages, resolve_api_type_for_model, resolve_upstream_for_model,
-    stream_openai_chat_completions,
+    stream_openai_chat_completions, tool_call_is_usable,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -2994,22 +2994,26 @@ fn projected_message_count(
 /// This mirrors the per-message half of
 /// [`crate::core::agent::upstream::drop_malformed_tool_calls`], which used to
 /// clean these out by rewriting the live list on the next turn. The record is
-/// never rewritten, so the poison is refused entry instead: a call whose
-/// arguments do not decode to a plain JSON object is one a strict upstream
-/// rejects the whole request over, and the run that emitted it cannot resend its
-/// own history until it is gone. The caller uses the returned ids to skip the
-/// results that answered those calls, which is the other half of the same
-/// repair: an orphaned `tool` message is invalid on its own.
+/// never rewritten, so an unusable call is refused entry instead: one whose
+/// arguments do not decode to a plain JSON object, or which has no non-empty id
+/// for its result to carry, is a turn a strict upstream rejects the whole
+/// request over -- and the run that emitted it cannot resend its own history
+/// until it is gone. The caller uses the returned ids to skip the results that
+/// answered those calls, which is the other half of the same repair: an
+/// orphaned `tool` message is invalid on its own.
 fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Value) -> Vec<String> {
     let mut message = message.clone();
     let mut dropped = Vec::new();
     if let Some(calls) = message.get("tool_calls").and_then(|c| c.as_array()) {
         let mut kept = Vec::with_capacity(calls.len());
         for call in calls {
-            if arguments_are_executable(call) {
+            if tool_call_is_usable(call) {
                 kept.push(call.clone());
-            } else if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                dropped.push(id.to_string());
+            } else {
+                // A refused call still has to be named here, empty id included:
+                // the result it produces carries that empty id, and the caller
+                // below skips what this returns.
+                dropped.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
             }
         }
         if let Some(object) = message.as_object_mut() {
@@ -3562,29 +3566,31 @@ async fn run_turn_cycle(
             continue;
         }
 
-        // Invariant: a tool call whose arguments do not decode to a plain
-        // JSON object is never executed. A truncated stream or a confused
-        // model would otherwise run a tool with invented or empty arguments.
-        // The call fails visibly instead, and the per-request sanitizer keeps
-        // the malformed call out of the history the next request carries.
+        // Invariant: a tool call the record cannot hold is never executed. A
+        // call whose arguments do not decode to a plain JSON object is one a
+        // truncated stream or a confused model would run with invented or empty
+        // arguments; a call with no non-empty id is one whose result would be a
+        // `role: "tool"` message paired with nothing. Both fail visibly instead
+        // of running, and the per-request sanitizer keeps them out of the
+        // history the next request carries.
         let executable: Vec<serde_json::Value> = tool_calls
             .iter()
-            .filter(|tc| arguments_are_executable(tc))
+            .filter(|tc| tool_call_is_usable(tc))
             .cloned()
             .collect();
         let mut error_outcomes: Vec<ToolOutcome> = tool_calls
             .iter()
-            .filter(|tc| !arguments_are_executable(tc))
+            .filter(|tc| !tool_call_is_usable(tc))
             .map(|tc| {
-                ToolOutcome::plain(
-                    tc.get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                let id = pairable_tool_call_id(tc).unwrap_or_default();
+                let reason = if id.is_empty() {
+                    "ERROR: tool call had no id; the call was not executed and its result would \
+                     have nothing to pair with. Re-emit it as a tool call carrying an id."
+                } else {
                     "ERROR: tool-call arguments are not a plain JSON object; the call was not \
                      executed. Re-emit it with the arguments as a JSON object."
-                        .to_string(),
-                )
+                };
+                ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
         let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
@@ -3777,6 +3783,40 @@ mod tests {
             req1["messages"][1], req2["messages"][1],
             "the volatile block is expected to differ"
         );
+    }
+
+    /// The record gate names every call it refuses, empty id included: the
+    /// caller skips results by that list, and a result left behind is the
+    /// orphan a strict upstream rejects the whole request over.
+    #[test]
+    fn a_tool_call_without_an_id_is_refused_entry_and_named_for_its_result() {
+        let mut transcript = Transcript::default();
+        let turn = json!({
+            "role": "assistant",
+            "content": "on it",
+            "tool_calls": [
+                { "type": "function", "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" } },
+                { "id": "call_ok", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+            ]
+        });
+
+        let dropped = record_assistant_turn(&mut transcript, &turn);
+        assert_eq!(
+            dropped,
+            vec![String::new()],
+            "the empty id is what the refused call's result will carry"
+        );
+
+        let crate::core::agent::transcript::Event::Message(recorded) = &transcript.events()[0]
+        else {
+            panic!("the assistant turn is recorded");
+        };
+        let calls = recorded["tool_calls"]
+            .as_array()
+            .expect("the usable call stays");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "call_ok");
+        assert_eq!(recorded["content"], "on it");
     }
 
     struct MockModel {

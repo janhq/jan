@@ -39,8 +39,8 @@ use crate::core::agent::compaction::is_compaction_summary;
 use crate::core::agent::r#loop::strip_assistant_reasoning;
 use crate::core::agent::reminder;
 use crate::core::agent::upstream::{
-    drop_malformed_tool_calls, insert_volatile_system, is_system_node, repair_dangling_tool_calls,
-    set_system_prompt,
+    drop_malformed_tool_calls, drop_orphaned_tool_results, insert_volatile_system, is_system_node,
+    repair_dangling_tool_calls, set_system_prompt,
 };
 
 /// One thing that happened, in the order it happened.
@@ -102,10 +102,11 @@ impl Transcript {
     /// This is the one boundary every incoming message array passes through,
     /// so it is where the record heals: a tool call a truncated stream left
     /// with unparsable arguments is refused entry, the result it orphaned goes
-    /// with it, and a surviving call that lost its result gets the synthetic
-    /// error reply. Both shapes wedge a session - providers 422 the whole
-    /// request - and healing here means the record only ever holds turns a
-    /// strict upstream accepts.
+    /// with it, a result whose call is not in the history at all is dropped,
+    /// and a surviving call that lost its result gets the synthetic error
+    /// reply. Every one of those shapes wedges a session - providers 422 the
+    /// whole request - and healing here means the record only ever holds turns
+    /// a strict upstream accepts.
     ///
     /// Two kinds of node are then read rather than recorded verbatim:
     ///
@@ -121,9 +122,11 @@ impl Transcript {
     pub(crate) fn from_history(mut messages: Vec<Value>) -> Self {
         let poisoned = drop_malformed_tool_calls(&mut messages);
         if poisoned > 0 {
-            log::warn!(
-                "agent: dropped {poisoned} tool call(s) with unparsable arguments from history"
-            );
+            log::warn!("agent: dropped {poisoned} unusable tool call(s) from history");
+        }
+        let orphaned = drop_orphaned_tool_results(&mut messages);
+        if orphaned > 0 {
+            log::warn!("agent: dropped {orphaned} tool result(s) whose call is not in the history");
         }
         let repaired = repair_dangling_tool_calls(&mut messages);
         if repaired > 0 {
@@ -439,6 +442,28 @@ mod tests {
         for (index, message) in recorded.iter().take(16).enumerate() {
             assert_eq!(message["content"], format!("message {index}"));
         }
+    }
+
+    /// The adoption boundary heals the shape no other pass can see: a
+    /// `role: "tool"` result whose call is not in the history at all. A strict
+    /// upstream rejects the whole request over that one orphan, so the record
+    /// must never take it in.
+    #[test]
+    fn from_history_drops_a_tool_result_whose_call_is_not_there() {
+        let transcript = Transcript::from_history(vec![
+            json!({ "role": "user", "content": "carry on" }),
+            json!({ "role": "tool", "tool_call_id": "call_gone", "content": "left behind" }),
+            json!({ "role": "assistant", "content": "as you asked" }),
+        ]);
+
+        let projected = transcript.project(&nothing());
+        assert_eq!(
+            projected.len(),
+            2,
+            "the orphaned result never reaches the wire: {projected:?}"
+        );
+        assert_eq!(projected[0]["content"], "carry on");
+        assert_eq!(projected[1]["content"], "as you asked");
     }
 
     /// The reasoning retry is a projection option: a route that rejects the

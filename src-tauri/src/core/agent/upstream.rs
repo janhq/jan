@@ -196,25 +196,64 @@ pub(crate) fn repair_dangling_tool_calls(messages: &mut Vec<serde_json::Value>) 
     repaired
 }
 
-/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
-/// `function.arguments` is not parsable JSON. A model (observed with
-/// DeepSeek/vLLM) can end a stream mid-argument while still reporting
-/// `finish_reason: "tool_calls"`, so the truncated call is persisted into the
-/// thread. Every later turn resends it, and an OpenAI-compatible upstream
-/// rejects the whole request with 422 -- the session is wedged, because the
-/// poison is in the history the agent keeps replaying.
+/// Drops `role: "tool"` messages whose `tool_call_id` matches no tool call in
+/// the same array.
 ///
-/// Removal, not reconstruction: a truncated argument cannot be recovered, and
-/// inventing one would run a tool the model never actually asked for. The call
-/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id`,
-/// so no orphaned result is left behind. Valid sibling calls in the same turn
-/// survive; an assistant turn whose calls are ALL dropped keeps its text and
-/// loses only the `tool_calls` key (and is removed entirely if that leaves it
-/// empty, which would otherwise be a contentless assistant turn some providers
-/// reject). Returns the number of calls dropped.
+/// [`drop_malformed_tool_calls`] removes the results of the calls it refuses,
+/// but nothing else in this module looks at a result whose call was never
+/// there: a caller's stored thread can carry a tool reply left behind by a
+/// dropped call, or one whose call lost its id, and a strict upstream rejects
+/// the entire request over that single orphan (Anthropic is the loudest, but
+/// OpenAI-compatible routes reject it too). This is the mirror of
+/// [`repair_dangling_tool_calls`] -- that pass fills a call that lost its
+/// result, this one removes a result that lost its call -- and the two together
+/// are what make the adoption boundary's history wire-shaped. Returns the
+/// number of results dropped.
+pub(crate) fn drop_orphaned_tool_results(messages: &mut Vec<serde_json::Value>) -> usize {
+    let mut called: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for message in messages.iter() {
+        let Some(calls) = message.get("tool_calls").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for call in calls {
+            if let Some(id) = pairable_tool_call_id(call) {
+                called.insert(id.to_string());
+            }
+        }
+    }
+    let before = messages.len();
+    messages.retain(|message| {
+        if message.get("role").and_then(|v| v.as_str()) != Some("tool") {
+            return true;
+        }
+        message
+            .get("tool_call_id")
+            .and_then(|v| v.as_str())
+            .is_some_and(|id| !id.is_empty() && called.contains(id))
+    });
+    before - messages.len()
+}
+
+/// The id a tool call's result has to answer with, or `None` when the call
+/// cannot be paired at all.
 ///
-/// Runs before [`repair_dangling_tool_calls`], so a surviving call that lost
-/// its result still gets the synthetic error reply from that pass.
+/// The result of a call is a `role: "tool"` message carrying the call's id, and
+/// a strict upstream rejects a request where the two do not line up. A call
+/// whose `id` is missing, not a string, or empty has nothing for its result to
+/// carry, so it is neither executed nor recorded -- see
+/// [`drop_malformed_tool_calls`] for the history side of the same rule.
+pub(crate) fn pairable_tool_call_id(call: &serde_json::Value) -> Option<&str> {
+    call.get("id")
+        .and_then(|id| id.as_str())
+        .filter(|id| !id.is_empty())
+}
+
+/// A call the record may hold: its result can be paired with it, and its
+/// arguments are a plain JSON object.
+pub(crate) fn tool_call_is_usable(call: &serde_json::Value) -> bool {
+    pairable_tool_call_id(call).is_some() && arguments_are_executable(call)
+}
+
 /// Whether a tool call's arguments are safe to execute and to keep in
 /// provider-visible history.
 ///
@@ -245,11 +284,35 @@ pub(crate) fn arguments_are_executable(tc: &serde_json::Value) -> bool {
     )
 }
 
+/// Drops "poisoned" tool calls: an assistant `tool_calls` entry whose
+/// `function.arguments` is not parsable JSON, or which has no non-empty id for
+/// its result to carry. A model (observed with DeepSeek/vLLM) can end a stream
+/// mid-argument while still reporting `finish_reason: "tool_calls"`, so the
+/// truncated call is persisted into the thread. Every later turn resends it,
+/// and an OpenAI-compatible upstream rejects the whole request with 422 -- the
+/// session is wedged, because the poison is in the history the agent keeps
+/// replaying.
+///
+/// Removal, not reconstruction: a truncated argument cannot be recovered, and
+/// inventing one would run a tool the model never actually asked for. The call
+/// is dropped along with any `role: "tool"` reply carrying its `tool_call_id` -
+/// including the empty id an unpaired result carries - so no orphaned result is
+/// left behind. Valid sibling calls in the same turn survive; an assistant turn
+/// whose calls are ALL dropped keeps its text and loses only the `tool_calls`
+/// key (and is removed entirely if that leaves it empty, which would otherwise
+/// be a contentless assistant turn some providers reject). Returns the number
+/// of calls dropped.
+///
+/// Runs before [`drop_orphaned_tool_results`] and
+/// [`repair_dangling_tool_calls`], so a surviving call that lost its result
+/// still gets the synthetic error reply from that pass.
 pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -> usize {
-    // A call is poison when its arguments are not a plain JSON object. An
-    // absent or empty `arguments` is the well-formed "no arguments" spelling
-    // several providers use, and is left alone.
-    let is_malformed = |call: &serde_json::Value| !arguments_are_executable(call);
+    // A call is refused when the record could not hold it: an unparsable
+    // `arguments` is the truncated-stream shape, and an absent or empty `id` is
+    // one nothing can pair a result with. An absent or empty `arguments` is the
+    // well-formed "no arguments" spelling several providers use, and is left
+    // alone.
+    let is_malformed = |call: &serde_json::Value| !tool_call_is_usable(call);
 
     let mut dropped_ids: Vec<String> = Vec::new();
     let mut dropped = 0;
@@ -263,9 +326,10 @@ pub(crate) fn drop_malformed_tool_calls(messages: &mut Vec<serde_json::Value>) -
         let mut kept: Vec<serde_json::Value> = Vec::with_capacity(calls.len());
         for call in calls {
             if is_malformed(call) {
-                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                    dropped_ids.push(id.to_string());
-                }
+                // A refused call with no id still has to be named here: its
+                // result carries the empty id, and skipping it would leave the
+                // orphan this pass exists to prevent.
+                dropped_ids.push(pairable_tool_call_id(call).unwrap_or_default().to_string());
                 dropped += 1;
             } else {
                 kept.push(call.clone());
@@ -2885,6 +2949,54 @@ mod tests {
         // Only the poisoned call's result was dropped.
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1]["tool_call_id"], "ok");
+    }
+
+    #[test]
+    fn sanitize_drops_a_call_without_an_id_and_the_result_that_cannot_carry_one() {
+        // A call nothing can pair: its result goes out with an empty
+        // `tool_call_id`, which is an orphan on every later turn.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "run it" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "type": "function",
+                    "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "", "content": "output" }),
+        ];
+        assert_eq!(drop_malformed_tool_calls(&mut messages), 1);
+        // The unpaired call, the empty shell it left, and its result are gone.
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["content"], "run it");
+    }
+
+    #[test]
+    fn orphan_tool_result_with_no_call_in_the_history_is_dropped() {
+        // What the sanitizer cannot see: a result whose call was never in the
+        // array at all (a caller's stored thread, a half-written replay). The
+        // pass is the mirror of `repair_dangling_tool_calls`, which fills the
+        // opposite gap.
+        let mut messages = vec![
+            json!({ "role": "user", "content": "carry on" }),
+            json!({ "role": "tool", "tool_call_id": "", "content": "left behind" }),
+            json!({ "role": "tool", "tool_call_id": "call_gone", "content": "also left behind" }),
+            json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": { "name": "read", "arguments": "{}" }
+                }]
+            }),
+            json!({ "role": "tool", "tool_call_id": "call_1", "content": "contents" }),
+        ];
+        assert_eq!(drop_orphaned_tool_results(&mut messages), 2);
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages[2]["tool_call_id"], "call_1");
     }
 
     /// The full fixture matrix behind the plain-object invariant: what the
