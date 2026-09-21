@@ -3582,6 +3582,7 @@ async fn run_turn_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::agent::shell_quoted_path;
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
@@ -6170,7 +6171,7 @@ mod tests {
             hook_set(vec![hook_entry(
                 "PreToolUse",
                 None,
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             Default::default(),
             crate::core::agent::plan::RunMode::Plan,
@@ -6217,7 +6218,7 @@ mod tests {
             Default::default(),
             plugin_tool_set(vec![plugin_tool_entry(
                 "touch",
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             crate::core::agent::plan::RunMode::Plan,
         );
@@ -6249,7 +6250,7 @@ mod tests {
             )]),
             plugin_tool_set(vec![plugin_tool_entry(
                 "touch",
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             crate::core::agent::plan::RunMode::Normal,
         );
@@ -6315,7 +6316,7 @@ mod tests {
             hook_set(vec![hook_entry(
                 "PreToolUse",
                 Some("mcp__*"),
-                &format!("cat > {}", seen.to_string_lossy()),
+                &format!("cat > {}", shell_quoted_path(&seen)),
             )]),
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
@@ -6380,17 +6381,17 @@ mod tests {
                 hook_entry(
                     "SessionStart",
                     None,
-                    &format!("cat > {}/start.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("start.json"))),
                 ),
                 hook_entry(
                     "UserPromptSubmit",
                     None,
-                    &format!("cat > {}/prompt.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("prompt.json"))),
                 ),
                 hook_entry(
                     "SessionEnd",
                     None,
-                    &format!("cat > {}/end.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("end.json"))),
                 ),
             ]),
             Default::default(),
