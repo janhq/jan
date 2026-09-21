@@ -221,7 +221,7 @@ event:
 | `protocol_version` | The wire contract this stream speaks. The `result` object carries it too, so a `--output-format json` caller can pin it without an `init` record |
 | `session_id` | The session this run saves under, unabbreviated -- the id `--resume` takes. `result.session_id` is its first 8 characters, and is `null` when the run saved nothing, which is how you tell whether this id names a session on disk |
 | `model` | The model the run dispatches to, as `result` reports it |
-| `cwd` | The project root the run's tools are confined to |
+| `cwd` | The project root the run's tools are confined to. `null` when the run was given none |
 | `tools` | The tool names the request advertises, in the order it sends them. The tool array is the head of the cached request prefix, so the order is part of the payload, not a detail |
 | `input_kinds` | The `type` values this run accepts on stdin. Empty when the run was not asked to read stdin, so "nothing can be sent back" is an answer rather than a missing field |
 
