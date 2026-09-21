@@ -15,14 +15,17 @@
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
 //! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
 //! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`. Three tags are minted
-//! here rather than by the loop: `init`, `permission_decision` and `result`.
-//! `init` is the handshake a client reads before any other record (see
-//! [`Init`]); `permission_decision` reports how this CLI answered a gated tool
-//! call, which the loop never sees; `result` is the terminal envelope.
+//! `turn_usage`, `done`, `error`, `permission_request`. Four tags are minted by
+//! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
+//! `input_error`. `init` is the handshake a client reads before any other record
+//! (see [`Init`]); `permission_decision` reports how this CLI answered a gated
+//! tool call, which the loop never sees; `result` is the terminal envelope;
+//! `input_error` (defined in [`stream_input`](super::stream_input)) reports a
+//! client line the parser rejected.
 //!
-//! The tag lists above and in `events.rs` are the contract, and a test compares
-//! both against the variants that actually serialize -- a renamed tag is a
+//! The tag lists above and in `events.rs` are the contract. One test compares
+//! the loop tags against the variants that serialize, and another compares the
+//! CLI-minted tags against the records that mint them -- a renamed tag is a
 //! breaking change for every consumer, so it must not be able to land quietly.
 //!
 //! `monitors`, `parked` and `notice` are display-only progress; a consumer that
@@ -245,8 +248,11 @@ pub(crate) struct Init {
     session_id: String,
     /// The model this run dispatches to, as the envelope reports it.
     model: String,
-    /// The project root the run's tools are confined to, absolute.
-    cwd: String,
+    /// The project root the run's tools are confined to, absolute. `null` for
+    /// a caller that built the run's arguments without one -- every CLI run
+    /// resolves a root before the run starts -- so the field never names a
+    /// directory that is not the one the tools are confined to.
+    cwd: Option<String>,
     /// The tool names this run advertises, in the order the request carries
     /// them. Order matters to the consumer: it is the prefix of the request a
     /// provider caches on, so a set that reorders between runs is a cache miss
@@ -262,7 +268,7 @@ impl Init {
     pub(crate) fn new(
         session_id: &str,
         model: &str,
-        cwd: &str,
+        cwd: Option<String>,
         tools: Vec<String>,
         input_kinds: Vec<&'static str>,
     ) -> Self {
@@ -271,7 +277,7 @@ impl Init {
             protocol_version: crate::core::agent::events::PROTOCOL_VERSION,
             session_id: session_id.to_string(),
             model: model.to_string(),
-            cwd: cwd.to_string(),
+            cwd,
             tools,
             input_kinds,
         }
@@ -352,13 +358,30 @@ mod tests {
     use super::*;
     use crate::core::agent::events::Usage;
 
+    /// The module's doc comment as one string. The prose is line-wrapped in the
+    /// source, so a phrase its marker quotes can straddle a line break, and
+    /// reading the doc comment alone keeps a marker from matching its own
+    /// mention in the tests below -- which is how a parse can silently return
+    /// nothing and still look green.
+    fn module_doc(source: &str) -> String {
+        source
+            .lines()
+            .take_while(|line| line.starts_with("//!"))
+            .map(|line| line.trim_start_matches("//!").trim_start())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
     /// The backticked tags in the module doc comment, read from the sentence
     /// that introduces them. Deliberately a parse of the prose: a list nothing
     /// reads is how the tags and the enum drifted apart in the first place, and
     /// the failure mode of a rewording is a test that says so, not a consumer
     /// that meets an unknown tag in production.
-    fn documented_tags_after<'a>(source: &'a str, marker: &str) -> Vec<&'a str> {
-        let after_marker = source
+    ///
+    /// Panics rather than returning an empty list, because "the marker moved"
+    /// and "the list is empty" are the same nothing to every caller here.
+    fn documented_tags_after<'a>(doc: &'a str, marker: &str) -> Vec<&'a str> {
+        let after_marker = doc
             .split_once(marker)
             .unwrap_or_else(|| panic!("the doc comment no longer says {marker:?}"))
             .1;
@@ -374,6 +397,10 @@ mod tests {
             // Missing trailing prose means the list ran to the end of the text.
             gap = segments.next().unwrap_or(".");
         }
+        assert!(
+            !tags.is_empty(),
+            "no tags parsed after {marker:?}: the doc comment was reworded"
+        );
         tags
     }
 
@@ -405,16 +432,16 @@ mod tests {
             .collect()
     }
 
-    /// Three views of one contract: the tags the doc comment promises, the
-    /// variants the enum declares, and the tags its instances actually
-    /// serialize. A renamed tag breaks consumers, so it has to be a deliberate
-    /// edit in all three places rather than a silent one in the enum.
+    /// Two views of the loop's half of the contract: the tags the doc comment
+    /// promises and the tags its instances actually serialize. The enum side
+    /// is [`every_declared_variant_is_documented_and_sampled`], which pins the
+    /// sample list to the variants; between them, a tag cannot be renamed or
+    /// dropped without a test saying so.
     #[test]
-    fn the_documented_tags_are_the_variants_that_serialize() {
+    fn the_documented_loop_tags_are_the_variants_that_serialize() {
         let source = include_str!("run_report.rs");
-        let loop_tags = documented_tags_after(source, "the snake_case variant names: ");
-        let minted =
-            documented_tags_after(source, "tags are minted here rather than by the loop: ");
+        let doc = module_doc(source);
+        let documented = documented_tags_after(&doc, "the snake_case variant names: ");
 
         let samples = crate::core::agent::events::tests::sample_events();
         let mut serialized: Vec<String> = samples
@@ -428,16 +455,52 @@ mod tests {
             .collect();
         serialized.sort();
 
-        let mut documented: Vec<String> = loop_tags
-            .iter()
-            .chain(minted.iter())
-            .map(|t| t.to_string())
-            .collect();
+        let mut documented: Vec<String> = documented.iter().map(|t| t.to_string()).collect();
         documented.sort();
-
         assert_eq!(
             documented, serialized,
-            "the tags this module documents and the tags that serialize have diverged"
+            "the loop tags this module documents and the tags that serialize have diverged"
+        );
+    }
+
+    /// The CLI's half of the contract. These tags have no `StreamEvent` variant
+    /// to serialize, so they are compared against the records that do mint them:
+    /// the doc comment and each record's `kind` have to move together.
+    #[test]
+    fn the_documented_minted_tags_are_the_ones_the_records_serialize() {
+        let doc = module_doc(include_str!("run_report.rs"));
+        let documented =
+            documented_tags_after(&doc, "the CLI rather than by the loop: ");
+
+        let minted = [
+            serde_json::to_value(Init::new("id", "m", Some("/tmp".to_string()), Vec::new(), Vec::new()))
+                .unwrap(),
+            serde_json::to_value(RunReport::default().finish(None, None, "m", 1, None)).unwrap(),
+            serde_json::to_value(PermissionDecisionRecord::new(
+                "req",
+                PermissionDecision::AllowOnce,
+            ))
+            .unwrap(),
+            serde_json::to_value(crate::core::cli::stream_input::InputErrorRecord::new(
+                "unknown type 'x'", "{}",
+            ))
+            .unwrap(),
+        ];
+        let mut serialized: Vec<&str> = minted
+            .iter()
+            .map(|record| {
+                record["type"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("a minted record has no tag: {record}"))
+            })
+            .collect();
+        serialized.sort_unstable();
+
+        let mut documented = documented.clone();
+        documented.sort_unstable();
+        assert_eq!(
+            documented, serialized,
+            "the CLI-minted tags the doc comment promises and the tags its records mint have diverged"
         );
     }
 
@@ -471,7 +534,7 @@ mod tests {
         let out = serde_json::to_value(Init::new(
             "3f7a91c2-0000-0000-0000-000000000000",
             "stub-model",
-            "/tmp/project",
+            Some("/tmp/project".to_string()),
             vec!["read".to_string(), "write".to_string()],
             vec!["user", "abort", "permission"],
         ))
@@ -495,10 +558,26 @@ mod tests {
     /// "may I send anything back?" gets an answer either way.
     #[test]
     fn init_with_no_input_channel_advertises_no_kinds() {
-        let out =
-            serde_json::to_value(Init::new("id", "m", "/tmp", Vec::new(), Vec::new())).unwrap();
+        let out = serde_json::to_value(Init::new(
+            "id",
+            "m",
+            Some("/tmp".to_string()),
+            Vec::new(),
+            Vec::new(),
+        ))
+        .unwrap();
         assert_eq!(out["input_kinds"], serde_json::json!([]));
         assert_eq!(out["input_kinds"].as_array().unwrap().len(), 0);
+    }
+
+    /// A run given no project root reports none. The alternative -- a path
+    /// that stands in for one -- would answer "what are the tools confined
+    /// to?" with a directory nothing is confined to.
+    #[test]
+    fn init_without_a_project_root_reports_cwd_absent() {
+        let out =
+            serde_json::to_value(Init::new("id", "m", None, Vec::new(), Vec::new())).unwrap();
+        assert!(out["cwd"].is_null(), "{out}");
     }
 
     /// The envelope carries the same version, so a `--output-format json`

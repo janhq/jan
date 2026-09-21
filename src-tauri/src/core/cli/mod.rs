@@ -1989,13 +1989,13 @@ async fn init_record(
     .iter()
     .filter_map(tool_name)
     .collect();
-    // A CLI run always resolves a project root; "." names the process's own
-    // directory for a caller that set none.
+    // The project root the run's tools are confined to, as the run itself sees
+    // it. A caller that built these args without one gets `null`: any path
+    // substituted here would claim a confinement the run does not have.
     let cwd = args
         .project_root
         .as_deref()
-        .map(|root| root.to_string_lossy().into_owned())
-        .unwrap_or_else(|| ".".to_string());
+        .map(|root| root.to_string_lossy().into_owned());
     // A run that does not read stdin accepts nothing, and says so: an empty
     // list is a client's answer that there is no reply path, which is more use
     // than an absent field or a list of kinds the run will ignore.
@@ -2004,7 +2004,7 @@ async fn init_record(
     } else {
         Vec::new()
     };
-    Init::new(session_id, model, &cwd, tools, input_kinds)
+    Init::new(session_id, model, cwd, tools, input_kinds)
 }
 
 /// A rendered tool schema's name, out of the OpenAI `{"type":"function",
