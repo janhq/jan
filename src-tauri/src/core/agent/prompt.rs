@@ -195,13 +195,17 @@ impl Composer {
         }
     }
 
-    /// Whether this composer's content is constant for a session.
+    /// Whether this composer's content is constant across the turns of one
+    /// run.
     ///
-    /// A composer that reads the clock, the branch, the query, or the todo list
-    /// is not, and cannot sit above the cache line: it would break the prefix
-    /// on the turn its value changed. Composition happens once per run, so a
-    /// composer that reads the project directory is constant *within a run* --
-    /// which is what "for a session" means here.
+    /// That is what the cache line asks for: composition happens once per run
+    /// and every turn of it reuses the same message 0, so a composer whose
+    /// bytes can only change when a new run composes the prompt may sit above
+    /// the cache line. A composer that reads the clock, the branch, the query,
+    /// or the todo list cannot: it would break the prefix on the turn its value
+    /// changed. A composer that reads the project directory (project context,
+    /// skills, memory) qualifies -- an edit to those files lands on the next
+    /// run, which is a new prompt on purpose.
     pub(crate) fn constant(self) -> bool {
         match self {
             Composer::AssistantInstructions
@@ -318,7 +322,8 @@ impl PromptPolicy {
         if !composer.constant() {
             if composer.declared() == Some(Placement::Prefix) {
                 return Err(format!(
-                    "`{}` is declared above the cache line but its content is not constant for a session. \
+                    "`{}` is declared above the cache line but its content is not constant across \
+                     the turns of one run. \
                      A composer that varies would break the cached prefix on the turn its value changed: \
                      declare it in the tail (see Composer::declared), or make it constant.",
                     composer.id()

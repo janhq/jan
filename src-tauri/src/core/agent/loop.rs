@@ -2109,9 +2109,11 @@ fn build_run_system_prompt(
 /// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
 /// the CLI `/context` view to size the system segments: routing it through the
 /// same builder is what keeps the reported breakdown from drifting away from
-/// what is actually sent. Excludes the per-turn additions a run makes on top --
-/// the date, git state, query-dependent memory recall, and plan/todo state --
-/// which are not knowable while idle. `None` when no prompt would be built, or
+/// what is actually sent. What it sizes is the stable prompt a run caches, so
+/// the per-turn additions a run composes on top are excluded: the date, git
+/// state, query-dependent memory recall, and plan/todo state all land in the
+/// volatile block below the cache line rather than in the prefix this reports.
+/// `None` when no prompt would be built, or
 /// when the project's `[prompt]` policy cannot be honored (the run itself
 /// reports that failure with the same message).
 #[cfg(feature = "cli")]
