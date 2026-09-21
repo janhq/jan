@@ -34,6 +34,9 @@ export default defineConfig({
         // The e2e suite is a separate package driven by WebdriverIO, not by
         // vitest, so every line of it reads as uncovered and dilutes the total.
         'e2e/**',
+        // Build and release-check scripts are run by node from workflows,
+        // never imported by a vitest suite, so they read as fully uncovered.
+        'scripts/**',
       ],
     },
   },

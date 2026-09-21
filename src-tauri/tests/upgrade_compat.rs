@@ -15,6 +15,11 @@
 //! directory to `fixture_root`); update an existing fixture only when the
 //! current schema itself is being pinned, never to make a test pass.
 
+// `core::setup` is desktop-only -- `core/mod.rs` gates it out of
+// `--features cli`, which builds this test target too. The fixtures are
+// desktop data folders, so the suite belongs to the desktop build.
+#![cfg(not(feature = "cli"))]
+
 use app_lib::core::mcp::models::McpSettings;
 use app_lib::core::setup::{is_default_exa_server, CURRENT_MCP_SCHEMA_VERSION};
 use app_lib::core::threads::helpers::read_messages_from_file;
