@@ -16,6 +16,14 @@ use crate::core::mcp::helpers::add_server_config;
 
 use super::{mcp::helpers::run_mcp_commands, state::AppState};
 
+/// The MCP store schema this build writes. `migrate_mcp_servers` walks every
+/// store older than this through the gates below, then pins this value. The
+/// upgrade-compat fixture test (tests/upgrade_compat.rs) asserts committed
+/// past-release stores sit below it, so bumping this constant without adding
+/// that release's store fixture breaks the build instead of skipping a
+/// migration silently.
+pub const CURRENT_MCP_SCHEMA_VERSION: i64 = 4;
+
 // Migrate MCP servers configuration
 pub fn migrate_mcp_servers(
     app_handle: tauri::AppHandle,
@@ -67,13 +75,15 @@ pub fn migrate_mcp_servers(
             log::error!("Failed to migrate Exa to HTTP: {e}");
         }
     }
-    if mcp_version < 4 {
-        log::info!("Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)");
+    if mcp_version < CURRENT_MCP_SCHEMA_VERSION {
+        log::info!(
+            "Migrating MCP schema version {CURRENT_MCP_SCHEMA_VERSION}: Removing default Exa MCP (native web search cutover)"
+        );
         if let Err(e) = remove_exa_server(app_handle) {
             log::error!("Failed to remove Exa MCP server: {e}");
         }
     }
-    store.set("mcp_version", 4);
+    store.set("mcp_version", CURRENT_MCP_SCHEMA_VERSION);
     store.save().expect("Failed to save store");
     Ok(())
 }
@@ -111,10 +121,42 @@ fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Whether an `exa` MCP server entry is one the web-search cutover removes:
+/// not currently active, and carrying no API key.
+///
+/// Note what `active: false` does *not* mean here. It is not evidence that the
+/// user never turned the server on: 0.8.3's own `migrate_exa_to_http` wrote
+/// the entry with `active: true` and an empty `env` for everybody, so a 0.8.3
+/// upgrader fails the `inactive` half and keeps the entry. The entries this
+/// actually removes are the ones a user deactivated themselves. See
+/// `remove_exa_server` for why that is left alone for now.
+///
+/// It inspects `active` and `env` only -- not `url` or `type` -- so an inactive
+/// *custom* exa entry with an empty env also matches. Callers must reject
+/// non-object values before calling (see `remove_exa_server`).
+///
+/// `pub` for the upgrade-compat fixture test, which pins the decision against
+/// real 0.8.3 bytes.
+pub fn is_default_exa_server(exa: &serde_json::Value) -> bool {
+    let inactive = exa.get("active").and_then(|v| v.as_bool()) != Some(true);
+    let no_key = exa
+        .get("env")
+        .and_then(|env| env.as_object())
+        .map(|env| env.is_empty())
+        .unwrap_or(true);
+    inactive && no_key
+}
+
 /// One-time cutover to native web search: drop the default Exa MCP server so the
-/// built-in web_search/web_fetch tools own web search. Only removes the entry if
-/// it is still the inactive default (hosted HTTP endpoint, no API key); a user who
-/// activated it or supplied their own key keeps their configuration.
+/// built-in web_search/web_fetch tools own web search.
+///
+/// Narrower than the name suggests, and deliberately left that way in this
+/// change: removal needs the entry to be inactive *and* keyless, but 0.8.3
+/// shipped it `active: true` with an empty `env`, so upgraders from 0.8.3 keep
+/// it and the cutover is close to a no-op for them. Widening the match to the
+/// hosted endpoint regardless of `active` would delete configuration for the
+/// whole installed base at next startup, so it is tracked in janhq/jan#9010
+/// rather than changed in passing.
 fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
     if !config_path.exists() {
@@ -129,19 +171,16 @@ fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     };
 
+    // `is_object()` is load-bearing, not defensive noise: serde_json's `get`
+    // returns None on a non-object, so without it a malformed `exa` (a string,
+    // a number, null) would read as "inactive, no key" and be deleted. Before
+    // this predicate was extracted the guard was an `.and_then(as_object)` that
+    // left such an entry alone, and this migration runs once against every
+    // user's config at startup -- it must not start deleting things it used to
+    // skip.
     let is_default_exa = servers
         .get("exa")
-        .and_then(|exa| exa.as_object())
-        .map(|exa| {
-            let inactive = exa.get("active").and_then(|v| v.as_bool()) != Some(true);
-            let no_key = exa
-                .get("env")
-                .and_then(|env| env.as_object())
-                .map(|env| env.is_empty())
-                .unwrap_or(true);
-            inactive && no_key
-        })
-        .unwrap_or(false);
+        .is_some_and(|exa| exa.is_object() && is_default_exa_server(exa));
 
     if is_default_exa {
         servers.remove("exa");
@@ -153,51 +192,6 @@ fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to write MCP config: {e}"))?;
     }
     Ok(())
-}
-
-/// Install/update the bundled `jan` CLI binary.
-///
-/// - `version_changed`: pass `true` whenever the app version has changed (i.e. after an update).
-///   When `true` the binary is always overwritten so the CLI stays in sync with the new app.
-///   When `false` only installs if the binary is not yet present on PATH.
-///
-/// Runs in a background task — never blocks startup.
-/// Errors are logged as warnings and never prevent the app from starting.
-pub fn setup_jan_cli<R: Runtime>(app_handle: tauri::AppHandle<R>, version_changed: bool) {
-    tauri::async_runtime::spawn(async move {
-        // On a normal launch where the version hasn't changed, skip reinstall if already on PATH.
-        if !version_changed {
-            let which_cmd = if cfg!(windows) { "where" } else { "which" };
-            let mut cmd = std::process::Command::new(which_cmd);
-            cmd.arg("jan");
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-            if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-                log::debug!("jan CLI already on PATH — skipping reinstall");
-                return;
-            }
-        }
-
-        match crate::core::system::commands::install_jan_cli_sync(&app_handle) {
-            Ok(status) => {
-                log::info!(
-                    "jan CLI {} to {}",
-                    if version_changed {
-                        "updated"
-                    } else {
-                        "installed"
-                    },
-                    status.path.as_deref().unwrap_or("<unknown>")
-                );
-            }
-            Err(e) => {
-                log::warn!("jan CLI auto-install skipped: {e}");
-            }
-        }
-    });
 }
 
 /// Resolve when the frontend emits `app-ready`, or after `timeout` (so a window

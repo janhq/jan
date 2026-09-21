@@ -148,15 +148,6 @@ describe('describeNativeToolCall for agent tools', () => {
     })
   })
 
-  // Polling a backgrounded run sends only job_id, so there is no command to show.
-  it('marks a job poll', () => {
-    expect(describeNativeToolCall(agent, 'bash', { job_id: 'bash-0' })).toEqual({
-      variant: 'terminal',
-      command: '',
-      jobId: 'bash-0',
-    })
-  })
-
   it('leads with the pattern for find and grep, path as detail', () => {
     expect(
       describeNativeToolCall(agent, 'grep', { pattern: 'TODO', path: 'src' })

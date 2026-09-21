@@ -69,8 +69,21 @@ move between fields and <kbd>k</kbd>/<kbd>j</kbd> type as ordinary characters (A
 them). The base URL must be `https://`, or `http://` for a localhost endpoint, so a key is never
 sent over a plaintext remote connection.
 
-A provider saved with no models is queried for its `GET /models` the next time you open `/model`,
-and the discovered ids are persisted - so a bare provider becomes selectable immediately.
+Providers with an entry in `~/.jan/config.toml` are queried for their `GET /models` the first time
+you open `/model` in a session, and newly discovered ids are persisted - so a provider saved with no
+models becomes selectable immediately, and one whose endpoint has gained models since you signed in
+picks them up. That automatic pass only ever *adds*: an id you configured by hand stays even if the
+endpoint stops listing it, since a permission-scoped key can answer with a subset. To take the
+endpoint's list as the truth and drop what it omits, ask for it - <kbd>Ctrl</kbd>+<kbd>R</kbd> in the
+picker, or `jan cli models refresh` headlessly. A refresh that retires the model `default_model`
+names says so in its summary.
+
+Providers inherited from Jan Desktop are never refreshed: there is no entry here to rewrite.
+
+Whatever the listing says about each model is cached in `~/.jan/model_catalog.json`. The context
+window drives the header gauge and compaction, and the per-token prices drive the cost lines in
+`/context` and `/usage`; the output cap is cached and echoed back by `jan cli models list`, but
+nothing reads it yet. That file is only a cache: delete it and the next refresh rebuilds it.
 
 ## Tokamak
 
@@ -121,6 +134,9 @@ name = "openai"
 api_key = "sk-..."
 base_url = "https://api.openai.com/v1"
 models = ["gpt-4o"]
+# Optional: when this route's runs compact, as a share of the window. See
+# [Context and compaction](/docs/agent/context).
+# compaction_ratio = 0.6
 ```
 
 <Callout type="warning">

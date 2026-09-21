@@ -318,9 +318,9 @@ impl WorkerHandle {
 
         #[cfg(unix)]
         crate::process::graceful_terminate_process(&mut self.child).await;
-        #[cfg(all(windows, target_arch = "x86_64"))]
+        #[cfg(windows)]
         crate::process::force_terminate_process(&mut self.child).await;
-        #[cfg(not(any(unix, all(windows, target_arch = "x86_64"))))]
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = self.child.kill().await;
         }

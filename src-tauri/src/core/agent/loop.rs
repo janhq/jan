@@ -15,14 +15,17 @@ use reqwest13::Client;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::core::agent::context::ComposedPrompt;
 use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
+use crate::core::agent::transcript::{Projection, Transcript};
 use crate::core::agent::upstream::{
-    arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
-    drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
-    load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
-    resolve_api_type_for_model, resolve_upstream_for_model, set_system_prompt,
-    stream_openai_chat_completions,
+    collect_mcp_openai_tools, content_says_nothing, copy_optional_chat_params,
+    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
+    pairable_tool_call_id, parse_openai_messages, prune_unusable_tool_calls,
+    resolve_api_type_for_model, resolve_upstream_for_model, stream_openai_chat_completions,
+    tool_call_is_usable,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -108,6 +111,21 @@ pub(crate) struct OrchestrationArgs {
     /// by dispatched subagents via the cloned parent args, so a child shell is
     /// confined exactly as its parent's was.
     pub sandbox: Option<bool>,
+    /// A monitor set owned by the session rather than by this run. When set,
+    /// a running monitor does not park the run: the model's turn ends and the
+    /// owner starts a new turn when a match lands. `None` (a headless run, a
+    /// child) scopes monitors to the run, which then parks on them. Never
+    /// inherited by a child run, which gets its own per-run set.
+    pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// When this run compacts ahead of dispatching: the route's context window,
+    /// the share of it a prompt may fill, and any explicitly configured reserve.
+    ///
+    /// `None` when the window cannot be sized - local engines keep theirs inside
+    /// the llamacpp plugin/preset - which leaves those runs on the reactive
+    /// path, compacting only after a provider rejects the request. An unknown
+    /// window must not be guessed at, so this is an `Option` rather than a
+    /// default budget.
+    pub compaction: Option<crate::core::agent::compaction::CompactionBudget>,
 }
 
 #[async_trait]
@@ -142,9 +160,70 @@ impl ToolOutcome {
     }
 }
 
+/// One background ping. `text` is what reaches the model as a `<SYSTEM>`
+/// reminder; `headline`, when set, is shown to the user at delivery as
+/// [`StreamEvent::Notice`]. Subagent completions carry no headline -- their
+/// `SubagentEnd` row already reported the fact -- while a monitor match has no
+/// other on-screen account.
+pub(crate) struct BackgroundNotice {
+    pub headline: Option<String>,
+    pub text: String,
+}
+
 #[async_trait]
 pub(crate) trait ToolInvoker: Send + Sync {
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
+
+    /// Pings raised by work the model started and is no longer blocked on (a
+    /// backgrounded subagent finishing, a monitor condition matching), oldest
+    /// first. Folded into the conversation as `<SYSTEM>` reminders at the top
+    /// of the next turn.
+    fn background_notices(&self) -> Vec<BackgroundNotice> {
+        Vec::new()
+    }
+
+    /// Whether such work is still owed to the model. A cycle that would
+    /// otherwise end waits on this rather than dropping the answer of a child
+    /// that was still running.
+    fn background_pending(&self) -> bool {
+        false
+    }
+
+    /// Park until [`Self::background_notices`] has something, or nothing is
+    /// left to wait for. Only called while `background_pending` holds, so the
+    /// default's immediate return cannot spin.
+    async fn await_background(&self) {}
+
+    /// The run's active file monitors, for [`StreamEvent::Monitors`].
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        Vec::new()
+    }
+
+    /// Fire the run's `PreCompact` hooks, just before `message_count` messages
+    /// are summarized away.
+    ///
+    /// On the invoker rather than passed into `compact_conversation` because
+    /// the invoker is what holds the run's resolved hooks and its tool context;
+    /// the default does nothing, which is right for every invoker that has no
+    /// project and therefore no hook files to read.
+    async fn pre_compact(&self, _message_count: usize) {}
+}
+
+/// Emit [`StreamEvent::Monitors`] when the set differs from what was last
+/// shown. Called wherever the set can have changed: after tool calls (start,
+/// stop), after a ping drain (match, timeout) and after a park.
+fn publish_monitors(
+    tools: &dyn ToolInvoker,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    shown: &mut Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot>,
+) {
+    let now = tools.monitor_snapshot();
+    if now != *shown {
+        let _ = events.send(StreamEvent::Monitors {
+            monitors: now.clone(),
+        });
+        *shown = now;
+    }
 }
 
 struct HttpModelInvoker {
@@ -277,6 +356,11 @@ struct CompositeToolInvoker {
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
     scratch_root: std::path::PathBuf,
+    /// Host env-var names/globs the shell may inherit beyond the base allowlist,
+    /// and explicit key=value overrides. Resolved once per run by merging
+    /// `~/.jan/config.toml` with the project's `[tools]` section.
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
     permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     events: mpsc::UnboundedSender<StreamEvent>,
     permission_requests: PermissionRegistry,
@@ -284,8 +368,31 @@ struct CompositeToolInvoker {
     todo_registry: Option<crate::core::agent::todo::TodoRegistry>,
     grants: std::sync::Mutex<tauri_plugin_agent_tools::tools::gate::SessionGrants>,
     subagents: Option<SubagentContext>,
+    /// The file monitors this run may start. Run-owned unless
+    /// `OrchestrationArgs::monitors` supplied a session set: dropping the last
+    /// reference aborts every watcher, and an active monitor keeps the run
+    /// parked via `background_pending` (bounded, since every monitor has a
+    /// deadline).
+    monitors: std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>,
+    /// Whether `monitors` outlives this run. A session-owned set never parks
+    /// the run on a watcher that has not fired: the owner delivers a later
+    /// match as a fresh turn, so the user can keep talking meanwhile.
+    monitors_outlive_run: bool,
     auto_approve: bool,
     run_mode: crate::core::agent::plan::RunMode,
+    /// The run's resolved lifecycle hooks (`hooks_config::resolve_hooks`),
+    /// snapshotted once per run like every other config-derived field: a hook
+    /// edited mid-run must not change what a call in flight is judged by.
+    hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+    /// Tools the installed plugins declare. Dispatched here rather than through
+    /// `execute_builtin`: they are not built-ins, and like MCP tools their
+    /// capability is unknowable, so they are prompted and hidden in Plan mode.
+    plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet,
+    /// `context` answers and failure notices raised by hooks during this run,
+    /// drained into `<SYSTEM>` reminders alongside the monitor's. `Arc` because
+    /// the tool-event hooks fire inside the toolset and report through a sink
+    /// that outlives the call (see [`CompositeToolInvoker::hook_sink`]).
+    hook_notices_queue: std::sync::Arc<std::sync::Mutex<Vec<BackgroundNotice>>>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -393,6 +500,11 @@ struct ResolvedSettings {
     allow_network: bool,
     allow_home_read: bool,
     sandbox: bool,
+    env_passthrough: Vec<String>,
+    env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
+    /// rest so composition and `agent status` answer from one parse.
+    prompt: PromptPolicy,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -408,6 +520,73 @@ fn resolve_run_settings(
         allow_network: resolve_allow_network(settings.allow_network),
         allow_home_read: resolve_allow_home_read(settings.allow_home_read),
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
+        env_passthrough: resolve_env_passthrough(settings.env_passthrough),
+        env_set: resolve_env_set(settings.env_set),
+        prompt: settings.prompt,
+    }
+}
+
+/// Merge the global `env_passthrough` with the project's: the union of both
+/// name lists (order-preserving, global first), since each entry is only a name
+/// to match against the host env. The global scope is the CLI's
+/// `~/.jan/config.toml`; the desktop has none, so it contributes nothing there.
+fn resolve_env_passthrough(project: Vec<String>) -> Vec<String> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_passthrough_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_passthrough(global, project)
+}
+
+/// Merge the global `env_set` with the project's, the project winning per key.
+/// Global scope is CLI-only (see [`resolve_env_passthrough`]).
+fn resolve_env_set(project: Vec<(String, String)>) -> Vec<(String, String)> {
+    #[cfg(feature = "cli")]
+    let global = crate::core::agent::global_config::env_set_setting();
+    #[cfg(not(feature = "cli"))]
+    let global = Vec::new();
+    merge_env_set(global, project)
+}
+
+fn merge_env_passthrough(mut global: Vec<String>, project: Vec<String>) -> Vec<String> {
+    global.extend(project);
+    global
+}
+
+fn merge_env_set(
+    mut global: Vec<(String, String)>,
+    project: Vec<(String, String)>,
+) -> Vec<(String, String)> {
+    for (key, val) in project {
+        global.retain(|(existing, _)| existing != &key);
+        global.push((key, val));
+    }
+    global
+}
+
+#[cfg(test)]
+mod env_merge_tests {
+    use super::{merge_env_passthrough, merge_env_set};
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn passthrough_is_the_union_global_first() {
+        let out = merge_env_passthrough(vec![s("GIT_*")], vec![s("CARGO_HOME")]);
+        assert_eq!(out, vec![s("GIT_*"), s("CARGO_HOME")]);
+    }
+
+    #[test]
+    fn env_set_project_wins_per_key() {
+        let global = vec![(s("RUST_LOG"), s("info")), (s("A"), s("g"))];
+        let project = vec![(s("RUST_LOG"), s("debug")), (s("B"), s("p"))];
+        let out = merge_env_set(global, project);
+        assert!(out.contains(&(s("A"), s("g"))));
+        assert!(out.contains(&(s("B"), s("p"))));
+        assert!(out.contains(&(s("RUST_LOG"), s("debug"))));
+        assert_eq!(out.iter().filter(|(k, _)| k == "RUST_LOG").count(), 1);
     }
 }
 
@@ -437,7 +616,46 @@ fn output_sink(
     })
 }
 
+/// The model-facing summary of a phased `dispatch_subagent` call.
+fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> String {
+    let names = d.first_phase_names.join(", ");
+    let where_answers = match &d.blackboard_dir {
+        Some(dir) => format!(
+            " Each answer is written to {dir}/<name>.md; read those files when you need them."
+        ),
+        None => " Each answer rides the note that tells you it finished.".to_string(),
+    };
+    let head = if d.phase_count > 1 {
+        format!(
+            "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running: {}. Later phases \
+             start automatically as each phase finishes, each receiving the previous phase's \
+             results.",
+            d.phase_count, d.total_subagents, names
+        )
+    } else {
+        format!(
+            "Dispatched {} subagent(s) running concurrently in the background: {}.",
+            d.total_subagents, names
+        )
+    };
+    format!(
+        "{head}{where_answers} These tasks are the subagents' now -- do not do them yourself; \
+         you'll be pinged as each finishes."
+    )
+}
+
 impl CompositeToolInvoker {
+    /// Whether the monitors owe the model something the run must stay alive
+    /// for: any queued ping, plus a still-running watcher when the set dies
+    /// with the run (nothing else could deliver its match).
+    fn monitors_owed(&self) -> bool {
+        if self.monitors_outlive_run {
+            self.monitors.has_queued_notices()
+        } else {
+            self.monitors.has_pending_work()
+        }
+    }
+
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
@@ -448,6 +666,43 @@ impl CompositeToolInvoker {
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
         .with_scratch_root(&self.scratch_root)
+        .with_env_passthrough(&self.env_passthrough)
+        .with_env_set(&self.env_set)
+        .with_hooks(
+            &self.hooks,
+            self.run_mode == crate::core::agent::plan::RunMode::Plan,
+            Some(self.hook_sink()),
+        )
+    }
+
+    /// Where the `PreToolUse`/`PostToolUse` hooks fired inside
+    /// [`tauri_plugin_agent_tools::tools::handlers::execute_builtin`] send their
+    /// context answers and failure notices: the same queue `fire_hooks` uses,
+    /// drained into `<SYSTEM>` reminders at the top of the next turn.
+    fn hook_sink(&self) -> tauri_plugin_agent_tools::tools::HookSink {
+        // The queue is shared rather than borrowed because the sink outlives
+        // the call that created it, the way an output sink does.
+        let queue = self.hook_notices_queue.clone();
+        std::sync::Arc::new(
+            move |report: tauri_plugin_agent_tools::tools::hooks::HookReport| {
+                let mut queued = Vec::new();
+                for context in report.context {
+                    queued.push(BackgroundNotice {
+                        headline: None,
+                        text: context,
+                    });
+                }
+                for notice in report.notices {
+                    let message = notice.message();
+                    log::warn!("agent: {message}");
+                    queued.push(BackgroundNotice {
+                        headline: Some(message.clone()),
+                        text: message,
+                    });
+                }
+                queue.lock().unwrap().extend(queued);
+            },
+        )
     }
 
     /// A tool context whose output streams to the run's event channel as
@@ -460,6 +715,52 @@ impl CompositeToolInvoker {
     fn streaming_tool_context(&self, id: &str) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         self.tool_context()
             .with_output_sink(output_sink(&self.events, id))
+    }
+
+    /// Fire the hooks for `event` and fold their answers into the run: a
+    /// `context` answer and every failure notice become `<SYSTEM>` reminders
+    /// queued alongside the monitor's, and the deny (if any) is returned for
+    /// the caller to act on.
+    ///
+    /// Hooks see this run's plan mode, so a `PreToolUse` command is inert in
+    /// Plan for the same reason the write tools are withheld there.
+    async fn fire_hooks(
+        &self,
+        event: tauri_plugin_agent_tools::tools::hooks::HookEvent,
+        payload: tauri_plugin_agent_tools::tools::hooks::HookPayload,
+    ) -> Option<String> {
+        if self.hooks.is_empty() {
+            return None;
+        }
+        let outcome = tauri_plugin_agent_tools::tools::hooks::run_hooks(
+            &self.hooks,
+            event,
+            &payload,
+            &self.tool_context(),
+            self.run_mode == crate::core::agent::plan::RunMode::Plan,
+        )
+        .await;
+        let mut queued = Vec::new();
+        for context in outcome.context {
+            queued.push(BackgroundNotice {
+                // No headline: a hook's context is guidance for the model, not
+                // an event the user needs announced, unlike a monitor match.
+                headline: None,
+                text: context,
+            });
+        }
+        for notice in outcome.notices {
+            let message = notice.message();
+            log::warn!("agent: {message}");
+            queued.push(BackgroundNotice {
+                headline: Some(message.clone()),
+                text: message,
+            });
+        }
+        if !queued.is_empty() {
+            self.hook_notices_queue.lock().unwrap().extend(queued);
+        }
+        outcome.denied
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -510,6 +811,13 @@ impl CompositeToolInvoker {
         decision
     }
 
+    /// Where a child's answer is spilled, or `None` when this run is
+    /// unconfined: no scratch is in force, so there is nowhere sanctioned to
+    /// write and the answer is delivered inline instead.
+    fn subagent_scratch(&self) -> Option<&std::path::Path> {
+        self.sandbox.then_some(self.scratch_root.as_path())
+    }
+
     /// Execute one subagent tool call, returning the model-facing result string
     /// (an `ERROR:`-prefixed message on failure, matching the tool-result
     /// convention). The registry is loaded fresh from disk each call so a
@@ -517,8 +825,10 @@ impl CompositeToolInvoker {
     async fn handle_subagent_tool(&self, name: &str, args: &serde_json::Value) -> String {
         use crate::core::agent::subagent::{
             await_subagent, format_subagent_list, parse_await_args, parse_create_args,
-            parse_dispatch_args, spawn_subagent, subagent_dir_for, SubagentRegistry, SubagentScope,
+            parse_dispatch_plan, spawn_dispatch_plan, subagent_dir_for, SubagentRegistry,
+            SubagentScope,
         };
+        use tauri_plugin_agent_tools::tools::spill::compose_subagent_result;
         let Some(ctx) = &self.subagents else {
             return "ERROR: subagents are not available in this run".to_string();
         };
@@ -528,24 +838,25 @@ impl CompositeToolInvoker {
                 format_subagent_list(&registry)
             }
             "dispatch_subagent" => {
-                let req = match parse_dispatch_args(args) {
-                    Ok(r) => r,
+                let plan = match parse_dispatch_plan(args) {
+                    Ok(p) => p,
                     Err(e) => return format!("ERROR: {e}"),
                 };
-                match spawn_subagent(
+                match spawn_dispatch_plan(
                     &ctx.bg,
                     &ctx.parent_args,
-                    req,
+                    plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
                     },
                     &self.events,
+                    // Unconfined means no scratch: the tools see the real
+                    // `/tmp`, so there is nowhere sanctioned to spill.
+                    self.subagent_scratch(),
                 ) {
-                    Ok(run_id) => format!(
-                        "Subagent started in the background. run_id={run_id}. Continue working, then call await_subagent with this run_id to collect its result."
-                    ),
+                    Ok(d) => format_dispatched_plan(&d),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -555,10 +866,12 @@ impl CompositeToolInvoker {
                     Err(e) => return format!("ERROR: {e}"),
                 };
                 match await_subagent(&ctx.bg, &run_id).await {
-                    Ok(text) if text.trim().is_empty() => {
+                    Ok(c) if c.text.trim().is_empty() => {
                         "The subagent finished but produced no text output.".to_string()
                     }
-                    Ok(text) => text,
+                    // The answer was spilled by the child's own task as it
+                    // finished, so this only names the file, never rewrites it.
+                    Ok(c) => compose_subagent_result(&c.text, c.display_path.as_deref()),
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -602,6 +915,75 @@ impl CompositeToolInvoker {
                 }
             }
             _ => "ERROR: unknown subagent tool".to_string(),
+        }
+    }
+
+    /// Prompt the user to approve starting a monitor: its script is an
+    /// arbitrary shell command the watcher will run repeatedly, so starting one
+    /// is an exec-class action even though each later poll is unattended.
+    async fn prompt_monitor_start(
+        &self,
+        spec: &tauri_plugin_agent_tools::tools::monitor::MonitorSpec,
+    ) -> PermissionDecision {
+        let request_id = next_permission_id();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.permission_requests
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
+        // The cadence rides along as a shell comment, so the user approves a
+        // script knowing how often it will run; the `$ ` preview stays honest.
+        let command = format!(
+            "# monitor '{}', every {}s\n{}",
+            spec.name,
+            spec.interval.as_secs(),
+            spec.script
+        );
+        let _ = self.events.send(StreamEvent::PermissionRequest {
+            request_id: request_id.clone(),
+            tool_name: tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME.to_string(),
+            capability: "run".to_string(),
+            path: None,
+            command: Some(command),
+            diff: None,
+            prompt_kind: "monitor".to_string(),
+            offers_always: false,
+        });
+        let decision = rx.await.unwrap_or(PermissionDecision::Deny);
+        self.permission_requests.lock().await.remove(&request_id);
+        decision
+    }
+
+    /// Execute one `monitor` tool call. `start` is gated (it schedules shell
+    /// scripts); `stop` and `list` only touch this run's own registry.
+    async fn handle_monitor_tool(&self, args: &serde_json::Value) -> String {
+        use tauri_plugin_agent_tools::tools::monitor;
+        match args.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "start" => {
+                let spec = match monitor::parse_start_args(args) {
+                    Ok(spec) => spec,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                if !self.auto_approve {
+                    match self.prompt_monitor_start(&spec).await {
+                        PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
+                        PermissionDecision::Deny => {
+                            return "ERROR: monitor start denied by user".to_string()
+                        }
+                    }
+                }
+                let ctx = monitor::MonitorCtx::from_tool_context(&self.tool_context());
+                match self.monitors.start(spec, ctx) {
+                    Ok(msg) => msg,
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "stop" => match monitor::parse_stop_args(args) {
+                Ok(id) => self.monitors.stop(&id),
+                Err(e) => format!("ERROR: {e}"),
+            },
+            "list" => self.monitors.list(),
+            other => format!("ERROR: unknown monitor op '{other}'"),
         }
     }
 
@@ -810,12 +1192,102 @@ fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path)
 
 /// Rejection message for a mutation-capable tool call attempted in
 /// `RunMode::Plan`. Authoritative: the tool never actually runs.
+/// A `PreToolUse` hook refused the call.
+///
+/// Deliberately the same `ERROR: tool '<name>' denied ...` shape every other
+/// refusal uses (see [`denied_by_policy_msg`] and the user-deny arm in
+/// `invoke`), so the model reads a hook denial as the ordinary denial it is
+/// and the TUI renders it in the same row -- there is no second refusal shape
+/// to teach either of them. The hook's reason is what distinguishes it, which
+/// is the part the user wrote to be read.
+fn hook_denied_msg(name: &str, reason: &str) -> String {
+    format!("ERROR: tool '{name}' denied: {reason}")
+}
+
 fn plan_mode_read_only_msg(name: &str) -> String {
     format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
 }
 
 #[async_trait]
 impl ToolInvoker for CompositeToolInvoker {
+    fn background_notices(&self) -> Vec<BackgroundNotice> {
+        let mut out: Vec<BackgroundNotice> = self
+            .subagents
+            .as_ref()
+            .map(|ctx| ctx.bg.take_notices())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|text| BackgroundNotice {
+                headline: None,
+                text,
+            })
+            .collect();
+        out.extend(
+            self.monitors
+                .take_notices()
+                .into_iter()
+                .map(|u| BackgroundNotice {
+                    headline: Some(u.headline),
+                    text: u.text,
+                }),
+        );
+        // Hook output rides the same channel: a `context` answer has to reach
+        // the model as a reminder, and a hook that failed has to be visible
+        // rather than silently skipped.
+        out.extend(std::mem::take(
+            &mut *self.hook_notices_queue.lock().unwrap(),
+        ));
+        out
+    }
+
+    fn background_pending(&self) -> bool {
+        self.subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_pending_work())
+            || self.monitors_owed()
+            // A queued hook answer is owed to the model the same way a monitor
+            // match is: the turn that would end must deliver it first.
+            || !self.hook_notices_queue.lock().unwrap().is_empty()
+    }
+
+    fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+        self.monitors.snapshot()
+    }
+
+    async fn pre_compact(&self, message_count: usize) {
+        crate::core::agent::compaction::fire_pre_compact(
+            &self.hooks,
+            &self.tool_context(),
+            message_count,
+        )
+        .await;
+    }
+
+    async fn await_background(&self) {
+        // Each wait returns on a notice OR when its own side has nothing left,
+        // so an exhausted side must not be selected over: it would win
+        // instantly every time and starve the side actually being waited on.
+        // The re-check between iterations is what `run_turn_cycle` does anyway.
+        // A session-owned set is still selected while a subagent is awaited: a
+        // match landing then should wake the park like a finished child does.
+        let sub_pending = self
+            .subagents
+            .as_ref()
+            .is_some_and(|ctx| ctx.bg.has_pending_work());
+        let mon_pending = self.monitors.has_pending_work();
+        match (self.subagents.as_ref(), sub_pending, mon_pending) {
+            (Some(ctx), true, true) => {
+                tokio::select! {
+                    _ = ctx.bg.wait_for_notice() => {}
+                    _ = self.monitors.wait_for_notice() => {}
+                }
+            }
+            (Some(ctx), true, false) => ctx.bg.wait_for_notice().await,
+            (_, _, true) => self.monitors.wait_for_notice().await,
+            _ => {}
+        }
+    }
+
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
@@ -824,6 +1296,9 @@ impl ToolInvoker for CompositeToolInvoker {
         };
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
+        // id -> (tool name, arguments) for the MCP calls that passed the gate,
+        // so their PostToolUse hooks can be fired once the batch returns.
+        let mut mcp_hook_inputs: HashMap<String, (String, serde_json::Value)> = HashMap::new();
         // Auto-allowed read-only built-ins (no prompt, no filesystem mutation)
         // are deferred and executed concurrently after the gating pass. Anything
         // that prompts, writes, execs, or dispatches stays sequential so
@@ -892,6 +1367,115 @@ impl ToolInvoker for CompositeToolInvoker {
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
+            // The monitor tool schedules shell scripts and owns per-run state,
+            // so like the subagent tools it is handled ahead of the fs/exec
+            // gate (its own prompt gates `start`).
+            if name == tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                // Not advertised in Plan; hard-denied here as defense in depth
+                // (a started monitor runs exec-class scripts).
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let content = self.handle_monitor_tool(&args).await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            // Plugin-declared tools are dispatched ahead of the MCP fallback:
+            // they are neither built-ins nor MCP, but their capability is just
+            // as opaque, so they get the MCP treatment -- prompted rather than
+            // auto-allowed, and withheld entirely in read-only Plan mode.
+            if self.plugin_tools.is_plugin_tool(name) {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                if self.permissions.is_denied(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        denied_by_policy_msg(name, &self.project_root),
+                    ));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                let approved = self.auto_approve
+                    || self.grants.lock().unwrap().covers_mcp(name)
+                    || match self.prompt_mcp_permission(name).await {
+                        PermissionDecision::AllowOnce => true,
+                        PermissionDecision::AllowAlways => {
+                            self.grants.lock().unwrap().grant_mcp(name);
+                            true
+                        }
+                        PermissionDecision::Deny => false,
+                    };
+                if !approved {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' denied by user"),
+                    ));
+                    continue;
+                }
+                // `execute_builtin`'s hook bracket does not cover this path, so
+                // the tool events are fired here -- a plugin tool is still a
+                // tool call, and a PreToolUse policy that cannot see it would
+                // have a hole exactly where a third party's code runs.
+                let payload = tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    tool_name: Some(name.to_string()),
+                    tool_input: Some(args.clone()),
+                    ..Default::default()
+                };
+                if let Some(reason) = self
+                    .fire_hooks(
+                        tauri_plugin_agent_tools::tools::hooks::HookEvent::PreToolUse,
+                        payload.clone(),
+                    )
+                    .await
+                {
+                    out.push(ToolOutcome::plain(id, hook_denied_msg(name, &reason)));
+                    continue;
+                }
+                let tool = self
+                    .plugin_tools
+                    .get(name)
+                    .expect("is_plugin_tool implies get");
+                let content = tauri_plugin_agent_tools::tools::plugin_tools::execute(
+                    tool,
+                    &args,
+                    &self.streaming_tool_context(&id),
+                )
+                .await;
+                self.fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::PostToolUse,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        tool_result: Some(content.clone()),
+                        ..payload
+                    },
+                )
+                .await;
+                out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
             if !is_builtin(name) {
                 let id = tc
                     .get("id")
@@ -913,21 +1497,54 @@ impl ToolInvoker for CompositeToolInvoker {
                     ));
                     continue;
                 }
-                if self.auto_approve || self.grants.lock().unwrap().covers_mcp(name) {
-                    mcp_calls.push(tc.clone());
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                // An MCP tool is a tool call like any other, so it gets the same
+                // bracket the built-ins and plugin tools get: a PreToolUse
+                // policy that could not see `mcp__*` would have its hole exactly
+                // where a third party's server runs. Fired before the permission
+                // prompt (unlike the built-in path, whose bracket lives inside
+                // `execute_builtin`), so a hook deny does not first cost the
+                // user an answer.
+                if let Some(reason) = self
+                    .fire_hooks(
+                        tauri_plugin_agent_tools::tools::hooks::HookEvent::PreToolUse,
+                        tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                            tool_name: Some(name.to_string()),
+                            tool_input: Some(args.clone()),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    out.push(ToolOutcome::plain(id, hook_denied_msg(name, &reason)));
                     continue;
                 }
-                match self.prompt_mcp_permission(name).await {
-                    PermissionDecision::AllowOnce => mcp_calls.push(tc.clone()),
-                    PermissionDecision::AllowAlways => {
-                        self.grants.lock().unwrap().grant_mcp(name);
-                        mcp_calls.push(tc.clone());
-                    }
-                    PermissionDecision::Deny => out.push(ToolOutcome::plain(
+                let approved = self.auto_approve
+                    || self.grants.lock().unwrap().covers_mcp(name)
+                    || match self.prompt_mcp_permission(name).await {
+                        PermissionDecision::AllowOnce => true,
+                        PermissionDecision::AllowAlways => {
+                            self.grants.lock().unwrap().grant_mcp(name);
+                            true
+                        }
+                        PermissionDecision::Deny => false,
+                    };
+                if !approved {
+                    out.push(ToolOutcome::plain(
                         id,
                         format!("ERROR: tool '{name}' denied by user"),
-                    )),
+                    ));
+                    continue;
                 }
+                // Kept alongside the call so PostToolUse can name the tool and
+                // carry its result: the batch `invoke` answers by id only.
+                mcp_hook_inputs.insert(id, (name.to_string(), args));
+                mcp_calls.push(tc.clone());
                 continue;
             }
             let id = tc
@@ -956,14 +1573,17 @@ impl ToolInvoker for CompositeToolInvoker {
             let decision = resolve_decision(
                 tool,
                 &args,
-                &self.project_root,
-                Some(self.scratch_root.as_path()),
-                // The CLI works *in* the project, so it has no separate
-                // read-only root to attach.
-                &[],
+                &tauri_plugin_agent_tools::tools::gate::GateContext {
+                    project_root: &self.project_root,
+                    scratch: Some(self.scratch_root.as_path()),
+                    // The CLI works *in* the project, so it has no separate
+                    // read-only or writable root to attach.
+                    read_roots: &[],
+                    write_roots: &[],
+                    hide_jan: self.sandbox,
+                },
                 &self.permissions,
                 &snapshot,
-                self.sandbox,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
             // still honors HardDeny, so the hidden `.jan` invariant (while the shell
@@ -986,12 +1606,19 @@ impl ToolInvoker for CompositeToolInvoker {
                 let allow_home_read = self.allow_home_read;
                 let sandbox = self.sandbox;
                 let scratch = self.scratch_root.clone();
+                // Hooks come along: a read is still a tool call, and a
+                // PreToolUse policy that stopped applying to whatever happened
+                // to be batched concurrently would be no policy at all.
+                let hooks = self.hooks.clone();
+                let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+                let hook_sink = self.hook_sink();
                 read_futures.push(async move {
                     let ctx = ToolContext::new(&root, &store, &enabled)
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
-                        .with_scratch_root(&scratch);
+                        .with_scratch_root(&scratch)
+                        .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
                         id,
@@ -1101,7 +1728,23 @@ impl ToolInvoker for CompositeToolInvoker {
             out.extend(futures::future::join_all(read_futures).await);
         }
         if !mcp_calls.is_empty() {
-            out.extend(self.mcp.invoke(&mcp_calls).await?);
+            let results = self.mcp.invoke(&mcp_calls).await?;
+            for outcome in &results {
+                let Some((name, args)) = mcp_hook_inputs.get(&outcome.id) else {
+                    continue;
+                };
+                self.fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::PostToolUse,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        tool_name: Some(name.clone()),
+                        tool_input: Some(args.clone()),
+                        tool_result: Some(outcome.content.clone()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            }
+            out.extend(results);
         }
         let order: HashMap<&str, usize> = tool_calls
             .iter()
@@ -1153,6 +1796,10 @@ pub(crate) async fn run_server_side_openai_orchestration(
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
         sandbox: None,
+        monitors: None,
+        // Server-side runs take whatever window the proxy's route reports
+        // through its own path, so the loop has none to size against here.
+        compaction: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -1175,15 +1822,23 @@ pub(crate) async fn run_server_side_openai_orchestration(
 #[cfg(not(feature = "cli"))]
 const PROXY_DEFAULT_MAX_TURNS: u64 = 8;
 
-/// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
-/// and exactly one terminal `Done`/`Error` derived from the final result, while
-/// still returning the completion JSON (or error) to the caller.
-pub(crate) async fn run_orchestration_streamed(
+/// A safe-boundary handoff. The TUI retains pending input until it can reply,
+/// so cancellation and late submissions use the ordinary next-turn path.
+// Only the CLI consumes handoffs; other callers always pass no channel.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) struct SteeringRequest {
+    pub run_mode: crate::core::agent::plan::RunMode,
+    pub messages: Vec<serde_json::Value>,
+    pub reply: tokio::sync::oneshot::Sender<Vec<serde_json::Value>>,
+}
+
+pub(crate) async fn run_orchestration_steered(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     args: &OrchestrationArgs,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
-    let result = orchestrate_inner(events, json_body, args).await;
+    let result = orchestrate_inner(events, json_body, args, steering).await;
     match &result {
         Ok(completion) => {
             let _ = events.send(StreamEvent::Done {
@@ -1199,6 +1854,17 @@ pub(crate) async fn run_orchestration_streamed(
         }
     }
     result
+}
+
+/// Streaming entry point. Emits `Step`/`ToolCall`/`ToolResult` progress events
+/// and exactly one terminal `Done`/`Error` derived from the final result, while
+/// still returning the completion JSON (or error) to the caller.
+pub(crate) async fn run_orchestration_streamed(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    json_body: &serde_json::Value,
+    args: &OrchestrationArgs,
+) -> Result<serde_json::Value, String> {
+    run_orchestration_steered(events, json_body, args, None).await
 }
 
 /// Restrict the collected MCP tools to `allowed` (by tool name), pruning both
@@ -1303,12 +1969,47 @@ fn advertise_local_tools(
                     if permissions.is_denied(name) {
                         continue;
                     }
+                    // await_subagent is not advertised: a finished child's note
+                    // already carries its answer (inline, or a file path to
+                    // read), so blocking to collect is redundant. The handler
+                    // stays (recognized + executable) so a named call still works.
+                    if name == "await_subagent" {
+                        continue;
+                    }
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;
                         }
                     }
                     openai_tools.push(schema);
+                }
+            }
+        }
+        // The monitor tool watches project files and runs exec-class condition
+        // scripts, so it needs a project and is hidden in read-only Plan mode.
+        if !planning {
+            let name = tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME;
+            if !permissions.is_denied(name)
+                && allowed_names.is_none_or(|allowed| allowed.contains(name))
+            {
+                openai_tools.push(tauri_plugin_agent_tools::tools::monitor::monitor_tool_schema());
+            }
+        }
+        // Plugin-declared tools run a third party's command, so they are
+        // advertised on exactly the terms opaque MCP tools are: never in
+        // read-only Plan mode, and subject to the same deny list.
+        if !planning {
+            if let Some(root) = project_root {
+                for tool in crate::core::agent::hooks_config::resolve_plugin_tools(root).all() {
+                    if permissions.is_denied(&tool.qualified_name) {
+                        continue;
+                    }
+                    if let Some(allow) = allowed_names {
+                        if !allow.contains(&tool.qualified_name) {
+                            continue;
+                        }
+                    }
+                    openai_tools.push(tool.schema());
                 }
             }
         }
@@ -1344,7 +2045,12 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     let content = messages
         .iter()
         .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_only(
+                    m.get("content").unwrap_or(&serde_json::Value::Null),
+                )
+        })?
         .get("content")?;
     match content {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -1362,10 +2068,16 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
 
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
-/// project-context and tool-use guidance from `build_system_prompt` is still
+/// project-context and tool-use guidance from `compose_system_prompt` is still
 /// built around it when a project is selected — a subagent gets the same
 /// grounding (guidelines, web access, tool docs) as a normal run, not a bare
 /// verbatim prompt with no instruction on how to actually use its tools.
+///
+/// The blocks are split by where `[prompt]` allows them to sit, so the caller
+/// places the prefix above the history and the tail below it. A policy that
+/// cannot be honored — a contributor that varies asked to sit above the cache
+/// line — is an error, not a warning: that is the whole point of resolving
+/// placement at composition.
 fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
@@ -1373,7 +2085,8 @@ fn build_run_system_prompt(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox: bool,
-) -> Option<String> {
+    policy: &PromptPolicy,
+) -> Result<Option<ComposedPrompt>, String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
@@ -1381,24 +2094,33 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
-            crate::core::agent::context::build_system_prompt(
+            crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
                 scratch.as_deref(),
                 subagents_enabled,
+                policy,
             )
+            .map(Some)
         }
-        None => base.map(str::to_string),
+        None => Ok(base.map(|prompt| ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        })),
     }
 }
 
 /// The system prompt the *next* ordinary turn in `project_root` would carry,
 /// built through the exact path a real run takes (`build_run_system_prompt`
-/// with this project's resolved sandbox/scratch). Used by the CLI `/context`
-/// view to size the system segments: routing it through the same builder is
-/// what keeps the reported breakdown from drifting away from what is actually
-/// sent. Excludes the two per-turn additions a run makes on top -- the date
-/// line and query-dependent memory recall -- which are not knowable while idle.
+/// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
+/// the CLI `/context` view to size the system segments: routing it through the
+/// same builder is what keeps the reported breakdown from drifting away from
+/// what is actually sent. It sizes all project-composed blocks, including
+/// blocks demoted to the tail, but excludes the run's date, git state,
+/// query-dependent memory recall, and plan/todo additions.
+/// `None` when no prompt would be built, or
+/// when the project's `[prompt]` policy cannot be honored (the run itself
+/// reports that failure with the same message).
 #[cfg(feature = "cli")]
 pub(crate) fn context_system_prompt_preview(
     override_prompt: Option<&str>,
@@ -1408,6 +2130,7 @@ pub(crate) fn context_system_prompt_preview(
     sandbox_flag: Option<bool>,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
+    let policy = crate::core::agent::project::prompt_policy(project_root);
     build_run_system_prompt(
         None,
         override_prompt,
@@ -1415,7 +2138,11 @@ pub(crate) fn context_system_prompt_preview(
         session_id,
         subagents_enabled,
         settings.sandbox,
+        &policy,
     )
+    .ok()
+    .flatten()
+    .map(|composed| composed.as_prompt())
 }
 
 /// The tool array the *next* ordinary turn would advertise: the MCP tools
@@ -1459,6 +2186,20 @@ pub(crate) async fn context_advertised_tools(
         todo_enabled,
     );
     tools
+}
+
+/// The git state block: which branch the project is on, so the model knows what
+/// its edits apply to.
+///
+/// A per-turn block rather than part of the environment in the stable prefix:
+/// the answer changes the moment anything checks out another branch, including
+/// the agent itself, and a branch switch inside a turn would otherwise move
+/// every byte behind the cache line.
+fn git_state_block(project_root: &std::path::Path) -> String {
+    match crate::core::agent::git::current_branch(project_root) {
+        Some(branch) => format!("# Git\n\nGit branch: `{branch}`"),
+        None => "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
+    }
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -1528,6 +2269,7 @@ async fn orchestrate_inner(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     args: &OrchestrationArgs,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
     let OrchestrationArgs {
         client,
@@ -1550,7 +2292,9 @@ async fn orchestrate_inner(
         auto_approve,
         run_mode,
         session_id,
+        monitors: session_monitors,
         sandbox,
+        compaction,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -1565,27 +2309,7 @@ async fn orchestrate_inner(
     let messages_value = json_body
         .get("messages")
         .ok_or("Missing required field 'messages'")?;
-    let mut conversation_messages = parse_openai_messages(messages_value)?;
-    // Drop tool calls a truncated stream left with unparsable arguments before
-    // anything else looks at the history. Such a call is persisted by the run
-    // that produced it and resent on every later turn, and an OpenAI-compatible
-    // upstream 422s the whole request over it -- so without this the session is
-    // wedged on its own history and cannot heal. Runs first so the dangling
-    // repair below sees the post-removal shape.
-    let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
-    if poisoned > 0 {
-        log::warn!("agent: dropped {poisoned} tool call(s) with unparsable arguments from history");
-    }
-    // Self-heal a conversation an earlier interrupted run may have left with a
-    // tool_calls turn missing one of its results (e.g. the process was killed
-    // while an `ask`/permission prompt was still pending). Providers like
-    // Anthropic reject the entire request on a dangling tool_use, so repair
-    // it here -- the one place every incoming message array passes through --
-    // before it ever reaches a provider.
-    let repaired = repair_dangling_tool_calls(&mut conversation_messages);
-    if repaired > 0 {
-        log::warn!("agent: repaired {repaired} dangling tool call(s) with no prior result");
-    }
+    let conversation_messages = parse_openai_messages(messages_value)?;
 
     let assistant_id = json_body
         .get("assistant_id")
@@ -1607,38 +2331,57 @@ async fn orchestrate_inner(
         .as_deref()
         .map(|root| resolve_run_settings(root, *sandbox));
 
-    let mut system_prompt = build_run_system_prompt(
+    // The stable system prompt: identity, guidelines, environment, skills and
+    // the memory catalog. Byte-identical across the turns of a session, so it
+    // is kept as system message 0 and never mixed with per-turn content.
+    // Changing context (date, git state, query memory recall, plan/todo state)
+    // is collected separately and appended as marked guidance after history.
+    // A second system message would be hoisted ahead of history by the provider
+    // bridge, invalidating the cached conversation on every change.
+    //
+    // Which blocks land in which half is `[prompt]`'s decision, resolved here:
+    // the composition returns them split rather than joined, and a composer the
+    // policy sends to the tail is emitted below instead of dropped.
+    let prompt_policy = settings
+        .as_ref()
+        .map(|s| s.prompt.clone())
+        .unwrap_or_default();
+    let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
         project_root.as_deref(),
         session_id.as_deref(),
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
-    );
+        &prompt_policy,
+    )?;
+
+    let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
+    // Always tell the model today's date, including isolated child runs.
+    volatile_parts.push((
+        Composer::Date,
+        format!(
+            "Today's date is {}.",
+            chrono::Local::now().format("%Y-%m-%d")
+        ),
+    ));
+    // Which checkout the work applies to. Per-turn rather than part of the
+    // environment block above, because anything that switches branch -- the
+    // agent included -- would otherwise move every byte behind it.
+    if let Some(root) = project_root.as_deref() {
+        volatile_parts.push((Composer::GitState, git_state_block(root)));
+    }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    system_prompt = Some(match system_prompt {
-                        Some(s) => format!("{s}\n\n{mem}"),
-                        None => mem,
-                    });
+                    volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
         }
     }
-    // Always tell the model today's date, including isolated child runs.
-    let date_line = format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
-    );
-    let system_prompt = match system_prompt {
-        Some(sys) => format!("{date_line}\n\n{sys}"),
-        None => date_line,
-    };
-    let system_prompt = Some(system_prompt);
     // Child (subagent) runs are excluded via `system_prompt_override`, the
     // same gate the memory-recall block above uses to distinguish a
     // top-level run from a subagent's isolated context.
@@ -1653,26 +2396,64 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    let system_prompt = if run_mode == crate::core::agent::plan::RunMode::Plan {
-        let addendum = crate::core::agent::plan::plan_mode_prompt_addendum();
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        volatile_parts.push((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
+        ));
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        // Child (subagent) runs are excluded via `system_prompt_override`, the
-        // same gate the memory-recall block above uses to distinguish a
-        // top-level run from a subagent's isolated context.
-        Some(match system_prompt {
-            Some(sys) => format!("{sys}\n\n{addendum}"),
-            None => addendum.to_string(),
-        })
-    } else {
-        system_prompt
-    };
-    if let Some(sys) = system_prompt {
-        set_system_prompt(&mut conversation_messages, &sys);
+        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
     }
+
+    // One tail message, built from every block the policy kept below the cache
+    // line: the composition's tail (a block `[prompt]` moved down) plus the
+    // per-turn blocks above, in registry order so the message's bytes do not
+    // depend on which caller built which block.
+    let mut tail: Vec<(Composer, String)> = stable_system
+        .as_ref()
+        .map(|composed| composed.tail.clone())
+        .unwrap_or_default();
+    for (composer, block) in volatile_parts {
+        if prompt_policy.placement_of(composer)? != Placement::Tail {
+            // Unreachable while these composers vary -- `placement_of` fails
+            // first -- and kept as an explicit error rather than a silent
+            // unwrap, because "per-turn content above the cache line" is
+            // exactly the bug this whole policy exists to prevent.
+            return Err(format!(
+                "`{}` is per-turn content and cannot sit above the cache line",
+                composer.id()
+            ));
+        }
+        tail.push((composer, block));
+    }
+    tail.sort_by_key(|(composer, _)| composer.order());
+    let volatile_system = tail
+        .into_iter()
+        .map(|(_, block)| block)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    // The history becomes a canonical record and the prompt becomes an event
+    // the projection places: at the head while it is unchanged, appended behind
+    // the history when it changes, so a turn cannot invalidate the bytes an
+    // earlier request already sent. Per-turn guidance starts as projection
+    // input, then is recorded at its sent position once a request succeeds.
+    // Later tool steps and client resumes must retain those accepted bytes.
+    //
+    // The stable half is the cacheable one; `[prompt]` decides which blocks
+    // reach it, and a composer the policy moves down is carried in the tail
+    // above rather than dropped. With no stable prefix at all (an isolated
+    // child run with no override) there is nothing above to cache and the tail
+    // is the whole prompt -- still placed below the history, so the arrangement
+    // does not depend on which half happens to be empty.
+    let submitted_prompt = latest_user_text(&conversation_messages);
+    let mut transcript =
+        crate::core::agent::transcript::Transcript::from_history(conversation_messages);
+    if let Some(composed) = stable_system.as_ref().filter(|c| !c.prefix.is_empty()) {
+        transcript.record_prompt(&composed.prefix);
+    }
+    let volatile_projection: Option<String> = Some(volatile_system);
+    let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -1791,9 +2572,9 @@ async fn orchestrate_inner(
         // Background subagents are scoped to this run: `_bg_guard` aborts any
         // still-running child when `orchestrate_inner` returns or is cancelled.
         // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
-            *max_parallel_subagents,
-        ));
+        let bg = std::sync::Arc::new(
+            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
+        );
         let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
@@ -1825,6 +2606,8 @@ async fn orchestrate_inner(
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
             scratch_root: scratch_root.clone(),
+            env_passthrough: settings.env_passthrough,
+            env_set: settings.env_set,
             project_root: root.clone(),
             permissions: permissions.clone(),
             events: events.clone(),
@@ -1835,15 +2618,97 @@ async fn orchestrate_inner(
                 tauri_plugin_agent_tools::tools::gate::SessionGrants::default(),
             ),
             subagents,
+            monitors: session_monitors.clone().unwrap_or_default(),
+            monitors_outlive_run: session_monitors.is_some(),
             auto_approve: *auto_approve,
             run_mode,
+            // Resolved once per run, like every other config-derived field: a
+            // hook file edited mid-run must not change what a call already in
+            // flight is judged by.
+            hooks: crate::core::agent::hooks_config::resolve_hooks(root),
+            plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
+            hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         };
+        // Entries dropped while loading the hook files are reported once here,
+        // before anything fires: a user whose matcher is a bad glob otherwise
+        // watches a hook never run and has nothing to tell them why.
+        {
+            let dropped: Vec<BackgroundNotice> = tools
+                .hooks
+                .load_notices()
+                .iter()
+                .map(|message| {
+                    log::warn!("agent: {message}");
+                    BackgroundNotice {
+                        headline: Some(message.clone()),
+                        text: message.clone(),
+                    }
+                })
+                .collect();
+            if !dropped.is_empty() {
+                tools.hook_notices_queue.lock().unwrap().extend(dropped);
+            }
+        }
+        // Cancellation aborts this future at its next await point, so the
+        // SessionEnd call below is simply never reached -- a hole exactly for
+        // the "log every session" hooks SessionEnd exists for. The guard closes
+        // it: dropped without being disarmed, it fires the event from a detached
+        // task. Disarmed on the normal path, so the event still fires there
+        // inline and in order.
+        let mut session_end = SessionEndGuard {
+            hooks: tools.hooks.clone(),
+            project_root: root.clone(),
+            store_root: tools.store_root.clone(),
+            sandbox: tools.sandbox,
+            session_id: session_id.clone(),
+            armed: true,
+        };
+        // SessionStart before the first model call and SessionEnd after the
+        // last, so a hook brackets exactly the work the run did. A context
+        // answer from SessionStart is queued here and drained into the first
+        // turn's reminders, which is why it fires before `run_turn_cycle`.
+        // What both payloads report is the request this run is about, and the
+        // record's projection is what it is: projected once, since the two
+        // hooks fire back to back on the same state.
+        let request_message_count =
+            projected_message_count(&transcript, volatile_projection.as_deref(), send_reasoning);
+        tools
+            .fire_hooks(
+                tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,
+                tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    session_id: session_id.clone(),
+                    message_count: Some(request_message_count),
+                    ..Default::default()
+                },
+            )
+            .await;
+        // UserPromptSubmit fires here rather than in each surface's submit
+        // handler: the TUI, the headless run and the stream-json duplex all
+        // funnel through this one function, and a hook wired to three call
+        // sites would inevitably grow a fourth it was never added to. `deny` is
+        // not honored -- there is no tool call to stop -- but `context` is,
+        // which is what a prompt hook is for.
+        if let Some(prompt) = submitted_prompt {
+            tools
+                .fire_hooks(
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::UserPromptSubmit,
+                    tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        prompt: Some(prompt),
+                        session_id: session_id.clone(),
+                        message_count: Some(request_message_count),
+                        ..Default::default()
+                    },
+                )
+                .await;
+        }
         let result = run_turn_cycle(
             events,
             json_body,
             &model_id,
             &openai_tools,
-            conversation_messages,
+            transcript,
+            volatile_projection,
+            send_reasoning,
             max_turns,
             &mut budget,
             &http_model,
@@ -1851,6 +2716,8 @@ async fn orchestrate_inner(
             run_mode,
             todo_registry.as_ref(),
             force_first_tool,
+            steering,
+            *compaction,
         )
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
@@ -1859,6 +2726,21 @@ async fn orchestrate_inner(
         if result.is_ok() {
             bg.join_all().await;
         }
+        // Fired on failure too: a SessionEnd hook that only ran on the happy
+        // path could not be used for the cleanup or audit it exists for. Its
+        // answers cannot reach the model (the run is over) and are logged by
+        // `fire_hooks` instead. Disarm first: this inline call is the ordered
+        // one, and the guard is only the cancellation fallback.
+        session_end.armed = false;
+        tools
+            .fire_hooks(
+                tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionEnd,
+                tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                    session_id: session_id.clone(),
+                    ..Default::default()
+                },
+            )
+            .await;
         if index_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
@@ -1877,7 +2759,9 @@ async fn orchestrate_inner(
             json_body,
             &model_id,
             &openai_tools,
-            conversation_messages,
+            transcript,
+            volatile_projection,
+            send_reasoning,
             max_turns,
             &mut budget,
             &http_model,
@@ -1885,6 +2769,8 @@ async fn orchestrate_inner(
             run_mode,
             todo_registry.as_ref(),
             force_first_tool,
+            steering,
+            *compaction,
         )
         .await
     }
@@ -1900,7 +2786,7 @@ const MAX_COMPACTION_ATTEMPTS: usize = 4;
 /// `stripAssistantReasoningInBody`; kept in one place so every surface (TUI,
 /// headless, subagents) strips consistently. Only assistant messages carry the
 /// field, but the filter is defensive and targets just that role.
-fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+pub(crate) fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     messages
         .iter()
         .map(|m| {
@@ -1921,7 +2807,7 @@ fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::
 }
 
 /// Build one OpenAI chat-completion request from the current conversation.
-fn build_completion_request(
+pub(crate) fn build_completion_request(
     model_id: &str,
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
@@ -1960,6 +2846,65 @@ fn build_completion_request(
     serde_json::Value::Object(completion_map)
 }
 
+/// Fires `SessionEnd` if the run is cancelled before it reaches its own call.
+///
+/// A cancelled future is dropped, not unwound past an await, so the only way to
+/// run anything after it is a `Drop` impl. Hooks are async and `Drop` is not,
+/// hence the detached task; it owns everything it needs so nothing borrowed from
+/// the dying run outlives it. Best-effort by construction: on process exit the
+/// task may not get to run, which is the honest limit of the guarantee.
+struct SessionEndGuard {
+    hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+    project_root: std::path::PathBuf,
+    store_root: std::path::PathBuf,
+    sandbox: bool,
+    session_id: Option<String>,
+    /// Cleared by the normal path, which fires the event itself and in order.
+    armed: bool,
+}
+
+impl Drop for SessionEndGuard {
+    fn drop(&mut self) {
+        if !self.armed || self.hooks.is_empty() {
+            return;
+        }
+        let hooks = std::mem::take(&mut self.hooks);
+        let project_root = std::mem::take(&mut self.project_root);
+        let store_root = std::mem::take(&mut self.store_root);
+        let sandbox = self.sandbox;
+        let session_id = self.session_id.take();
+        // `spawn` rather than `block_on`: this drop can run on the runtime's own
+        // worker, where blocking would deadlock it.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(
+                    &project_root,
+                    &store_root,
+                    &[],
+                )
+                .with_sandbox(sandbox)
+                .with_hooks(&hooks, false, None);
+                let outcome = tauri_plugin_agent_tools::tools::hooks::run_hooks(
+                    &hooks,
+                    tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionEnd,
+                    &tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                        session_id,
+                        ..Default::default()
+                    },
+                    &ctx,
+                    false,
+                )
+                .await;
+                // Logged, not queued: the run is gone, so there is no turn left
+                // to fold a context answer or a notice into.
+                for notice in outcome.notices {
+                    log::warn!("agent: {}", notice.message());
+                }
+            });
+        }
+    }
+}
+
 /// Manually compact `messages` for the given model, resolving the upstream from
 /// `args` and reusing the same summarization path as the reactive loop. Used by
 /// the TUI `/compact` command, which holds `OrchestrationArgs` + a model id but
@@ -1971,6 +2916,18 @@ pub(crate) async fn compact_history(
     messages: &[serde_json::Value],
     keep_recent: usize,
 ) -> Result<Vec<serde_json::Value>, String> {
+    // `/compact` discards conversation exactly as the in-loop overflow retry
+    // does, so it owes PreCompact the same warning. This path has no invoker to
+    // hang the hooks off (it holds args and a model id, nothing more), so they
+    // are resolved here.
+    if let Some(root) = args.project_root.as_deref() {
+        let hooks = crate::core::agent::hooks_config::resolve_hooks(root);
+        let store = tauri_plugin_agent_tools::workspace::project_store(root);
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(root, &store, &[])
+            .with_sandbox(effective_sandbox(root))
+            .with_hooks(&hooks, false, None);
+        crate::core::agent::compaction::fire_pre_compact(&hooks, &ctx, messages.len()).await;
+    }
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         model_id,
         args.provider_configs.clone(),
@@ -2076,13 +3033,121 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
+async fn receive_steering(
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
+    messages: Vec<serde_json::Value>,
+    run_mode: crate::core::agent::plan::RunMode,
+) -> Vec<serde_json::Value> {
+    let Some(steering) = steering else {
+        return Vec::new();
+    };
+    let (reply, response) = tokio::sync::oneshot::channel();
+    if steering
+        .send(SteeringRequest {
+            messages,
+            reply,
+            run_mode,
+        })
+        .is_err()
+    {
+        return Vec::new();
+    }
+    response.await.unwrap_or_default()
+}
+
+/// The request the run's record projects to right now.
+fn project(
+    transcript: &Transcript,
+    volatile_system: Option<&str>,
+    send_reasoning: bool,
+) -> Vec<serde_json::Value> {
+    transcript.project(&Projection {
+        volatile_system,
+        send_reasoning,
+    })
+}
+
+/// The message list a client adopts as its session history
+/// (`StreamEvent::MessagesUpdated`).
+///
+/// Keep accepted guidance in the published history at the position the model
+/// saw it. Only a pending block from a request that has not succeeded is
+/// excluded. Removing an accepted block would break the next run's prefix.
+fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_json::Value> {
+    project(transcript, None, send_reasoning)
+}
+
+/// How many messages the request this run is about carries: the `message_count`
+/// a hook payload reports. The projection is the only thing that knows now that
+/// there is no live list to measure, so the count is projected rather than kept
+/// alongside the record, where it could drift from what the request carries.
+fn projected_message_count(
+    transcript: &Transcript,
+    volatile_system: Option<&str>,
+    send_reasoning: bool,
+) -> usize {
+    project(transcript, volatile_system, send_reasoning).len()
+}
+
+/// Record the assistant turn, minus the tool calls that may not be resent, and
+/// report the ids of the calls that were dropped.
+///
+/// The refusal rule itself is [`crate::core::agent::upstream::prune_unusable_tool_calls`],
+/// the same one [`crate::core::agent::upstream::drop_malformed_tool_calls`]
+/// applies to an incoming history: it used to clean these out of the live list
+/// on the next turn. The record is never rewritten, so an unusable call is
+/// refused entry instead: one whose arguments do not decode to a plain JSON
+/// object, or which has no non-empty id for its result to carry, is a turn a
+/// strict upstream rejects the whole request over -- and the run that emitted
+/// it cannot resend its own history until it is gone. The caller uses the
+/// returned ids to skip the results that answered those calls, which is the
+/// other half of the same repair: an orphaned `tool` message is invalid on its
+/// own.
+fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Value) -> Vec<String> {
+    let mut message = message.clone();
+    let dropped = prune_unusable_tool_calls(&mut message);
+    // An assistant turn left with neither text nor calls is not a valid message
+    // to resend, and recording it would only make the next request invalid.
+    if message.get("tool_calls").is_none() && content_says_nothing(&message) {
+        return dropped;
+    }
+    transcript.record_message(message);
+    dropped
+}
+
+/// Compact the run's record in place: summarize the span the plan names, and
+/// record the point that stands in for it. `Some(messages summarized)` when a
+/// compaction happened; `None` when there is nothing safe to drop, which is how
+/// the caller tells a no-op from a shrink instead of comparing lengths.
+///
+/// The original span stays in the record - only the projection omits it - so a
+/// later turn, a different provider, or a changed `keep_recent` can still
+/// rebuild from it.
+async fn compact(
+    transcript: &mut Transcript,
+    keep_recent: usize,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<Option<usize>, String> {
+    let Some(plan) = transcript.compaction_plan(keep_recent) else {
+        return Ok(None);
+    };
+    let summarized = plan.summarize.len();
+    let summary =
+        crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+    transcript.record_compaction(summary, plan.covers);
+    Ok(Some(summarized))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_turn_cycle(
     events: &mpsc::UnboundedSender<StreamEvent>,
     json_body: &serde_json::Value,
     model_id: &str,
     openai_tools: &[serde_json::Value],
-    mut conversation_messages: Vec<serde_json::Value>,
+    mut transcript: Transcript,
+    volatile_system: Option<String>,
+    mut send_reasoning: bool,
     max_turns: usize,
     budget: &mut SessionBudget,
     model: &dyn ModelInvoker,
@@ -2093,6 +3158,11 @@ async fn run_turn_cycle(
     // named tool -- used to make the eager-todo nudge actually reliable
     // instead of an easily-ignored suggestion. `None` for every later turn.
     force_first_tool: Option<&str>,
+    steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
+    // Compacts the conversation before dispatching when the request would
+    // outgrow this budget. `None` leaves compaction to a provider rejection,
+    // the only signal a route with an unknown window can give.
+    compaction: Option<crate::core::agent::compaction::CompactionBudget>,
 ) -> Result<serde_json::Value, String> {
     // `max_turns == 0` is the normal case: the session token budget and user
     // cancellation are the real guards, so a run isn't cut off mid-task by a
@@ -2115,67 +3185,149 @@ async fn run_turn_cycle(
     let mut mid_run_nudge_count: u32 = 0;
     // One-shot: asked the model to close out its todos before handing back.
     let mut closeout_nudged = false;
+    // The monitor set last published as `StreamEvent::Monitors`.
+    let mut shown_monitors = Vec::new();
 
     while unlimited || turn < max_turns {
+        for message in receive_steering(
+            steering,
+            project(&transcript, volatile_system.as_deref(), send_reasoning),
+            run_mode,
+        )
+        .await
+        {
+            transcript.record_message(message);
+        }
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
             max: max_turns as u32,
         });
 
-        // A turn this run just produced can carry poison of its own: a
-        // length-truncated tool call, or an argument string that decodes to a
-        // scalar. A strict upstream rejects the whole request over it, so
-        // sanitize per turn -- the next attempt lands on clean history instead
-        // of wedging the session. The entry-time pass above cannot see what
-        // this run created mid-flight.
-        let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
-        if poisoned > 0 {
-            log::warn!("agent: dropped {poisoned} malformed tool call(s) from the live context");
+        // Nothing is sanitized here any more: a malformed tool call never
+        // enters the record (it is refused where the turn is recorded), and a
+        // history that arrived already carrying one was repaired at the entry -
+        // the one place a caller's array passes through. Sanitizing the live
+        // list used to *rewrite* it, which is what made the record unusable as
+        // a source of truth.
+
+        // Background work that finished since the last request reaches the model
+        // here, as a `<SYSTEM>` reminder rather than an invented tool result:
+        // nothing was called this turn. Several pings fold into one user
+        // message, since `attach` appends to a trailing user turn.
+        let notices = tools.background_notices();
+        if !notices.is_empty() {
+            for notice in &notices {
+                transcript.record_reminder(&notice.text);
+                // The headline is shown at delivery, not when the ping was
+                // queued, so the transcript reads in the order the model saw
+                // things (matching Cowork's inbox drain).
+                if let Some(headline) = &notice.headline {
+                    let _ = events.send(StreamEvent::Notice {
+                        text: headline.clone(),
+                    });
+                }
+            }
+            let _ = events.send(StreamEvent::MessagesUpdated {
+                messages: client_history(&transcript, send_reasoning),
+            });
+            // A drained ping is how a match or a timeout reaches the display.
+            publish_monitors(tools, events, &mut shown_monitors);
         }
 
+        // A prompt already past the route's trigger is compacted *before* the
+        // request goes out, so the prefix break lands at a point this run chose
+        // instead of one a provider rejection forced - which costs a round trip
+        // and a summarizer call, and reads to the user as a stall.
+        let mut preflighted = false;
         // On a context-overflow error, compact the conversation and retry.
         // Compaction runs progressively (a smaller kept tail each attempt) and
-        // the loop gives up if a pass fails to shrink the message list.
+        // the loop gives up if a pass fails to shrink the message list. Kept as
+        // the fallback, and the only path for a route whose window is unknown.
         let completion = {
             let mut keep_recent = crate::core::agent::compaction::DEFAULT_KEEP_RECENT;
             let mut attempts = 0usize;
             loop {
                 let request_value = build_completion_request(
                     model_id,
-                    &conversation_messages,
+                    &project(&transcript, volatile_system.as_deref(), send_reasoning),
                     openai_tools,
                     json_body,
                     (turn == 0).then_some(force_first_tool).flatten(),
                 );
+                // Once per turn, on the request about to be sent. A prompt still
+                // over the trigger after compacting is sent anyway: there is
+                // nothing safe left to drop, and retrying here would spin.
+                if !preflighted {
+                    preflighted = true;
+                    if let Some(budget) = compaction {
+                        let estimate =
+                            crate::core::agent::compaction::estimate_request_tokens(&request_value);
+                        if estimate > budget.trigger_tokens() {
+                            if let Some(dropped) = compact(
+                                &mut transcript,
+                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
+                                model_id,
+                                model,
+                            )
+                            .await?
+                            {
+                                log::info!(
+                                    "agent: prompt estimated at {estimate} tokens against a {} \
+                                     token trigger on a {} token window, compacted {dropped} \
+                                     messages into a summary before dispatch",
+                                    budget.trigger_tokens(),
+                                    budget.context_window
+                                );
+                                // Published for the same reason the overflow
+                                // path below publishes: a client holding the
+                                // oversized history would send it again next turn.
+                                let _ = events.send(StreamEvent::MessagesUpdated {
+                                    messages: client_history(&transcript, send_reasoning),
+                                });
+                                // The one legitimate cache break in a session,
+                                // and the only way the user can tell it apart
+                                // from a stall: say it happened, and why.
+                                let _ = events.send(StreamEvent::Notice {
+                                    text: format!(
+                                        "compacted {dropped} messages into a summary before sending \
+                                         ({estimate} tokens against a {} token budget)",
+                                        budget.trigger_tokens()
+                                    ),
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                }
                 match model.invoke(&request_value, events).await {
                     Ok(c) => break c,
                     Err(e)
                         if crate::core::agent::upstream::is_context_overflow_error(&e)
                             && attempts < MAX_COMPACTION_ATTEMPTS =>
                     {
-                        let compacted = crate::core::agent::compaction::compact_conversation(
-                            &conversation_messages,
-                            model_id,
-                            model,
-                            keep_recent,
-                        )
-                        .await?;
-                        if compacted.len() >= conversation_messages.len() {
-                            return Err(e);
-                        }
+                        tools
+                            .pre_compact(projected_message_count(
+                                &transcript,
+                                volatile_system.as_deref(),
+                                send_reasoning,
+                            ))
+                            .await;
+                        // Nothing safe left to drop: the request is smaller than the
+                        // window only in the provider's own maths.
+                        let dropped = compact(&mut transcript, keep_recent, model_id, model)
+                            .await?
+                            .ok_or(e)?;
                         log::info!(
-                            "agent: context overflow, compacted {} -> {} messages (attempt {})",
-                            conversation_messages.len(),
-                            compacted.len(),
+                            "agent: context overflow, compacted {dropped} messages into a \
+                             summary (attempt {})",
                             attempts + 1
                         );
-                        conversation_messages = compacted;
                         // Publish now, not at the end of the run: a retry that
                         // never recovers returns Err, and an unpublished
                         // compaction leaves the client holding the oversized
                         // history that every later turn would re-overflow on.
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: conversation_messages.clone(),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
@@ -2183,28 +3335,40 @@ async fn run_turn_cycle(
                     // This provider rejects `reasoning_content` outright rather
                     // than ignoring it, so the opt-out `[agent].send_reasoning`
                     // exists for is discovered here instead of having to be
-                    // configured by hand. Dropping it from the conversation is
-                    // enough on its own: a provider that rejects the field never
-                    // streams one either, so no later turn re-adds it. Published
-                    // so the client's persisted history loses it too, the way the
-                    // compacted history above is published.
+                    // configured by hand. The retry drops the field from the
+                    // *request*, not from the record: a route that accepts
+                    // reasoning is entitled to what an earlier turn produced,
+                    // and which route is asking is a projection option. The
+                    // record keeps the reasoning, so nothing is destroyed for
+                    // the route that would have accepted it.
                     Err(e)
                         if crate::core::agent::upstream::is_reasoning_field_error(&e)
-                            && body_send_reasoning(json_body)
-                            && carries_assistant_reasoning(&conversation_messages) =>
+                            && send_reasoning
+                            && carries_assistant_reasoning(&project(
+                                &transcript,
+                                volatile_system.as_deref(),
+                                send_reasoning,
+                            )) =>
                     {
                         log::info!(
                             "agent: upstream rejected reasoning_content, retrying without it"
                         );
-                        conversation_messages = strip_assistant_reasoning(&conversation_messages);
+                        send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: conversation_messages.clone(),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                     }
                     Err(e) => return Err(e),
                 }
             }
         };
+
+        // This request succeeded: its guidance is now part of the accepted
+        // history, before the assistant response and any tool results. Keep it
+        // there instead of projecting it at the moving tail of every step.
+        if let Some(text) = volatile_system.as_deref() {
+            transcript.record_prompt_tail(text);
+        }
 
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
@@ -2229,6 +3393,30 @@ async fn run_turn_cycle(
                 .and_then(|c| c.as_str())
                 .unwrap_or_default()
                 .to_string();
+            // Include the completed assistant response before any new user input.
+            // The terminal-boundary handshake also catches input submitted during
+            // the final model request without starting a separate run.
+            if steering.is_some() && (unlimited || turn + 1 < max_turns) {
+                let mut assistant = extract_choice_message(&completion)
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({ "content": final_text }));
+                assistant["role"] = serde_json::json!("assistant");
+                // The channel is shown the conversation it would be resuming,
+                // turn included, so it can decide to park the run. Nothing is
+                // recorded unless input actually arrives: the record is the
+                // history the model saw, and this turn was never resent.
+                let mut probe = project(&transcript, volatile_system.as_deref(), send_reasoning);
+                probe.push(assistant.clone());
+                let incoming = receive_steering(steering, probe, run_mode).await;
+                if !incoming.is_empty() {
+                    transcript.record_message(assistant);
+                    for message in incoming {
+                        transcript.record_message(message);
+                    }
+                    turn += 1;
+                    continue;
+                }
+            }
             let awaiting_user = final_text.trim_end().ends_with('?');
             if !closeout_nudged
                 && run_mode == crate::core::agent::plan::RunMode::Normal
@@ -2236,18 +3424,43 @@ async fn run_turn_cycle(
             {
                 if let Some(summary) = open_todo_summary(todo_registry).await {
                     closeout_nudged = true;
-                    conversation_messages.push(serde_json::json!({
+                    transcript.record_message(serde_json::json!({
                         "role": "assistant",
                         "content": final_text,
                     }));
-                    crate::core::agent::reminder::attach(
-                        &mut conversation_messages,
-                        &format!(
-                            "Before you stop: these todos are still open:\n{summary}\n\nFor each \
-                             one you actually completed, call `todo` with `done` now (or `drop` if \
-                             you skipped it). If work genuinely remains, continue it instead."
-                        ),
-                    );
+                    transcript.record_reminder(&format!(
+                        "Before you stop: these todos are still open:\n{summary}\n\nFor each \
+                         one you actually completed, call `todo` with `done` now (or `drop` if \
+                         you skipped it). If work genuinely remains, continue it instead."
+                    ));
+                    turn += 1;
+                    continue;
+                }
+            }
+            // The model has nothing left to do, but a subagent it dispatched is
+            // still running (or a run-owned monitor is) -- and its answer has
+            // nowhere to go once this cycle returns. So park here instead of
+            // ending: the ping drained at the top of the next turn is what
+            // resumes the conversation. A session-owned monitor never parks:
+            // its owner starts a turn when it fires (`monitors_owed`). The turn
+            // the model just took has to be recorded first, exactly as the
+            // closeout nudge above records it, or the reminder would attach to
+            // a conversation missing the answer it follows.
+            if tools.background_pending() {
+                // Nothing is generated until a ping lands; the display should
+                // say so rather than keep a working badge on an idle model.
+                let _ = events.send(StreamEvent::Parked);
+                tools.await_background().await;
+                publish_monitors(tools, events, &mut shown_monitors);
+                // Re-checked rather than assumed: the wait also returns when
+                // there is nothing left to wait for (a cancelled run drops its
+                // queued pings), and resuming on that would spend a turn asking
+                // the model to react to nothing.
+                if tools.background_pending() {
+                    transcript.record_message(serde_json::json!({
+                        "role": "assistant",
+                        "content": final_text,
+                    }));
                     turn += 1;
                     continue;
                 }
@@ -2260,34 +3473,39 @@ async fn run_turn_cycle(
             // The reactive path above cannot help with that -- it only fires
             // once an upstream has already rejected a request.
             //
-            // Only when it actually shrinks: `compact_conversation` returns the
-            // input untouched when there is too little to drop, and publishing
-            // an unchanged history would spend a summarizer call for nothing.
+            // Only when there is something to drop: a plan that
+            // covers nothing would spend a summarizer call to publish an
+            // unchanged history.
             if budget.exhausted() {
-                match crate::core::agent::compaction::compact_conversation(
-                    &conversation_messages,
+                tools
+                    .pre_compact(projected_message_count(
+                        &transcript,
+                        volatile_system.as_deref(),
+                        send_reasoning,
+                    ))
+                    .await;
+                match compact(
+                    &mut transcript,
+                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                     model_id,
                     model,
-                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                 )
                 .await
                 {
-                    Ok(compacted) if compacted.len() < conversation_messages.len() => {
+                    Ok(Some(dropped)) => {
                         log::info!(
-                            "agent: budget exhausted at end of run, compacted {} -> {} messages",
-                            conversation_messages.len(),
-                            compacted.len()
+                            "agent: budget exhausted at end of run, compacted {dropped} messages \
+                             into a summary"
                         );
-                        conversation_messages = compacted;
                     }
-                    Ok(_) => {}
+                    Ok(None) => {}
                     Err(error) => {
                         log::warn!("agent: budget exhausted but compaction failed: {error}");
                     }
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: conversation_messages.clone(),
+                messages: client_history(&transcript, send_reasoning),
             });
             return Ok(completion);
         }
@@ -2304,7 +3522,7 @@ async fn run_turn_cycle(
         // is the shape a model will imitate unprompted on later turns.
         if budget.exhausted() && !budget_notice_recorded {
             budget_notice_recorded = true;
-            conversation_messages.push(serde_json::json!({
+            transcript.record_message(serde_json::json!({
                 "role": "system",
                 "content": format!(
                     "[session token budget exhausted ({} tokens)] The configured \
@@ -2313,7 +3531,7 @@ async fn run_turn_cycle(
                 ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: conversation_messages.clone(),
+                messages: client_history(&transcript, send_reasoning),
             });
         }
 
@@ -2350,7 +3568,7 @@ async fn run_turn_cycle(
         // for the specific model that needs it (scoped, content preserved), so
         // the agent can speak standard OpenAI tool protocol on the wire again.
         // See janhq/jan-internal#238.
-        if let Some(choice_message) = extract_choice_message(&completion) {
+        let assistant_turn = if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
                 .cloned()
@@ -2370,14 +3588,18 @@ async fn run_turn_cycle(
             {
                 msg["reasoning_content"] = serde_json::json!(r);
             }
-            conversation_messages.push(msg);
+            msg
         } else {
-            conversation_messages.push(serde_json::json!({
+            serde_json::json!({
                 "role": "assistant",
                 "content": serde_json::Value::Null,
                 "tool_calls": tool_calls.clone()
-            }));
-        }
+            })
+        };
+        // Recording is the gate that keeps poison out of the record: a call the
+        // model emitted with unparsable arguments is never resent, and the ids
+        // it answered are what the results below are matched against.
+        let dropped_tool_ids = record_assistant_turn(&mut transcript, &assistant_turn);
 
         // A `length` finish means the model was cut off mid-emission, so the
         // streamed tool-call arguments may be silently truncated. Executing them
@@ -2400,7 +3622,13 @@ async fn run_turn_cycle(
                     is_error: true,
                     diff: None,
                 });
-                conversation_messages.push(serde_json::json!({
+                // A truncated call whose arguments no longer parse never made it
+                // into the record, so neither does its result: an orphaned tool
+                // message is invalid on its own.
+                if dropped_tool_ids.iter().any(|dropped| dropped == &id) {
+                    continue;
+                }
+                transcript.record_message(serde_json::json!({
                     "role": "tool",
                     "tool_call_id": id,
                     "content": content
@@ -2410,29 +3638,31 @@ async fn run_turn_cycle(
             continue;
         }
 
-        // Invariant: a tool call whose arguments do not decode to a plain
-        // JSON object is never executed. A truncated stream or a confused
-        // model would otherwise run a tool with invented or empty arguments.
-        // The call fails visibly instead, and the per-request sanitizer keeps
-        // the malformed call out of the history the next request carries.
+        // Invariant: a tool call the record cannot hold is never executed. A
+        // call whose arguments do not decode to a plain JSON object is one a
+        // truncated stream or a confused model would run with invented or empty
+        // arguments; a call with no non-empty id is one whose result would be a
+        // `role: "tool"` message paired with nothing. Both fail visibly instead
+        // of running, and the per-request sanitizer keeps them out of the
+        // history the next request carries.
         let executable: Vec<serde_json::Value> = tool_calls
             .iter()
-            .filter(|tc| arguments_are_executable(tc))
+            .filter(|tc| tool_call_is_usable(tc))
             .cloned()
             .collect();
         let mut error_outcomes: Vec<ToolOutcome> = tool_calls
             .iter()
-            .filter(|tc| !arguments_are_executable(tc))
+            .filter(|tc| !tool_call_is_usable(tc))
             .map(|tc| {
-                ToolOutcome::plain(
-                    tc.get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                let id = pairable_tool_call_id(tc).unwrap_or_default();
+                let reason = if id.is_empty() {
+                    "ERROR: tool call had no id; the call was not executed and its result would \
+                     have nothing to pair with. Re-emit it as a tool call carrying an id."
+                } else {
                     "ERROR: tool-call arguments are not a plain JSON object; the call was not \
                      executed. Re-emit it with the arguments as a JSON object."
-                        .to_string(),
-                )
+                };
+                ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
         let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
@@ -2443,6 +3673,7 @@ async fn run_turn_cycle(
         // Results are matched to calls by id, so appending the failed calls
         // after the executed ones keeps the protocol intact.
         tool_results.append(&mut error_outcomes);
+        publish_monitors(tools, events, &mut shown_monitors);
 
         // Standard OpenAI tool protocol: each result is a `role: "tool"` message
         // carrying its `tool_call_id` (see note above the assistant push -- the
@@ -2508,11 +3739,16 @@ async fn run_turn_cycle(
                 }
                 serde_json::Value::Array(parts)
             };
-            conversation_messages.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
-                "content": wire_content
-            }));
+            // A result whose call was refused entry to the record would be an
+            // orphaned tool message on the next request: the call it answers is
+            // not there any more.
+            if !dropped_tool_ids.iter().any(|dropped| dropped == &id) {
+                transcript.record_message(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": wire_content
+                }));
+            }
         }
         if todo_touched_this_batch {
             mutations_since_todo_touch = 0;
@@ -2541,16 +3777,14 @@ async fn run_turn_cycle(
                 mutations_since_todo_touch = 0;
                 mid_run_nudge_count += 1;
                 let plural = if open_count == 1 { "" } else { "s" };
-                crate::core::agent::reminder::attach(
-                    &mut conversation_messages,
-                    &format!(
-                        "Reminder: {open_count} todo item{plural} still open. If you finished a \
-                         task since the last todo update, mark it done now so progress stays \
-                         visible; otherwise just keep working."
-                    ),
-                );
+                transcript.record_reminder(&format!(
+                    "Reminder: {open_count} todo item{plural} still open. If you finished a \
+                     task since the last todo update, mark it done now so progress stays \
+                     visible; otherwise just keep working."
+                ));
             }
         }
+
         turn += 1;
     }
 
@@ -2562,9 +3796,272 @@ async fn run_turn_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::agent::shell_quoted_path;
+    use crate::core::agent::upstream::append_prompt_tail;
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
+
+    /// The cache-prefix contract from #340: across turns the system prompt at
+    /// message 0 and the tool schema must be byte-identical, so a provider can
+    /// cache them; changing guidance is appended after the conversation.
+    /// A regression here silently defeats prompt caching.
+    #[test]
+    fn system_prefix_and_tools_are_byte_identical_across_turns() {
+        let tools = vec![json!({
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "description": "run a shell command",
+                "parameters": {"type": "object"}
+            }
+        })];
+        let body = json!({});
+
+        // Two turns of the same session: the conversation grew and the volatile
+        // block differs. Both go through the projection, which is where the
+        // request is built from now on.
+        let volatile1 = "Today's date is 2026-09-16.";
+        let volatile2 = "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note";
+
+        let mut first = Transcript::from_history(vec![json!({"role": "user", "content": "first"})]);
+        first.record_prompt("STABLE PREFIX");
+        let req1 = build_completion_request(
+            "m",
+            &project(&first, Some(volatile1), true),
+            &tools,
+            &body,
+            None,
+        );
+
+        let mut second = Transcript::from_history(vec![
+            json!({"role": "user", "content": "first"}),
+            json!({"role": "assistant", "content": "reply"}),
+            json!({"role": "user", "content": "second"}),
+        ]);
+        second.record_prompt("STABLE PREFIX");
+        let req2 = build_completion_request(
+            "m",
+            &project(&second, Some(volatile2), true),
+            &tools,
+            &body,
+            None,
+        );
+
+        let node0 = |r: &serde_json::Value| serde_json::to_string(&r["messages"][0]).unwrap();
+        let tools_of = |r: &serde_json::Value| serde_json::to_string(&r["tools"]).unwrap();
+        assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
+        assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
+        assert_ne!(
+            req1["messages"].as_array().unwrap().last(),
+            req2["messages"].as_array().unwrap().last(),
+            "the volatile block is expected to differ"
+        );
+    }
+
+    /// A client resumes from the published history, so it must retain the
+    /// guidance the provider already accepted, not rebuild it after the answer.
+    #[tokio::test]
+    async fn published_history_preserves_the_accepted_prompt_tail() {
+        let volatile1 = "Today's date is 2026-09-21.";
+        let volatile2 = "Today's date is 2026-09-22.";
+
+        let reminders = |messages: &[serde_json::Value]| -> Vec<serde_json::Value> {
+            messages
+                .iter()
+                .filter(|m| {
+                    m["role"] == "user"
+                        && crate::core::agent::reminder::is_reminder_only(&m["content"])
+                })
+                .cloned()
+                .collect()
+        };
+        let published = |rx: &mut mpsc::UnboundedReceiver<StreamEvent>| {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .filter_map(|ev| match ev {
+                    StreamEvent::MessagesUpdated { messages } => Some(messages),
+                    _ => None,
+                })
+                .last()
+        };
+
+        // Turn one.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("reply")]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "first" })]),
+            Some(volatile1.to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request1 = model.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request1).len(),
+            1,
+            "the request carries this turn's block: {request1:?}"
+        );
+
+        // The client takes what was published -- not the bytes it asked with --
+        // and adds its next user turn to it.
+        let mut adopted = published(&mut rx).expect("turn one publishes its history");
+        assert_eq!(adopted, request1, "publish the accepted request verbatim");
+        adopted.push(json!({ "role": "assistant", "content": "reply" }));
+        adopted.push(json!({ "role": "user", "content": "second" }));
+
+        // Changed guidance follows the entire previous request and its answer.
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        let model2 = MockModel::new(vec![final_answer("reply 2")]);
+        let mut budget2 = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx2,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(adopted),
+            Some(volatile2.to_string()),
+            true,
+            8,
+            &mut budget2,
+            &model2,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request2 = model2.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request2).len(),
+            2,
+            "one accepted block from each run: {request2:?}"
+        );
+        assert_eq!(
+            request2.last().unwrap()["content"],
+            json!(crate::core::agent::reminder::wrap(volatile2)),
+            "the newest guidance is last"
+        );
+        assert_eq!(
+            serde_json::to_string(&request2[..request1.len()]).unwrap(),
+            serde_json::to_string(&request1).unwrap(),
+            "the next run must extend every message the provider accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_steps_preserve_the_accepted_prompt_tail() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![tool_call_completion(), final_answer("done")]);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "search for Rust"}),
+            ]),
+            Some("Today's date is 2026-09-21.".to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let requests = model.requests.lock().unwrap();
+        let first = requests[0]["messages"].as_array().unwrap();
+        let second = requests[1]["messages"].as_array().unwrap();
+        assert_eq!(
+            serde_json::to_string(&second[..first.len()]).unwrap(),
+            serde_json::to_string(first).unwrap(),
+            "a tool step must extend the accepted request, not move its guidance"
+        );
+        assert_eq!(
+            second.len(),
+            first.len() + 2,
+            "only the call and result are new"
+        );
+        assert_eq!(second.last().unwrap()["role"], "tool");
+    }
+
+    #[test]
+    fn prompt_tail_does_not_replace_the_user_query() {
+        let mut messages = vec![json!({"role": "user", "content": "find the configuration"})];
+        append_prompt_tail(&mut messages, "Today's date is 2026-09-21.");
+        assert_eq!(
+            latest_user_text(&messages).as_deref(),
+            Some("find the configuration")
+        );
+    }
+
+    /// The record gate names every call it refuses, empty id included: the
+    /// caller skips results by that list, and a result left behind is the
+    /// orphan a strict upstream rejects the whole request over.
+    #[test]
+    fn a_tool_call_without_an_id_is_refused_entry_and_named_for_its_result() {
+        let mut transcript = Transcript::default();
+        let turn = json!({
+            "role": "assistant",
+            "content": "on it",
+            "tool_calls": [
+                { "type": "function", "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" } },
+                { "id": "call_ok", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+            ]
+        });
+
+        let dropped = record_assistant_turn(&mut transcript, &turn);
+        assert_eq!(
+            dropped,
+            vec![String::new()],
+            "the empty id is what the refused call's result will carry"
+        );
+
+        let crate::core::agent::transcript::Event::Message(recorded) = &transcript.events()[0]
+        else {
+            panic!("the assistant turn is recorded");
+        };
+        let calls = recorded["tool_calls"]
+            .as_array()
+            .expect("the usable call stays");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "call_ok");
+        assert_eq!(recorded["content"], "on it");
+    }
 
     struct MockModel {
         responses: StdMutex<VecDeque<serde_json::Value>>,
@@ -2713,8 +4210,11 @@ mod tests {
             Some("test-session"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
 
         assert!(prompt.starts_with("You are a robotics researcher."));
         assert!(!prompt.contains("main assistant"));
@@ -2722,6 +4222,88 @@ mod tests {
         assert!(prompt.contains("# Web Access"));
         assert!(prompt.contains("web_search"));
         assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[prompt]` in agent.toml is what decides which blocks reach the cache
+    /// line: the run resolves the policy from the project's config and composes
+    /// through it, so an allowlist naming two contributors really does move the
+    /// rest below the line.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_narrows_what_reaches_the_cache_line() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"assistant_instructions\", \"tool_schemas\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        assert_eq!(policy.prefix_allow().map(<[String]>::len), Some(2));
+        // ...and the run's resolved settings carry the same policy, which is
+        // what `orchestrate_inner` composes with.
+        assert_eq!(
+            resolve_run_settings(&root, None)
+                .prompt
+                .prefix_allow()
+                .map(<[String]>::len),
+            Some(2)
+        );
+        let composed = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect("prompt")
+        .expect("project prompt");
+
+        // Only the identity is allowed above the line...
+        assert_eq!(composed.prefix, "main assistant");
+        // ...and everything else still reaches the model, from the tail.
+        let tail: Vec<&str> = composed
+            .tail
+            .iter()
+            .map(|(_, block)| block.as_str())
+            .collect();
+        assert!(tail.iter().any(|block| block.contains("# Guidelines")));
+        assert!(tail.iter().any(|block| block.contains("# Web Access")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An allowlist that would put a varying composer above the cache line stops
+    /// the run, rather than costing a cache miss on every turn. The failure is
+    /// the same one `agent status` reports, from the same resolution.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"todo_addendum\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        let error = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect_err("a per-turn composer cannot be allowed above the cache line");
+        assert!(error.contains("todo_addendum"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -2742,6 +4324,151 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn steering_enters_after_all_tool_results_in_submission_order() {
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let mut completion = tool_call_completion();
+        let mut second = completion["choices"][0]["message"]["tool_calls"][0].clone();
+        second["id"] = json!("call_2");
+        completion["choices"][0]["message"]["tool_calls"]
+            .as_array_mut()
+            .unwrap()
+            .push(second);
+        let model = MockModel::new(vec![
+            completion,
+            json!({"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            let first = requests.recv().await.unwrap();
+            first.reply.send(vec![]).unwrap();
+            let boundary = requests.recv().await.unwrap();
+            let roles: Vec<_> = boundary
+                .messages
+                .iter()
+                .map(|m| m["role"].as_str().unwrap())
+                .collect();
+            assert_eq!(roles, ["user", "assistant", "tool", "tool"]);
+            assert_eq!(boundary.messages[2]["tool_call_id"], "call_1");
+            assert_eq!(boundary.messages[3]["tool_call_id"], "call_2");
+            boundary
+                .reply
+                .send(vec![
+                    json!({"role": "user", "content": "use pnpm"}),
+                    json!({"role": "user", "content": "then test"}),
+                ])
+                .unwrap();
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+            None,
+        )
+        .await
+        .unwrap();
+        {
+            let sent = model.requests.lock().unwrap();
+            let messages = sent[1]["messages"].as_array().unwrap();
+            assert_eq!(messages[4]["content"], "use pnpm");
+            assert_eq!(messages[5]["content"], "then test");
+            assert_eq!(sent.len(), 2);
+        }
+        drop(steering);
+        consumer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn steering_during_final_response_continues_the_same_run() {
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let model = MockModel::new(vec![
+            json!({"choices": [{"message": {"content": "first answer", "reasoning_content": "considered options"}, "finish_reason": "stop"}]}),
+            json!({"choices": [{"message": {"content": "revised answer"}, "finish_reason": "stop"}]}),
+        ]);
+        let consumer = tokio::spawn(async move {
+            requests.recv().await.unwrap().reply.send(vec![]).unwrap();
+            let final_boundary = requests.recv().await.unwrap();
+            assert_eq!(
+                final_boundary.messages.last().unwrap()["content"],
+                "first answer"
+            );
+            final_boundary
+                .reply
+                .send(vec![json!({"role": "user", "content": "correction"})])
+                .unwrap();
+            while let Some(request) = requests.recv().await {
+                request.reply.send(vec![]).unwrap();
+            }
+        });
+        let mut budget = SessionBudget::new(None);
+        let result = run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["choices"][0]["message"]["content"], "revised answer");
+        {
+            let sent = model.requests.lock().unwrap();
+            assert_eq!(sent[1]["messages"][1]["content"], "first answer");
+            assert_eq!(
+                sent[1]["messages"][1]["reasoning_content"],
+                "considered options"
+            );
+            assert_eq!(sent[1]["messages"][2]["content"], "correction");
+        }
+        drop(steering);
+        consumer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn steering_disconnected_surface_does_not_block_the_loop() {
+        let (steering, receiver) = mpsc::unbounded_channel();
+        drop(receiver);
+        let messages = vec![json!({"role": "user", "content": "start"})];
+        assert!(
+            receive_steering(
+                Some(&steering),
+                messages,
+                crate::core::agent::plan::RunMode::Normal
+            )
+            .await
+            .is_empty(),
+            "a disconnected steering surface contributes nothing"
+        );
+    }
+
+    #[tokio::test]
     async fn turn_cycle_executes_tool_then_returns_final() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
@@ -2757,12 +4484,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -2790,6 +4521,179 @@ mod tests {
             }
         }
         assert!(saw_tool_call && saw_tool_result);
+    }
+
+    /// The preflight exists so an oversized prompt is compacted *before* it is
+    /// sent: the provider never sees the request it would reject, and the user
+    /// gets one notice instead of a stall followed by a silent retry.
+    #[tokio::test]
+    async fn a_prompt_over_the_trigger_is_compacted_before_the_request_goes_out() {
+        /// Rejects an oversized request the way a real provider does (HTTP 400
+        /// `context_length_exceeded`), counted so the test can assert it was
+        /// never given the chance. `limit` is measured with the same estimator
+        /// the preflight uses, on the same request body.
+        struct OverflowRejectingModel {
+            limit: u64,
+            requests: StdMutex<Vec<serde_json::Value>>,
+            rejections: StdMutex<usize>,
+        }
+        #[async_trait]
+        impl ModelInvoker for OverflowRejectingModel {
+            async fn invoke(
+                &self,
+                request: &serde_json::Value,
+                _events: &mpsc::UnboundedSender<StreamEvent>,
+            ) -> Result<serde_json::Value, String> {
+                // The summarizer call is tiny by construction; answer it.
+                let summarizing = request["messages"][0]["content"]
+                    .as_str()
+                    .is_some_and(|c| c.starts_with("Summarize the AI agent"));
+                if !summarizing {
+                    self.requests.lock().unwrap().push(request.clone());
+                    let estimate = crate::core::agent::compaction::estimate_request_tokens(request);
+                    if estimate > self.limit {
+                        *self.rejections.lock().unwrap() += 1;
+                        return Err(
+                            "Upstream returned HTTP 400: context_length_exceeded".to_string()
+                        );
+                    }
+                }
+                let content = if summarizing {
+                    "CONDENSED"
+                } else {
+                    "final answer"
+                };
+                Ok(json!({
+                    "choices": [{ "message": { "content": content }, "finish_reason": "stop" }]
+                }))
+            }
+        }
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // The provider's own ceiling sits between the compacted and the
+        // uncompacted prompt: reachable only after the preflight runs.
+        let model = OverflowRejectingModel {
+            limit: 800,
+            requests: StdMutex::new(Vec::new()),
+            rejections: StdMutex::new(0),
+        };
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        let mut convo = vec![json!({ "role": "system", "content": "sys" })];
+        for i in 0..20 {
+            convo.push(json!({
+                "role": "user",
+                "content": format!("message {i} {}", "x".repeat(200)),
+            }));
+        }
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(convo),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: 1_000,
+                ratio: 0.5,
+                reserve_tokens: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["choices"][0]["message"]["content"], "final answer");
+        assert_eq!(
+            *model.rejections.lock().unwrap(),
+            0,
+            "the compacted request must fit, so the provider never rejects"
+        );
+        // Scoped: the guard is not held across the awaits below, and `sent`
+        // borrows through it.
+        {
+            let requests = model.requests.lock().unwrap();
+            assert_eq!(
+                requests.len(),
+                1,
+                "one dispatch, after the preflight -- never a rejected send"
+            );
+            let sent = requests[0]["messages"].as_array().unwrap();
+            assert!(
+                sent.len() < 20,
+                "the oversized history must be gone before dispatch, sent {} messages",
+                sent.len()
+            );
+            assert!(
+                sent.iter()
+                    .any(|m| m["content"].as_str().unwrap_or("").contains("CONDENSED")),
+                "the summary must replace the dropped middle: {sent:?}"
+            );
+        }
+
+        drop(tx);
+        let mut notices = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            if let StreamEvent::Notice { text } = ev {
+                notices.push(text);
+            }
+        }
+        assert!(
+            notices.iter().any(|n| n.contains("before sending")),
+            "a prefix break the user did not ask for has to be announced: {notices:?}"
+        );
+    }
+
+    /// The other half of the contract: under the trigger nothing is compacted
+    /// and no summarizer call is spent.
+    #[tokio::test]
+    async fn a_prompt_under_the_trigger_is_sent_untouched() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            Some(crate::core::agent::compaction::CompactionBudget {
+                context_window: 128_000,
+                ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+                reserve_tokens: None,
+            }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "no summarizer call under the trigger"
+        );
     }
 
     /// Reads the tool message the loop wrote into the next request's
@@ -2840,12 +4744,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -2898,13 +4806,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "edit the file" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "edit the file" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3008,6 +4920,7 @@ mod tests {
         // strict upstream never sees the poison and the turn goes through in
         // one round trip -- the wedge this used to create is gone.
         let (tx, _rx) = mpsc::unbounded_channel();
+
         let healed = StrictModel {
             calls: Default::default(),
         };
@@ -3016,12 +4929,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            poisoned,
+            Transcript::from_history(poisoned),
+            None,
+            true,
             8,
             &mut SessionBudget::new(None),
             &healed,
             &MockTool::default(),
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3051,7 +4968,9 @@ mod tests {
             &json!({}),
             "m",
             &[crate::core::agent::todo::todo_tool_schema()],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -3059,6 +4978,8 @@ mod tests {
             crate::core::agent::plan::RunMode::Normal,
             None,
             Some("todo"),
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -3203,8 +5124,8 @@ mod tests {
 
     /// How many mid-run nudges are present in this request's history. Counting
     /// messages (not requests) is what the per-cycle cap actually bounds: an
-    /// injected nudge stays in `conversation_messages`, so every later request
-    /// carries it and counting requests would grow with the turn count.
+    /// injected nudge stays in the transcript, so every later request carries
+    /// it and counting requests would grow with the turn count.
     fn nudge_message_count(request: &serde_json::Value) -> usize {
         request["messages"]
             .as_array()
@@ -3245,13 +5166,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3321,13 +5246,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "go" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3365,13 +5294,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "go" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3400,13 +5333,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Plan,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3451,13 +5388,17 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
             Some(&registry),
+            None,
+            None,
             None,
         )
         .await
@@ -3470,6 +5411,325 @@ mod tests {
                 .iter()
                 .all(|r| !request_has_nudge(r)),
             "a todo touch partway through must reset the mutation counter"
+        );
+    }
+
+    /// A tool invoker with background work outstanding, standing in for a run
+    /// that dispatched subagents. Each `await_background` releases one queued
+    /// ping, so a test controls exactly how many times the cycle is resumed.
+    struct BackgroundTool {
+        pending: StdMutex<VecDeque<Vec<String>>>,
+        ready: StdMutex<Vec<String>>,
+    }
+    impl BackgroundTool {
+        fn new(rounds: Vec<Vec<String>>) -> Self {
+            Self {
+                pending: StdMutex::new(rounds.into_iter().collect()),
+                ready: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+    #[async_trait]
+    impl ToolInvoker for BackgroundTool {
+        async fn invoke(
+            &self,
+            _tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(Vec::new())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            std::mem::take(&mut *self.ready.lock().unwrap())
+                .into_iter()
+                .map(|text| BackgroundNotice {
+                    headline: None,
+                    text,
+                })
+                .collect()
+        }
+        fn background_pending(&self) -> bool {
+            !self.ready.lock().unwrap().is_empty() || !self.pending.lock().unwrap().is_empty()
+        }
+        async fn await_background(&self) {
+            if let Some(round) = self.pending.lock().unwrap().pop_front() {
+                *self.ready.lock().unwrap() = round;
+            }
+        }
+    }
+
+    fn final_answer(text: &str) -> serde_json::Value {
+        json!({ "choices": [{ "message": { "content": text }, "finish_reason": "stop" }] })
+    }
+
+    /// The model stopping is not the end of the run while a child it dispatched
+    /// is still going: its answer would have nowhere to land. The cycle parks,
+    /// then resumes on the ping -- as a `<SYSTEM>`-marked user turn, since no
+    /// tool was called and there is no tool result to attach it to.
+    #[tokio::test]
+    async fn a_finished_subagent_resumes_a_cycle_that_would_have_ended() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            final_answer("dispatched, waiting"),
+            final_answer("here is what it found"),
+        ]);
+        let tool = BackgroundTool::new(vec![vec!["Subagent 'researcher' finished".to_string()]]);
+        let mut budget = SessionBudget::new(None);
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "look into it" })]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            result["choices"][0]["message"]["content"], "here is what it found",
+            "the run continued past the first answer"
+        );
+        let requests = model.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2, "the ping cost exactly one more turn");
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let last = sent.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(
+            crate::core::agent::reminder::is_reminder_only(&last["content"]),
+            "the ping is marked, so rewind and recall skip it: {last}"
+        );
+        assert!(last["content"]
+            .as_str()
+            .unwrap()
+            .contains("Subagent 'researcher' finished"));
+        // The turn the model just took has to be in the history the ping
+        // follows, or it reads as a reply to the previous user message.
+        assert_eq!(sent[sent.len() - 2]["content"], "dispatched, waiting");
+    }
+
+    /// Two children landing together produce one user turn, not two: `attach`
+    /// folds into a trailing user message, and consecutive user messages are
+    /// rejected outright by some providers.
+    #[tokio::test]
+    async fn pings_arriving_together_are_fused_into_one_turn() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("waiting"), final_answer("done")]);
+        let tool = BackgroundTool::new(vec![vec![
+            "Subagent 'alpha' finished".to_string(),
+            "Subagent 'beta' finished".to_string(),
+        ]]);
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let pings: Vec<&serde_json::Value> = sent
+            .iter()
+            .filter(|m| {
+                m["role"] == "user" && crate::core::agent::reminder::is_reminder_only(&m["content"])
+            })
+            .collect();
+        assert_eq!(pings.len(), 1, "one turn carries both: {sent:?}");
+        let text = pings[0]["content"].as_str().unwrap();
+        assert!(
+            text.contains("'alpha'") && text.contains("'beta'"),
+            "{text}"
+        );
+    }
+
+    /// A tool invoker whose one queued ping carries a headline, standing in for
+    /// a monitor match. The headline must surface as `StreamEvent::Notice` at
+    /// delivery; the text must reach the model as a `<SYSTEM>` reminder.
+    struct HeadlinedTool {
+        // The match "lands" only once the cycle parks (await_background), so
+        // the ping resumes a stopped run rather than riding the first turn.
+        armed: StdMutex<bool>,
+        delivered: StdMutex<bool>,
+    }
+    #[async_trait]
+    impl ToolInvoker for HeadlinedTool {
+        async fn invoke(
+            &self,
+            _tool_calls: &[serde_json::Value],
+        ) -> Result<Vec<ToolOutcome>, String> {
+            Ok(Vec::new())
+        }
+        fn background_notices(&self) -> Vec<BackgroundNotice> {
+            if !*self.armed.lock().unwrap() {
+                return Vec::new();
+            }
+            let mut delivered = self.delivered.lock().unwrap();
+            if *delivered {
+                return Vec::new();
+            }
+            *delivered = true;
+            vec![BackgroundNotice {
+                headline: Some("Monitor mon-1: condition 'ok' matched".to_string()),
+                text: "Monitor 'mon-1' condition 'ok' matched on build.log:\nBUILD OK".to_string(),
+            }]
+        }
+        fn background_pending(&self) -> bool {
+            !*self.delivered.lock().unwrap()
+        }
+        async fn await_background(&self) {
+            *self.armed.lock().unwrap() = true;
+        }
+        fn monitor_snapshot(
+            &self,
+        ) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
+            if *self.delivered.lock().unwrap() {
+                return Vec::new();
+            }
+            vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
+                monitor_id: "mon-1".to_string(),
+                name: "ok".to_string(),
+                script: "grep OK build.log".to_string(),
+                polls: 1,
+            }]
+        }
+    }
+
+    /// A monitor match is delivered in both registers: the model gets the
+    /// `<SYSTEM>` reminder, the user gets the headline as a `Notice` event.
+    #[tokio::test]
+    async fn a_monitor_match_pings_the_model_and_shows_its_headline() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("watching"), final_answer("reacted")]);
+        let tool = HeadlinedTool {
+            armed: StdMutex::new(false),
+            delivered: StdMutex::new(false),
+        };
+        let mut budget = SessionBudget::new(None);
+
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({ "role": "user", "content": "watch the build" }),
+            ]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let sent = requests[1]["messages"].as_array().unwrap();
+        let last = sent.last().unwrap();
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"].as_str().unwrap().contains("BUILD OK"));
+
+        let mut saw_notice = false;
+        while let Ok(event) = rx.try_recv() {
+            if let StreamEvent::Notice { text } = event {
+                assert_eq!(text, "Monitor mon-1: condition 'ok' matched");
+                saw_notice = true;
+            }
+        }
+        assert!(saw_notice, "the headline must be emitted as a Notice event");
+    }
+
+    /// The display learns about a park and about the monitor set from the
+    /// stream: `Parked` before the wait, the live set once it returns, and the
+    /// emptied set when the delivered ping retires the monitor.
+    #[tokio::test]
+    async fn a_parked_run_publishes_parked_and_its_monitor_set() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("watching"), final_answer("reacted")]);
+        let tool = HeadlinedTool {
+            armed: StdMutex::new(false),
+            delivered: StdMutex::new(false),
+        };
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({ "role": "user", "content": "watch the build" }),
+            ]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut events = Vec::new();
+        while let Ok(event) = rx.try_recv() {
+            events.push(event);
+        }
+        let parked = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Parked))
+            .expect("Parked before the wait");
+        let live = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.len() == 1))
+            .expect("the live set after the wait");
+        let notice = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Notice { .. }))
+            .expect("the match headline");
+        let retired = events
+            .iter()
+            .position(|e| matches!(e, StreamEvent::Monitors { monitors } if monitors.is_empty()))
+            .expect("the emptied set at delivery");
+        assert!(
+            parked < live && live < notice && notice < retired,
+            "{events:?}"
         );
     }
 
@@ -3527,12 +5787,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "hi" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3582,12 +5846,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3685,12 +5953,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3751,12 +6023,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3829,12 +6105,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3846,11 +6126,12 @@ mod tests {
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
-    /// instead of ignoring it. The turn must recover by dropping the field and
-    /// retrying, and hand the stripped conversation to the client so its
-    /// persisted history stops carrying it.
+    /// instead of ignoring it. The turn must recover by projecting the request
+    /// without the field and retrying, and hand the client the projection the
+    /// retry used; the record keeps the reasoning, so a route that accepts it
+    /// still gets what the earlier turn produced.
     #[tokio::test]
-    async fn turn_cycle_strips_reasoning_and_retries_when_the_upstream_rejects_it() {
+    async fn turn_cycle_retries_without_reasoning_when_the_upstream_rejects_it() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = ResultQueueModel {
             results: StdMutex::new(
@@ -3876,12 +6157,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3905,9 +6190,10 @@ mod tests {
         );
     }
 
-    /// The retry is one-shot by construction: once stripped, nothing carries the
-    /// field, so a provider that keeps rejecting fails the turn instead of
-    /// resending the same request forever.
+    /// The retry is one-shot by construction: nothing is destroyed when the field
+    /// is dropped from the failed request, so the retry sends the same bytes
+    /// minus that field, and a provider that keeps rejecting fails the turn
+    /// instead of resending the same request forever.
     #[tokio::test]
     async fn a_persistent_reasoning_rejection_fails_the_turn() {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -3928,12 +6214,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -3943,7 +6233,7 @@ mod tests {
         assert_eq!(
             model.results.lock().unwrap().len(),
             1,
-            "exactly one retry after the strip"
+            "exactly one retry without the field"
         );
     }
 
@@ -3991,12 +6281,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -4047,12 +6341,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -4097,12 +6395,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -4134,12 +6436,16 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
             &tool,
             crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
             None,
             None,
         )
@@ -4241,6 +6547,8 @@ mod tests {
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
             scratch_root: tauri_plugin_agent_tools::workspace::scratch_dir("test-session"),
+            env_passthrough: Vec::new(),
+            env_set: Vec::new(),
             project_root: root,
             // Read-only default => write PROMPTS.
             permissions: ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
@@ -4250,9 +6558,470 @@ mod tests {
             todo_registry: None,
             grants: std::sync::Mutex::new(SessionGrants::default()),
             subagents: None,
+            monitors: std::sync::Arc::new(
+                tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
+            ),
+            monitors_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
+            hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
+            plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new(),
+            hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         }
+    }
+
+    fn hooks_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_hooks_{tag}_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).expect("create root");
+        root
+    }
+
+    fn invoker_with_hooks(
+        root: std::path::PathBuf,
+        hooks: tauri_plugin_agent_tools::tools::hooks::HookSet,
+        plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet,
+        run_mode: crate::core::agent::plan::RunMode,
+    ) -> CompositeToolInvoker {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root, tx, PermissionRegistry::default());
+        // Unconfined and auto-approved so the assertions are about the hook and
+        // plugin-tool wiring, not about a sandbox backend or a prompt that has
+        // no one to answer it.
+        invoker.sandbox = false;
+        invoker.auto_approve = true;
+        invoker.hooks = hooks;
+        invoker.plugin_tools = plugin_tools;
+        invoker.run_mode = run_mode;
+        invoker
+    }
+
+    fn hooked_tool_call(name: &str, arguments: &str) -> serde_json::Value {
+        json!({
+            "id": "c1",
+            "type": "function",
+            "function": { "name": name, "arguments": arguments }
+        })
+    }
+
+    fn hook_set(
+        entries: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    ) -> tauri_plugin_agent_tools::tools::hooks::HookSet {
+        let mut set = tauri_plugin_agent_tools::tools::hooks::HookSet::new();
+        set.extend_from(entries, std::path::Path::new("test"));
+        set
+    }
+
+    fn hook_entry(
+        event: &str,
+        matcher: Option<&str>,
+        command: &str,
+    ) -> tauri_plugin_agent_tools::tools::hooks::HookEntry {
+        tauri_plugin_agent_tools::tools::hooks::HookEntry {
+            event: event.to_string(),
+            matcher: matcher.map(str::to_string),
+            command: command.to_string(),
+            timeout_secs: None,
+        }
+    }
+
+    fn plugin_tool_set(
+        entries: Vec<tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry>,
+    ) -> tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet {
+        let mut set = tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new();
+        set.extend_from("p", entries, std::path::Path::new("test"));
+        set
+    }
+
+    fn plugin_tool_entry(
+        name: &str,
+        command: &str,
+    ) -> tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry {
+        tauri_plugin_agent_tools::tools::plugin_tools::PluginToolEntry {
+            name: name.to_string(),
+            description: "a plugin tool".to_string(),
+            parameters: None,
+            command: command.to_string(),
+            timeout_secs: None,
+        }
+    }
+
+    /// The acceptance requirement that a hook denial is indistinguishable from
+    /// a gate denial in the transcript: same `ERROR: tool '<name>' denied`
+    /// prefix, carried back as an ordinary tool result rather than a run error.
+    #[tokio::test]
+    async fn a_hook_denial_reaches_the_model_as_an_ordinary_denial() {
+        let root = hooks_root("deny");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("write"),
+                r#"echo '{"decision":"deny","reason":"writes are frozen"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert_eq!(out.len(), 1);
+        assert!(
+            out[0].content.starts_with("ERROR: tool 'write' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("writes are frozen"));
+        assert!(
+            !root.join("out.txt").exists(),
+            "the denied write must not have happened"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A `context` answer becomes a background notice, which is what
+    /// `run_turn_cycle` turns into a `<SYSTEM>` reminder via `reminder::attach`.
+    #[tokio::test]
+    async fn a_hook_context_answer_is_queued_as_a_background_notice() {
+        let root = hooks_root("context");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PostToolUse",
+                Some("write"),
+                r#"echo '{"context":"remember to update the changelog"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        assert!(!invoker.background_pending());
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "{}", out[0].content);
+        assert!(
+            invoker.background_pending(),
+            "the answer is owed to the model"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(notices[0].text, "remember to update the changelog");
+        assert!(
+            notices[0].headline.is_none(),
+            "hook guidance is for the model, not an announcement"
+        );
+        assert!(
+            !invoker.background_pending(),
+            "draining must clear the queue"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A hook that fails is reported once and the tool call still succeeds:
+    /// a broken hook must never be able to wedge a run.
+    #[tokio::test]
+    async fn a_failing_hook_notices_but_does_not_stop_the_call() {
+        let root = hooks_root("failing");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry("PreToolUse", None, "exit 9")]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(!out[0].content.starts_with("ERROR"), "{}", out[0].content);
+        assert!(
+            root.join("out.txt").exists(),
+            "the write must have happened"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].text.contains("exited 9"), "{}", notices[0].text);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode withholds write tools, so the hooks bracketing them have
+    /// nothing to bracket and must not run either.
+    #[tokio::test]
+    async fn tool_hooks_are_inert_in_plan_mode() {
+        let root = hooks_root("plan");
+        let marker = root.join("hook-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                None,
+                &format!("touch {}", shell_quoted_path(&marker)),
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let out = invoker.invoke(&[write_call()]).await.unwrap();
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
+        assert!(!marker.exists(), "a tool hook must not run in plan mode");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Phase 2: a plugin-declared tool is dispatched, runs its command with the
+    /// call's arguments on stdin, and returns its stdout as the tool result.
+    #[tokio::test]
+    async fn a_plugin_declared_tool_is_dispatched_and_returns_its_output() {
+        let root = hooks_root("plugintool");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry("echo", "cat")]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__echo", r#"{"value":42}"#)])
+            .await
+            .unwrap();
+        assert_eq!(out.len(), 1);
+        let parsed: serde_json::Value = serde_json::from_str(&out[0].content).unwrap();
+        assert_eq!(parsed["value"], 42);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin tool's capability is as opaque as an MCP tool's, so Plan mode
+    /// hard-denies it the same way.
+    #[tokio::test]
+    async fn a_plugin_tool_is_withheld_in_plan_mode() {
+        let root = hooks_root("plugintoolplan");
+        let marker = root.join("tool-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry(
+                "touch",
+                &format!("touch {}", shell_quoted_path(&marker)),
+            )]),
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__touch", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
+        assert!(!marker.exists(), "a plugin tool must not run in plan mode");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hooks cover plugin tools too: a third party's command is exactly
+    /// where a PreToolUse policy most needs to apply.
+    #[tokio::test]
+    async fn a_hook_can_deny_a_plugin_tool() {
+        let root = hooks_root("plugintooldeny");
+        let marker = root.join("tool-ran");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("plugin__*"),
+                r#"echo '{"decision":"deny","reason":"third-party tools are off"}'"#,
+            )]),
+            plugin_tool_set(vec![plugin_tool_entry(
+                "touch",
+                &format!("touch {}", shell_quoted_path(&marker)),
+            )]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__touch", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0]
+                .content
+                .starts_with("ERROR: tool 'plugin__p__touch' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("third-party tools are off"));
+        assert!(!marker.exists(), "the denied plugin tool must not have run");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The bypass this closes: an MCP call went straight to `mcp.invoke_tool`,
+    /// so a deny hook stopped `bash` and `plugin__*` but never `mcp__*` -- a
+    /// hole exactly where a third party's server runs.
+    #[tokio::test]
+    async fn a_hook_can_deny_an_mcp_tool() {
+        let root = hooks_root("mcpdeny");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("mcp__*"),
+                r#"echo '{"decision":"deny","reason":"no mcp today"}'"#,
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        // The invoker's MCP registry is empty, so reaching the call at all
+        // would surface as a transport error rather than this deny message:
+        // the assertion distinguishes "stopped by the hook" from "failed".
+        let out = invoker
+            .invoke(&[hooked_tool_call("mcp__srv__doit", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0]
+                .content
+                .starts_with("ERROR: tool 'mcp__srv__doit' denied"),
+            "{}",
+            out[0].content
+        );
+        assert!(out[0].content.contains("no mcp today"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A hook that does not deny leaves the MCP call alone, and its input
+    /// reaches the hook: a PreToolUse audit hook is useless if it cannot see
+    /// what was asked for.
+    #[tokio::test]
+    async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
+        let root = hooks_root("mcpallow");
+        let seen = root.join("seen.json");
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![hook_entry(
+                "PreToolUse",
+                Some("mcp__*"),
+                &format!("cat > {}", shell_quoted_path(&seen)),
+            )]),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        // The call goes on to the empty MCP registry and fails there, which is
+        // the point: the hook did not stop it.
+        let _ = invoker
+            .invoke(&[hooked_tool_call(
+                "mcp__srv__doit",
+                r#"{"path":"a.rs"}"#,
+            )])
+            .await;
+        let written: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&seen).expect("hook ran")).unwrap();
+        assert_eq!(written["event"], "PreToolUse");
+        assert_eq!(written["tool_name"], "mcp__srv__doit");
+        assert_eq!(written["tool_input"]["path"], "a.rs");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A deny-listed plugin tool is refused by the same policy path an MCP
+    /// tool's deny takes.
+    #[tokio::test]
+    async fn a_denied_plugin_tool_is_refused_by_policy() {
+        let root = hooks_root("plugintoolpolicy");
+        let mut invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            plugin_tool_set(vec![plugin_tool_entry("echo", "cat")]),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        invoker.permissions = ToolPermissions::new(
+            PermissionDefault::ReadOnly,
+            &[],
+            &["plugin__p__echo".to_string()],
+            &[],
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("plugin__p__echo", "{}")])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("denied by project policy"),
+            "{}",
+            out[0].content
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The three session-lifecycle events go through `fire_hooks` rather than
+    /// the toolset's `execute_builtin` bracket, so they are pinned here: each
+    /// fires, each receives its payload, and each is still live in Plan mode
+    /// (unlike the tool events above).
+    #[tokio::test]
+    async fn session_and_prompt_hooks_fire_with_their_payloads() {
+        let root = hooks_root("lifecycle");
+        let seen = root.join("seen");
+        std::fs::create_dir_all(&seen).unwrap();
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            hook_set(vec![
+                hook_entry(
+                    "SessionStart",
+                    None,
+                    &format!("cat > {}", shell_quoted_path(&seen.join("start.json"))),
+                ),
+                hook_entry(
+                    "UserPromptSubmit",
+                    None,
+                    &format!("cat > {}", shell_quoted_path(&seen.join("prompt.json"))),
+                ),
+                hook_entry(
+                    "SessionEnd",
+                    None,
+                    &format!("cat > {}", shell_quoted_path(&seen.join("end.json"))),
+                ),
+            ]),
+            Default::default(),
+            // Plan mode on purpose: a lifecycle hook is not a tool call, so it
+            // must still fire where the tool hooks go inert.
+            crate::core::agent::plan::RunMode::Plan,
+        );
+        use tauri_plugin_agent_tools::tools::hooks::{HookEvent, HookPayload};
+        invoker
+            .fire_hooks(
+                HookEvent::SessionStart,
+                HookPayload {
+                    session_id: Some("s1".to_string()),
+                    message_count: Some(3),
+                    ..Default::default()
+                },
+            )
+            .await;
+        invoker
+            .fire_hooks(
+                HookEvent::UserPromptSubmit,
+                HookPayload {
+                    prompt: Some("ship it".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        invoker
+            .fire_hooks(
+                HookEvent::SessionEnd,
+                HookPayload {
+                    session_id: Some("s1".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+
+        let read = |name: &str| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(seen.join(name)).unwrap()).unwrap()
+        };
+        let start = read("start.json");
+        assert_eq!(start["event"], "SessionStart");
+        assert_eq!(start["session_id"], "s1");
+        assert_eq!(start["message_count"], 3);
+        let prompt = read("prompt.json");
+        assert_eq!(prompt["event"], "UserPromptSubmit");
+        assert_eq!(prompt["prompt"], "ship it");
+        assert_eq!(read("end.json")["event"], "SessionEnd");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The whole point of the setting: what agent.toml says has to survive the
@@ -4379,8 +7148,11 @@ mod tests {
             Some("s1"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
         let bare = build_run_system_prompt(
             None,
@@ -4389,8 +7161,11 @@ mod tests {
             Some("s1"),
             false,
             false,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(!bare.contains("Scratch:"), "{bare}");
     }
 
@@ -4914,12 +7689,16 @@ mod tests {
                     &json!({}),
                     "m",
                     &[crate::core::agent::interaction::ask_tool_schema()],
-                    convo,
+                    Transcript::from_history(convo),
+                    None,
+                    true,
                     0,
                     &mut budget,
                     model.as_ref(),
                     invoker.as_ref(),
                     crate::core::agent::plan::RunMode::Normal,
+                    None,
+                    None,
                     None,
                     None,
                 )
@@ -5141,6 +7920,178 @@ mod tests {
             out[0].content
         );
         assert_eq!(std::fs::read_to_string(root.join("out.txt")).unwrap(), "hi");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn monitor_call(id: &str, args: serde_json::Value) -> serde_json::Value {
+        json!({
+            "id": id,
+            "type": "function",
+            "function": { "name": "monitor", "arguments": args.to_string() }
+        })
+    }
+
+    /// Starting a monitor schedules shell scripts, so it prompts like an exec
+    /// and a deny refuses without starting anything.
+    #[tokio::test]
+    async fn monitor_start_prompts_and_a_deny_refuses() {
+        let root = unique_project_root();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = Arc::new(build_prompting_invoker(root.clone(), tx, registry.clone()));
+
+        let responder = {
+            let registry = registry.clone();
+            tokio::spawn(async move {
+                let (request_id, prompt_kind, command) = loop {
+                    match rx.recv().await {
+                        Some(StreamEvent::PermissionRequest {
+                            request_id,
+                            prompt_kind,
+                            command,
+                            ..
+                        }) => break (request_id, prompt_kind, command),
+                        Some(_) => continue,
+                        None => panic!("no permission prompt for monitor start"),
+                    }
+                };
+                assert_eq!(prompt_kind, "monitor");
+                let shown = command.as_deref().unwrap_or("");
+                assert!(
+                    shown.contains("grep READY"),
+                    "the prompt must show the scripts it approves: {command:?}"
+                );
+                assert!(
+                    shown.contains("# monitor 'ready', every 5s"),
+                    "the prompt names the monitor and its cadence: {command:?}"
+                );
+                let tx = registry.lock().await.remove(&request_id).unwrap();
+                let _ = tx.send(PermissionDecision::Deny);
+            })
+        };
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        responder.await.unwrap();
+        assert!(out[0].content.contains("denied"), "got: {}", out[0].content);
+        assert!(!invoker.background_pending(), "nothing may have started");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// End to end through the invoker: an auto-approved start whose script
+    /// already holds delivers a merged background notice carrying a headline
+    /// and the matched content, and the pending flag clears once all conditions
+    /// are met.
+    #[tokio::test]
+    async fn monitor_match_arrives_as_a_headlined_background_notice() {
+        let root = unique_project_root();
+        std::fs::write(root.join("boot.log"), "starting\nREADY on port 1337\n").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+        // Bare shell: this exercises the loop wiring, not the jail.
+        invoker.sandbox = false;
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("monitor_id=mon-1"),
+            "got: {}",
+            out[0].content
+        );
+        assert!(invoker.background_pending());
+
+        let mut notices = Vec::new();
+        for _ in 0..200 {
+            notices = invoker.background_notices();
+            if !notices.is_empty() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert_eq!(notices.len(), 1, "one match, one ping");
+        assert!(
+            notices[0]
+                .headline
+                .as_deref()
+                .unwrap_or("")
+                .contains("'ready' matched"),
+            "{:?}",
+            notices[0].headline
+        );
+        assert!(notices[0].text.contains("READY on port 1337"));
+        for _ in 0..200 {
+            if !invoker.background_pending() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            !invoker.background_pending(),
+            "all conditions met, so the run must not stay parked"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A session-owned set does not hold the run open: a watcher that has not
+    /// fired leaves `background_pending` false (the turn ends and the user can
+    /// keep talking), while a queued match still resumes the run, and taking
+    /// it clears the flag again.
+    #[tokio::test]
+    async fn a_session_owned_monitor_does_not_park_the_run_until_it_fires() {
+        let root = unique_project_root();
+        std::fs::write(root.join("boot.log"), "starting\n").unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.auto_approve = true;
+        invoker.sandbox = false;
+        invoker.monitors_outlive_run = true;
+
+        let out = invoker
+            .invoke(&[monitor_call(
+                "m1",
+                json!({ "op": "start", "name": "ready", "script": "grep READY boot.log" }),
+            )])
+            .await
+            .unwrap();
+        assert!(
+            out[0].content.contains("monitor_id=mon-1"),
+            "{}",
+            out[0].content
+        );
+        assert_eq!(invoker.monitor_snapshot().len(), 1, "the watcher is up");
+        assert!(
+            !invoker.background_pending(),
+            "an unfired session monitor must not park the run"
+        );
+
+        std::fs::write(root.join("boot.log"), "starting\nREADY on port 1337\n").unwrap();
+        for _ in 0..300 {
+            if invoker.background_pending() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            invoker.background_pending(),
+            "a queued match is owed to the model and resumes the run"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].text.contains("READY on port 1337"));
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -5410,10 +8361,10 @@ mod tests {
     }
 
     /// `bash` hands its child to a detached task that keeps the output sink
-    /// alive after the call has returned its `job_id`. The sink must not keep
-    /// the run's event channel open with it: every consumer of that channel --
-    /// the desktop forwarder, the headless printer, a subagent's forwarder --
-    /// finishes only when the channel closes.
+    /// alive after the call has backgrounded. The sink must not keep the run's
+    /// event channel open with it: every consumer of that channel -- the desktop
+    /// forwarder, the headless printer, a subagent's forwarder -- finishes only
+    /// when the channel closes.
     #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_job_does_not_hold_the_event_channel_open() {
@@ -5432,7 +8383,7 @@ mod tests {
         .await
         .0;
         assert!(
-            out.contains("job_id=bash-"),
+            out.contains("still running in the background"),
             "expected a backgrounded job, got: {out}"
         );
 

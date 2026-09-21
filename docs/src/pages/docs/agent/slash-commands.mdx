@@ -34,6 +34,9 @@ Either form loads the skill's full instructions into the conversation (no separa
 | `/clear` | Clear the conversation |
 | `/threads` | List saved threads for this project |
 | `/resume [id]` | Resume a thread. Bare: pick interactively |
+| `/fork` | Branch this session at a past message into a new thread, keeping this one |
+| `/tree` | Saved threads as a fork tree. Enter resumes one |
+| `/worktree` | The dedicated checkout this session works in, and what changed there |
 | `/quit` | Exit |
 
 See [Sessions](/docs/agent/sessions).
@@ -47,7 +50,10 @@ See [Sessions](/docs/agent/sessions).
 | `/todo [add [phase\|] text \| clear]` | Open the todo editor, append an item, or drop all |
 | `/compact` | Summarize older turns to free up context |
 | `/context` | Show what is filling the context window, by category - opens a live overlay while the turn keeps running |
+| `/usage` | Show this session's tokens and estimated cost, per model. Priced from what the provider publishes; a model it publishes no price for is listed as such rather than counted as free |
 | `/cancel [N]` | Cancel queued messages. Bare: all, or an index |
+| `/agents` | Inspect running subagents: each one's stats and current activity |
+| `/shells` (alias `/jobs`) | Inspect and stop background shell commands the agent left running |
 
 See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-todos), and
 [Context and compaction](/docs/agent/context).
@@ -56,14 +62,14 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 
 | Command | Description |
 | --- | --- |
-| `/model [id]` | Switch model. Bare: pick interactively |
+| `/model [id]` | Switch model. Bare: pick interactively. Opening the picker re-lists each provider's models once per session; <kbd>Ctrl</kbd>+<kbd>R</kbd> inside it re-lists them again on demand |
 | `/effort [low\|medium\|high]` | Set reasoning effort. Bare: show current; `low` is faster, `high` thinks deeper |
 | `/mcp` | List, toggle, add, edit, and remove MCP servers; Enter opens a server's detail screen, where you can list its tools and sign in to it |
 | `/plugin [list\|install <spec>\|remove <name>\|search [query]]` | Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace |
 | `/login` | Sign in to Tokamak and save the API key |
 | `/config` | View provider config (`~/.jan/config.toml`) |
 | `/terminal-setup` | Configure this terminal so <kbd>Shift</kbd>+<kbd>Enter</kbd> inserts a newline and, on macOS, <kbd>Option</kbd>+<kbd>Delete</kbd> deletes a word. Writes the terminal's own config where it can (VS Code, kitty, Ghostty, tmux) and prints the manual step where it cannot. Idempotent |
-| `/settings [max_parallel_subagents N]` | Edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `instructions_file`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next run, except cosmetic ones like `wave` that apply immediately |
+| `/settings [max_parallel_subagents N]` | Edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `instructions_file`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next run, except cosmetic ones like `wave` that apply immediately |
 
 See [Providers](/docs/agent/providers), [MCP](/docs/agent/mcp), [Plugins](/docs/agent/plugins), and
 [Keybindings](/docs/agent/keybindings#shiftenter-and-the-option-key).

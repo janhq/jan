@@ -3,6 +3,7 @@
 //! just one project. Optional: a missing file yields an empty provider set,
 //! not an error.
 
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -22,6 +23,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # sandbox = true                      # run `bash` under OS confinement (same as
 #                                     # passing --sandbox); off by default, so
 #                                     # shell commands run with your own access
+# worktree = true                     # run each session in its own git worktree
+#                                     # (same as passing --worktree); off by
+#                                     # default, so the agent edits your checkout
 # think_tags = false                  # stop treating <think> tags in model
 #                                     # content as reasoning; they render and
 #                                     # are resent as ordinary prose. On by
@@ -29,6 +33,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
+# theme = "light"                     # force the TUI colour theme: "light",
+#                                     # "dark", or "auto" (the default), which
+#                                     # detects the terminal background
 # ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
 #                                     # after this many seconds, choosing each
 #                                     # question's recommended option (else its
@@ -71,6 +78,10 @@ struct GlobalConfigToml {
     /// `--sandbox` flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     sandbox: Option<bool>,
+    /// Give each session its own git worktree to work in. `None` = the
+    /// default, off. The "permanently on" answer to `--worktree`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree: Option<bool>,
     /// Parse `<think>` tags in model *content* as reasoning. `None` = the
     /// default, on. Native `reasoning_content` streaming is a separate
     /// mechanism and is unaffected.
@@ -81,6 +92,11 @@ struct GlobalConfigToml {
     /// reasoning for good.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_reasoning: Option<bool>,
+    /// TUI colour theme: `"light"`, `"dark"`, or `"auto"`. `None` = the default,
+    /// auto, which detects the terminal background. Any other string also reads
+    /// as auto so a typo degrades to detection rather than an error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme: Option<String>,
     /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
     /// selecting each question's recommended option (or its first option when
     /// none is recommended). `None` = the default, and `0` is treated the same:
@@ -108,6 +124,27 @@ struct GlobalConfigToml {
     /// one cell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wave: Option<String>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist. Empty by default, so the shell env is
+    /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
+    /// looking name is never copied by a glob (use `env_set` to inject one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over a project's per-key value. The one way to
+    /// inject a secret-named variable on purpose.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    env_set: BTreeMap<String, String>,
+    /// `[[hooks]]` -- lifecycle commands run around tool calls, prompts,
+    /// sessions and compactions, for every project this user opens. Merged
+    /// under a project's own `[[hooks]]`, which run after these.
+    ///
+    /// Declared before `providers` because `toml` renders an array of tables
+    /// after plain values but before sub-tables; putting it after would emit it
+    /// past the `[providers.*]` headers, where a re-read would still find it
+    /// but a human appending to the file would not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
 }
@@ -202,6 +239,10 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
                     custom_headers: Vec::new(),
                     models: entry.models,
                     api_type: entry.api_type,
+                    // `~/.jan/config.toml` describes the desktop app's
+                    // providers, which size compaction from the project's
+                    // `[provider]`/`[agent]` sections instead.
+                    compaction_ratio: None,
                 },
             )
         })
@@ -276,6 +317,41 @@ pub(crate) fn sandbox_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.sandbox)
 }
 
+/// Whether a session gets its own git worktree by default (`worktree` in
+/// `~/.jan/config.toml`). `None` when unset, so a project's `agent.toml` or the
+/// `--worktree` flag decides first. Unreadable config yields `None`, like
+/// [`sandbox_setting`]: a preference must not block a session from starting.
+pub(crate) fn worktree_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// Host env-var names the sandboxed `bash` may inherit beyond the base
+/// allowlist (`env_passthrough` in `~/.jan/config.toml`), merged under a
+/// project's `[tools].env_passthrough`. Empty on an unreadable or malformed
+/// config: a shell-env preference must never block a session from starting.
+pub(crate) fn env_passthrough_setting() -> Vec<String> {
+    load_raw()
+        .map(|config| config.env_passthrough)
+        .unwrap_or_default()
+}
+
+/// Explicit key=value overrides for the `bash` env (`env_set` in
+/// `~/.jan/config.toml`), sorted by key. Same fail-open rationale as
+/// [`env_passthrough_setting`].
+pub(crate) fn env_set_setting() -> Vec<(String, String)> {
+    load_raw()
+        .map(|config| config.env_set.into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// The user's global `[[hooks]]`, merged under a project's own. Empty on an
+/// unreadable or malformed config: a hook is a policy refinement, and a config
+/// the user cannot parse must not be what blocks a session from starting --
+/// the same fail-open rationale as [`sandbox_setting`].
+pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry> {
+    load_raw().map(|config| config.hooks).unwrap_or_default()
+}
+
 /// Whether inline `<think>` tags in model content are parsed as reasoning
 /// (`think_tags` in `~/.jan/config.toml`), defaulting to on. `false` makes the
 /// tags ordinary prose: rendered verbatim, kept in the answer sent back as
@@ -301,6 +377,14 @@ pub(crate) fn stream_reasoning_enabled() -> bool {
         .ok()
         .and_then(|config| config.stream_reasoning)
         .unwrap_or(true)
+}
+
+/// The TUI colour-theme preference (`theme` in `~/.jan/config.toml`): `"light"`,
+/// `"dark"`, or `"auto"`. `None` when unset, which the TUI treats as auto-detect
+/// from the terminal background. An unreadable or malformed config yields `None`
+/// so a display preference never blocks startup.
+pub(crate) fn theme_setting() -> Option<String> {
+    load_raw().ok().and_then(|config| config.theme)
 }
 
 /// How long an unanswered `ask` prompt waits before it auto-answers with each
@@ -385,9 +469,11 @@ const ROOT_KEYS: &[&str] = &[
     "sandbox",
     "think_tags",
     "stream_reasoning",
+    "theme",
     "ask_timeout_secs",
     "terminal_hint",
     "wave",
+    "hooks",
 ];
 
 /// Render a TOML parse failure with a fix, not just a location. `toml`'s own
@@ -636,7 +722,10 @@ pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
     result
 }
 
-#[cfg(test)]
+// The suite covers the provider records and the TUI's settings writers, which
+// only the `cli` build compiles; the module itself is shared so the desktop can
+// read the user's `[[hooks]]`.
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
 
@@ -912,6 +1001,23 @@ mod tests {
                 stream_reasoning_enabled(),
                 "an unreadable config keeps the default"
             );
+        });
+    }
+
+    #[test]
+    fn theme_defaults_unset_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert_eq!(theme_setting(), None, "missing file -> auto (unset)");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(theme_setting(), None, "scaffolded file only comments it");
+
+            std::fs::write(&path, "theme = \"light\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("light"));
+            std::fs::write(&path, "theme = \"dark\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("dark"));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(theme_setting(), None, "an unreadable config reads as auto");
         });
     }
 

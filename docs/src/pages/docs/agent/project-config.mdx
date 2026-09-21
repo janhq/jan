@@ -59,11 +59,13 @@ Point at a different file with `instructions_file` if you already keep conventio
 [agent]
 # model = "Jan-V4"
 # context_window = 128000
-# compaction_reserve_tokens = 16384
+# compaction_ratio = 0.8  # share of the window a prompt may fill before compacting
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
 # send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
+# worktree = true         # give each session its own git checkout instead of editing this one
 instructions_file = "AGENT.md"
 
 # [provider]
@@ -71,6 +73,7 @@ instructions_file = "AGENT.md"
 # api_key = "sk-..."
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
+# compaction_ratio = 0.6  # override the [agent] ratio for this provider's routes
 
 # The run's only cap: new token spend across all turns (replayed context is not
 # recharged each turn). There is no turn limit. Defaults to 128000 when unset;
@@ -84,6 +87,9 @@ allow = []
 deny = []
 allow_write = []
 # sandbox = true
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*"]
+# [tools.env_set]
+# RUST_LOG = "info"
 
 [skills]
 enabled = []
@@ -96,11 +102,13 @@ inject = "always"
 | --- | --- | --- |
 | `model` | inherited | Model id. Overridden by `--model` |
 | `context_window` | `128000` | Context limit in tokens |
-| `compaction_reserve_tokens` | `16384` | Headroom kept free before [compaction](/docs/agent/context) |
+| `compaction_ratio` | `0.8` | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context). Values outside `0.1`-`0.99` are clamped |
+| `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
 | `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
+| `worktree` | `false` | Run each session in its own git worktree under `~/.jan/worktrees`, on a `jan/agent/` branch, instead of editing this checkout. Overridden by `--worktree` / `--no-worktree`. See [Sessions](/docs/agent/sessions) |
 | `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`
@@ -108,20 +116,76 @@ inject = "always"
 A project-local provider override, winning over `~/.jan/config.toml` and anything inherited from Jan
 Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-project-override).
 
+| Key | Default | Description |
+| --- | --- | --- |
+| `compaction_ratio` | inherited | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context) for requests this provider serves. Overrides the `[agent]` value, so a route with a small window can be tuned without loosening it for every other route |
+
 ### `[budget]`
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `max_tokens` | `128000` | Token-spend ceiling for one run (new spend across all turns). The only cap on run length - there is no turn limit. Set `0` to disable the cap. Defaults to `128000` when unset |
+| `max_tokens` | `128000` | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to `128000` when unset |
 
-A bound on how far one run goes, distinct from the per-request context window. It bounds the run's
-marginal token spend (replayed context is not recharged each turn).
+A marker for how far one run has gone, distinct from the per-request context window. It tracks the
+run's marginal token spend (replayed context is not recharged each turn).
+
+<Callout type="warning">
+Passing this ceiling does not stop a run. The agent compacts its history, records a note that the
+ceiling was crossed, and carries on, tool calls included. For a hard bound on an unattended run use
+`--max-turns` (see the [CLI reference](/docs/agent/cli)), or cancel it.
+</Callout>
 
 ### `[tools]`
 
 See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
 [shell confinement](/docs/agent/permissions#the-shell-sandbox) for everyone who checks it out; it is
 off by default on the CLI.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `env_passthrough` | `[]` | Host environment variables the shell may inherit beyond the minimal base (exact names or a `*` wildcard). Merged with `~/.jan/config.toml`. A secret-looking name is never copied by a wildcard - see [The shell environment](/docs/agent/permissions#the-shell-environment) |
+| `env_set` | `{}` | Explicit `key = "value"` pairs for the shell env, as a `[tools.env_set]` table. Wins over `env_passthrough` and the global value; the way to inject a secret-named variable on purpose |
+
+### `[prompt]`
+
+Which contributor to the system prompt may sit above the **cache line**. A provider reuses a request
+prefix only while its bytes are identical to the previous request, so a contributor that changes per
+turn belongs below the conversation, not in front of it. Placement is deny-wins, like `[tools]`:
+nothing reaches the prefix without being allowed there, and the safe answer for a contributor no
+policy mentions is the tail.
+
+Tail blocks are sent as `<SYSTEM>`-marked guidance after the conversation, including when the
+allowlist leaves no stable prompt. They are not system-role messages: provider adapters would
+move those ahead of history and defeat the placement policy.
+Once sent successfully, a tail block remains in accepted history at that position rather than
+moving after each tool result. Fresh run context is appended after it; compaction bounds growth.
+
+```toml
+[prompt]
+# Only these may sit above the cache line. Unset keeps each contributor's own
+# placement; setting it moves everything else below the line.
+prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Placement for a contributor no policy mentions (default: tail).
+# default = "tail"
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
+| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+
+All current contributors either declare their placement or vary, so changing `default` alone has
+no effect today. Use `prefix_allow` to narrow the current prefix. The tool schemas are a request
+field rather than a prompt block and always remain above the cache line, even with an empty list.
+
+```bash
+jan cli agent status   # the resolved placement of every contributor, and why
+```
+
+Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `runtime_environment`,
+`subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`, `memory_catalog`,
+`tool_schemas`, `date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`. See
+[Context and Compaction](/docs/agent/context) for what the split buys.
 
 ### `[skills]`
 

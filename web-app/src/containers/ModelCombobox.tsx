@@ -398,6 +398,7 @@ export function ModelCombobox({
     <div className={cn('relative', className)} ref={containerRef}>
       <div className="relative">
         <Input
+          data-testid="model-combobox-input"
           ref={inputRef}
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}

@@ -4,7 +4,11 @@ import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DiffView } from '@/components/DiffView'
 import { CoworkSidePanel } from '@/containers/CoworkSidePanel'
-import type { CoworkFileDiff } from '@/lib/coworkDiffs'
+import {
+  DIFF_ADD_TEXT,
+  DIFF_DEL_TEXT,
+  type CoworkFileDiff,
+} from '@/lib/coworkDiffs'
 
 /**
  * Every write and edit this session landed, grouped by file.
@@ -41,8 +45,9 @@ export function CoworkDiffPanel({
     <CoworkSidePanel
       title={t('common:changes.title')}
       summary={
-        <span className="shrink-0 text-xs font-mono text-main-view-fg/60">
-          +{additions} -{deletions}
+        <span className="shrink-0 space-x-1 text-xs font-mono tabular-nums">
+          <span className={DIFF_ADD_TEXT}>+{additions}</span>
+          <span className={DIFF_DEL_TEXT}>-{deletions}</span>
         </span>
       }
       onClose={onClose}
@@ -74,10 +79,20 @@ export function CoworkDiffPanel({
                     <span className="min-w-0 flex-1 truncate text-xs font-medium">
                       {file.path}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-green-600">
+                    <span
+                      className={cn(
+                        'shrink-0 font-mono text-xs tabular-nums',
+                        DIFF_ADD_TEXT
+                      )}
+                    >
                       +{file.additions}
                     </span>
-                    <span className="shrink-0 font-mono text-xs text-red-600">
+                    <span
+                      className={cn(
+                        'shrink-0 font-mono text-xs tabular-nums',
+                        DIFF_DEL_TEXT
+                      )}
+                    >
                       -{file.deletions}
                     </span>
                   </button>

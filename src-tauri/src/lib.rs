@@ -6,7 +6,7 @@
 #[cfg(all(feature = "cli", feature = "tauri-app"))]
 compile_error!(
     "features `cli` and `tauri-app`/`desktop` are mutually exclusive; \
-     build the CLI with `cargo build --no-default-features --features cli --bin jan`"
+     build the CLI from the standalone crate: `cd src-tauri/jan-cli && cargo build --features cli`"
 );
 
 pub mod core;
@@ -75,9 +75,6 @@ macro_rules! invoke_commands_with_extras {
         core::system::commands::read_logs,
         core::system::commands::is_library_available,
         core::system::commands::launch_claude_code_with_config,
-        core::system::commands::check_jan_cli_installed,
-        core::system::commands::install_jan_cli,
-        core::system::commands::uninstall_jan_cli,
         core::system::commands::clear_claude_code_env,
         // Server commands
         core::server::commands::start_server,
@@ -93,6 +90,7 @@ macro_rules! invoke_commands_with_extras {
         core::agent::commands::agent_skill_hub_import,
         core::agent::commands::agent_skill_enabled_get,
         core::agent::commands::agent_skill_enabled_set,
+        core::agent::commands::agent_skill_invoke,
         core::agent::commands::agent_plugin_list,
         core::agent::commands::agent_plugin_install,
         core::agent::commands::agent_plugin_remove,
@@ -259,14 +257,30 @@ async fn handle_graceful_exit<R: tauri::Runtime>(
     tauri::mobile_entry_point
 )]
 pub fn run() {
-    let mut builder = tauri::Builder::default();
-    #[cfg(desktop)]
-    {
-        builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
-          println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
-          // when defining deep link schemes at runtime, you must also check `argv` here
-        }));
-    }
+    // Installed before any plugin: the toolset crate owns no config format, so
+    // the `execute_tool` IPC command can only reach a user's `[[hooks]]`
+    // through a resolver the app hands it. Without this the desktop is the one
+    // surface where a configured hook silently never fires, since the webview
+    // drives its own tool loop and never builds the CLI's invoker.
+    tauri_plugin_agent_tools::tools::hooks::set_resolver(std::sync::Arc::new(|project| {
+        crate::core::agent::hooks_config::resolve_hooks_for(project)
+    }));
+
+    let builder = tauri::Builder::default();
+    // Shadowed rather than mutated: under `e2e` the plugin below is the only
+    // thing that touched `builder`, and a `mut` binding would then be unused --
+    // which CI's `clippy -D warnings` treats as an error.
+    //
+    // Not in e2e builds: single-instance keys off a hardcoded /tmp socket on
+    // macOS (a D-Bus name on Linux, a named mutex on Windows), none of which the
+    // test harness's HOME/XDG/TMPDIR overrides isolate. With a real Jan already running, the
+    // test binary would hand over its argv and exit before the embedded
+    // WebDriver server ever bound.
+    #[cfg(all(desktop, not(feature = "e2e")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
+        println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+        // when defining deep link schemes at runtime, you must also check `argv` here
+    }));
 
     let mut app_builder = builder
         .plugin(tauri_plugin_os::init())
@@ -275,7 +289,9 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_llamacpp::init())
-        .plugin(tauri_plugin_vector_db::init())
+        .plugin(tauri_plugin_vector_db::init(
+            crate::core::app::paths::vector_db_dir(),
+        ))
         .plugin(tauri_plugin_rag::init())
         .plugin(tauri_plugin_websearch::init())
         .plugin(tauri_plugin_agent_tools::init());
@@ -283,6 +299,13 @@ pub fn run() {
     #[cfg(feature = "deep-link")]
     {
         app_builder = app_builder.plugin(tauri_plugin_deep_link::init());
+    }
+
+    // e2e builds only: the embedded WebDriver server @wdio/tauri-service drives.
+    // Gated behind the `e2e` feature so no release binary exposes it.
+    #[cfg(feature = "e2e")]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_wdio_webdriver::init());
     }
 
     #[cfg(target_os = "macos")]
@@ -333,6 +356,8 @@ pub fn run() {
             app.handle().plugin(
                 tauri_plugin_log::Builder::default()
                     .level(log::LevelFilter::Debug)
+                    .max_file_size(10_000_000)
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(5))
                     .targets([
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
                         tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Webview),
@@ -354,10 +379,6 @@ pub fn run() {
                 .handle()
                 .store(store_path)
                 .expect("Store not initialized");
-            let stored_version = store
-                .get("version")
-                .and_then(|v| v.as_str().map(String::from))
-                .unwrap_or_default();
             let app_version = app.config().version.clone().unwrap_or_default();
 
             // Migrate MCP servers
@@ -376,7 +397,18 @@ pub fn run() {
                 let _ = setup::setup_tray(app.handle());
             }
 
-            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
+            // Not in e2e builds: on Windows `register_all` writes HKCU
+            // Software\Classes\jan\shell\open\command and points it at the
+            // running exe, so every run would repoint the developer's real
+            // `jan://` handler at target/debug/Jan-Desktop.exe. The registry is
+            // outside everything the harness's env overrides can reach. (On
+            // Linux it writes into `data_dir()/applications`, which XDG_DATA_HOME
+            // does redirect -- but no spec opens a deep link, so skip both.)
+            #[cfg(all(
+                feature = "deep-link",
+                not(feature = "e2e"),
+                any(windows, target_os = "linux")
+            ))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
                 app.deep_link().register_all()?;
@@ -394,8 +426,6 @@ pub fn run() {
             }
 
             setup_mcp(app);
-            #[cfg(desktop)]
-            setup::setup_jan_cli(app.handle().clone(), stored_version != app_version);
             setup::setup_theme_listener(app)?;
             Ok(())
         })

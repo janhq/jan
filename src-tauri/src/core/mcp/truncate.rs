@@ -6,7 +6,7 @@
 //! is. Everything that hands an MCP result to a model funnels through here first
 //! so the payload is bounded and the clipping is announced rather than silent.
 
-use rmcp::model::{CallToolResult, Content};
+use rmcp::model::{CallToolResult, ContentBlock};
 
 /// Total text characters carried by a result, across every text block.
 fn total_text_chars(result: &CallToolResult) -> usize {
@@ -48,7 +48,7 @@ pub fn truncate_tool_result(result: &CallToolResult, max_chars: u64) -> CallTool
     }
 
     let mut used = 0usize;
-    let mut new_content: Vec<Content> = Vec::with_capacity(result.content.len() + 1);
+    let mut new_content: Vec<ContentBlock> = Vec::with_capacity(result.content.len() + 1);
 
     for block in &result.content {
         let Some(text) = block.as_text() else {
@@ -68,20 +68,17 @@ pub fn truncate_tool_result(result: &CallToolResult, max_chars: u64) -> CallTool
         if keep == len {
             new_content.push(block.clone());
         } else {
-            new_content.push(Content::text(
+            new_content.push(ContentBlock::text(
                 text.text.chars().take(keep).collect::<String>(),
             ));
         }
     }
 
-    new_content.push(Content::text(truncation_marker(used, total)));
+    new_content.push(ContentBlock::text(truncation_marker(used, total)));
 
-    CallToolResult {
-        content: new_content,
-        structured_content: result.structured_content.clone(),
-        is_error: result.is_error,
-        meta: result.meta.clone(),
-    }
+    let mut truncated = result.clone();
+    truncated.content = new_content;
+    truncated
 }
 
 #[cfg(test)]
@@ -89,7 +86,7 @@ mod tests {
     use super::*;
 
     fn text_result(parts: &[&str]) -> CallToolResult {
-        CallToolResult::success(parts.iter().map(|p| Content::text(*p)).collect())
+        CallToolResult::success(parts.iter().map(|p| ContentBlock::text(*p)).collect())
     }
 
     fn texts(result: &CallToolResult) -> Vec<String> {
@@ -107,7 +104,7 @@ mod tests {
     #[test]
     fn serialized_result_the_web_layer_receives_is_bounded() {
         // Stand-in for a Jan Browser MCP page snapshot: one enormous text block.
-        let snapshot = CallToolResult::success(vec![Content::text(
+        let snapshot = CallToolResult::success(vec![ContentBlock::text(
             "<div>page</div>".repeat(100_000),
         )]);
 
@@ -194,8 +191,8 @@ mod tests {
     #[test]
     fn non_text_blocks_survive_truncation() {
         let result = CallToolResult::success(vec![
-            Content::text("z".repeat(1_000)),
-            Content::image("ZmFrZQ==".to_string(), "image/png".to_string()),
+            ContentBlock::text("z".repeat(1_000)),
+            ContentBlock::image("ZmFrZQ==".to_string(), "image/png".to_string()),
         ]);
         let capped = truncate_tool_result(&result, 10);
 

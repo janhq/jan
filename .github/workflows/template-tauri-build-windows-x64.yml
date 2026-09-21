@@ -55,6 +55,8 @@ on:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
         required: false
+      DELTA_AWS_REGION:
+        required: false
       AZURE_KEY_VAULT_URI:
         required: false
       AZURE_CLIENT_ID:
@@ -97,6 +99,31 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # The self-hosted CUDA images have Git for Windows off PATH (or absent) and
+      # no make; every later step (dtolnay's included) is bash, and make runs
+      # recipes like `mkdir -p` through the coreutils in Git's usr\bin.
+      - name: Provision Git Bash, make and dotnet on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path 'C:\Program Files\Git\bin\bash.exe')) {
+            choco install git -y --no-progress
+          }
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\cmd'
+          Add-Content $env:GITHUB_PATH 'C:\Program Files\Git\bin'
+          # Appended, not prepended: usr\bin also holds GNU link, which must
+          # not shadow MSVC's link.exe for rustc.
+          Add-Content $env:GITHUB_ENV "PATH=$env:PATH;C:\Program Files\Git\usr\bin"
+          if (-not (Get-Command make -ErrorAction SilentlyContinue)) {
+            choco install make -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\ProgramData\chocolatey\bin'
+          }
+          if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            choco install dotnet-8.0-sdk -y --no-progress
+            Add-Content $env:GITHUB_PATH 'C:\Program Files\dotnet'
+          }
+          Add-Content $env:GITHUB_PATH "$env:USERPROFILE\.dotnet\tools"
+
       - name: Replace Icons for Beta Build
         if: inputs.channel != 'stable'
         shell: bash
@@ -110,6 +137,8 @@ jobs:
 
       - name: Install jq
         uses: dcarbone/install-jq-action@b7ef57d46ece78760b4019dbc4080a1ba2a40b45 # v3.2.0
+
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Install ctoml
         run: |
@@ -185,6 +214,10 @@ jobs:
               new_build_version="${base_version}.${t_value}"
           }
           generate_build_version ${{ inputs.new_version }}
+          # The template's File paths are absolute; the workspace differs between
+          # hosted (D:\a\jan\jan) and self-hosted (C:\w\jan\jan) runners.
+          ws='${{ github.workspace }}'
+          sed -i "s|jan_workspace|${ws//\\/\\\\}|g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_version/$new_base_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
           sed -i "s/jan_build/$new_build_version/g" ./src-tauri/tauri.bundle.windows.nsis.template
 
@@ -234,9 +267,13 @@ jobs:
           echo "---------nsis.template---------"
           cat ./src-tauri/tauri.bundle.windows.nsis.template
 
+      # A persistent runner may already carry a newer AzureSignTool, and
+      # installing an older version over it is an error.
       - name: Install AzureSignTool
         run: |
-          dotnet tool install --global --version 6.0.0 AzureSignTool
+          if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+            dotnet tool install --global --version 6.0.0 AzureSignTool
+          }
 
       - name: Config Yarn
         run: |
@@ -253,6 +290,24 @@ jobs:
         uses: ./.github/actions/setup-engine-toolchain
         with:
           variant: ${{ inputs.engine_variant }}
+
+      # Links a cached build of the pinned llama.cpp instead of compiling it
+      # (~80 of the ~115 minutes below). No credentials, or a missing,
+      # truncated or incomplete object, means the full cmake build. After the
+      # toolchain step, because the key reads the VCToolsVersion its
+      # msvc-dev-cmd exports for cuda variants; a vulkan-only build has no key
+      # and always compiles. Key and layout: src-tauri/build-utils/engine-prebuilt.sh
+      - name: Restore the prebuilt llama.cpp engine
+        id: engine_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
 
       - name: Build app
         shell: bash
@@ -275,6 +330,31 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the engine is kept when signing
+      # or bundling fails later; the script itself refuses unless the worker
+      # was built and every output is present.
+      - name: Save the prebuilt llama.cpp engine
+        if: ${{ !cancelled() && steps.engine_prebuilt.outputs.key != '' && steps.engine_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/engine-prebuilt.sh save
+        env:
+          KEY: ${{ steps.engine_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
 
       # The engine build is fifteen minutes of cmake whose output cargo only
       # surfaces as a tail. When it fails, the whole log is the artifact worth

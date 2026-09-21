@@ -475,9 +475,49 @@ pub async fn get_engine_info(
     Ok(guard.as_ref().map(EngineInfo::from))
 }
 
+/// The llama.cpp this build is pinned to. Compile-time constants, so it answers
+/// with the engine's identity whether or not a worker is running -- unlike
+/// `get_engine_info`, which reports `None` while the engine is stopped, and is
+/// therefore no use to a settings screen that wants to name the engine.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineVersion {
+    /// llama.cpp's own version, e.g. `0.4.0`.
+    pub version: String,
+    /// The upstream build tag the source was taken from, e.g. `b10809`.
+    pub tag: String,
+    /// The same tag's build number, which is what the shim reports back over
+    /// the FFI and what a version mismatch is checked against.
+    pub build_number: String,
+    /// Full commit sha. The tag is mutable upstream; this is the real pin.
+    pub commit: String,
+}
+
+#[tauri::command]
+pub fn get_engine_version() -> EngineVersion {
+    EngineVersion {
+        version: super::PINNED_VERSION.to_string(),
+        tag: super::PINNED_TAG.to_string(),
+        build_number: super::PINNED_BUILD_NUMBER.to_string(),
+        commit: super::PINNED_COMMIT.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The screen that shows this is the only place a user can check which
+    /// engine they are running, so it has to report the pin rather than a
+    /// hardcoded string that outlives the next bump.
+    #[test]
+    fn the_reported_version_is_the_pin() {
+        let v = get_engine_version();
+        assert_eq!(v.version, super::super::PINNED_VERSION);
+        assert_eq!(v.tag, super::super::PINNED_TAG);
+        assert_eq!(v.build_number, super::super::PINNED_BUILD_NUMBER);
+        assert_eq!(v.commit, super::super::PINNED_COMMIT);
+        assert_eq!(v.commit.len(), 40, "a full sha, not the short form");
+    }
 
     #[test]
     fn generated_keys_are_long_hex_and_do_not_repeat() {

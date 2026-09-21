@@ -13,6 +13,7 @@
 #include "ggml-backend.h"
 
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -81,6 +82,13 @@ std::mutex               g_capture_mu;
 std::vector<std::string> g_captured;
 bool                     g_capturing = false;
 
+// Metal's device-init probe logs an ERROR when the Metal 4 tensor API is
+// unavailable, then disables it and continues -- benign, so keep it out of the
+// captured cause instead of surfacing it as a load failure.
+bool is_benign_probe_error(const std::string & line) {
+    return line.find("ggml_metal_library_init_from_source") != std::string::npos;
+}
+
 void capture_log_callback(ggml_log_level level, const char * text, void * user_data) {
     if (level == GGML_LOG_LEVEL_ERROR && text != nullptr) {
         std::lock_guard<std::mutex> lock(g_capture_mu);
@@ -89,7 +97,7 @@ void capture_log_callback(ggml_log_level level, const char * text, void * user_d
             while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
                 line.pop_back();
             }
-            if (!line.empty()) {
+            if (!line.empty() && !is_benign_probe_error(line)) {
                 g_captured.push_back(std::move(line));
             }
         }
@@ -391,6 +399,15 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
             engine->params.kv_overrides.back().key[0] = 0;
         }
 
+        // arg.cpp:963-966, at the end of common_params_parse_ex. Since 0.4.0 the
+        // kwarg defaults to on when the user did not name it, and a template
+        // with `supports_preserve_reasoning` reads it -- so omitting this here
+        // would have the preset path preserve less reasoning than the argv path
+        // and than llama-server, for the same ini.
+        if (!engine->params.default_template_kwargs.count("preserve_reasoning")) {
+            engine->params.default_template_kwargs["preserve_reasoning"] = "true";
+        }
+
         return finish_start(std::move(engine), err, err_len);
     } catch (const std::exception & e) {
         set_err(err, err_len, e.what());
@@ -414,6 +431,16 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
         if (engine->params.n_parallel < 0) {
             engine->params.n_parallel = 4;
             engine->params.kv_unified = true;
+        }
+
+        // server.cpp:160-170, immediately after the block above and dependent on
+        // it: the pool is n_parallel wide, so it can only be sized once the
+        // sentinel is resolved. Only `-c 0` (size to the model's trained
+        // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size
+        // pins the pool and the cap then applies per slot inside it.
+        if (engine->params.kv_unified_per_slot > 0 && engine->params.n_ctx == 0 &&
+            (uint32_t) engine->params.fit_params_min_ctx != UINT32_MAX) {
+            engine->params.n_ctx = engine->params.n_parallel * engine->params.kv_unified_per_slot;
         }
 
         common_init();

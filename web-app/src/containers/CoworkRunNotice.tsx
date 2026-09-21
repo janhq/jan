@@ -1,10 +1,18 @@
-import { CircleSlash, TriangleAlert } from 'lucide-react'
+import { CircleSlash, TrendingUp, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
 type Props =
   | { kind: 'stopped' }
-  | { kind: 'error'; message?: string; onRetry: () => void }
+  | {
+      kind: 'error'
+      message?: string
+      onRetry: () => void
+      /** When the failure is a context overflow, offer the quick context
+       *  increase (as normal Chat does) instead of a bare retry, which would
+       *  just fail again at the same limit. */
+      onIncreaseContext?: () => void
+    }
 
 /**
  * How a run ended when it ended without an answer.
@@ -31,6 +39,8 @@ export function CoworkRunNotice(props: Props) {
     )
   }
 
+  const isOverflow = props.kind === 'error' && !!props.onIncreaseContext
+
   return (
     <div
       role="alert"
@@ -41,14 +51,26 @@ export function CoworkRunNotice(props: Props) {
       <span className="min-w-0 break-words">
         {props.message?.trim() || t('common:run.failed')}
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-7"
-        onClick={props.onRetry}
-      >
-        {t('common:run.tryAgain')}
-      </Button>
+      {isOverflow ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7"
+          onClick={props.onIncreaseContext}
+        >
+          <TrendingUp size={14} aria-hidden className="mr-1 shrink-0" />
+          {t('model-errors:increaseContextSize')}
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7"
+          onClick={props.onRetry}
+        >
+          {t('common:run.tryAgain')}
+        </Button>
+      )}
     </div>
   )
 }

@@ -25,6 +25,18 @@ Extensions add specific features to Jan as self-contained modules.
 - `src/backend.ts` - llama.cpp integration
 - `settings.json` - Model settings
 
+### `/mlx-extension`
+- MLX-Swift inference on Apple Silicon Macs
+- `src/index.ts` - Entry point
+
+### `/rag-extension`
+- RAG tooling: registers RAG tools and orchestrates retrieval across parser, embeddings, and vector DB
+- `src/index.ts` - Main implementation
+
+### `/vector-db-extension`
+- Vector DB integration using sqlite-vec, with a linear fallback
+- `src/index.ts` - Entry point
+
 ## Creating Extensions
 
 ### Setup

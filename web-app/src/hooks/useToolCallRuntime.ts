@@ -154,3 +154,25 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
 
   reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {} }),
 }))
+
+/**
+ * Run one tool call with its timing recorded, so its card can show a live
+ * duration instead of a bare spinner.
+ *
+ * For a caller that dispatches serially and so has no queue to report -- each
+ * call is its own queue of one. The chat route enqueues a whole step up front
+ * instead, which is what lets it also show "queued, 2nd in line".
+ */
+export async function withToolTiming<T>(
+  toolCallId: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const runtime = useToolCallRuntime.getState()
+  runtime.enqueue([toolCallId])
+  runtime.markRunning(toolCallId)
+  try {
+    return await run()
+  } finally {
+    useToolCallRuntime.getState().markSettled(toolCallId)
+  }
+}

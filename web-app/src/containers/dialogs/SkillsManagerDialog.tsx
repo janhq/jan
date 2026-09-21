@@ -135,14 +135,17 @@ export default function SkillsManagerDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t('common:skillsTitle')}</DialogTitle>
+          {/* Name the stores being managed. With a folder attached the list is
+              the union of its co-located skills and the global store (#8879);
+              with nothing attached it is the global store every session reads. */}
+          <p className="text-xs text-muted-foreground">
+            {folder
+              ? t('common:skillsScopeMerged', { folder })
+              : t('common:skillsScopeGlobal')}
+          </p>
         </DialogHeader>
 
-        {!folder ? (
-          <div className="py-10 text-center text-sm text-muted-foreground">
-            {t('common:skillsSelectFolder')}
-          </div>
-        ) : (
-          <div className="flex gap-4 h-[60vh] overflow-hidden">
+        <div className="flex gap-4 h-[60vh] overflow-hidden">
             {/* Skill list */}
             <div className="w-1/3 min-h-0 flex flex-col gap-2 border-r pr-3">
               <Button
@@ -183,7 +186,18 @@ export default function SkillsManagerDialog({
                     >
                       <FileText size={14} className="shrink-0 text-muted-foreground" />
                       <div className="flex-1 min-w-0">
-                        <div className="truncate font-medium">{s.name}</div>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="truncate font-medium">{s.name}</span>
+                          {folder && (
+                            <span className="shrink-0 rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">
+                              {t(
+                                s.origin === 'project'
+                                  ? 'common:skillOriginFolder'
+                                  : 'common:skillOriginGlobal'
+                              )}
+                            </span>
+                          )}
+                        </div>
                         {s.description && (
                           <div className="line-clamp-2 break-words text-xs text-muted-foreground">
                             {s.description}
@@ -294,7 +308,6 @@ export default function SkillsManagerDialog({
               )}
             </div>
           </div>
-        )}
       </DialogContent>
     </Dialog>
   )

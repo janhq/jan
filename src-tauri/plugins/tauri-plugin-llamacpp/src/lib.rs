@@ -25,6 +25,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             engine::commands::start_engine,
             engine::commands::stop_engine,
             engine::commands::get_engine_info,
+            engine::commands::get_engine_version,
             engine::commands::reload_engine_models,
             engine::commands::engine_devices,
             engine::commands::force_stop_engine,

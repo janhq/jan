@@ -30,13 +30,18 @@ export function AnalyticConsent() {
       <p className="mt-2 text-sm">{t('analyticsConsentQuestion')}</p>
       <div className="mt-4 flex justify-end space-x-2">
         <Button
+          data-testid="analytic-deny"
           variant="ghost"
           size="sm"
           onClick={() => handleProductAnalytics(false)}
         >
           {t('deny')}
         </Button>
-        <Button size="sm" onClick={() => handleProductAnalytics(true)}>
+        <Button
+          data-testid="analytic-allow"
+          size="sm"
+          onClick={() => handleProductAnalytics(true)}
+        >
           {t('allow')}
         </Button>
       </div>

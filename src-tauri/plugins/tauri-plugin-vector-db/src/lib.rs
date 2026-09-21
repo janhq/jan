@@ -9,7 +9,7 @@ pub use error::VectorDBError;
 pub use state::VectorDBState;
 
 #[cfg(feature = "tauri")]
-pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+pub fn init<R: tauri::Runtime>(base_dir: std::path::PathBuf) -> tauri::plugin::TauriPlugin<R> {
     use tauri::Manager;
 
     tauri::plugin::Builder::new("vector-db")
@@ -29,8 +29,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::memory_search,
             commands::memory_clear,
         ])
-        .setup(|app, _api| {
-            app.manage(state::VectorDBState::new());
+        .setup(move |app, _api| {
+            app.manage(state::VectorDBState::new(base_dir));
             Ok(())
         })
         .build()

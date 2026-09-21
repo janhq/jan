@@ -99,6 +99,10 @@ async fn verify_key(api_key: &str) -> Result<Vec<String>, String> {
     }
     let parsed: serde_json::Value = serde_json::from_str(&body)
         .map_err(|e| format!("Tokamak returned a response we could not read: {e}"))?;
+    // The listing carries per-model `context_length` and pricing; caching it
+    // here is what lets `/context` and `/usage` report the real window and an
+    // actual cost rather than a catalog guess.
+    super::model_catalog::cache_listing(PROVIDER, &parsed);
     Ok(parse_models(&parsed))
 }
 
@@ -227,6 +231,7 @@ pub async fn logout() -> Result<Logout, String> {
     };
 
     remove_provider(PROVIDER)?;
+    super::model_catalog::forget(PROVIDER);
     Ok(match revoked {
         true => Logout::ClearedAndRevoked,
         false => Logout::ClearedOnly,

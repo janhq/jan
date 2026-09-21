@@ -10,6 +10,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use tauri_plugin_agent_tools::permissions::ToolPermissions;
+use tauri_plugin_agent_tools::tools::sandbox::scratch_display_path;
+use tauri_plugin_agent_tools::tools::spill::{
+    compose_subagent_result, fill_subagent_result, reserve_blackboard_result,
+    SUBAGENT_INLINE_MAX_BYTES,
+};
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
@@ -54,7 +59,6 @@ struct SubagentFile {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SubagentError {
-    UnknownSubagent(String),
     PermissionDenied(String),
     Upstream(String),
     Cancelled,
@@ -63,15 +67,6 @@ pub enum SubagentError {
 impl std::fmt::Display for SubagentError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SubagentError::UnknownSubagent(n) => {
-                write!(
-                    f,
-                    "unknown subagent '{n}': no matching definition in the user or \
-                     project scope. For a one-off subagent, retry with a `system_prompt` \
-                     describing its role (required for any subagent_name that isn't already \
-                     saved); to check saved names first, call list_subagents."
-                )
-            }
             SubagentError::PermissionDenied(m) => write!(f, "permission denied: {m}"),
             SubagentError::Upstream(m) => write!(f, "{m}"),
             SubagentError::Cancelled => write!(f, "subagent run cancelled"),
@@ -359,8 +354,11 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
         .filter_map(|t| {
             let jan = match t.to_ascii_lowercase().as_str() {
                 "read" => Some("read"),
-                "glob" => Some("glob"),
-                "grep" => Some("grep"),
+                // Glob/Grep intentionally unmapped: Jan no longer advertises
+                // list/search tools (bash covers them). Mapping them would
+                // restrict a child to a tool it is never offered -- and a child
+                // scoped to *only* those would be left with none. Dropped instead,
+                // so such an agent inherits the full toolset (bash included).
                 "bash" => Some("bash"),
                 "edit" => Some("edit"),
                 "write" => Some("write"),
@@ -444,9 +442,15 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
 /// definition's `allowed_tools`, the call-site override, and the parent's
 /// permissions, plus the always-on `skill_list`/`skill_read` pair. Deny (from
 /// the parent) always wins. Returns the list to set as the child's
-/// `allowed_tools` (an empty list means "no tools"), or `None` to inherit the
-/// definition's full toolset with no per-run allowlist (the parent's deny-list
-/// still applies at gate time).
+/// `allowed_tools`, or `None` to inherit the parent's full toolset with no
+/// per-run allowlist (the parent's deny-list still applies at gate time).
+///
+/// An empty allowlist is normalized to `None` (inherit), never "no tools": a
+/// model dispatching a one-off routinely emits `allowed_tools: []` for the
+/// optional array parameter, which used to hand the child only the forced
+/// skill/work tools and no `read`/`bash` -- the "subagent has no tools" failure.
+/// Restricting a child is still possible, with a non-empty list. (The plugin
+/// path already relies on this via `map_claude_tools` returning `None`.)
 ///
 /// Fails closed: a tool named in `request` that the definition does not permit,
 /// or that the parent denies, is rejected rather than silently dropped. A
@@ -457,6 +461,8 @@ pub fn intersect_allowed_tools(
     request: Option<&[String]>,
     parent: &ToolPermissions,
 ) -> Result<Option<Vec<String>>, SubagentError> {
+    let definition = definition.filter(|d| !d.is_empty());
+    let request = request.filter(|r| !r.is_empty());
     if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
@@ -489,17 +495,33 @@ pub fn intersect_allowed_tools(
     }
 }
 
-/// A model- or orchestration-issued request to run a subagent. When
-/// `subagent_name` resolves in the registry, that definition is used (and
-/// `allowed_tools` further narrows it). Otherwise, if `system_prompt` is
-/// provided, an ephemeral one-off subagent is run inline with that prompt (no
-/// registry entry, no disk write) so create + dispatch collapse to one call.
+/// One subagent within a phased dispatch. When `name` matches a saved definition
+/// that definition's role and tools are used (and `allowed_tools` further narrows
+/// it); otherwise the subagent runs as a focused general-purpose agent defined by
+/// its `description` (the task) alone. `name` is also the blackboard filename its
+/// answer is written to (`blackboard/<name>.md`).
 #[derive(Debug, Clone)]
 pub struct SubagentRequest {
-    pub subagent_name: String,
+    pub name: String,
     pub description: String,
     pub allowed_tools: Option<Vec<String>>,
-    pub system_prompt: Option<String>,
+}
+
+/// A group of subagents that run concurrently. The next phase starts only once
+/// every subagent here has finished, and each next-phase subagent is handed this
+/// phase's results (the `blackboard/<name>.md` files). `number` is the model's
+/// own `phase` key for this group (what the "phase N" badge shows), which the
+/// parser only uses to order and group -- gaps and any base are fine.
+#[derive(Debug, Clone)]
+pub struct Phase {
+    pub number: u32,
+    pub subagents: Vec<SubagentRequest>,
+}
+
+/// A parsed `dispatch_subagent` call: one or more ordered phases.
+#[derive(Debug, Clone)]
+pub struct DispatchPlan {
+    pub phases: Vec<Phase>,
 }
 
 /// The resolved plan for a dispatch: the winning definition plus the effective
@@ -517,7 +539,7 @@ fn resolve_dispatch(
     req: &SubagentRequest,
     parent: &ToolPermissions,
 ) -> Result<ResolvedDispatch, SubagentError> {
-    match registry.get(&req.subagent_name).cloned() {
+    match registry.get(&req.name).cloned() {
         Some(definition) => {
             // Registered definition: the call-site allowlist further narrows it.
             let allowed_tools = intersect_allowed_tools(
@@ -531,23 +553,17 @@ fn resolve_dispatch(
             })
         }
         None => {
-            // Unregistered: run an ephemeral one-off if an inline system_prompt
-            // was supplied; otherwise it's a genuine unknown-name error.
-            let system_prompt = req
-                .system_prompt
-                .clone()
-                .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| SubagentError::UnknownSubagent(req.subagent_name.clone()))?;
+            // No saved definition: a focused general-purpose subagent defined by
+            // its task. The call-site allowlist IS its toolset; only the parent's
+            // deny-list narrows it further.
             let definition = SubagentDefinition {
-                name: req.subagent_name.clone(),
+                name: req.name.clone(),
                 description: req.description.clone(),
-                system_prompt,
+                system_prompt: ephemeral_subagent_prompt(&req.name),
                 allowed_tools: req.allowed_tools.clone(),
                 model: None,
                 scope: SubagentScope::Project,
             };
-            // The inline allowed_tools IS the definition's toolset; only the
-            // parent's deny-list narrows it further.
             let allowed_tools =
                 intersect_allowed_tools(definition.allowed_tools.as_deref(), None, parent)?;
             Ok(ResolvedDispatch {
@@ -558,10 +574,23 @@ fn resolve_dispatch(
     }
 }
 
+/// The system prompt for a subagent dispatched without a saved definition: a
+/// focused generalist whose closing report becomes the next phase's input.
+fn ephemeral_subagent_prompt(name: &str) -> String {
+    format!(
+        "You are \"{name}\", a focused subagent handling one task as part of a larger plan. \
+         Do exactly the task you are given, using your tools as needed, and do not wait for \
+         clarification -- you cannot receive any. When you finish, end with a concise, \
+         self-contained report of what you found or did: it is handed verbatim to the agents in \
+         the next phase, so include the facts, paths, and decisions they will need."
+    )
+}
+
 /// Child stream events are folded into the parent's own stream, except the
 /// child's terminal `Done`/`Error`: the parent must not see the child terminate
 /// its stream. Dispatch turns the child's result into a synthetic tool result
-/// instead, bracketed by `SubagentStart`/`SubagentEnd`.
+/// instead, bracketed by `SubagentStart`/`SubagentEnd`. A child's monitor set
+/// and its parked state describe the child alone, so they stay with it too.
 fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
     use crate::core::agent::events::StreamEvent;
     !matches!(
@@ -569,6 +598,8 @@ fn forward_to_parent(ev: &crate::core::agent::events::StreamEvent) -> bool {
         StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
             | StreamEvent::MessagesUpdated { .. }
+            | StreamEvent::Monitors { .. }
+            | StreamEvent::Parked
     )
 }
 
@@ -604,6 +635,32 @@ struct BackgroundEntry {
     run_id: String,
     name: String,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    /// Model-visible path this child's answer is written to, reserved at
+    /// dispatch so the parent is told where to look before there is an answer.
+    /// `None` with no scratch in force (the unconfined CLI, by design).
+    display_path: Option<String>,
+    /// Set by the child's own task the moment it finishes, so teardown can tell
+    /// a run that ended on its own from one it is aborting. Without it every
+    /// uncollected-but-finished child got a second `SubagentEnd` at teardown --
+    /// which used to be rare and, now that collection is optional, would be the
+    /// common case.
+    finished: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
+/// text, plus the run it belongs to so an explicit `await_subagent` can drop it
+/// rather than reporting the same completion twice.
+struct Notice {
+    run_id: String,
+    text: String,
+}
+
+/// What an `await_subagent` collects: the child's final text plus the file its
+/// full answer was already written to (the same path `dispatch_subagent`
+/// reported), so collecting never writes a second copy.
+pub(crate) struct Collected {
+    pub(crate) text: String,
+    pub(crate) display_path: Option<String>,
 }
 
 /// Registry of a single parent run's background subagents, keyed by `run_id`.
@@ -622,6 +679,20 @@ pub(crate) struct BackgroundSubagents {
     /// Used to report each queued child's 1-based position; decremented by the
     /// task itself the moment it acquires its permit.
     queued: std::sync::atomic::AtomicUsize,
+    /// Completions the parent has not been pinged about yet. Drained into the
+    /// conversation as a `<SYSTEM>` reminder at the top of the next turn.
+    notices: std::sync::Mutex<Vec<Notice>>,
+    /// Raised whenever a notice lands, so a parent that has run out of work can
+    /// park until a child finishes instead of ending the run under it.
+    wake: Arc<tokio::sync::Notify>,
+    /// Children dispatched and not yet finished. Incremented at dispatch and
+    /// decremented only *after* the notice is queued, so `has_pending_work`
+    /// never reads false in the window between the two.
+    running: std::sync::atomic::AtomicUsize,
+    /// Multi-phase plans still driving. A plan holds this above zero for its
+    /// whole life, so the parent stays parked across the gap where one phase has
+    /// finished (`running == 0`) but the driver has not yet spawned the next.
+    plans_pending: std::sync::atomic::AtomicUsize,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -643,7 +714,106 @@ impl BackgroundSubagents {
             inner: std::sync::Mutex::new(std::collections::HashMap::new()),
             semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(cap.max(1) as usize)),
             queued: std::sync::atomic::AtomicUsize::new(0),
+            notices: std::sync::Mutex::new(Vec::new()),
+            wake: Arc::new(tokio::sync::Notify::new()),
+            running: std::sync::atomic::AtomicUsize::new(0),
+            plans_pending: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    /// Mark a multi-phase plan as driving, keeping the parent parked until the
+    /// driver calls [`end_plan`]. Balanced 1:1 with `end_plan`.
+    fn begin_plan(&self) {
+        self.plans_pending
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// A plan's driver has spawned its last phase (or given up): stop holding the
+    /// park open and wake anyone waiting so they re-evaluate.
+    fn end_plan(&self) {
+        self.plans_pending
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.wake.notify_waiters();
+    }
+
+    /// Take every queued completion ping, oldest first.
+    pub(crate) fn take_notices(&self) -> Vec<String> {
+        std::mem::take(&mut *self.notices.lock().unwrap())
+            .into_iter()
+            .map(|n| n.text)
+            .collect()
+    }
+
+    /// Whether anything could still ping the parent: a child still running, or
+    /// one that finished and whose ping has not been delivered.
+    pub(crate) fn has_pending_work(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
+            || self.running.load(std::sync::atomic::Ordering::SeqCst) > 0
+            || self.plans_pending.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// Park until a ping is available, or until nothing is left to wait for.
+    ///
+    /// The waiter is registered *before* the state is re-read (`enable`), so a
+    /// child finishing in between wakes this call rather than being missed --
+    /// `notify_waiters` only reaches waiters already registered.
+    pub(crate) async fn wait_for_notice(&self) {
+        loop {
+            let waiter = self.wake.notified();
+            tokio::pin!(waiter);
+            waiter.as_mut().enable();
+            // Re-check after enabling the waiter so a completion landing in the
+            // window is not missed (`notify_waiters` only reaches an
+            // already-registered waiter). `running == 0` is the "nothing left"
+            // exit.
+            if !self.notices.lock().unwrap().is_empty()
+                || (self.running.load(std::sync::atomic::Ordering::SeqCst) == 0
+                    && self.plans_pending.load(std::sync::atomic::Ordering::SeqCst) == 0)
+            {
+                return;
+            }
+            waiter.await;
+        }
+    }
+
+    /// Park until every `run_id` in `ids` has finished (or is gone from the
+    /// registry -- collected or aborted). The phase-plan driver's barrier between
+    /// one phase and the next. Mirrors [`wait_for_notice`]'s wake discipline:
+    /// the waiter is registered (`enable`) before the flags are re-read, so a
+    /// child finishing in the window is not missed.
+    async fn await_phase(&self, ids: &[String]) {
+        use std::sync::atomic::Ordering;
+        loop {
+            let waiter = self.wake.notified();
+            tokio::pin!(waiter);
+            waiter.as_mut().enable();
+            let all_done = {
+                let guard = self.inner.lock().unwrap();
+                ids.iter().all(|id| {
+                    guard
+                        .get(id)
+                        .is_none_or(|e| e.finished.load(Ordering::SeqCst))
+                })
+            };
+            if all_done {
+                return;
+            }
+            waiter.await;
+        }
+    }
+
+    fn push_notice(&self, run_id: &str, text: String) {
+        self.notices.lock().unwrap().push(Notice {
+            run_id: run_id.to_string(),
+            text,
+        });
+        self.wake.notify_waiters();
+    }
+
+    /// Drop a queued ping for a run the parent collected explicitly: it already
+    /// has the answer, and telling it again would spend context on nothing.
+    fn drop_notice(&self, run_id: &str) {
+        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
     }
     /// Abort and forget every registered child. Called on parent teardown when
     /// the run is cancelled. Emits a closing `SubagentEnd` for each aborted
@@ -654,11 +824,18 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            // A child that ran to completion already emitted its own end event;
+            // this is only closing the bracket for one cut off mid-run.
+            if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
+                continue;
+            }
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
+                error: None,
             });
         }
+        self.notices.lock().unwrap().clear();
     }
 
     /// Wait for every still-registered child to finish on its own, rather than
@@ -756,6 +933,9 @@ async fn run_subagent(
     // Subagents cannot read or mutate the parent's todo list (isolated child
     // context, matching ask_requests above).
     child_args.todo_registry = None;
+    // A child's monitors are its own and die with it; nothing would pick up a
+    // match left in the session set once the child has returned.
+    child_args.monitors = None;
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -771,12 +951,15 @@ async fn run_subagent(
     let fwd_name = name.clone();
     let forwarder = tokio::spawn(async move {
         while let Some(ev) = child_rx.recv().await {
-            if forward_to_parent(&ev) {
-                let _ = parent_events.send(StreamEvent::Subagent {
-                    run_id: fwd_run_id.clone(),
-                    name: fwd_name.clone(),
-                    event: Box::new(ev),
-                });
+            match &ev {
+                _ if forward_to_parent(&ev) => {
+                    let _ = parent_events.send(StreamEvent::Subagent {
+                        run_id: fwd_run_id.clone(),
+                        name: fwd_name.clone(),
+                        event: Box::new(ev),
+                    });
+                }
+                _ => {}
             }
         }
     });
@@ -785,12 +968,16 @@ async fn run_subagent(
     drop(child_tx);
     let _ = forwarder.await;
 
-    let _ = events.send(StreamEvent::SubagentEnd { run_id, name });
-
-    match result {
+    let outcome = match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
-    }
+    };
+    let _ = events.send(StreamEvent::SubagentEnd {
+        run_id,
+        name,
+        error: outcome.as_ref().err().map(|e| e.to_string()),
+    });
+    outcome
 }
 
 /// Resolve and start a subagent on a background task, returning its `run_id`
@@ -804,13 +991,27 @@ async fn run_subagent(
 /// until a running child finishes. A queued dispatch still returns its `run_id`
 /// right away, and `await_subagent` on a queued run blocks until it gets a slot
 /// and runs to completion -- never errors, never starts out of turn.
+///
+/// `scratch` is where the child's answer is spilled. The file is reserved here,
+/// before the child has produced a word, so the dispatch can report the path the
+/// parent will read it from; the child's own task fills it in and queues the
+/// `<SYSTEM>` ping that tells the parent it is there.
+///
+/// `notify_on_finish` decides whether this child's completion rings the parent's
+/// doorbell: a plain fan-out child pings the moment it finishes, but a child
+/// managed by a multi-phase plan stays silent so the parent is woken exactly
+/// once -- when the plan's last phase finishes (see [`run_phase_plan`]). Silence
+/// suppresses only the `<SYSTEM>` ping; the child still fills its blackboard
+/// file, decrements the running count, and wakes the phase driver's barrier.
 pub(crate) fn spawn_subagent(
     bg: &Arc<BackgroundSubagents>,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
     events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
-) -> Result<String, SubagentError> {
+    scratch: Option<&Path>,
+    notify_on_finish: bool,
+) -> Result<Dispatched, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use std::sync::atomic::Ordering;
 
@@ -829,6 +1030,10 @@ pub(crate) fn spawn_subagent(
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
     let (tx, rx) = tokio::sync::oneshot::channel();
+    let result_file = scratch.and_then(|s| {
+        reserve_blackboard_result(s, &name).map(|path| (scratch_display_path(Some(s), &path), path))
+    });
+    let display_path = result_file.as_ref().map(|(display, _)| display.clone());
 
     // Try to grab a permit at dispatch time. On success the child is admitted
     // immediately; on exhaustion it joins the semaphore waitlist (FIFO) and is
@@ -857,7 +1062,12 @@ pub(crate) fn spawn_subagent(
     let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
-    let queued_counter = bg.clone();
+    let name_task = name.clone();
+    let registry = bg.clone();
+    let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let finished_task = finished.clone();
+    let notice_path = display_path.clone();
+    registry.running.fetch_add(1, Ordering::SeqCst);
     let handle = tokio::spawn(async move {
         let permit = match admitted {
             Ok(p) => p,
@@ -866,7 +1076,7 @@ pub(crate) fn spawn_subagent(
                     .acquire_owned()
                     .await
                     .expect("subagent semaphore is never closed");
-                queued_counter.queued.fetch_sub(1, Ordering::SeqCst);
+                registry.queued.fetch_sub(1, Ordering::SeqCst);
                 p
             }
         };
@@ -877,9 +1087,24 @@ pub(crate) fn spawn_subagent(
             description,
             inherited,
             task_events,
-            run_id_task,
+            run_id_task.clone(),
         )
         .await;
+        if let Some((_, path)) = &result_file {
+            fill_subagent_result(path, &spilled_text(&result));
+        }
+        finished_task.store(true, Ordering::SeqCst);
+        // Queue the ping before releasing the run count, so a parent asking
+        // "is anything still owed to me?" can never see neither. A plan-managed
+        // child stays silent: the phase driver rings the doorbell once at the end.
+        if notify_on_finish {
+            registry.push_notice(
+                &run_id_task,
+                completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
+            );
+        }
+        registry.running.fetch_sub(1, Ordering::SeqCst);
+        registry.wake.notify_waiters();
         let _ = tx.send(result);
     });
 
@@ -891,9 +1116,350 @@ pub(crate) fn spawn_subagent(
             run_id: run_id.clone(),
             name,
             events: entry_events,
+            display_path: display_path.clone(),
+            finished,
         },
     );
-    Ok(run_id)
+    Ok(Dispatched { run_id })
+}
+
+/// What a phased dispatch reports back to the model.
+pub(crate) struct DispatchedPlan {
+    pub(crate) phase_count: usize,
+    pub(crate) total_subagents: usize,
+    /// The subagents started right now (phase 1).
+    pub(crate) first_phase_names: Vec<String>,
+    /// The blackboard directory in the model's spelling, or `None` when the run
+    /// is unconfined (no scratch: answers ride the completion pings inline).
+    pub(crate) blackboard_dir: Option<String>,
+}
+
+/// `<scratch>/blackboard`.
+fn blackboard_dir_path(scratch: &Path) -> PathBuf {
+    scratch.join(tauri_plugin_agent_tools::tools::spill::BLACKBOARD_DIR)
+}
+
+/// Max bytes of each previous-phase answer folded into a next-phase brief, so a
+/// verbose predecessor cannot blow the successor's context. The full answer is
+/// always on the blackboard for the subagent to read in whole if it needs it.
+const PHASE_INPUT_MAX_BYTES: usize = 12 * 1024;
+
+/// The largest char boundary at or below `max`, so a byte truncation never splits
+/// a UTF-8 sequence.
+fn char_boundary(s: &str, max: usize) -> usize {
+    if max >= s.len() {
+        return s.len();
+    }
+    let mut i = max;
+    while i > 0 && !s.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Read the previous phase's answers (`blackboard/<name>.md`) for injection into
+/// the next phase. Missing files are skipped -- a subagent that produced nothing
+/// contributes nothing. `names` are already validated to the blackboard-stem
+/// charset, so each maps to its file directly.
+fn read_blackboard(scratch: Option<&Path>, names: &[String]) -> Vec<(String, String)> {
+    let Some(s) = scratch else {
+        return Vec::new();
+    };
+    names
+        .iter()
+        .filter_map(|n| {
+            tauri_plugin_agent_tools::tools::spill::read_blackboard_result(s, n)
+                .map(|c| (n.clone(), c))
+        })
+        .collect()
+}
+
+/// Prefix a next-phase brief with the previous phase's results.
+fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
+    if inputs.is_empty() {
+        return task.to_string();
+    }
+    let mut s = String::from(
+        "## Results from the previous phase\n\nThe agents before you produced the following; \
+         their full outputs are also on the blackboard at blackboard/<name>.md.\n\n",
+    );
+    for (name, content) in inputs {
+        s.push_str(&format!("### {name}\n"));
+        let trimmed = content.trim();
+        let cut = char_boundary(trimmed, PHASE_INPUT_MAX_BYTES);
+        s.push_str(&trimmed[..cut]);
+        if cut < trimmed.len() {
+            s.push_str(&format!(
+                "\n\n[...truncated; read blackboard/{name}.md for the full output]"
+            ));
+        }
+        s.push_str("\n\n");
+    }
+    s.push_str("---\n\n");
+    s.push_str(task);
+    s
+}
+
+/// Start a phased dispatch: spawn phase 1 now and, when there is more than one
+/// phase, spawn a background driver that advances through the remaining phases as
+/// each completes, handing every phase its predecessor's blackboard results.
+/// Returns as soon as phase 1 is dispatched. The whole plan is validated up front
+/// so a bad subagent fails the dispatch atomically, before any child starts.
+pub(crate) fn spawn_dispatch_plan(
+    bg: &Arc<BackgroundSubagents>,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+    plan: DispatchPlan,
+    parent: &ParentRun,
+    events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    scratch: Option<&Path>,
+) -> Result<DispatchedPlan, SubagentError> {
+    if !parent_args.subagents_enabled {
+        return Err(SubagentError::PermissionDenied(
+            "subagents cannot dispatch nested subagents".to_string(),
+        ));
+    }
+    if plan.phases.is_empty() {
+        return Err(SubagentError::Upstream(
+            "a dispatch needs at least one phase".to_string(),
+        ));
+    }
+    let project_root = parent_args.project_root.as_ref().ok_or_else(|| {
+        SubagentError::Upstream("subagents require an active project".to_string())
+    })?;
+    let registry = SubagentRegistry::load(project_root);
+    for phase in &plan.phases {
+        for req in &phase.subagents {
+            resolve_dispatch(&registry, req, &parent_args.permissions)?;
+        }
+    }
+
+    let phase_count = plan.phases.len();
+    let total_subagents = plan.phases.iter().map(|p| p.subagents.len()).sum();
+    let blackboard_dir = scratch.map(|s| scratch_display_path(Some(s), &blackboard_dir_path(s)));
+
+    let multi = phase_count > 1;
+    if multi {
+        // Announce the later phases up front so the UI can show their subagents
+        // waiting on the phase before them; each is promoted by its own
+        // SubagentStart/SubagentQueued (matched by name).
+        let pending: Vec<crate::core::agent::events::PendingSubagent> = plan.phases[1..]
+            .iter()
+            .flat_map(|ph| {
+                let phase = ph.number;
+                ph.subagents
+                    .iter()
+                    .map(move |s| crate::core::agent::events::PendingSubagent {
+                        name: s.name.clone(),
+                        phase,
+                    })
+            })
+            .collect();
+        let _ = events.send(crate::core::agent::events::StreamEvent::SubagentPlan { pending });
+        // Hold the park open for the whole plan before the first child can finish.
+        bg.begin_plan();
+    }
+
+    let mut phases = plan.phases.into_iter();
+    let first = phases.next().expect("non-empty checked above");
+    let mut first_names = Vec::with_capacity(first.subagents.len());
+    let mut first_ids = Vec::with_capacity(first.subagents.len());
+    // A single-phase fan-out pings per child (the last phase is the only phase);
+    // a multi-phase plan keeps every child silent and rings once when it ends.
+    for req in first.subagents {
+        first_names.push(req.name.clone());
+        match spawn_subagent(bg, parent_args, req, parent, events, scratch, !multi) {
+            Ok(d) => first_ids.push(d.run_id),
+            Err(e) => {
+                if multi {
+                    bg.end_plan();
+                }
+                return Err(e);
+            }
+        }
+    }
+
+    if multi {
+        let remaining: Vec<Phase> = phases.collect();
+        let driver_bg = bg.clone();
+        let driver_args = parent_args.clone();
+        let driver_parent = parent.clone();
+        let driver_events = events.clone();
+        let driver_scratch = scratch.map(|s| s.to_path_buf());
+        let driver_names = first_names.clone();
+        let driver_dir = blackboard_dir.clone();
+        tokio::spawn(async move {
+            run_phase_plan(
+                driver_bg,
+                driver_args,
+                driver_parent,
+                driver_events,
+                driver_scratch,
+                first_ids,
+                driver_names,
+                remaining,
+                PlanSummary {
+                    phase_count,
+                    total_subagents,
+                    blackboard_dir: driver_dir,
+                },
+            )
+            .await;
+        });
+    }
+
+    Ok(DispatchedPlan {
+        phase_count,
+        total_subagents,
+        first_phase_names: first_names,
+        blackboard_dir,
+    })
+}
+
+/// Plan-wide facts the phase driver needs to compose the single completion ping.
+struct PlanSummary {
+    phase_count: usize,
+    total_subagents: usize,
+    /// The blackboard directory in the model's spelling, or `None` when the run
+    /// is unconfined (no scratch: the final phase's answers ride the ping inline).
+    blackboard_dir: Option<String>,
+}
+
+/// The background driver for a multi-phase plan: wait out each phase, gather its
+/// blackboard results, and spawn the next phase with those results injected. When
+/// the last phase finishes it rings the parent's doorbell once -- every child ran
+/// silent (`notify_on_finish = false`), so on the success path this single ping is
+/// the only wake the parent gets for the whole plan. A later-phase spawn *failure*
+/// is the exception: it pushes its own "could not start" notice, since an error
+/// should wake the parent rather than be swallowed until the terminal ping.
+#[allow(clippy::too_many_arguments)]
+async fn run_phase_plan(
+    bg: Arc<BackgroundSubagents>,
+    parent_args: crate::core::agent::r#loop::OrchestrationArgs,
+    parent: ParentRun,
+    events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    scratch: Option<PathBuf>,
+    mut prev_ids: Vec<String>,
+    mut prev_names: Vec<String>,
+    phases: Vec<Phase>,
+    summary: PlanSummary,
+) {
+    for phase in phases {
+        bg.await_phase(&prev_ids).await;
+        let inputs = read_blackboard(scratch.as_deref(), &prev_names);
+        let mut ids = Vec::with_capacity(phase.subagents.len());
+        let mut names = Vec::with_capacity(phase.subagents.len());
+        for mut req in phase.subagents {
+            req.description = inject_inputs(&req.description, &inputs);
+            // Push the name only on a successful spawn, so `ids` and `names` stay
+            // aligned: a child that never started has no blackboard file for the
+            // next phase to read and no answer for the terminal notice to report.
+            let name = req.name.clone();
+            match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref(), false)
+            {
+                Ok(d) => {
+                    ids.push(d.run_id);
+                    names.push(name);
+                }
+                Err(e) => bg.push_notice(
+                    "plan",
+                    format!("A subagent in the next phase could not start: {e}"),
+                ),
+            }
+        }
+        prev_ids = ids;
+        prev_names = names;
+    }
+    // Ring the doorbell once, only after the last phase's last child is done.
+    bg.await_phase(&prev_ids).await;
+    let notice = plan_completion_notice(&bg, &prev_ids, &prev_names, &summary).await;
+    bg.push_notice("plan", notice);
+    // Release the plan hold now that the terminal ping is queued.
+    bg.end_plan();
+}
+
+/// The single `<SYSTEM>` ping delivered when a multi-phase plan finishes.
+/// Confined: point the parent at the blackboard, where every phase's answers
+/// live. Unconfined: there is no blackboard, so collect and inline the final
+/// phase's answers (bounded), since they have nowhere else to be read from.
+async fn plan_completion_notice(
+    bg: &Arc<BackgroundSubagents>,
+    final_ids: &[String],
+    final_names: &[String],
+    summary: &PlanSummary,
+) -> String {
+    let PlanSummary {
+        phase_count,
+        total_subagents,
+        blackboard_dir,
+    } = summary;
+    match blackboard_dir {
+        Some(dir) => format!(
+            "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases. \
+             The final phase produced: {}. Every answer is on the blackboard at {dir} \
+             (blackboard/<name>.md) -- read the files you need.",
+            final_names.join(", ")
+        ),
+        None => {
+            let mut parts = Vec::with_capacity(final_ids.len());
+            for (id, name) in final_ids.iter().zip(final_names) {
+                // Bounded per answer: the notice concatenates the whole final
+                // phase, so an uncapped inline (what `compose_subagent_result`
+                // returns with no path) could blow the parent's context. Matches
+                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
+                let body = match await_subagent(bg, id).await {
+                    Ok(c) => {
+                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
+                        c.text[..cut].to_string()
+                    }
+                    Err(e) => format!("failed: {e}"),
+                };
+                parts.push(format!("### {name}\n\n{body}"));
+            }
+            format!(
+                "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} \
+                 phases. Final phase answers:\n\n{}",
+                parts.join("\n\n")
+            )
+        }
+    }
+}
+
+/// What goes in the spill file. A failed child writes its failure there rather
+/// than leaving the reserved file empty: the parent was told to read that path,
+/// and an empty file reads as "the child had nothing to say".
+fn spilled_text(result: &Result<String, SubagentError>) -> String {
+    match result {
+        Ok(text) => text.clone(),
+        Err(e) => format!("ERROR: {e}"),
+    }
+}
+
+/// The `<SYSTEM>` ping delivered to the parent when a child finishes.
+fn completion_notice(
+    name: &str,
+    run_id: &str,
+    display_path: Option<&str>,
+    result: &Result<String, SubagentError>,
+) -> String {
+    match (result, display_path) {
+        (Err(e), _) => format!("Subagent '{name}' ({run_id}) failed: {e}"),
+        (Ok(_), Some(path)) => format!(
+            "Subagent '{name}' ({run_id}) finished. Its full answer is in {path} -- read that file \
+             when you need it."
+        ),
+        // No spill file (an unconfined run has no scratch): the answer has
+        // nowhere to be read from later, so it rides the note inline, bounded.
+        (Ok(text), None) => format!(
+            "Subagent '{name}' ({run_id}) finished. Its answer:\n\n{}",
+            compose_subagent_result(text, None)
+        ),
+    }
+}
+
+/// What a single `spawn_subagent` reports back: the id to await on. The answer's
+/// file is the child's blackboard entry, reported by the plan as a whole.
+pub(crate) struct Dispatched {
+    pub(crate) run_id: String,
 }
 
 /// Block until the background subagent `run_id` finishes and return its final
@@ -902,17 +1468,18 @@ pub(crate) fn spawn_subagent(
 pub(crate) async fn await_subagent(
     bg: &Arc<BackgroundSubagents>,
     run_id: &str,
-) -> Result<String, SubagentError> {
-    let rx = {
+) -> Result<Collected, SubagentError> {
+    let taken = {
         let mut guard = bg.inner.lock().unwrap();
-        match guard.get_mut(run_id).and_then(|e| e.result.take()) {
-            Some(rx) => rx,
-            None => {
-                return Err(SubagentError::Upstream(format!(
-                    "unknown or already-collected subagent run '{run_id}'"
-                )))
-            }
-        }
+        guard.get_mut(run_id).and_then(|e| {
+            let rx = e.result.take()?;
+            Some((rx, e.display_path.clone()))
+        })
+    };
+    let Some((rx, display_path)) = taken else {
+        return Err(SubagentError::Upstream(format!(
+            "unknown or already-collected subagent run '{run_id}'"
+        )));
     };
     // Keep the entry (and its abort handle) in the registry while awaiting, so a
     // parent cancellation mid-await can still reach this child via `abort_all`.
@@ -920,7 +1487,9 @@ pub(crate) async fn await_subagent(
     // now-spent entry once the await resolves (a no-op if teardown drained it).
     let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
     bg.inner.lock().unwrap().remove(run_id);
-    outcome
+    // Collected explicitly, so the queued ping for this run is redundant.
+    bg.drop_notice(run_id);
+    outcome.map(|text| Collected { text, display_path })
 }
 
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
@@ -965,13 +1534,13 @@ pub fn subagent_tool_schemas(
         names.dedup();
         names
     };
-    let one_off = " For a one-off subagent, pass system_prompt inline (with a descriptive subagent_name); use create_subagent only to save a reusable definition.";
-    let bg = format!(" Runs in the BACKGROUND and returns a run_id immediately; keep working, dispatch more, then call await_subagent(run_id) to collect each result. Up to {max_parallel} run concurrently (max_parallel_subagents in agent.toml); dispatches beyond that are queued FIFO and start as running ones finish.");
+    let bg = format!(" Subagents run in the BACKGROUND, concurrently (up to {max_parallel} at once, from max_parallel_subagents in agent.toml; more are queued FIFO). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to.");
+    let phases_desc = " List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase's results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).";
     let dispatch_desc = if available.is_empty() {
-        format!("Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} No saved subagents yet.")
+        format!("Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} No saved subagents yet; each runs as a focused general-purpose agent defined by its task.")
     } else {
         format!(
-            "Start a subagent: a nested, isolated agent with its own system prompt and narrowed tools.{bg}{one_off} Saved subagents: {}.",
+            "Dispatch one or more subagents -- nested, isolated agents -- to do work for you.{phases_desc}{bg} A subagent whose name matches a saved one uses that role and tools; otherwise it runs as a focused general-purpose agent. Saved subagents: {}.",
             available.join(", ")
         )
     };
@@ -984,16 +1553,26 @@ pub fn subagent_tool_schemas(
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "subagent_name": { "type": "string", "description": "Name of a saved subagent to run. For a one-off (no saved definition), pick a short descriptive name here AND pass system_prompt in the same call -- an unrecognized name with no system_prompt fails." },
-                        "description": { "type": "string", "description": "The task for the subagent, as its sole user message. Include everything it needs; it does not see this conversation." },
-                        "system_prompt": { "type": "string", "description": "Required alongside subagent_name whenever that name isn't already saved -- defines the one-off subagent's role. Omit only when subagent_name matches a saved subagent." },
-                        "allowed_tools": {
+                        "subagents": {
                             "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Tool allowlist. For a saved subagent this further narrows its own allowed_tools (never widens); for a one-off it is the subagent's toolset."
+                            "description": "The subagents to run. With no phases they all run concurrently; otherwise they run grouped and ordered by their `phase`.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": { "type": "string", "description": "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent." },
+                                    "task": { "type": "string", "description": "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them." },
+                                    "phase": { "type": "integer", "minimum": 0, "description": "Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out." },
+                                    "allowed_tools": {
+                                        "type": "array",
+                                        "items": { "type": "string" },
+                                        "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs bash, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
+                                    }
+                                },
+                                "required": ["name", "task"]
+                            }
                         }
                     },
-                    "required": ["subagent_name", "description"]
+                    "required": ["subagents"]
                 }
             }
         }),
@@ -1001,7 +1580,7 @@ pub fn subagent_tool_schemas(
             "type": "function",
             "function": {
                 "name": "await_subagent",
-                "description": "Block until a backgrounded subagent (started by dispatch_subagent) finishes, and return its final answer. Pass the run_id that dispatch_subagent returned. Each run_id can be awaited once.",
+                "description": "Block until a backgrounded subagent (started by dispatch_subagent) finishes, and return its final answer. Only worth calling when you have nothing else to do: you are notified as each child finishes, and its answer is on disk either way. Pass the run_id that dispatch_subagent returned. Each run_id can be awaited once.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -1025,7 +1604,7 @@ pub fn subagent_tool_schemas(
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Optional default tool allowlist for the subagent."
+                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. bash to run commands, write/edit to change files). An empty list is treated as omitted."
                         },
                         "scope": { "type": "string", "enum": ["user", "project"], "description": "Where to store it (default 'project')." },
                         "overwrite": { "type": "boolean", "description": "Replace an existing same-name definition in that scope (default false)." }
@@ -1059,22 +1638,87 @@ fn optional_tool_list(args: &serde_json::Value) -> Option<Vec<String>> {
         .map(|a| {
             a.iter()
                 .filter_map(|v| v.as_str().map(String::from))
-                .collect()
+                .collect::<Vec<_>>()
         })
+        // `allowed_tools: []` means "inherit", not "no tools" -- see
+        // `intersect_allowed_tools`. Drop an empty list so it reads as omitted.
+        .filter(|list| !list.is_empty())
 }
 
-/// Parse a `dispatch_subagent` tool-call argument object.
-pub fn parse_dispatch_args(args: &serde_json::Value) -> Result<SubagentRequest, SubagentError> {
-    Ok(SubagentRequest {
-        subagent_name: required_str(args, "subagent_name")?,
-        description: required_str(args, "description")?,
-        allowed_tools: optional_tool_list(args),
-        system_prompt: args
-            .get("system_prompt")
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .filter(|s| !s.trim().is_empty()),
-    })
+/// Longest subagent name accepted in a plan. Kept under the blackboard stem's
+/// own 80-char cap so a validated name maps to `blackboard/<name>.md` verbatim
+/// (no truncation), which is what lets the next phase read it back by name.
+const MAX_SUBAGENT_NAME_LEN: usize = 64;
+
+/// Parse a `dispatch_subagent` tool-call argument object into an ordered plan.
+///
+/// The wire shape is a flat `subagents` array; each subagent's optional `phase`
+/// (a non-negative integer, default 0) groups it into a stage. Subagents that
+/// share a `phase` run together; lower phases run first. This one shape covers
+/// both a plain fan-out (omit `phase` everywhere -> a single stage) and a
+/// pipeline (raise `phase` for later work). Names are validated (charset +
+/// length) and required unique across the whole plan, since each is a blackboard
+/// filename and a panel identity.
+pub fn parse_dispatch_plan(args: &serde_json::Value) -> Result<DispatchPlan, SubagentError> {
+    let subs_val = args
+        .get("subagents")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            SubagentError::Upstream(
+                "missing required argument 'subagents' (an array of subagents, each with a name \
+                 and task, plus an optional integer 'phase')"
+                    .to_string(),
+            )
+        })?;
+    if subs_val.is_empty() {
+        return Err(SubagentError::Upstream(
+            "'subagents' must contain at least one subagent".to_string(),
+        ));
+    }
+    let mut seen = std::collections::HashSet::new();
+    // BTreeMap so phases come out in ascending `phase` order regardless of the
+    // order the model listed them, and sparse numbers (0, 5) just collapse to
+    // adjacent stages.
+    let mut by_phase: std::collections::BTreeMap<u32, Vec<SubagentRequest>> =
+        std::collections::BTreeMap::new();
+    for sub in subs_val {
+        let name = required_str(sub, "name")?;
+        validate_name(&name)?;
+        if name.len() > MAX_SUBAGENT_NAME_LEN {
+            return Err(SubagentError::PermissionDenied(format!(
+                "subagent name '{name}' is too long (max {MAX_SUBAGENT_NAME_LEN} characters)"
+            )));
+        }
+        if !seen.insert(name.clone()) {
+            return Err(SubagentError::Upstream(format!(
+                "duplicate subagent name '{name}': names must be unique across the whole plan \
+                 (each is a blackboard filename)"
+            )));
+        }
+        let description = required_str(sub, "task")?;
+        let phase = match sub.get("phase") {
+            None | Some(serde_json::Value::Null) => 0,
+            Some(v) => v
+                .as_u64()
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| {
+                    SubagentError::Upstream(format!(
+                        "subagent '{name}' has an invalid 'phase': use a non-negative integer \
+                         (0 = the first stage)"
+                    ))
+                })?,
+        };
+        by_phase.entry(phase).or_default().push(SubagentRequest {
+            name,
+            description,
+            allowed_tools: optional_tool_list(sub),
+        });
+    }
+    let phases = by_phase
+        .into_iter()
+        .map(|(number, subagents)| Phase { number, subagents })
+        .collect();
+    Ok(DispatchPlan { phases })
 }
 
 /// Parse an `await_subagent` tool-call argument object, returning the run_id.
@@ -1162,6 +1806,29 @@ mod tests {
             "name = \"{name}\"\ndescription = \"desc for {name}\"\nsystem_prompt = \"You are {name}.\"\n{extra}"
         );
         std::fs::write(dir.join(format!("{name}.toml")), body).unwrap();
+    }
+
+    /// The ping is the only signal a non-awaiting parent gets, so it must carry
+    /// the answer: a file path when there is scratch, the bounded text inline
+    /// when there is not (await_subagent is no longer advertised).
+    #[test]
+    fn the_completion_ping_delivers_the_answer() {
+        let ok = Ok("the findings".to_string());
+        let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &ok);
+        assert!(note.contains("/tmp/x.md"), "{note}");
+        assert!(!note.contains("await_subagent"), "no await reference: {note}");
+
+        // Unconfined: no file, so the answer rides the note inline.
+        let note = completion_notice("researcher", "sub-researcher-1", None, &ok);
+        assert!(note.contains("the findings"), "answer is inline: {note}");
+        assert!(!note.contains("await_subagent"), "no await reference: {note}");
+
+        let failed = Err(SubagentError::Upstream("upstream refused".to_string()));
+        let note = completion_notice("researcher", "sub-researcher-1", Some("/tmp/x.md"), &failed);
+        assert!(note.contains("failed: "), "{note}");
+        // A failure is written to the reserved file too: the parent was told to
+        // read that path, and an empty file reads as an empty answer.
+        assert!(spilled_text(&failed).starts_with("ERROR: "));
     }
 
     #[test]
@@ -1376,6 +2043,33 @@ mod tests {
     }
 
     #[test]
+    fn intersect_empty_lists_inherit_rather_than_stripping_tools() {
+        // A model emitting `allowed_tools: []` must not yield a toolless child
+        // (no read/bash) -- an empty allowlist inherits the full toolset.
+        let p = ToolPermissions::allow_all();
+        let empty: &[String] = &[];
+        assert_eq!(intersect_allowed_tools(None, Some(empty), &p).unwrap(), None);
+        assert_eq!(intersect_allowed_tools(Some(empty), None, &p).unwrap(), None);
+        assert_eq!(
+            intersect_allowed_tools(Some(empty), Some(empty), &p).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn optional_tool_list_treats_empty_array_as_omitted() {
+        assert_eq!(
+            optional_tool_list(&serde_json::json!({ "allowed_tools": [] })),
+            None
+        );
+        assert_eq!(optional_tool_list(&serde_json::json!({})), None);
+        assert_eq!(
+            optional_tool_list(&serde_json::json!({ "allowed_tools": ["read"] })),
+            Some(vec!["read".to_string()])
+        );
+    }
+
+    #[test]
     fn intersect_definition_only_drops_parent_denied() {
         let def = vec!["read".to_string(), "write".to_string()];
         let p = perms_denying(&["write"]);
@@ -1468,10 +2162,9 @@ mod tests {
 
     fn req(name: &str, allowed: Option<Vec<String>>) -> SubagentRequest {
         SubagentRequest {
-            subagent_name: name.to_string(),
+            name: name.to_string(),
             description: "do the thing".to_string(),
             allowed_tools: allowed,
-            system_prompt: None,
         }
     }
 
@@ -1510,27 +2203,20 @@ mod tests {
         assert_eq!(off["send_reasoning"], serde_json::json!(false));
     }
 
+    /// An unknown name is no longer an error: it runs as a focused generalist
+    /// whose default prompt names it, with the request's tools as its toolset.
     #[test]
-    fn resolve_unknown_name_without_inline_prompt_errors() {
-        let reg = registry_with("reviewer", None);
-        let p = ToolPermissions::allow_all();
-        let err = resolve_dispatch(&reg, &req("nope", None), &p).unwrap_err();
-        assert!(matches!(err, SubagentError::UnknownSubagent(n) if n == "nope"));
-    }
-
-    #[test]
-    fn resolve_unknown_name_with_inline_prompt_runs_ephemeral() {
+    fn resolve_unknown_name_runs_ephemeral_generalist() {
         let reg = SubagentRegistry::default();
         let p = ToolPermissions::allow_all();
         let request = SubagentRequest {
-            subagent_name: "one-off".to_string(),
+            name: "one-off".to_string(),
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
-            system_prompt: Some("You are a one-off.".to_string()),
         };
         let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
-        assert_eq!(resolved.definition.system_prompt, "You are a one-off.");
         assert_eq!(resolved.definition.name, "one-off");
+        assert!(resolved.definition.system_prompt.contains("one-off"));
         assert_eq!(
             resolved.allowed_tools,
             Some(vec![
@@ -1542,14 +2228,72 @@ mod tests {
     }
 
     #[test]
-    fn parse_dispatch_reads_inline_system_prompt() {
-        let r = parse_dispatch_args(&serde_json::json!({
-            "subagent_name": "one-off",
-            "description": "task",
-            "system_prompt": "You are a one-off."
+    fn parse_dispatch_plan_groups_flat_subagents_by_phase() {
+        // Listed out of order and with a gap (0, 2); the parser groups and
+        // orders them, and the phase number carried is the model's own key.
+        let plan = parse_dispatch_plan(&serde_json::json!({
+            "subagents": [
+                { "name": "synthesize", "task": "write it up", "phase": 2 },
+                { "name": "research-api", "task": "study the api" },
+                { "name": "research-perf", "task": "study perf", "phase": 0, "allowed_tools": ["read", "grep"] }
+            ]
         }))
         .unwrap();
-        assert_eq!(r.system_prompt.as_deref(), Some("You are a one-off."));
+        assert_eq!(plan.phases.len(), 2);
+        assert_eq!(plan.phases[0].number, 0);
+        assert_eq!(plan.phases[0].subagents.len(), 2);
+        assert_eq!(plan.phases[0].subagents[0].name, "research-api");
+        assert_eq!(
+            plan.phases[0].subagents[1].allowed_tools,
+            Some(vec!["read".to_string(), "grep".to_string()])
+        );
+        assert_eq!(plan.phases[1].number, 2);
+        assert_eq!(plan.phases[1].subagents[0].name, "synthesize");
+    }
+
+    #[test]
+    fn parse_dispatch_plan_fans_out_with_no_phase() {
+        let plan = parse_dispatch_plan(&serde_json::json!({
+            "subagents": [
+                { "name": "a", "task": "x" },
+                { "name": "b", "task": "y" }
+            ]
+        }))
+        .unwrap();
+        assert_eq!(plan.phases.len(), 1, "no phase key -> a single stage");
+        assert_eq!(plan.phases[0].subagents.len(), 2);
+    }
+
+    #[test]
+    fn parse_dispatch_plan_rejects_duplicate_names() {
+        let err = parse_dispatch_plan(&serde_json::json!({
+            "subagents": [
+                { "name": "a", "task": "x" },
+                { "name": "a", "task": "y", "phase": 1 }
+            ]
+        }))
+        .unwrap_err();
+        assert!(matches!(err, SubagentError::Upstream(m) if m.contains("duplicate")));
+    }
+
+    #[test]
+    fn parse_dispatch_plan_rejects_empty_missing_and_bad_phase() {
+        assert!(parse_dispatch_plan(&serde_json::json!({})).is_err());
+        assert!(parse_dispatch_plan(&serde_json::json!({ "subagents": [] })).is_err());
+        // missing task
+        assert!(parse_dispatch_plan(
+            &serde_json::json!({ "subagents": [ { "name": "a" } ] })
+        )
+        .is_err());
+        // negative / non-integer phase
+        assert!(parse_dispatch_plan(
+            &serde_json::json!({ "subagents": [ { "name": "a", "task": "x", "phase": -1 } ] })
+        )
+        .is_err());
+        assert!(parse_dispatch_plan(
+            &serde_json::json!({ "subagents": [ { "name": "a", "task": "x", "phase": "later" } ] })
+        )
+        .is_err());
     }
 
     #[test]
@@ -1669,6 +2413,24 @@ mod tests {
 
     // ── background registry (spawn/await/abort) ─────────────────────────────
 
+    /// A registry entry for the run these tests all call "r1", standing in for
+    /// one `spawn_subagent` would have built.
+    fn test_entry(
+        rx: tokio::sync::oneshot::Receiver<Result<String, SubagentError>>,
+        abort: tokio::task::AbortHandle,
+        events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> BackgroundEntry {
+        BackgroundEntry {
+            result: Some(rx),
+            abort,
+            run_id: "r1".to_string(),
+            name: "reviewer".to_string(),
+            events,
+            display_path: None,
+            finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+
     #[tokio::test]
     async fn await_unknown_run_errors() {
         let bg = Arc::new(BackgroundSubagents::default());
@@ -1683,16 +2445,10 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         tx.send(Ok("done".to_string())).unwrap();
-        assert_eq!(await_subagent(&bg, "r1").await.unwrap(), "done");
+        assert_eq!(await_subagent(&bg, "r1").await.unwrap().text, "done");
         assert!(await_subagent(&bg, "r1").await.is_err(), "run is consumed");
         handle.abort();
     }
@@ -1705,20 +2461,14 @@ mod tests {
         let (ev_tx, mut ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         let guard = AbortOnDrop(bg.clone());
         drop(guard);
         assert!(bg.inner.lock().unwrap().is_empty(), "abort_all drains the map");
         assert!(handle.await.unwrap_err().is_cancelled(), "child was aborted");
         match ev_rx.try_recv() {
-            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name }) => {
+            Ok(crate::core::agent::events::StreamEvent::SubagentEnd { run_id, name, .. }) => {
                 assert_eq!(run_id, "r1");
                 assert_eq!(name, "reviewer");
             }
@@ -1738,13 +2488,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
 
         let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
@@ -1775,13 +2519,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
         bg.join_all().await;
         assert!(bg.inner.lock().unwrap().is_empty(), "join_all drains the map");
@@ -1804,13 +2542,7 @@ mod tests {
         let (ev_tx, _ev_rx) = tokio::sync::mpsc::unbounded_channel();
         bg.inner.lock().unwrap().insert(
             "r1".to_string(),
-            BackgroundEntry {
-                result: Some(rx),
-                abort: handle.abort_handle(),
-                run_id: "r1".to_string(),
-                name: "reviewer".to_string(),
-                events: ev_tx,
-            },
+            test_entry(rx, handle.abort_handle(), ev_tx),
         );
 
         let bg_await = bg.clone();
@@ -1864,10 +2596,25 @@ mod tests {
             subagents_enabled: true,
             max_parallel_subagents: 1,
             auto_approve: false,
+            monitors: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
+            compaction: None,
         }
+    }
+
+    /// One queue-test dispatch, with no scratch: these assert admission order,
+    /// not spilling, and a child that fails fast has nothing to write anyway.
+    #[cfg(feature = "cli")]
+    fn dispatch_reviewer(
+        bg: &Arc<BackgroundSubagents>,
+        args: &crate::core::agent::r#loop::OrchestrationArgs,
+        events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> String {
+        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None, true)
+            .unwrap()
+            .run_id
     }
 
     #[test]
@@ -1935,9 +2682,9 @@ mod tests {
         let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
         let mut starts = Vec::new();
 
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
         assert_ne!(r1, r2);
         assert_ne!(r2, r3);
 
@@ -1976,6 +2723,156 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[test]
+    fn inject_inputs_prefixes_and_truncates() {
+        assert_eq!(inject_inputs("do it", &[]), "do it");
+        let inputs = vec![("alpha".to_string(), "found X".to_string())];
+        let out = inject_inputs("synthesize", &inputs);
+        assert!(out.contains("Results from the previous phase"));
+        assert!(out.contains("### alpha"));
+        assert!(out.contains("found X"));
+        assert!(out.trim_end().ends_with("synthesize"));
+
+        let big = "x".repeat(PHASE_INPUT_MAX_BYTES + 500);
+        let out = inject_inputs("t", &[("beta".to_string(), big)]);
+        assert!(out.contains("truncated; read blackboard/beta.md"));
+    }
+
+    /// The heart of the phased dispatch: a later phase must not start until the
+    /// earlier one has fully finished, and it must receive the earlier phase's
+    /// blackboard results in its brief. Children fail fast (no provider), which is
+    /// fine -- the scheduling contract and the injection are what this pins.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_later_phase_starts_after_the_earlier_one_with_its_results() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("phaseplan");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None), req("beta", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        let d = spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+        assert_eq!(d.phase_count, 2);
+        assert_eq!(d.total_subagents, 3);
+        assert!(bg.has_pending_work(), "a multi-phase plan holds the run open");
+
+        // Drain like the real loop, bounded so a scheduling bug fails not hangs.
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                let _ = bg.take_notices();
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        let mut order = Vec::new();
+        let mut collector_task = None;
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::SubagentStart { name, task, .. } => {
+                    if name == "collector" {
+                        collector_task = task;
+                    }
+                    order.push(format!("start:{name}"));
+                }
+                StreamEvent::SubagentEnd { name, .. } => order.push(format!("end:{name}")),
+                _ => {}
+            }
+        }
+        let pos = |s: &str| order.iter().position(|e| e == s);
+        let collector = pos("start:collector").expect("collector started");
+        assert!(
+            pos("end:alpha").unwrap() < collector && pos("end:beta").unwrap() < collector,
+            "phase 2 waits for all of phase 1: {order:?}"
+        );
+
+        let task = collector_task.expect("collector carried a brief");
+        assert!(
+            task.contains("Results from the previous phase")
+                && task.contains("alpha")
+                && task.contains("beta"),
+            "the collector's brief carries phase 1's blackboard: {task}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The doorbell contract: a multi-phase plan wakes the parent exactly once,
+    /// after the last phase's last child finishes -- not per intermediate child.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_multi_phase_plan_rings_the_doorbell_once_at_the_end() {
+        let root = unique_root("phasering");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None), req("beta", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("gamma", None), req("collector", None)],
+                },
+            ],
+        };
+        spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+
+        let mut all = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                all.extend(bg.take_notices());
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        assert_eq!(
+            all.len(),
+            1,
+            "one ping for the whole plan, not one per child: {all:?}"
+        );
+        assert!(
+            all[0].contains("plan finished") && all[0].contains("blackboard"),
+            "the terminal ping points at the blackboard: {}",
+            all[0]
+        );
+        // The notice names exactly the final phase (from `prev_names`, kept
+        // aligned with `prev_ids`): both of its children, and neither earlier one.
+        assert!(
+            all[0].contains("gamma") && all[0].contains("collector"),
+            "the notice lists the whole final phase: {}",
+            all[0]
+        );
+        assert!(
+            !all[0].contains("alpha") && !all[0].contains("beta"),
+            "the notice does not leak earlier-phase names: {}",
+            all[0]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn await_on_queued_run_blocks_until_a_slot_frees() {
@@ -1990,8 +2887,8 @@ mod tests {
         // Occupy the only slot BEFORE dispatching, so every dispatch queues and
         // the await below is deterministic: nothing can start while held.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
 
         // r2 is queued (not started), and awaiting it must NOT start it: the
         // slot is still held, so the await parks. Assert via the events: no
@@ -2032,9 +2929,9 @@ mod tests {
         // Hold the slot before dispatching so r1, r2, r3 all queue (parked on
         // the semaphore) -- the interesting teardown case.
         let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
-        let _r1 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r2 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
-        let r3 = spawn_subagent(&bg, &args, req("reviewer", None), &parent_run(), &events_tx).unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r2 = dispatch_reviewer(&bg, &args, &events_tx);
+        let r3 = dispatch_reviewer(&bg, &args, &events_tx);
 
         AbortOnDrop(bg.clone()); // teardown with queued children parked
 
@@ -2071,7 +2968,10 @@ mod tests {
         );
         let dispatch = &schemas[0]["function"]["description"].as_str().unwrap();
         assert!(dispatch.contains("reviewer"), "got: {dispatch}");
-        assert!(dispatch.contains("await_subagent"), "dispatch should mention await");
+        // await_subagent is no longer advertised; the description explains the
+        // background model (a note carries each child's answer) instead.
+        assert!(!dispatch.contains("await_subagent"), "no await reference: {dispatch}");
+        assert!(dispatch.contains("BACKGROUND"), "explains the background model: {dispatch}");
     }
 
     #[test]
@@ -2090,19 +2990,6 @@ mod tests {
         let reg = registry_with("reviewer", None);
         let listed = format_subagent_list(&reg);
         assert!(listed.contains("reviewer [project]: d"));
-    }
-
-    #[test]
-    fn parse_dispatch_requires_name_and_description() {
-        let ok = parse_dispatch_args(&serde_json::json!({
-            "subagent_name": "reviewer",
-            "description": "review this",
-            "allowed_tools": ["read"]
-        }))
-        .unwrap();
-        assert_eq!(ok.subagent_name, "reviewer");
-        assert_eq!(ok.allowed_tools, Some(vec!["read".to_string()]));
-        assert!(parse_dispatch_args(&serde_json::json!({ "description": "x" })).is_err());
     }
 
     #[test]
@@ -2185,7 +3072,8 @@ mod tests {
         )
         .unwrap();
         // tools is a Claude Code frontmatter list; NotebookRead has no Jan
-        // equivalent and must be dropped, not fatal.
+        // equivalent, and Glob/Grep are intentionally unmapped (Jan no longer
+        // advertises list/search tools) -- all three must drop, leaving `read`.
         std::fs::write(
             plugin_agents_dir(&root).join("scout.md"),
             "---\nname: scout\ndescription: Scans\ntools: [Read, Glob, Grep, NotebookRead]\n---\nScan.",
@@ -2194,12 +3082,26 @@ mod tests {
 
         let reg = SubagentRegistry::load(&root);
         let def = reg.get("scout").expect("loaded");
-        assert_eq!(
-            def.allowed_tools.as_deref(),
-            Some(&["read".to_string(), "glob".to_string(), "grep".to_string()][..])
-        );
+        assert_eq!(def.allowed_tools.as_deref(), Some(&["read".to_string()][..]));
         // No tools field: no allowlist at all.
         assert_eq!(reg.get("reader").unwrap().allowed_tools, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn plugin_agent_scoped_to_only_search_tools_inherits_full_toolset() {
+        // Glob/Grep are unmapped, so an agent listing only those maps to nothing
+        // -> None (inherit), never Some([]) -- otherwise it would be left with no
+        // way to search (bash is what covers it now).
+        let root = unique_root("plugin-search-only");
+        std::fs::create_dir_all(plugin_agents_dir(&root)).unwrap();
+        std::fs::write(
+            plugin_agents_dir(&root).join("finder.md"),
+            "---\nname: finder\ndescription: Finds\ntools: [Glob, Grep]\n---\nFind.",
+        )
+        .unwrap();
+        let reg = SubagentRegistry::load(&root);
+        assert_eq!(reg.get("finder").unwrap().allowed_tools, None);
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -33,7 +33,9 @@ const files: CoworkFileDiff[] = [
 describe('CoworkDiffPanel', () => {
   it('summarises the totals across files', () => {
     render(<CoworkDiffPanel files={files} onClose={vi.fn()} />)
-    expect(screen.getByText('+6 -2')).toBeInTheDocument()
+    // Additions and deletions are separate spans so each carries its own color.
+    expect(screen.getAllByText('+6').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('-2').length).toBeGreaterThan(0)
   })
 
   // Collapsed by default: a run touching a dozen files should open as a list,

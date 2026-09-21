@@ -11,7 +11,14 @@
 //!     the same layout as project skills
 //!   - `SKILL.md` at the plugin root — a repo that is itself one skill
 //!   - `plugin.toml` — optional metadata: `name`, `description`, `version`,
-//!     `repo` (the canonical source URL, recorded at install for provenance)
+//!     `repo` (the canonical source URL, recorded at install for provenance),
+//!     plus optional `[[tools]]` entries the plugin contributes
+//!   - `hooks/hooks.json` — optional lifecycle hooks (see
+//!     `tauri_plugin_agent_tools::tools::hooks`)
+//!
+//! Installing still executes nothing: a declared tool or hook is a command
+//! recorded on disk, run only when the model calls it or its event fires, and
+//! then under the same confinement `bash` gets.
 //!
 //! `[plugins] marketplace` in `agent.toml` points at a JSON index of community
 //! plugins: `[{ "name", "description", "repo", "ref"? }]`. `install <name>`
@@ -100,6 +107,13 @@ pub struct InstalledPlugin {
     pub commands: usize,
     /// Number of agent definitions (`agents/**/*.md`).
     pub agents: usize,
+    /// Number of tools the plugin declares in `[[tools]]` of its `plugin.toml`.
+    /// Unlike the three counts above these are not markdown: they are commands
+    /// the model can call, which is why the count is worth reporting separately
+    /// rather than folded into the others.
+    pub tools: usize,
+    /// Number of lifecycle hooks the plugin ships in `hooks/hooks.json`.
+    pub hooks: usize,
 }
 
 /// A plugin available on the configured marketplace: JSON index entry.
@@ -202,6 +216,10 @@ fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
                 skills: plugin_skills,
                 commands: plugin_commands,
                 agents: plugin_agents,
+                tools: crate::core::agent::hooks_config::plugin_tool_entries(&path).len(),
+                hooks: tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&path)
+                    .0
+                    .len(),
             },
         ));
     }
@@ -713,6 +731,10 @@ fn install_payload_dir(
         .filter(|e| e.plugin == stem)
         .count();
     let agents_count = crate::core::agent::subagent::count_plugin_agents(root, &stem);
+    let tools_count = crate::core::agent::hooks_config::plugin_tool_entries(&target).len();
+    let hooks_count = tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&target)
+        .0
+        .len();
     Ok(PayloadOutcome::Installed(InstalledPlugin {
         name: stem,
         description: manifest.description.unwrap_or_default(),
@@ -721,6 +743,8 @@ fn install_payload_dir(
         skills: skills_count,
         commands: commands_count,
         agents: agents_count,
+        tools: tools_count,
+        hooks: hooks_count,
     }))
 }
 

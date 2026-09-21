@@ -42,7 +42,13 @@ if has_token hip || has_token rocm; then
     echo "error: JAN_ENGINE_VARIANT=$VARIANT needs hipcc on PATH (install ROCm)" >&2
     exit 1
   }
-  echo "engine toolchain: hipcc found"
+  rocm="${ROCM_PATH:-${HIP_PATH:-/opt/rocm}}"
+  [ -f "$rocm/include/rocwmma/rocwmma.hpp" ] || {
+    echo "error: the hip backend builds with GGML_HIP_ROCWMMA_FATTN and needs rocwmma-dev" >&2
+    echo "       (no $rocm/include/rocwmma/rocwmma.hpp; set ROCM_PATH if ROCm lives elsewhere)" >&2
+    exit 1
+  }
+  echo "engine toolchain: hipcc and rocwmma found"
 fi
 
 command -v cmake >/dev/null 2>&1 || {
@@ -65,10 +71,39 @@ MINGW* | MSYS* | CYGWIN*)
     echo "error: the engine build needs clang on PATH on Windows (install LLVM)" >&2
     exit 1
   }
-  command -v cl >/dev/null 2>&1 || {
-    echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
-    echo "         if the build cannot find the MSVC headers and libraries." >&2
-  }
+  if ! command -v cl >/dev/null 2>&1; then
+    # An ARM64 build never puts cl on PATH: the one nvcc needs is the arm64
+    # cross, which build.rs passes by full path as CMAKE_CUDA_HOST_COMPILER.
+    # So there it is VCToolsInstallDir that has to be right, not PATH; probed
+    # the same way build.rs probes it, since arm64 is hosted from either.
+    #
+    # rustc for the arch, not uname: Git for Windows on an ARM64 runner is the
+    # x86-64 build under emulation and reports x86_64. Backslashes to forward
+    # slashes because MSYS resolves a C:/... path and cygpath is not on every
+    # Git for Windows install.
+    host_cl=""
+    case "$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')" in
+    aarch64-*)
+      root=$(printf '%s' "${VCToolsInstallDir:-}" | tr '\\' '/')
+      for h in Hostarm64 Hostx64; do
+        [ -n "$root" ] && [ -f "$root/bin/$h/arm64/cl.exe" ] || continue
+        host_cl="$root/bin/$h/arm64/cl.exe"
+        break
+      done
+      ;;
+    esac
+    if [ -n "$host_cl" ]; then
+      echo "engine toolchain: nvcc host compiler $host_cl"
+    elif [ -n "$want" ]; then
+      echo "error: nvcc needs cl on PATH on Windows; run from a Visual Studio developer prompt" >&2
+      echo "       (on ARM64, set VCToolsInstallDir to an MSVC toolset with bin/Host*/arm64/cl.exe;" >&2
+      echo "        VCToolsInstallDir='${VCToolsInstallDir:-}')" >&2
+      exit 1
+    else
+      echo "warning: cl is not on PATH; run from a Visual Studio developer prompt" >&2
+      echo "         if the build cannot find the MSVC headers and libraries." >&2
+    fi
+  fi
   echo "engine toolchain: ninja and clang found"
   ;;
 esac

@@ -8,6 +8,7 @@
  */
 import { jsonSchema, type Tool } from 'ai'
 import { getAgentToolSchemas } from '@/lib/agentTools'
+import { MONITOR_TOOL_NAME, monitorTool } from '@/lib/coworkMonitor'
 import {
   WEB_FETCH_DESCRIPTION,
   WEB_FETCH_INPUT_SCHEMA,
@@ -23,6 +24,8 @@ export const PLAN_DENIED_TOOLS = new Set([
   'memory_write',
   'skill_write',
   'task',
+  // Starting one schedules shell scripts, which is exec-class work.
+  MONITOR_TOOL_NAME,
 ])
 
 /** Named `todo` to match the Rust tool: the plan-mode addendum instructs the
@@ -36,6 +39,7 @@ export const CLIENT_TOOL_NAMES = new Set([
   TODO_TOOL_NAME,
   ASK_TOOL_NAME,
   TASK_TOOL_NAME,
+  MONITOR_TOOL_NAME,
 ])
 
 const todoTool: Tool = {
@@ -114,26 +118,66 @@ const askTool: Tool = {
   }),
 } as Tool
 
+/**
+ * The dispatch schema, ported from `subagent_tool_schemas` in Rust: a flat
+ * `{ subagents: [ {name, task, phase?, allowed_tools?} ] }`. An optional per-
+ * subagent `phase` groups them into ordered stages (omit it for a plain fan-
+ * out). A name matching a saved subagent uses that role and tools; any other
+ * name runs as a focused general-purpose agent, so there is no `system_prompt`
+ * and no unknown-name failure. Wording tracks the Rust description.
+ */
 function taskTool(subagentNames: string[]): Tool {
-  const known = subagentNames.length
-    ? ` Saved subagents: ${subagentNames.join(', ')}.`
-    : ''
+  const phasesDesc =
+    ' List all the subagents in one call. To PIPELINE them, give a subagent a `phase`: subagents sharing a phase run together, lower phases run first, and each later phase is handed the previous phase\'s results automatically. Omit `phase` for a plain fan-out (one stage, everyone at once); use it to stage work (e.g. phase 0 researches in parallel, phase 1 synthesizes).'
+  const bg =
+    " Subagents run in the BACKGROUND, concurrently (more than the running cap are queued). You keep working and get a note the moment each finishes. Each subagent's final answer is written to blackboard/<name>.md in a shared scratch directory the whole plan can read from and write to."
+  const saved = subagentNames.length
+    ? ` A subagent whose name matches a saved one uses that role and tools; otherwise it runs as a focused general-purpose agent. Saved subagents: ${subagentNames.join(', ')}.`
+    : ' No saved subagents yet; each runs as a focused general-purpose agent defined by its task.'
   return {
     description:
-      'Run a subagent: a nested, isolated agent with its own system prompt and narrowed tools. It does not see this conversation, so state everything it needs in `description`. Returns its final answer.' +
-      known,
+      'Dispatch one or more subagents -- nested, isolated agents -- to do work for you.' +
+      phasesDesc +
+      bg +
+      saved,
     inputSchema: jsonSchema({
       type: 'object',
       properties: {
-        subagent_name: { type: 'string' },
-        description: { type: 'string' },
-        system_prompt: {
-          type: 'string',
-          description: 'For a one-off subagent with no saved definition.',
+        subagents: {
+          type: 'array',
+          description:
+            'The subagents to run. With no phases they all run concurrently; otherwise they run grouped and ordered by their `phase`.',
+          items: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description:
+                  "Short identity for this subagent, unique across the whole call: letters, digits, '-' and '_' only. It is also the blackboard file its answer is written to (blackboard/<name>.md). If it matches a saved subagent, that role and tools are used; otherwise it runs as a focused general-purpose agent.",
+              },
+              task: {
+                type: 'string',
+                description:
+                  "The subagent's sole instruction. Include everything it needs; it does not see this conversation. A subagent in a later phase also receives the previous phase's results automatically, so tell it what to DO with them.",
+              },
+              phase: {
+                type: 'integer',
+                minimum: 0,
+                description:
+                  'Optional stage (default 0). Subagents with the same phase run concurrently; a phase starts only after every lower phase has finished. Omit it entirely for a plain fan-out.',
+              },
+              allowed_tools: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs bash, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted.",
+              },
+            },
+            required: ['name', 'task'],
+          },
         },
-        allowed_tools: { type: 'array', items: { type: 'string' } },
       },
-      required: ['subagent_name', 'description'],
+      required: ['subagents'],
       additionalProperties: false,
     }),
   } as Tool
@@ -216,6 +260,9 @@ export async function buildCoworkTools(
   tools[ASK_TOOL_NAME] = askTool
   if (opts.allowSubagents && !opts.planMode) {
     tools[TASK_TOOL_NAME] = taskTool(opts.subagentNames)
+  }
+  if (!opts.planMode) {
+    tools[MONITOR_TOOL_NAME] = monitorTool()
   }
   return tools
 }
