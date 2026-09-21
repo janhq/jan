@@ -293,6 +293,16 @@ fn parse_hosted_result_text(body: &str, provider: &str) -> Result<String, String
         .and_then(|a| a.first())
         .and_then(|c| c.get("text"))
         .and_then(|v| v.as_str());
+    // A throttled hosted endpoint answers HTTP 200 with no `isError`, putting
+    // the refusal in the text block where it parses as zero results. Reported
+    // as success that reads to a model as "the web has nothing", so the flag in
+    // `_meta` is the only thing separating a refusal from a real empty answer.
+    if is_rate_limited(result) {
+        return Err(format!(
+            "{provider} rate limit reached: {}",
+            text.unwrap_or("no quota remaining on the keyless endpoint")
+        ));
+    }
     if result.get("isError").and_then(|v| v.as_bool()) == Some(true) {
         return Err(format!(
             "{provider} tool call failed: {}",
@@ -301,6 +311,22 @@ fn parse_hosted_result_text(body: &str, provider: &str) -> Result<String, String
     }
     text.map(str::to_string)
         .ok_or_else(|| format!("{provider} response had no text content"))
+}
+
+/// Whether a hosted `result` carries a provider rate-limit marker in `_meta`.
+///
+/// Namespaced per vendor (`ai.exa/rateLimited`), so the suffix is matched
+/// rather than one hard-coded key: the hosted transport is shared by every
+/// keyless backend here.
+fn is_rate_limited(result: &Value) -> bool {
+    result
+        .get("_meta")
+        .and_then(|m| m.as_object())
+        .is_some_and(|meta| {
+            meta.iter().any(|(k, v)| {
+                (k == "rateLimited" || k.ends_with("/rateLimited")) && v.as_bool() == Some(true)
+            })
+        })
 }
 
 fn parse_hosted_search_text(text: &str) -> Vec<SearchResult> {
@@ -1088,6 +1114,54 @@ mod tests {
         assert!(parse_hosted_result_text(tool_err, "Exa")
             .unwrap_err()
             .contains("bad"));
+    }
+
+    #[test]
+    fn parse_hosted_result_text_surfaces_rate_limit_as_error() {
+        // Verbatim shape of a throttled `mcp.exa.ai/mcp` reply: the call
+        // "succeeds" (no `isError`, HTTP 200) and the refusal is prose in the
+        // text block, so only `_meta` distinguishes it from a real answer.
+        let sse = format!(
+            "event: message\ndata: {}\n\n",
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "_meta": { "ai.exa/rateLimited": true },
+                    "content": [{
+                        "type": "text",
+                        "text": "You've hit Exa's free MCP rate limit. To continue using without limits, create your own Exa API key."
+                    }]
+                }
+            })
+        );
+        let err = parse_hosted_result_text(&sse, "Exa")
+            .expect_err("a throttled reply must not read as a successful search");
+        assert!(err.contains("rate limit"), "unexpected message: {err}");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_ignores_unrelated_meta() {
+        let raw = json!({
+            "result": {
+                "_meta": { "ai.exa/cached": true },
+                "content": [{ "type": "text", "text": "hello" }]
+            }
+        })
+        .to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "Exa").unwrap(), "hello");
+    }
+
+    #[test]
+    fn parse_hosted_result_text_rate_limit_flag_must_be_true() {
+        let raw = json!({
+            "result": {
+                "_meta": { "ai.exa/rateLimited": false },
+                "content": [{ "type": "text", "text": "hello" }]
+            }
+        })
+        .to_string();
+        assert_eq!(parse_hosted_result_text(&raw, "Exa").unwrap(), "hello");
     }
 
     #[test]

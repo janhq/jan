@@ -11,6 +11,7 @@ use console::Style;
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
+use app_lib::core::cli::mcp_serve::{cli_mcp_serve, ServeFlags, ServeTransport};
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::stream_input::InputFormat;
@@ -237,8 +238,14 @@ enum Commands {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
-    /// Update this binary to the latest build of the channel it was built for
+    /// Serve Jan's built-in tools to another agent over MCP
     #[command(display_order = 6)]
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpServeCommands,
+    },
+    /// Update this binary to the latest build of the channel it was built for
+    #[command(display_order = 7)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -246,6 +253,37 @@ enum Commands {
         /// Reinstall even when already on the latest version
         #[arg(long, conflicts_with = "check")]
         force: bool,
+    },
+}
+
+/// The server direction of MCP: Jan offered as a tool provider. The client
+/// direction (managing the servers Jan *connects to*) stays under
+/// `jan cli mcp`.
+#[derive(Subcommand)]
+enum McpServeCommands {
+    /// Run an MCP server exposing Jan's built-in tools for one project
+    Serve {
+        /// Project root the served tools are confined to
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Transport: stdio for a spawned child process, http for loopback Streamable HTTP
+        #[arg(long, value_enum, default_value_t = ServeTransport::Stdio)]
+        transport: ServeTransport,
+        /// Also serve the mutating filesystem tools (write, edit), confined to the project root
+        #[arg(long)]
+        allow_write: bool,
+        /// Also serve bash (runs under the same OS sandbox the agent's shell does)
+        #[arg(long)]
+        allow_exec: bool,
+        /// Serve only these tools, repeatable; never widens what the allow flags permit
+        #[arg(long = "tool")]
+        tools: Vec<String>,
+        /// Port for --transport http; 0 picks a free one
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Bearer token for --transport http; a random one is generated and printed if omitted
+        #[arg(long)]
+        token: Option<String>,
     },
 }
 
@@ -628,7 +666,9 @@ async fn main() {
     // `jan update` reports the same thing itself, in more detail. The check
     // doubles as the usage record (see `updater::fetch_manifest`), so there is
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
-    if !matches!(command, Commands::Update { .. }) {
+    // `jan mcp serve` is driven by another program, not a person: nobody reads
+    // the notice, and an update fetch on every spawn is a cost the peer pays.
+    if !matches!(command, Commands::Update { .. } | Commands::Mcp { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -653,7 +693,33 @@ async fn main() {
             }
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
+        Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
+    }
+}
+
+// ── MCP server handler ─────────────────────────────────────────────────────
+
+async fn handle_mcp_serve(cmd: McpServeCommands) {
+    let McpServeCommands::Serve {
+        project,
+        transport,
+        allow_write,
+        allow_exec,
+        tools,
+        port,
+        token,
+    } = cmd;
+    let flags = ServeFlags {
+        allow_write,
+        allow_exec,
+        only: tools,
+        port,
+        token,
+    };
+    if let Err(e) = cli_mcp_serve(&project, transport, flags).await {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -1371,6 +1437,87 @@ mod tests {
             Some(Commands::Update { check: true, .. })
         ));
         assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
+    }
+
+    #[test]
+    fn mcp_serve_parses_and_defaults_to_read_only_stdio() {
+        let cli = Cli::parse_from(["jan", "mcp", "serve"]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                project,
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(project, ".");
+        assert_eq!(transport, ServeTransport::Stdio);
+        assert!(!allow_write);
+        assert!(!allow_exec);
+        assert!(tools.is_empty());
+        assert_eq!(port, 0);
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn mcp_serve_http_flags_parse() {
+        let cli = Cli::parse_from([
+            "jan",
+            "mcp",
+            "serve",
+            "--transport",
+            "http",
+            "--port",
+            "7331",
+            "--token",
+            "abc",
+            "--allow-write",
+            "--allow-exec",
+            "--tool",
+            "read",
+            "--tool",
+            "grep",
+        ]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+                ..
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(transport, ServeTransport::Http);
+        assert!(allow_write);
+        assert!(allow_exec);
+        assert_eq!(tools, vec!["read".to_string(), "grep".to_string()]);
+        assert_eq!(port, 7331);
+        assert_eq!(token.as_deref(), Some("abc"));
+    }
+
+    /// The client direction keeps its own place; `jan mcp` must not shadow it.
+    #[test]
+    fn mcp_client_subcommand_still_lives_under_cli() {
+        let cli = Cli::parse_from(["jan", "cli", "mcp", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Mcp {
+                    cmd: McpCommands::List { .. }
+                }
+            })
+        ));
     }
 
     #[test]
