@@ -58,12 +58,15 @@ pub fn authorized(headers: &hyper::HeaderMap, token: &str) -> bool {
     let Ok(value) = value.to_str() else {
         return false;
     };
-    let Some(presented) = value
-        .strip_prefix("Bearer ")
-        .or_else(|| value.strip_prefix("bearer "))
-    else {
-        return false;
+    // RFC 7235: the auth-scheme is case-insensitive. Only the scheme -- the
+    // credential keeps its constant-time byte compare below.
+    let (scheme, presented) = match value.split_once(' ') {
+        Some(parts) => parts,
+        None => return false,
     };
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return false;
+    }
     constant_time_eq(presented.as_bytes(), token.as_bytes())
 }
 

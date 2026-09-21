@@ -122,7 +122,7 @@ files --command npx --arg -y --arg my-mcp`, `jan cli mcp list`, `jan cli mcp rem
 
 The other direction: `jan mcp serve` exposes Jan's built-in tools - `read`, the memory and skill
 store, `web_search`, `web_fetch` - as an MCP server, so Claude Code, Codex CLI or any other MCP
-client can call them.
+client can call them. See the [CLI reference](/docs/agent/cli#jan-mcp-serve) for every flag.
 
 ```bash
 jan mcp serve --project .              # stdio, what another agent spawns as a child process
@@ -133,9 +133,14 @@ The served tools run against **one project root**, fixed when the server starts,
 confinement and sandbox re-checks an in-agent call gets. A path argument that escapes that root is
 refused, and so is anything inside the project's hidden `.jan` state.
 
-The default set is read-only: file reading, search, memory, skills and the web tools. The two
-classes that can change the machine are opt-in, because the caller is another program rather than a
-person who can answer a permission prompt:
+The default set touches no project file: file reading, search, the web tools, and the memory and
+skill tools. Those last two do write, but only into the agent's own store under `.jan/agent` and
+only by sanitized name, so they can never reach a file in your project. Note that a skill written
+this way is an instruction Jan's own agent may later read, so a peer you would not trust to write
+instructions should be narrowed with `--tool`.
+
+The two classes that can change the machine are opt-in, because the caller is another program
+rather than a person who can answer a permission prompt:
 
 | Flag | Adds |
 | --- | --- |
