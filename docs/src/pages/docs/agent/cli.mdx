@@ -396,6 +396,34 @@ added servers default to inactive, so they are persisted but not connected until
 
 See [MCP](/docs/agent/mcp).
 
+## `jan mcp serve`
+
+The other direction: serve Jan's own built-in tools to another MCP client. One project root, fixed
+at startup; a path argument that escapes it is refused, and so is the project's hidden `.jan` state.
+
+```bash
+jan mcp serve --project .                   # stdio, for a client that spawns it as a child
+jan mcp serve --transport http              # loopback HTTP; prints its URL and bearer token
+jan mcp serve --allow-write --allow-exec    # add the mutating and shell tools
+jan mcp serve --tool read --tool grep       # narrow the set
+```
+
+| Flag | Description |
+| --- | --- |
+| `--project <PATH>` | Project root the served tools are confined to. Defaults to `.` |
+| `--transport <T>` | `stdio` (default) or `http` |
+| `--port <PORT>` | Port for `http`. Defaults to an ephemeral one |
+| `--token <TOKEN>` | Bearer token for `http`. One is generated and printed if omitted |
+| `--allow-write` | Offer `write` and `edit`, confined to the project root |
+| `--allow-exec` | Offer `bash`, under the same OS sandbox the agent's shell uses |
+| `--tool <NAME>` | Serve only these tools. Repeatable; never widens what the flags above permit |
+
+The default set touches no project file, and the two classes that can change the machine are opt-in:
+the caller is another program, so anything that would wait for an approval returns an error rather
+than blocking. On `http` the listener is loopback-only and every request must carry the token.
+
+See [Serving Jan's own tools](/docs/agent/mcp#serving-jans-own-tools).
+
 ## `jan update`
 
 Update the binary to the latest build of the channel it was built for.

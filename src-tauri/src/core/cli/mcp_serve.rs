@@ -52,6 +52,15 @@ fn options_for(project: &str, flags: &ServeFlags) -> Result<ServeOptions, String
     Ok(opts)
 }
 
+/// The `--tool` names that are not built-ins. `lookup()` is the authority on
+/// what a built-in is, so this cannot drift from what is actually servable.
+fn unknown_tool_names(only: &[String]) -> Vec<String> {
+    only.iter()
+        .filter(|n| tauri_plugin_agent_tools::tools::lookup(n).is_none())
+        .cloned()
+        .collect()
+}
+
 /// Run the server until the peer disconnects (stdio) or the process is stopped
 /// (http).
 pub async fn cli_mcp_serve(
@@ -60,6 +69,14 @@ pub async fn cli_mcp_serve(
     flags: ServeFlags,
 ) -> Result<(), String> {
     let opts = options_for(project, &flags)?;
+    // Always to stderr: on stdio, stdout is the JSON-RPC stream.
+    let unknown = unknown_tool_names(&flags.only);
+    if !unknown.is_empty() {
+        eprintln!(
+            "jan mcp serve: warning: unknown --tool name(s): {}. Nothing is served for them.",
+            unknown.join(", ")
+        );
+    }
     match transport {
         ServeTransport::Stdio => {
             // stdout is the JSON-RPC stream from here on; the startup notice
@@ -126,6 +143,22 @@ mod tests {
         assert!(!opts.sandbox);
         assert!(opts.allow_network);
         assert_eq!(opts.enabled_skills, vec!["jan".to_string()]);
+    }
+
+    /// A mistyped `--tool` serves an empty set and exits 0, which looks like a
+    /// working server that offers nothing. Name the unknown ones so the typo is
+    /// fixable.
+    #[test]
+    fn unknown_tool_names_are_reported() {
+        assert_eq!(unknown_tool_names(&[]), Vec::<String>::new());
+        assert_eq!(
+            unknown_tool_names(&["read".into(), "grep".into()]),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            unknown_tool_names(&["read".into(), "nope".into(), "alsonope".into()]),
+            vec!["nope".to_string(), "alsonope".to_string()]
+        );
     }
 
     #[test]

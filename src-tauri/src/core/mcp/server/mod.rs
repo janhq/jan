@@ -29,7 +29,7 @@ use rmcp::{ErrorData as McpError, ServerHandler};
 use tauri_plugin_agent_tools::tools::gate::{
     resolve_decision, Decision, DenyReason, GateContext, PromptKind, SessionGrants,
 };
-use tauri_plugin_agent_tools::tools::handlers::execute_builtin;
+use tauri_plugin_agent_tools::tools::handlers::{bash_result_failed, execute_builtin};
 use tauri_plugin_agent_tools::tools::schema::{builtin_tool_schemas, search_tool_schemas};
 use tauri_plugin_agent_tools::tools::{lookup, Capability, ToolContext};
 
@@ -317,7 +317,11 @@ impl ServerHandler for JanToolServer {
     ) -> Result<CallToolResponse, McpError> {
         let args = serde_json::Value::Object(request.arguments.unwrap_or_default());
         let (content, mut blocks) = self.dispatch(&request.name, &args).await;
-        let is_error = content.starts_with("ERROR");
+        // Same two clauses the agent loop uses. `bash` reports a non-zero exit
+        // as an `[exit N]` trailer rather than an `ERROR` prefix, so the prefix
+        // alone would tell a peer that a command which exited 3 succeeded.
+        let is_error = content.starts_with("ERROR")
+            || (request.name == "bash" && bash_result_failed(&content));
         blocks.insert(0, ContentBlock::text(content));
         let result = if is_error {
             CallToolResult::error(blocks)

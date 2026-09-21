@@ -4,7 +4,6 @@
 use std::path::PathBuf;
 
 use rmcp::model::CallToolRequestParams;
-use rmcp::transport::io::stdio;
 use rmcp::{ServiceExt, ServerHandler};
 
 use super::http::{authorized, generate_token};
@@ -276,6 +275,34 @@ fn bearer_token_check_rejects_everything_but_the_token() {
     assert!(authorized(&headers, &token));
 }
 
+/// RFC 7235 makes the auth-scheme case-insensitive, so a client that sends
+/// `BEARER` is presenting a valid credential and must not be turned away. The
+/// token itself stays case-sensitive.
+#[test]
+fn bearer_scheme_is_case_insensitive_but_the_token_is_not() {
+    let token = generate_token();
+    let mut headers = hyper::HeaderMap::new();
+    for scheme in ["Bearer", "bearer", "BEARER", "BeArEr"] {
+        headers.insert(
+            hyper::header::AUTHORIZATION,
+            hyper::header::HeaderValue::from_str(&format!("{scheme} {token}")).unwrap(),
+        );
+        assert!(authorized(&headers, &token), "scheme {scheme} must be accepted");
+    }
+
+    headers.insert(
+        hyper::header::AUTHORIZATION,
+        hyper::header::HeaderValue::from_str(&format!("Bearer {}", token.to_uppercase())).unwrap(),
+    );
+    assert!(!authorized(&headers, &token), "the credential is case-sensitive");
+
+    headers.insert(
+        hyper::header::AUTHORIZATION,
+        hyper::header::HeaderValue::from_str(&format!("Basic {token}")).unwrap(),
+    );
+    assert!(!authorized(&headers, &token), "a different scheme is not a bearer");
+}
+
 /// The end-to-end shape an external agent sees: initialize, `tools/list`,
 /// `tools/call`. Driven over an in-memory duplex rather than a spawned process,
 /// which is the same transport type (`AsyncRead + AsyncWrite`) the stdio
@@ -339,10 +366,55 @@ async fn list_and_call_round_trip_over_a_stream_transport() {
     server_task.abort();
 }
 
-/// `stdio()` is what the transport module hands to rmcp; assert it stays the
-/// pair the server is built from, so a refactor cannot silently swap stdout for
-/// something else and corrupt the framing.
-#[test]
-fn stdio_transport_is_stdin_stdout() {
-    let (_stdin, _stdout) = stdio();
+/// A shell command that fails must reach the peer as `isError: true`.
+///
+/// `bash` deliberately does not prefix `ERROR` on a non-zero exit, so the
+/// prefix alone is a strictly narrower predicate than the agent loop's and
+/// reports a failed command as a success to a caller that trusts the protocol
+/// field. Driven through a real client because `is_error` is decided in
+/// `call_tool`, which `dispatch` never reaches.
+#[tokio::test]
+async fn bash_exit_status_decides_is_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut opts = options(dir.path());
+    opts.served.allow_exec = true;
+
+    let (server_io, client_io) = tokio::io::duplex(8 * 1024);
+    let server = JanToolServer::new(opts);
+    let server_task = tokio::spawn(async move {
+        let running = server.serve(server_io).await.expect("server starts");
+        let _ = running.waiting().await;
+    });
+    let client = ().serve(client_io).await.expect("client initializes");
+
+    for (command, expected) in [
+        ("exit 3", Some(true)),
+        ("kill -TERM $$", Some(true)),
+        ("echo fine", Some(false)),
+    ] {
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("bash").with_arguments(
+                    serde_json::json!({ "command": command })
+                        .as_object()
+                        .cloned()
+                        .expect("object"),
+                ),
+            )
+            .await
+            .expect("tools/call reaches the handler");
+        let text = result
+            .content
+            .iter()
+            .filter_map(|b| b.as_text().map(|t| t.text.clone()))
+            .collect::<String>();
+        assert_eq!(
+            result.is_error, expected,
+            "`{command}` reported is_error={:?}; content: {text}",
+            result.is_error
+        );
+    }
+
+    client.cancel().await.ok();
+    server_task.abort();
 }
