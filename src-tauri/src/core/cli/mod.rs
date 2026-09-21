@@ -1836,51 +1836,8 @@ async fn run_agent_loop(
     // than from the printer task for exactly that reason: nothing has been
     // spawned yet, so "first line" is a property of the code's order rather than
     // a race against the run's own events.
-    //
-    // The tool names come from the same resolution the first turn uses, so the
-    // handshake cannot advertise a set the request does not carry.
     if format.is_stream_json() {
-        let tools = crate::core::agent::r#loop::context_advertised_tools(
-            &args.mcp_servers,
-            &args.mcp_settings,
-            &args.permissions,
-            args.project_root.as_deref(),
-            args.run_mode,
-            args.subagents_enabled,
-            args.max_parallel_subagents,
-            args.ask_requests.is_some(),
-            args.todo_registry.is_some(),
-        )
-        .await
-        .iter()
-        .filter_map(|tool| {
-            tool.get("function")?
-                .get("name")?
-                .as_str()
-                .map(str::to_string)
-        })
-        .collect();
-        let cwd = match args.project_root.as_deref() {
-            Some(root) => root.to_string_lossy().into_owned(),
-            None => std::env::current_dir()
-                .map(|d| d.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-        };
-        // A run that does not read stdin accepts nothing, and says so: an empty
-        // list is a client's answer that there is no reply path, which is more
-        // use than an absent field or a list of kinds the run will ignore.
-        let input_kinds = if input_format.is_stream_json() {
-            INPUT_KINDS.to_vec()
-        } else {
-            Vec::new()
-        };
-        print_json_line(&Init::new(
-            &session_id,
-            &persist.model,
-            &cwd,
-            tools,
-            input_kinds,
-        ));
+        print_json_line(&init_record(&args, &session_id, &persist.model, input_format).await);
     }
 
     // The client on stdin, when there is one: it owns every permission decision
@@ -2005,6 +1962,55 @@ async fn run_agent_loop(
         return Ok(());
     }
     result.map(|_| ())
+}
+
+/// The `init` handshake of a `--output-format stream-json` run, assembled from
+/// the same parts the run itself uses: the session it saves under, the model it
+/// dispatches to, and the tools its first turn will advertise, so the record
+/// cannot describe a run other than this one.
+async fn init_record(
+    args: &OrchestrationArgs,
+    session_id: &str,
+    model: &str,
+    input_format: InputFormat,
+) -> Init {
+    let tools = crate::core::agent::r#loop::context_advertised_tools(
+        &args.mcp_servers,
+        &args.mcp_settings,
+        &args.permissions,
+        args.project_root.as_deref(),
+        args.run_mode,
+        args.subagents_enabled,
+        args.max_parallel_subagents,
+        args.ask_requests.is_some(),
+        args.todo_registry.is_some(),
+    )
+    .await
+    .iter()
+    .filter_map(tool_name)
+    .collect();
+    // A CLI run always resolves a project root; "." names the process's own
+    // directory for a caller that set none.
+    let cwd = args
+        .project_root
+        .as_deref()
+        .map(|root| root.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".".to_string());
+    // A run that does not read stdin accepts nothing, and says so: an empty
+    // list is a client's answer that there is no reply path, which is more use
+    // than an absent field or a list of kinds the run will ignore.
+    let input_kinds = if input_format.is_stream_json() {
+        INPUT_KINDS.to_vec()
+    } else {
+        Vec::new()
+    };
+    Init::new(session_id, model, &cwd, tools, input_kinds)
+}
+
+/// A rendered tool schema's name, out of the OpenAI `{"type":"function",
+/// "function":{"name":…}}` shape the advertised array carries.
+fn tool_name(tool: &serde_json::Value) -> Option<String> {
+    Some(tool.get("function")?.get("name")?.as_str()?.to_string())
 }
 
 /// Stop reason reported for a run the client ended with an `abort` message, and

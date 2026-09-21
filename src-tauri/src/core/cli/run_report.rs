@@ -358,30 +358,28 @@ mod tests {
     /// the failure mode of a rewording is a test that says so, not a consumer
     /// that meets an unknown tag in production.
     fn documented_tags_after<'a>(source: &'a str, marker: &str) -> Vec<&'a str> {
-        let start = source
-            .find(marker)
+        let after_marker = source
+            .split_once(marker)
             .unwrap_or_else(|| panic!("the doc comment no longer says {marker:?}"))
-            + marker.len();
+            .1;
+        // The list reads "`tag`, `tag`, ... `last`.", so the backtick-separated
+        // segments alternate gap and tag, and a period in a gap is the sentence
+        // boundary that ends it -- the tag before that gap is still in the list.
+        let mut segments = after_marker.split('`');
         let mut tags = Vec::new();
-        let mut cursor = start;
-        // A period between two backticked words ends the list: that is the
-        // sentence boundary, and everything past it is other prose.
-        while let Some(open) = source[cursor..].find('`').map(|i| cursor + i) {
-            if source[cursor..open].contains('.') {
-                break;
-            }
-            let Some(close) = source[open + 1..].find('`').map(|i| open + 1 + i) else {
-                break;
-            };
-            tags.push(&source[open + 1..close]);
-            cursor = close + 1;
+        let mut gap = segments.next().unwrap_or_default();
+        while !gap.contains('.') {
+            let Some(tag) = segments.next() else { break };
+            tags.push(tag);
+            // Missing trailing prose means the list ran to the end of the text.
+            gap = segments.next().unwrap_or(".");
         }
         tags
     }
 
-    /// The variant names the enum declares, read from its own source. The enum
-    /// body's variants sit at one indentation level, which is what makes them
-    /// distinguishable from the fields inside them.
+    /// The variant names the enum declares, read from its own source. Variants
+    /// sit at one indentation level inside the body and their fields sit
+    /// deeper, which is what tells the two apart.
     fn declared_variants(source: &str) -> Vec<&str> {
         let body = source
             .split_once("pub enum StreamEvent {")
@@ -392,15 +390,17 @@ mod tests {
             .expect("the enum is unterminated")
             .lines()
             .filter_map(|line| {
-                let name = line.strip_prefix("    ")?;
-                if name.starts_with(' ') || name.starts_with("//") || name.starts_with("#[") {
+                // Four spaces is the body's own indent: anything deeper is a
+                // field inside a variant, and anything else is an attribute or
+                // a comment.
+                let rest = line.strip_prefix("    ")?;
+                if rest.starts_with(' ') || rest.starts_with("//") || rest.starts_with("#[") {
                     return None;
                 }
-                let end = name
-                    .find(|c: char| !c.is_alphanumeric())
-                    .unwrap_or(name.len());
-                let name = &name[..end];
-                (!name.is_empty() && name.starts_with(char::is_uppercase)).then_some(name)
+                let end = rest
+                    .find(|c: char| !c.is_alphanumeric() && c != '_')
+                    .unwrap_or(rest.len());
+                rest[..end].starts_with(char::is_uppercase).then_some(&rest[..end])
             })
             .collect()
     }
