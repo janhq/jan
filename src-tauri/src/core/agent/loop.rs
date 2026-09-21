@@ -3068,6 +3068,23 @@ fn project(
     })
 }
 
+/// The message list a client adopts as its session history
+/// (`StreamEvent::MessagesUpdated`).
+///
+/// Deliberately not the request's messages. The per-turn block is projection
+/// input the loop regenerates on every turn, and a client that kept it would
+/// send it back inside its next history, where [`Transcript::from_history`]
+/// cannot tell it from a reminder the model actually received -- the wire
+/// shape is the same one -- so it would record it as history. Every turn would
+/// then append another block behind the last: yesterday's date carried
+/// forward, and a request that grows by a block per turn. The published
+/// history is therefore the conversation without this turn's block, and the
+/// client's next request gets the fresh one appended at the tail, where the
+/// projection puts it.
+fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_json::Value> {
+    project(transcript, None, send_reasoning)
+}
+
 /// How many messages the request this run is about carries: the `message_count`
 /// a hook payload reports. The projection is the only thing that knows now that
 /// there is no live list to measure, so the count is projected rather than kept
@@ -3219,7 +3236,7 @@ async fn run_turn_cycle(
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
             // A drained ping is how a match or a timeout reaches the display.
             publish_monitors(tools, events, &mut shown_monitors);
@@ -3273,11 +3290,7 @@ async fn run_turn_cycle(
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
                                 let _ = events.send(StreamEvent::MessagesUpdated {
-                                    messages: project(
-                                        &transcript,
-                                        volatile_system.as_deref(),
-                                        send_reasoning,
-                                    ),
+                                    messages: client_history(&transcript, send_reasoning),
                                 });
                                 // The one legitimate cache break in a session,
                                 // and the only way the user can tell it apart
@@ -3322,11 +3335,7 @@ async fn run_turn_cycle(
                         // compaction leaves the client holding the oversized
                         // history that every later turn would re-overflow on.
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: project(
-                                &transcript,
-                                volatile_system.as_deref(),
-                                send_reasoning,
-                            ),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
@@ -3354,11 +3363,7 @@ async fn run_turn_cycle(
                         );
                         send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: project(
-                                &transcript,
-                                volatile_system.as_deref(),
-                                send_reasoning,
-                            ),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                     }
                     Err(e) => return Err(e),
@@ -3501,7 +3506,7 @@ async fn run_turn_cycle(
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
             return Ok(completion);
         }
@@ -3527,7 +3532,7 @@ async fn run_turn_cycle(
                 ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
         }
 
@@ -3852,6 +3857,122 @@ mod tests {
             req1["messages"].as_array().unwrap().last(),
             req2["messages"].as_array().unwrap().last(),
             "the volatile block is expected to differ"
+        );
+    }
+
+    /// The client adopts the published history as its session history and sends
+    /// it back on the next turn, so this turn's block must not be in it. The
+    /// block takes a reminder's wire shape, and `from_history` records a resent
+    /// reminder as history on purpose (it arrived, so it stays), which makes a
+    /// handed-back block indistinguishable from one: every turn would append
+    /// another copy, and carry yesterday's date forward while it did.
+    #[tokio::test]
+    async fn the_published_history_carries_no_per_turn_block() {
+        let volatile1 = "Today's date is 2026-09-21.";
+        let volatile2 = "Today's date is 2026-09-22.";
+
+        let reminders = |messages: &[serde_json::Value]| -> Vec<serde_json::Value> {
+            messages
+                .iter()
+                .filter(|m| {
+                    m["role"] == "user"
+                        && crate::core::agent::reminder::is_reminder_only(&m["content"])
+                })
+                .cloned()
+                .collect()
+        };
+        let published = |rx: &mut mpsc::UnboundedReceiver<StreamEvent>| {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .filter_map(|ev| match ev {
+                    StreamEvent::MessagesUpdated { messages } => Some(messages),
+                    _ => None,
+                })
+                .last()
+        };
+
+        // Turn one.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("reply")]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "first" })]),
+            Some(volatile1.to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request1 = model.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request1).len(),
+            1,
+            "the request carries this turn's block: {request1:?}"
+        );
+
+        // The client takes what was published -- not the bytes it asked with --
+        // and adds its next user turn to it.
+        let mut adopted = published(&mut rx).expect("turn one publishes its history");
+        assert!(
+            reminders(&adopted).is_empty(),
+            "the published history is the conversation, not the request: {adopted:?}"
+        );
+        adopted.push(json!({ "role": "user", "content": "second" }));
+
+        // Turn two carries one block: this turn's.
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        let model2 = MockModel::new(vec![final_answer("reply 2")]);
+        let mut budget2 = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx2,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(adopted),
+            Some(volatile2.to_string()),
+            true,
+            8,
+            &mut budget2,
+            &model2,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request2 = model2.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request2).len(),
+            1,
+            "the previous turn's block must not survive into the next request: {request2:?}"
+        );
+        assert_eq!(
+            request2.last().unwrap()["content"],
+            json!(crate::core::agent::reminder::wrap(volatile2)),
+            "the one block that is there is this turn's"
         );
     }
 

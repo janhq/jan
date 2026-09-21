@@ -342,6 +342,11 @@ impl Transcript {
 /// Index of the per-turn block in a history that came from outside, if it has
 /// one: the slot the prompt writer owns, i.e. index 1 once a system node holds
 /// index 0. A summary that happens to occupy the slot is history, not a block.
+///
+/// Only the slot is healed. A block a client hands back at the tail is not:
+/// `append_prompt_tail` gives it the same wire shape `reminder::attach` gives a
+/// reminder the model actually received, and those have to survive a resend. So
+/// the writer must not hand one back in the first place -- see `loop::client_history`.
 fn volatile_index(messages: &[Value]) -> Option<usize> {
     let slot = usize::from(messages.first().is_some_and(is_system_node));
     messages

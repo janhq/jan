@@ -141,7 +141,9 @@ pub enum StreamEvent {
     Parked,
     /// The loop's compaction reduced the conversation while retrying a
     /// context overflow. The client should replace its session history with
-    /// `messages` for subsequent turns.
+    /// `messages` for subsequent turns. This turn's per-turn block is not in
+    /// here: it is projection input the loop regenerates for every request, and
+    /// a client that stored it would resend it as history on the next turn.
     MessagesUpdated {
         messages: Vec<serde_json::Value>,
     },
