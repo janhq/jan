@@ -15,9 +15,15 @@
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
 //! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
 //! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`. Two tags are minted
-//! here rather than by the loop: `permission_decision` (how this CLI answered a
-//! `permission_request`) and the terminal `result`.
+//! `turn_usage`, `done`, `error`, `permission_request`. Three tags are minted
+//! here rather than by the loop: `init`, `permission_decision` and `result`.
+//! `init` is the handshake a client reads before any other record (see
+//! [`Init`]); `permission_decision` reports how this CLI answered a gated tool
+//! call, which the loop never sees; `result` is the terminal envelope.
+//!
+//! The tag lists above and in `events.rs` are the contract, and a test compares
+//! both against the variants that actually serialize -- a renamed tag is a
+//! breaking change for every consumer, so it must not be able to land quietly.
 //!
 //! `monitors`, `parked` and `notice` are display-only progress; a consumer that
 //! only wants the outcome can read the last line alone. Unknown tags must be
@@ -165,6 +171,7 @@ StreamEvent::TurnUsage { usage } => {
         let is_error = self.error.is_some();
         RunResult {
             kind: "result",
+            protocol_version: crate::core::agent::events::PROTOCOL_VERSION,
             is_error,
             result: super::tui::answer_without_reasoning(final_text.unwrap_or(&self.partial)),
             stop_reason: if is_error {
@@ -197,6 +204,80 @@ StreamEvent::TurnUsage { usage } => {
     }
 }
 
+/// The first record of a `--output-format stream-json` channel, and the only
+/// one a client may require before any other.
+///
+/// It exists because the rest of the stream is unversioned and unaddressable: a
+/// consumer sees events and nothing else, so it cannot tell which contract it
+/// is reading, whose run it is watching, or what it is allowed to send back.
+/// Those are the questions a handshake answers, and a consumer that has to
+/// infer them from a side channel (a CLI flag it passed, a config file it read)
+/// is one refactor away from being wrong.
+///
+/// Field names are snake_case like the rest of this channel -- the event tags
+/// and the envelope's `session_id`/`stop_reason` set that convention, so the
+/// handshake follows it rather than introducing a second one for two fields.
+///
+/// The compatibility rule for what a client may assume:
+///
+/// - a v1 client may rely on `protocol_version`, `session_id` and `model`
+///   always being present;
+/// - fields may be added without a version bump, so a client ignores unknown
+///   ones and unknown tags rather than failing;
+/// - a tag is never renamed and never removed within v1;
+/// - behaviour beyond v1 is asserted against `protocol_version`, not assumed.
+#[derive(serde::Serialize)]
+pub(crate) struct Init {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    /// [`PROTOCOL_VERSION`](crate::core::agent::events::PROTOCOL_VERSION) at
+    /// the time of the run, so a client can refuse a channel it cannot read
+    /// instead of misreading it.
+    protocol_version: u32,
+    /// The thread this run saves under. Minted before the first turn rather
+    /// than at save time, so a client learns the id from the stream: the same
+    /// id `--resume` takes. A run that produces no completion saves nothing,
+    /// and its terminal envelope reports `session_id: null` -- which is how a
+    /// client tells this id apart from one that now exists on disk.
+    ///
+    /// The envelope reports the short form (the first 8 characters) it has
+    /// always reported; this is the same id, unabbreviated.
+    session_id: String,
+    /// The model this run dispatches to, as the envelope reports it.
+    model: String,
+    /// The project root the run's tools are confined to, absolute.
+    cwd: String,
+    /// The tool names this run advertises, in the order the request carries
+    /// them. Order matters to the consumer: it is the prefix of the request a
+    /// provider caches on, so a set that reorders between runs is a cache miss
+    /// (see the tool-ordering note in `upstream.rs`).
+    tools: Vec<String>,
+    /// What `--input-format stream-json` accepts from this client, as message
+    /// `type` tags. Empty when the run does not read stdin at all, which is
+    /// the honest answer for a read-only stream: nothing can be sent back.
+    input_kinds: Vec<&'static str>,
+}
+
+impl Init {
+    pub(crate) fn new(
+        session_id: &str,
+        model: &str,
+        cwd: &str,
+        tools: Vec<String>,
+        input_kinds: Vec<&'static str>,
+    ) -> Self {
+        Self {
+            kind: "init",
+            protocol_version: crate::core::agent::events::PROTOCOL_VERSION,
+            session_id: session_id.to_string(),
+            model: model.to_string(),
+            cwd: cwd.to_string(),
+            tools,
+            input_kinds,
+        }
+    }
+}
+
 /// The envelope itself. A struct rather than a `json!` literal so the fields
 /// serialize in declaration order: `serde_json`'s map is sorted, which would
 /// print this contract alphabetically and bury `result` in the middle.
@@ -204,6 +285,10 @@ StreamEvent::TurnUsage { usage } => {
 pub(crate) struct RunResult {
     #[serde(rename = "type")]
     kind: &'static str,
+    /// The same contract version `init` carries, so a `--output-format json`
+    /// caller -- which never sees an init record -- can still pin what it is
+    /// reading. Additive: a consumer that does not know the field ignores it.
+    protocol_version: u32,
     is_error: bool,
     result: String,
     stop_reason: String,
@@ -266,6 +351,167 @@ fn error_code(code: &str, message: &str) -> String {
 mod tests {
     use super::*;
     use crate::core::agent::events::Usage;
+
+    /// The backticked tags in the module doc comment, read from the sentence
+    /// that introduces them. Deliberately a parse of the prose: a list nothing
+    /// reads is how the tags and the enum drifted apart in the first place, and
+    /// the failure mode of a rewording is a test that says so, not a consumer
+    /// that meets an unknown tag in production.
+    fn documented_tags_after<'a>(source: &'a str, marker: &str) -> Vec<&'a str> {
+        let start = source
+            .find(marker)
+            .unwrap_or_else(|| panic!("the doc comment no longer says {marker:?}"))
+            + marker.len();
+        let mut tags = Vec::new();
+        let mut cursor = start;
+        // A period between two backticked words ends the list: that is the
+        // sentence boundary, and everything past it is other prose.
+        while let Some(open) = source[cursor..].find('`').map(|i| cursor + i) {
+            if source[cursor..open].contains('.') {
+                break;
+            }
+            let Some(close) = source[open + 1..].find('`').map(|i| open + 1 + i) else {
+                break;
+            };
+            tags.push(&source[open + 1..close]);
+            cursor = close + 1;
+        }
+        tags
+    }
+
+    /// The variant names the enum declares, read from its own source. The enum
+    /// body's variants sit at one indentation level, which is what makes them
+    /// distinguishable from the fields inside them.
+    fn declared_variants(source: &str) -> Vec<&str> {
+        let body = source
+            .split_once("pub enum StreamEvent {")
+            .expect("the enum's declaration moved")
+            .1;
+        body.split("\n}")
+            .next()
+            .expect("the enum is unterminated")
+            .lines()
+            .filter_map(|line| {
+                let name = line.strip_prefix("    ")?;
+                if name.starts_with(' ') || name.starts_with("//") || name.starts_with("#[") {
+                    return None;
+                }
+                let end = name
+                    .find(|c: char| !c.is_alphanumeric())
+                    .unwrap_or(name.len());
+                let name = &name[..end];
+                (!name.is_empty() && name.starts_with(char::is_uppercase)).then_some(name)
+            })
+            .collect()
+    }
+
+    /// Three views of one contract: the tags the doc comment promises, the
+    /// variants the enum declares, and the tags its instances actually
+    /// serialize. A renamed tag breaks consumers, so it has to be a deliberate
+    /// edit in all three places rather than a silent one in the enum.
+    #[test]
+    fn the_documented_tags_are_the_variants_that_serialize() {
+        let source = include_str!("run_report.rs");
+        let loop_tags = documented_tags_after(source, "the snake_case variant names: ");
+        let minted =
+            documented_tags_after(source, "tags are minted here rather than by the loop: ");
+
+        let samples = crate::core::agent::events::tests::sample_events();
+        let mut serialized: Vec<String> = samples
+            .iter()
+            .map(|(name, ev)| {
+                serde_json::to_value(ev).unwrap()["type"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{name} has no tag"))
+                    .to_string()
+            })
+            .collect();
+        serialized.sort();
+
+        let mut documented: Vec<String> = loop_tags
+            .iter()
+            .chain(minted.iter())
+            .map(|t| t.to_string())
+            .collect();
+        documented.sort();
+
+        assert_eq!(
+            documented, serialized,
+            "the tags this module documents and the tags that serialize have diverged"
+        );
+    }
+
+    /// The tag list must cover every variant the enum declares, not just the
+    /// ones sampled: a variant nobody samples is a tag a consumer can meet
+    /// while the documentation still denies it exists.
+    #[test]
+    fn every_declared_variant_is_documented_and_sampled() {
+        let enum_source = include_str!("../agent/events.rs");
+        let mut declared = declared_variants(enum_source);
+        declared.sort_unstable();
+        assert!(declared.len() >= 24, "{} variants", declared.len());
+
+        let mut sampled: Vec<&str> = crate::core::agent::events::tests::sample_events()
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        sampled.sort_unstable();
+        assert_eq!(
+            sampled, declared,
+            "the sample list and the enum's own variants disagree"
+        );
+    }
+
+    /// The handshake's wire shape, field by field. A consumer asserting
+    /// `protocol_version == 1` at startup is the whole point of the record, so
+    /// the name and the version it carries are the contract, not an internal
+    /// detail that a rename may move.
+    #[test]
+    fn init_carries_the_version_and_the_run_it_names() {
+        let out = serde_json::to_value(Init::new(
+            "3f7a91c2-0000-0000-0000-000000000000",
+            "stub-model",
+            "/tmp/project",
+            vec!["read".to_string(), "write".to_string()],
+            vec!["user", "abort", "permission"],
+        ))
+        .unwrap();
+        assert_eq!(
+            out,
+            serde_json::json!({
+                "type": "init",
+                "protocol_version": crate::core::agent::events::PROTOCOL_VERSION,
+                "session_id": "3f7a91c2-0000-0000-0000-000000000000",
+                "model": "stub-model",
+                "cwd": "/tmp/project",
+                "tools": ["read", "write"],
+                "input_kinds": ["user", "abort", "permission"],
+            })
+        );
+    }
+
+    /// A run that does not read stdin accepts nothing, and the record says so
+    /// with an empty list rather than by omitting the field: a client asking
+    /// "may I send anything back?" gets an answer either way.
+    #[test]
+    fn init_with_no_input_channel_advertises_no_kinds() {
+        let out =
+            serde_json::to_value(Init::new("id", "m", "/tmp", Vec::new(), Vec::new())).unwrap();
+        assert_eq!(out["input_kinds"], serde_json::json!([]));
+        assert_eq!(out["input_kinds"].as_array().unwrap().len(), 0);
+    }
+
+    /// The envelope carries the same version, so a `--output-format json`
+    /// caller -- which never sees an `init` record -- can pin it too.
+    #[test]
+    fn the_envelope_carries_the_protocol_version() {
+        let out = RunReport::default().finish(None, None, "m", 1, None);
+        let out = serde_json::to_value(out).unwrap();
+        assert_eq!(
+            out["protocol_version"],
+            serde_json::json!(crate::core::agent::events::PROTOCOL_VERSION)
+        );
+    }
 
     fn usage(prompt: u64, completion: u64) -> Usage {
         Usage {
