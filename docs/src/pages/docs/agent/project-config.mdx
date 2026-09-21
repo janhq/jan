@@ -124,10 +124,16 @@ Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `max_tokens` | `128000` | Token-spend ceiling for one run (new spend across all turns). The only cap on run length - there is no turn limit. Set `0` to disable the cap. Defaults to `128000` when unset |
+| `max_tokens` | `128000` | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to `128000` when unset |
 
-A bound on how far one run goes, distinct from the per-request context window. It bounds the run's
-marginal token spend (replayed context is not recharged each turn).
+A marker for how far one run has gone, distinct from the per-request context window. It tracks the
+run's marginal token spend (replayed context is not recharged each turn).
+
+<Callout type="warning">
+Passing this ceiling does not stop a run. The agent compacts its history, records a note that the
+ceiling was crossed, and carries on, tool calls included. For a hard bound on an unattended run use
+`--max-turns` (see the [CLI reference](/docs/agent/cli)), or cancel it.
+</Callout>
 
 ### `[tools]`
 
