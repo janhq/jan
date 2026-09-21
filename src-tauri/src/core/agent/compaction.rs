@@ -444,7 +444,7 @@ mod tests {
             vec![tauri_plugin_agent_tools::tools::hooks::HookEntry {
                 event: "PreCompact".to_string(),
                 matcher: None,
-                command: format!("cat > {}", seen.to_string_lossy()),
+                command: format!("cat > {}", crate::core::agent::shell_quoted_path(&seen)),
                 timeout_secs: None,
             }],
             std::path::Path::new("test"),
