@@ -247,19 +247,18 @@ impl Transcript {
         })
     }
 
-    /// The prompt events recorded before the conversation began, i.e. the head
-    /// the request must keep even when a compaction covers the history behind
-    /// it.
-    fn leading_prompts(&self, boundary: usize) -> Vec<&str> {
+    /// Prompts remain active even when compaction covers the conversation
+    /// around them. The initial prompt is recorded after the incoming history,
+    /// and later updates can occur anywhere, so retain all covered prompts in
+    /// their original order rather than only a leading run of prompt events.
+    fn prompts_before(&self, boundary: usize) -> impl Iterator<Item = &str> {
         self.events
             .iter()
             .take(boundary)
-            .take_while(|event| matches!(event, Event::Prompt(_)))
             .filter_map(|event| match event {
                 Event::Prompt(text) => Some(text.as_str()),
                 _ => None,
             })
-            .collect()
     }
 
     /// The request this record projects to. Pure: same record, same options,
@@ -269,7 +268,7 @@ impl Transcript {
         let mut out = Vec::with_capacity(self.events.len() + 1);
         let mut volatile_placed = false;
 
-        for text in self.leading_prompts(boundary) {
+        for text in self.prompts_before(boundary) {
             set_system_prompt(&mut out, text);
             if !volatile_placed {
                 volatile_placed = self.place_volatile(&mut out, projection);
@@ -603,6 +602,70 @@ mod tests {
         let after = transcript.events();
         assert_eq!(&after[..before.len()], before.as_slice());
         assert_eq!(after.len(), before.len() + 4);
+    }
+
+    #[test]
+    fn compaction_preserves_a_prompt_recorded_after_the_first_user_turn() {
+        let mut transcript =
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]);
+        transcript.record_prompt("Follow the project instructions.");
+        for message in convo(12) {
+            transcript.record_message(message);
+        }
+        let projection = Projection {
+            volatile_system: Some("Today's date is 2026-09-21."),
+            send_reasoning: true,
+        };
+        let before = transcript.project(&projection);
+        let plan = transcript.compaction_plan(4).unwrap();
+        transcript.record_compaction(
+            crate::core::agent::compaction::summary_message("earlier work"),
+            plan.covers,
+        );
+
+        let after = transcript.project(&projection);
+        assert_eq!(
+            &after[..2],
+            &before[..2],
+            "compaction must retain the prompt"
+        );
+        assert!(is_compaction_summary(&after[2]));
+        assert_eq!(&after[3..], &before[before.len() - 4..]);
+    }
+
+    #[test]
+    fn compaction_preserves_prompt_updates_across_successive_boundaries() {
+        let mut transcript = Transcript::from_history(vec![
+            json!({"role": "system", "content": "Original instructions."}),
+            json!({"role": "user", "content": "start"}),
+        ]);
+        transcript.record_prompt("Updated instructions take precedence.");
+        for message in convo(12) {
+            transcript.record_message(message);
+        }
+        let projection = Projection {
+            volatile_system: Some("Today's date is 2026-09-21."),
+            send_reasoning: true,
+        };
+        let before = transcript.project(&projection);
+        let expected: Vec<&Value> = before.iter().filter(|m| is_system_node(m)).collect();
+
+        for keep_recent in [8, 4] {
+            let plan = transcript.compaction_plan(keep_recent).unwrap();
+            transcript.record_compaction(
+                crate::core::agent::compaction::summary_message("earlier work"),
+                plan.covers,
+            );
+            let after = transcript.project(&projection);
+            let prompts: Vec<&Value> = after
+                .iter()
+                .filter(|m| is_system_node(m) && !is_compaction_summary(m))
+                .collect();
+            assert_eq!(
+                prompts, expected,
+                "prompt precedence must survive compaction"
+            );
+        }
     }
 
     /// Nothing safe to drop means no compaction: a short history reports no
