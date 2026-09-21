@@ -162,6 +162,24 @@ impl ResumeArgs {
     }
 }
 
+/// Per-invocation cost limits for `jan cli agent run`. Both mirror the engine's
+/// own semantics: `0` means unbounded, and an unpassed flag leaves the config
+/// files (or, for turns, nothing at all) in charge.
+///
+/// Only `--max-turns` ends a run. The token ceiling is advisory: passing it
+/// compacts the conversation and records a note, then the run continues.
+#[derive(Args, Clone, Copy)]
+struct BudgetArgs {
+    /// Fail the run after at most N agentic turns; bounds this run only, not
+    /// its subagents (0 = unbounded, the default)
+    #[arg(long, value_name = "N")]
+    max_turns: Option<u64>,
+    /// Advisory token ceiling overriding [budget].max_tokens: triggers
+    /// compaction and a note, but does not stop the run (0 = no ceiling)
+    #[arg(long, value_name = "N")]
+    max_session_tokens: Option<u64>,
+}
+
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
 /// space-separated `--resume ID` would swallow the task, so the value form must
 /// be written `--resume=ID`.
@@ -331,7 +349,7 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the session token budget
+    /// Run the agent loop to completion, or to a --max-turns cap
     Run {
         /// Project root containing .jan/agent/agent.toml
         #[arg(long, default_value = ".")]
@@ -352,6 +370,8 @@ enum AgentCommands {
         worktree: WorktreeArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
+        #[command(flatten)]
+        budget: BudgetArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
         /// object on stdout when the run finishes; `stream-json` prints one
         /// JSON event per line as the run proceeds, ending with that object
@@ -807,6 +827,7 @@ async fn handle_agent(cmd: AgentCommands) {
             sandbox,
             worktree,
             resume,
+            budget,
             output_format,
             input_format,
         } => {
@@ -819,6 +840,8 @@ async fn handle_agent(cmd: AgentCommands) {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
                     worktree: worktree.into_flag(),
+                    max_turns: budget.max_turns,
+                    max_session_tokens: budget.max_session_tokens,
                     ..Default::default()
                 },
                 resume.into_request(),
@@ -1221,6 +1244,39 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its budget args.
+    fn parsed_budget(extra: &[&str]) -> BudgetArgs {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { budget, .. },
+                    },
+            }) => budget,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// An unpassed limit is `None` so the config files (or nothing, for turns)
+    /// decide; `0` must survive parsing as the engine's unbounded marker rather
+    /// than collapsing into the same `None`.
+    #[test]
+    fn run_limits_parse_and_default_to_unset() {
+        let none = parsed_budget(&[]);
+        assert_eq!(none.max_turns, None);
+        assert_eq!(none.max_session_tokens, None);
+
+        let set = parsed_budget(&["--max-turns", "5", "--max-session-tokens", "20000"]);
+        assert_eq!(set.max_turns, Some(5));
+        assert_eq!(set.max_session_tokens, Some(20_000));
+
+        let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
+        assert_eq!(zero.max_turns, Some(0));
+        assert_eq!(zero.max_session_tokens, Some(0));
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
     fn parsed_input_format(extra: &[&str]) -> InputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1484,6 +1540,8 @@ mod tests {
                 skills: 2,
                 commands: 1,
                 agents: 3,
+                tools: 4,
+                hooks: 5,
             },
             InstalledPlugin {
                 name: "beta".into(),
@@ -1493,6 +1551,8 @@ mod tests {
                 skills: 0,
                 commands: 0,
                 agents: 0,
+                tools: 0,
+                hooks: 0,
             },
         ];
 
@@ -1501,11 +1561,16 @@ mod tests {
         assert!(output.lines().next().unwrap().contains("PLUGIN"));
         assert!(output.lines().next().unwrap().contains("COMMANDS"));
         assert!(output.lines().next().unwrap().contains("AGENTS"));
+        assert!(output.lines().next().unwrap().contains("TOOLS"));
+        assert!(output.lines().next().unwrap().contains("HOOKS"));
         assert!(output.contains("alpha"));
         assert!(output.contains("1.2.3"));
-        assert!(output.contains("2"));
-        assert!(output.contains("1"));
-        assert!(output.contains("3"));
+        // Every count alpha declares, in column order.
+        let alpha = output.lines().nth(1).unwrap();
+        assert_eq!(
+            alpha.split_whitespace().collect::<Vec<_>>(),
+            ["alpha", "1.2.3", "2", "1", "3", "4", "5"]
+        );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
     }
