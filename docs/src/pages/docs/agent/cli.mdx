@@ -126,6 +126,7 @@ jan cli agent run --output-format json "review auth.rs" | jq -r .result
 ```json
 {
   "type": "result",
+  "protocol_version": 1,
   "is_error": false,
   "result": "APPROVED: the retry loop is correct...",
   "stop_reason": "end_turn",
@@ -149,6 +150,7 @@ had said before it broke as `result`:
 ```json
 {
   "type": "result",
+  "protocol_version": 1,
   "is_error": true,
   "result": "I started reviewing auth.rs and...",
   "stop_reason": "error",
@@ -163,6 +165,7 @@ had said before it broke as `result`:
 
 | Field | Notes |
 | --- | --- |
+| `protocol_version` | The wire contract this object belongs to. See [the protocol version](#the-protocol-version) |
 | `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
 | `stop_reason` | The upstream finish reason, or `error` |
 | `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
@@ -203,6 +206,42 @@ Closing stdin is not an abort -- the run finishes and still prints its `result`.
 only thing that can approve a gated tool call, so any request still pending is denied, as is any
 that comes afterwards. Keep the pipe open for as long as you want a say.
 </Callout>
+
+#### The protocol version
+
+The first line of a `stream-json` run is always an `init` record, printed before the run's first
+event:
+
+```json
+{"type":"init","protocol_version":1,"session_id":"3f7a91c2-4e5d-4a6b-8c7d-0e1f2a3b4c5d","model":"tokamak-1-preview","cwd":"/home/me/app","tools":["read","write","bash"],"input_kinds":["user","abort","permission"]}
+```
+
+| Field | Notes |
+| --- | --- |
+| `protocol_version` | The wire contract this stream speaks. The `result` object carries it too, so a `--output-format json` caller can pin it without an `init` record |
+| `session_id` | The session this run saves under, unabbreviated -- the id `--resume` takes. `result.session_id` is its first 8 characters, and is `null` when the run saved nothing, which is how you tell whether this id names a session on disk |
+| `model` | The model the run dispatches to, as `result` reports it |
+| `cwd` | The project root the run's tools are confined to. `null` when the run was given none |
+| `tools` | The tool names the request advertises, in the order it sends them. The tool array is the head of the cached request prefix, so the order is part of the payload, not a detail |
+| `input_kinds` | The `type` values this run accepts on stdin. Empty when the run was not asked to read stdin, so "nothing can be sent back" is an answer rather than a missing field |
+
+One stream has no handshake: a run that fails before a model is resolved (nothing configured, no
+usable provider) prints the terminal `result` alone, with `error.code` set to `setup_error`. There
+is no session and no tool set to name yet, so a client treats "no `init`" together with that code
+as the setup failure it is.
+
+What a client may assume, for `protocol_version` 1:
+
+- **A tag is never renamed and never removed.** `token` stays `token`. A rename is a version bump.
+- **Fields and tags may be added**, so ignore what you do not recognise instead of failing on it.
+  That is what lets a provider-neutral field land without breaking every consumer.
+- **Assert the version, then degrade.** A client that needs behaviour from a later version checks
+  `protocol_version` and takes its fallback path; it does not assume the behaviour is there.
+- **`protocol_version`, `session_id` and `model` are always present** on `init`; everything else is
+  optional in a later minor shape.
+
+The version is bumped only for a change a v1 consumer cannot survive: a renamed or removed tag, a
+removed field, or a new meaning for an existing one. Adding a field is not a bump.
 
 ### `step`
 

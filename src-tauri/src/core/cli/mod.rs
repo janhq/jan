@@ -735,9 +735,11 @@ use crate::core::agent::r#loop::{
 };
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
-use crate::core::cli::run_report::{ndjson_line, OutputFormat, PermissionDecisionRecord, RunReport};
+use crate::core::cli::run_report::{
+    ndjson_line, Init, OutputFormat, PermissionDecisionRecord, RunReport,
+};
 use crate::core::cli::stream_input::{
-    parse_input_line, InputErrorRecord, InputFormat, InputMessage, StreamInput,
+    parse_input_line, InputErrorRecord, InputFormat, InputMessage, StreamInput, INPUT_KINDS,
 };
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -1821,6 +1823,23 @@ async fn run_agent_loop(
         }
     }
 
+    // The session this run saves under, decided here rather than at save time
+    // so the `init` record can name it: a client learns the id it can `--resume`
+    // from the first line of the stream, and a run killed mid-flight still told
+    // it which id to look for.
+    let session_id = persist
+        .thread_id
+        .clone()
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    // The handshake, before anything else can reach stdout. Printed here rather
+    // than from the printer task for exactly that reason: nothing has been
+    // spawned yet, so "first line" is a property of the code's order rather than
+    // a race against the run's own events.
+    if format.is_stream_json() {
+        print_json_line(&init_record(&args, &session_id, &persist.model, input_format).await);
+    }
+
     // The client on stdin, when there is one: it owns every permission decision
     // and can steer or stop the run while it is in flight.
     let input = input_format
@@ -1896,7 +1915,11 @@ async fn run_agent_loop(
     if let Some(messages) = updated_history {
         history = messages;
     }
-    let mut session_id = thread_id.clone();
+    // What the envelope reports. A resumed thread already exists on disk, so it
+    // is named even when the run fails; a fresh one is only named once it has
+    // actually been saved -- which is also how a client tells whether the
+    // `init` id names a session it can read back.
+    let mut reported_session_id = thread_id.clone();
     let mut final_text = None;
     if let Ok(completion) = result.as_ref() {
         final_text = completion_text(completion);
@@ -1904,7 +1927,7 @@ async fn run_agent_loop(
             history.push(serde_json::json!({ "role": "assistant", "content": text.clone() }));
         }
         let metadata = worktree_metadata(&agent_dir, thread_id.as_deref(), workspace.as_ref());
-        match cli_save_thread(&agent_dir, thread_id.as_deref(), &model, &history, metadata) {
+        match cli_save_thread(&agent_dir, Some(&session_id), &model, &history, metadata) {
             Ok(id) => {
                 if !format.is_machine() {
                     eprintln!(
@@ -1913,7 +1936,7 @@ async fn run_agent_loop(
                         short_id(&id)
                     );
                 }
-                session_id = Some(id);
+                reported_session_id = Some(id);
             }
             Err(e) => eprintln!("(could not save session: {e})"),
         }
@@ -1922,7 +1945,7 @@ async fn run_agent_loop(
         print_report(
             format,
             report.finish(
-                session_id.as_deref().map(short_id).as_deref(),
+                reported_session_id.as_deref().map(short_id).as_deref(),
                 provider.as_deref(),
                 &model,
                 started.elapsed().as_millis(),
@@ -1939,6 +1962,55 @@ async fn run_agent_loop(
         return Ok(());
     }
     result.map(|_| ())
+}
+
+/// The `init` handshake of a `--output-format stream-json` run, assembled from
+/// the same parts the run itself uses: the session it saves under, the model it
+/// dispatches to, and the tools its first turn will advertise, so the record
+/// cannot describe a run other than this one.
+async fn init_record(
+    args: &OrchestrationArgs,
+    session_id: &str,
+    model: &str,
+    input_format: InputFormat,
+) -> Init {
+    let tools = crate::core::agent::r#loop::context_advertised_tools(
+        &args.mcp_servers,
+        &args.mcp_settings,
+        &args.permissions,
+        args.project_root.as_deref(),
+        args.run_mode,
+        args.subagents_enabled,
+        args.max_parallel_subagents,
+        args.ask_requests.is_some(),
+        args.todo_registry.is_some(),
+    )
+    .await
+    .iter()
+    .filter_map(tool_name)
+    .collect();
+    // The project root the run's tools are confined to, as the run itself sees
+    // it. A caller that built these args without one gets `null`: any path
+    // substituted here would claim a confinement the run does not have.
+    let cwd = args
+        .project_root
+        .as_deref()
+        .map(|root| root.to_string_lossy().into_owned());
+    // A run that does not read stdin accepts nothing, and says so: an empty
+    // list is a client's answer that there is no reply path, which is more use
+    // than an absent field or a list of kinds the run will ignore.
+    let input_kinds = if input_format.is_stream_json() {
+        INPUT_KINDS.to_vec()
+    } else {
+        Vec::new()
+    };
+    Init::new(session_id, model, cwd, tools, input_kinds)
+}
+
+/// A rendered tool schema's name, out of the OpenAI `{"type":"function",
+/// "function":{"name":…}}` shape the advertised array carries.
+fn tool_name(tool: &serde_json::Value) -> Option<String> {
+    Some(tool.get("function")?.get("name")?.as_str()?.to_string())
 }
 
 /// Stop reason reported for a run the client ended with an `abort` message, and

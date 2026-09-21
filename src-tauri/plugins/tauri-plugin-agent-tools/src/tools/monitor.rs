@@ -115,7 +115,7 @@ pub struct MonitorUpdate {
 }
 
 /// Display-only view of one active monitor, for a status panel.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitorSnapshot {
     pub monitor_id: String,

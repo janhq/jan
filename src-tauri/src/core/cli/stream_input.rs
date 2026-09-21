@@ -12,6 +12,8 @@
 //! `user` (a follow-up joined to the run in flight at the next turn boundary,
 //! via the orchestration loop's existing steering handshake), `abort`, and
 //! `permission` (a decision keyed to a `permission_request` already on stdout).
+//! [`INPUT_KINDS`] is that set as data: the `init` record advertises it, so a
+//! client learns what it may send without being told out of band.
 //! A line that parses as none of them is reported as an `input_error` record
 //! and skipped: the reader is a peer process's output, so one bad line must not
 //! be able to end a run that is otherwise healthy.
@@ -37,6 +39,13 @@ impl InputFormat {
         matches!(self, InputFormat::StreamJson)
     }
 }
+
+/// The message kinds the input channel accepts, in the order they are
+/// documented. One list, two readers: the rejection message below names them,
+/// and the `init` record advertises them to a client that has not read the
+/// docs. A kind added to the parser without a line here would be a capability
+/// no client is told about, so a test pins the two together.
+pub(crate) const INPUT_KINDS: [&str; 3] = ["user", "abort", "permission"];
 
 /// One well-formed line from the client.
 #[derive(Debug, PartialEq, Eq)]
@@ -96,7 +105,10 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
                 decision,
             })
         }
-        other => Err(format!("unknown type '{other}' (user, abort, permission)")),
+        other => Err(format!(
+            "unknown type '{other}' ({})",
+            INPUT_KINDS.join(", ")
+        )),
     }
 }
 
@@ -203,6 +215,31 @@ mod tests {
                 decision: PermissionDecision::AllowOnce,
             }
         );
+    }
+
+    /// The advertised kinds and the accepted ones are one list. A kind the
+    /// parser takes but the handshake never names is a capability no client can
+    /// discover; one it names but cannot parse is a lie a client acts on. The
+    /// `panic!` arm is the prompt to add a sample line when the list grows.
+    #[test]
+    fn the_advertised_kinds_are_the_accepted_ones() {
+        let err = parse_input_line(r#"{"type":"steer","text":"hi"}"#).expect_err("unknown type");
+        for kind in INPUT_KINDS {
+            assert!(
+                err.contains(kind),
+                "the rejection does not name '{kind}': {err}"
+            );
+            let line = match kind {
+                "user" => r#"{"type":"user","text":"hello"}"#,
+                "abort" => r#"{"type":"abort"}"#,
+                "permission" => r#"{"type":"permission","request_id":"p1","decision":"deny"}"#,
+                other => panic!("'{other}' is advertised but has no sample line here"),
+            };
+            assert!(
+                parse_input_line(line).is_ok(),
+                "'{kind}' is advertised in init but the parser rejects it"
+            );
+        }
     }
 
     /// Every rejection names what was wrong: the client sees this text on the
