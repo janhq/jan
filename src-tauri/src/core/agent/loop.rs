@@ -20,10 +20,10 @@ use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::upstream::{
-    arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
-    drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
-    load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
-    insert_volatile_system, resolve_api_type_for_model, resolve_upstream_for_model,
+    append_prompt_tail, arguments_are_executable, collect_mcp_openai_tools,
+    copy_optional_chat_params, drop_malformed_tool_calls, execute_mcp_tool_calls,
+    extract_choice_message, extract_tool_calls, load_assistant_config, parse_openai_messages,
+    repair_dangling_tool_calls, resolve_api_type_for_model, resolve_upstream_for_model,
     set_system_prompt, stream_openai_chat_completions,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
@@ -2044,7 +2044,12 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     let content = messages
         .iter()
         .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_only(
+                    m.get("content").unwrap_or(&serde_json::Value::Null),
+                )
+        })?
         .get("content")?;
     match content {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -2347,12 +2352,12 @@ async fn orchestrate_inner(
         .map(|root| resolve_run_settings(root, *sandbox));
 
     // The stable system prompt: identity, guidelines, environment, skills and
-    // the memory catalog. Byte-identical across the turns of a session (within a
-    // day), so it is kept as system message 0 and never mixed with per-turn
-    // content -- that is what lets a provider cache this long prefix. Volatile
-    // per-turn context (date, git state, query memory recall, plan/todo state)
-    // is collected separately below and emitted as a second system message so it
-    // cannot invalidate the cached prefix above.
+    // the memory catalog. Byte-identical across the turns of a session, so it
+    // is kept as system message 0 and never mixed with per-turn content.
+    // Changing context (date, git state, query memory recall, plan/todo state)
+    // is collected separately and appended as marked guidance after history.
+    // A second system message would be hoisted ahead of history by the provider
+    // bridge, invalidating the cached conversation on every change.
     //
     // Which blocks land in which half is `[prompt]`'s decision, resolved here:
     // the composition returns them split rather than joined, and a composer the
@@ -2448,18 +2453,14 @@ async fn orchestrate_inner(
         .collect::<Vec<_>>()
         .join("\n\n");
 
-    match &stable_system {
-        // An allowlist can move every block below the cache line, which leaves
-        // no stable prompt at all: the volatile block then stands in as
-        // message 0 rather than an empty system node preceding it.
-        Some(composed) if !composed.prefix.is_empty() => {
+    if let Some(composed) = &stable_system {
+        if !composed.prefix.is_empty() {
             set_system_prompt(&mut conversation_messages, &composed.prefix);
-            insert_volatile_system(&mut conversation_messages, &volatile_block);
         }
-        // No stable prompt (an isolated child run with no override): the
-        // volatile block is all there is, so it stands in as message 0.
-        _ => set_system_prompt(&mut conversation_messages, &volatile_block),
     }
+    // Even without a stable prefix, tail policy must survive the provider
+    // bridge: system-role guidance would be lifted ahead of all history.
+    append_prompt_tail(&mut conversation_messages, &volatile_block);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -3684,9 +3685,8 @@ mod tests {
 
     /// The cache-prefix contract from #340: across turns the system prompt at
     /// message 0 and the tool schema must be byte-identical, so a provider can
-    /// cache them; only the volatile message 1 (date, memory recall, plan state)
-    /// changes. A regression here silently defeats prompt caching, which no
-    /// functional test would catch.
+    /// cache them; changing guidance is appended after the conversation.
+    /// A regression here silently defeats prompt caching.
     #[test]
     fn system_prefix_and_tools_are_byte_identical_across_turns() {
         let tools = vec![json!({
@@ -3701,7 +3701,7 @@ mod tests {
 
         let mut turn1 = vec![json!({"role": "user", "content": "first"})];
         set_system_prompt(&mut turn1, "STABLE PREFIX");
-        insert_volatile_system(&mut turn1, "Today's date is 2026-09-16.");
+        append_prompt_tail(&mut turn1, "Today's date is 2026-09-16.");
         let req1 = build_completion_request("m", &turn1, &tools, &body, None);
 
         // A later turn: the conversation has grown and the volatile block differs.
@@ -3711,7 +3711,7 @@ mod tests {
             json!({"role": "user", "content": "second"}),
         ];
         set_system_prompt(&mut turn2, "STABLE PREFIX");
-        insert_volatile_system(
+        append_prompt_tail(
             &mut turn2,
             "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note",
         );
@@ -3722,8 +3722,19 @@ mod tests {
         assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
         assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
         assert_ne!(
-            req1["messages"][1], req2["messages"][1],
+            req1["messages"].as_array().unwrap().last(),
+            req2["messages"].as_array().unwrap().last(),
             "the volatile block is expected to differ"
+        );
+    }
+
+    #[test]
+    fn prompt_tail_does_not_replace_the_user_query() {
+        let mut messages = vec![json!({"role": "user", "content": "find the configuration"})];
+        append_prompt_tail(&mut messages, "Today's date is 2026-09-21.");
+        assert_eq!(
+            latest_user_text(&messages).as_deref(),
+            Some("find the configuration")
         );
     }
 

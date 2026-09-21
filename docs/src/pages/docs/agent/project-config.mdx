@@ -148,6 +148,10 @@ turn belongs below the conversation, not in front of it. Placement is deny-wins,
 nothing reaches the prefix without being allowed there, and the safe answer for a contributor no
 policy mentions is the tail.
 
+Tail blocks are sent as `<SYSTEM>`-marked guidance after the conversation, including when the
+allowlist leaves no stable prompt. They are not system-role messages: provider adapters would
+move those ahead of history and defeat the placement policy.
+
 ```toml
 [prompt]
 # Only these may sit above the cache line. Unset keeps each contributor's own

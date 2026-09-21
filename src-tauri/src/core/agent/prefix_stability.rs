@@ -19,7 +19,7 @@
 //!
 //! What they drive is the real production code for each contributor to the
 //! prefix - `compose_system_prompt` and the placement policy, the two helpers
-//! that place the stable and volatile system messages, `build_completion_request`,
+//! that place the stable prompt and marked tail guidance, `build_completion_request`,
 //! and the tool-array assembly and reuse. The one thing not driven here is the
 //! *order* in which `orchestrate_inner` calls those pieces, which is inline in
 //! that function and only reachable with a live upstream. When that assembly is
@@ -35,7 +35,7 @@ use super::events::StreamEvent;
 use super::prompt::{Composer, Placement, PromptPolicy};
 use super::r#loop::{build_completion_request, ModelInvoker};
 use super::upstream::{
-    assemble_tool_array, insert_volatile_system, reuse_last_good_listings, set_system_prompt,
+    append_prompt_tail, assemble_tool_array, reuse_last_good_listings, set_system_prompt,
     RenderedTool,
 };
 use async_trait::async_trait;
@@ -232,13 +232,13 @@ fn advertised(names: &[&str]) -> Vec<Value> {
 }
 
 /// One turn's request, assembled the way `orchestrate_inner` assembles one: the
-/// composed prompt at the front, the policy's tail blocks plus the per-turn
-/// blocks merged in registry order behind it, then the conversation.
+/// composed prompt at the front, then accepted history, then the policy's tail
+/// blocks plus the per-turn blocks merged in registry order.
 ///
 /// The per-turn blocks are the date and a fixed git line - the two the loop
 /// always has - rather than the memory/plan/todo blocks, which depend on
 /// session state this suite does not drive. What the assertions here need is
-/// the *shape*: one volatile system message directly behind the stable prompt.
+/// the *shape*: one marked guidance message after the conversation.
 fn turn(project: &Path, history: &[Value], date: &str, tools: &[Value]) -> Request {
     let composed =
         compose_system_prompt(None, project, None, false, &PromptPolicy::default()).unwrap();
@@ -257,7 +257,7 @@ fn turn(project: &Path, history: &[Value], date: &str, tools: &[Value]) -> Reque
 
     let mut messages = history.to_vec();
     set_system_prompt(&mut messages, &composed.prefix);
-    insert_volatile_system(&mut messages, &volatile);
+    append_prompt_tail(&mut messages, &volatile);
 
     let body = serde_json::to_string(&build_completion_request(
         "test-model",
@@ -344,16 +344,10 @@ fn consecutive_turns_extend_the_previous_request() {
     let tools = advertised(&["read_file"]);
 
     let first = turn(project.root(), &[user("first question")], DAY, &tools);
-    let second = turn(
-        project.root(),
-        &[
-            user("first question"),
-            assistant("first answer"),
-            user("second question"),
-        ],
-        DAY,
-        &tools,
-    );
+    let mut history = first.messages.clone();
+    history.push(assistant("first answer"));
+    history.push(user("second question"));
+    let second = turn(project.root(), &history, DAY, &tools);
 
     first.assert_extended_by("an unchanged project on the next turn", &second);
 }
@@ -454,6 +448,24 @@ fn a_midnight_crossing_diverges_inside_the_volatile_block() {
          a block above the cache line is varying",
         volatile_start + volatile.len(),
     );
+}
+
+#[test]
+fn a_changing_tail_preserves_all_accepted_history() {
+    let project = Project::new("tail-history");
+    let tools = advertised(&["read_file"]);
+    let first = turn(
+        project.root(),
+        &[user("first question")],
+        "2026-09-20",
+        &tools,
+    );
+    let mut history = first.messages.clone();
+    history.push(assistant("first answer"));
+    history.push(user("second question"));
+
+    let second = turn(project.root(), &history, "2026-09-21", &tools);
+    first.assert_extended_by("changed context belongs after accepted history", &second);
 }
 
 /// #8959: the tool array sits at the front of the request, so it has to be a
@@ -573,6 +585,7 @@ async fn compaction_breaks_the_prefix_exactly_once() {
                 breaks += 1;
             }
         }
+        history = request.messages.clone();
         previous = Some(request);
         history.push(assistant(&format!("answer {index}")));
         if index == 2 {

@@ -126,12 +126,13 @@ sit at the front of every request.
 
 - The stable part of the system prompt (identity, guidelines, working directory, skills, memory
   catalog) is written once at the head of the conversation and never rewritten.
-- Per-turn context (today's date, memory recall, plan and todo state) lives in its own slot behind
-  it, and is rewritten only when its content changes.
-- A system prompt that changes mid-session - an edited `agent.toml`, a skill installed while the
-  session is open, a mode switch - is appended as a new system message instead of overwriting the
-  head. The provider keeps the cached prefix, and the model still reads the update last, so the
-  change is honored without re-sending the whole conversation as new bytes.
+- Per-turn context (today's date, memory recall, plan and todo state) is appended after the
+  conversation as marked guidance. Previously sent messages stay untouched, and provider
+  adapters do not lift the changing guidance into the system prompt.
+- A stable prompt that changes mid-session - an edited `agent.toml`, a skill installed while
+  the session is open, a mode switch - is retained as a new system message. Providers combine
+  system messages into one instruction field, so a change to these prefix contributors still
+  invalidates the cached conversation. Use tail placement for changing context.
 - The advertised tool array is ordered deterministically, so a restart that advertises the same
   tools advertises them as the same bytes.
 
