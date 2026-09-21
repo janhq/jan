@@ -118,6 +118,47 @@ Add, list, edit, remove, and toggle servers headlessly with `jan cli mcp ...` - 
 files --command npx --arg -y --arg my-mcp`, `jan cli mcp list`, `jan cli mcp remove files`. See the
 [CLI reference](/docs/agent/cli#jan-cli-mcp).
 
+## Serving Jan's own tools
+
+The other direction: `jan mcp serve` exposes Jan's built-in tools - `read`, the memory and skill
+store, `web_search`, `web_fetch` - as an MCP server, so Claude Code, Codex CLI or any other MCP
+client can call them.
+
+```bash
+jan mcp serve --project .              # stdio, what another agent spawns as a child process
+jan mcp serve --transport http         # loopback Streamable HTTP; prints its URL and bearer token
+```
+
+The served tools run against **one project root**, fixed when the server starts, with the same path
+confinement and sandbox re-checks an in-agent call gets. A path argument that escapes that root is
+refused, and so is anything inside the project's hidden `.jan` state.
+
+The default set is read-only: file reading, search, memory, skills and the web tools. The two
+classes that can change the machine are opt-in, because the caller is another program rather than a
+person who can answer a permission prompt:
+
+| Flag | Adds |
+| --- | --- |
+| `--allow-write` | `write` and `edit`, confined to the project root |
+| `--allow-exec` | `bash`, under the same OS sandbox the agent's shell uses |
+| `--tool NAME` | Narrows the set to these names; never widens what the flags above permit |
+
+Anything that would otherwise wait for an approval returns an error instead of blocking, so a peer
+never hangs on a prompt nobody can see. A project's `[tools]` section still applies: `sandbox` and
+`allow_network` are read from its `agent.toml` exactly as a normal run reads them.
+
+On `--transport http` the listener is loopback-only and every request must carry the bearer token
+printed at startup (`--token` sets your own); a request without it gets a `401`. Point a client at
+the printed URL:
+
+```json
+{
+  "mcpServers": {
+    "jan": { "command": "jan", "args": ["mcp", "serve", "--project", "/path/to/project"] }
+  }
+}
+```
+
 ## Tool policy
 
 MCP tools follow the project's [`[tools]` policy](/docs/agent/permissions#project-policy):

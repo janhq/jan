@@ -10,6 +10,8 @@ pub mod device_auth;
 pub mod journal;
 pub mod login;
 pub mod mcp;
+/// `jan mcp serve`: the other direction, Jan's toolset served over MCP.
+pub mod mcp_serve;
 mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;

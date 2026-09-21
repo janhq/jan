@@ -1,6 +1,11 @@
 //! OpenAI `tools` array entries for the built-in tools, one per BUILTIN_TOOLS
 //! entry. These are advertised to the model when a project is active; execution
 //! is dispatched by `handlers::execute_builtin` and gated by `gate`.
+//!
+//! Two views, one schema each: [`builtin_tool_schemas`] is what a model is
+//! offered, and [`search_tool_schemas`] holds `ls`/`find`/`grep`, which the
+//! model is not offered because `bash` covers them. A caller that has no `bash`
+//! -- an external MCP client served the read-only set -- takes both.
 
 use serde_json::{json, Value};
 
@@ -25,12 +30,12 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
                 }
             }
         }),
-        // ls / find / grep are deliberately NOT advertised: `bash` covers
+        // ls / find / grep are deliberately NOT advertised here: `bash` covers
         // listing and searching (`ls`, `find`, `grep`/`rg`), so dedicated tools
         // for them only enlarge the schema a weak model has to handle. They stay
-        // in BUILTIN_TOOLS -- recognized, gated, and executable if named -- so
-        // the change is reversible and the handlers/tests are untouched; they are
-        // just no longer offered to the model.
+        // in BUILTIN_TOOLS -- recognized, gated, and executable if named -- and
+        // their schemas live in `search_tool_schemas` for callers that have no
+        // `bash` to cover them.
         #[cfg(feature = "tauri")]
         json!({
             "type": "function",
@@ -211,6 +216,70 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
     .to_vec()
 }
 
+/// Schemas for the three search tools a model is not offered (`bash` covers
+/// them for the agent). Kept out of [`builtin_tool_schemas`] so the model's tool
+/// array stays small, and defined here rather than at a call site so there is
+/// still exactly one copy of each schema in the tree.
+///
+/// Taken by a surface that serves the read-only toolset without `bash`, where
+/// otherwise nothing could list or search at all.
+pub fn search_tool_schemas() -> Vec<Value> {
+    [
+        json!({
+            "type": "function",
+            "function": {
+                "name": "ls",
+                "description": "List the entries of a directory, one per line, with directories marked by a trailing slash.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": { "type": "string", "description": "Directory path relative to the project root (or absolute). Defaults to the root." },
+                        "limit": { "type": "integer", "description": "Maximum number of entries to return (default 500)." }
+                    },
+                    "required": []
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "find",
+                "description": "Find files whose path matches a glob pattern, honoring .gitignore. Use this to locate files by name; use grep to search their contents.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": { "type": "string", "description": "Glob pattern to match against each path, e.g. **/*.rs." },
+                        "path": { "type": "string", "description": "Directory to search under, relative to the project root. Defaults to the root." },
+                        "limit": { "type": "integer", "description": "Maximum number of paths to return (default 1000)." }
+                    },
+                    "required": ["pattern"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "grep",
+                "description": "Search file contents for a regular expression, honoring .gitignore, and return matching lines with their file and line number.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "pattern": { "type": "string", "description": "Regular expression to search for, or a literal string when literal is true." },
+                        "path": { "type": "string", "description": "Directory or file to search, relative to the project root. Defaults to the root." },
+                        "glob": { "type": "string", "description": "Only search paths matching this glob, e.g. *.rs." },
+                        "ignore_case": { "type": "boolean", "description": "Match case-insensitively (default false)." },
+                        "literal": { "type": "boolean", "description": "Treat pattern as a literal string rather than a regex (default false)." },
+                        "context": { "type": "integer", "description": "Lines of context to include around each match (default 0)." },
+                        "limit": { "type": "integer", "description": "Maximum number of matches to return (default 100)." }
+                    },
+                    "required": ["pattern"]
+                }
+            }
+        }),
+    ]
+    .to_vec()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +305,58 @@ mod tests {
             .filter(|n| !matches!(*n, "ls" | "find" | "grep"))
             .collect();
         assert_eq!(names, expected);
+    }
+
+    /// The two views together must cover BUILTIN_TOOLS exactly: no builtin
+    /// without a schema, and no schema for something that is not a builtin.
+    #[test]
+    fn the_two_schema_views_together_cover_every_builtin() {
+        let mut names: Vec<String> = builtin_tool_schemas()
+            .iter()
+            .chain(search_tool_schemas().iter())
+            .map(|s| s["function"]["name"].as_str().unwrap().to_string())
+            .collect();
+        names.sort();
+        let mut expected: Vec<String> =
+            BUILTIN_TOOLS.iter().map(|t| t.name.to_string()).collect();
+        expected.sort();
+        assert_eq!(names, expected);
+    }
+
+    /// The search schemas name the arguments the handlers actually read; a
+    /// rename on either side would otherwise silently produce a tool whose
+    /// required argument never arrives.
+    #[test]
+    fn search_schemas_declare_the_handler_arguments() {
+        let schemas = search_tool_schemas();
+        for schema in &schemas {
+            assert_eq!(schema["type"], "function");
+            assert_eq!(schema["function"]["parameters"]["type"], "object");
+        }
+        let by_name = |n: &str| -> Value {
+            schemas
+                .iter()
+                .find(|s| s["function"]["name"] == n)
+                .expect("schema present")
+                .clone()
+        };
+        // `path` is optional everywhere (it defaults to the root); `pattern` is
+        // required exactly where the handler errors without it.
+        assert!(by_name("ls")["function"]["parameters"]["properties"]["path"].is_object());
+        assert_eq!(by_name("ls")["function"]["parameters"]["required"], json!([]));
+        for tool in ["find", "grep"] {
+            let s = by_name(tool);
+            assert_eq!(
+                s["function"]["parameters"]["required"],
+                json!(["pattern"]),
+                "{tool}"
+            );
+        }
+        for key in ["glob", "ignore_case", "literal", "context", "limit"] {
+            assert!(
+                by_name("grep")["function"]["parameters"]["properties"][key].is_object(),
+                "grep is missing {key}"
+            );
+        }
     }
 }
