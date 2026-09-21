@@ -15,7 +15,9 @@ use reqwest13::Client;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::core::agent::context::ComposedPrompt;
 use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
 use crate::core::agent::upstream::{
@@ -500,6 +502,9 @@ struct ResolvedSettings {
     sandbox: bool,
     env_passthrough: Vec<String>,
     env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
+    /// rest so composition and `agent status` answer from one parse.
+    prompt: PromptPolicy,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -517,6 +522,7 @@ fn resolve_run_settings(
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
+        prompt: settings.prompt,
     }
 }
 
@@ -2039,7 +2045,12 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     let content = messages
         .iter()
         .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_only(
+                    m.get("content").unwrap_or(&serde_json::Value::Null),
+                )
+        })?
         .get("content")?;
     match content {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -2057,10 +2068,16 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
 
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
-/// project-context and tool-use guidance from `build_system_prompt` is still
+/// project-context and tool-use guidance from `compose_system_prompt` is still
 /// built around it when a project is selected — a subagent gets the same
 /// grounding (guidelines, web access, tool docs) as a normal run, not a bare
 /// verbatim prompt with no instruction on how to actually use its tools.
+///
+/// The blocks are split by where `[prompt]` allows them to sit, so the caller
+/// places the prefix above the history and the tail below it. A policy that
+/// cannot be honored — a contributor that varies asked to sit above the cache
+/// line — is an error, not a warning: that is the whole point of resolving
+/// placement at composition.
 fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
@@ -2068,7 +2085,8 @@ fn build_run_system_prompt(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox: bool,
-) -> Option<String> {
+    policy: &PromptPolicy,
+) -> Result<Option<ComposedPrompt>, String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
@@ -2076,24 +2094,33 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
-            crate::core::agent::context::build_system_prompt(
+            crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
                 scratch.as_deref(),
                 subagents_enabled,
+                policy,
             )
+            .map(Some)
         }
-        None => base.map(str::to_string),
+        None => Ok(base.map(|prompt| ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        })),
     }
 }
 
 /// The system prompt the *next* ordinary turn in `project_root` would carry,
 /// built through the exact path a real run takes (`build_run_system_prompt`
-/// with this project's resolved sandbox/scratch). Used by the CLI `/context`
-/// view to size the system segments: routing it through the same builder is
-/// what keeps the reported breakdown from drifting away from what is actually
-/// sent. Excludes the two per-turn additions a run makes on top -- the date
-/// line and query-dependent memory recall -- which are not knowable while idle.
+/// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
+/// the CLI `/context` view to size the system segments: routing it through the
+/// same builder is what keeps the reported breakdown from drifting away from
+/// what is actually sent. It sizes all project-composed blocks, including
+/// blocks demoted to the tail, but excludes the run's date, git state,
+/// query-dependent memory recall, and plan/todo additions.
+/// `None` when no prompt would be built, or
+/// when the project's `[prompt]` policy cannot be honored (the run itself
+/// reports that failure with the same message).
 #[cfg(feature = "cli")]
 pub(crate) fn context_system_prompt_preview(
     override_prompt: Option<&str>,
@@ -2103,6 +2130,7 @@ pub(crate) fn context_system_prompt_preview(
     sandbox_flag: Option<bool>,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
+    let policy = crate::core::agent::project::prompt_policy(project_root);
     build_run_system_prompt(
         None,
         override_prompt,
@@ -2110,7 +2138,11 @@ pub(crate) fn context_system_prompt_preview(
         session_id,
         subagents_enabled,
         settings.sandbox,
+        &policy,
     )
+    .ok()
+    .flatten()
+    .map(|composed| composed.as_prompt())
 }
 
 /// The tool array the *next* ordinary turn would advertise: the MCP tools
@@ -2154,6 +2186,20 @@ pub(crate) async fn context_advertised_tools(
         todo_enabled,
     );
     tools
+}
+
+/// The git state block: which branch the project is on, so the model knows what
+/// its edits apply to.
+///
+/// A per-turn block rather than part of the environment in the stable prefix:
+/// the answer changes the moment anything checks out another branch, including
+/// the agent itself, and a branch switch inside a turn would otherwise move
+/// every byte behind the cache line.
+fn git_state_block(project_root: &std::path::Path) -> String {
+    match crate::core::agent::git::current_branch(project_root) {
+        Some(branch) => format!("# Git\n\nGit branch: `{branch}`"),
+        None => "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
+    }
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -2286,12 +2332,20 @@ async fn orchestrate_inner(
         .map(|root| resolve_run_settings(root, *sandbox));
 
     // The stable system prompt: identity, guidelines, environment, skills and
-    // the memory catalog. Byte-identical across the turns of a session (within a
-    // day), so it is kept as system message 0 and never mixed with per-turn
-    // content -- that is what lets a provider cache this long prefix. Volatile
-    // per-turn context (date, query memory recall, plan/todo state) is collected
-    // separately below and emitted as a second system message so it cannot
-    // invalidate the cached prefix above.
+    // the memory catalog. Byte-identical across the turns of a session, so it
+    // is kept as system message 0 and never mixed with per-turn content.
+    // Changing context (date, git state, query memory recall, plan/todo state)
+    // is collected separately and appended as marked guidance after history.
+    // A second system message would be hoisted ahead of history by the provider
+    // bridge, invalidating the cached conversation on every change.
+    //
+    // Which blocks land in which half is `[prompt]`'s decision, resolved here:
+    // the composition returns them split rather than joined, and a composer the
+    // policy sends to the tail is emitted below instead of dropped.
+    let prompt_policy = settings
+        .as_ref()
+        .map(|s| s.prompt.clone())
+        .unwrap_or_default();
     let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
@@ -2299,21 +2353,31 @@ async fn orchestrate_inner(
         session_id.as_deref(),
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
-    );
+        &prompt_policy,
+    )?;
 
-    let mut volatile_parts: Vec<String> = Vec::new();
+    let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    volatile_parts.push(format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
+    volatile_parts.push((
+        Composer::Date,
+        format!(
+            "Today's date is {}.",
+            chrono::Local::now().format("%Y-%m-%d")
+        ),
     ));
+    // Which checkout the work applies to. Per-turn rather than part of the
+    // environment block above, because anything that switches branch -- the
+    // agent included -- would otherwise move every byte behind it.
+    if let Some(root) = project_root.as_deref() {
+        volatile_parts.push((Composer::GitState, git_state_block(root)));
+    }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    volatile_parts.push(mem);
+                    volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
         }
@@ -2333,36 +2397,62 @@ async fn orchestrate_inner(
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
     if run_mode == crate::core::agent::plan::RunMode::Plan {
-        volatile_parts.push(crate::core::agent::plan::plan_mode_prompt_addendum().to_string());
+        volatile_parts.push((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
+        ));
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        volatile_parts.push(addendum.to_string());
+        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
     }
+
+    // One tail message, built from every block the policy kept below the cache
+    // line: the composition's tail (a block `[prompt]` moved down) plus the
+    // per-turn blocks above, in registry order so the message's bytes do not
+    // depend on which caller built which block.
+    let mut tail: Vec<(Composer, String)> = stable_system
+        .as_ref()
+        .map(|composed| composed.tail.clone())
+        .unwrap_or_default();
+    for (composer, block) in volatile_parts {
+        if prompt_policy.placement_of(composer)? != Placement::Tail {
+            // Unreachable while these composers vary -- `placement_of` fails
+            // first -- and kept as an explicit error rather than a silent
+            // unwrap, because "per-turn content above the cache line" is
+            // exactly the bug this whole policy exists to prevent.
+            return Err(format!(
+                "`{}` is per-turn content and cannot sit above the cache line",
+                composer.id()
+            ));
+        }
+        tail.push((composer, block));
+    }
+    tail.sort_by_key(|(composer, _)| composer.order());
+    let volatile_system = tail
+        .into_iter()
+        .map(|(_, block)| block)
+        .collect::<Vec<_>>()
+        .join("\n\n");
 
     // The history becomes a canonical record and the prompt becomes an event
     // the projection places: at the head while it is unchanged, appended behind
     // the history when it changes, so a turn cannot invalidate the bytes an
-    // earlier request already sent. The per-turn block stays projection input:
-    // recording yesterday's date as history is how a resumed session ends up
-    // carrying yesterday's date forever.
-    let volatile_system = volatile_parts.join("\n\n");
-    // The prompt the user just submitted, read while the incoming list is still
-    // a list: the record is not one, and `UserPromptSubmit` reports this turn's
-    // text rather than the history's.
+    // earlier request already sent. Per-turn guidance starts as projection
+    // input, then is recorded at its sent position once a request succeeds.
+    // Later tool steps and client resumes must retain those accepted bytes.
+    //
+    // The stable half is the cacheable one; `[prompt]` decides which blocks
+    // reach it, and a composer the policy moves down is carried in the tail
+    // above rather than dropped. With no stable prefix at all (an isolated
+    // child run with no override) there is nothing above to cache and the tail
+    // is the whole prompt -- still placed below the history, so the arrangement
+    // does not depend on which half happens to be empty.
     let submitted_prompt = latest_user_text(&conversation_messages);
     let mut transcript =
         crate::core::agent::transcript::Transcript::from_history(conversation_messages);
-    let volatile_projection = match &stable_system {
-        Some(sys) => {
-            transcript.record_prompt(sys);
-            Some(volatile_system)
-        }
-        // No stable prompt (an isolated child run with no override): the
-        // volatile block is all there is, so it stands in as message 0.
-        None => {
-            transcript.record_prompt(&volatile_system);
-            None
-        }
-    };
+    if let Some(composed) = stable_system.as_ref().filter(|c| !c.prefix.is_empty()) {
+        transcript.record_prompt(&composed.prefix);
+    }
+    let volatile_projection: Option<String> = Some(volatile_system);
     let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
@@ -2717,7 +2807,7 @@ pub(crate) fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<s
 }
 
 /// Build one OpenAI chat-completion request from the current conversation.
-fn build_completion_request(
+pub(crate) fn build_completion_request(
     model_id: &str,
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
@@ -2977,6 +3067,16 @@ fn project(
     })
 }
 
+/// The message list a client adopts as its session history
+/// (`StreamEvent::MessagesUpdated`).
+///
+/// Keep accepted guidance in the published history at the position the model
+/// saw it. Only a pending block from a request that has not succeeded is
+/// excluded. Removing an accepted block would break the next run's prefix.
+fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_json::Value> {
+    project(transcript, None, send_reasoning)
+}
+
 /// How many messages the request this run is about carries: the `message_count`
 /// a hook payload reports. The projection is the only thing that knows now that
 /// there is no live list to measure, so the count is projected rather than kept
@@ -3128,7 +3228,7 @@ async fn run_turn_cycle(
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
             // A drained ping is how a match or a timeout reaches the display.
             publish_monitors(tools, events, &mut shown_monitors);
@@ -3182,11 +3282,7 @@ async fn run_turn_cycle(
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
                                 let _ = events.send(StreamEvent::MessagesUpdated {
-                                    messages: project(
-                                        &transcript,
-                                        volatile_system.as_deref(),
-                                        send_reasoning,
-                                    ),
+                                    messages: client_history(&transcript, send_reasoning),
                                 });
                                 // The one legitimate cache break in a session,
                                 // and the only way the user can tell it apart
@@ -3231,11 +3327,7 @@ async fn run_turn_cycle(
                         // compaction leaves the client holding the oversized
                         // history that every later turn would re-overflow on.
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: project(
-                                &transcript,
-                                volatile_system.as_deref(),
-                                send_reasoning,
-                            ),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
@@ -3263,17 +3355,20 @@ async fn run_turn_cycle(
                         );
                         send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: project(
-                                &transcript,
-                                volatile_system.as_deref(),
-                                send_reasoning,
-                            ),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                     }
                     Err(e) => return Err(e),
                 }
             }
         };
+
+        // This request succeeded: its guidance is now part of the accepted
+        // history, before the assistant response and any tool results. Keep it
+        // there instead of projecting it at the moving tail of every step.
+        if let Some(text) = volatile_system.as_deref() {
+            transcript.record_prompt_tail(text);
+        }
 
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
@@ -3410,7 +3505,7 @@ async fn run_turn_cycle(
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
             return Ok(completion);
         }
@@ -3436,7 +3531,7 @@ async fn run_turn_cycle(
                 ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: project(&transcript, volatile_system.as_deref(), send_reasoning),
+                messages: client_history(&transcript, send_reasoning),
             });
         }
 
@@ -3702,15 +3797,15 @@ async fn run_turn_cycle(
 mod tests {
     use super::*;
     use crate::core::agent::shell_quoted_path;
+    use crate::core::agent::upstream::append_prompt_tail;
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
 
     /// The cache-prefix contract from #340: across turns the system prompt at
     /// message 0 and the tool schema must be byte-identical, so a provider can
-    /// cache them; only the volatile message 1 (date, memory recall, plan state)
-    /// changes. A regression here silently defeats prompt caching, which no
-    /// functional test would catch.
+    /// cache them; changing guidance is appended after the conversation.
+    /// A regression here silently defeats prompt caching.
     #[test]
     fn system_prefix_and_tools_are_byte_identical_across_turns() {
         let tools = vec![json!({
@@ -3758,8 +3853,179 @@ mod tests {
         assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
         assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
         assert_ne!(
-            req1["messages"][1], req2["messages"][1],
+            req1["messages"].as_array().unwrap().last(),
+            req2["messages"].as_array().unwrap().last(),
             "the volatile block is expected to differ"
+        );
+    }
+
+    /// A client resumes from the published history, so it must retain the
+    /// guidance the provider already accepted, not rebuild it after the answer.
+    #[tokio::test]
+    async fn published_history_preserves_the_accepted_prompt_tail() {
+        let volatile1 = "Today's date is 2026-09-21.";
+        let volatile2 = "Today's date is 2026-09-22.";
+
+        let reminders = |messages: &[serde_json::Value]| -> Vec<serde_json::Value> {
+            messages
+                .iter()
+                .filter(|m| {
+                    m["role"] == "user"
+                        && crate::core::agent::reminder::is_reminder_only(&m["content"])
+                })
+                .cloned()
+                .collect()
+        };
+        let published = |rx: &mut mpsc::UnboundedReceiver<StreamEvent>| {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .filter_map(|ev| match ev {
+                    StreamEvent::MessagesUpdated { messages } => Some(messages),
+                    _ => None,
+                })
+                .last()
+        };
+
+        // Turn one.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("reply")]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "first" })]),
+            Some(volatile1.to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request1 = model.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request1).len(),
+            1,
+            "the request carries this turn's block: {request1:?}"
+        );
+
+        // The client takes what was published -- not the bytes it asked with --
+        // and adds its next user turn to it.
+        let mut adopted = published(&mut rx).expect("turn one publishes its history");
+        assert_eq!(adopted, request1, "publish the accepted request verbatim");
+        adopted.push(json!({ "role": "assistant", "content": "reply" }));
+        adopted.push(json!({ "role": "user", "content": "second" }));
+
+        // Changed guidance follows the entire previous request and its answer.
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        let model2 = MockModel::new(vec![final_answer("reply 2")]);
+        let mut budget2 = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx2,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(adopted),
+            Some(volatile2.to_string()),
+            true,
+            8,
+            &mut budget2,
+            &model2,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request2 = model2.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request2).len(),
+            2,
+            "one accepted block from each run: {request2:?}"
+        );
+        assert_eq!(
+            request2.last().unwrap()["content"],
+            json!(crate::core::agent::reminder::wrap(volatile2)),
+            "the newest guidance is last"
+        );
+        assert_eq!(
+            serde_json::to_string(&request2[..request1.len()]).unwrap(),
+            serde_json::to_string(&request1).unwrap(),
+            "the next run must extend every message the provider accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_steps_preserve_the_accepted_prompt_tail() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![tool_call_completion(), final_answer("done")]);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "search for Rust"}),
+            ]),
+            Some("Today's date is 2026-09-21.".to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let requests = model.requests.lock().unwrap();
+        let first = requests[0]["messages"].as_array().unwrap();
+        let second = requests[1]["messages"].as_array().unwrap();
+        assert_eq!(
+            serde_json::to_string(&second[..first.len()]).unwrap(),
+            serde_json::to_string(first).unwrap(),
+            "a tool step must extend the accepted request, not move its guidance"
+        );
+        assert_eq!(
+            second.len(),
+            first.len() + 2,
+            "only the call and result are new"
+        );
+        assert_eq!(second.last().unwrap()["role"], "tool");
+    }
+
+    #[test]
+    fn prompt_tail_does_not_replace_the_user_query() {
+        let mut messages = vec![json!({"role": "user", "content": "find the configuration"})];
+        append_prompt_tail(&mut messages, "Today's date is 2026-09-21.");
+        assert_eq!(
+            latest_user_text(&messages).as_deref(),
+            Some("find the configuration")
         );
     }
 
@@ -3944,8 +4210,11 @@ mod tests {
             Some("test-session"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
 
         assert!(prompt.starts_with("You are a robotics researcher."));
         assert!(!prompt.contains("main assistant"));
@@ -3953,6 +4222,88 @@ mod tests {
         assert!(prompt.contains("# Web Access"));
         assert!(prompt.contains("web_search"));
         assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[prompt]` in agent.toml is what decides which blocks reach the cache
+    /// line: the run resolves the policy from the project's config and composes
+    /// through it, so an allowlist naming two contributors really does move the
+    /// rest below the line.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_narrows_what_reaches_the_cache_line() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"assistant_instructions\", \"tool_schemas\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        assert_eq!(policy.prefix_allow().map(<[String]>::len), Some(2));
+        // ...and the run's resolved settings carry the same policy, which is
+        // what `orchestrate_inner` composes with.
+        assert_eq!(
+            resolve_run_settings(&root, None)
+                .prompt
+                .prefix_allow()
+                .map(<[String]>::len),
+            Some(2)
+        );
+        let composed = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect("prompt")
+        .expect("project prompt");
+
+        // Only the identity is allowed above the line...
+        assert_eq!(composed.prefix, "main assistant");
+        // ...and everything else still reaches the model, from the tail.
+        let tail: Vec<&str> = composed
+            .tail
+            .iter()
+            .map(|(_, block)| block.as_str())
+            .collect();
+        assert!(tail.iter().any(|block| block.contains("# Guidelines")));
+        assert!(tail.iter().any(|block| block.contains("# Web Access")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An allowlist that would put a varying composer above the cache line stops
+    /// the run, rather than costing a cache miss on every turn. The failure is
+    /// the same one `agent status` reports, from the same resolution.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"todo_addendum\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        let error = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect_err("a per-turn composer cannot be allowed above the cache line");
+        assert!(error.contains("todo_addendum"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -6797,8 +7148,11 @@ mod tests {
             Some("s1"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
         let bare = build_run_system_prompt(
             None,
@@ -6807,8 +7161,11 @@ mod tests {
             Some("s1"),
             false,
             false,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(!bare.contains("Scratch:"), "{bare}");
     }
 

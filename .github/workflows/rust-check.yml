@@ -84,6 +84,43 @@ jobs:
             --no-default-features --features ${{ matrix.features }} ${{ matrix.targets }} \
             -- -D warnings
 
+  # `cargo check` and `clippy --all-targets` compile the tests but never run
+  # them, so a unit test that fails at runtime ships green. The CLI config is
+  # the one this job runs: it compiles the whole `core::agent` loop and its
+  # composers (the tests live in the lib, not behind the desktop features), and
+  # it needs neither the Tauri system libraries nor the resource stubs. The
+  # byte-level prompt-prefix contract in `core::agent::prefix_stability` is
+  # among these tests.
+  test:
+    name: cargo test (cli)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: test-cli
+          # Branches restore but never save: one 3.5GB cache set on main
+          # rather than one per branch, which is what breached the 10GB cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The plugin-install tests build fixture repositories and commit in
+      # them; a runner has no git identity of its own.
+      - name: Configure a git identity for the fixture repositories
+        run: |
+          git config --global user.email "ci@jan.ai"
+          git config --global user.name "Jan CI"
+
+      # One thread: a few tests set process-wide state (env vars, the global
+      # config), and the same convention is what `make test-rust` uses.
+      - name: cargo test
+        run: |
+          cargo test --locked --manifest-path src-tauri/Cargo.toml \
+            --no-default-features --features cli --lib -- --test-threads=1
+
   # Each plugin and src-tauri/utils is its own workspace, so checking the app
   # crate compiles them as path dependencies but never lints them. No --locked
   # here: Cargo.lock is gitignored and only some of these crates commit one.

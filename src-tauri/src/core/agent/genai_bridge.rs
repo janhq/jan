@@ -951,6 +951,36 @@ mod tests {
     }
 
     #[test]
+    fn prompt_tail_stays_after_history_in_the_provider_request() {
+        let mut messages = vec![
+            json!({"role": "system", "content": "Stable instructions."}),
+            json!({"role": "user", "content": "first question"}),
+            json!({"role": "assistant", "content": "first answer"}),
+            json!({"role": "user", "content": "second question"}),
+        ];
+        crate::core::agent::upstream::append_prompt_tail(
+            &mut messages,
+            "Today's date is 2026-09-21.",
+        );
+        let (_, request) = chat_request_from_body(&json!({
+            "model": "m",
+            "messages": messages,
+        }))
+        .unwrap();
+
+        assert_eq!(request.system.as_deref(), Some("Stable instructions."));
+        assert_eq!(request.messages[0].role, ChatRole::User);
+        assert_eq!(request.messages[1].role, ChatRole::Assistant);
+        assert_eq!(request.messages[2].role, ChatRole::User);
+        let tail = request.messages.last().unwrap();
+        assert_eq!(tail.role, ChatRole::User);
+        assert_eq!(
+            tail.content.first_text(),
+            Some("<SYSTEM>\nToday's date is 2026-09-21.\n</SYSTEM>")
+        );
+    }
+
+    #[test]
     fn assistant_reasoning_and_tool_calls_survive_the_round_trip() {
         let body = json!({
             "model": "m",

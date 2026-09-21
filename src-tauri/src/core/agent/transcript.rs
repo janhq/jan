@@ -26,9 +26,10 @@
 //!   them.
 //! - **The wire shape is projection-owned.** Where the stable prompt sits, how
 //!   a changed prompt lands behind the history instead of rewriting the head
-//!   (see [`crate::core::agent::upstream::set_system_prompt`]), how per-turn
-//!   context occupies its slot, and whether a prior turn's reasoning is resent
-//!   are all parameters of [`Projection`], not edits to the record.
+//!   (see [`crate::core::agent::upstream::set_system_prompt`]), how pending
+//!   guidance lands below history, and whether reasoning is resent are
+//!   projection decisions. Once a request succeeds, its guidance is recorded
+//!   at the accepted position rather than moved to the next request's tail.
 //! - **`project` is pure.** Two calls over an unchanged record with the same
 //!   options produce byte-identical output, which is the property the
 //!   prefix-stability suite asserts against.
@@ -39,7 +40,7 @@ use crate::core::agent::compaction::is_compaction_summary;
 use crate::core::agent::r#loop::strip_assistant_reasoning;
 use crate::core::agent::reminder;
 use crate::core::agent::upstream::{
-    drop_malformed_tool_calls, drop_orphaned_tool_results, insert_volatile_system, is_system_node,
+    append_prompt_tail, drop_malformed_tool_calls, drop_orphaned_tool_results, is_system_node,
     repair_dangling_tool_calls, set_system_prompt,
 };
 
@@ -57,6 +58,9 @@ pub(crate) enum Event {
     /// [`crate::core::agent::reminder::attach`]) rather than recorded as one,
     /// so the record keeps what actually arrived.
     Reminder(String),
+    /// Prompt guidance from a successful request, fixed at the position where
+    /// the model received it. Unlike a reminder, it is always its own message.
+    PromptTail(String),
     /// A summary standing in for every event recorded before it. `covers` is
     /// the record index the kept tail begins at - a projection boundary, not a
     /// deletion: the events before it are still in the record.
@@ -72,10 +76,10 @@ pub(crate) struct Transcript {
 /// What the wire needs that is not in the record.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Projection<'a> {
-    /// The per-turn context block (today's date, query-specific memory recall,
-    /// plan/todo state). Per-turn by nature: it is placed in its slot and
-    /// replaced when it changes, unlike the stable prompt behind which the
-    /// cached prefix sits.
+    /// Pending guidance for this run. It is appended below history until a
+    /// successful request records it as `Event::PromptTail`; later projections
+    /// retain that event in place. If compaction covers it, the current block
+    /// is appended again and recorded on the next successful request.
     pub volatile_system: Option<&'a str>,
     /// Resend a prior assistant turn's `reasoning_content`. `false` is a
     /// provider capability answer ("this route rejects the field"), so it
@@ -108,17 +112,10 @@ impl Transcript {
     /// whole request - and healing here means the record only ever holds turns
     /// a strict upstream accepts.
     ///
-    /// Two kinds of node are then read rather than recorded verbatim:
-    ///
-    /// - a stable prompt node becomes a [`Event::Prompt`], so the projection
-    ///   places it the way the live list did (head, or appended behind the
-    ///   history when it changed);
-    /// - the per-turn block in its slot is dropped: it is projection input,
-    ///   regenerated from the current turn, and recording it would accumulate
-    ///   yesterday's date in the history.
-    ///
-    /// A compaction summary is neither: it is history under the `system` role,
-    /// and it stays.
+    /// System instructions become `Event::Prompt` entries; summaries and
+    /// marked guidance remain conversation history. No array position owns a
+    /// disposable slot: compaction can put two stable prompt updates next to
+    /// each other, and both must survive a client round trip.
     pub(crate) fn from_history(mut messages: Vec<Value>) -> Self {
         let poisoned = drop_malformed_tool_calls(&mut messages);
         if poisoned > 0 {
@@ -133,12 +130,8 @@ impl Transcript {
             log::warn!("agent: repaired {repaired} dangling tool call(s) with no prior result");
         }
 
-        let volatile = volatile_index(&messages);
         let mut events = Vec::with_capacity(messages.len());
-        for (index, message) in messages.into_iter().enumerate() {
-            if Some(index) == volatile {
-                continue;
-            }
+        for message in messages {
             events.push(
                 if is_system_node(&message) && !is_compaction_summary(&message) {
                     match message.get("content").and_then(|c| c.as_str()) {
@@ -167,6 +160,26 @@ impl Transcript {
     /// Append per-turn context to be folded into the trailing message.
     pub(crate) fn record_reminder(&mut self, text: &str) {
         self.events.push(Event::Reminder(text.to_string()));
+    }
+
+    /// Freeze guidance where the successful request sent it. Repeated tool
+    /// steps reuse the same event; compaction may require a fresh one.
+    pub(crate) fn record_prompt_tail(&mut self, text: &str) {
+        if !text.is_empty() && !self.has_prompt_tail(text) {
+            self.events.push(Event::PromptTail(text.to_string()));
+        }
+    }
+
+    fn has_prompt_tail(&self, text: &str) -> bool {
+        self.events
+            .iter()
+            .skip(self.boundary())
+            .rev()
+            .find_map(|event| match event {
+                Event::PromptTail(accepted) => Some(accepted.as_str()),
+                _ => None,
+            })
+            == Some(text)
     }
 
     /// Record a compaction point: `summary` stands in for the first `covers`
@@ -231,6 +244,10 @@ impl Transcript {
                     reminder::attach(&mut messages, text);
                     sources.resize(messages.len(), index);
                 }
+                Event::PromptTail(text) => {
+                    append_prompt_tail(&mut messages, text);
+                    sources.push(index);
+                }
                 Event::Prompt(_) | Event::Compaction { .. } => {}
             }
         }
@@ -266,13 +283,9 @@ impl Transcript {
     pub(crate) fn project(&self, projection: &Projection<'_>) -> Vec<Value> {
         let boundary = self.boundary();
         let mut out = Vec::with_capacity(self.events.len() + 1);
-        let mut volatile_placed = false;
 
         for text in self.prompts_before(boundary) {
             set_system_prompt(&mut out, text);
-            if !volatile_placed {
-                volatile_placed = self.place_volatile(&mut out, projection);
-            }
         }
 
         if let Some(summary) = self.latest_summary() {
@@ -283,19 +296,15 @@ impl Transcript {
             match event {
                 Event::Message(message) => out.push(message.clone()),
                 Event::Reminder(text) => reminder::attach(&mut out, text),
-                Event::Prompt(text) => {
-                    set_system_prompt(&mut out, text);
-                    if !volatile_placed {
-                        volatile_placed = self.place_volatile(&mut out, projection);
-                    }
-                }
+                Event::PromptTail(text) => append_prompt_tail(&mut out, text),
+                Event::Prompt(text) => set_system_prompt(&mut out, text),
                 // Already emitted ahead of the range it covers.
                 Event::Compaction { .. } => {}
             }
         }
-        if !volatile_placed {
-            self.place_volatile(&mut out, projection);
-        }
+        // Pending guidance belongs at the tail. Accepted guidance is already
+        // emitted at its recorded position and must not move on later steps.
+        self.place_volatile(&mut out, projection);
 
         if !projection.send_reasoning {
             out = strip_assistant_reasoning(&out);
@@ -303,20 +312,16 @@ impl Transcript {
         out
     }
 
-    /// Put this turn's context block where it belongs and report whether it
-    /// went somewhere. A run with no stable prompt has no head to sit behind,
-    /// so the block stands in as node zero - the same arrangement the live list
-    /// used.
-    fn place_volatile(&self, out: &mut Vec<Value>, projection: &Projection<'_>) -> bool {
+    /// Append guidance only when this run has not yet sent it successfully,
+    /// or compaction covered its accepted event. A `system` node would be
+    /// hoisted ahead of history by the provider bridge.
+    fn place_volatile(&self, out: &mut Vec<Value>, projection: &Projection<'_>) {
         let Some(text) = projection.volatile_system.filter(|text| !text.is_empty()) else {
-            return false;
+            return;
         };
-        if out.iter().any(is_system_node) {
-            insert_volatile_system(out, text);
-        } else {
-            set_system_prompt(out, text);
+        if !self.has_prompt_tail(text) {
+            append_prompt_tail(out, text);
         }
-        true
     }
 
     /// What a compaction would summarize, and how far into the record its
@@ -340,17 +345,6 @@ impl Transcript {
             covers: sources[cut],
         })
     }
-}
-
-/// Index of the per-turn block in a history that came from outside, if it has
-/// one: the slot the prompt writer owns, i.e. index 1 once a system node holds
-/// index 0. A summary that happens to occupy the slot is history, not a block.
-fn volatile_index(messages: &[Value]) -> Option<usize> {
-    let slot = usize::from(messages.first().is_some_and(is_system_node));
-    messages
-        .get(slot)
-        .filter(|message| is_system_node(message) && !is_compaction_summary(message))
-        .map(|_| slot)
 }
 
 #[cfg(test)]
@@ -516,77 +510,6 @@ mod tests {
         );
     }
 
-    /// A history from outside carries the previous turn's blocks: the stable
-    /// prompt is read back as a `Prompt` event (so it is placed the same way),
-    /// the per-turn block is not recorded at all (it is regenerated), and a
-    /// compaction summary stays as history.
-    #[test]
-    fn from_history_splits_the_previous_turns_wire_shape() {
-        let summary = format!("{} stuff", crate::core::agent::compaction::SUMMARY_MARKER);
-        let history = vec![
-            json!({"role": "system", "content": "stable prompt"}),
-            json!({"role": "system", "content": "Today's date is 2026-09-17."}),
-            json!({"role": "system", "content": summary}),
-            json!({"role": "user", "content": "carry on"}),
-        ];
-        let transcript = Transcript::from_history(history);
-        assert_eq!(
-            transcript.events()[0],
-            Event::Prompt("stable prompt".to_string())
-        );
-        assert_eq!(
-            transcript.events().len(),
-            3,
-            "the per-turn block is not history"
-        );
-        assert_eq!(
-            transcript.events()[1],
-            Event::Message(json!({
-                "role": "system",
-                "content": summary,
-            }))
-        );
-
-        let projected = transcript.project(&Projection {
-            volatile_system: Some("Today's date is 2026-09-18."),
-            send_reasoning: true,
-        });
-        assert_eq!(projected[0]["content"], "stable prompt");
-        assert_eq!(
-            projected[1]["content"], "Today's date is 2026-09-18.",
-            "the current block, not yesterday's: {projected:?}"
-        );
-        assert_eq!(projected.len(), 4, "{projected:?}");
-    }
-
-    /// Equivalence with the live-list placement this replaced: a history and a
-    /// changed prompt produce the same bytes the old `set_system_prompt` +
-    /// `insert_volatile_system` pair did.
-    #[test]
-    fn the_projection_places_the_prompt_like_the_live_list_did() {
-        let history = vec![
-            json!({"role": "system", "content": "old prompt"}),
-            json!({"role": "system", "content": "Today's date is 2026-09-17."}),
-            json!({"role": "user", "content": "hi"}),
-            json!({"role": "assistant", "content": "hello"}),
-        ];
-
-        let mut live = history.clone();
-        set_system_prompt(&mut live, "new prompt");
-        insert_volatile_system(&mut live, "Today's date is 2026-09-18.");
-
-        let mut transcript = Transcript::from_history(history);
-        transcript.record_prompt("new prompt");
-        let projected = transcript.project(&Projection {
-            volatile_system: Some("Today's date is 2026-09-18."),
-            send_reasoning: true,
-        });
-
-        assert_eq!(
-            serde_json::to_string(&projected).unwrap(),
-            serde_json::to_string(&live).unwrap()
-        );
-    }
 
     /// The record only ever grows: recording does not reorder or rewrite what
     /// is already there.
@@ -624,13 +547,12 @@ mod tests {
         );
 
         let after = transcript.project(&projection);
-        assert_eq!(
-            &after[..2],
-            &before[..2],
-            "compaction must retain the prompt"
-        );
-        assert!(is_compaction_summary(&after[2]));
-        assert_eq!(&after[3..], &before[before.len() - 4..]);
+        assert_eq!(after[0], before[0], "compaction must retain the prompt");
+        assert!(is_compaction_summary(&after[1]));
+        // Everything after the summary is the kept tail plus this turn's block,
+        // both of which `before` ends with: compaction changes which messages
+        // are dropped, not where the per-turn block sits.
+        assert_eq!(&after[2..], &before[before.len() - 5..]);
     }
 
     #[test]
@@ -665,7 +587,41 @@ mod tests {
                 prompts, expected,
                 "prompt precedence must survive compaction"
             );
+            let published = transcript.project(&nothing());
+            let resumed = Transcript::from_history(published.clone()).project(&nothing());
+            assert_eq!(
+                resumed, published,
+                "resuming the compacted history must retain every stable prompt update"
+            );
         }
+    }
+
+    #[test]
+    fn compaction_restores_accepted_guidance_once() {
+        let guidance = "Follow the project rules for this run.";
+        let projection = Projection {
+            volatile_system: Some(guidance),
+            send_reasoning: true,
+        };
+        let mut transcript = Transcript::from_history(convo(4));
+        transcript.record_prompt_tail(guidance);
+        for message in convo(12) {
+            transcript.record_message(message);
+        }
+        let plan = transcript.compaction_plan(4).unwrap();
+        transcript.record_compaction(
+            crate::core::agent::compaction::summary_message("earlier work"),
+            plan.covers,
+        );
+
+        let retry = transcript.project(&projection);
+        assert_eq!(retry.last().unwrap()["content"], reminder::wrap(guidance));
+        transcript.record_prompt_tail(guidance);
+        assert_eq!(transcript.project(&nothing()), retry);
+        transcript.record_message(json!({"role": "assistant", "content": "continuing"}));
+        let next = transcript.project(&projection);
+        assert_eq!(&next[..retry.len()], retry.as_slice());
+        assert_eq!(next.len(), retry.len() + 1, "no duplicate guidance");
     }
 
     /// Nothing safe to drop means no compaction: a short history reports no

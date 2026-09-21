@@ -799,6 +799,26 @@ pub fn cli_agent_status(
     let cfg = load_agent_config(&project_root)?;
     let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
 
+    // Resolved once, and reported for every registered composer: "which of my
+    // contributors is writing into the cached prefix" is one command, not an
+    // investigation. An unusable `[prompt]` policy (an allowlist naming
+    // something that varies, or a typo) fails here with the same message
+    // composition would give.
+    let prompt_policy = crate::core::agent::project::prompt_policy(&project_root);
+    let prompt_components: Vec<serde_json::Value> = prompt_policy
+        .placements()?
+        .into_iter()
+        .map(|(composer, placement)| {
+            serde_json::json!({
+                "id": composer.id(),
+                "placement": placement.as_str(),
+                "constant": composer.constant(),
+                "source": composer.source().as_str(),
+                "what": composer.what(),
+            })
+        })
+        .collect();
+
     // Only providers this build can reach: local-engine entries inherited from
     // the desktop store have no upstream here (see `is_cli_reachable`).
     let mut providers: Vec<serde_json::Value> = provider_configs
@@ -876,6 +896,14 @@ pub fn cli_agent_status(
         // unless they can tell which of the three layers installed it.
         "hooks": hooks,
         "plugin_tools": plugin_tools,
+        // Who may write above the cache line, and where each registered
+        // contributor actually lands: the code-level placement, narrowed by
+        // `[prompt].prefix_allow`.
+        "prompt": {
+            "default": prompt_policy.default_placement().as_str(),
+            "prefix_allow": prompt_policy.prefix_allow(),
+            "components": prompt_components,
+        },
         "providers": providers,
     }))
 }
@@ -1806,8 +1834,16 @@ async fn run_agent_loop(
     // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
         let mut report = RunReport::default();
+        let mut updated_history = None;
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
+            if format.is_stream_json() {
+                print_json_line(&ev);
+            }
+            if let StreamEvent::MessagesUpdated { messages } = ev {
+                updated_history = Some(messages);
+                continue;
+            }
             // Asked per event, not once per run: the client owns the decision
             // only while it is still reading. Once stdin has closed, the CLI
             // takes its own path back, which on a pipe is an auto-deny.
@@ -1818,7 +1854,6 @@ async fn run_agent_loop(
                     resolve_permission_silently(ev, &permission_requests, duplex).await;
                 }
                 OutputFormat::StreamJson => {
-                    print_json_line(&ev);
                     if let Some((request_id, decision)) =
                         resolve_permission_silently(ev, &permission_requests, duplex).await
                     {
@@ -1827,7 +1862,7 @@ async fn run_agent_loop(
                 }
             }
         }
-        report
+        (report, updated_history)
     });
 
     // `None` when the client aborted: the run produced no completion, but a
@@ -1843,7 +1878,7 @@ async fn run_agent_loop(
     let aborted = outcome.is_none();
     let result = outcome.unwrap_or_else(|| Err(ABORTED_BY_CLIENT.to_string()));
     drop(tx);
-    let report = printer.await.unwrap_or_default();
+    let (report, updated_history) = printer.await.unwrap_or_default();
     if let Some(input) = input.as_ref() {
         report_dropped_follow_ups(input, format);
     }
@@ -1856,6 +1891,9 @@ async fn run_agent_loop(
         mut history,
         workspace,
     } = persist;
+    if let Some(messages) = updated_history {
+        history = messages;
+    }
     let mut session_id = thread_id.clone();
     let mut final_text = None;
     if let Ok(completion) = result.as_ref() {
@@ -2308,11 +2346,9 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         }
         // Headless never renders an ask prompt, so there is nothing to dismiss.
         StreamEvent::AskResolved { .. } => {}
-        // The non-interactive CLI doesn't persist session state; a todo update
-        // is silently dropped here (mirrors MessagesUpdated below).
+        // Headless runs do not persist the interactive todo registry.
         StreamEvent::TodoUpdate { .. } => {}
-        // The non-interactive CLI doesn't persist session state, so
-        // MessagesUpdated is a no-op here.
+        // The event collector adopts this history before it reaches the printer.
         StreamEvent::MessagesUpdated { .. } => {}
         StreamEvent::PermissionRequest {
             request_id,
