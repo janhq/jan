@@ -37,6 +37,55 @@ fn fixture_root(release: &str) -> PathBuf {
         .join(release)
 }
 
+/// Every committed release fixture, oldest first. Discovered rather than
+/// listed because the tripwire below exists to demand a new fixture on a
+/// schema bump -- if it also demanded an edit here, the edit is the thing that
+/// would get forgotten.
+fn fixture_releases() -> Vec<String> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/upgrade");
+    let mut releases: Vec<(Vec<u64>, String)> = std::fs::read_dir(&root)
+        .unwrap_or_else(|e| panic!("upgrade fixture root {root:?} unreadable: {e}"))
+        .map(|entry| entry.expect("fixture directory entry must be readable"))
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Sort on the parsed components, not the string: "0.8.10" must
+            // come after "0.8.9", which it does not lexicographically.
+            let parts = name
+                .split('.')
+                .map(|part| {
+                    part.parse().unwrap_or_else(|_| {
+                        panic!("fixture directory {name:?} is not a dotted release version")
+                    })
+                })
+                .collect();
+            (parts, name)
+        })
+        .collect();
+    assert!(
+        !releases.is_empty(),
+        "no release fixtures under {root:?} -- this suite would pass vacuously"
+    );
+    releases.sort();
+    releases.into_iter().map(|(_, name)| name).collect()
+}
+
+/// `mcp_version` from a release fixture's `store.json`, checking on the way
+/// that the directory name and the release the store records agree.
+fn fixture_mcp_version(release: &str) -> i64 {
+    let path = fixture_root(release).join("store.json");
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{release} store.json fixture missing at {path:?}: {e}"));
+    let store: Value = serde_json::from_str(&raw)
+        .unwrap_or_else(|e| panic!("{release} store.json must parse: {e}"));
+    assert_eq!(
+        store["version"].as_str(),
+        Some(release),
+        "fixture directory {release} holds a store.json written by a different release"
+    );
+    store["mcp_version"].as_i64().unwrap_or(0)
+}
+
 fn read_thread_metadata(release: &str, thread_id: &str) -> Value {
     let path = get_thread_metadata_path(&fixture_root(release), thread_id);
     let raw = std::fs::read_to_string(&path)
@@ -120,30 +169,40 @@ fn thread_dir_layout_matches_current_path_resolution() {
 }
 
 #[test]
-fn store_written_by_0_8_3_sits_inside_the_migration_range() {
-    let raw = std::fs::read_to_string(fixture_root("0.8.3").join("store.json"))
-        .expect("0.8.3 store.json fixture missing");
-    let store: Value = serde_json::from_str(&raw).expect("0.8.3 store.json must parse");
-    assert_eq!(store["version"], "0.8.3");
-    // 0.8.3 shipped MCP schema 3. `migrate_mcp_servers` (core/setup.rs) walks
-    // stores older than CURRENT_MCP_SCHEMA_VERSION through the gates and then
-    // pins that version.
-    //
-    // Equality with `CURRENT - 1`, not `< CURRENT`, and that is the whole point
-    // of this test. `<` is satisfied by 3 < 5 just as well as by 3 < 4, so it
-    // would stay green through a schema bump and guard nothing -- it only ever
-    // fired if the constant were *lowered*. Pinning the gap at exactly one
-    // release means bumping the constant fails here until the newly-superseded
-    // release's store output is committed as a fixture, which is the coverage
-    // this file exists to keep.
-    let fixture_version = store["mcp_version"].as_i64().unwrap_or(0);
+fn every_store_fixture_sits_inside_the_migration_range() {
+    let releases = fixture_releases();
+
+    // `migrate_mcp_servers` (core/setup.rs) only walks stores *below*
+    // CURRENT_MCP_SCHEMA_VERSION through the gates, so a fixture at or above it
+    // would sit outside the migration path this suite exists to cover and
+    // assert nothing.
+    for release in &releases {
+        let mcp_version = fixture_mcp_version(release);
+        assert!(
+            mcp_version < CURRENT_MCP_SCHEMA_VERSION,
+            "{release} fixture carries mcp_version {mcp_version}, which the current schema \
+             ({CURRENT_MCP_SCHEMA_VERSION}) no longer migrates"
+        );
+    }
+
+    // The newest fixture is pinned at exactly CURRENT - 1, and that is the
+    // whole point of this test. `<` is satisfied by 3 < 5 just as well as by
+    // 3 < 4, so it would stay green through a schema bump and guard nothing --
+    // it only ever fired if the constant were *lowered*. Pinning the gap at
+    // exactly one release means bumping the constant fails here until the
+    // newly-superseded release's store output is committed as a fixture, which
+    // is the coverage this file exists to keep.
+    let newest = releases
+        .last()
+        .expect("fixture_releases rejects an empty set");
+    let newest_version = fixture_mcp_version(newest);
     assert_eq!(
-        fixture_version,
+        newest_version,
         CURRENT_MCP_SCHEMA_VERSION - 1,
-        "the newest upgrade fixture carries mcp_version {fixture_version}, but the current \
-         schema is {CURRENT_MCP_SCHEMA_VERSION}. If you just bumped CURRENT_MCP_SCHEMA_VERSION, \
-         commit the store.json written by the release that shipped schema {} as a new fixture \
-         directory and point this test at it.",
+        "the newest upgrade fixture ({newest}) carries mcp_version {newest_version}, but the \
+         current schema is {CURRENT_MCP_SCHEMA_VERSION}. If you just bumped \
+         CURRENT_MCP_SCHEMA_VERSION, commit the store.json written by the release that shipped \
+         schema {} as a new fixture directory under tests/fixtures/upgrade/.",
         CURRENT_MCP_SCHEMA_VERSION - 1
     );
 }
@@ -183,15 +242,23 @@ fn mcp_config_written_by_0_8_3_parses_with_current_settings_schema() {
         "backoffMultiplier no longer maps onto backoff_multiplier"
     );
 
-    // Migration 4 removes only the never-activated default exa entry.
+    // Migration 4 removes only an exa entry that is inactive *and* keyless.
     //
     // What the fixture actually is, stated carefully because the obvious
     // reading is wrong: 0.8.3's own `migrate_exa_to_http` wrote this entry with
     // `active: true` (`git show v0.8.3:src-tauri/src/core/setup.rs`), so it is
     // byte-for-byte 0.8.3's *default*, not evidence that a user activated
-    // anything. The contract it pins is therefore "an exa entry as 0.8.3 left
-    // it survives the 0.8.4 cutover" -- true precisely because 0.8.3's default
-    // is active, which no comment in the shipping code says out loud.
+    // anything. The contract pinned below is therefore "an exa entry as 0.8.3
+    // left it survives the 0.8.4 cutover" -- true precisely because 0.8.3's
+    // default is active.
+    //
+    // That is recorded as current behaviour, not endorsed: 0.8.3 wrote this
+    // shape for every user, so the cutover is close to a no-op for the whole
+    // 0.8.3 population. Widening it is a separate change against the shipping
+    // migration -- see janhq/jan#9010 and the note on `remove_exa_server`.
+    // If that widening lands, this assertion is expected to flip, and
+    // flipping it is the signal that the behaviour changed rather than a
+    // regression.
     let servers = config["mcpServers"].as_object().expect("mcpServers object");
     let fixture_exa = servers
         .get("exa")

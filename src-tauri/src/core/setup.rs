@@ -77,7 +77,7 @@ pub fn migrate_mcp_servers(
     }
     if mcp_version < CURRENT_MCP_SCHEMA_VERSION {
         log::info!(
-            "Migrating MCP schema version 4: Removing default Exa MCP (native web search cutover)"
+            "Migrating MCP schema version {CURRENT_MCP_SCHEMA_VERSION}: Removing default Exa MCP (native web search cutover)"
         );
         if let Err(e) = remove_exa_server(app_handle) {
             log::error!("Failed to remove Exa MCP server: {e}");
@@ -121,10 +121,15 @@ fn migrate_exa_to_http(app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether an `exa` MCP server entry looks like an untouched default: never
-/// activated and carrying no API key. Only such entries are removed by the
-/// web-search cutover, so a user who activated the server or supplied a key
-/// keeps their configuration.
+/// Whether an `exa` MCP server entry is one the web-search cutover removes:
+/// not currently active, and carrying no API key.
+///
+/// Note what `active: false` does *not* mean here. It is not evidence that the
+/// user never turned the server on: 0.8.3's own `migrate_exa_to_http` wrote
+/// the entry with `active: true` and an empty `env` for everybody, so a 0.8.3
+/// upgrader fails the `inactive` half and keeps the entry. The entries this
+/// actually removes are the ones a user deactivated themselves. See
+/// `remove_exa_server` for why that is left alone for now.
 ///
 /// It inspects `active` and `env` only -- not `url` or `type` -- so an inactive
 /// *custom* exa entry with an empty env also matches. Callers must reject
@@ -143,9 +148,15 @@ pub fn is_default_exa_server(exa: &serde_json::Value) -> bool {
 }
 
 /// One-time cutover to native web search: drop the default Exa MCP server so the
-/// built-in web_search/web_fetch tools own web search. Only removes the entry if
-/// it is still the inactive default (hosted HTTP endpoint, no API key); a user who
-/// activated it or supplied their own key keeps their configuration.
+/// built-in web_search/web_fetch tools own web search.
+///
+/// Narrower than the name suggests, and deliberately left that way in this
+/// change: removal needs the entry to be inactive *and* keyless, but 0.8.3
+/// shipped it `active: true` with an empty `env`, so upgraders from 0.8.3 keep
+/// it and the cutover is close to a no-op for them. Widening the match to the
+/// hosted endpoint regardless of `active` would delete configuration for the
+/// whole installed base at next startup, so it is tracked in janhq/jan#9010
+/// rather than changed in passing.
 fn remove_exa_server(app_handle: tauri::AppHandle) -> Result<(), String> {
     let config_path = get_jan_data_folder_path(app_handle).join("mcp_config.json");
     if !config_path.exists() {
