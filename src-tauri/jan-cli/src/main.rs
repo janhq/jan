@@ -162,6 +162,19 @@ impl ResumeArgs {
     }
 }
 
+/// Per-invocation cost ceilings for `jan cli agent run`. Both mirror the
+/// engine's own semantics: `0` means unbounded, and an unpassed flag leaves the
+/// config files (or, for turns, nothing at all) in charge.
+#[derive(Args, Clone, Copy)]
+struct BudgetArgs {
+    /// Stop after at most N agentic turns (0 = unbounded, the default)
+    #[arg(long, value_name = "N")]
+    max_turns: Option<u64>,
+    /// Session token ceiling, overriding [budget].max_tokens (0 = unbounded)
+    #[arg(long, value_name = "N")]
+    max_session_tokens: Option<u64>,
+}
+
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
 /// space-separated `--resume ID` would swallow the task, so the value form must
 /// be written `--resume=ID`.
@@ -352,6 +365,8 @@ enum AgentCommands {
         worktree: WorktreeArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
+        #[command(flatten)]
+        budget: BudgetArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
         /// object on stdout when the run finishes; `stream-json` prints one
         /// JSON event per line as the run proceeds, ending with that object
@@ -807,6 +822,7 @@ async fn handle_agent(cmd: AgentCommands) {
             sandbox,
             worktree,
             resume,
+            budget,
             output_format,
             input_format,
         } => {
@@ -819,6 +835,8 @@ async fn handle_agent(cmd: AgentCommands) {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
                     worktree: worktree.into_flag(),
+                    max_turns: budget.max_turns,
+                    max_session_tokens: budget.max_session_tokens,
                     ..Default::default()
                 },
                 resume.into_request(),

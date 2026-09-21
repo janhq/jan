@@ -750,6 +750,25 @@ use tokio::sync::{mpsc, Mutex};
 /// this bounds real new spend, not the context replayed on every turn.
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
+/// Where the session token ceiling in effect came from, so `agent status` can
+/// say which of the three sources won.
+fn session_budget_source(flag: Option<u64>, configured: Option<u64>) -> &'static str {
+    match (flag, configured) {
+        (Some(_), _) => "flag",
+        (None, Some(_)) => "agent.toml",
+        (None, None) => "default",
+    }
+}
+
+/// Session token ceiling for one run. Precedence is the per-invocation
+/// `--max-session-tokens` flag, then `agent.toml [budget].max_tokens`, then
+/// `DEFAULT_MAX_SESSION_TOKENS` - the same flag/config/default shape the
+/// sandbox setting resolves with. `0` from either source means unbounded and is
+/// carried through as-is (see `body_session_budget`).
+fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
+    flag.or(configured).unwrap_or(DEFAULT_MAX_SESSION_TOKENS)
+}
+
 /// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
 /// value is what the model would otherwise see verbatim in the system prompt's
 /// working-directory block, so a bare "." must become the real cwd rather than
@@ -820,7 +839,11 @@ pub fn cli_agent_status(
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
         "model": cfg.agent.model,
-        "max_session_tokens": cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
+        // The effective ceiling with the config files resolved. A
+        // `--max-session-tokens` flag is per-invocation and so, like
+        // `--sandbox` below, cannot be reflected in a config dump.
+        "max_session_tokens": resolve_session_budget(None, cfg.budget.max_tokens),
+        "max_session_tokens_source": session_budget_source(None, cfg.budget.max_tokens),
         "tools": {
             "default": cfg.tools.default,
             "allow": cfg.tools.allow,
@@ -937,8 +960,8 @@ pub async fn cli_plugin_search(
     crate::core::agent::plugins::search(&resolve_project_root(project), query).await
 }
 
-/// Autonomous run: as many turns as the task needs, bounded only by the
-/// session token budget.
+/// Autonomous run: as many turns as the task needs, bounded by the session
+/// token budget and, when `flags.max_turns` is set, by a turn cap.
 #[allow(clippy::too_many_arguments)]
 pub async fn cli_agent_run(
     project: &str,
@@ -964,8 +987,8 @@ pub async fn cli_agent_run(
     .await
 }
 
-/// Single-turn run for debugging: the one place a turn cap is still applied,
-/// and it is not user-configurable.
+/// Single-turn run for debugging: the turn cap is pinned to 1 here and
+/// outranks any `--max-turns`.
 pub async fn cli_agent_step(
     project: &str,
     task: &str,
@@ -1089,9 +1112,13 @@ pub(crate) struct SessionLimits {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
-    /// `[budget].max_tokens`: marginal token-spend ceiling for one run, the
-    /// only cap on run length. `0` is unbounded.
+    /// `--max-session-tokens`, else `[budget].max_tokens`, else the default:
+    /// marginal token-spend ceiling for one run. `0` is unbounded.
     pub max_session_tokens: u64,
+    /// `--max-turns`: hard cap on agentic turns for this run. `None` omits the
+    /// field from the request body, which the engine reads as unbounded; `0`
+    /// means unbounded too (see `body_turn_cap`).
+    pub max_turns: Option<u64>,
 }
 
 /// Resolved engine handle for a chat session: the args are built once and the
@@ -1147,6 +1174,11 @@ impl AgentSession {
         if let Some(max) = self.limits.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // Single place a turn cap enters the body: `agent step` pins 1 the same
+        // way `--max-turns` pins N, so both go through `limits`.
+        if let Some(turns) = self.limits.max_turns {
+            body["max_turns"] = serde_json::json!(turns);
+        }
         // Reasoning resend policy: the request-level flag the loop reads to
         // decide whether prior assistant `reasoning_content` goes back out.
         body["send_reasoning"] = serde_json::json!(self.send_reasoning);
@@ -1176,6 +1208,13 @@ pub struct SessionFlags {
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
     pub worktree: Option<bool>,
+    /// `--max-turns`: hard cap on agentic turns. `None` (not passed) leaves the
+    /// run unbounded by turns; `0` is unbounded as well.
+    pub max_turns: Option<u64>,
+    /// `--max-session-tokens`: session token ceiling, outranking
+    /// `[budget].max_tokens`. `None` (not passed) defers to that, then to
+    /// `DEFAULT_MAX_SESSION_TOKENS`.
+    pub max_session_tokens: Option<u64>,
 }
 
 /// The desktop app's currently-selected model, adopted only when signed in to
@@ -1486,7 +1525,11 @@ fn prepare_agent_session(
             compaction_ratio,
             compaction_reserve_tokens: cfg.agent.compaction_reserve_tokens,
             max_tokens: cfg.agent.max_tokens,
-            max_session_tokens: cfg.budget.max_tokens.unwrap_or(DEFAULT_MAX_SESSION_TOKENS),
+            max_session_tokens: resolve_session_budget(
+                flags.max_session_tokens,
+                cfg.budget.max_tokens,
+            ),
+            max_turns: flags.max_turns,
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
@@ -1545,6 +1588,9 @@ fn prepare_agent_run(
         SessionFlags {
             plan: false,
             require_model: true,
+            // `agent step` is a single turn by definition and outranks any
+            // flag; `agent run` carries whatever `--max-turns` asked for.
+            max_turns: if single_turn { Some(1) } else { flags.max_turns },
             ..flags
         },
         resume.as_ref(),
@@ -1599,10 +1645,7 @@ fn prepare_agent_run(
 
     let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
     history.push(serde_json::json!({ "role": "user", "content": final_task }));
-    let mut body = session.body(serde_json::json!(history.clone()));
-    if single_turn {
-        body["max_turns"] = serde_json::json!(1);
-    }
+    let body = session.body(serde_json::json!(history.clone()));
     // Emit resolved references stderr so the user sees what was injected
     if !injected.is_empty() {
         eprintln!("(resolved @path references)");
@@ -3448,5 +3491,25 @@ mod tests {
         // A source that recorded a snapshot uses it, no capture needed.
         let snapped = serde_json::json!({ "id": "s", "metadata": { "base_snapshot": "cafe" } });
         assert_eq!(fork_base(Some(&snapped)).as_deref(), Some("cafe"));
+    }
+
+    /// `--max-session-tokens` outranks `[budget].max_tokens`, which outranks
+    /// the built-in default; `0` from either source survives as the unbounded
+    /// marker `body_session_budget` expects rather than falling through.
+    #[test]
+    fn session_budget_precedence_is_flag_then_config_then_default() {
+        assert_eq!(
+            resolve_session_budget(None, None),
+            DEFAULT_MAX_SESSION_TOKENS
+        );
+        assert_eq!(resolve_session_budget(None, Some(50_000)), 50_000);
+        assert_eq!(resolve_session_budget(Some(20_000), Some(50_000)), 20_000);
+        assert_eq!(resolve_session_budget(Some(20_000), None), 20_000);
+        assert_eq!(resolve_session_budget(Some(0), Some(50_000)), 0);
+        assert_eq!(resolve_session_budget(None, Some(0)), 0);
+
+        assert_eq!(session_budget_source(None, None), "default");
+        assert_eq!(session_budget_source(None, Some(50_000)), "agent.toml");
+        assert_eq!(session_budget_source(Some(0), Some(50_000)), "flag");
     }
 }
