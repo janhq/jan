@@ -744,14 +744,23 @@ use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
 /// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
-/// is unset. There is no turn cap: the agent takes as many turns as the task
-/// needs and this budget (or cancellation) is what stops a runaway loop. `0`
-/// disables the ceiling entirely. Counted marginally by `SessionBudget`, so
-/// this bounds real new spend, not the context replayed on every turn.
+/// is unset. `0` disables the ceiling entirely. Counted marginally by
+/// `SessionBudget`, so it tracks real new spend, not the context replayed on
+/// every turn.
+///
+/// Advisory, not a bound: crossing it compacts the history and records a note,
+/// then the run carries on (see `body_session_budget`). `--max-turns` and
+/// cancellation are what actually stop a runaway loop.
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Where the session token ceiling in effect came from, so `agent status` can
-/// say which of the three sources won.
+/// say which source won.
+///
+/// `agent status` takes no budget flag and so always passes `None`, making
+/// `"flag"` unreachable from the binary today. It is kept because the argument
+/// mirrors `resolve_session_budget` below: a status surface that does accept
+/// the flag (or any caller reporting an in-flight run's ceiling) would
+/// otherwise report `agent.toml` for a value the flag had overridden.
 fn session_budget_source(flag: Option<u64>, configured: Option<u64>) -> &'static str {
     match (flag, configured) {
         (Some(_), _) => "flag",
@@ -960,8 +969,9 @@ pub async fn cli_plugin_search(
     crate::core::agent::plugins::search(&resolve_project_root(project), query).await
 }
 
-/// Autonomous run: as many turns as the task needs, bounded by the session
-/// token budget and, when `flags.max_turns` is set, by a turn cap.
+/// Autonomous run: as many turns as the task needs, bounded by a `max_turns`
+/// cap when one is set, and otherwise only by cancellation. The session token
+/// budget is advisory and does not stop the run (see `body_session_budget`).
 #[allow(clippy::too_many_arguments)]
 pub async fn cli_agent_run(
     project: &str,
@@ -1113,11 +1123,15 @@ pub(crate) struct SessionLimits {
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
     /// `--max-session-tokens`, else `[budget].max_tokens`, else the default:
-    /// marginal token-spend ceiling for one run. `0` is unbounded.
+    /// marginal token-spend ceiling for one run. `0` is no ceiling.
+    ///
+    /// Advisory: crossing it triggers compaction and a recorded note, it does
+    /// not end the run. `max_turns` is the hard bound.
     pub max_session_tokens: u64,
-    /// `--max-turns`: hard cap on agentic turns for this run. `None` omits the
-    /// field from the request body, which the engine reads as unbounded; `0`
-    /// means unbounded too (see `body_turn_cap`).
+    /// `--max-turns`: hard cap on agentic turns for this run, and the only
+    /// setting that terminates one. `None` omits the field from the request
+    /// body, which the engine reads as unbounded; `0` means unbounded too (see
+    /// `body_turn_cap`).
     pub max_turns: Option<u64>,
 }
 
@@ -1160,29 +1174,43 @@ pub(crate) struct AgentSession {
     pub workspace_note: Option<String>,
 }
 
+/// The request body for one turn, as a free function of the parts that shape
+/// it. Split out of [`AgentSession::body`] so the wire contract is testable
+/// without standing up an orchestration handle (MCP maps, HTTP client, tool
+/// permissions), none of which this assembly reads.
+fn request_body(
+    model: &str,
+    limits: &SessionLimits,
+    send_reasoning: bool,
+    messages: serde_json::Value,
+) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "max_session_tokens": limits.max_session_tokens,
+        "stream": true,
+    });
+    // Forward the per-request output cap only when configured; it flows to
+    // the upstream via `copy_optional_chat_params`.
+    if let Some(max) = limits.max_tokens {
+        body["max_tokens"] = serde_json::json!(max);
+    }
+    // Single place a turn cap enters the body: `agent step` pins 1 the same
+    // way `--max-turns` pins N, so both go through `limits`. Absent rather
+    // than 0 when unset, so the engine's own default applies.
+    if let Some(turns) = limits.max_turns {
+        body["max_turns"] = serde_json::json!(turns);
+    }
+    // Reasoning resend policy: the request-level flag the loop reads to
+    // decide whether prior assistant `reasoning_content` goes back out.
+    body["send_reasoning"] = serde_json::json!(send_reasoning);
+    body
+}
+
 impl AgentSession {
     /// Build a streaming request body for the given conversation history.
     pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
-        let mut body = serde_json::json!({
-            "model": self.model,
-            "messages": messages,
-            "max_session_tokens": self.limits.max_session_tokens,
-            "stream": true,
-        });
-        // Forward the per-request output cap only when configured; it flows to
-        // the upstream via `copy_optional_chat_params`.
-        if let Some(max) = self.limits.max_tokens {
-            body["max_tokens"] = serde_json::json!(max);
-        }
-        // Single place a turn cap enters the body: `agent step` pins 1 the same
-        // way `--max-turns` pins N, so both go through `limits`.
-        if let Some(turns) = self.limits.max_turns {
-            body["max_turns"] = serde_json::json!(turns);
-        }
-        // Reasoning resend policy: the request-level flag the loop reads to
-        // decide whether prior assistant `reasoning_content` goes back out.
-        body["send_reasoning"] = serde_json::json!(self.send_reasoning);
-        body
+        request_body(&self.model, &self.limits, self.send_reasoning, messages)
     }
 }
 
@@ -1208,10 +1236,11 @@ pub struct SessionFlags {
     /// defers to `[agent].worktree`, then the global `worktree`, then the CLI
     /// default of off.
     pub worktree: Option<bool>,
-    /// `--max-turns`: hard cap on agentic turns. `None` (not passed) leaves the
-    /// run unbounded by turns; `0` is unbounded as well.
+    /// `--max-turns`: hard cap on agentic turns, and the only setting that
+    /// ends a run. `None` (not passed) leaves the run unbounded by turns; `0`
+    /// is unbounded as well.
     pub max_turns: Option<u64>,
-    /// `--max-session-tokens`: session token ceiling, outranking
+    /// `--max-session-tokens`: advisory session token ceiling, outranking
     /// `[budget].max_tokens`. `None` (not passed) defers to that, then to
     /// `DEFAULT_MAX_SESSION_TOKENS`.
     pub max_session_tokens: Option<u64>,
@@ -3511,5 +3540,47 @@ mod tests {
         assert_eq!(session_budget_source(None, None), "default");
         assert_eq!(session_budget_source(None, Some(50_000)), "agent.toml");
         assert_eq!(session_budget_source(Some(0), Some(50_000)), "flag");
+    }
+
+    fn limits_with(max_turns: Option<u64>, max_session_tokens: u64) -> SessionLimits {
+        SessionLimits {
+            context_window: 128_000,
+            context_window_source:
+                crate::core::cli::model_capabilities::ContextWindowSource::Fallback,
+            compaction_ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
+            compaction_reserve_tokens: None,
+            max_tokens: None,
+            max_session_tokens,
+            max_turns,
+        }
+    }
+
+    /// The write side of the caps: the limits have to reach the request body in
+    /// the encoding `body_turn_cap` / `body_session_budget` read back, or the
+    /// flags are inert. `max_turns` is absent (not `0`) when unset, so a caller
+    /// that never passes it is byte-identical to before the flag existed.
+    #[test]
+    fn run_limits_reach_the_request_body() {
+        let messages = serde_json::json!([]);
+
+        let unset = request_body("m", &limits_with(None, 128_000), true, messages.clone());
+        assert!(
+            unset.get("max_turns").is_none(),
+            "an unset cap must not write the field at all: {unset}"
+        );
+        assert_eq!(unset["max_session_tokens"], 128_000);
+
+        // What `agent step` pins, and what `--max-turns 5` pins, by the same route.
+        let stepped = request_body("m", &limits_with(Some(1), 128_000), true, messages.clone());
+        assert_eq!(stepped["max_turns"], 1);
+        let capped = request_body("m", &limits_with(Some(5), 20_000), true, messages.clone());
+        assert_eq!(capped["max_turns"], 5);
+        assert_eq!(capped["max_session_tokens"], 20_000);
+
+        // An explicit 0 is the engine's "unbounded" encoding and must survive as
+        // itself rather than being dropped back to the absent case.
+        let zero = request_body("m", &limits_with(Some(0), 0), true, messages);
+        assert_eq!(zero["max_turns"], 0);
+        assert_eq!(zero["max_session_tokens"], 0);
     }
 }

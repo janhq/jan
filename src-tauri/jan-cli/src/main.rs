@@ -162,15 +162,20 @@ impl ResumeArgs {
     }
 }
 
-/// Per-invocation cost ceilings for `jan cli agent run`. Both mirror the
-/// engine's own semantics: `0` means unbounded, and an unpassed flag leaves the
-/// config files (or, for turns, nothing at all) in charge.
+/// Per-invocation cost limits for `jan cli agent run`. Both mirror the engine's
+/// own semantics: `0` means unbounded, and an unpassed flag leaves the config
+/// files (or, for turns, nothing at all) in charge.
+///
+/// Only `--max-turns` ends a run. The token ceiling is advisory: passing it
+/// compacts the conversation and records a note, then the run continues.
 #[derive(Args, Clone, Copy)]
 struct BudgetArgs {
-    /// Stop after at most N agentic turns (0 = unbounded, the default)
+    /// Fail the run after at most N agentic turns; bounds this run only, not
+    /// its subagents (0 = unbounded, the default)
     #[arg(long, value_name = "N")]
     max_turns: Option<u64>,
-    /// Session token ceiling, overriding [budget].max_tokens (0 = unbounded)
+    /// Advisory token ceiling overriding [budget].max_tokens: triggers
+    /// compaction and a note, but does not stop the run (0 = no ceiling)
     #[arg(long, value_name = "N")]
     max_session_tokens: Option<u64>,
 }
@@ -344,7 +349,7 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the session token budget
+    /// Run the agent loop to completion, or to a --max-turns cap
     Run {
         /// Project root containing .jan/agent/agent.toml
         #[arg(long, default_value = ".")]

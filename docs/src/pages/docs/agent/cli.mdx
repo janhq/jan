@@ -74,9 +74,14 @@ Run the agent without a UI. This is the form to use in scripts.
 
 ### `run`
 
-Run to completion, or until the session token budget is spent. There is no turn cap by default - the
-agent runs as many turns as the task needs, bounded by `[budget].max_tokens`, by `--max-turns` /
-`--max-session-tokens`, or by cancelling it.
+Run to completion. There is no turn cap by default - the agent runs as many turns as the task needs,
+bounded by `--max-turns` or by cancelling it.
+
+<Callout type="warning">
+`--max-session-tokens` and `[budget].max_tokens` do **not** stop a run. Crossing the ceiling is
+advisory: the run compacts its history, records a note, and carries on, tool calls included. Use
+`--max-turns` for a hard bound on an unattended run.
+</Callout>
 
 ```bash
 jan cli agent run "fix the failing test in tests/auth"
@@ -98,8 +103,8 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--fork-session` | Open the resumed session as a new thread, leaving the original resumable |
 | `--worktree` | Work in a dedicated git worktree instead of the project directory. Off by default |
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
-| `--max-turns <N>` | Stop after at most N agentic turns. `0` means unbounded, which is the default |
-| `--max-session-tokens <N>` | Session token ceiling for this run, overriding `[budget].max_tokens`. `0` means unbounded |
+| `--max-turns <N>` | Hard cap on agentic turns. If the model is still calling tools at N the run fails with `reached the N-turn limit...` and a non-zero exit; with `--output-format json` the partial answer is still in `result`. Bounds the parent run only - subagent turns are not counted. `0` means unbounded, which is the default |
+| `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Triggers compaction and a recorded note when passed; it does not terminate the run. `0` means no ceiling |
 | `--provider`, `--api-key` | Credential overrides for this run |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
 | `--input-format <FORMAT>` | `text` (default) ignores stdin; `stream-json` reads client messages while the run is in flight. Requires `--output-format stream-json` |
