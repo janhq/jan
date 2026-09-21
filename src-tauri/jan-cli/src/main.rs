@@ -1239,6 +1239,39 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its budget args.
+    fn parsed_budget(extra: &[&str]) -> BudgetArgs {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { budget, .. },
+                    },
+            }) => budget,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// An unpassed limit is `None` so the config files (or nothing, for turns)
+    /// decide; `0` must survive parsing as the engine's unbounded marker rather
+    /// than collapsing into the same `None`.
+    #[test]
+    fn run_limits_parse_and_default_to_unset() {
+        let none = parsed_budget(&[]);
+        assert_eq!(none.max_turns, None);
+        assert_eq!(none.max_session_tokens, None);
+
+        let set = parsed_budget(&["--max-turns", "5", "--max-session-tokens", "20000"]);
+        assert_eq!(set.max_turns, Some(5));
+        assert_eq!(set.max_session_tokens, Some(20_000));
+
+        let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
+        assert_eq!(zero.max_turns, Some(0));
+        assert_eq!(zero.max_session_tokens, Some(0));
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
     fn parsed_input_format(extra: &[&str]) -> InputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1502,6 +1535,8 @@ mod tests {
                 skills: 2,
                 commands: 1,
                 agents: 3,
+                tools: 4,
+                hooks: 5,
             },
             InstalledPlugin {
                 name: "beta".into(),
@@ -1511,6 +1546,8 @@ mod tests {
                 skills: 0,
                 commands: 0,
                 agents: 0,
+                tools: 0,
+                hooks: 0,
             },
         ];
 
@@ -1519,11 +1556,16 @@ mod tests {
         assert!(output.lines().next().unwrap().contains("PLUGIN"));
         assert!(output.lines().next().unwrap().contains("COMMANDS"));
         assert!(output.lines().next().unwrap().contains("AGENTS"));
+        assert!(output.lines().next().unwrap().contains("TOOLS"));
+        assert!(output.lines().next().unwrap().contains("HOOKS"));
         assert!(output.contains("alpha"));
         assert!(output.contains("1.2.3"));
-        assert!(output.contains("2"));
-        assert!(output.contains("1"));
-        assert!(output.contains("3"));
+        // Every count alpha declares, in column order.
+        let alpha = output.lines().nth(1).unwrap();
+        assert_eq!(
+            alpha.split_whitespace().collect::<Vec<_>>(),
+            ["alpha", "1.2.3", "2", "1", "3", "4", "5"]
+        );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
     }

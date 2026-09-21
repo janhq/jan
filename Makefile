@@ -179,8 +179,14 @@ test-ci: test-prepare
 
 # Cheap compile guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
+#
+# --all-targets for the same reason the rust-check `cli` matrix entry uses it:
+# jan-cli is a standalone crate that no other job compiles, so without the test
+# target here its #[cfg(test)] module is built by nothing and silently rots
+# against changes to app_lib types it constructs.
 check-cli:
-	cd src-tauri/jan-cli && cargo check --locked --no-default-features --features cli
+	cd src-tauri/jan-cli && cargo check --locked --no-default-features --features cli --all-targets
+	cd src-tauri/jan-cli && cargo test --locked --no-default-features --features cli
 
 # Build MLX server (macOS Apple Silicon only) - always builds, unless
 # JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
