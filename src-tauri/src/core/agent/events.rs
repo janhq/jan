@@ -139,14 +139,11 @@ pub enum StreamEvent {
     /// Nothing is being generated until a ping resumes the run, which the next
     /// `Step` marks. Lets a consumer say "watching" rather than "working".
     Parked,
-    /// The loop's compaction reduced the conversation while retrying a
-    /// context overflow. The client should replace its session history with
-    /// `messages` for subsequent turns. This turn's per-turn block is not in
-    /// here: it is projection input the loop regenerates for every request, and
-    /// a client that stored it would resend it as history on the next turn.
-    MessagesUpdated {
-        messages: Vec<serde_json::Value>,
-    },
+    /// The client should replace its session history with `messages` before
+    /// subsequent turns. Includes accepted prompt guidance in its original
+    /// position, but not a pending block from an unsuccessful request. Also
+    /// carries compacted history when the loop retries a context overflow.
+    MessagesUpdated { messages: Vec<serde_json::Value> },
     /// The `ask` tool is waiting for structured interactive input. Carries the
     /// `ask_timeout_secs` deadline (seconds until the loop auto-selects the
     /// recommended option) as `timeout_secs`, or `None` when no timeout is

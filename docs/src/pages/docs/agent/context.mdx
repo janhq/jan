@@ -126,9 +126,11 @@ sit at the front of every request.
 
 - The stable part of the system prompt (identity, guidelines, working directory, skills, memory
   catalog) is written once at the head of the conversation and never rewritten.
-- Per-turn context (today's date, memory recall, plan and todo state) is appended after the
-  conversation as marked guidance. Previously sent messages stay untouched, and provider
-  adapters do not lift the changing guidance into the system prompt.
+- Per-run context (today's date, memory recall, plan and todo state) starts after the
+  conversation as marked guidance. Once a request succeeds, that block stays at the position
+  the model received it, including across tool steps and saved-session resumes. A new run adds
+  fresh guidance after history; old blocks are bounded by normal compaction. Provider adapters
+  do not lift this guidance into the system prompt.
 - A stable prompt that changes mid-session - an edited `agent.toml`, a skill installed while
   the session is open, a mode switch - is retained as a new system message. Providers combine
   system messages into one instruction field, so a change to these prefix contributors still

@@ -3,8 +3,8 @@
 //! Every failure in that epic was the same failure - two consecutive requests
 //! that should share a prefix, and did not - so that is what this suite
 //! measures. Each test assembles whole requests the way a run does (the
-//! composed prompt through its placement policy, the per-turn block behind it,
-//! the conversation after that, the tool array in front) and compares
+//! composed prefix, accepted history, then pending per-turn guidance, with the
+//! tool array in front) and compares
 //! *serialized bytes*, because those are what a provider caches. Comparing
 //! `Value`s instead would miss key order and whitespace, which are part of the
 //! prefix a provider matches on.
@@ -20,11 +20,10 @@
 //! What they drive is the real production code for each contributor to the
 //! prefix - `compose_system_prompt` and the placement policy, the two helpers
 //! that place the stable prompt and marked tail guidance, `build_completion_request`,
-//! and the tool-array assembly and reuse. The one thing not driven here is the
-//! *order* in which `orchestrate_inner` calls those pieces, which is inline in
-//! that function and only reachable with a live upstream. When that assembly is
-//! extracted into a callable step, [`turn`] should call it instead of mirroring
-//! it, and every assertion below keeps its meaning.
+//! and the tool-array assembly and reuse. This module mirrors orchestration
+//! order; `loop::tests` separately drives real tool steps and a published-history
+//! round trip, so moving accepted guidance cannot pass only because this
+//! fixture retained messages the production loop dropped.
 //!
 //! Each test says what it protects, and names the epic item behind it where
 //! there is one.

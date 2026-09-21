@@ -2115,10 +2115,9 @@ fn build_run_system_prompt(
 /// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
 /// the CLI `/context` view to size the system segments: routing it through the
 /// same builder is what keeps the reported breakdown from drifting away from
-/// what is actually sent. What it sizes is the stable prompt a run caches, so
-/// the per-turn additions a run composes on top are excluded: the date, git
-/// state, query-dependent memory recall, and plan/todo state all land in the
-/// volatile block below the cache line rather than in the prefix this reports.
+/// what is actually sent. It sizes all project-composed blocks, including
+/// blocks demoted to the tail, but excludes the run's date, git state,
+/// query-dependent memory recall, and plan/todo additions.
 /// `None` when no prompt would be built, or
 /// when the project's `[prompt]` policy cannot be honored (the run itself
 /// reports that failure with the same message).
@@ -2437,9 +2436,9 @@ async fn orchestrate_inner(
     // The history becomes a canonical record and the prompt becomes an event
     // the projection places: at the head while it is unchanged, appended behind
     // the history when it changes, so a turn cannot invalidate the bytes an
-    // earlier request already sent. The per-turn block stays projection input:
-    // recording yesterday's date as history is how a resumed session ends up
-    // carrying yesterday's date forever.
+    // earlier request already sent. Per-turn guidance starts as projection
+    // input, then is recorded at its sent position once a request succeeds.
+    // Later tool steps and client resumes must retain those accepted bytes.
     //
     // The stable half is the cacheable one; `[prompt]` decides which blocks
     // reach it, and a composer the policy moves down is carried in the tail
@@ -3071,16 +3070,9 @@ fn project(
 /// The message list a client adopts as its session history
 /// (`StreamEvent::MessagesUpdated`).
 ///
-/// Deliberately not the request's messages. The per-turn block is projection
-/// input the loop regenerates on every turn, and a client that kept it would
-/// send it back inside its next history, where [`Transcript::from_history`]
-/// cannot tell it from a reminder the model actually received -- the wire
-/// shape is the same one -- so it would record it as history. Every turn would
-/// then append another block behind the last: yesterday's date carried
-/// forward, and a request that grows by a block per turn. The published
-/// history is therefore the conversation without this turn's block, and the
-/// client's next request gets the fresh one appended at the tail, where the
-/// projection puts it.
+/// Keep accepted guidance in the published history at the position the model
+/// saw it. Only a pending block from a request that has not succeeded is
+/// excluded. Removing an accepted block would break the next run's prefix.
 fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_json::Value> {
     project(transcript, None, send_reasoning)
 }
@@ -3370,6 +3362,13 @@ async fn run_turn_cycle(
                 }
             }
         };
+
+        // This request succeeded: its guidance is now part of the accepted
+        // history, before the assistant response and any tool results. Keep it
+        // there instead of projecting it at the moving tail of every step.
+        if let Some(text) = volatile_system.as_deref() {
+            transcript.record_prompt_tail(text);
+        }
 
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
@@ -3860,14 +3859,10 @@ mod tests {
         );
     }
 
-    /// The client adopts the published history as its session history and sends
-    /// it back on the next turn, so this turn's block must not be in it. The
-    /// block takes a reminder's wire shape, and `from_history` records a resent
-    /// reminder as history on purpose (it arrived, so it stays), which makes a
-    /// handed-back block indistinguishable from one: every turn would append
-    /// another copy, and carry yesterday's date forward while it did.
+    /// A client resumes from the published history, so it must retain the
+    /// guidance the provider already accepted, not rebuild it after the answer.
     #[tokio::test]
-    async fn the_published_history_carries_no_per_turn_block() {
+    async fn published_history_preserves_the_accepted_prompt_tail() {
         let volatile1 = "Today's date is 2026-09-21.";
         let volatile2 = "Today's date is 2026-09-22.";
 
@@ -3929,13 +3924,11 @@ mod tests {
         // The client takes what was published -- not the bytes it asked with --
         // and adds its next user turn to it.
         let mut adopted = published(&mut rx).expect("turn one publishes its history");
-        assert!(
-            reminders(&adopted).is_empty(),
-            "the published history is the conversation, not the request: {adopted:?}"
-        );
+        assert_eq!(adopted, request1, "publish the accepted request verbatim");
+        adopted.push(json!({ "role": "assistant", "content": "reply" }));
         adopted.push(json!({ "role": "user", "content": "second" }));
 
-        // Turn two carries one block: this turn's.
+        // Changed guidance follows the entire previous request and its answer.
         let (tx2, _rx2) = mpsc::unbounded_channel();
         let model2 = MockModel::new(vec![final_answer("reply 2")]);
         let mut budget2 = SessionBudget::new(None);
@@ -3966,14 +3959,64 @@ mod tests {
             .clone();
         assert_eq!(
             reminders(&request2).len(),
-            1,
-            "the previous turn's block must not survive into the next request: {request2:?}"
+            2,
+            "one accepted block from each run: {request2:?}"
         );
         assert_eq!(
             request2.last().unwrap()["content"],
             json!(crate::core::agent::reminder::wrap(volatile2)),
-            "the one block that is there is this turn's"
+            "the newest guidance is last"
         );
+        assert_eq!(
+            serde_json::to_string(&request2[..request1.len()]).unwrap(),
+            serde_json::to_string(&request1).unwrap(),
+            "the next run must extend every message the provider accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_steps_preserve_the_accepted_prompt_tail() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![tool_call_completion(), final_answer("done")]);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "search for Rust"}),
+            ]),
+            Some("Today's date is 2026-09-21.".to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let requests = model.requests.lock().unwrap();
+        let first = requests[0]["messages"].as_array().unwrap();
+        let second = requests[1]["messages"].as_array().unwrap();
+        assert_eq!(
+            serde_json::to_string(&second[..first.len()]).unwrap(),
+            serde_json::to_string(first).unwrap(),
+            "a tool step must extend the accepted request, not move its guidance"
+        );
+        assert_eq!(
+            second.len(),
+            first.len() + 2,
+            "only the call and result are new"
+        );
+        assert_eq!(second.last().unwrap()["role"], "tool");
     }
 
     #[test]
