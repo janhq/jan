@@ -257,7 +257,16 @@ export const config: WebdriverIO.Config = {
   //
   // The cost is that this list is maintained by hand: a new spec that is not
   // added here does not run, and nothing reports its absence.
-  specs: ['./specs/smoke.e2e.ts', './specs/chat.e2e.ts'],
+  //
+  // The order below is smoke -> chat -> message-actions, pristine first and
+  // most-configured last. message-actions.e2e.ts registers a second provider
+  // and leaves two threads behind, so it has to come after anything that cares
+  // what the profile holds.
+  specs: [
+    './specs/smoke.e2e.ts',
+    './specs/chat.e2e.ts',
+    './specs/message-actions.e2e.ts',
+  ],
   maxInstances: 1,
   capabilities: [
     {

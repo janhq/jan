@@ -510,6 +510,7 @@ export const MessageItem = memo(
         <div className="flex items-center gap-0.5 text-muted-foreground">
           <button
             type="button"
+            data-testid="message-version-prev"
             className="hover:text-foreground disabled:opacity-40"
             disabled={versionInfo.index <= 1}
             onClick={() => onSwitchVersion(message.id, -1)}
@@ -517,11 +518,12 @@ export const MessageItem = memo(
           >
             <IconChevronLeft size={14} />
           </button>
-          <span className="tabular-nums">
+          <span data-testid="message-version-counter" className="tabular-nums">
             {versionInfo.index}/{versionInfo.count}
           </span>
           <button
             type="button"
+            data-testid="message-version-next"
             className="hover:text-foreground disabled:opacity-40"
             disabled={versionInfo.index >= versionInfo.count}
             onClick={() => onSwitchVersion(message.id, 1)}
@@ -703,6 +705,7 @@ export const MessageItem = memo(
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    data-testid="continue-message"
                     onClick={handleContinue}
                     title={t('chat:actions.continue')}
                   >
@@ -717,6 +720,7 @@ export const MessageItem = memo(
                   <Button
                     variant="ghost"
                     size="icon-xs"
+                    data-testid="regenerate-message"
                     onClick={handleRegenerate}
                     title={t('chat:actions.regenerate')}
                   >
