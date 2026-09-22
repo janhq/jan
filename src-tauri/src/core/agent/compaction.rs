@@ -218,7 +218,7 @@ fn role(msg: &Value) -> &str {
 ///
 /// `None` when the tail would leave nothing worth dropping: the summary is
 /// itself a message, so a prefix of one shrinks nothing.
-fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
+pub(crate) fn tail_start(rest: &[Value], target: usize) -> Option<usize> {
     let mut cut = target;
     while cut < rest.len() && role(&rest[cut]) == "tool" {
         cut += 1;
@@ -274,6 +274,16 @@ pub(crate) async fn fire_pre_compact(
     }
 }
 
+/// The `system` message a compaction summary travels in, marker included. One
+/// place, because [`is_compaction_summary`] recognizes a summary by that marker
+/// and the transcript records this node verbatim.
+pub(crate) fn summary_message(summary: &str) -> Value {
+    json!({
+        "role": "system",
+        "content": format!("{SUMMARY_MARKER}\n\n{summary}")
+    })
+}
+
 /// Compact `messages` so the result is meaningfully smaller than the input.
 /// Returns the input unchanged when there is nothing safe to compact (so the
 /// caller can detect a no-op and stop retrying).
@@ -284,6 +294,11 @@ pub(crate) async fn fire_pre_compact(
 /// model, the compacted request could still overflow). The `Err` is propagated
 /// so the caller can preserve history and block the request instead. Every
 /// other summarizer failure stays recoverable and yields a [`FALLBACK_NOTE`].
+///
+/// Only the TUI's `/compact` still calls this: the agent loop compacts through
+/// the transcript's own boundary ([`summarize_span`]), so outside the cli build
+/// there is nothing left to call it.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
 pub(crate) async fn compact_conversation(
     messages: &[Value],
     model_id: &str,
@@ -306,12 +321,23 @@ pub(crate) async fn compact_conversation(
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
-    out.push(json!({
-        "role": "system",
-        "content": format!("{SUMMARY_MARKER}\n\n{summary}")
-    }));
+    out.push(summary_message(&summary));
     out.extend_from_slice(kept);
     Ok(out)
+}
+
+/// Summarize a span for a caller that records the replacement itself: the
+/// transcript's compaction path, where the summary becomes an event rather than
+/// a rewritten list. The node carries [`SUMMARY_MARKER`], so a later turn reads
+/// it as condensed history instead of mistaking it for a prompt.
+pub(crate) async fn summarize_span(
+    span: &[Value],
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<Value, String> {
+    summarize(span, model_id, model)
+        .await
+        .map(|text| summary_message(&text))
 }
 
 /// Flatten a span of wire messages into a plain-text transcript. Rendering
@@ -444,7 +470,7 @@ mod tests {
             vec![tauri_plugin_agent_tools::tools::hooks::HookEntry {
                 event: "PreCompact".to_string(),
                 matcher: None,
-                command: format!("cat > {}", seen.to_string_lossy()),
+                command: format!("cat > {}", crate::core::agent::shell_quoted_path(&seen)),
                 timeout_secs: None,
             }],
             std::path::Path::new("test"),

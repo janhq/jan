@@ -31,10 +31,29 @@ pub mod plan;
 pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
+pub mod prompt;
 pub mod reminder;
 pub mod session;
 pub mod skill_hub;
 pub mod skills;
 pub mod subagent;
 pub mod todo;
+pub mod transcript;
 pub mod upstream;
+
+// Byte-level prefix-stability tests: the regression suite for epic #8956.
+#[cfg(test)]
+mod prefix_stability;
+
+/// Render a path for embedding in a hook/plugin-tool shell command in tests.
+///
+/// The hook runner hands the command to the resolved shell, which on the
+/// Windows CI runner is git-bash: a native `C:\Users\...` path reaches it as a
+/// backslash-escaped string and those escapes are eaten, so the command writes
+/// to a mangled name and the file the test asserts on never appears. Bash
+/// accepts forward slashes on Windows, and the quotes keep a path containing
+/// spaces a single word.
+#[cfg(test)]
+pub(crate) fn shell_quoted_path(path: &std::path::Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\\', "/"))
+}

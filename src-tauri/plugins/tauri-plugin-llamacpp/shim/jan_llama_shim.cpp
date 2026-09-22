@@ -379,6 +379,16 @@ jan_llama_engine * jan_llama_engine_start_from_preset(const char *       ini_pat
         postprocess_cpu_params(engine->params.speculative.draft.cpuparams_batch,
                                &engine->params.cpuparams_batch);
 
+        // arg.cpp:886-890, added in 0.4.1: an unset `-mmdev` follows `--device`
+        // rather than falling back to auto-placement. Without it a preset that
+        // pins the model to one GPU would still let the projector land wherever
+        // ggml chose, which is the split the setting exists to prevent.
+        if (engine->params.mmproj_use_gpu && engine->params.mmproj_device == nullptr &&
+            !engine->params.devices.empty()) {
+            engine->params.mmproj_device  = engine->params.devices.front();
+            engine->params.mmproj_use_gpu = engine->params.mmproj_device != nullptr;
+        }
+
         // Same omission, arg.cpp:946-954: common_params_fit needs spare slots
         // to write its overrides into and throws "did not provide buffer to
         // set tensor_buft_overrides" without them, so auto-fit silently gave

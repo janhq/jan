@@ -1,0 +1,27 @@
+{
+  "version": "0.8.4-4980",
+  "notes": "",
+  "pub_date": "2026-09-16T21:01:20.471Z",
+  "platforms": {
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRXJUVWE2ekJCTGlJMVJ6aU4ySUc1WmEwVm5Mdk5WaDZUSDhhdEhyWGcyVjBsTlpHWnJ4ZTJPeFFrVUFDdDdYRUswTVRZeUZnY2l0ZjhOUWRGNVQraGNMdFhOVExJblFnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTkwODMzCWZpbGU6SmFuLW5pZ2h0bHlfMC44LjQtNDk4MF9hbWQ2NC5BcHBJbWFnZQptSTZPUkVVemRlM1F0alI3RFozaFluZktHM1lTYWNPeExPTDhjcFNNUFZobVNnekU2OVdVaGtzNFpCSSt3ekx3MEZkeG5iTFl3Q1hxQ09zOHFhQzJBZz09Cg==",
+      "url": "https://delta.jan.ai/nightly/Jan-nightly_0.8.4-4980_amd64.AppImage"
+    },
+    "windows-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRXJUVWE2ekJCTGpJdVkybG03Mk45ZUIyQVNyQ1hnM2VQa1JxbXQxUFdRUmZlblV4R1BLd1BCdDB3Nlp1dUs4TXQ4NTJhN3ZCWExTblBkcE5RVkdUcUJZMGVBaEZWR2c4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTkxNTcwCWZpbGU6SmFuLW5pZ2h0bHlfMC44LjQtNDk4MF94NjQtc2V0dXAuZXhlCkRrb3F1V0tmNzk2TXNRWkliL2tXbEt3eFNNOGpsazloZC8zREhCMW8xVHNwc204Vzg4NHpiQlZYNW1SRjVyVXliNlJGeHJMcENTRmVHN0swT0h2TUFRPT0K",
+      "url": "https://delta.jan.ai/nightly/Jan-nightly_0.8.4-4980_x64-setup.exe"
+    },
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRXJUVWE2ekJCTHVFczR5MlVlTjRMQ2l5bGRBdkgwTG1mRTIvbXpBOHc1RW1ITHkrZXd1bFpJRldMbDhWYTBER1RBWTZmMVR4czFadWhsUGRuTlJoeWFQREk0OEpFV1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTkyNDI2CWZpbGU6SmFuLW5pZ2h0bHkuYXBwLnRhci5nego4RkUwWEFTQ0dWazVqQW9GeW5oQmlMQ211di9qUkR6Vzhic2dLZWh5MDRUNm8xVFVVKzJzNlZwQXFRUnp1dUtGcUdWVWc5WUxWcElaWjF4QWVDK0pCZz09Cg==",
+      "url": "https://delta.jan.ai/nightly/Jan-nightly_0.8.4-4980.app.tar.gz"
+    },
+    "darwin-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRXJUVWE2ekJCTHVFczR5MlVlTjRMQ2l5bGRBdkgwTG1mRTIvbXpBOHc1RW1ITHkrZXd1bFpJRldMbDhWYTBER1RBWTZmMVR4czFadWhsUGRuTlJoeWFQREk0OEpFV1FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTkyNDI2CWZpbGU6SmFuLW5pZ2h0bHkuYXBwLnRhci5nego4RkUwWEFTQ0dWazVqQW9GeW5oQmlMQ211di9qUkR6Vzhic2dLZWh5MDRUNm8xVFVVKzJzNlZwQXFRUnp1dUtGcUdWVWc5WUxWcElaWjF4QWVDK0pCZz09Cg==",
+      "url": "https://delta.jan.ai/nightly/Jan-nightly_0.8.4-4980.app.tar.gz"
+    },
+    "windows-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSRXJUVWE2ekJCTGdiQWt2VjlZK0wvSXN2ZDlTNythZHZCaUh4THJsRTE3TlpRNEI1UEVRT29wbWNnRkRGSjZSaEFEalYwdDdhSnBWRXk2VWhSMVJ3azdrdjVwYzJTSVFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg5NTkxMjE3CWZpbGU6SmFuLW5pZ2h0bHlfMC44LjQtNDk4MF9hcm02NC1zZXR1cC5leGUKckEyTEZvVTMyeWViTzFZKzJETko1TncyNFV3dHgxT205eXVPanBvc2lGcmFVbzBQdDk0a2hkZGdpaDFHVm1EYTdRbDJRSTQwdXpEUVUzRTRMSjhsQWc9PQo=",
+      "url": "https://delta.jan.ai/nightly/Jan-nightly_0.8.4-4980_arm64-setup.exe"
+    }
+  }
+}

@@ -4,6 +4,7 @@ import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   Fragment,
@@ -148,6 +149,7 @@ import {
 } from '@/lib/skillCommands'
 
 export const Route = createFileRoute(route.cowork as any)({
+  beforeLoad: () => ensureCoworkEnabled(),
   component: CoworkPage,
 })
 
@@ -1463,7 +1465,10 @@ function CoworkPage() {
   useEffect(() => setRail(null), [session?.id])
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
+    <div
+      data-testid="cowork-surface"
+      className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
+    >
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownModelProvider

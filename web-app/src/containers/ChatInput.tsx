@@ -2920,6 +2920,7 @@ const ChatInput = memo(function ChatInput({
                     <Button
                       variant="destructive"
                       size="icon-sm"
+                      data-testid="stop-message-button"
                       className="rounded-full mr-1 mb-1"
                       onClick={() => {
                         // Stopping with messages queued clears the queue —

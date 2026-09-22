@@ -21,6 +21,7 @@ import {
 } from '@tabler/icons-react'
 import { useMatches, useNavigate } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
+import { isCoworkEnabled } from '@/lib/version'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle, isLocalProvider } from '@/lib/utils'
@@ -199,11 +200,15 @@ const SettingsMenu = () => {
       route: route.settings.web_search,
       icon: IconWorldSearch,
     },
-    {
-      title: 'common:cowork',
-      route: route.settings.cowork,
-      icon: IconFolderCode,
-    },
+    ...(isCoworkEnabled()
+      ? [
+          {
+            title: 'common:cowork',
+            route: route.settings.cowork,
+            icon: IconFolderCode,
+          },
+        ]
+      : []),
     {
       title: 'common:keyboardShortcuts',
       route: route.settings.shortcuts,

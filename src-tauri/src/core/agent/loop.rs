@@ -15,14 +15,17 @@ use reqwest13::Client;
 use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::core::agent::context::ComposedPrompt;
 use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
+use crate::core::agent::transcript::{Projection, Transcript};
 use crate::core::agent::upstream::{
-    arguments_are_executable, collect_mcp_openai_tools, copy_optional_chat_params,
-    drop_malformed_tool_calls, execute_mcp_tool_calls, extract_choice_message, extract_tool_calls,
-    load_assistant_config, parse_openai_messages, repair_dangling_tool_calls,
-    insert_volatile_system, resolve_api_type_for_model, resolve_upstream_for_model,
-    set_system_prompt, stream_openai_chat_completions,
+    collect_mcp_openai_tools, content_says_nothing, copy_optional_chat_params,
+    execute_mcp_tool_calls, extract_choice_message, extract_tool_calls, load_assistant_config,
+    pairable_tool_call_id, parse_openai_messages, prune_unusable_tool_calls,
+    resolve_api_type_for_model, resolve_upstream_for_model, stream_openai_chat_completions,
+    tool_call_is_usable,
 };
 use crate::core::server::converters::{converter_for, UpstreamConverter};
 #[cfg(not(feature = "cli"))]
@@ -499,6 +502,9 @@ struct ResolvedSettings {
     sandbox: bool,
     env_passthrough: Vec<String>,
     env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
+    /// rest so composition and `agent status` answer from one parse.
+    prompt: PromptPolicy,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -516,6 +522,7 @@ fn resolve_run_settings(
         sandbox: resolve_sandbox(sandbox_flag, settings.sandbox),
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
+        prompt: settings.prompt,
     }
 }
 
@@ -2038,7 +2045,12 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     let content = messages
         .iter()
         .rev()
-        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))?
+        .find(|m| {
+            m.get("role").and_then(|v| v.as_str()) == Some("user")
+                && !crate::core::agent::reminder::is_reminder_only(
+                    m.get("content").unwrap_or(&serde_json::Value::Null),
+                )
+        })?
         .get("content")?;
     match content {
         serde_json::Value::String(s) => Some(s.clone()),
@@ -2056,10 +2068,16 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
 
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
-/// project-context and tool-use guidance from `build_system_prompt` is still
+/// project-context and tool-use guidance from `compose_system_prompt` is still
 /// built around it when a project is selected — a subagent gets the same
 /// grounding (guidelines, web access, tool docs) as a normal run, not a bare
 /// verbatim prompt with no instruction on how to actually use its tools.
+///
+/// The blocks are split by where `[prompt]` allows them to sit, so the caller
+/// places the prefix above the history and the tail below it. A policy that
+/// cannot be honored — a contributor that varies asked to sit above the cache
+/// line — is an error, not a warning: that is the whole point of resolving
+/// placement at composition.
 fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
@@ -2067,7 +2085,8 @@ fn build_run_system_prompt(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox: bool,
-) -> Option<String> {
+    policy: &PromptPolicy,
+) -> Result<Option<ComposedPrompt>, String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
         Some(root) => {
@@ -2075,24 +2094,33 @@ fn build_run_system_prompt(
             // real `/tmp`, and advertising a scratch nothing binds would send
             // the model to a directory only the filesystem tools can see.
             let scratch = sandbox.then(|| scratch_root_for(session_id, root));
-            crate::core::agent::context::build_system_prompt(
+            crate::core::agent::context::compose_system_prompt(
                 base,
                 root,
                 scratch.as_deref(),
                 subagents_enabled,
+                policy,
             )
+            .map(Some)
         }
-        None => base.map(str::to_string),
+        None => Ok(base.map(|prompt| ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        })),
     }
 }
 
 /// The system prompt the *next* ordinary turn in `project_root` would carry,
 /// built through the exact path a real run takes (`build_run_system_prompt`
-/// with this project's resolved sandbox/scratch). Used by the CLI `/context`
-/// view to size the system segments: routing it through the same builder is
-/// what keeps the reported breakdown from drifting away from what is actually
-/// sent. Excludes the two per-turn additions a run makes on top -- the date
-/// line and query-dependent memory recall -- which are not knowable while idle.
+/// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
+/// the CLI `/context` view to size the system segments: routing it through the
+/// same builder is what keeps the reported breakdown from drifting away from
+/// what is actually sent. It sizes all project-composed blocks, including
+/// blocks demoted to the tail, but excludes the run's date, git state,
+/// query-dependent memory recall, and plan/todo additions.
+/// `None` when no prompt would be built, or
+/// when the project's `[prompt]` policy cannot be honored (the run itself
+/// reports that failure with the same message).
 #[cfg(feature = "cli")]
 pub(crate) fn context_system_prompt_preview(
     override_prompt: Option<&str>,
@@ -2102,6 +2130,7 @@ pub(crate) fn context_system_prompt_preview(
     sandbox_flag: Option<bool>,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
+    let policy = crate::core::agent::project::prompt_policy(project_root);
     build_run_system_prompt(
         None,
         override_prompt,
@@ -2109,7 +2138,11 @@ pub(crate) fn context_system_prompt_preview(
         session_id,
         subagents_enabled,
         settings.sandbox,
+        &policy,
     )
+    .ok()
+    .flatten()
+    .map(|composed| composed.as_prompt())
 }
 
 /// The tool array the *next* ordinary turn would advertise: the MCP tools
@@ -2153,6 +2186,20 @@ pub(crate) async fn context_advertised_tools(
         todo_enabled,
     );
     tools
+}
+
+/// The git state block: which branch the project is on, so the model knows what
+/// its edits apply to.
+///
+/// A per-turn block rather than part of the environment in the stable prefix:
+/// the answer changes the moment anything checks out another branch, including
+/// the agent itself, and a branch switch inside a turn would otherwise move
+/// every byte behind the cache line.
+fn git_state_block(project_root: &std::path::Path) -> String {
+    match crate::core::agent::git::current_branch(project_root) {
+        Some(branch) => format!("# Git\n\nGit branch: `{branch}`"),
+        None => "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
+    }
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -2262,27 +2309,7 @@ async fn orchestrate_inner(
     let messages_value = json_body
         .get("messages")
         .ok_or("Missing required field 'messages'")?;
-    let mut conversation_messages = parse_openai_messages(messages_value)?;
-    // Drop tool calls a truncated stream left with unparsable arguments before
-    // anything else looks at the history. Such a call is persisted by the run
-    // that produced it and resent on every later turn, and an OpenAI-compatible
-    // upstream 422s the whole request over it -- so without this the session is
-    // wedged on its own history and cannot heal. Runs first so the dangling
-    // repair below sees the post-removal shape.
-    let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
-    if poisoned > 0 {
-        log::warn!("agent: dropped {poisoned} tool call(s) with unparsable arguments from history");
-    }
-    // Self-heal a conversation an earlier interrupted run may have left with a
-    // tool_calls turn missing one of its results (e.g. the process was killed
-    // while an `ask`/permission prompt was still pending). Providers like
-    // Anthropic reject the entire request on a dangling tool_use, so repair
-    // it here -- the one place every incoming message array passes through --
-    // before it ever reaches a provider.
-    let repaired = repair_dangling_tool_calls(&mut conversation_messages);
-    if repaired > 0 {
-        log::warn!("agent: repaired {repaired} dangling tool call(s) with no prior result");
-    }
+    let conversation_messages = parse_openai_messages(messages_value)?;
 
     let assistant_id = json_body
         .get("assistant_id")
@@ -2305,12 +2332,20 @@ async fn orchestrate_inner(
         .map(|root| resolve_run_settings(root, *sandbox));
 
     // The stable system prompt: identity, guidelines, environment, skills and
-    // the memory catalog. Byte-identical across the turns of a session (within a
-    // day), so it is kept as system message 0 and never mixed with per-turn
-    // content -- that is what lets a provider cache this long prefix. Volatile
-    // per-turn context (date, query memory recall, plan/todo state) is collected
-    // separately below and emitted as a second system message so it cannot
-    // invalidate the cached prefix above.
+    // the memory catalog. Byte-identical across the turns of a session, so it
+    // is kept as system message 0 and never mixed with per-turn content.
+    // Changing context (date, git state, query memory recall, plan/todo state)
+    // is collected separately and appended as marked guidance after history.
+    // A second system message would be hoisted ahead of history by the provider
+    // bridge, invalidating the cached conversation on every change.
+    //
+    // Which blocks land in which half is `[prompt]`'s decision, resolved here:
+    // the composition returns them split rather than joined, and a composer the
+    // policy sends to the tail is emitted below instead of dropped.
+    let prompt_policy = settings
+        .as_ref()
+        .map(|s| s.prompt.clone())
+        .unwrap_or_default();
     let stable_system = build_run_system_prompt(
         assistant_instructions.as_deref(),
         system_prompt_override.as_deref(),
@@ -2318,21 +2353,31 @@ async fn orchestrate_inner(
         session_id.as_deref(),
         *subagents_enabled,
         settings.as_ref().is_some_and(|s| s.sandbox),
-    );
+        &prompt_policy,
+    )?;
 
-    let mut volatile_parts: Vec<String> = Vec::new();
+    let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    volatile_parts.push(format!(
-        "Today's date is {}.",
-        chrono::Local::now().format("%Y-%m-%d")
+    volatile_parts.push((
+        Composer::Date,
+        format!(
+            "Today's date is {}.",
+            chrono::Local::now().format("%Y-%m-%d")
+        ),
     ));
+    // Which checkout the work applies to. Per-turn rather than part of the
+    // environment block above, because anything that switches branch -- the
+    // agent included -- would otherwise move every byte behind it.
+    if let Some(root) = project_root.as_deref() {
+        volatile_parts.push((Composer::GitState, git_state_block(root)));
+    }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
     if system_prompt_override.is_none() {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
-                    volatile_parts.push(mem);
+                    volatile_parts.push((Composer::MemoryRecall, mem));
                 }
             }
         }
@@ -2352,19 +2397,63 @@ async fn orchestrate_inner(
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
     if run_mode == crate::core::agent::plan::RunMode::Plan {
-        volatile_parts.push(crate::core::agent::plan::plan_mode_prompt_addendum().to_string());
+        volatile_parts.push((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
+        ));
     } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        volatile_parts.push(addendum.to_string());
+        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
     }
 
-    if let Some(sys) = stable_system {
-        set_system_prompt(&mut conversation_messages, &sys);
-        insert_volatile_system(&mut conversation_messages, &volatile_parts.join("\n\n"));
-    } else {
-        // No stable prompt (an isolated child run with no override): the
-        // volatile block is all there is, so it stands in as message 0.
-        set_system_prompt(&mut conversation_messages, &volatile_parts.join("\n\n"));
+    // One tail message, built from every block the policy kept below the cache
+    // line: the composition's tail (a block `[prompt]` moved down) plus the
+    // per-turn blocks above, in registry order so the message's bytes do not
+    // depend on which caller built which block.
+    let mut tail: Vec<(Composer, String)> = stable_system
+        .as_ref()
+        .map(|composed| composed.tail.clone())
+        .unwrap_or_default();
+    for (composer, block) in volatile_parts {
+        if prompt_policy.placement_of(composer)? != Placement::Tail {
+            // Unreachable while these composers vary -- `placement_of` fails
+            // first -- and kept as an explicit error rather than a silent
+            // unwrap, because "per-turn content above the cache line" is
+            // exactly the bug this whole policy exists to prevent.
+            return Err(format!(
+                "`{}` is per-turn content and cannot sit above the cache line",
+                composer.id()
+            ));
+        }
+        tail.push((composer, block));
     }
+    tail.sort_by_key(|(composer, _)| composer.order());
+    let volatile_system = tail
+        .into_iter()
+        .map(|(_, block)| block)
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    // The history becomes a canonical record and the prompt becomes an event
+    // the projection places: at the head while it is unchanged, appended behind
+    // the history when it changes, so a turn cannot invalidate the bytes an
+    // earlier request already sent. Per-turn guidance starts as projection
+    // input, then is recorded at its sent position once a request succeeds.
+    // Later tool steps and client resumes must retain those accepted bytes.
+    //
+    // The stable half is the cacheable one; `[prompt]` decides which blocks
+    // reach it, and a composer the policy moves down is carried in the tail
+    // above rather than dropped. With no stable prefix at all (an isolated
+    // child run with no override) there is nothing above to cache and the tail
+    // is the whole prompt -- still placed below the history, so the arrangement
+    // does not depend on which half happens to be empty.
+    let submitted_prompt = latest_user_text(&conversation_messages);
+    let mut transcript =
+        crate::core::agent::transcript::Transcript::from_history(conversation_messages);
+    if let Some(composed) = stable_system.as_ref().filter(|c| !c.prefix.is_empty()) {
+        transcript.record_prompt(&composed.prefix);
+    }
+    let volatile_projection: Option<String> = Some(volatile_system);
+    let send_reasoning = body_send_reasoning(json_body);
     // Paired with the addendum above: force the model's very first tool call
     // to actually be `todo` rather than leaving compliance up to a prompt it
     // could silently ignore.
@@ -2578,12 +2667,17 @@ async fn orchestrate_inner(
         // last, so a hook brackets exactly the work the run did. A context
         // answer from SessionStart is queued here and drained into the first
         // turn's reminders, which is why it fires before `run_turn_cycle`.
+        // What both payloads report is the request this run is about, and the
+        // record's projection is what it is: projected once, since the two
+        // hooks fire back to back on the same state.
+        let request_message_count =
+            projected_message_count(&transcript, volatile_projection.as_deref(), send_reasoning);
         tools
             .fire_hooks(
                 tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,
                 tauri_plugin_agent_tools::tools::hooks::HookPayload {
                     session_id: session_id.clone(),
-                    message_count: Some(conversation_messages.len()),
+                    message_count: Some(request_message_count),
                     ..Default::default()
                 },
             )
@@ -2594,14 +2688,14 @@ async fn orchestrate_inner(
         // sites would inevitably grow a fourth it was never added to. `deny` is
         // not honored -- there is no tool call to stop -- but `context` is,
         // which is what a prompt hook is for.
-        if let Some(prompt) = latest_user_text(&conversation_messages) {
+        if let Some(prompt) = submitted_prompt {
             tools
                 .fire_hooks(
                     tauri_plugin_agent_tools::tools::hooks::HookEvent::UserPromptSubmit,
                     tauri_plugin_agent_tools::tools::hooks::HookPayload {
                         prompt: Some(prompt),
                         session_id: session_id.clone(),
-                        message_count: Some(conversation_messages.len()),
+                        message_count: Some(request_message_count),
                         ..Default::default()
                     },
                 )
@@ -2612,7 +2706,9 @@ async fn orchestrate_inner(
             json_body,
             &model_id,
             &openai_tools,
-            conversation_messages,
+            transcript,
+            volatile_projection,
+            send_reasoning,
             max_turns,
             &mut budget,
             &http_model,
@@ -2663,7 +2759,9 @@ async fn orchestrate_inner(
             json_body,
             &model_id,
             &openai_tools,
-            conversation_messages,
+            transcript,
+            volatile_projection,
+            send_reasoning,
             max_turns,
             &mut budget,
             &http_model,
@@ -2688,7 +2786,7 @@ const MAX_COMPACTION_ATTEMPTS: usize = 4;
 /// `stripAssistantReasoningInBody`; kept in one place so every surface (TUI,
 /// headless, subagents) strips consistently. Only assistant messages carry the
 /// field, but the filter is defensive and targets just that role.
-fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+pub(crate) fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
     messages
         .iter()
         .map(|m| {
@@ -2709,7 +2807,7 @@ fn strip_assistant_reasoning(messages: &[serde_json::Value]) -> Vec<serde_json::
 }
 
 /// Build one OpenAI chat-completion request from the current conversation.
-fn build_completion_request(
+pub(crate) fn build_completion_request(
     model_id: &str,
     conversation_messages: &[serde_json::Value],
     openai_tools: &[serde_json::Value],
@@ -2937,27 +3035,108 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
 
 async fn receive_steering(
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
-    messages: &mut Vec<serde_json::Value>,
+    messages: Vec<serde_json::Value>,
     run_mode: crate::core::agent::plan::RunMode,
-) -> bool {
+) -> Vec<serde_json::Value> {
     let Some(steering) = steering else {
-        return false;
+        return Vec::new();
     };
     let (reply, response) = tokio::sync::oneshot::channel();
     if steering
         .send(SteeringRequest {
-            messages: messages.clone(),
+            messages,
             reply,
             run_mode,
         })
         .is_err()
     {
-        return false;
+        return Vec::new();
     }
-    let incoming = response.await.unwrap_or_default();
-    let received = !incoming.is_empty();
-    messages.extend(incoming);
-    received
+    response.await.unwrap_or_default()
+}
+
+/// The request the run's record projects to right now.
+fn project(
+    transcript: &Transcript,
+    volatile_system: Option<&str>,
+    send_reasoning: bool,
+) -> Vec<serde_json::Value> {
+    transcript.project(&Projection {
+        volatile_system,
+        send_reasoning,
+    })
+}
+
+/// The message list a client adopts as its session history
+/// (`StreamEvent::MessagesUpdated`).
+///
+/// Keep accepted guidance in the published history at the position the model
+/// saw it. Only a pending block from a request that has not succeeded is
+/// excluded. Removing an accepted block would break the next run's prefix.
+fn client_history(transcript: &Transcript, send_reasoning: bool) -> Vec<serde_json::Value> {
+    project(transcript, None, send_reasoning)
+}
+
+/// How many messages the request this run is about carries: the `message_count`
+/// a hook payload reports. The projection is the only thing that knows now that
+/// there is no live list to measure, so the count is projected rather than kept
+/// alongside the record, where it could drift from what the request carries.
+fn projected_message_count(
+    transcript: &Transcript,
+    volatile_system: Option<&str>,
+    send_reasoning: bool,
+) -> usize {
+    project(transcript, volatile_system, send_reasoning).len()
+}
+
+/// Record the assistant turn, minus the tool calls that may not be resent, and
+/// report the ids of the calls that were dropped.
+///
+/// The refusal rule itself is [`crate::core::agent::upstream::prune_unusable_tool_calls`],
+/// the same one [`crate::core::agent::upstream::drop_malformed_tool_calls`]
+/// applies to an incoming history: it used to clean these out of the live list
+/// on the next turn. The record is never rewritten, so an unusable call is
+/// refused entry instead: one whose arguments do not decode to a plain JSON
+/// object, or which has no non-empty id for its result to carry, is a turn a
+/// strict upstream rejects the whole request over -- and the run that emitted
+/// it cannot resend its own history until it is gone. The caller uses the
+/// returned ids to skip the results that answered those calls, which is the
+/// other half of the same repair: an orphaned `tool` message is invalid on its
+/// own.
+fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Value) -> Vec<String> {
+    let mut message = message.clone();
+    let dropped = prune_unusable_tool_calls(&mut message);
+    // An assistant turn left with neither text nor calls is not a valid message
+    // to resend, and recording it would only make the next request invalid.
+    if message.get("tool_calls").is_none() && content_says_nothing(&message) {
+        return dropped;
+    }
+    transcript.record_message(message);
+    dropped
+}
+
+/// Compact the run's record in place: summarize the span the plan names, and
+/// record the point that stands in for it. `Some(messages summarized)` when a
+/// compaction happened; `None` when there is nothing safe to drop, which is how
+/// the caller tells a no-op from a shrink instead of comparing lengths.
+///
+/// The original span stays in the record - only the projection omits it - so a
+/// later turn, a different provider, or a changed `keep_recent` can still
+/// rebuild from it.
+async fn compact(
+    transcript: &mut Transcript,
+    keep_recent: usize,
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<Option<usize>, String> {
+    let Some(plan) = transcript.compaction_plan(keep_recent) else {
+        return Ok(None);
+    };
+    let summarized = plan.summarize.len();
+    let summary =
+        crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+    transcript.record_compaction(summary, plan.covers);
+    Ok(Some(summarized))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2966,7 +3145,9 @@ async fn run_turn_cycle(
     json_body: &serde_json::Value,
     model_id: &str,
     openai_tools: &[serde_json::Value],
-    mut conversation_messages: Vec<serde_json::Value>,
+    mut transcript: Transcript,
+    volatile_system: Option<String>,
+    mut send_reasoning: bool,
     max_turns: usize,
     budget: &mut SessionBudget,
     model: &dyn ModelInvoker,
@@ -3008,22 +3189,26 @@ async fn run_turn_cycle(
     let mut shown_monitors = Vec::new();
 
     while unlimited || turn < max_turns {
-        receive_steering(steering, &mut conversation_messages, run_mode).await;
+        for message in receive_steering(
+            steering,
+            project(&transcript, volatile_system.as_deref(), send_reasoning),
+            run_mode,
+        )
+        .await
+        {
+            transcript.record_message(message);
+        }
         let _ = events.send(StreamEvent::Step {
             index: (turn as u32) + 1,
             max: max_turns as u32,
         });
 
-        // A turn this run just produced can carry poison of its own: a
-        // length-truncated tool call, or an argument string that decodes to a
-        // scalar. A strict upstream rejects the whole request over it, so
-        // sanitize per turn -- the next attempt lands on clean history instead
-        // of wedging the session. The entry-time pass above cannot see what
-        // this run created mid-flight.
-        let poisoned = drop_malformed_tool_calls(&mut conversation_messages);
-        if poisoned > 0 {
-            log::warn!("agent: dropped {poisoned} malformed tool call(s) from the live context");
-        }
+        // Nothing is sanitized here any more: a malformed tool call never
+        // enters the record (it is refused where the turn is recorded), and a
+        // history that arrived already carrying one was repaired at the entry -
+        // the one place a caller's array passes through. Sanitizing the live
+        // list used to *rewrite* it, which is what made the record unusable as
+        // a source of truth.
 
         // Background work that finished since the last request reaches the model
         // here, as a `<SYSTEM>` reminder rather than an invented tool result:
@@ -3032,7 +3217,7 @@ async fn run_turn_cycle(
         let notices = tools.background_notices();
         if !notices.is_empty() {
             for notice in &notices {
-                crate::core::agent::reminder::attach(&mut conversation_messages, &notice.text);
+                transcript.record_reminder(&notice.text);
                 // The headline is shown at delivery, not when the ping was
                 // queued, so the transcript reads in the order the model saw
                 // things (matching Cowork's inbox drain).
@@ -3043,7 +3228,7 @@ async fn run_turn_cycle(
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: conversation_messages.clone(),
+                messages: client_history(&transcript, send_reasoning),
             });
             // A drained ping is how a match or a timeout reaches the display.
             publish_monitors(tools, events, &mut shown_monitors);
@@ -3064,45 +3249,40 @@ async fn run_turn_cycle(
             loop {
                 let request_value = build_completion_request(
                     model_id,
-                    &conversation_messages,
+                    &project(&transcript, volatile_system.as_deref(), send_reasoning),
                     openai_tools,
                     json_body,
                     (turn == 0).then_some(force_first_tool).flatten(),
                 );
                 // Once per turn, on the request about to be sent. A prompt still
-                // over the trigger after compacting is sent anyway:
-                // `compact_conversation` returns its input unchanged when there
-                // is nothing safe to drop, and retrying here would spin.
+                // over the trigger after compacting is sent anyway: there is
+                // nothing safe left to drop, and retrying here would spin.
                 if !preflighted {
                     preflighted = true;
                     if let Some(budget) = compaction {
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
                         if estimate > budget.trigger_tokens() {
-                            let compacted = crate::core::agent::compaction::compact_conversation(
-                                &conversation_messages,
+                            if let Some(dropped) = compact(
+                                &mut transcript,
+                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
-                                crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                             )
-                            .await?;
-                            if compacted.len() < conversation_messages.len() {
-                                let dropped = conversation_messages.len() - compacted.len();
+                            .await?
+                            {
                                 log::info!(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
-                                     token trigger on a {} token window, compacted {} -> {} \
-                                     messages before dispatch",
+                                     token trigger on a {} token window, compacted {dropped} \
+                                     messages into a summary before dispatch",
                                     budget.trigger_tokens(),
-                                    budget.context_window,
-                                    conversation_messages.len(),
-                                    compacted.len()
+                                    budget.context_window
                                 );
-                                conversation_messages = compacted;
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
                                 // oversized history would send it again next turn.
                                 let _ = events.send(StreamEvent::MessagesUpdated {
-                                    messages: conversation_messages.clone(),
+                                    messages: client_history(&transcript, send_reasoning),
                                 });
                                 // The one legitimate cache break in a session,
                                 // and the only way the user can tell it apart
@@ -3125,30 +3305,29 @@ async fn run_turn_cycle(
                         if crate::core::agent::upstream::is_context_overflow_error(&e)
                             && attempts < MAX_COMPACTION_ATTEMPTS =>
                     {
-                        tools.pre_compact(conversation_messages.len()).await;
-                        let compacted = crate::core::agent::compaction::compact_conversation(
-                            &conversation_messages,
-                            model_id,
-                            model,
-                            keep_recent,
-                        )
-                        .await?;
-                        if compacted.len() >= conversation_messages.len() {
-                            return Err(e);
-                        }
+                        tools
+                            .pre_compact(projected_message_count(
+                                &transcript,
+                                volatile_system.as_deref(),
+                                send_reasoning,
+                            ))
+                            .await;
+                        // Nothing safe left to drop: the request is smaller than the
+                        // window only in the provider's own maths.
+                        let dropped = compact(&mut transcript, keep_recent, model_id, model)
+                            .await?
+                            .ok_or(e)?;
                         log::info!(
-                            "agent: context overflow, compacted {} -> {} messages (attempt {})",
-                            conversation_messages.len(),
-                            compacted.len(),
+                            "agent: context overflow, compacted {dropped} messages into a \
+                             summary (attempt {})",
                             attempts + 1
                         );
-                        conversation_messages = compacted;
                         // Publish now, not at the end of the run: a retry that
                         // never recovers returns Err, and an unpublished
                         // compaction leaves the client holding the oversized
                         // history that every later turn would re-overflow on.
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: conversation_messages.clone(),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                         keep_recent = (keep_recent / 2).max(2);
                         attempts += 1;
@@ -3156,28 +3335,40 @@ async fn run_turn_cycle(
                     // This provider rejects `reasoning_content` outright rather
                     // than ignoring it, so the opt-out `[agent].send_reasoning`
                     // exists for is discovered here instead of having to be
-                    // configured by hand. Dropping it from the conversation is
-                    // enough on its own: a provider that rejects the field never
-                    // streams one either, so no later turn re-adds it. Published
-                    // so the client's persisted history loses it too, the way the
-                    // compacted history above is published.
+                    // configured by hand. The retry drops the field from the
+                    // *request*, not from the record: a route that accepts
+                    // reasoning is entitled to what an earlier turn produced,
+                    // and which route is asking is a projection option. The
+                    // record keeps the reasoning, so nothing is destroyed for
+                    // the route that would have accepted it.
                     Err(e)
                         if crate::core::agent::upstream::is_reasoning_field_error(&e)
-                            && body_send_reasoning(json_body)
-                            && carries_assistant_reasoning(&conversation_messages) =>
+                            && send_reasoning
+                            && carries_assistant_reasoning(&project(
+                                &transcript,
+                                volatile_system.as_deref(),
+                                send_reasoning,
+                            )) =>
                     {
                         log::info!(
                             "agent: upstream rejected reasoning_content, retrying without it"
                         );
-                        conversation_messages = strip_assistant_reasoning(&conversation_messages);
+                        send_reasoning = false;
                         let _ = events.send(StreamEvent::MessagesUpdated {
-                            messages: conversation_messages.clone(),
+                            messages: client_history(&transcript, send_reasoning),
                         });
                     }
                     Err(e) => return Err(e),
                 }
             }
         };
+
+        // This request succeeded: its guidance is now part of the accepted
+        // history, before the assistant response and any tool results. Keep it
+        // there instead of projecting it at the moving tail of every step.
+        if let Some(text) = volatile_system.as_deref() {
+            transcript.record_prompt_tail(text);
+        }
 
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
@@ -3206,14 +3397,22 @@ async fn run_turn_cycle(
             // The terminal-boundary handshake also catches input submitted during
             // the final model request without starting a separate run.
             if steering.is_some() && (unlimited || turn + 1 < max_turns) {
-                let mut continued = conversation_messages.clone();
                 let mut assistant = extract_choice_message(&completion)
                     .cloned()
                     .unwrap_or_else(|| serde_json::json!({ "content": final_text }));
                 assistant["role"] = serde_json::json!("assistant");
-                continued.push(assistant);
-                if receive_steering(steering, &mut continued, run_mode).await {
-                    conversation_messages = continued;
+                // The channel is shown the conversation it would be resuming,
+                // turn included, so it can decide to park the run. Nothing is
+                // recorded unless input actually arrives: the record is the
+                // history the model saw, and this turn was never resent.
+                let mut probe = project(&transcript, volatile_system.as_deref(), send_reasoning);
+                probe.push(assistant.clone());
+                let incoming = receive_steering(steering, probe, run_mode).await;
+                if !incoming.is_empty() {
+                    transcript.record_message(assistant);
+                    for message in incoming {
+                        transcript.record_message(message);
+                    }
                     turn += 1;
                     continue;
                 }
@@ -3225,18 +3424,15 @@ async fn run_turn_cycle(
             {
                 if let Some(summary) = open_todo_summary(todo_registry).await {
                     closeout_nudged = true;
-                    conversation_messages.push(serde_json::json!({
+                    transcript.record_message(serde_json::json!({
                         "role": "assistant",
                         "content": final_text,
                     }));
-                    crate::core::agent::reminder::attach(
-                        &mut conversation_messages,
-                        &format!(
-                            "Before you stop: these todos are still open:\n{summary}\n\nFor each \
-                             one you actually completed, call `todo` with `done` now (or `drop` if \
-                             you skipped it). If work genuinely remains, continue it instead."
-                        ),
-                    );
+                    transcript.record_reminder(&format!(
+                        "Before you stop: these todos are still open:\n{summary}\n\nFor each \
+                         one you actually completed, call `todo` with `done` now (or `drop` if \
+                         you skipped it). If work genuinely remains, continue it instead."
+                    ));
                     turn += 1;
                     continue;
                 }
@@ -3261,7 +3457,7 @@ async fn run_turn_cycle(
                 // queued pings), and resuming on that would spend a turn asking
                 // the model to react to nothing.
                 if tools.background_pending() {
-                    conversation_messages.push(serde_json::json!({
+                    transcript.record_message(serde_json::json!({
                         "role": "assistant",
                         "content": final_text,
                     }));
@@ -3277,35 +3473,39 @@ async fn run_turn_cycle(
             // The reactive path above cannot help with that -- it only fires
             // once an upstream has already rejected a request.
             //
-            // Only when it actually shrinks: `compact_conversation` returns the
-            // input untouched when there is too little to drop, and publishing
-            // an unchanged history would spend a summarizer call for nothing.
+            // Only when there is something to drop: a plan that
+            // covers nothing would spend a summarizer call to publish an
+            // unchanged history.
             if budget.exhausted() {
-                tools.pre_compact(conversation_messages.len()).await;
-                match crate::core::agent::compaction::compact_conversation(
-                    &conversation_messages,
+                tools
+                    .pre_compact(projected_message_count(
+                        &transcript,
+                        volatile_system.as_deref(),
+                        send_reasoning,
+                    ))
+                    .await;
+                match compact(
+                    &mut transcript,
+                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                     model_id,
                     model,
-                    crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                 )
                 .await
                 {
-                    Ok(compacted) if compacted.len() < conversation_messages.len() => {
+                    Ok(Some(dropped)) => {
                         log::info!(
-                            "agent: budget exhausted at end of run, compacted {} -> {} messages",
-                            conversation_messages.len(),
-                            compacted.len()
+                            "agent: budget exhausted at end of run, compacted {dropped} messages \
+                             into a summary"
                         );
-                        conversation_messages = compacted;
                     }
-                    Ok(_) => {}
+                    Ok(None) => {}
                     Err(error) => {
                         log::warn!("agent: budget exhausted but compaction failed: {error}");
                     }
                 }
             }
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: conversation_messages.clone(),
+                messages: client_history(&transcript, send_reasoning),
             });
             return Ok(completion);
         }
@@ -3322,7 +3522,7 @@ async fn run_turn_cycle(
         // is the shape a model will imitate unprompted on later turns.
         if budget.exhausted() && !budget_notice_recorded {
             budget_notice_recorded = true;
-            conversation_messages.push(serde_json::json!({
+            transcript.record_message(serde_json::json!({
                 "role": "system",
                 "content": format!(
                     "[session token budget exhausted ({} tokens)] The configured \
@@ -3331,7 +3531,7 @@ async fn run_turn_cycle(
                 ),
             }));
             let _ = events.send(StreamEvent::MessagesUpdated {
-                messages: conversation_messages.clone(),
+                messages: client_history(&transcript, send_reasoning),
             });
         }
 
@@ -3368,7 +3568,7 @@ async fn run_turn_cycle(
         // for the specific model that needs it (scoped, content preserved), so
         // the agent can speak standard OpenAI tool protocol on the wire again.
         // See janhq/jan-internal#238.
-        if let Some(choice_message) = extract_choice_message(&completion) {
+        let assistant_turn = if let Some(choice_message) = extract_choice_message(&completion) {
             let assistant_content = choice_message
                 .get("content")
                 .cloned()
@@ -3388,14 +3588,18 @@ async fn run_turn_cycle(
             {
                 msg["reasoning_content"] = serde_json::json!(r);
             }
-            conversation_messages.push(msg);
+            msg
         } else {
-            conversation_messages.push(serde_json::json!({
+            serde_json::json!({
                 "role": "assistant",
                 "content": serde_json::Value::Null,
                 "tool_calls": tool_calls.clone()
-            }));
-        }
+            })
+        };
+        // Recording is the gate that keeps poison out of the record: a call the
+        // model emitted with unparsable arguments is never resent, and the ids
+        // it answered are what the results below are matched against.
+        let dropped_tool_ids = record_assistant_turn(&mut transcript, &assistant_turn);
 
         // A `length` finish means the model was cut off mid-emission, so the
         // streamed tool-call arguments may be silently truncated. Executing them
@@ -3418,7 +3622,13 @@ async fn run_turn_cycle(
                     is_error: true,
                     diff: None,
                 });
-                conversation_messages.push(serde_json::json!({
+                // A truncated call whose arguments no longer parse never made it
+                // into the record, so neither does its result: an orphaned tool
+                // message is invalid on its own.
+                if dropped_tool_ids.iter().any(|dropped| dropped == &id) {
+                    continue;
+                }
+                transcript.record_message(serde_json::json!({
                     "role": "tool",
                     "tool_call_id": id,
                     "content": content
@@ -3428,29 +3638,31 @@ async fn run_turn_cycle(
             continue;
         }
 
-        // Invariant: a tool call whose arguments do not decode to a plain
-        // JSON object is never executed. A truncated stream or a confused
-        // model would otherwise run a tool with invented or empty arguments.
-        // The call fails visibly instead, and the per-request sanitizer keeps
-        // the malformed call out of the history the next request carries.
+        // Invariant: a tool call the record cannot hold is never executed. A
+        // call whose arguments do not decode to a plain JSON object is one a
+        // truncated stream or a confused model would run with invented or empty
+        // arguments; a call with no non-empty id is one whose result would be a
+        // `role: "tool"` message paired with nothing. Both fail visibly instead
+        // of running, and the per-request sanitizer keeps them out of the
+        // history the next request carries.
         let executable: Vec<serde_json::Value> = tool_calls
             .iter()
-            .filter(|tc| arguments_are_executable(tc))
+            .filter(|tc| tool_call_is_usable(tc))
             .cloned()
             .collect();
         let mut error_outcomes: Vec<ToolOutcome> = tool_calls
             .iter()
-            .filter(|tc| !arguments_are_executable(tc))
+            .filter(|tc| !tool_call_is_usable(tc))
             .map(|tc| {
-                ToolOutcome::plain(
-                    tc.get("id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
+                let id = pairable_tool_call_id(tc).unwrap_or_default();
+                let reason = if id.is_empty() {
+                    "ERROR: tool call had no id; the call was not executed and its result would \
+                     have nothing to pair with. Re-emit it as a tool call carrying an id."
+                } else {
                     "ERROR: tool-call arguments are not a plain JSON object; the call was not \
                      executed. Re-emit it with the arguments as a JSON object."
-                        .to_string(),
-                )
+                };
+                ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
         let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
@@ -3527,11 +3739,16 @@ async fn run_turn_cycle(
                 }
                 serde_json::Value::Array(parts)
             };
-            conversation_messages.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
-                "content": wire_content
-            }));
+            // A result whose call was refused entry to the record would be an
+            // orphaned tool message on the next request: the call it answers is
+            // not there any more.
+            if !dropped_tool_ids.iter().any(|dropped| dropped == &id) {
+                transcript.record_message(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": id,
+                    "content": wire_content
+                }));
+            }
         }
         if todo_touched_this_batch {
             mutations_since_todo_touch = 0;
@@ -3560,14 +3777,11 @@ async fn run_turn_cycle(
                 mutations_since_todo_touch = 0;
                 mid_run_nudge_count += 1;
                 let plural = if open_count == 1 { "" } else { "s" };
-                crate::core::agent::reminder::attach(
-                    &mut conversation_messages,
-                    &format!(
-                        "Reminder: {open_count} todo item{plural} still open. If you finished a \
-                         task since the last todo update, mark it done now so progress stays \
-                         visible; otherwise just keep working."
-                    ),
-                );
+                transcript.record_reminder(&format!(
+                    "Reminder: {open_count} todo item{plural} still open. If you finished a \
+                     task since the last todo update, mark it done now so progress stays \
+                     visible; otherwise just keep working."
+                ));
             }
         }
 
@@ -3582,15 +3796,16 @@ async fn run_turn_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::agent::shell_quoted_path;
+    use crate::core::agent::upstream::append_prompt_tail;
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
 
     /// The cache-prefix contract from #340: across turns the system prompt at
     /// message 0 and the tool schema must be byte-identical, so a provider can
-    /// cache them; only the volatile message 1 (date, memory recall, plan state)
-    /// changes. A regression here silently defeats prompt caching, which no
-    /// functional test would catch.
+    /// cache them; changing guidance is appended after the conversation.
+    /// A regression here silently defeats prompt caching.
     #[test]
     fn system_prefix_and_tools_are_byte_identical_across_turns() {
         let tools = vec![json!({
@@ -3603,32 +3818,249 @@ mod tests {
         })];
         let body = json!({});
 
-        let mut turn1 = vec![json!({"role": "user", "content": "first"})];
-        set_system_prompt(&mut turn1, "STABLE PREFIX");
-        insert_volatile_system(&mut turn1, "Today's date is 2026-09-16.");
-        let req1 = build_completion_request("m", &turn1, &tools, &body, None);
+        // Two turns of the same session: the conversation grew and the volatile
+        // block differs. Both go through the projection, which is where the
+        // request is built from now on.
+        let volatile1 = "Today's date is 2026-09-16.";
+        let volatile2 = "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note";
 
-        // A later turn: the conversation has grown and the volatile block differs.
-        let mut turn2 = vec![
+        let mut first = Transcript::from_history(vec![json!({"role": "user", "content": "first"})]);
+        first.record_prompt("STABLE PREFIX");
+        let req1 = build_completion_request(
+            "m",
+            &project(&first, Some(volatile1), true),
+            &tools,
+            &body,
+            None,
+        );
+
+        let mut second = Transcript::from_history(vec![
             json!({"role": "user", "content": "first"}),
             json!({"role": "assistant", "content": "reply"}),
             json!({"role": "user", "content": "second"}),
-        ];
-        set_system_prompt(&mut turn2, "STABLE PREFIX");
-        insert_volatile_system(
-            &mut turn2,
-            "Today's date is 2026-09-17.\n\n# Recalled memory\n- a note",
+        ]);
+        second.record_prompt("STABLE PREFIX");
+        let req2 = build_completion_request(
+            "m",
+            &project(&second, Some(volatile2), true),
+            &tools,
+            &body,
+            None,
         );
-        let req2 = build_completion_request("m", &turn2, &tools, &body, None);
 
         let node0 = |r: &serde_json::Value| serde_json::to_string(&r["messages"][0]).unwrap();
         let tools_of = |r: &serde_json::Value| serde_json::to_string(&r["tools"]).unwrap();
         assert_eq!(node0(&req1), node0(&req2), "node 0 must be byte-stable");
         assert_eq!(tools_of(&req1), tools_of(&req2), "tools must be byte-stable");
         assert_ne!(
-            req1["messages"][1], req2["messages"][1],
+            req1["messages"].as_array().unwrap().last(),
+            req2["messages"].as_array().unwrap().last(),
             "the volatile block is expected to differ"
         );
+    }
+
+    /// A client resumes from the published history, so it must retain the
+    /// guidance the provider already accepted, not rebuild it after the answer.
+    #[tokio::test]
+    async fn published_history_preserves_the_accepted_prompt_tail() {
+        let volatile1 = "Today's date is 2026-09-21.";
+        let volatile2 = "Today's date is 2026-09-22.";
+
+        let reminders = |messages: &[serde_json::Value]| -> Vec<serde_json::Value> {
+            messages
+                .iter()
+                .filter(|m| {
+                    m["role"] == "user"
+                        && crate::core::agent::reminder::is_reminder_only(&m["content"])
+                })
+                .cloned()
+                .collect()
+        };
+        let published = |rx: &mut mpsc::UnboundedReceiver<StreamEvent>| {
+            std::iter::from_fn(|| rx.try_recv().ok())
+                .filter_map(|ev| match ev {
+                    StreamEvent::MessagesUpdated { messages } => Some(messages),
+                    _ => None,
+                })
+                .last()
+        };
+
+        // Turn one.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![final_answer("reply")]);
+        let tool = MockTool::default();
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "first" })]),
+            Some(volatile1.to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request1 = model.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request1).len(),
+            1,
+            "the request carries this turn's block: {request1:?}"
+        );
+
+        // The client takes what was published -- not the bytes it asked with --
+        // and adds its next user turn to it.
+        let mut adopted = published(&mut rx).expect("turn one publishes its history");
+        assert_eq!(adopted, request1, "publish the accepted request verbatim");
+        adopted.push(json!({ "role": "assistant", "content": "reply" }));
+        adopted.push(json!({ "role": "user", "content": "second" }));
+
+        // Changed guidance follows the entire previous request and its answer.
+        let (tx2, _rx2) = mpsc::unbounded_channel();
+        let model2 = MockModel::new(vec![final_answer("reply 2")]);
+        let mut budget2 = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx2,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(adopted),
+            Some(volatile2.to_string()),
+            true,
+            8,
+            &mut budget2,
+            &model2,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let request2 = model2.requests.lock().unwrap()[0]["messages"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(
+            reminders(&request2).len(),
+            2,
+            "one accepted block from each run: {request2:?}"
+        );
+        assert_eq!(
+            request2.last().unwrap()["content"],
+            json!(crate::core::agent::reminder::wrap(volatile2)),
+            "the newest guidance is last"
+        );
+        assert_eq!(
+            serde_json::to_string(&request2[..request1.len()]).unwrap(),
+            serde_json::to_string(&request1).unwrap(),
+            "the next run must extend every message the provider accepted"
+        );
+    }
+
+    #[tokio::test]
+    async fn tool_steps_preserve_the_accepted_prompt_tail() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![tool_call_completion(), final_answer("done")]);
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![
+                json!({"role": "system", "content": "Stable instructions."}),
+                json!({"role": "user", "content": "search for Rust"}),
+            ]),
+            Some("Today's date is 2026-09-21.".to_string()),
+            true,
+            8,
+            &mut budget,
+            &model,
+            &MockTool::default(),
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("run completes");
+
+        let requests = model.requests.lock().unwrap();
+        let first = requests[0]["messages"].as_array().unwrap();
+        let second = requests[1]["messages"].as_array().unwrap();
+        assert_eq!(
+            serde_json::to_string(&second[..first.len()]).unwrap(),
+            serde_json::to_string(first).unwrap(),
+            "a tool step must extend the accepted request, not move its guidance"
+        );
+        assert_eq!(
+            second.len(),
+            first.len() + 2,
+            "only the call and result are new"
+        );
+        assert_eq!(second.last().unwrap()["role"], "tool");
+    }
+
+    #[test]
+    fn prompt_tail_does_not_replace_the_user_query() {
+        let mut messages = vec![json!({"role": "user", "content": "find the configuration"})];
+        append_prompt_tail(&mut messages, "Today's date is 2026-09-21.");
+        assert_eq!(
+            latest_user_text(&messages).as_deref(),
+            Some("find the configuration")
+        );
+    }
+
+    /// The record gate names every call it refuses, empty id included: the
+    /// caller skips results by that list, and a result left behind is the
+    /// orphan a strict upstream rejects the whole request over.
+    #[test]
+    fn a_tool_call_without_an_id_is_refused_entry_and_named_for_its_result() {
+        let mut transcript = Transcript::default();
+        let turn = json!({
+            "role": "assistant",
+            "content": "on it",
+            "tool_calls": [
+                { "type": "function", "function": { "name": "bash", "arguments": "{\"command\":\"ls\"}" } },
+                { "id": "call_ok", "type": "function", "function": { "name": "read", "arguments": "{}" } },
+            ]
+        });
+
+        let dropped = record_assistant_turn(&mut transcript, &turn);
+        assert_eq!(
+            dropped,
+            vec![String::new()],
+            "the empty id is what the refused call's result will carry"
+        );
+
+        let crate::core::agent::transcript::Event::Message(recorded) = &transcript.events()[0]
+        else {
+            panic!("the assistant turn is recorded");
+        };
+        let calls = recorded["tool_calls"]
+            .as_array()
+            .expect("the usable call stays");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "call_ok");
+        assert_eq!(recorded["content"], "on it");
     }
 
     struct MockModel {
@@ -3778,8 +4210,11 @@ mod tests {
             Some("test-session"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
 
         assert!(prompt.starts_with("You are a robotics researcher."));
         assert!(!prompt.contains("main assistant"));
@@ -3787,6 +4222,88 @@ mod tests {
         assert!(prompt.contains("# Web Access"));
         assert!(prompt.contains("web_search"));
         assert!(prompt.contains("web_fetch"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[prompt]` in agent.toml is what decides which blocks reach the cache
+    /// line: the run resolves the policy from the project's config and composes
+    /// through it, so an allowlist naming two contributors really does move the
+    /// rest below the line.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_narrows_what_reaches_the_cache_line() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"assistant_instructions\", \"tool_schemas\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        assert_eq!(policy.prefix_allow().map(<[String]>::len), Some(2));
+        // ...and the run's resolved settings carry the same policy, which is
+        // what `orchestrate_inner` composes with.
+        assert_eq!(
+            resolve_run_settings(&root, None)
+                .prompt
+                .prefix_allow()
+                .map(<[String]>::len),
+            Some(2)
+        );
+        let composed = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect("prompt")
+        .expect("project prompt");
+
+        // Only the identity is allowed above the line...
+        assert_eq!(composed.prefix, "main assistant");
+        // ...and everything else still reaches the model, from the tail.
+        let tail: Vec<&str> = composed
+            .tail
+            .iter()
+            .map(|(_, block)| block.as_str())
+            .collect();
+        assert!(tail.iter().any(|block| block.contains("# Guidelines")));
+        assert!(tail.iter().any(|block| block.contains("# Web Access")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An allowlist that would put a varying composer above the cache line stops
+    /// the run, rather than costing a cache miss on every turn. The failure is
+    /// the same one `agent status` reports, from the same resolution.
+    #[test]
+    #[cfg(feature = "cli")]
+    fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
+        let root = unique_project_root();
+        let agent_dir = root.join(".jan").join("agent");
+        std::fs::create_dir_all(&agent_dir).expect("agent dir");
+        std::fs::write(
+            agent_dir.join("agent.toml"),
+            "[prompt]\nprefix_allow = [\"todo_addendum\"]\n",
+        )
+        .expect("agent.toml");
+
+        let policy = crate::core::agent::project::prompt_policy(&root);
+        let error = build_run_system_prompt(
+            Some("main assistant"),
+            None,
+            Some(&root),
+            Some("s1"),
+            false,
+            false,
+            &policy,
+        )
+        .expect_err("a per-turn composer cannot be allowed above the cache line");
+        assert!(error.contains("todo_addendum"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3850,7 +4367,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({"role": "user", "content": "start"})],
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -3903,7 +4422,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({"role": "user", "content": "start"})],
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -3934,16 +4455,17 @@ mod tests {
     async fn steering_disconnected_surface_does_not_block_the_loop() {
         let (steering, receiver) = mpsc::unbounded_channel();
         drop(receiver);
-        let mut messages = vec![json!({"role": "user", "content": "start"})];
+        let messages = vec![json!({"role": "user", "content": "start"})];
         assert!(
-            !receive_steering(
+            receive_steering(
                 Some(&steering),
-                &mut messages,
+                messages,
                 crate::core::agent::plan::RunMode::Normal
             )
             .await
+            .is_empty(),
+            "a disconnected steering surface contributes nothing"
         );
-        assert_eq!(messages.len(), 1);
     }
 
     #[tokio::test]
@@ -3962,7 +4484,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4068,7 +4592,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4143,7 +4669,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "hi" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4216,7 +4744,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4276,7 +4806,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "edit the file" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "edit the file" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4397,7 +4929,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            poisoned,
+            Transcript::from_history(poisoned),
+            None,
+            true,
             8,
             &mut SessionBudget::new(None),
             &healed,
@@ -4434,7 +4968,9 @@ mod tests {
             &json!({}),
             "m",
             &[crate::core::agent::todo::todo_tool_schema()],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4588,8 +5124,8 @@ mod tests {
 
     /// How many mid-run nudges are present in this request's history. Counting
     /// messages (not requests) is what the per-cycle cap actually bounds: an
-    /// injected nudge stays in `conversation_messages`, so every later request
-    /// carries it and counting requests would grow with the turn count.
+    /// injected nudge stays in the transcript, so every later request carries
+    /// it and counting requests would grow with the turn count.
     fn nudge_message_count(request: &serde_json::Value) -> usize {
         request["messages"]
             .as_array()
@@ -4630,7 +5166,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -4708,7 +5246,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "go" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -4754,7 +5294,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "go" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -4791,7 +5333,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -4844,7 +5388,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -4933,7 +5479,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "look into it" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "look into it" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -4987,7 +5535,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "go" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5086,7 +5636,11 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "watch the build" })],
+            Transcript::from_history(vec![
+                json!({ "role": "user", "content": "watch the build" }),
+            ]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5135,7 +5689,11 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "watch the build" })],
+            Transcript::from_history(vec![
+                json!({ "role": "user", "content": "watch the build" }),
+            ]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5229,7 +5787,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            vec![json!({ "role": "user", "content": "hi" })],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5286,7 +5846,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5391,7 +5953,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5459,7 +6023,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5539,7 +6105,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5558,11 +6126,12 @@ mod tests {
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
-    /// instead of ignoring it. The turn must recover by dropping the field and
-    /// retrying, and hand the stripped conversation to the client so its
-    /// persisted history stops carrying it.
+    /// instead of ignoring it. The turn must recover by projecting the request
+    /// without the field and retrying, and hand the client the projection the
+    /// retry used; the record keeps the reasoning, so a route that accepts it
+    /// still gets what the earlier turn produced.
     #[tokio::test]
-    async fn turn_cycle_strips_reasoning_and_retries_when_the_upstream_rejects_it() {
+    async fn turn_cycle_retries_without_reasoning_when_the_upstream_rejects_it() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = ResultQueueModel {
             results: StdMutex::new(
@@ -5588,7 +6157,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5619,9 +6190,10 @@ mod tests {
         );
     }
 
-    /// The retry is one-shot by construction: once stripped, nothing carries the
-    /// field, so a provider that keeps rejecting fails the turn instead of
-    /// resending the same request forever.
+    /// The retry is one-shot by construction: nothing is destroyed when the field
+    /// is dropped from the failed request, so the retry sends the same bytes
+    /// minus that field, and a provider that keeps rejecting fails the turn
+    /// instead of resending the same request forever.
     #[tokio::test]
     async fn a_persistent_reasoning_rejection_fails_the_turn() {
         let (tx, _rx) = mpsc::unbounded_channel();
@@ -5642,7 +6214,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5659,7 +6233,7 @@ mod tests {
         assert_eq!(
             model.results.lock().unwrap().len(),
             1,
-            "exactly one retry after the strip"
+            "exactly one retry without the field"
         );
     }
 
@@ -5707,7 +6281,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5765,7 +6341,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5817,7 +6395,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             8,
             &mut budget,
             &model,
@@ -5856,7 +6436,9 @@ mod tests {
             &json!({}),
             "m",
             &[],
-            convo,
+            Transcript::from_history(convo),
+            None,
+            true,
             0,
             &mut budget,
             &model,
@@ -6170,7 +6752,7 @@ mod tests {
             hook_set(vec![hook_entry(
                 "PreToolUse",
                 None,
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             Default::default(),
             crate::core::agent::plan::RunMode::Plan,
@@ -6217,7 +6799,7 @@ mod tests {
             Default::default(),
             plugin_tool_set(vec![plugin_tool_entry(
                 "touch",
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             crate::core::agent::plan::RunMode::Plan,
         );
@@ -6249,7 +6831,7 @@ mod tests {
             )]),
             plugin_tool_set(vec![plugin_tool_entry(
                 "touch",
-                &format!("touch {}", marker.to_string_lossy()),
+                &format!("touch {}", shell_quoted_path(&marker)),
             )]),
             crate::core::agent::plan::RunMode::Normal,
         );
@@ -6315,7 +6897,7 @@ mod tests {
             hook_set(vec![hook_entry(
                 "PreToolUse",
                 Some("mcp__*"),
-                &format!("cat > {}", seen.to_string_lossy()),
+                &format!("cat > {}", shell_quoted_path(&seen)),
             )]),
             Default::default(),
             crate::core::agent::plan::RunMode::Normal,
@@ -6380,17 +6962,17 @@ mod tests {
                 hook_entry(
                     "SessionStart",
                     None,
-                    &format!("cat > {}/start.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("start.json"))),
                 ),
                 hook_entry(
                     "UserPromptSubmit",
                     None,
-                    &format!("cat > {}/prompt.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("prompt.json"))),
                 ),
                 hook_entry(
                     "SessionEnd",
                     None,
-                    &format!("cat > {}/end.json", seen.to_string_lossy()),
+                    &format!("cat > {}", shell_quoted_path(&seen.join("end.json"))),
                 ),
             ]),
             Default::default(),
@@ -6566,8 +7148,11 @@ mod tests {
             Some("s1"),
             false,
             true,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(confined.contains("Scratch:"), "{confined}");
         let bare = build_run_system_prompt(
             None,
@@ -6576,8 +7161,11 @@ mod tests {
             Some("s1"),
             false,
             false,
+            &PromptPolicy::default(),
         )
-        .expect("prompt");
+        .expect("prompt")
+        .expect("project prompt")
+        .as_prompt();
         assert!(!bare.contains("Scratch:"), "{bare}");
     }
 
@@ -7101,7 +7689,9 @@ mod tests {
                     &json!({}),
                     "m",
                     &[crate::core::agent::interaction::ask_tool_schema()],
-                    convo,
+                    Transcript::from_history(convo),
+                    None,
+                    true,
                     0,
                     &mut budget,
                     model.as_ref(),

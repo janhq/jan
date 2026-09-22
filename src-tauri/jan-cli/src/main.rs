@@ -11,6 +11,7 @@ use console::Style;
 // The lib target is named "app_lib" (see [lib] section in Cargo.toml).
 use app_lib::core::agent::plugins::InstalledPlugin;
 use app_lib::core::cli::mcp::{self, split_kv, McpServerEntry};
+use app_lib::core::cli::mcp_serve::{cli_mcp_serve, ServeFlags, ServeTransport};
 use app_lib::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use app_lib::core::cli::run_report::OutputFormat;
 use app_lib::core::cli::stream_input::InputFormat;
@@ -162,6 +163,24 @@ impl ResumeArgs {
     }
 }
 
+/// Per-invocation cost limits for `jan cli agent run`. Both mirror the engine's
+/// own semantics: `0` means unbounded, and an unpassed flag leaves the config
+/// files (or, for turns, nothing at all) in charge.
+///
+/// Only `--max-turns` ends a run. The token ceiling is advisory: passing it
+/// compacts the conversation and records a note, then the run continues.
+#[derive(Args, Clone, Copy)]
+struct BudgetArgs {
+    /// Fail the run after at most N agentic turns; bounds this run only, not
+    /// its subagents (0 = unbounded, the default)
+    #[arg(long, value_name = "N")]
+    max_turns: Option<u64>,
+    /// Advisory token ceiling overriding [budget].max_tokens: triggers
+    /// compaction and a note, but does not stop the run (0 = no ceiling)
+    #[arg(long, value_name = "N")]
+    max_session_tokens: Option<u64>,
+}
+
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
 /// space-separated `--resume ID` would swallow the task, so the value form must
 /// be written `--resume=ID`.
@@ -219,8 +238,14 @@ enum Commands {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
-    /// Update this binary to the latest build of the channel it was built for
+    /// Serve Jan's built-in tools to another agent over MCP
     #[command(display_order = 6)]
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpServeCommands,
+    },
+    /// Update this binary to the latest build of the channel it was built for
+    #[command(display_order = 7)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -228,6 +253,37 @@ enum Commands {
         /// Reinstall even when already on the latest version
         #[arg(long, conflicts_with = "check")]
         force: bool,
+    },
+}
+
+/// The server direction of MCP: Jan offered as a tool provider. The client
+/// direction (managing the servers Jan *connects to*) stays under
+/// `jan cli mcp`.
+#[derive(Subcommand)]
+enum McpServeCommands {
+    /// Run an MCP server exposing Jan's built-in tools for one project
+    Serve {
+        /// Project root the served tools are confined to
+        #[arg(long, default_value = ".")]
+        project: String,
+        /// Transport: stdio for a spawned child process, http for loopback Streamable HTTP
+        #[arg(long, value_enum, default_value_t = ServeTransport::Stdio)]
+        transport: ServeTransport,
+        /// Also serve the mutating filesystem tools (write, edit), confined to the project root
+        #[arg(long)]
+        allow_write: bool,
+        /// Also serve bash (runs under the same OS sandbox the agent's shell does)
+        #[arg(long)]
+        allow_exec: bool,
+        /// Serve only these tools, repeatable; never widens what the allow flags permit
+        #[arg(long = "tool")]
+        tools: Vec<String>,
+        /// Port for --transport http; 0 picks a free one
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Bearer token for --transport http; a random one is generated and printed if omitted
+        #[arg(long)]
+        token: Option<String>,
     },
 }
 
@@ -331,7 +387,7 @@ impl ProviderArgs {
 
 #[derive(Subcommand)]
 enum AgentCommands {
-    /// Run the agent loop to completion or the session token budget
+    /// Run the agent loop to completion, or to a --max-turns cap
     Run {
         /// Project root containing .jan/agent/agent.toml
         #[arg(long, default_value = ".")]
@@ -352,6 +408,8 @@ enum AgentCommands {
         worktree: WorktreeArgs,
         #[command(flatten)]
         resume: ResumeRunArgs,
+        #[command(flatten)]
+        budget: BudgetArgs,
         /// `text` streams the answer as it arrives; `json` prints one result
         /// object on stdout when the run finishes; `stream-json` prints one
         /// JSON event per line as the run proceeds, ending with that object
@@ -608,7 +666,9 @@ async fn main() {
     // `jan update` reports the same thing itself, in more detail. The check
     // doubles as the usage record (see `updater::fetch_manifest`), so there is
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
-    if !matches!(command, Commands::Update { .. }) {
+    // `jan mcp serve` is driven by another program, not a person: nobody reads
+    // the notice, and an update fetch on every spawn is a cost the peer pays.
+    if !matches!(command, Commands::Update { .. } | Commands::Mcp { .. }) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -633,7 +693,33 @@ async fn main() {
             }
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
+        Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
+    }
+}
+
+// ── MCP server handler ─────────────────────────────────────────────────────
+
+async fn handle_mcp_serve(cmd: McpServeCommands) {
+    let McpServeCommands::Serve {
+        project,
+        transport,
+        allow_write,
+        allow_exec,
+        tools,
+        port,
+        token,
+    } = cmd;
+    let flags = ServeFlags {
+        allow_write,
+        allow_exec,
+        only: tools,
+        port,
+        token,
+    };
+    if let Err(e) = cli_mcp_serve(&project, transport, flags).await {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
 }
 
@@ -807,6 +893,7 @@ async fn handle_agent(cmd: AgentCommands) {
             sandbox,
             worktree,
             resume,
+            budget,
             output_format,
             input_format,
         } => {
@@ -819,6 +906,8 @@ async fn handle_agent(cmd: AgentCommands) {
                     auto_approve: !safe,
                     sandbox: sandbox.into_flag(),
                     worktree: worktree.into_flag(),
+                    max_turns: budget.max_turns,
+                    max_session_tokens: budget.max_session_tokens,
                     ..Default::default()
                 },
                 resume.into_request(),
@@ -1221,6 +1310,39 @@ mod tests {
         assert!(Cli::parse_from(["jan", "--safe"]).safe);
     }
 
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its budget args.
+    fn parsed_budget(extra: &[&str]) -> BudgetArgs {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { budget, .. },
+                    },
+            }) => budget,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// An unpassed limit is `None` so the config files (or nothing, for turns)
+    /// decide; `0` must survive parsing as the engine's unbounded marker rather
+    /// than collapsing into the same `None`.
+    #[test]
+    fn run_limits_parse_and_default_to_unset() {
+        let none = parsed_budget(&[]);
+        assert_eq!(none.max_turns, None);
+        assert_eq!(none.max_session_tokens, None);
+
+        let set = parsed_budget(&["--max-turns", "5", "--max-session-tokens", "20000"]);
+        assert_eq!(set.max_turns, Some(5));
+        assert_eq!(set.max_session_tokens, Some(20_000));
+
+        let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
+        assert_eq!(zero.max_turns, Some(0));
+        assert_eq!(zero.max_session_tokens, Some(0));
+    }
+
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
     fn parsed_input_format(extra: &[&str]) -> InputFormat {
         let mut argv = vec!["jan", "cli", "agent", "run", "task"];
@@ -1315,6 +1437,87 @@ mod tests {
             Some(Commands::Update { check: true, .. })
         ));
         assert!(Cli::try_parse_from(["jan", "update", "--check", "--force"]).is_err());
+    }
+
+    #[test]
+    fn mcp_serve_parses_and_defaults_to_read_only_stdio() {
+        let cli = Cli::parse_from(["jan", "mcp", "serve"]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                project,
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(project, ".");
+        assert_eq!(transport, ServeTransport::Stdio);
+        assert!(!allow_write);
+        assert!(!allow_exec);
+        assert!(tools.is_empty());
+        assert_eq!(port, 0);
+        assert!(token.is_none());
+    }
+
+    #[test]
+    fn mcp_serve_http_flags_parse() {
+        let cli = Cli::parse_from([
+            "jan",
+            "mcp",
+            "serve",
+            "--transport",
+            "http",
+            "--port",
+            "7331",
+            "--token",
+            "abc",
+            "--allow-write",
+            "--allow-exec",
+            "--tool",
+            "read",
+            "--tool",
+            "grep",
+        ]);
+        let Some(Commands::Mcp {
+            cmd: McpServeCommands::Serve {
+                transport,
+                allow_write,
+                allow_exec,
+                tools,
+                port,
+                token,
+                ..
+            },
+        }) = cli.command
+        else {
+            panic!("expected mcp serve");
+        };
+        assert_eq!(transport, ServeTransport::Http);
+        assert!(allow_write);
+        assert!(allow_exec);
+        assert_eq!(tools, vec!["read".to_string(), "grep".to_string()]);
+        assert_eq!(port, 7331);
+        assert_eq!(token.as_deref(), Some("abc"));
+    }
+
+    /// The client direction keeps its own place; `jan mcp` must not shadow it.
+    #[test]
+    fn mcp_client_subcommand_still_lives_under_cli() {
+        let cli = Cli::parse_from(["jan", "cli", "mcp", "list"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Mcp {
+                    cmd: McpCommands::List { .. }
+                }
+            })
+        ));
     }
 
     #[test]
@@ -1484,6 +1687,8 @@ mod tests {
                 skills: 2,
                 commands: 1,
                 agents: 3,
+                tools: 4,
+                hooks: 5,
             },
             InstalledPlugin {
                 name: "beta".into(),
@@ -1493,6 +1698,8 @@ mod tests {
                 skills: 0,
                 commands: 0,
                 agents: 0,
+                tools: 0,
+                hooks: 0,
             },
         ];
 
@@ -1501,11 +1708,16 @@ mod tests {
         assert!(output.lines().next().unwrap().contains("PLUGIN"));
         assert!(output.lines().next().unwrap().contains("COMMANDS"));
         assert!(output.lines().next().unwrap().contains("AGENTS"));
+        assert!(output.lines().next().unwrap().contains("TOOLS"));
+        assert!(output.lines().next().unwrap().contains("HOOKS"));
         assert!(output.contains("alpha"));
         assert!(output.contains("1.2.3"));
-        assert!(output.contains("2"));
-        assert!(output.contains("1"));
-        assert!(output.contains("3"));
+        // Every count alpha declares, in column order.
+        let alpha = output.lines().nth(1).unwrap();
+        assert_eq!(
+            alpha.split_whitespace().collect::<Vec<_>>(),
+            ["alpha", "1.2.3", "2", "1", "3", "4", "5"]
+        );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
     }

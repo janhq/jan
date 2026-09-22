@@ -31,8 +31,39 @@ yarn build:e2e:app                  # from the repo root
 cd e2e && xvfb-run -a yarn test
 ```
 
-`xvfb-run -a yarn e2e` also works; it just puts the ~20-minute build inside the
-virtual display for no reason.
+`xvfb-run -a yarn e2e` also works; it just puts the build — 6-11 minutes cold
+on the hosted runners — inside the virtual display for no reason.
+
+## What it covers
+
+Four spec files, run in this order (see [Spec order](#spec-order-is-maintained-by-hand)):
+
+| Spec | Covers |
+|---|---|
+| `smoke.e2e.ts` | The app boots, React mounts, the first-run wizard renders, and the data folder Rust resolves is inside the throwaway profile. |
+| `chat.e2e.ts` | Configure a provider and a model through the real dialogs; send; stream a reply; a second turn; survive a webview reload; delete the thread and confirm it left disk. |
+| `message-actions.e2e.ts` | Regenerate; switch between reply versions; edit a user message and re-run; delete a single message; stop a reply mid-stream; New Chat into a fresh thread. |
+| `cowork-channel.e2e.ts` | The absent half of the channel gate: no sidebar tab, no settings entry, and a bookmarked `/cowork`, `/artifacts` or `/settings/cowork` URL lands where the guard sends it. |
+
+Those are the load-bearing items of the manual checklist's D section: if the
+chat loop and the actions on a message work, the product works. Much of D is
+still manual — rename, the search dialog, `Delete All`, projects, switching
+model mid-conversation, markdown/LaTeX/code-block rendering, image attachments,
+IME input, the token-speed readout.
+
+**Deliberately out of scope.** llama.cpp: a real local model means a
+multi-gigabyte download, minutes per run, and different behaviour on every
+backend, so it needs its own platform-specific test rather than a place in the
+critical path. Copy-to-clipboard: `CopyButton` calls
+`navigator.clipboard.writeText` without awaiting it or handling a rejection, and
+flips to the check icon either way, so a DOM assertion there would pass whether
+or not anything reached the clipboard.
+
+**Not testable at all, as of the sidebar revamp (`92b2de422`).** Starring a
+thread, the `Favorites`/`Recent` split, `Unstar All` and the inline sidebar
+search input were all rendered by `containers/LeftPanel.tsx`, which that commit
+deleted. `toggleFavorite`, `unstarAllThreads` and `getFavoriteThreads` survive in
+`hooks/useThreads.ts` with no production caller. The checklist still lists them.
 
 ## Running
 
@@ -336,7 +367,7 @@ there is plenty painted on top (the analytics consent panel over the composer,
 the download toast over the header; both below). The failure mode is a 30-60s
 timeout naming an element that is fine.
 
-Use `clickWhenReady(selector)` from `specs/chat.e2e.ts` instead:
+Use `clickWhenReady(selector)` from `helpers/interactions.ts` instead:
 `waitForDisplayed()` + `waitForEnabled()` + `click()`. Displayed and enabled are
 still worth waiting for, because they are real states this app uses — Add Model
 stays disabled until the model-id field is non-empty, and the send button is
@@ -347,9 +378,23 @@ exist is the streaming barrier.
 there: `waitForDisplayed()` runs `checkVisibility({opacityProperty: true})`
 browser-side and rejects a fully transparent element exactly as
 `waitForClickable()` would. Anything revealed only on hover or focus needs
-`waitForExist()` instead — which is what the third test in `specs/chat.e2e.ts`
-does for the thread overflow menu, clicking it to focus it before the
-`opacity-0` rule stops applying.
+`waitForExist()` instead, then a plain `click()` to focus it before the
+`opacity-0` rule stops applying. Two live examples, and they are hidden by
+different rules:
+
+- the thread overflow menu (third test in `specs/chat.e2e.ts`), which is
+  `md:opacity-0` with a `group-focus-within/menu-item:opacity-100` escape
+  (`components/ui/sidebar.tsx:714`), and additionally needs `Enter` because its
+  Radix *dropdown* trigger opens on pointerdown;
+- the whole **user-side message action row** — Copy, Edit, Ask again, Delete —
+  which is `opacity-0 ... group-hover/message:opacity-100 focus-within:opacity-100`
+  (`web-app/src/containers/MessageItem.tsx:631`). The edit test in
+  `specs/message-actions.e2e.ts` reaches it with `waitForExist()` + `click()`
+  and nothing else: `DialogTrigger` opens on `onClick`, so unlike the dropdown
+  no keypress is needed.
+
+The **assistant**-side row has no opacity rule at all — it is only `hidden`
+while that reply is streaming — so message actions on a reply need none of this.
 
 ### The analytics prompt covers the composer
 
@@ -360,10 +405,17 @@ The button stays present, enabled and non-zero-sized, so it fails only
 WebDriver's elementFromPoint check and reports as "still not clickable", which
 names an element that is fine.
 
-`specs/chat.e2e.ts` dismisses it in `before()` via
+`denyAnalyticsConsent({ required })` in `helpers/provider.ts` answers it via
 `[data-testid="analytic-deny"]` — deny rather than allow, because a test run has
-no business opting into telemetry. Any new spec that reaches a post-onboarding
-state has to do the same.
+no business opting into telemetry.
+
+`required` is the part worth reading twice. The panel appears **once per
+profile**, so exactly one spec in a run sees it: the first to complete
+onboarding, which is `specs/chat.e2e.ts`. That one passes `required: true`,
+because silently skipping a panel that has not appeared yet just defers it to
+whatever is being clicked later. Every later spec passes `required: false`,
+because waiting for a panel that has already been answered hangs for the full
+timeout.
 
 It is not the only thing that floats. The embedding-model download from
 [Isolation](#isolation) completes at a different moment every run depending on
@@ -375,17 +427,33 @@ consecutive red runs, with `[data-testid="add-provider-trigger"]` reported as
 "still not clickable" while being present, enabled, visible and 132x32 — which is
 the `waitForClickable()` ban above, in the wild.
 
-A click that arrives in that window has also been seen to simply not take. Once:
-the click on `[data-testid="add-provider-trigger"]` returned and the dialog never
-appeared, while the toast was landing. It has not reproduced, and **why** it did
-not register is not known. The likeliest explanation is that `el.click()` went to
-a node React had just replaced, but that is unverified — the Toaster is a sibling
-of the page in `routes/__root.tsx`, and `routes/settings/providers/index.tsx`
-does not remount its header when the model list changes, so nothing observed says
-a mounting toast re-keys the trigger.
+A click that arrives in that window has also been seen to simply not take, and
+this is the suite's one **open** problem. Twice: once on an otherwise idle
+machine while the toast was landing, and once as a run of three consecutive red
+runs — `[data-testid="add-provider-trigger"]` present and enabled, dialog never
+appearing, in `chat.e2e.ts` and `message-actions.e2e.ts` alike — which then went
+green on their own and have not returned.
+
+**Why** it does not register is not known. The standing hypothesis is that
+`el.click()` goes to a node React has just replaced; it is unverified, and
+nothing observed supports the obvious culprit — the Toaster is a sibling of the
+page in `routes/__root.tsx`, and `routes/settings/providers/index.tsx` does not
+remount its header when the model list changes, so a mounting toast does not
+re-key the trigger.
+
+Attempts to reproduce it have all failed. Saturating every core produced 4/4
+green runs with the current `openDialog()` *and* 4/4 with the check-then-click
+version it replaced; a later series ran 30 consecutive whole-suite runs green —
+20 idle, 10 under combined CPU and I/O saturation. **So load is not the trigger,
+and the current version is not known to fix anything.** Do not read its shape as
+a solved problem. What it does is narrow the window between finding the trigger
+and clicking it from four round trips to none, and report what the last attempt
+actually observed when it times out — "clicked", "already-open", "missing",
+"disabled" or "hidden". If this goes red on CI, that word is the first thing to
+read, and it is the evidence this paragraph is still missing.
 
 Opening a dialog therefore goes through
-`openDialog(triggerSelector, dialogSelector)` in `specs/chat.e2e.ts`, which
+`openDialog(triggerSelector, dialogSelector)` in `helpers/interactions.ts`, which
 re-clicks until the dialog is displayed — kept because the retry is cheap and the
 guard makes it safe, not because the cause is understood. The guard is the
 load-bearing part and it *is* verified: Radix mirrors open state onto the trigger
@@ -422,6 +490,21 @@ If a future spec is mysteriously slow and the log carries
 `helpers/` holds the pieces more than one spec needs:
 
 - `navigation.ts` — `goto()`, described above.
+- `interactions.ts` — `clickWhenReady()` and `openDialog()`, both described
+  above. They live here rather than in a spec because what they work around is
+  the driver, not the screen.
+- `provider.ts` — `configureMockProvider()` walks the real Add Provider and Add
+  Model dialogs, `denyAnalyticsConsent()` answers the consent panel, and
+  `selectModel()` picks a model in the composer. The last is not optional:
+  `useModelProvider` defaults to `{ selectedProvider: 'llamacpp', selectedModel:
+  null }` and `DropdownModelProvider`'s init effect only ever auto-selects a
+  llamacpp model or clears the selection — it never reaches for a custom
+  provider, so a spec that skips it sends at a model that is not there.
+- `chat.ts` — the `USER_MESSAGES` / `ASSISTANT_MESSAGES` selectors, `sendPrompt()`
+  and `waitForStreamToFinish()`. The two selectors pair the testid with
+  `data-message-role`, which matters: system notes take an early return in
+  `MessageItem.tsx` and render neither attribute, so counting these counts real
+  conversation turns and nothing else.
 - `paths.ts` — two directories, and they are not the same one. Asserting against
   a real on-disk path is what makes a filesystem check meaningful; asserting
   against `isolationEnv()` would only restate what the harness injected.
@@ -463,6 +546,29 @@ client: no CORS, no preflight, and the capability set already allows
 `http://*:*`. The provider is registered through the real Add Provider and Add
 Model dialogs, so the configuration path is covered too.
 
+`startMockOpenAI()` takes two options, both of which exist for a specific spec:
+
+- `modelId` — what `GET /v1/models` advertises. A second spec **must** override
+  it. Nothing removes an earlier spec's provider, and the composer's dropdown
+  keys its option testid on the model id alone
+  (`DropdownModelProvider.tsx:584,684`), so two providers advertising the same
+  id put two elements behind `model-option-<id>` — and one of them points at a
+  server that was closed in the earlier spec's `after()`.
+- `chunkDelayMs` — milliseconds between streamed chunks, and writable on the
+  returned handle so one test can slow the stream down and put it back. At the
+  default of 0 the whole echo lands well inside one WebDriver round trip, so
+  there is nothing left to interrupt by the time a click on stop arrives.
+
+The handle also carries `streamedPrompts`: the last user turn of every
+*streaming* completion so far, live. It is there because some claims the UI
+makes are not observable in the DOM at all. A regenerated reply to an unchanged
+prompt is byte-identical to the one it replaced, so nothing on screen separates
+"asked the model again" from "re-rendered what was already there" — and asking
+again is the whole of what Regenerate does. Its mirror image is the version-nav
+test, which asserts the count did **not** move: switching between two versions
+has to read what the thread already holds. Title-summarizer calls are excluded,
+since they are not conversation turns.
+
 Start the server in `before()` and close it in `after()` — an open listener keeps
 the worker's event loop alive and the run never exits.
 
@@ -483,6 +589,10 @@ forwards between spec files: `smoke.e2e.ts` asserts the first-run setup wizard
 and `chat.e2e.ts` configures a provider, which under an alphabetically sorted
 glob ran first and broke it.
 
+The order is pristine first, most-configured last — `smoke` → `chat` →
+`message-actions` — and it is the reason `message-actions.e2e.ts` can assume a
+provider has already been configured and the analytics panel already answered.
+
 It leaks further than a shared profile would explain. The embedded provider
 spawns **one** app in the launcher's `onPrepare` and every spec file drives that
 same process over its own WebDriver session — the run log carries a single
@@ -497,7 +607,7 @@ configures the app.
 
 ### A green run still logs errors
 
-Both spec files leave `no such element` and `stale element reference` lines in
+The spec files leave `no such element` and `stale element reference` lines in
 the wdio log even when every test passes — on a two-run Linux check, 14 and 23
 of them respectively; on Windows, 53. They are `INFO webdriver: RESULT`
 responses, not failures: `waitForDisplayed()`, `waitUntil()` and `openDialog()`
