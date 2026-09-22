@@ -265,7 +265,7 @@ On the stable build:
 - [ ] `Settings` has no `Cowork` entry
 - [ ] Opening `/cowork` or `/artifacts` lands on `Home`, and `/settings/cowork` lands on `Settings -> General`
 - [ ] A thread, a project and a chat turn still work - the gate must not take the app down with it
-- [ ] A profile whose last surface was `Cowork` (open Cowork in a nightly build on the same data folder, then launch the stable build) opens on `Home` - a restored last surface must not resurrect the tab
+- [ ] A data folder written by a nightly build, with Cowork used and a session present, opens in the stable build without errors: the sidebar renders, `Settings` renders, and `data/logs/app.log` has no error naming the Cowork surface
 On the nightly build of the same commit:
 - [ ] The `Cowork` tab and switcher are present, and `/cowork` opens the surface
 - [ ] `Settings -> Cowork` is present and lists memory, skills and subagents
