@@ -119,6 +119,11 @@
         <p>Anthropic-compatible custom providers, provider-aware sampling controls, media-only messages, an overhauled llama.cpp settings UX, and many stability and error-handling fixes</p>
       </description>
     </release>
+    <release version="0.8.5" date="2026-09-22">
+      <description>
+        <p>Fixes only: llama.cpp per-slot context and backend-update stability, a cap on MCP tool-result size, macOS and Windows platform fixes, and an enforced Trusted Hosts allowlist when the API server binds 0.0.0.0</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-05-22">
       <description>
         <p>Multi-Token Prediction, a unified llama.cpp router process, inline MCP tool approval with citation cards, model fit labels, and audio attachments</p>
