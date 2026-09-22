@@ -243,6 +243,9 @@ What a client may assume, for `protocol_version` 1:
 The version is bumped only for a change a v1 consumer cannot survive: a renamed or removed tag, a
 removed field, or a new meaning for an existing one. Adding a field is not a bump.
 
+Both directions of this channel are published as a JSON Schema by `jan cli agent schema`, so a
+client validates against the types instead of re-declaring them (see [`schema`](#schema)).
+
 ### `step`
 
 Run a single turn. Useful when debugging a prompt or a tool.
@@ -259,6 +262,39 @@ Print the resolved project config and available providers as JSON.
 jan cli agent status
 jan cli agent status --project ~/code/app
 ```
+
+### `schema`
+
+Print the protocol as a JSON Schema document, generated from the Rust types that define the channel
+rather than written by hand. No project and no provider are involved: the document is the same on
+every machine, and it is the same document for a client that validates `stream-json` output as for
+one that writes stdin messages.
+
+```bash
+jan cli agent schema                              # stdout
+jan cli agent schema --out protocol/schema.json   # or a file
+```
+
+The document has two root properties:
+
+| Property | Contents |
+| --- | --- |
+| `output` | The records a run writes to stdout: every `StreamEvent`, plus the `init`, `result`, `permission_decision` and `input_error` records the CLI adds around the loop |
+| `input` | The lines a client may write to stdin: the `user`, `abort` and `permission` messages |
+
+`x-protocol-version` is the contract version the document describes, so a client validates against
+the version it pinned rather than whatever happens to be installed. `$defs` names the record types,
+so a client can validate one family (`#/$defs/StreamEvent`) as well as the whole stream.
+
+The committed copy is `protocol/schema.json`:
+
+```bash
+make protocol-schema   # regenerate it after changing a protocol type
+```
+
+A unit test compares the file against a fresh generation, so a change to a protocol type cannot
+land without the document moving with it, and generating twice from unchanged types is
+byte-identical rather than a diff.
 
 ## `jan plugin`
 
