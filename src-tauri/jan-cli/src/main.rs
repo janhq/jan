@@ -1045,36 +1045,13 @@ async fn handle_usage(cmd: UsageCommands, json: bool) -> Result<(), String> {
         return Ok(());
     }
 
-    match &query {
-        Query::Generation(_) | Query::Correlated(_) => {
-            let records = usage::parse_generations_payload(&payload).map_err(|e| e.to_string())?;
-            if records.is_empty() {
-                println!("No matching execution.");
-                return Ok(());
-            }
-            for (i, record) in records.iter().enumerate() {
-                if i > 0 {
-                    println!();
-                }
-                for line in usage::generation_lines(record) {
-                    println!("{line}");
-                }
-            }
-        }
-        _ => {
-            let fields = payload.fields();
-            if fields.is_empty() {
-                println!("The provider reported no figures for this view.");
-                return Ok(());
-            }
-            let width = fields.iter().map(|(p, _)| p.len()).max().unwrap_or(0);
-            for (path, value) in fields {
-                println!("{path:width$}  {value}");
-            }
-        }
+    // The same renderer the TUI readout draws, so the two surfaces cannot
+    // drift: one place decides how a reported charge is displayed. Nothing is
+    // folded here -- a fold is an interactive affordance, and a piped view
+    // that silently dropped rows would be wrong for the scripts reading it.
+    for line in app_lib::core::cli::usage_view::reported_usage_lines(&query, &payload, true) {
+        println!("{line}");
     }
-    println!();
-    println!("Reported by the provider. Not the local per-session estimate.");
     Ok(())
 }
 

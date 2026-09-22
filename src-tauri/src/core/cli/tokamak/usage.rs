@@ -464,6 +464,218 @@ pub fn parse_payload_for_test(body: &str) -> Payload {
     Payload(body.to_string())
 }
 
+/// One row of aggregated analytics: a model's slice of the account summary, a
+/// day's totals, or the account-wide total.
+///
+/// Token counts default to zero because these endpoints report a count for
+/// every bucket they return a row for -- a row exists *because* there was
+/// traffic. Cost does not default: it is [`Money`] or nothing, for the same
+/// reason a generation's charge is.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Aggregate {
+    /// Model id for a by-model row, the date for a daily row, empty for the
+    /// account total.
+    pub label: String,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cache_creation_tokens: u64,
+    pub request_count: u64,
+    /// What the server computed this slice cost. Exact text, never summed
+    /// client-side -- the server already totalled it in the row that says so.
+    pub cost: Option<Money>,
+    /// What caching saved, when reported.
+    pub savings: Option<Money>,
+}
+
+#[derive(Deserialize)]
+struct AggregateWire {
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    date: Option<String>,
+    #[serde(default)]
+    total_prompt_tokens: u64,
+    #[serde(default)]
+    total_completion_tokens: u64,
+    #[serde(default)]
+    cache_read_tokens: u64,
+    #[serde(default)]
+    cache_creation_tokens: u64,
+    #[serde(default)]
+    request_count: u64,
+    #[serde(default)]
+    estimated_cost_usd: Option<Box<RawValue>>,
+    #[serde(default)]
+    cache_savings_usd: Option<Box<RawValue>>,
+}
+
+impl From<AggregateWire> for Aggregate {
+    fn from(wire: AggregateWire) -> Self {
+        Self {
+            // A daily row is named by its date and a model row by its model;
+            // the account total carries neither and is labelled by context.
+            label: wire
+                .model
+                .filter(|m| !m.is_empty())
+                .or(wire.date)
+                .unwrap_or_default(),
+            prompt_tokens: wire.total_prompt_tokens,
+            completion_tokens: wire.total_completion_tokens,
+            cache_read_tokens: wire.cache_read_tokens,
+            cache_creation_tokens: wire.cache_creation_tokens,
+            request_count: wire.request_count,
+            cost: wire.estimated_cost_usd.as_deref().and_then(Money::parse),
+            savings: wire.cache_savings_usd.as_deref().and_then(Money::parse),
+        }
+    }
+}
+
+/// `GET /v1/usage/me`: the account total plus its per-model breakdown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AccountSummary {
+    /// Window the figures cover, as the server dated it.
+    pub period: Option<(String, String)>,
+    pub total: Aggregate,
+    pub by_model: Vec<Aggregate>,
+}
+
+/// Parse the account summary. Returns `None` when the body is not that shape,
+/// so the caller can fall back to the generic field walk rather than claim the
+/// server sent nothing.
+pub fn parse_account_summary(payload: &Payload) -> Option<AccountSummary> {
+    #[derive(Deserialize)]
+    struct Period {
+        start_date: String,
+        end_date: String,
+    }
+    #[derive(Deserialize)]
+    struct Wire {
+        #[serde(default)]
+        period: Option<Period>,
+        total_usage: AggregateWire,
+        #[serde(default)]
+        by_model: Vec<AggregateWire>,
+    }
+    let wire: Wire = serde_json::from_str(payload.as_str()).ok()?;
+    Some(AccountSummary {
+        period: wire.period.map(|p| (p.start_date, p.end_date)),
+        total: wire.total_usage.into(),
+        by_model: wire.by_model.into_iter().map(Aggregate::from).collect(),
+    })
+}
+
+/// Parse `GET /v1/usage/me/daily`, a bare array of per-day totals.
+pub fn parse_daily(payload: &Payload) -> Option<Vec<Aggregate>> {
+    let wire: Vec<AggregateWire> = serde_json::from_str(payload.as_str()).ok()?;
+    Some(wire.into_iter().map(Aggregate::from).collect())
+}
+
+/// One recorded request from `GET /v1/usage/me/requests`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestRecord {
+    pub execution_id: Option<String>,
+    pub model: Option<String>,
+    pub billing_status: Option<BillingStatus>,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub cache_read_tokens: u64,
+    pub cost: Option<Money>,
+    pub created_at: Option<String>,
+    /// HTTP status the caller saw. A non-200 is why a row may have no cost.
+    pub status: Option<u16>,
+}
+
+#[derive(Deserialize)]
+struct RequestWire {
+    #[serde(default)]
+    execution_id: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    billing_status: Option<String>,
+    #[serde(default)]
+    prompt_tokens: u64,
+    #[serde(default)]
+    completion_tokens: u64,
+    #[serde(default)]
+    cache_read_tokens: u64,
+    #[serde(default)]
+    estimated_cost_usd: Option<Box<RawValue>>,
+    #[serde(default)]
+    created_at: Option<String>,
+    #[serde(default)]
+    status: Option<u16>,
+}
+
+/// Parse the recorded-requests list out of its `data` envelope.
+pub fn parse_requests(payload: &Payload) -> Option<Vec<RequestRecord>> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        #[serde(default)]
+        data: Vec<RequestWire>,
+    }
+    let envelope: Envelope = serde_json::from_str(payload.as_str()).ok()?;
+    Some(
+        envelope
+            .data
+            .into_iter()
+            .map(|wire| RequestRecord {
+                execution_id: wire.execution_id,
+                model: wire.model,
+                billing_status: wire.billing_status.as_deref().map(BillingStatus::from_str),
+                prompt_tokens: wire.prompt_tokens,
+                completion_tokens: wire.completion_tokens,
+                cache_read_tokens: wire.cache_read_tokens,
+                cost: wire.estimated_cost_usd.as_deref().and_then(Money::parse),
+                created_at: wire.created_at,
+                status: wire.status,
+            })
+            .collect(),
+    )
+}
+
+/// `GET /v1/usage/limits/current`: whether the account is currently allowed to
+/// spend, and the decisions behind that.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitStatus {
+    pub allowed: bool,
+    /// Each limit the server evaluated, rendered from whatever fields it
+    /// carried -- the decision schema is not pinned here.
+    pub decisions: Vec<String>,
+}
+
+/// Parse the current-limits view. A `null` `decisions` is the documented shape
+/// of "nothing to report", not an error.
+pub fn parse_limits(payload: &Payload) -> Option<LimitStatus> {
+    #[derive(Deserialize)]
+    struct Wire {
+        allowed: bool,
+        #[serde(default)]
+        decisions: Option<Vec<Box<RawValue>>>,
+    }
+    let wire: Wire = serde_json::from_str(payload.as_str()).ok()?;
+    Some(LimitStatus {
+        allowed: wire.allowed,
+        decisions: wire
+            .decisions
+            .unwrap_or_default()
+            .iter()
+            .map(|raw| {
+                // Unpinned schema: flatten each decision to `key=value` pairs
+                // so an added field shows up instead of being dropped.
+                let mut fields = Vec::new();
+                flatten(String::new(), raw, &mut fields);
+                fields
+                    .iter()
+                    .map(|(path, value)| format!("{path}={value}"))
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            })
+            .collect(),
+    })
+}
+
 /// How a field with no value is shown. Never `0` and never blank: the whole
 /// point is that unavailable and zero are different answers, and a blank cell
 /// reads as zero to most people.

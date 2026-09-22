@@ -736,11 +736,20 @@ enum Readout {
     Session { all_models: bool },
     /// `/usage <account view>`: requested, not yet fetched.
     ReportedLoading(super::tokamak::usage::Query),
-    /// `/usage <account view>`: the fetched readout, already rendered.
+    /// `/usage <account view>`: the fetched body, rendered at draw time.
+    ///
+    /// The payload is kept rather than the rendered lines so `m` can fold the
+    /// breakdown without refetching -- re-asking the server for a list the
+    /// user already has would bill a request to expand a table. `error` holds
+    /// a failed read, which has no payload to re-render.
     Reported {
         title: String,
-        lines: Vec<String>,
+        query: super::tokamak::usage::Query,
+        payload: Box<super::tokamak::usage::Payload>,
+        all_rows: bool,
     },
+    /// `/usage <account view>`: the read failed, and why.
+    ReportedError { title: String, message: String },
 }
 
 impl Readout {
@@ -753,7 +762,7 @@ impl Readout {
             Readout::ContextLoading | Readout::Context(_) => "context".to_string(),
             Readout::Session { .. } => "session estimate".to_string(),
             Readout::ReportedLoading(query) => query.label().to_string(),
-            Readout::Reported { title, .. } => title.clone(),
+            Readout::Reported { title, .. } | Readout::ReportedError { title, .. } => title.clone(),
         }
     }
 }
@@ -3599,6 +3608,11 @@ impl App {
             Some("edit the setting above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
             Some("finish the wizard above")
+        } else if self.readout.is_some() {
+            // A readout takes the keyboard while it is docked -- `q`, `m` and
+            // Esc are its keys, so a keystroke meant for it must never land in
+            // the field as text the user then has to delete.
+            Some("Esc or q to close the readout above")
         } else {
             None
         }
@@ -6677,7 +6691,7 @@ impl ContextReport {
 /// is slightly below 2.05 but `k * 10.0` lands on exactly 20.5, so the branch
 /// selected decimal output while the renderer produced the self-defeating
 /// `2.0K`. Integer math removes that representation mismatch.
-fn format_tokens(tokens: u64) -> String {
+pub(super) fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         return tokens.to_string();
     }
@@ -6929,11 +6943,20 @@ fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static
         Readout::ReportedLoading(query) => {
             vec![Line::raw(format!("reading {}...", query.label()))]
         }
-        Readout::Reported { lines, .. } => lines
+        Readout::Reported {
+            query,
+            payload,
+            all_rows,
+            ..
+        } => super::usage_view::reported_usage_lines(query, payload, *all_rows)
             .iter()
             // Hard-wrapped rather than clipped: a truncated money figure is a
             // wrong money figure.
             .flat_map(|line| wrap_text(line, Style::new(), width))
+            .map(Line::from)
+            .collect(),
+        Readout::ReportedError { message, .. } => wrap_text(message, Style::new(), width)
+            .into_iter()
             .map(Line::from)
             .collect(),
     }
@@ -10868,16 +10891,15 @@ async fn handle_key(
     // up.
     if app.readout.is_some() {
         match key.code {
-            // `m` folds the session readout's model list open and shut. Only
-            // that readout has a tail to fold, so elsewhere it falls through
-            // to the catch-all and does nothing rather than closing the dock.
-            KeyCode::Char('m')
-                if !ctrl && matches!(app.readout, Some(Readout::Session { .. })) =>
-            {
-                if let Some(Readout::Session { all_models }) = &mut app.readout {
-                    *all_models = !*all_models;
-                }
-            }
+            // `m` folds a readout's list open and shut -- the session's
+            // models, or an account view's breakdown. Readouts with no tail
+            // fall through to the catch-all and do nothing rather than
+            // closing the dock.
+            KeyCode::Char('m') if !ctrl => match &mut app.readout {
+                Some(Readout::Session { all_models }) => *all_models = !*all_models,
+                Some(Readout::Reported { all_rows, .. }) => *all_rows = !*all_rows,
+                _ => {}
+            },
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.readout = None;
             }
@@ -12414,58 +12436,6 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
     }
 }
 
-/// Render a fetched account-usage payload.
-///
-/// A generation lookup has a known schema and is rendered field by field; every
-/// other view is walked as raw text (see [`super::tokamak::usage::Payload`]),
-/// so a field the server added since this build still appears and no money
-/// field is rounded on the way through.
-fn reported_usage_lines(
-    query: &super::tokamak::usage::Query,
-    payload: &super::tokamak::usage::Payload,
-) -> Vec<String> {
-    use super::tokamak::usage;
-
-    let mut lines = match query {
-        usage::Query::Generation(_) | usage::Query::Correlated(_) => {
-            match usage::parse_generations_payload(payload) {
-                Ok(records) if records.is_empty() => vec!["no matching execution".to_string()],
-                Ok(records) => records
-                    .iter()
-                    .flat_map(|record| {
-                        usage::generation_lines(record)
-                            .into_iter()
-                            .chain(std::iter::once(String::new()))
-                    })
-                    .collect(),
-                Err(e) => vec![e.to_string()],
-            }
-        }
-        _ => {
-            let fields = payload.fields();
-            if fields.is_empty() {
-                vec!["the provider reported no figures for this view".to_string()]
-            } else {
-                // Padded to the widest path so the values line up as a column;
-                // a usage readout is scanned down the numbers, not read across.
-                let width = fields.iter().map(|(p, _)| p.len()).max().unwrap_or(0);
-                fields
-                    .iter()
-                    .map(|(path, value)| format!("{path:width$}  {value}"))
-                    .collect()
-            }
-        }
-    };
-    while lines.last().is_some_and(String::is_empty) {
-        lines.pop();
-    }
-    // The line that keeps the two kinds of number apart. Everything above came
-    // from the server; the session estimate lives behind a different command
-    // and the two are never added together.
-    lines.push(String::new());
-    lines.push("reported by the provider - not the local session estimate".to_string());
-    lines
-}
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
 /// later session reads back: the root `JAN.md` (ingested as project context),
@@ -15701,13 +15671,17 @@ fn finish_reported_usage(
     if !matches!(app.readout, Some(Readout::ReportedLoading(_))) {
         return;
     }
-    let lines = match result {
-        Ok(payload) => reported_usage_lines(query, &payload),
-        Err(e) => vec![e.to_string()],
-    };
-    app.readout = Some(Readout::Reported {
-        title: query.label().to_string(),
-        lines,
+    app.readout = Some(match result {
+        Ok(payload) => Readout::Reported {
+            title: query.label().to_string(),
+            query: query.clone(),
+            payload: Box::new(payload),
+            all_rows: false,
+        },
+        Err(e) => Readout::ReportedError {
+            title: query.label().to_string(),
+            message: e.to_string(),
+        },
     });
 }
 
@@ -24696,7 +24670,12 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 6] = [
+        let setups: [DockSetup; 7] = [
+            // A readout is docked like any other prompt and owns the same
+            // keys, so the field must go inactive for it too.
+            ("readout", |app| {
+                app.readout = Some(super::Readout::Session { all_models: false })
+            }),
             ("login/connecting", |app| {
                 app.login = Some(super::LoginPrompt::connecting())
             }),
@@ -32587,28 +32566,82 @@ mod tests {
         app.readout = Some(super::Readout::ReportedLoading(Query::Summary));
         super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
         match &app.readout {
-            Some(super::Readout::Reported { lines, .. }) => {
-                let text = lines.join("\n");
-                assert!(text.contains("not found"), "{text}");
-                assert!(!text.is_empty());
+            Some(super::Readout::ReportedError { message, .. }) => {
+                assert!(message.contains("not found"), "{message}");
             }
             _ => panic!("the readout should hold the failure"),
         }
+        assert!(readout_text(&app).contains("not found"), "{}", readout_text(&app));
     }
 
-    /// Every server-sourced readout has to declare itself as such, because the
-    /// same command one word apart prints a local estimate.
-    #[test]
-    fn a_reported_readout_says_it_is_not_the_local_estimate() {
+    /// A live account summary, trimmed to six models. Shaped exactly as
+    /// `GET /v1/usage/me` answers, including the empty `provider` fields and
+    /// money as decimal strings.
+    const ACCOUNT_BODY: &str = r#"{
+        "period": {"start_date":"2026-08-23T08:57:21.160234939Z",
+                   "end_date":"2026-09-22T08:57:21.160234939Z"},
+        "total_usage": {"model":"","provider":"","total_prompt_tokens":277414219,
+            "total_completion_tokens":10931093,"total_tokens":1892976850,
+            "request_count":15049,"estimated_cost_usd":"1240.10224445",
+            "cache_read_tokens":1577470525,"cache_creation_tokens":27161013,
+            "cache_savings_usd":"1200.5278263"},
+        "by_model": [
+          {"model":"cheap-model","total_prompt_tokens":56073,
+           "total_completion_tokens":2217,"request_count":29,
+           "estimated_cost_usd":"0.087158","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"anthropic/claude-sonnet-5","total_prompt_tokens":4408975,
+           "total_completion_tokens":1295731,"request_count":1238,
+           "estimated_cost_usd":"46.7142352","cache_read_tokens":105369976,
+           "cache_creation_tokens":1545992,"cache_savings_usd":"189.6659568"},
+          {"model":"anthropic/claude-opus-5","total_prompt_tokens":8639502,
+           "total_completion_tokens":1546976,"request_count":2987,
+           "estimated_cost_usd":"195.67393925","cache_read_tokens":224635971,
+           "cache_creation_tokens":237447,"cache_savings_usd":"1010.8618695"},
+          {"model":"tokamak-1-preview","total_prompt_tokens":263419660,
+           "total_completion_tokens":2879420,"request_count":4884,
+           "estimated_cost_usd":"69.454827","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"claude-opus-4-8","total_prompt_tokens":890009,
+           "total_completion_tokens":120000,"request_count":300,
+           "estimated_cost_usd":"12.5","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"claude-haiku-4-5","total_prompt_tokens":100000,
+           "total_completion_tokens":20000,"request_count":120,
+           "estimated_cost_usd":"3.25","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"}
+        ]}"#;
+
+    /// `m` folds an account readout the same way it folds the session one, and
+    /// without refetching -- the payload is held, so expanding a table costs
+    /// no request.
+    #[tokio::test]
+    async fn m_folds_an_account_readout_without_refetching() {
         use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
-        let payload = parse_payload_for_test(r#"{"spend_usd":"1.25"}"#);
-        let lines = super::reported_usage_lines(&Query::Summary, &payload).join("\n");
-        assert!(lines.contains("spend_usd"), "{lines}");
-        assert!(lines.contains("1.25"), "{lines}");
-        assert!(
-            lines.contains("reported by the provider - not the local session estimate"),
-            "{lines}"
+        let mut app = test_app();
+        app.readout = Some(super::Readout::ReportedLoading(Query::Summary));
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Ok(parse_payload_for_test(ACCOUNT_BODY)),
         );
+        assert!(readout_text(&app).contains("m to show all"));
+        assert!(!readout_text(&app).contains("cheap-model"));
+
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(super::Readout::Reported { all_rows: true, .. })),
+            "m expands"
+        );
+        assert!(readout_text(&app).contains("cheap-model"));
+
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(super::Readout::Reported { all_rows: false, .. })),
+            "m folds back"
+        );
+        // Folding is a view change, not a close.
+        assert!(readout_text(&app).contains("account total"));
     }
 
     /// The session readout points at the authoritative view rather than
@@ -32990,7 +33023,15 @@ mod tests {
                 Readout::ReportedLoading(crate::core::cli::tokamak::usage::Query::Summary),
                 Readout::Reported {
                     title: "account".to_string(),
-                    lines: vec!["spend_usd  1.25".to_string(); 40],
+                    query: crate::core::cli::tokamak::usage::Query::Summary,
+                    payload: Box::new(
+                        crate::core::cli::tokamak::usage::parse_payload_for_test(ACCOUNT_BODY),
+                    ),
+                    all_rows: true,
+                },
+                Readout::ReportedError {
+                    title: "account".to_string(),
+                    message: "not found".to_string(),
                 },
             ]
         };
@@ -33019,7 +33060,11 @@ mod tests {
         let mut app = test_app();
         app.readout = Some(Readout::Reported {
             title: "account".to_string(),
-            lines: vec!["spend_usd  1.25".to_string()],
+            query: crate::core::cli::tokamak::usage::Query::Summary,
+            payload: Box::new(crate::core::cli::tokamak::usage::parse_payload_for_test(
+                r#"{"spend_usd":"1.25"}"#,
+            )),
+            all_rows: false,
         });
         let rows = render_rows(&mut app, 60, 24);
         // Located by the title, not by border glyphs: other chrome draws

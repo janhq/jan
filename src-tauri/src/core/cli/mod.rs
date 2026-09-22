@@ -23,6 +23,7 @@ pub mod telemetry;
 pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
+pub mod usage_view;
 pub mod updater;
 pub mod worktree;
 
