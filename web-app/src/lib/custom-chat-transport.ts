@@ -1810,7 +1810,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
               }
               return part
             })
-            message.parts = parts
+            return { ...message, parts }
           }
         }
       }
