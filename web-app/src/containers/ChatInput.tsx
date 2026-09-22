@@ -966,6 +966,7 @@ const ChatInput = memo(function ChatInput({
               'pptx',
               'html',
               'htm',
+              'xhtml',
               // JavaScript / TypeScript
               'js',
               'mjs',
