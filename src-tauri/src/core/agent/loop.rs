@@ -6788,6 +6788,86 @@ mod tests {
         );
     }
 
+    /// The wire boundary where a run becomes metered, or silently does not.
+    /// The CLI refuses an unpriceable ceiling up front, but this function is
+    /// what the loop actually believes, and it is reached by three callers
+    /// (the plain CLI, the TUI, and a subagent dispatch). A body that carries
+    /// a limit but no rates, or rates but no limit, is a caller bug -- and
+    /// running uncapped is the one outcome a cost ceiling must never produce
+    /// silently, so the pairing is asserted here rather than assumed.
+    #[test]
+    fn a_cost_ceiling_needs_both_a_limit_and_the_rates_to_meter_it() {
+        let rates = json!({ "prompt_usd": 1e-6, "completion_usd": 10e-6 });
+
+        assert!(body_cost_ceiling(&json!({})).is_none(), "nothing asked for");
+        assert!(
+            body_cost_ceiling(&json!({ "max_budget_usd": 2.0 })).is_none(),
+            "a limit with no prices cannot be enforced"
+        );
+        assert!(
+            body_cost_ceiling(&json!({ "token_rates": rates })).is_none(),
+            "prices with no limit meter nothing"
+        );
+        // Rates that are present but incomplete are not a ceiling either: the
+        // two required legs of the formula have no sane default, and guessing
+        // one would meter against a price the user was never shown.
+        assert!(
+            body_cost_ceiling(&json!({
+                "max_budget_usd": 2.0,
+                "token_rates": { "prompt_usd": 1e-6 },
+            }))
+            .is_none(),
+            "a half-specified rate sheet is not a rate sheet"
+        );
+
+        let ceiling = body_cost_ceiling(&json!({
+            "max_budget_usd": 2.5,
+            "token_rates": {
+                "prompt_usd": 1e-6,
+                "completion_usd": 10e-6,
+                "cache_read_usd": 0.1e-6,
+                "cache_write_usd": 1.25e-6,
+            },
+        }))
+        .expect("a limit and its rates together are a ceiling");
+        assert_eq!(ceiling.max_usd, 2.5);
+        assert_eq!(ceiling.rates.prompt_usd, 1e-6);
+        assert_eq!(ceiling.rates.cache_read_usd, Some(0.1e-6));
+
+        // Cache rates are genuinely optional -- a provider may publish none --
+        // and their absence bills the cached share at the prompt rate rather
+        // than voiding the ceiling.
+        let no_cache = body_cost_ceiling(&json!({
+            "max_budget_usd": 1.0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("cache rates are optional");
+        assert_eq!(no_cache.rates.cache_read_usd, None);
+
+        // `0` is a real ceiling (stop at the first billed request), not a
+        // synonym for unbounded the way `max_session_tokens: 0` is. The two
+        // limits sit side by side in the same body, so this must not drift.
+        let zero = body_cost_ceiling(&json!({
+            "max_budget_usd": 0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("zero is a ceiling, not an absence");
+        assert_eq!(zero.max_usd, 0.0);
+
+        // Nonsense amounts do not meter. A negative or non-finite ceiling is
+        // never satisfiable, and treating it as `0` would stop every run.
+        for bad in [json!(-1.0), json!("2.00"), json!(null)] {
+            assert!(
+                body_cost_ceiling(&json!({
+                    "max_budget_usd": bad,
+                    "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+                }))
+                .is_none(),
+                "{bad} is not an amount"
+            );
+        }
+    }
+
     #[test]
     fn stop_reason_reads_first_choice() {
         let completion = json!({ "choices": [{ "finish_reason": "tool_calls" }] });
