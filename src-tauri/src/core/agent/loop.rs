@@ -117,6 +117,20 @@ pub(crate) struct OrchestrationArgs {
     /// child) scopes monitors to the run, which then parks on them. Never
     /// inherited by a child run, which gets its own per-run set.
     pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// A backgrounded-shell registry owned by the session rather than by this
+    /// run. When set, a command still running does not park the run: the
+    /// model's turn ends and the owner starts a new turn when the command
+    /// finishes. `None` (a headless run, a child) scopes shells to the run,
+    /// which then parks on them. Never inherited by a child run.
+    pub bg_shells: Option<std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>>,
+    /// A background-subagent registry owned by the session rather than by this
+    /// run, on the same terms as `monitors` and `bg_shells`: a child still
+    /// running does not park the run, and its completion starts a turn of its
+    /// own. A session set is also exempt from the run-scoped `AbortOnDrop`
+    /// teardown -- the owner decides when children die (the TUI kills them on
+    /// cancel and on session reset). Never inherited by a child run, which
+    /// cannot dispatch grandchildren anyway.
+    pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -401,6 +415,14 @@ struct CompositeToolInvoker {
     /// backgrounded shell may never end, so one past its park budget is
     /// abandoned with a notice telling the model where to collect it later.
     bg_shells: std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// Whether `bg_shells` outlives this run. A session-owned registry never
+    /// parks the run on a command that has not finished: the owner delivers a
+    /// later completion as a fresh turn, so the user can keep talking meanwhile.
+    bg_shells_outlive_run: bool,
+    /// Whether the subagent registry in `subagents` outlives this run, on the
+    /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
+    /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
+    subagent_bg_outlive_run: bool,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -661,6 +683,31 @@ impl CompositeToolInvoker {
             self.monitors.has_queued_notices()
         } else {
             self.monitors.has_pending_work()
+        }
+    }
+
+    /// Whether the backgrounded shells owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`]: a queued
+    /// ping always, plus a command still running when the registry dies with
+    /// the run (nothing else could deliver its output).
+    fn shells_owed(&self) -> bool {
+        if self.bg_shells_outlive_run {
+            self.bg_shells.has_queued_notices()
+        } else {
+            self.bg_shells.has_pending_work()
+        }
+    }
+
+    /// Whether the background subagents owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`].
+    fn subagents_owed(&self) -> bool {
+        let Some(ctx) = self.subagents.as_ref() else {
+            return false;
+        };
+        if self.subagent_bg_outlive_run {
+            ctx.bg.has_queued_notices()
+        } else {
+            ctx.bg.has_pending_work()
         }
     }
 
@@ -1279,9 +1326,7 @@ impl ToolInvoker for CompositeToolInvoker {
     }
 
     fn background_pending(&self) -> bool {
-        self.subagents
-            .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work())
+        self.subagents_owed()
             || self.monitors_owed()
             // A queued hook answer is owed to the model the same way a monitor
             // match is: the turn that would end must deliver it first.
@@ -1290,8 +1335,10 @@ impl ToolInvoker for CompositeToolInvoker {
             // the output of a build the model is still waiting on. Bounded
             // too, though the bound is the park's rather than the command's --
             // a shell has no deadline of its own, so `BackgroundShells`
-            // abandons one past its budget with a notice saying so.
-            || self.bg_shells.has_pending_work()
+            // abandons one past its budget with a notice saying so. A
+            // session-owned registry never parks on a command still running:
+            // its owner starts a turn when the output lands.
+            || self.shells_owed()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
@@ -1849,6 +1896,10 @@ pub(crate) async fn run_server_side_openai_orchestration(
         session_id: None,
         sandbox: None,
         monitors: None,
+        // Run-owned: the proxy has no conversation to deliver a later ping
+        // into, so background work must be settled before the run returns.
+        bg_shells: None,
+        subagent_bg: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -2345,6 +2396,8 @@ async fn orchestrate_inner(
         run_mode,
         session_id,
         monitors: session_monitors,
+        bg_shells: session_bg_shells,
+        subagent_bg: session_subagent_bg,
         sandbox,
         compaction,
     } = args;
@@ -2621,13 +2674,23 @@ async fn orchestrate_inner(
     let index_memory = system_prompt_override.is_none();
 
     if let Some(root) = project_root {
-        // Background subagents are scoped to this run: `_bg_guard` aborts any
-        // still-running child when `orchestrate_inner` returns or is cancelled.
-        // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(
-            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
-        );
-        let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
+        // Background subagents are scoped to this run unless the session owns
+        // them: `_bg_guard` aborts any still-running child when
+        // `orchestrate_inner` returns or is cancelled. The cap
+        // (`max_parallel_subagents`) is snapshotted here, at run start.
+        let bg = session_subagent_bg.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+                *max_parallel_subagents,
+            ))
+        });
+        // A session set outlives the run by design, so the run-scoped teardown
+        // must not arm for it: the owner decides when its children die (the
+        // TUI aborts them on cancel and on session reset). Arming it here would
+        // kill on the first turn's return exactly the children this change
+        // exists to keep running.
+        let _bg_guard = session_subagent_bg
+            .is_none()
+            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
             model_id: model_id.clone(),
@@ -2672,6 +2735,8 @@ async fn orchestrate_inner(
             subagents,
             monitors: session_monitors.clone().unwrap_or_default(),
             monitors_outlive_run: session_monitors.is_some(),
+            bg_shells_outlive_run: session_bg_shells.is_some(),
+            subagent_bg_outlive_run: session_subagent_bg.is_some(),
             auto_approve: *auto_approve,
             run_mode,
             // Resolved once per run, like every other config-derived field: a
@@ -2680,9 +2745,7 @@ async fn orchestrate_inner(
             hooks: crate::core::agent::hooks_config::resolve_hooks(root),
             plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            bg_shells: std::sync::Arc::new(
-                crate::core::agent::bg_shell::BackgroundShells::default(),
-            ),
+            bg_shells: session_bg_shells.clone().unwrap_or_default(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -2777,8 +2840,11 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them.
-        if result.is_ok() {
+        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // set is skipped: nothing is about to abort those children, and waiting
+        // here would hold the run open for precisely the work the session set
+        // exists to outlive it.
+        if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
@@ -6617,6 +6683,8 @@ mod tests {
                 tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
             ),
             monitors_outlive_run: false,
+            bg_shells_outlive_run: false,
+            subagent_bg_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
@@ -8150,6 +8218,77 @@ mod tests {
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("READY on port 1337"));
         assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shell counterpart of
+    /// `a_session_owned_monitor_does_not_park_the_run_until_it_fires`: a
+    /// command still running must not hold the run open when the session owns
+    /// the registry, so the model's turn can end and the user can type into an
+    /// idle agent. A queued completion is still owed, since it has to reach
+    /// the model somewhere.
+    #[tokio::test]
+    async fn a_session_owned_background_shell_does_not_park_the_run_until_it_finishes() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.bg_shells_outlive_run = true;
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: Some("/tmp/out.log".to_string()),
+        });
+        assert!(
+            !invoker.background_pending(),
+            "a command still running must not park a session-owned run"
+        );
+
+        invoker.bg_shells.finish(ShellDone {
+            id: 1,
+            command: "sleep 600".to_string(),
+            elapsed_secs: 1,
+            output_path: Some("/tmp/out.log".to_string()),
+            failed: false,
+        });
+        assert!(
+            invoker.background_pending(),
+            "a queued completion is owed to the model"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].headline.is_some(), "a shell reports its own end");
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run-owned registry keeps the old contract: nothing else could deliver
+    /// the output, so the run parks until the command reports back. This is
+    /// the headless and child-run path.
+    #[tokio::test]
+    async fn a_run_owned_background_shell_still_parks_the_run() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry);
+        assert!(!invoker.bg_shells_outlive_run, "run-owned by default");
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        assert!(
+            invoker.background_pending(),
+            "nothing else could deliver this output, so the run waits"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

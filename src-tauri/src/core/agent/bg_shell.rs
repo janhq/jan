@@ -107,6 +107,15 @@ impl BackgroundShells {
         !state.notices.is_empty() || !state.pending.is_empty()
     }
 
+    /// Whether a ping is queued and not yet taken. Unlike
+    /// [`Self::has_pending_work`] this says nothing about commands still
+    /// running: a set that outlives its run consults it to decide whether the
+    /// model has something to react to *now*, since a command finishing later
+    /// starts a turn of its own rather than holding this one open.
+    pub(crate) fn has_queued_notices(&self) -> bool {
+        !self.state.lock().unwrap().notices.is_empty()
+    }
+
     /// Park until a ping is queued, a command's budget expires, or nothing is
     /// left to wait for. The waiter registers before the state re-read, so a
     /// command finishing in between wakes this call rather than being missed.
