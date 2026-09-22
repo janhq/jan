@@ -61,6 +61,48 @@ pub(crate) enum InputMessage {
     },
 }
 
+/// One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields
+/// each carries. The wire shape is a serde type rather than a hand-rolled walk
+/// over a `Value` so the protocol schema can be derived from it -- `jan cli
+/// agent schema` publishes this shape, and a hand-written copy of it would be
+/// correct only until the parser moved.
+///
+/// The `type` field is read separately, before deserializing: an unknown kind is
+/// reported against [`INPUT_KINDS`], which is the list `init` advertises.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum InputLine {
+    /// A follow-up turn for the run in flight.
+    User { text: String },
+    /// Stop the run; the terminal envelope still reports what it had produced.
+    Abort,
+    /// The answer to a `permission_request` this run emitted.
+    Permission {
+        request_id: String,
+        decision: InputDecision,
+    },
+}
+
+/// The decisions a client may answer a `permission_request` with: the wire
+/// vocabulary, which [`parse_input_line`] maps onto the tool gate's own enum.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InputDecision {
+    AllowOnce,
+    AllowAlways,
+    Deny,
+}
+
+impl From<InputDecision> for PermissionDecision {
+    fn from(decision: InputDecision) -> Self {
+        match decision {
+            InputDecision::AllowOnce => PermissionDecision::AllowOnce,
+            InputDecision::AllowAlways => PermissionDecision::AllowAlways,
+            InputDecision::Deny => PermissionDecision::Deny,
+        }
+    }
+}
+
 /// Parse one NDJSON line. The error is what the client is told on the stream,
 /// so it names the offending value rather than just the expected shape.
 pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
@@ -69,46 +111,27 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
     let Some(kind) = value.get("type").and_then(|v| v.as_str()) else {
         return Err("missing string field 'type'".to_string());
     };
-    match kind {
-        "user" => {
-            let text = value
-                .get("text")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'user' needs a string field 'text'".to_string())?;
+    if !INPUT_KINDS.contains(&kind) {
+        return Err(format!(
+            "unknown type '{kind}' ({})",
+            INPUT_KINDS.join(", ")
+        ));
+    }
+    match serde_json::from_value::<InputLine>(value).map_err(|e| e.to_string())? {
+        InputLine::User { text } => {
             if text.trim().is_empty() {
                 return Err("'user' text is empty".to_string());
             }
-            Ok(InputMessage::User(text.to_string()))
+            Ok(InputMessage::User(text))
         }
-        "abort" => Ok(InputMessage::Abort),
-        "permission" => {
-            let request_id = value
-                .get("request_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'permission' needs a string field 'request_id'".to_string())?;
-            let decision = value
-                .get("decision")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'permission' needs a string field 'decision'".to_string())?;
-            let decision = match decision {
-                "allow_once" => PermissionDecision::AllowOnce,
-                "allow_always" => PermissionDecision::AllowAlways,
-                "deny" => PermissionDecision::Deny,
-                other => {
-                    return Err(format!(
-                        "unknown decision '{other}' (allow_once, allow_always, deny)"
-                    ))
-                }
-            };
-            Ok(InputMessage::Permission {
-                request_id: request_id.to_string(),
-                decision,
-            })
-        }
-        other => Err(format!(
-            "unknown type '{other}' ({})",
-            INPUT_KINDS.join(", ")
-        )),
+        InputLine::Abort => Ok(InputMessage::Abort),
+        InputLine::Permission {
+            request_id,
+            decision,
+        } => Ok(InputMessage::Permission {
+            request_id,
+            decision: decision.into(),
+        }),
     }
 }
 
@@ -116,9 +139,12 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
 /// [`StreamEvent::Error`](crate::core::agent::events::StreamEvent::Error): the
 /// report folds that into the run's outcome, so a typo in one line would mark
 /// an otherwise successful run as failed.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct InputErrorRecord<'a> {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "input_error"))]
     kind: &'static str,
     message: &'a str,
     /// The line that was rejected, so the client can match it to what it wrote.
@@ -250,13 +276,13 @@ mod tests {
             ("not json at all", "not JSON"),
             (r#"{"text":"hi"}"#, "missing string field 'type'"),
             (r#"{"type":"steer","text":"hi"}"#, "unknown type 'steer'"),
-            (r#"{"type":"user"}"#, "string field 'text'"),
+            (r#"{"type":"user"}"#, "missing field `text`"),
             (r#"{"type":"user","text":"  "}"#, "is empty"),
-            (r#"{"type":"permission","decision":"deny"}"#, "'request_id'"),
-            (r#"{"type":"permission","request_id":"p"}"#, "'decision'"),
+            (r#"{"type":"permission","decision":"deny"}"#, "missing field `request_id`"),
+            (r#"{"type":"permission","request_id":"p"}"#, "missing field `decision`"),
             (
                 r#"{"type":"permission","request_id":"p","decision":"maybe"}"#,
-                "unknown decision 'maybe'",
+                "unknown variant `maybe`, expected one of `allow_once`, `allow_always`, `deny`",
             ),
         ] {
             let err = parse_input_line(line).expect_err(line);

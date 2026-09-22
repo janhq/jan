@@ -1,0 +1,1119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Jan agent protocol v1",
+  "description": "Every record a `jan cli agent run` writes to stdout, and every line a client may write to stdin. The `x-protocol-version` keyword names the contract version this document describes.",
+  "type": "object",
+  "properties": {
+    "output": {
+      "description": "Records a run writes to stdout. The first is `init`, and the last is\n`result`; everything between them is a `StreamEvent` or a\nCLI-minted record.",
+      "$ref": "#/$defs/OutputRecord"
+    },
+    "input": {
+      "description": "Lines a client may write to stdin. What this run accepts is reported by\n`init`'s `input_kinds`, which is empty when the run reads no stdin.",
+      "$ref": "#/$defs/InputLine"
+    }
+  },
+  "required": [
+    "output",
+    "input"
+  ],
+  "$defs": {
+    "OutputRecord": {
+      "description": "Any record a run writes to stdout.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StreamEvent"
+        },
+        {
+          "$ref": "#/$defs/Init"
+        },
+        {
+          "$ref": "#/$defs/RunResult"
+        },
+        {
+          "$ref": "#/$defs/PermissionDecisionRecord"
+        },
+        {
+          "$ref": "#/$defs/InputErrorRecord"
+        }
+      ]
+    },
+    "StreamEvent": {
+      "description": "`Deserialize` as well as `Serialize`: a consumer validates what it received\nagainst these shapes, and `JsonSchema` is what `jan cli agent schema`\npublishes them as -- a consumer generates its own types from\n`protocol/schema.json` rather than copying this declaration. The wire has to\nsurvive a round trip, not just a write, so `#[serde(tag = \"type\")]` keeps the\ntag on both sides.",
+      "oneOf": [
+        {
+          "description": "A streamed content delta from the model.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "token"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "A streamed reasoning delta, carried natively when the upstream exposes\nit as a dedicated field (`reasoning_content`). Display-only: reasoning\nnever joins the assistant `content` that is resent as history, and it\nmust never leak into piped stdout. Providers that instead inline\n`<think>` tags in `content` stream those through [`Token`]; consumers\nfall back to stripping the tags manually.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "reasoning"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "A new orchestration turn began (`index` is 1-based; `max` is the turn\ncap, `0` when the run is unbounded, which is the normal case).",
+          "type": "object",
+          "properties": {
+            "index": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "max": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "step"
+            }
+          },
+          "required": [
+            "type",
+            "index",
+            "max"
+          ]
+        },
+        {
+          "description": "A tool call started streaming: emitted mid-stream the instant the model's\ntool-call `id` and `name` are known, before its arguments finish\nstreaming. Lets a consumer show an in-progress indicator during the\n(potentially long) argument-streaming window; the full [`ToolCall`] with\nparsed `args` follows once the completion is assembled.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call_started"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "name"
+          ]
+        },
+        {
+          "description": "A chunk of a tool call's raw JSON arguments, exactly as it arrived on the\nwire. Emitted between [`ToolCallStarted`] and [`ToolCall`] so a consumer\ncan render the arguments as they land -- the difference between a\nfeatureless spinner and a live preview while a large `write` streams.\n\nDeltas, not the accumulated buffer: re-sending the whole prefix on every\nchunk is quadratic in a file-sized argument. Consumers concatenate.\nThe result is *incomplete JSON* until [`ToolCall`] arrives; parse it\nleniently or not at all.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "delta": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_call_args_delta"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "delta"
+          ]
+        },
+        {
+          "description": "The model requested a tool call. `args` is the parsed argument object\n(null if the model emitted non-JSON arguments).",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "args": true,
+            "type": {
+              "type": "string",
+              "const": "tool_call"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "name",
+            "args"
+          ]
+        },
+        {
+          "description": "A chunk of a tool's output, as it is produced. Emitted between\n[`ToolCall`] and [`ToolResult`] so a consumer can show a command's output\nwhile it runs instead of only once it exits.\n\nDeltas, not the accumulated buffer, for the same reason as\n[`ToolCallArgsDelta`]: resending the prefix on every chunk is quadratic in\nthe output size. Chunks are raw fragments and may split a line.\n\nKeeps arriving after a `bash` call has backgrounded itself, so a\nlong-running job reports progress under the id of the call that started it.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "delta": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_output_delta"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "delta"
+          ]
+        },
+        {
+          "description": "A tool finished. `is_error` reflects the upstream \"ERROR\" encoding.\n`diff` is display-only focused-change text (line-prefixed `-`/`+`) for\n`write`/`edit`; `None` for other tools.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "diff": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_result"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "content",
+            "is_error"
+          ]
+        },
+        {
+          "description": "A backgrounded subagent run began. `run_id` identifies the run so a\nconsumer can attribute concurrent children; brackets the child's wrapped\nevents with `SubagentEnd`.",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "task": {
+              "description": "The task the child was dispatched with -- its sole user message.\nCarried on the event rather than left for consumers to correlate\nback to the `dispatch_subagent` call: two dispatches can share a\n`subagent_name`, so matching on name alone is ambiguous.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "subagent_start"
+            }
+          },
+          "required": [
+            "type",
+            "run_id",
+            "name"
+          ]
+        },
+        {
+          "description": "A backgrounded subagent dispatch found the parent run's concurrency cap\n(`max_parallel_subagents`) exhausted and queued the child in FIFO order.\n`waiting` is the child's 1-based position in the queue (1 = next to\nstart). The child's `SubagentStart` follows once a slot frees; a queued\nchild aborted at parent teardown is closed by `SubagentEnd` like any\nother.",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "waiting": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "subagent_queued"
+            }
+          },
+          "required": [
+            "type",
+            "run_id",
+            "name",
+            "waiting"
+          ]
+        },
+        {
+          "description": "A backgrounded subagent run finished (success or error). Pairs with the\n`SubagentStart` of the same `run_id`.",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "error": {
+              "description": "Why the child failed, when it did: the same reason the parent's\n`<SYSTEM>` completion ping carries. Carried on the event because a\nbackground child's answer never reaches a consumer -- only the model\nreads it -- so without this a failed run is indistinguishable from a\nclean one on screen. `None` for a clean finish, and for a child cut\noff at parent teardown, which is not its own failure.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "subagent_end"
+            }
+          },
+          "required": [
+            "type",
+            "run_id",
+            "name"
+          ]
+        },
+        {
+          "description": "The later phases of a phased dispatch, named up front so a consumer can\nshow their subagents as WAITING on an earlier phase before they start.\nEach pending subagent is promoted by its own `SubagentStart` (or\n`SubagentQueued`), matched by `name`, which is unique across a plan.\nDisplay-only and never journaled; emitted only by the top-level run\n(children cannot dispatch), so it is never wrapped in `Subagent`.",
+          "type": "object",
+          "properties": {
+            "pending": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/PendingSubagent"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "subagent_plan"
+            }
+          },
+          "required": [
+            "type",
+            "pending"
+          ]
+        },
+        {
+          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "event": {
+              "$ref": "#/$defs/StreamEvent"
+            },
+            "type": {
+              "type": "string",
+              "const": "subagent"
+            }
+          },
+          "required": [
+            "type",
+            "run_id",
+            "name",
+            "event"
+          ]
+        },
+        {
+          "description": "The user-facing headline of a background ping the loop just delivered to\nthe model as a `<SYSTEM>` reminder (today: a `monitor` condition\nmatching). Emitted at delivery, not when the ping is queued, so the\ntranscript reads in the order the model saw things. Display-only and\ntransient, like notes: it is never journaled.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "notice"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "The run's active file monitors, as a whole replacing the previous set.\nEmitted whenever the set changes (a `monitor` start or stop, a condition\nmatching, a monitor finishing), so a consumer keeps a live view without\nbookkeeping of its own. Display-only and never journaled. Not forwarded\nfrom a child: a child's monitors are its own.",
+          "type": "object",
+          "properties": {
+            "monitors": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/MonitorSnapshot"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "monitors"
+            }
+          },
+          "required": [
+            "type",
+            "monitors"
+          ]
+        },
+        {
+          "description": "The model has finished its turn and the loop is parked on background\nwork it started (a subagent still running, a monitor still watching).\nNothing is being generated until a ping resumes the run, which the next\n`Step` marks. Lets a consumer say \"watching\" rather than \"working\".",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "parked"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "The client should replace its session history with `messages` before\nsubsequent turns. Includes accepted prompt guidance in its original\nposition, but not a pending block from an unsuccessful request. Also\ncarries compacted history when the loop retries a context overflow.",
+          "type": "object",
+          "properties": {
+            "messages": {
+              "type": "array",
+              "items": true
+            },
+            "type": {
+              "type": "string",
+              "const": "messages_updated"
+            }
+          },
+          "required": [
+            "type",
+            "messages"
+          ]
+        },
+        {
+          "description": "The `ask` tool is waiting for structured interactive input. Carries the\n`ask_timeout_secs` deadline (seconds until the loop auto-selects the\nrecommended option) as `timeout_secs`, or `None` when no timeout is\nconfigured. It travels on the event so a client can render a countdown\nwithout re-reading config: the same value both arms the loop's timer and\ndrives the display, keeping the two in agreement.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "request": {
+              "$ref": "#/$defs/AskRequest"
+            },
+            "timeout_secs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint64",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "ask_request"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "request"
+          ]
+        },
+        {
+          "description": "An `ask` request the loop resolved without a user answer (it timed out\nand auto-selected). Tells a client showing the live prompt for\n`request_id` to dismiss it, since no `respond` from that client is\ncoming. User-driven answers never emit this: the client clears its own\nprompt as it responds.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "ask_resolved"
+            }
+          },
+          "required": [
+            "type",
+            "request_id"
+          ]
+        },
+        {
+          "description": "The canonical todo list changed (tool mutation or user edit in the\nTUI). Carries the full resulting snapshot for reconstruction.",
+          "type": "object",
+          "properties": {
+            "list": {
+              "$ref": "#/$defs/TodoList"
+            },
+            "type": {
+              "type": "string",
+              "const": "todo_update"
+            }
+          },
+          "required": [
+            "type",
+            "list"
+          ]
+        },
+        {
+          "description": "Token usage for a single upstream request, emitted as soon as that\nrequest completes rather than waiting for the run to finish.\n\n`Done` carries only the *last* request's usage, which is too late and\ntoo little for a live display: a turn that calls tools makes many\nrequests, and a subagent never emits `Done` into the parent stream at\nall. Consumers accumulate these to show context pressure, output\nvolume, and throughput while the work is still happening -- for the\nparent run and, via the [`Subagent`] bracket, for each child.",
+          "type": "object",
+          "properties": {
+            "usage": {
+              "$ref": "#/$defs/Usage"
+            },
+            "type": {
+              "type": "string",
+              "const": "turn_usage"
+            }
+          },
+          "required": [
+            "type",
+            "usage"
+          ]
+        },
+        {
+          "description": "Terminal success: the model returned a final (tool-free) completion.",
+          "type": "object",
+          "properties": {
+            "stop_reason": {
+              "type": "string"
+            },
+            "usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Usage"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "type": "string",
+              "const": "done"
+            }
+          },
+          "required": [
+            "type",
+            "stop_reason"
+          ]
+        },
+        {
+          "description": "Terminal failure (setup error, upstream/tool failure, or max_turns).",
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "error"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ]
+        },
+        {
+          "description": "The loop needs the user to approve a gated tool call. The client replies via\nthe `agent_permission_respond` command referencing `request_id`.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "capability": {
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "command": {
+              "description": "The shell command for exec prompts (drives the command-scoped\n\"allow always\" grant); `None` for non-exec tools.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "diff": {
+              "description": "Focused diff preview for `write`/`edit` prompts so the user sees the\nchange before approving; `None` for other tools.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "prompt_kind": {
+              "type": "string"
+            },
+            "offers_always": {
+              "type": "boolean"
+            },
+            "type": {
+              "type": "string",
+              "const": "permission_request"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "tool_name",
+            "capability",
+            "prompt_kind",
+            "offers_always"
+          ]
+        }
+      ]
+    },
+    "PendingSubagent": {
+      "description": "A subagent in a not-yet-started phase of a phased dispatch: its name (unique\nacross the plan, and its blackboard file) and 1-based phase number. Carried by\n[`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase\nbefore it.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "phase"
+      ]
+    },
+    "MonitorSnapshot": {
+      "description": "Display-only view of one active monitor, for a status panel.",
+      "type": "object",
+      "properties": {
+        "monitorId": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "script": {
+          "type": "string"
+        },
+        "polls": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "monitorId",
+        "name",
+        "script",
+        "polls"
+      ]
+    },
+    "AskRequest": {
+      "type": "object",
+      "properties": {
+        "questions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Question"
+          }
+        }
+      },
+      "required": [
+        "questions"
+      ]
+    },
+    "Question": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OptionItem"
+          }
+        },
+        "multi": {
+          "type": "boolean",
+          "default": false
+        },
+        "recommended": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0,
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "question",
+        "options"
+      ]
+    },
+    "OptionItem": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "label"
+      ]
+    },
+    "TodoList": {
+      "type": "object",
+      "properties": {
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoPhase"
+          }
+        }
+      },
+      "required": [
+        "phases"
+      ]
+    },
+    "TodoPhase": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "tasks"
+      ]
+    },
+    "TodoItem": {
+      "type": "object",
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TodoStatus"
+        }
+      },
+      "required": [
+        "content",
+        "status"
+      ]
+    },
+    "TodoStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed",
+        "abandoned"
+      ]
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "prompt_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cached_tokens": {
+          "description": "Prompt tokens served from the provider's prompt cache (a read/hit).\nOpenAI reports it under `prompt_tokens_details.cached_tokens`; Anthropic\nunder `cache_read_input_tokens`. A thrashing cache shows here as a low\nvalue against a high `prompt_tokens`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cache_write_tokens": {
+          "description": "Prompt tokens written into the provider cache this request (a write).\nOnly Anthropic bills this separately (`cache_creation_input_tokens`);\nabsent for providers that do not distinguish reads from writes.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      }
+    },
+    "Init": {
+      "description": "The first record of a `--output-format stream-json` channel, and the only\none a client may require before any other.\n\nIt exists because the rest of the stream is unversioned and unaddressable: a\nconsumer sees events and nothing else, so it cannot tell which contract it\nis reading, whose run it is watching, or what it is allowed to send back.\nThose are the questions a handshake answers, and a consumer that has to\ninfer them from a side channel (a CLI flag it passed, a config file it read)\nis one refactor away from being wrong.\n\nField names are snake_case like the rest of this channel -- the event tags\nand the envelope's `session_id`/`stop_reason` set that convention, so the\nhandshake follows it rather than introducing a second one for two fields.\n\nThe compatibility rule for what a client may assume:\n\n- a v1 client may rely on `protocol_version`, `session_id` and `model`\n  always being present;\n- fields may be added without a version bump, so a client ignores unknown\n  ones and unknown tags rather than failing;\n- a tag is never renamed and never removed within v1;\n- behaviour beyond v1 is asserted against `protocol_version`, not assumed.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "The record's tag. A consumer switches on it, so the schema states the\nvalue rather than leaving it an open string.",
+          "type": "string",
+          "const": "init"
+        },
+        "protocol_version": {
+          "description": "[`PROTOCOL_VERSION`](crate::core::agent::events::PROTOCOL_VERSION) at\nthe time of the run, so a client can refuse a channel it cannot read\ninstead of misreading it.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "session_id": {
+          "description": "The thread this run saves under. Minted before the first turn rather\nthan at save time, so a client learns the id from the stream: the same\nid `--resume` takes. A run that produces no completion saves nothing,\nand its terminal envelope reports `session_id: null` -- which is how a\nclient tells this id apart from one that now exists on disk.\n\nThe envelope reports the short form (the first 8 characters) it has\nalways reported; this is the same id, unabbreviated.",
+          "type": "string"
+        },
+        "model": {
+          "description": "The model this run dispatches to, as the envelope reports it.",
+          "type": "string"
+        },
+        "cwd": {
+          "description": "The project root the run's tools are confined to, absolute. `null` for\na caller that built the run's arguments without one -- every CLI run\nresolves a root before the run starts -- so the field never names a\ndirectory that is not the one the tools are confined to.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tools": {
+          "description": "The tool names this run advertises, in the order the request carries\nthem. Order matters to the consumer: it is the prefix of the request a\nprovider caches on, so a set that reorders between runs is a cache miss\n(see the tool-ordering note in `upstream.rs`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "input_kinds": {
+          "description": "What `--input-format stream-json` accepts from this client, as message\n`type` tags. Empty when the run does not read stdin at all, which is\nthe honest answer for a read-only stream: nothing can be sent back.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "protocol_version",
+        "session_id",
+        "model",
+        "tools",
+        "input_kinds"
+      ]
+    },
+    "RunResult": {
+      "description": "The envelope itself. A struct rather than a `json!` literal so the fields\nserialize in declaration order: `serde_json`'s map is sorted, which would\nprint this contract alphabetically and bury `result` in the middle.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "The record's tag. A consumer switches on it, so the schema states the\nvalue rather than leaving it an open string.",
+          "type": "string",
+          "const": "result"
+        },
+        "protocol_version": {
+          "description": "The same contract version `init` carries, so a `--output-format json`\ncaller -- which never sees an init record -- can still pin what it is\nreading. Additive: a consumer that does not know the field ignores it.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "is_error": {
+          "type": "boolean"
+        },
+        "result": {
+          "type": "string"
+        },
+        "stop_reason": {
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RunError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "description": "`null` when nothing was persisted, which is any run that failed before\nproducing a completion: there is no session to resume.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "num_turns": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "duration_ms": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "usage": {
+          "$ref": "#/$defs/ReportUsage"
+        }
+      },
+      "required": [
+        "type",
+        "protocol_version",
+        "is_error",
+        "result",
+        "stop_reason",
+        "model",
+        "num_turns",
+        "duration_ms",
+        "usage"
+      ]
+    },
+    "RunError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "ReportUsage": {
+      "type": "object",
+      "properties": {
+        "prompt_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "completion_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "total_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cached_tokens": {
+          "description": "`null` on a route that reports no cache fields at all; `0` when it\nreported zero reads. Piped consumers branch on the difference.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "cache_write_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "estimated_cost_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens"
+      ]
+    },
+    "PermissionDecisionRecord": {
+      "description": "How the CLI answered a [`StreamEvent::PermissionRequest`]. The loop does not\nemit this: the decision is made here, and without it a piped consumer sees\nthe request and never learns that the run was denied.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "The record's tag. A consumer switches on it, so the schema states the\nvalue rather than leaving it an open string.",
+          "type": "string",
+          "const": "permission_decision"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "decision"
+      ]
+    },
+    "InputErrorRecord": {
+      "description": "A rejected input line, reported on stdout. Deliberately *not* a\n[`StreamEvent::Error`](crate::core::agent::events::StreamEvent::Error): the\nreport folds that into the run's outcome, so a typo in one line would mark\nan otherwise successful run as failed.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "The record's tag. A consumer switches on it, so the schema states the\nvalue rather than leaving it an open string.",
+          "type": "string",
+          "const": "input_error"
+        },
+        "message": {
+          "type": "string"
+        },
+        "line": {
+          "description": "The line that was rejected, so the client can match it to what it wrote.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "message",
+        "line"
+      ]
+    },
+    "InputLine": {
+      "description": "One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields\neach carries. The wire shape is a serde type rather than a hand-rolled walk\nover a `Value` so the protocol schema can be derived from it -- `jan cli\nagent schema` publishes this shape, and a hand-written copy of it would be\ncorrect only until the parser moved.\n\nThe `type` field is read separately, before deserializing: an unknown kind is\nreported against [`INPUT_KINDS`], which is the list `init` advertises.",
+      "oneOf": [
+        {
+          "description": "A follow-up turn for the run in flight.",
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "user"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ]
+        },
+        {
+          "description": "Stop the run; the terminal envelope still reports what it had produced.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "abort"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "The answer to a `permission_request` this run emitted.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "decision": {
+              "$ref": "#/$defs/InputDecision"
+            },
+            "type": {
+              "type": "string",
+              "const": "permission"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "decision"
+          ]
+        }
+      ]
+    },
+    "InputDecision": {
+      "description": "The decisions a client may answer a `permission_request` with: the wire\nvocabulary, which [`parse_input_line`] maps onto the tool gate's own enum.",
+      "type": "string",
+      "enum": [
+        "allow_once",
+        "allow_always",
+        "deny"
+      ]
+    }
+  },
+  "x-protocol-version": 1
+}

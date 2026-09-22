@@ -448,6 +448,13 @@ enum AgentCommands {
         #[command(flatten)]
         providers: ProviderArgs,
     },
+    /// Print the protocol's JSON Schema, generated from the types that define
+    /// the channel (see `protocol/schema.json`)
+    Schema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -946,6 +953,9 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
+        // No project and no provider: the schema comes from the types alone, so
+        // it is the same document on any machine and in any directory.
+        AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -1419,6 +1429,35 @@ mod tests {
             "yaml"
         ])
         .is_err());
+    }
+
+    /// `schema` is the one `cli agent` subcommand with no project and no
+    /// provider: it prints a document derived from the types alone.
+    #[test]
+    fn schema_parses_with_and_without_an_output_path() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema", "--out", "protocol/schema.json"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema --out`");
+        };
+        assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
     }
 
     #[test]

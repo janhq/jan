@@ -108,6 +108,10 @@ serde_json = "1.0"
 
 [dependencies]
 dirs = "6.0.0"
+# The protocol types derive JSON Schema from themselves: `jan cli agent schema`
+# is generated, never hand-written, so a consumer validates against the types
+# rather than against a copy of them.
+schemars = "1"
 async-trait = "0.1"
 env = "1.0.1"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs", optional = true }

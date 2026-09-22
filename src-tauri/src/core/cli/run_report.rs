@@ -72,9 +72,12 @@ pub(crate) fn ndjson_line<T: serde::Serialize>(value: &T) -> Option<String> {
 /// How the CLI answered a [`StreamEvent::PermissionRequest`]. The loop does not
 /// emit this: the decision is made here, and without it a piped consumer sees
 /// the request and never learns that the run was denied.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct PermissionDecisionRecord<'a> {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "permission_decision"))]
     kind: &'static str,
     request_id: &'a str,
     decision: &'static str,
@@ -229,9 +232,12 @@ StreamEvent::TurnUsage { usage } => {
 ///   ones and unknown tags rather than failing;
 /// - a tag is never renamed and never removed within v1;
 /// - behaviour beyond v1 is asserted against `protocol_version`, not assumed.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct Init {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "init"))]
     kind: &'static str,
     /// [`PROTOCOL_VERSION`](crate::core::agent::events::PROTOCOL_VERSION) at
     /// the time of the run, so a client can refuse a channel it cannot read
@@ -287,9 +293,12 @@ impl Init {
 /// The envelope itself. A struct rather than a `json!` literal so the fields
 /// serialize in declaration order: `serde_json`'s map is sorted, which would
 /// print this contract alphabetically and bury `result` in the middle.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct RunResult {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "result"))]
     kind: &'static str,
     /// The same contract version `init` carries, so a `--output-format json`
     /// caller -- which never sees an init record -- can still pin what it is
@@ -309,13 +318,13 @@ pub(crate) struct RunResult {
     usage: ReportUsage,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 struct RunError {
     code: String,
     message: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 struct ReportUsage {
     prompt_tokens: u64,
     completion_tokens: u64,

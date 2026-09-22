@@ -15,6 +15,8 @@ pub mod mcp_serve;
 mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;
+/// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
+pub mod protocol_schema;
 pub mod run_report;
 pub mod providers;
 mod secret_input;

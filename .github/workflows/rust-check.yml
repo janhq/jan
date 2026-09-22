@@ -121,6 +121,53 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml \
             --no-default-features --features cli --lib -- --test-threads=1
 
+  # The deliverable of the schema work is this guard, not the file: a protocol
+  # shape that changes without regenerating leaves every consumer validating
+  # against a document that no longer describes the channel. The unit test in
+  # core::cli::protocol_schema compares the types against the file; this runs the
+  # command a human would, in the CLI's own feature set, and prints the diff.
+  schema:
+    name: protocol schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: protocol-schema
+          # Branches restore but never save: one 3.5GB cache set on main
+          # rather than one per branch, which is what breached the 10GB cap.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # --locked: the generated document is a function of the locked schemars,
+      # so the only thing that may move it is a commit.
+      - name: Regenerate the protocol schema
+        run: |
+          cd src-tauri/jan-cli
+          cargo run --quiet --locked --no-default-features --features cli \
+            --bin jan -- cli agent schema --out ../../protocol/schema.json
+
+      - name: Fail on drift
+        run: |
+          if git diff --exit-code -- protocol/schema.json; then
+            echo "protocol/schema.json matches the types"
+            exit 0
+          fi
+          echo "::error title=protocol drift::protocol/schema.json no longer matches the protocol types"
+          {
+            echo "## protocol drift"
+            echo
+            echo '```diff'
+            git diff -- protocol/schema.json
+            echo '```'
+            echo
+            echo 'Run `make protocol-schema` and commit the result.'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
   # Each plugin and src-tauri/utils is its own workspace, so checking the app
   # crate compiles them as path dependencies but never lints them. No --locked
   # here: Cargo.lock is gitignored and only some of these crates commit one.
