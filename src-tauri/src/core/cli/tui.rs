@@ -704,35 +704,54 @@ enum ToolsState {
     Failed(String),
 }
 
-/// Overlay state for the `/context` readout. Replaces the old idle-only
-/// transcript row: the report now lands here off the render loop, so `/context`
-/// stays responsive while a turn is running and the readout reads as a popup
-/// the user closes with Esc rather than a line committed to the conversation.
-enum ContextView {
-    /// Requested, not yet computed. The off-loop job for it is in flight (or
-    /// queued behind the loop picking up `context_request`).
-    Loading,
-    /// The computed report, ready to render.
-    Ready(Box<ContextReport>),
-}
-
-/// Overlay state for the account-usage readouts (`/usage account`, `daily`,
-/// `limits`, and a single execution lookup).
+/// A docked readout: `/context` and every `/usage` view, which are one kind of
+/// surface -- a question the user asks about the run, answered in place and
+/// dismissed with Esc, never committed to the conversation.
 ///
-/// Separate from [`ContextView`] because the two answer different questions
-/// from different sources: `/context` describes the current window from local
-/// state, while this holds figures the *server* reported. Keeping them in
-/// distinct overlays is what stops a charge and an estimate ever sharing a
-/// surface without saying which is which.
-enum ReportedUsageView {
-    /// Requested, not yet fetched. The network call is in flight (or queued
-    /// behind the loop picking up `reported_usage_request`).
-    Loading(super::tokamak::usage::Query),
-    /// The fetched readout: the view's title and its already-rendered lines.
-    Ready {
+/// One field on `App` holds one of these, so a second readout *replaces* the
+/// first rather than stacking on it. That exclusivity used to be a comment
+/// ("only one can be open at a time") maintained by two independent `Option`s
+/// that could both be `Some`; here it is the type.
+///
+/// The variants stay distinct because the questions are distinct, and the
+/// difference is the whole point of the feature: `Context` and `Session` are
+/// **local estimates**, `Reported` is **what the provider actually recorded**.
+/// Collapsing them into a bag of lines would make it possible to render a
+/// charge and an estimate identically, which is the one thing these surfaces
+/// must never do.
+enum Readout {
+    /// `/context`: the current window. Requested, not yet computed -- the
+    /// off-loop job is in flight (or queued behind `readout_request`).
+    ContextLoading,
+    /// `/context`: the computed report.
+    Context(Box<ContextReport>),
+    /// Bare `/usage`: this session's local estimate, priced from the
+    /// provider's published rates. Rendered from live `App` state at draw
+    /// time rather than snapshotted here, so a readout left open during a turn
+    /// keeps counting instead of freezing on the totals it opened with.
+    Session,
+    /// `/usage <account view>`: requested, not yet fetched.
+    ReportedLoading(super::tokamak::usage::Query),
+    /// `/usage <account view>`: the fetched readout, already rendered.
+    Reported {
         title: String,
         lines: Vec<String>,
     },
+}
+
+impl Readout {
+    /// The dock's title. Names the *source*, not just the command: "session
+    /// estimate" and what the provider recorded are different claims about
+    /// money, and the title is where a user reads which one they are looking
+    /// at.
+    fn title(&self) -> String {
+        match self {
+            Readout::ContextLoading | Readout::Context(_) => "context".to_string(),
+            Readout::Session => "session estimate".to_string(),
+            Readout::ReportedLoading(query) => query.label().to_string(),
+            Readout::Reported { title, .. } => title.clone(),
+        }
+    }
 }
 
 /// Off-loop MCP work the detail screen hands to the loop. Everything here
@@ -2006,8 +2025,10 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
-    /// Current `/context` overlay, if one is open. `None` when closed.
-    context_view: Option<ContextView>,
+    /// The open readout (`/context` or any `/usage` view), or `None`. One
+    /// field, so opening either replaces the other instead of stacking two
+    /// popups over each other.
+    readout: Option<Readout>,
     /// Set by `/context` to ask the loop to compute the report off the render
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
@@ -2017,8 +2038,6 @@ struct App {
     /// request has reported one -- which is the normal case on the default
     /// upstream path, where the response headers are unreachable.
     last_execution_id: Option<String>,
-    /// Current account-usage overlay, if one is open. `None` when closed.
-    reported_usage_view: Option<ReportedUsageView>,
     /// Set by `/usage <mode>` to ask the loop to perform the read off the
     /// render loop. These are network calls against the provider's usage API,
     /// so running one inline would freeze the frame for as long as the request
@@ -2632,10 +2651,9 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
-            context_view: None,
+            readout: None,
             context_request: false,
             last_execution_id: None,
-            reported_usage_view: None,
             reported_usage_request: None,
             mcp_prompt: None,
             mcp_detail: None,
@@ -6774,6 +6792,69 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
 
 /// Plain `/context` summary: current usage and autocompaction threshold first,
 /// followed by seven equal-scale category bars.
+/// The docked readout's body at `width`.
+///
+/// Takes `App` because the session estimate is rendered from live state rather
+/// than from a snapshot taken when the readout opened: a user who leaves it up
+/// during a turn is watching the run's spend, and a frozen total would be
+/// quietly wrong from the first token that arrived after it.
+fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    match readout {
+        Readout::ContextLoading => vec![Line::raw("computing context...")],
+        Readout::Context(report) => context_lines(report, width),
+        Readout::Session => {
+            if app.session_usage.is_empty() {
+                return vec![Line::styled("no usage yet this session".to_string(), dim)];
+            }
+            let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage)
+                .into_iter()
+                .map(Line::from)
+                .collect();
+            // The provenance line is not decoration: every figure above it is
+            // priced from a published rate sheet, and a user comparing it with
+            // an invoice has to know which one they are holding.
+            lines.push(Line::styled(
+                "estimated from the provider's published prices - not a bill".to_string(),
+                dim,
+            ));
+            // A capped session names its ceiling. The estimate above is the
+            // whole session's spend while the ceiling applies per run, so this
+            // states the limit rather than implying progress toward it -- the
+            // two numbers do not measure the same thing.
+            if let Some(ceiling) = app.cost_ceiling {
+                lines.push(Line::styled(
+                    format!(
+                        "each run stops at {} (--max-budget-usd)",
+                        format_usd(ceiling.max_usd)
+                    ),
+                    dim,
+                ));
+            }
+            lines.push(Line::styled(
+                match &app.last_execution_id {
+                    // A concrete id beats naming the command: this is the one
+                    // request whose real charge can be looked up right now.
+                    Some(id) => format!("/usage {id} for what the provider recorded"),
+                    None => "/usage account for what the provider actually recorded".to_string(),
+                },
+                dim,
+            ));
+            lines
+        }
+        Readout::ReportedLoading(query) => {
+            vec![Line::raw(format!("reading {}...", query.label()))]
+        }
+        Readout::Reported { lines, .. } => lines
+            .iter()
+            // Hard-wrapped rather than clipped: a truncated money figure is a
+            // wrong money figure.
+            .flat_map(|line| wrap_text(line, Style::new(), width))
+            .map(Line::from)
+            .collect(),
+    }
+}
+
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     let max = width.max(1);
     let percents = report.percents();
@@ -10701,28 +10782,13 @@ async fn handle_key(
     // without cancelling the running turn. Nothing else reaches the input box
     // or the transcript shortcuts (e.g. a bare `q` must not quit) while it is
     // up.
-    if app.context_view.is_some() {
+    if app.readout.is_some() {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
-                app.context_view = None;
+                app.readout = None;
             }
             _ if ctrl_c => {
-                app.context_view = None;
-            }
-            _ => {}
-        }
-        return;
-    }
-    // The account-usage overlay owns the keyboard on the same terms as
-    // `/context`: it is the same kind of surface and must not behave
-    // differently under the same keys.
-    if app.reported_usage_view.is_some() {
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
-                app.reported_usage_view = None;
-            }
-            _ if ctrl_c => {
-                app.reported_usage_view = None;
+                app.readout = None;
             }
             _ => {}
         }
@@ -12117,17 +12183,21 @@ async fn run_command(
 /// The report is *not* computed here. Sizing the tool segment takes the MCP
 /// server lock, which a turn executing an MCP tool call holds for up to the
 /// tool-call timeout; computing it inline on the key-handling path would
-/// freeze the whole UI. So this only sets the overlay to its loading state and
-/// raises a flag the loop picks up, which computes the report on its own task
-/// and fills the overlay in when it lands. Unlike the old idle-only transcript
-/// row, the readout is a popup the user closes with Esc, so it stays available
+/// freeze the whole UI. So this only opens the readout on its loading state
+/// and raises a flag the loop picks up, which computes the report on its own
+/// task and fills it in when it lands. Unlike the old idle-only transcript
+/// row, the readout is a dock the user closes with Esc, so it stays available
 /// mid-turn without ever blocking the render loop.
 fn context_command(app: &mut App) {
-    app.context_view = Some(ContextView::Loading);
+    app.readout = Some(Readout::ContextLoading);
     app.context_request = true;
 }
 
-/// `/usage`: what this session has actually spent, per model. Unlike
+/// `/usage`: what this session has spent, per model, in the same dock
+/// `/context` uses -- these are one kind of surface (a question about the run,
+/// answered in place and dismissed), so they must not look like two.
+///
+/// Unlike
 /// `/context` -- which describes the *current* window, a single request's worth
 /// -- these are sums across every request, because that is what a provider
 /// bills. Prices come from the provider's own `/models` listing (cached by
@@ -12136,39 +12206,13 @@ fn context_command(app: &mut App) {
 /// sent upstream, and no account-level spend is available to ask for.
 fn usage_command(app: &mut App, arg: &str) {
     match parse_usage_mode(arg) {
-        UsageMode::Session => {
-            if app.session_usage.is_empty() {
-                app.note("no usage yet this session");
-                return;
-            }
-            app.note("session usage");
-            for row in usage_lines(&app.session_usage) {
-                app.system_detail(row);
-            }
-            app.system_detail_text(
-                "estimated from the provider's published prices - not a bill",
-            );
-            // A capped session says what the cap is. The estimate above is the
-            // session's whole spend, while the ceiling applies per run, so this
-            // names the limit rather than pretending to show progress toward
-            // it: the two numbers do not measure the same thing.
-            if let Some(ceiling) = app.cost_ceiling {
-                app.system_detail_text(&format!(
-                    "each run stops at {} (--max-budget-usd)",
-                    format_usd(ceiling.max_usd)
-                ));
-            }
-            match &app.last_execution_id {
-                // A concrete id beats naming the command: this is the one
-                // request whose real charge the user can look up right now.
-                Some(id) => app.system_detail_text(&format!(
-                    "/usage {id} for what the provider recorded for the last request"
-                )),
-                None => app.system_detail_text(
-                    "/usage account for what the provider actually recorded",
-                ),
-            }
-        }
+        // The estimate is a glance-and-dismiss answer, not part of the
+        // conversation: it opens the same dock every other readout uses and
+        // writes nothing to the transcript. An empty session still opens it --
+        // "nothing yet" is the answer to the question that was asked, and
+        // answering it somewhere else would make the command's surface depend
+        // on its result.
+        UsageMode::Session => app.readout = Some(Readout::Session),
         UsageMode::Run => {
             // Every request this session made carries the session's correlation
             // id, so one lookup returns the whole run's executions -- which is
@@ -12201,7 +12245,7 @@ fn usage_command(app: &mut App, arg: &str) {
                 );
                 return;
             }
-            app.reported_usage_view = Some(ReportedUsageView::Loading(query.clone()));
+            app.readout = Some(Readout::ReportedLoading(query.clone()));
             app.reported_usage_request = Some(query);
         }
         UsageMode::Unknown(arg) => {
@@ -15536,8 +15580,13 @@ async fn finish_mcp_job(
 /// not reopen a popup they walked away from (mirrors how `finish_mcp_job`
 /// drops a listing whose screen has been left).
 fn finish_context_report(app: &mut App, report: ContextReport) {
-    if app.context_view.is_some() {
-        app.context_view = Some(ContextView::Ready(Box::new(report)));
+    // Only while `/context` is still the readout on screen. Checking the
+    // variant rather than merely "something is open" matters now that one
+    // field holds them all: a user who ran `/context` and then `/usage` before
+    // the report landed must not have the usage view yanked out from under
+    // them by the earlier request finishing.
+    if matches!(app.readout, Some(Readout::ContextLoading)) {
+        app.readout = Some(Readout::Context(Box::new(report)));
     }
 }
 
@@ -15553,14 +15602,16 @@ fn finish_reported_usage(
     query: &super::tokamak::usage::Query,
     result: Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
 ) {
-    if app.reported_usage_view.is_none() {
+    // Same rule as `finish_context_report`, and for the same reason: a result
+    // only fills the readout that is still waiting for it.
+    if !matches!(app.readout, Some(Readout::ReportedLoading(_))) {
         return;
     }
     let lines = match result {
         Ok(payload) => reported_usage_lines(query, &payload),
         Err(e) => vec![e.to_string()],
     };
-    app.reported_usage_view = Some(ReportedUsageView::Ready {
+    app.readout = Some(Readout::Reported {
         title: query.label().to_string(),
         lines,
     });
@@ -17112,91 +17163,38 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
-    // The `/context` overlay renders on top of (never instead of) the finished
+    // A readout (`/context`, `/usage`) docks above the input box, where every
+    // other prompt in this TUI lives -- `/login`, `/settings`, `/mcp`, the
+    // provider wizard. It renders on top of (never instead of) the finished
     // frame, so the spinner and streamed output keep animating behind it
-    // mid-turn. A centered bordered popup over the body, titled like the
-    // pickers, with the readout re-laid out by the same `context_lines` the
-    // old transcript row used - the numbers and layout are unchanged, only the
-    // surface (a popup the user closes with Esc) differs. The rect is clamped
-    // to the frame and never indexes a zero-width/zero-height area, so it
-    // stays correct at tiny terminal sizes.
-    if let Some(view) = &app.context_view {
-        let body = chunks[1];
-        // The rect is sized before the content, because the readout's height
-        // depends on the width it is laid out at. Borders cost two columns and
-        // two rows, so the content width is the popup's inner width -- laying
-        // out at the popup's *outer* width would push the rail's right edge
-        // under the border and silently clip it.
-        let outer_w = body.width.saturating_sub(2).max(1);
-        let content_w = outer_w.saturating_sub(2).max(1);
-        let lines: Vec<Line<'static>> = match view {
-            ContextView::Loading => vec![Line::raw("computing context...")],
-            ContextView::Ready(report) => context_lines(report, content_w as usize),
-        };
-        // Two rows for the borders. A frame too short to hold the whole readout
-        // gets as much of it as fits rather than nothing.
-        let height = (lines.len() as u16 + 2).min(body.height);
+    // mid-turn.
+    //
+    // Docked rather than centered because a readout is something you consult
+    // while looking at the conversation, and the bottom is where the eye
+    // already is; a mid-screen box also covers the transcript the numbers are
+    // about. The rect is clamped to the frame and never indexes a
+    // zero-width/zero-height area, so it stays correct at tiny terminal sizes.
+    if let Some(readout) = &app.readout {
+        // Sized before the content, because the readout's height depends on
+        // the width it is laid out at. Borders cost two columns and two rows,
+        // so content is laid out at the *inner* width -- using the outer width
+        // would push the context rail's right edge under the border and
+        // silently clip it.
+        let content_w = chunks[2].width.saturating_sub(2).max(1);
+        let lines = readout_lines(app, readout, content_w as usize);
+        let height = (lines.len() as u16 + 2).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
-            x: body.x + body.width.saturating_sub(outer_w) / 2,
-            y: body.y + body.height.saturating_sub(height) / 2,
-            width: outer_w,
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
             height,
         };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::new().cyan())
             .title(Span::styled(
-                " context ",
-                Style::new().on_cyan().black().bold(),
-            ));
-        let inner = block.inner(rect);
-        // A frame with no room for the popup draws nothing -- and must still
-        // fall through to the prompts below, so this never returns from `draw`.
-        if rect.width > 0 && rect.height > 0 {
-            f.render_widget(ratatui::widgets::Clear, rect);
-            f.render_widget(block, rect);
-        }
-        if inner.width > 0 && inner.height > 0 {
-            f.render_widget(Paragraph::new(lines), inner);
-        }
-    }
-
-    // The account-usage overlay, laid out exactly like `/context`'s so the two
-    // readouts are the same kind of surface. Only one can be open at a time --
-    // opening either closes the input path to the other -- so they never
-    // overlap.
-    if let Some(view) = &app.reported_usage_view {
-        let body = chunks[1];
-        let outer_w = body.width.saturating_sub(2).max(1);
-        let content_w = outer_w.saturating_sub(2).max(1) as usize;
-        let (title, lines): (String, Vec<Line<'static>>) = match view {
-            ReportedUsageView::Loading(query) => (
-                query.label().to_string(),
-                vec![Line::raw(format!("reading {}...", query.label()))],
-            ),
-            ReportedUsageView::Ready { title, lines } => (
-                title.clone(),
-                lines
-                    .iter()
-                    // Hard-wrapped rather than clipped: a truncated money
-                    // figure is a wrong money figure.
-                    .flat_map(|line| wrap_text(line, Style::new(), content_w))
-                    .map(Line::from)
-                    .collect(),
-            ),
-        };
-        let height = (lines.len() as u16 + 2).min(body.height);
-        let rect = ratatui::layout::Rect {
-            x: body.x + body.width.saturating_sub(outer_w) / 2,
-            y: body.y + body.height.saturating_sub(height) / 2,
-            width: outer_w,
-            height,
-        };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::new().cyan())
-            .title(Span::styled(
-                format!(" {title} "),
+                format!(" {} ", readout.title()),
                 Style::new().on_cyan().black().bold(),
             ));
         let inner = block.inner(rect);
@@ -19609,7 +19607,7 @@ mod tests {
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
         with_wave_glyph, without_think_tags, worktree_command, App, CompactKind, ContextReport,
-        ContextSegment, ContextView, CurrentRun, McpField, McpPrompt, MonitorSet, Pending,
+        ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, Worktree, AGENT_SETTINGS,
         ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG,
@@ -32254,12 +32252,46 @@ mod tests {
     }
 
     /// `/usage` with nothing to report says so rather than printing an empty
-    /// table.
+    /// table -- and says it in the readout, not the transcript. Answering an
+    /// empty session somewhere else would make the command's surface depend on
+    /// its result, so a user could not learn where to look.
     #[test]
     fn usage_command_with_no_requests_notes_it() {
         let mut app = test_app();
         super::usage_command(&mut app, "");
-        assert!(transcript_text(&app).contains("no usage yet this session"));
+        assert!(
+            matches!(app.readout, Some(Readout::Session)),
+            "an empty session still opens the readout"
+        );
+        assert!(
+            readout_text(&app).contains("no usage yet this session"),
+            "{}",
+            readout_text(&app)
+        );
+        assert!(
+            transcript_text(&app).is_empty(),
+            "a readout is never committed to the conversation: {}",
+            transcript_text(&app)
+        );
+    }
+
+    /// The docked readout's rendered text, which is what the user actually
+    /// reads -- assertions go through the same `readout_lines` the frame draws
+    /// so a test cannot pass on state the renderer would never show.
+    fn readout_text(app: &App) -> String {
+        let Some(readout) = &app.readout else {
+            return String::new();
+        };
+        super::readout_lines(app, readout, 80)
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// A bare `/usage` must keep answering with the local session estimate.
@@ -32356,7 +32388,7 @@ mod tests {
                 app.reported_usage_request.is_none(),
                 "nothing may be sent upstream without a key"
             );
-            assert!(app.reported_usage_view.is_none(), "no overlay should open");
+            assert!(app.readout.is_none(), "no readout should open");
         });
     }
 
@@ -32366,9 +32398,9 @@ mod tests {
     fn a_usage_result_landing_after_close_is_dropped() {
         use crate::core::cli::tokamak::usage::{Query, UsageError};
         let mut app = test_app();
-        app.reported_usage_view = None;
+        app.readout = None;
         super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
-        assert!(app.reported_usage_view.is_none());
+        assert!(app.readout.is_none());
     }
 
     /// A failed read fills the overlay with the reason. An empty popup would
@@ -32377,15 +32409,15 @@ mod tests {
     fn a_failed_read_reports_the_reason_rather_than_an_empty_readout() {
         use crate::core::cli::tokamak::usage::{Query, UsageError};
         let mut app = test_app();
-        app.reported_usage_view = Some(super::ReportedUsageView::Loading(Query::Summary));
+        app.readout = Some(super::Readout::ReportedLoading(Query::Summary));
         super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
-        match &app.reported_usage_view {
-            Some(super::ReportedUsageView::Ready { lines, .. }) => {
+        match &app.readout {
+            Some(super::Readout::Reported { lines, .. }) => {
                 let text = lines.join("\n");
                 assert!(text.contains("not found"), "{text}");
                 assert!(!text.is_empty());
             }
-            _ => panic!("the overlay should hold the failure"),
+            _ => panic!("the readout should hold the failure"),
         }
     }
 
@@ -32421,9 +32453,37 @@ mod tests {
             execution_id: None,
         });
         super::usage_command(&mut app, "");
-        let text = transcript_text(&app);
+        let text = readout_text(&app);
         assert!(text.contains("not a bill"), "{text}");
         assert!(text.contains("/usage account"), "{text}");
+    }
+
+    /// The session estimate renders from live state, not from a snapshot taken
+    /// when the readout opened. A user who leaves it up during a turn is
+    /// watching the run's spend, so a total frozen at open time would be
+    /// quietly wrong from the first token that arrived after it.
+    #[test]
+    fn the_session_readout_keeps_counting_while_it_is_open() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        super::usage_command(&mut app, "");
+        assert!(readout_text(&app).contains("no usage yet this session"));
+
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(1_000),
+                completion_tokens: Some(50),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        let text = readout_text(&app);
+        assert!(
+            text.contains("1 req"),
+            "the open readout must reflect the request that just landed: {text}"
+        );
     }
 
     /// A report with a measured fill and no cache fields, the starting point for
@@ -32739,25 +32799,99 @@ mod tests {
         }
     }
 
-    /// The `/context` overlay (not the old transcript row) goes through the
-    /// same frame sizes the rest of the transcript survives. A mid-turn popup
-    /// must never panic on rendering, however narrow or short the terminal.
+    /// Every readout variant goes through the frame sizes the rest of the
+    /// transcript survives. A readout is drawn mid-turn, over a live frame, so
+    /// it must never panic however narrow or short the terminal -- and the
+    /// docked rect is computed by subtraction, which is where an underflow
+    /// would hide.
     #[test]
-    fn tiny_frames_render_the_context_view_without_panicking() {
-        let mut app = test_app();
+    fn tiny_frames_render_every_readout_without_panicking() {
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
-        app.context_view = Some(ContextView::Ready(Box::new(report)));
-        for (w, h) in [
-            (1u16, 1u16),
-            (2, 3),
-            (8, 4),
-            (20, 6),
-            (40, 2),
-            (43, 12),
-            (200, 80),
-        ] {
-            render_rows(&mut app, w, h);
+        let variants = || {
+            vec![
+                Readout::ContextLoading,
+                Readout::Context(Box::new(report.clone())),
+                Readout::Session,
+                Readout::ReportedLoading(crate::core::cli::tokamak::usage::Query::Summary),
+                Readout::Reported {
+                    title: "account".to_string(),
+                    lines: vec!["spend_usd  1.25".to_string(); 40],
+                },
+            ]
+        };
+        for readout in variants() {
+            let mut app = test_app();
+            app.readout = Some(readout);
+            for (w, h) in [
+                (1u16, 1u16),
+                (2, 3),
+                (8, 4),
+                (20, 6),
+                (40, 2),
+                (43, 12),
+                (200, 80),
+            ] {
+                render_rows(&mut app, w, h);
+            }
         }
+    }
+
+    /// The readout docks above the input box rather than floating mid-screen,
+    /// so it sits where every other prompt in this TUI does and does not cover
+    /// the transcript its numbers are about.
+    #[test]
+    fn the_readout_docks_above_the_input_box() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Reported {
+            title: "account".to_string(),
+            lines: vec!["spend_usd  1.25".to_string()],
+        });
+        let rows = render_rows(&mut app, 60, 24);
+        // Located by the title, not by border glyphs: other chrome draws
+        // horizontal rules too, so a glyph search finds the wrong box.
+        let top = rows
+            .iter()
+            .position(|row| row.contains("account"))
+            .expect("the readout draws its title");
+        // Docked: the box lives in the bottom half, against the input, rather
+        // than centered over the conversation.
+        assert!(
+            top > rows.len() / 2,
+            "the readout should dock at the bottom, found its top border at row {top} of {}",
+            rows.len()
+        );
+    }
+
+    /// One field holds the open readout, so asking for a second one replaces
+    /// the first. Two independent `Option`s could both be `Some` and render
+    /// one popup over another.
+    #[test]
+    fn opening_a_second_readout_replaces_the_first() {
+        let mut app = test_app();
+        super::context_command(&mut app);
+        assert!(matches!(app.readout, Some(Readout::ContextLoading)));
+        super::usage_command(&mut app, "");
+        assert!(
+            matches!(app.readout, Some(Readout::Session)),
+            "the newer readout wins outright"
+        );
+    }
+
+    /// A slow `/context` computation must not yank away a readout the user
+    /// opened after it. Landing results are matched to the view still waiting
+    /// for them, not merely to "something is open".
+    #[test]
+    fn a_late_context_report_does_not_replace_a_newer_readout() {
+        let mut app = test_app();
+        super::context_command(&mut app);
+        // The user gave up on it and asked for the session estimate instead.
+        super::usage_command(&mut app, "");
+        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        super::finish_context_report(&mut app, report);
+        assert!(
+            matches!(app.readout, Some(Readout::Session)),
+            "the stale report must not displace what the user is now reading"
+        );
     }
 
     /// A compaction invalidates the provider's last measurement: the count is
@@ -32842,7 +32976,7 @@ mod tests {
         app.status = Status::Running;
         run_command(&mut app, "context", &no_mcp()).await;
         assert!(
-            matches!(app.context_view, Some(ContextView::Loading)),
+            matches!(app.readout, Some(Readout::ContextLoading)),
             "mid-turn /context must open the loading overlay"
         );
         assert!(
@@ -32869,7 +33003,7 @@ mod tests {
     async fn esc_closes_the_context_overlay_without_cancelling_the_turn() {
         let mut app = test_app();
         app.status = Status::Running;
-        app.context_view = Some(ContextView::Loading);
+        app.readout = Some(Readout::ContextLoading);
         app.context_request = true;
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers = no_mcp();
@@ -32883,7 +33017,7 @@ mod tests {
         )
         .await;
         assert!(
-            app.context_view.is_none(),
+            app.readout.is_none(),
             "Esc must close the context overlay"
         );
         assert_eq!(app.status, Status::Running, "the turn keeps running");
@@ -32892,7 +33026,7 @@ mod tests {
             "closing the overlay must not spawn a run, let alone cancel one"
         );
         // A bare `q` also closes it, outranking the quit shortcut.
-        app.context_view = Some(ContextView::Loading);
+        app.readout = Some(Readout::ContextLoading);
         handle_key(
             &mut app,
             key(KeyCode::Char('q')),
@@ -32901,7 +33035,7 @@ mod tests {
             &mcp_servers,
         )
         .await;
-        assert!(app.context_view.is_none(), "q closes when not ctrl");
+        assert!(app.readout.is_none(), "q closes when not ctrl");
         assert!(
             !app.should_quit,
             "q must not quit while the overlay is open"
@@ -32914,11 +33048,11 @@ mod tests {
     #[tokio::test]
     async fn a_context_result_landing_after_close_is_discarded() {
         let mut app = test_app();
-        app.context_view = None;
+        app.readout = None;
         let report = context_report(128_000, 16_384, [1_000, 2_000, 3_000, 4_000, 5_000]);
         finish_context_report(&mut app, report);
         assert!(
-            app.context_view.is_none(),
+            app.readout.is_none(),
             "a result landing after the overlay closed must not reopen it"
         );
     }

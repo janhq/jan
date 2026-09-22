@@ -49,8 +49,8 @@ See [Sessions](/docs/agent/sessions).
 | `/plan [exit\|text]` | Enter read-only plan mode, optionally with a first message |
 | `/todo [add [phase\|] text \| clear]` | Open the todo editor, append an item, or drop all |
 | `/compact` | Summarize older turns to free up context |
-| `/context` | Show what is filling the context window, by category - opens a live overlay while the turn keeps running |
-| `/usage` | Show this session's tokens and estimated cost, per model. Priced from what the provider publishes; a model it publishes no price for is listed as such rather than counted as free |
+| `/context` | Show what is filling the context window, by category. Opens a readout docked above the input, live while the turn keeps running; Esc or `q` closes it |
+| `/usage [run\|account\|daily\|requests\|limits\|<execution-id>]` | Bare: this session's tokens and estimated cost, per model, priced from what the provider publishes (a model it publishes no price for is listed as such rather than counted as free). The other views read what the provider actually recorded. Same docked readout as `/context`, and only one is open at a time |
 | `/cancel [N]` | Cancel queued messages. Bare: all, or an index |
 | `/agents` | Inspect running subagents: each one's stats and current activity |
 | `/shells` (alias `/jobs`) | Inspect and stop background shell commands the agent left running |
