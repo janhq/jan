@@ -36,13 +36,14 @@ on the hosted runners — inside the virtual display for no reason.
 
 ## What it covers
 
-Three spec files, run in this order (see [Spec order](#spec-order-is-maintained-by-hand)):
+Four spec files, run in this order (see [Spec order](#spec-order-is-maintained-by-hand)):
 
 | Spec | Covers |
 |---|---|
 | `smoke.e2e.ts` | The app boots, React mounts, the first-run wizard renders, and the data folder Rust resolves is inside the throwaway profile. |
 | `chat.e2e.ts` | Configure a provider and a model through the real dialogs; send; stream a reply; a second turn; survive a webview reload; delete the thread and confirm it left disk. |
 | `message-actions.e2e.ts` | Regenerate; switch between reply versions; edit a user message and re-run; delete a single message; stop a reply mid-stream; New Chat into a fresh thread. |
+| `cowork-channel.e2e.ts` | The absent half of the channel gate: no sidebar tab, no settings entry, and a bookmarked `/cowork`, `/artifacts` or `/settings/cowork` URL lands where the guard sends it. |
 
 Those are the load-bearing items of the manual checklist's D section: if the
 chat loop and the actions on a message work, the product works. Much of D is

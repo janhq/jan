@@ -391,10 +391,10 @@ export async function generatePreset(
   ) {
     lines.push(`main-gpu = ${Math.floor(config.main_gpu)}`)
   }
-  // `--mlock` and `--no-mmap` are both deprecated aliases that write the single
-  // params.load_mode field (arg.cpp:2658-2702), so emitting both left load_mode
-  // at NONE and silently dropped mlock -- and mmap+mlock was unreachable.
-  // Deriving the one key it actually wants fixes both.
+  // `--mlock`, `--mmap`/`--no-mmap` and `--direct-io` were deprecated aliases of
+  // the single params.load_mode field and were deleted outright in 0.4.1, so
+  // `load-mode` is now the only spelling llama.cpp understands. Jan keeps the two
+  // familiar toggles in its settings and derives that one key from them.
   const wantsMlock = config.mlock === true
   const wantsNoMmap = config.no_mmap === true
   if (wantsMlock || wantsNoMmap) {

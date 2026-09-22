@@ -545,8 +545,8 @@ describe('generatePreset upstream-default skipping', () => {
     expect(modelSection('c')).not.toContain('n-gpu-layers')
   })
 
-  // mlock and no_mmap are two deprecated aliases for one upstream field, so
-  // emitting both left load_mode at NONE and silently dropped mlock.
+  // mlock and no_mmap were two aliases for one upstream field and are gone as of
+  // 0.4.1; load-mode is the only key llama.cpp still accepts.
   it('derives a single load-mode and never emits mlock or no-mmap', async () => {
     const cases: Array<[boolean, boolean, string | null]> = [
       [false, false, null],
