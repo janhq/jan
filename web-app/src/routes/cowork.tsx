@@ -1465,7 +1465,10 @@ function CoworkPage() {
   useEffect(() => setRail(null), [session?.id])
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]">
+    <div
+      data-testid="cowork-surface"
+      className="flex flex-col h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))]"
+    >
       <HeaderPage>
         <div className="flex items-center justify-between w-full pr-2">
           <DropdownModelProvider
