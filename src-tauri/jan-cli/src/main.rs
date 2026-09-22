@@ -163,12 +163,16 @@ impl ResumeArgs {
     }
 }
 
-/// Per-invocation cost limits for `jan cli agent run`. Both mirror the engine's
-/// own semantics: `0` means unbounded, and an unpassed flag leaves the config
-/// files (or, for turns, nothing at all) in charge.
+/// Per-invocation cost limits for `jan cli agent run`. All three mirror the
+/// engine's own semantics: an unpassed flag leaves the config files (or, for
+/// turns, nothing at all) in charge.
 ///
-/// Only `--max-turns` ends a run. The token ceiling is advisory: passing it
-/// compacts the conversation and records a note, then the run continues.
+/// Two of them stop a run and one does not. `--max-turns` bounds how many turns
+/// it may take, `--max-budget-usd` bounds what it may spend; the token ceiling
+/// is advisory, compacting the conversation and recording a note before the run
+/// continues. A money ceiling is the one a user reaching for a limit usually
+/// means: turns and tokens are both proxies for the number they actually care
+/// about.
 #[derive(Args, Clone, Copy)]
 struct BudgetArgs {
     /// Fail the run after at most N agentic turns; bounds this run only, not
@@ -179,6 +183,11 @@ struct BudgetArgs {
     /// compaction and a note, but does not stop the run (0 = no ceiling)
     #[arg(long, value_name = "N")]
     max_session_tokens: Option<u64>,
+    /// Stop the run once it has spent this much in USD, overriding
+    /// [budget].max_usd. Priced from the provider's published rates, so a
+    /// model with no published price is refused rather than run uncapped
+    #[arg(long, value_name = "USD")]
+    max_budget_usd: Option<f64>,
 }
 
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
@@ -954,6 +963,7 @@ async fn handle_agent(cmd: AgentCommands) {
                     worktree: worktree.into_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
+                    max_budget_usd: budget.max_budget_usd,
                     ..Default::default()
                 },
                 resume.into_request(),
@@ -1456,6 +1466,21 @@ mod tests {
         let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
         assert_eq!(zero.max_turns, Some(0));
         assert_eq!(zero.max_session_tokens, Some(0));
+
+        // The money ceiling parses as a decimal amount, not a token count: a
+        // budget users write as "$2.50" must not be truncated to 2 on the way
+        // in, which is the failure an integer type here would produce.
+        assert_eq!(parsed_budget(&[]).max_budget_usd, None);
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "2.50"]).max_budget_usd,
+            Some(2.50)
+        );
+        // `0` is a real ceiling (stop at the first billed request), so it must
+        // survive as `Some(0.0)` rather than collapsing into "unset".
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "0"]).max_budget_usd,
+            Some(0.0)
+        );
     }
 
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.

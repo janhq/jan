@@ -782,6 +782,57 @@ fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
     flag.or(configured).unwrap_or(DEFAULT_MAX_SESSION_TOKENS)
 }
 
+/// The money ceiling for a run, priced against the model actually being billed.
+///
+/// Precedence matches the token budget: `--max-budget-usd`, then
+/// `[budget].max_usd`, then none. Unlike that one, this can fail. A ceiling is
+/// only meaningful if the run can be priced, and the price comes from the
+/// provider's last `/models` listing, so three things go wrong in ways the user
+/// has to be told about rather than have guessed at:
+///
+/// - **the model publishes no prices.** Refused. The alternative is to run
+///   uncapped, and a user who asked to spend at most $2 has to end up either
+///   capped or stopped -- never billed without a limit because a listing was
+///   thin. This is also why an unpriced model cannot be worked around by
+///   assuming a rate: an invented price produces an invented ceiling.
+/// - **a negative limit.** Refused as a typo. `0` is allowed and honest: it
+///   stops at the first billed request.
+/// - **no ceiling asked for.** The common case, and not an error: the run is
+///   unmetered, exactly as before this flag existed.
+///
+/// Refusing at startup rather than at the first request is the point: a run
+/// that cannot be capped must not do paid work before saying so.
+fn resolve_cost_ceiling(
+    flag: Option<f64>,
+    configured: Option<f64>,
+    provider: Option<&str>,
+    model: &str,
+) -> Result<Option<crate::core::agent::session::CostCeiling>, String> {
+    let Some(max_usd) = flag.or(configured) else {
+        return Ok(None);
+    };
+    if !max_usd.is_finite() || max_usd < 0.0 {
+        return Err(format!(
+            "a cost ceiling must be a non-negative amount in USD, not {max_usd}"
+        ));
+    }
+    let rates = model_catalog::load()
+        .get(provider, model)
+        .and_then(|info| info.rates())
+        .ok_or_else(|| {
+            format!(
+                "cannot cap spend for {model}: this provider publishes no prices for it, so \
+                 there is nothing to meter a ${max_usd} ceiling against. Remove the limit to \
+                 run uncapped, or switch to a model the provider prices (`/model` in the TUI \
+                 refreshes the listing)."
+            )
+        })?;
+    Ok(Some(crate::core::agent::session::CostCeiling {
+        rates,
+        max_usd,
+    }))
+}
+
 /// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
 /// value is what the model would otherwise see verbatim in the system prompt's
 /// working-directory block, so a bare "." must become the real cwd rather than
@@ -877,6 +928,10 @@ pub fn cli_agent_status(
         // `--sandbox` below, cannot be reflected in a config dump.
         "max_session_tokens": resolve_session_budget(None, cfg.budget.max_tokens),
         "max_session_tokens_source": session_budget_source(None, cfg.budget.max_tokens),
+        // The configured money ceiling, or null when the project sets none.
+        // Reported unpriced: whether it can actually be enforced depends on the
+        // model a run resolves, which a config dump has not resolved.
+        "max_budget_usd": cfg.budget.max_usd,
         "tools": {
             "default": cfg.tools.default,
             "allow": cfg.tools.allow,
@@ -1169,6 +1224,11 @@ pub(crate) struct SessionLimits {
     /// body, which the engine reads as unbounded; `0` means unbounded too (see
     /// `body_turn_cap`).
     pub max_turns: Option<u64>,
+    /// `--max-budget-usd`, else `[budget].max_usd`: the run's money ceiling and
+    /// the rates to meter it against, resolved once at startup by
+    /// `resolve_cost_ceiling` (which refuses a model with no published price).
+    /// `None` leaves the run unmetered, which is the default.
+    pub cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
 }
 
 /// Resolved engine handle for a chat session: the args are built once and the
@@ -1237,6 +1297,18 @@ fn request_body(
     if let Some(turns) = limits.max_turns {
         body["max_turns"] = serde_json::json!(turns);
     }
+    // The ceiling travels with the rates it is metered against: the loop is not
+    // `cli`-gated and cannot read the model catalog, so prices resolved here
+    // are the only ones it will ever see (`body_cost_ceiling`).
+    if let Some(ceiling) = limits.cost_ceiling {
+        body["max_budget_usd"] = serde_json::json!(ceiling.max_usd);
+        body["token_rates"] = serde_json::json!({
+            "prompt_usd": ceiling.rates.prompt_usd,
+            "completion_usd": ceiling.rates.completion_usd,
+            "cache_read_usd": ceiling.rates.cache_read_usd,
+            "cache_write_usd": ceiling.rates.cache_write_usd,
+        });
+    }
     // Reasoning resend policy: the request-level flag the loop reads to
     // decide whether prior assistant `reasoning_content` goes back out.
     body["send_reasoning"] = serde_json::json!(send_reasoning);
@@ -1280,6 +1352,11 @@ pub struct SessionFlags {
     /// `[budget].max_tokens`. `None` (not passed) defers to that, then to
     /// `DEFAULT_MAX_SESSION_TOKENS`.
     pub max_session_tokens: Option<u64>,
+    /// `--max-budget-usd`: hard USD ceiling for the run, outranking
+    /// `[budget].max_usd`. `None` (not passed) defers to that, then leaves the
+    /// run unmetered. A run that asks for one but cannot be priced is refused
+    /// (see `resolve_cost_ceiling`).
+    pub max_budget_usd: Option<f64>,
 }
 
 /// The desktop app's currently-selected model, adopted only when signed in to
@@ -1578,6 +1655,18 @@ fn prepare_agent_session(
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
     });
 
+    // Resolved before the session is built: a run that asked for a ceiling it
+    // cannot be priced against is refused here, before any paid request.
+    // Priced against `serving_provider`, the provider that will actually be
+    // billed, rather than whichever one the catalog finds first -- the same
+    // model can carry different rates on two of them.
+    let cost_ceiling = resolve_cost_ceiling(
+        flags.max_budget_usd,
+        cfg.budget.max_usd,
+        serving_provider.as_deref(),
+        &model,
+    )?;
+
     Ok(AgentSession {
         args,
         permission_requests,
@@ -1595,6 +1684,7 @@ fn prepare_agent_session(
                 cfg.budget.max_tokens,
             ),
             max_turns: flags.max_turns,
+            cost_ceiling,
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
@@ -3656,6 +3746,57 @@ mod tests {
         assert_eq!(session_budget_source(Some(0), Some(50_000)), "flag");
     }
 
+    /// The money ceiling resolves flag > config > none, and a run that asks
+    /// for one it cannot price is **refused** rather than run uncapped -- the
+    /// one outcome a cost ceiling must never produce. Asking for none is not
+    /// an error: that is the default, and it leaves the run unmetered.
+    ///
+    /// The refusal cases are asserted against an unpriced model because that is
+    /// the failure that matters: these tests do not write a model catalog, so
+    /// every lookup here misses, which is exactly the state a user on a plain
+    /// OpenAI-compatible endpoint is in.
+    #[test]
+    fn a_cost_ceiling_is_refused_rather_than_run_uncapped() {
+        // A model id no listing can plausibly carry, so the lookup misses no
+        // matter what the developer running these tests has cached in
+        // `~/.jan/model_catalog.json` -- which is the state every user of a
+        // plain OpenAI-compatible endpoint is in anyway.
+        let unpriced = "no-such-model/never-published-a-price";
+
+        // No ceiling asked for: unmetered, and never a price lookup.
+        assert_eq!(resolve_cost_ceiling(None, None, None, unpriced), Ok(None));
+
+        // Asked for, but the model publishes no prices.
+        let refused = resolve_cost_ceiling(Some(2.0), None, None, unpriced)
+            .expect_err("an unpriceable ceiling must not silently run uncapped");
+        assert!(
+            refused.contains("publishes no prices"),
+            "the message has to say why: {refused}"
+        );
+        // The config source is refused on the same terms as the flag: a
+        // ceiling that came from agent.toml is no more enforceable.
+        assert!(resolve_cost_ceiling(None, Some(2.0), None, unpriced).is_err());
+        // Precedence, read off the amount the refusal quotes: the flag's $2
+        // is the ceiling in force, not the config's $9.
+        let precedence = resolve_cost_ceiling(Some(2.0), Some(9.0), None, unpriced)
+            .expect_err("still unpriceable");
+        assert!(
+            precedence.contains("$2") && !precedence.contains("$9"),
+            "the flag outranks the config: {precedence}"
+        );
+
+        // A negative limit is a typo, not a request to spend nothing.
+        let negative = resolve_cost_ceiling(Some(-1.0), None, None, unpriced)
+            .expect_err("a negative ceiling is rejected");
+        assert!(negative.contains("non-negative"), "{negative}");
+        assert!(resolve_cost_ceiling(Some(f64::NAN), None, None, unpriced).is_err());
+
+        // `0` is honest and must not be confused with "unset": it means stop
+        // at the first billed request. It still needs prices, so an unpriced
+        // model refuses rather than quietly passing the zero through.
+        assert!(resolve_cost_ceiling(Some(0.0), None, None, unpriced).is_err());
+    }
+
     fn limits_with(max_turns: Option<u64>, max_session_tokens: u64) -> SessionLimits {
         SessionLimits {
             context_window: 128_000,
@@ -3666,6 +3807,7 @@ mod tests {
             max_tokens: None,
             max_session_tokens,
             max_turns,
+            cost_ceiling: None,
         }
     }
 

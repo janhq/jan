@@ -343,6 +343,9 @@ struct SubagentContext {
     parent_args: OrchestrationArgs,
     model_id: String,
     max_session_tokens: Option<u64>,
+    /// The run's money ceiling, forwarded to every child (see
+    /// [`crate::core::agent::subagent::ParentRun::cost_remaining`]).
+    cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
     /// The parent's `send_reasoning`, forwarded to every child body: a child
     /// resends the reasoning of its own tool-call turns, so an opt-out that
     /// stopped at the parent would still break a strict provider.
@@ -930,6 +933,7 @@ impl CompositeToolInvoker {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
+                        cost_remaining: ctx.cost_ceiling,
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -2137,6 +2141,30 @@ fn advertise_local_tools(
     }
 }
 
+/// The last completion of a run stopped by its money ceiling, rewritten into a
+/// terminal answer.
+///
+/// Two things have to change. The `finish_reason` becomes `budget_exceeded`, so
+/// a caller can tell a run that ran out of money from one the model chose to
+/// end -- the difference between "here is your answer" and "here is as far as
+/// your budget got". And any `tool_calls` are dropped: this completion is
+/// returned *instead of* executing them, so leaving them on the message would
+/// hand the caller an assistant turn whose calls are never answered, which is
+/// an invalid conversation to resume from.
+fn halted_over_budget(mut completion: serde_json::Value) -> serde_json::Value {
+    if let Some(choice) = completion
+        .get_mut("choices")
+        .and_then(|c| c.as_array_mut())
+        .and_then(|choices| choices.first_mut())
+    {
+        if let Some(message) = choice.get_mut("message").and_then(|m| m.as_object_mut()) {
+            message.remove("tool_calls");
+        }
+        choice["finish_reason"] = serde_json::json!("budget_exceeded");
+    }
+    completion
+}
+
 fn stop_reason_of(completion: &serde_json::Value) -> String {
     completion
         .get("choices")
@@ -2677,7 +2705,8 @@ async fn orchestrate_inner(
     };
 
     let max_session_tokens = body_session_budget(json_body);
-    let mut budget = SessionBudget::new(max_session_tokens);
+    let cost_ceiling = body_cost_ceiling(json_body);
+    let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
 
     // Top-level runs index their final assistant answer into project memory;
     // isolated child (subagent) runs skip it to keep history independent.
@@ -2705,6 +2734,7 @@ async fn orchestrate_inner(
             parent_args: args.clone(),
             model_id: model_id.clone(),
             max_session_tokens,
+            cost_ceiling,
             send_reasoning: body_send_reasoning(json_body),
             bg: bg.clone(),
         });
@@ -3174,6 +3204,35 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .filter(|v| *v > 0)
 }
 
+/// Money ceiling for a request body: `max_budget_usd` plus the `token_rates` to
+/// charge against. Both are required, because a limit with no prices cannot be
+/// enforced and prices with no limit meter nothing -- either alone is a
+/// configuration the caller got wrong, and silently running uncapped is the
+/// one outcome a cost ceiling must never produce. The CLI refuses that case up
+/// front (`resolve_cost_ceiling`); here it simply does not meter.
+///
+/// `0` is not special-cased: a `0` ceiling stops the run at the first billed
+/// request, which is what asking to spend nothing means.
+fn body_cost_ceiling(
+    json_body: &serde_json::Value,
+) -> Option<crate::core::agent::session::CostCeiling> {
+    let max_usd = json_body
+        .get("max_budget_usd")
+        .and_then(|v| v.as_f64())
+        .filter(|v| v.is_finite() && *v >= 0.0)?;
+    let rates = json_body.get("token_rates")?;
+    let rate = |key: &str| rates.get(key).and_then(|v| v.as_f64()).filter(|v| *v >= 0.0);
+    Some(crate::core::agent::session::CostCeiling {
+        rates: crate::core::agent::session::TokenRates {
+            prompt_usd: rate("prompt_usd")?,
+            completion_usd: rate("completion_usd")?,
+            cache_read_usd: rate("cache_read_usd"),
+            cache_write_usd: rate("cache_write_usd"),
+        },
+        max_usd,
+    })
+}
+
 async fn receive_steering(
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
     messages: Vec<serde_json::Value>,
@@ -3328,8 +3387,44 @@ async fn run_turn_cycle(
     let mut closeout_nudged = false;
     // The monitor set last published as `StreamEvent::Monitors`.
     let mut shown_monitors = Vec::new();
+    // The last completion this cycle received, so a run stopped by its money
+    // ceiling returns the work it actually did rather than an error with no
+    // answer in it. `None` only before the first request.
+    let mut last_completion: Option<serde_json::Value> = None;
 
     while unlimited || turn < max_turns {
+        // The money ceiling is enforced here, at the one point every path that
+        // would start another request passes through -- the `continue`s below
+        // (truncated response, closeout nudge, steering, tool results) each
+        // lead back to a paid request, so checking at any one of them would
+        // leave the others uncapped.
+        //
+        // A ceiling stops the run; it does not fail it. The turns already taken
+        // are real work the user is being billed for, so the answer is returned
+        // with `finish_reason: "budget_exceeded"` rather than discarded into an
+        // error with no result.
+        if budget.over_cost_ceiling() {
+            if let Some(completion) = last_completion.take() {
+                let spent = budget.spent_usd().unwrap_or(0.0);
+                let max = budget.max_usd().unwrap_or(0.0);
+                log::info!("agent: stopping the run, spent ${spent:.4} of a ${max:.4} ceiling");
+                // Recorded so a resumed thread shows why it stopped mid-task,
+                // rather than looking like the model chose to stop. A system
+                // note, not an assistant turn: the model never wrote it.
+                transcript.record_message(serde_json::json!({
+                    "role": "system",
+                    "content": format!(
+                        "[cost ceiling reached] This run stopped after spending about \
+                         ${spent:.4} against its ${max:.4} ceiling. The task may be \
+                         unfinished; raising --max-budget-usd and resuming continues it."
+                    ),
+                }));
+                let _ = events.send(StreamEvent::MessagesUpdated {
+                    messages: client_history(&transcript, send_reasoning),
+                });
+                return Ok(halted_over_budget(completion));
+            }
+        }
         for message in receive_steering(
             steering,
             project(&transcript, volatile_system.as_deref(), send_reasoning),
@@ -3511,6 +3606,7 @@ async fn run_turn_cycle(
             transcript.record_prompt_tail(text);
         }
 
+        last_completion = Some(completion.clone());
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
         // that just landed, and a long tool phase shouldn't sit on them.
@@ -5914,6 +6010,79 @@ mod tests {
                 "finish_reason": "tool_calls"
             }]
         })
+    }
+
+    /// A run stopped by its money ceiling returns the work it already did,
+    /// rather than failing. The turns taken are real work the user is billed
+    /// for, so discarding them into an error would charge for an answer it then
+    /// threw away -- and the caller could not tell "out of budget" from "the
+    /// provider broke".
+    #[tokio::test]
+    async fn the_cost_ceiling_stops_the_run_and_keeps_the_answer() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // One request whose usage alone blows a $0.01 ceiling, then a second
+        // the loop must never make.
+        let mut expensive = bash_call_completion();
+        expensive["usage"] = json!({
+            "prompt_tokens": 1_000_000,
+            "completion_tokens": 0,
+            "total_tokens": 1_000_000,
+        });
+        let model = MockModel::new(vec![expensive, final_answer("never reached")]);
+        let tool = FixedTool {
+            content: "ok".to_string(),
+        };
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                rates: crate::core::agent::session::TokenRates {
+                    // $1 per million prompt tokens, so one request costs $1.
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.01,
+            },
+        ));
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("a ceiling stops the run, it does not fail it");
+
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "the second request is the one the ceiling exists to prevent"
+        );
+        assert_eq!(
+            result["choices"][0]["finish_reason"],
+            json!("budget_exceeded"),
+            "a caller must be able to tell this from a model that chose to stop: {result}"
+        );
+        // The returned completion asked for a tool call that will never be
+        // answered, so leaving it on the message would hand the caller an
+        // invalid conversation to resume from.
+        assert!(
+            result["choices"][0]["message"].get("tool_calls").is_none(),
+            "unanswered tool calls must not survive on the final message: {result}"
+        );
     }
 
     async fn bash_result_is_error_flag(content: &str) -> bool {

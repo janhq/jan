@@ -80,7 +80,8 @@ bounded by `--max-turns` or by cancelling it.
 <Callout type="warning">
 `--max-session-tokens` and `[budget].max_tokens` do **not** stop a run. Crossing the ceiling is
 advisory: the run compacts its history, records a note, and carries on, tool calls included. Use
-`--max-turns` for a hard bound on an unattended run.
+`--max-budget-usd` to bound what an unattended run may spend, or `--max-turns` to bound how many
+turns it may take.
 </Callout>
 
 ```bash
@@ -105,6 +106,7 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--no-worktree` | Work in the project directory, overriding a persistent `worktree` setting |
 | `--max-turns <N>` | Hard cap on agentic turns. If the model is still calling tools at N the run fails with `reached the N-turn limit...` and a non-zero exit; with `--output-format json` the partial answer is still in `result`. Bounds the parent run only - subagent turns are not counted. `0` means unbounded, which is the default |
 | `--max-session-tokens <N>` | Advisory token ceiling for this run, overriding `[budget].max_tokens`. Triggers compaction and a recorded note when passed; it does not terminate the run. `0` means no ceiling |
+| `--max-budget-usd <USD>` | Stop the run once it has spent this much, overriding `[budget].max_usd`. Priced from the provider's published rates, so a model with no published price is **refused** rather than run uncapped. Subagents inherit the ceiling. `0` stops at the first billed request |
 | `--provider`, `--api-key` | Credential overrides for this run |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
 | `--input-format <FORMAT>` | `text` (default) ignores stdin; `stream-json` reads client messages while the run is in flight. Requires `--output-format stream-json` |
@@ -167,7 +169,7 @@ had said before it broke as `result`:
 | --- | --- |
 | `protocol_version` | The wire contract this object belongs to. See [the protocol version](#the-protocol-version) |
 | `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
-| `stop_reason` | The upstream finish reason, or `error` |
+| `stop_reason` | The upstream finish reason, `budget_exceeded` when `--max-budget-usd` stopped the run, or `error` |
 | `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
 | `session_id` | Short session id for `--resume`. `null` when the run failed before producing one |
 | `num_turns` | Agent turns taken. Subagent turns are not counted |

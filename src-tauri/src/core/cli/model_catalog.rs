@@ -55,27 +55,31 @@ impl ModelInfo {
         self.prompt_usd.is_some() && self.completion_usd.is_some()
     }
 
-    /// Estimated USD for one request's token counts.
-    ///
-    /// `cached` and `cache_write` are **shares of `prompt`**, not additions to
-    /// it: every pipeline that reaches here normalizes Anthropic's usage the
-    /// OpenAI way, so `prompt_tokens = input + cache_read + cache_write` (genai
-    /// `anthropic/adapter_shared.rs`, and `core::server::converters` for Jan's
-    /// own responses). Each share is billed at its own rate and the remainder
-    /// at the prompt rate; a rate the provider did not publish falls back to
-    /// the prompt rate, which is exactly what a prompt/completion-only price
-    /// list already charges.
+    /// The per-token rates for this model, or `None` when it cannot be priced.
+    /// This is what a run's money ceiling is metered against, so it is the same
+    /// `has_pricing` answer rather than a second, looser notion of "priced".
+    pub fn rates(&self) -> Option<crate::core::agent::session::TokenRates> {
+        Some(crate::core::agent::session::TokenRates {
+            prompt_usd: self.prompt_usd?,
+            completion_usd: self.completion_usd?,
+            cache_read_usd: self.cache_read_usd,
+            cache_write_usd: self.cache_write_usd,
+        })
+    }
+
+    /// Estimated USD for one request's token counts. An unpriced model costs
+    /// nothing here; callers that must not bill a missing price as free go
+    /// through [`TokenUsage::cost_usd`], which checks [`Self::has_pricing`]
+    /// first.
     pub fn cost_usd(&self, prompt: u64, completion: u64, cached: u64, cache_write: u64) -> f64 {
-        let prompt_rate = self.prompt_usd.unwrap_or(0.0);
-        // Clamped so a provider reporting a share larger than the prompt (or
-        // two shares that together exceed it) cannot underflow the remainder.
-        let cached = cached.min(prompt);
-        let written = cache_write.min(prompt - cached);
-        let fresh = prompt - cached - written;
-        fresh as f64 * prompt_rate
-            + cached as f64 * self.cache_read_usd.unwrap_or(prompt_rate)
-            + written as f64 * self.cache_write_usd.unwrap_or(prompt_rate)
-            + completion as f64 * self.completion_usd.unwrap_or(0.0)
+        self.rates()
+            .unwrap_or(crate::core::agent::session::TokenRates {
+                prompt_usd: self.prompt_usd.unwrap_or(0.0),
+                completion_usd: self.completion_usd.unwrap_or(0.0),
+                cache_read_usd: self.cache_read_usd,
+                cache_write_usd: self.cache_write_usd,
+            })
+            .cost_usd(prompt, completion, cached, cache_write)
     }
 }
 

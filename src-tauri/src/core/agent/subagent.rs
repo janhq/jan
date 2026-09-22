@@ -934,6 +934,15 @@ pub(crate) struct ParentRun {
     pub(crate) model: String,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
+    /// The parent's remaining money ceiling, or `None` when it meters none.
+    ///
+    /// Every child gets the *whole* remainder rather than a share of it, which
+    /// means N children may each spend it: the ceiling bounds any one lineage,
+    /// not the fan-out. Splitting it N ways is worse -- the split would have to
+    /// be chosen before anyone knows which child does the work, and starving a
+    /// child of budget mid-task fails the run the user asked for. The parent's
+    /// own ceiling still stops the run once those charges land on it.
+    pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
 }
 
 /// Build the child request body shared by every subagent run.
@@ -961,6 +970,24 @@ fn child_body(
     }
     if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child dispatched by a capped run is capped too: subagents are where a
+    // run's spend multiplies, so a ceiling the children did not inherit would
+    // be one the parent could spend around by fanning out.
+    if let Some(ceiling) = parent.cost_remaining {
+        body.insert(
+            "max_budget_usd".to_string(),
+            serde_json::json!(ceiling.max_usd),
+        );
+        body.insert(
+            "token_rates".to_string(),
+            serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            }),
+        );
     }
     // A child's own tool-call turns carry `reasoning_content`, so the parent's
     // opt-out has to travel with the dispatch or a strict provider still sees
@@ -2248,7 +2275,50 @@ mod tests {
             model: "m".to_string(),
             budget_remaining: None,
             send_reasoning: true,
+            cost_remaining: None,
         }
+    }
+
+    /// A capped parent's children are capped too. Subagents are where a run's
+    /// spend multiplies, so a ceiling that stopped at the parent would be one
+    /// any run could spend around by dispatching.
+    #[test]
+    fn child_body_inherits_the_parents_cost_ceiling() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+
+        let uncapped = child_body(&resolved, "task", &parent_run());
+        assert!(
+            uncapped.get("max_budget_usd").is_none(),
+            "an unmetered parent must not invent a ceiling: {uncapped}"
+        );
+        assert!(uncapped.get("token_rates").is_none());
+
+        let capped = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                    rates: crate::core::agent::session::TokenRates {
+                        prompt_usd: 1e-6,
+                        completion_usd: 2e-6,
+                        cache_read_usd: None,
+                        cache_write_usd: None,
+                    },
+                    max_usd: 0.25,
+                }),
+                ..parent_run()
+            },
+        );
+        assert_eq!(capped["max_budget_usd"], serde_json::json!(0.25));
+        // The rates travel with the limit: a child that inherited the ceiling
+        // but not the prices could not meter itself against it.
+        assert_eq!(capped["token_rates"]["prompt_usd"], serde_json::json!(1e-6));
+        assert_eq!(
+            capped["token_rates"]["completion_usd"],
+            serde_json::json!(2e-6)
+        );
     }
 
     /// `[agent].send_reasoning = false` has to reach the child body: a child

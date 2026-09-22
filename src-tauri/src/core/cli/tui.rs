@@ -1797,9 +1797,15 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
-    /// Token-spend ceiling for one message's run; `0` is unbounded. The only
-    /// cap on run length -- there is no turn limit.
+    /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
+    /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
+    /// `[budget].max_usd`: what one message's run may spend before it stops,
+    /// with the rates to meter it against. `None` -- the default -- leaves the
+    /// session unmetered. Per run, not per session: each message gets the same
+    /// ceiling, because the user set a bound on what a task may cost and an
+    /// interactive session is a sequence of tasks, not one.
+    cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -2559,6 +2565,7 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
+            cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -4652,6 +4659,18 @@ impl App {
         // the upstream via `copy_optional_chat_params`.
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
+        }
+        // The money ceiling and the rates it is metered against. The loop is
+        // not `cli`-gated and cannot read the model catalog, so the prices
+        // resolved at startup are the only ones it sees.
+        if let Some(ceiling) = self.cost_ceiling {
+            body["max_budget_usd"] = serde_json::json!(ceiling.max_usd);
+            body["token_rates"] = serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            });
         }
         // Live plan-mode toggle: the backend reads this per turn and falls back
         // to the session default when absent. Only forwarded in Plan so normal
@@ -12129,6 +12148,16 @@ fn usage_command(app: &mut App, arg: &str) {
             app.system_detail_text(
                 "estimated from the provider's published prices - not a bill",
             );
+            // A capped session says what the cap is. The estimate above is the
+            // session's whole spend, while the ceiling applies per run, so this
+            // names the limit rather than pretending to show progress toward
+            // it: the two numbers do not measure the same thing.
+            if let Some(ceiling) = app.cost_ceiling {
+                app.system_detail_text(&format!(
+                    "each run stops at {} (--max-budget-usd)",
+                    format_usd(ceiling.max_usd)
+                ));
+            }
             match &app.last_execution_id {
                 // A concrete id beats naming the command: this is the one
                 // request whose real charge the user can look up right now.
@@ -19677,6 +19706,7 @@ mod tests {
             max_tokens: None,
             max_session_tokens: 128_000,
             max_turns: None,
+            cost_ceiling: None,
         };
         let app = App::new(
             "m".into(),
@@ -20181,6 +20211,7 @@ mod tests {
                     max_tokens: None,
                     max_session_tokens: 128_000,
                     max_turns: None,
+                    cost_ceiling: None,
                 },
                 false,
                 agent_dir,
