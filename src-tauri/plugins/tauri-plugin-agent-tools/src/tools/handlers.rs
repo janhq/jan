@@ -26,10 +26,11 @@ const MAX_LINES: usize = 2000;
 /// text file whose name ends in an image extension) cannot flood the model
 /// context as a base64 blob.
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
-/// bash output caps: generous enough that typical command output reaches the
-/// model intact on a large-context run, spilling to a temp file only past this.
-const BASH_MAX_BYTES: usize = 256 * 1024;
-const BASH_MAX_LINES: usize = 10_000;
+/// bash output caps, matching the `read` tool. Overflow is not lost: it spills
+/// to a temp file the `read` tool can page through, so the cap is tuned for
+/// context economy (~16k tokens worst case) rather than for fitting everything.
+const BASH_MAX_BYTES: usize = MAX_BYTES;
+const BASH_MAX_LINES: usize = MAX_LINES;
 const GREP_MAX_LINE: usize = 500;
 const LS_DEFAULT_LIMIT: usize = 500;
 const FIND_DEFAULT_LIMIT: usize = 1000;
@@ -3135,22 +3136,48 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bash_output_past_old_64kb_cap_survives_intact() {
+    async fn bash_output_under_the_cap_survives_intact() {
         let root = unique_root();
-        // ~128KB of output: over the shared 64KB cap, under the bash cap.
+        // ~32KB over 500 lines: half the byte cap, a quarter of the line cap.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 500); do printf '%064d\\n' \"$i\"; done"}),
+            &root,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(
+            !out.contains("output truncated"),
+            "should not truncate: len={}",
+            out.len()
+        );
+        assert!(out.contains("000500"), "last line lost: end of {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The counterpart: past the cap the notice appears. Pinned just above
+    /// `BASH_MAX_BYTES` rather than at some loose multiple of it -- the notice
+    /// alone already fails at the old 256KB cap, so only a tight bound actually
+    /// pins the byte cap itself.
+    #[tokio::test]
+    async fn bash_output_past_the_byte_cap_is_truncated() {
+        let root = unique_root();
+        // ~128KB over 2000 lines of 64 chars: over the byte cap, at the line cap.
         let out = execute_builtin(
             lookup("bash").unwrap(),
             &json!({"command": "for i in $(seq 1 2000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
         .await;
-        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(
-            !out.contains("[truncated"),
-            "should not truncate: len={}",
+            out.contains("output truncated at"),
+            "should truncate: end of {out}"
+        );
+        assert!(
+            out.len() < BASH_MAX_BYTES + 6 * 1024,
+            "cap not honoured: len={}",
             out.len()
         );
-        assert!(out.len() > 64 * 1024, "expected >64KB, got {}", out.len());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3317,9 +3344,8 @@ mod tests {
     #[tokio::test]
     async fn bash_line_overflow_keeps_the_tail_not_the_head() {
         let root = unique_root();
-        // 12000 short lines: over the 10000-line cap but under the byte cap.
-        // Tail truncation must keep the LAST lines (final result/errors) and
-        // drop the earliest ones.
+        // 12000 short lines: well over the line cap. Tail truncation must keep
+        // the LAST lines (final result/errors) and drop the earliest ones.
         let out = execute_builtin(
             lookup("bash").unwrap(),
             &json!({"command": "for i in $(seq 1 12000); do echo \"L$i\"; done"}),
