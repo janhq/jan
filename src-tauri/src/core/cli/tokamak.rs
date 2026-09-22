@@ -24,7 +24,9 @@ pub mod usage;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::core::agent::global_config::{set_default_model_if_unset, set_provider, ProviderUpdate};
+use crate::core::agent::global_config::{
+    adopt_default_model, set_provider, DefaultModelChange, ProviderUpdate,
+};
 
 /// Provider id this login writes to in `~/.jan/config.toml`.
 pub const PROVIDER: &str = "tokamak";
@@ -63,8 +65,13 @@ const VERIFY_TIMEOUT: Duration = Duration::from_secs(20);
 pub struct Login {
     pub models: Vec<String>,
     pub config_path: PathBuf,
-    /// The model written to `default_model`, or `None` when the user already had one.
+    /// The model written to `default_model`, or `None` when the user already had
+    /// a usable one.
     pub default_model: Option<String>,
+    /// Set when [`Login::default_model`] *replaced* a stale default rather than
+    /// filling an empty one, so the caller can say so: silently changing the
+    /// model a user thinks they are on would be worse than the 404 it avoids.
+    pub replaced_default: bool,
     /// Who the server says signed in. Only the browser flow reports one; the
     /// paste flow never learns it.
     pub account: Option<String>,
@@ -78,10 +85,21 @@ pub fn sanitize_key(raw: &str) -> Result<String, String> {
     super::auth::providers::sanitize_key(raw)
 }
 
+/// What a `/models` listing said, for the two things that read it differently.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Roster {
+    /// Every id, sorted, as stored in the provider's `models` list.
+    pub stored: Vec<String>,
+    /// The id the endpoint listed **first**. Kept separately because `stored`
+    /// is sorted, which would make "the provider's first model" mean nothing
+    /// more than "alphabetically first".
+    pub first_listed: Option<String>,
+}
+
 /// Verify `api_key` against Tokamak and return the model ids it grants access
 /// to. An empty list is a valid answer (the account has no models yet), so the
 /// caller decides whether that is usable.
-async fn verify_key(api_key: &str) -> Result<Vec<String>, String> {
+async fn verify_key(api_key: &str) -> Result<Roster, String> {
     let client = reqwest::Client::builder()
         .timeout(VERIFY_TIMEOUT)
         .build()
@@ -105,28 +123,39 @@ async fn verify_key(api_key: &str) -> Result<Vec<String>, String> {
     // here is what lets `/context` and `/usage` report the real window and an
     // actual cost rather than a catalog guess.
     super::model_catalog::cache_listing(PROVIDER, &parsed);
-    Ok(parse_models(&parsed))
+    Ok(roster_of(&parsed))
+}
+
+/// Split out so the sorted/wire-order pairing is testable without a server.
+fn roster_of(parsed: &serde_json::Value) -> Roster {
+    Roster {
+        stored: parse_models(parsed),
+        first_listed: super::auth::providers::listed_model_ids(parsed)
+            .into_iter()
+            .next(),
+    }
 }
 
 /// Verify the key, then persist it as the `tokamak` provider. Nothing is written
 /// when verification fails, so a typo never leaves a broken entry behind.
 pub async fn login(api_key: &str) -> Result<Login, String> {
     let api_key = sanitize_key(api_key)?;
-    let models = verify_key(&api_key).await?;
-    persist(&api_key, models)
+    let roster = verify_key(&api_key).await?;
+    persist(&api_key, roster)
 }
 
 /// Write the verified key + model list to `~/.jan/config.toml`, adopting the
-/// first model as `default_model` when the user has none (otherwise the agent
-/// would still start with "no model specified" right after signing in).
-fn persist(api_key: &str, models: Vec<String>) -> Result<Login, String> {
+/// provider's first-listed model as `default_model` when the user has none
+/// (otherwise the agent would still start with "no model specified" right after
+/// signing in) or when their default is no longer offered anywhere.
+fn persist(api_key: &str, roster: Roster) -> Result<Login, String> {
     let config_path = set_provider(
         PROVIDER,
         ProviderUpdate {
             api_key: Some(api_key.to_string()),
             clear_api_key: false,
             base_url: Some(base_url()),
-            models: Some(models.clone()),
+            models: Some(roster.stored.clone()),
             api_type: None,
             // A pasted key carries no metadata, and any left over from a
             // previous browser login belongs to a key this one replaces.
@@ -135,17 +164,33 @@ fn persist(api_key: &str, models: Vec<String>) -> Result<Login, String> {
             account: Some(None),
         },
     )?;
-    let default_model = match models.first() {
-        Some(first) if set_default_model_if_unset(first)? => Some(first.clone()),
-        _ => None,
-    };
+    let (default_model, replaced_default) = resolve_default(&roster)?;
     Ok(Login {
-        models,
+        models: roster.stored,
         config_path,
         default_model,
+        replaced_default,
         // The paste flow verifies a key against `/v1/models`; it never learns
         // who the key belongs to.
         account: None,
+    })
+}
+
+/// Point `default_model` at the provider's first-listed model when the stored
+/// default is missing or stale, reporting what happened.
+///
+/// Called *after* the roster is written, so the staleness check sees the list
+/// this sign-in just installed rather than the one it replaced -- that ordering
+/// is the whole point: a model retired upstream is only detectable once the new
+/// roster is on disk.
+fn resolve_default(roster: &Roster) -> Result<(Option<String>, bool), String> {
+    let Some(first) = roster.first_listed.as_ref() else {
+        return Ok((None, false));
+    };
+    Ok(match adopt_default_model(first)? {
+        Some(DefaultModelChange::Adopted) => (Some(first.clone()), false),
+        Some(DefaultModelChange::Repointed) => (Some(first.clone()), true),
+        None => (None, false),
     })
 }
 
@@ -160,25 +205,22 @@ pub(crate) async fn device_login(
     pending: super::device_auth::PendingAuth,
 ) -> Result<Login, String> {
     let minted = pending.claim().await?;
-    let models = verify_key(&minted.api_key).await?;
-    persist_minted(&minted, models)
+    let roster = verify_key(&minted.api_key).await?;
+    persist_minted(&minted, roster)
 }
 
 /// Persist a verified key plus the server-assigned key metadata (`key_id`/
 /// `key_expires_at`, so `auth status` can show the expiry and logout can revoke
-/// this exact key), adopting the first model as `default_model` when the user
-/// has none.
-fn persist_minted(
-    minted: &super::device_auth::Minted,
-    models: Vec<String>,
-) -> Result<Login, String> {
+/// this exact key), adopting the provider's first-listed model as
+/// `default_model` when the user has none or theirs is no longer offered.
+fn persist_minted(minted: &super::device_auth::Minted, roster: Roster) -> Result<Login, String> {
     let config_path = set_provider(
         PROVIDER,
         ProviderUpdate {
             api_key: Some(minted.api_key.clone()),
             clear_api_key: false,
             base_url: Some(base_url()),
-            models: Some(models.clone()),
+            models: Some(roster.stored.clone()),
             api_type: None,
             // Written even when the server sent nothing, so a re-login cannot
             // leave the previous key's id behind to be revoked by mistake.
@@ -187,14 +229,12 @@ fn persist_minted(
             account: Some(minted.account.clone()),
         },
     )?;
-    let default_model = match models.first() {
-        Some(first) if set_default_model_if_unset(first)? => Some(first.clone()),
-        _ => None,
-    };
+    let (default_model, replaced_default) = resolve_default(&roster)?;
     Ok(Login {
-        models,
+        models: roster.stored,
         config_path,
         default_model,
+        replaced_default,
         account: minted.account.clone(),
     })
 }
@@ -444,6 +484,12 @@ mod tests {
             parse_models(&body),
             vec!["alpha".to_string(), "tokamak-1-preview".to_string()]
         );
+        // Same payload, order preserved: the junk entries are still dropped and
+        // the duplicate still collapses, but to its *first* appearance.
+        assert_eq!(
+            super::super::auth::providers::listed_model_ids(&body),
+            vec!["tokamak-1-preview".to_string(), "alpha".to_string()]
+        );
     }
 
     #[test]
@@ -467,10 +513,21 @@ mod tests {
         assert!(describe_failure(418, "").contains("418"));
     }
 
+    /// A roster as a server would hand it over: `stored` sorted, `first_listed`
+    /// the id the endpoint led with.
+    fn roster(ids: &[&str]) -> Roster {
+        let mut stored: Vec<String> = ids.iter().map(|s| (*s).to_string()).collect();
+        stored.sort();
+        Roster {
+            stored,
+            first_listed: ids.first().map(|s| (*s).to_string()),
+        }
+    }
+
     #[test]
     fn persist_writes_provider_entry_and_default_model() {
         with_temp_home(|_| {
-            let login = persist("tk-1", vec!["m-a".into(), "m-b".into()]).expect("persist");
+            let login = persist("tk-1", roster(&["m-a", "m-b"])).expect("persist");
             assert_eq!(login.default_model.as_deref(), Some("m-a"));
 
             let configs = load_global_config().expect("load");
@@ -485,16 +542,18 @@ mod tests {
     #[test]
     fn persist_respects_an_existing_default_model() {
         with_temp_home(|_| {
+            // Offered by this very roster, so it is a live choice, not a fossil.
             crate::core::agent::global_config::set_default_model_if_unset("chosen").unwrap();
-            let login = persist("tk-1", vec!["m-a".into()]).expect("persist");
+            let login = persist("tk-1", roster(&["m-a", "chosen"])).expect("persist");
             assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
         });
     }
 
     #[test]
     fn persist_with_no_models_still_saves_the_key() {
         with_temp_home(|_| {
-            let login = persist("tk-1", Vec::new()).expect("persist");
+            let login = persist("tk-1", roster(&[])).expect("persist");
             assert!(login.models.is_empty());
             assert_eq!(login.default_model, None);
             let configs = load_global_config().expect("load");
@@ -508,12 +567,119 @@ mod tests {
     #[test]
     fn relogin_replaces_the_key_and_model_list() {
         with_temp_home(|_| {
-            persist("tk-old", vec!["m-a".into(), "m-b".into()]).expect("first");
-            persist("tk-new", vec!["m-c".into()]).expect("second");
+            persist("tk-old", roster(&["m-a", "m-b"])).expect("first");
+            persist("tk-new", roster(&["m-c"])).expect("second");
             let configs = load_global_config().expect("load");
             let cfg = configs.get(PROVIDER).unwrap();
             assert_eq!(cfg.api_key.as_deref(), Some("tk-new"));
             assert_eq!(cfg.models, vec!["m-c".to_string()]);
+        });
+    }
+
+    /// The bug this guards: a re-login replaces the provider's roster wholesale,
+    /// so a default the upstream has since retired is left pointing at a model
+    /// nothing serves. Every later run 404s, and a `--max-budget-usd` ceiling is
+    /// refused as unpriceable, with nothing connecting either to the sign-in.
+    #[test]
+    fn a_relogin_repoints_a_default_the_provider_no_longer_offers() {
+        with_temp_home(|_| {
+            let first = persist("tk-old", roster(&["legacy-preview", "m-b"])).expect("first");
+            assert_eq!(first.default_model.as_deref(), Some("legacy-preview"));
+            assert!(!first.replaced_default, "nothing to replace on a fresh sign-in");
+
+            // The upstream retires it; the next sign-in lists a new roster.
+            let again = persist("tk-new", roster(&["m-c", "m-d"])).expect("second");
+            assert_eq!(again.default_model.as_deref(), Some("m-c"));
+            assert!(
+                again.replaced_default,
+                "a stale default must be reported as replaced, not swapped in silence"
+            );
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("m-c"),
+                "the repoint must reach disk"
+            );
+        });
+    }
+
+    /// The other half: a default this sign-in still offers is a live choice, and
+    /// re-pointing it would overwrite a deliberate `/model` pick on every login.
+    #[test]
+    fn a_relogin_leaves_a_still_offered_default_alone() {
+        with_temp_home(|_| {
+            // Listed first, so this is what the user ended up on.
+            persist("tk-old", roster(&["chosen", "m-a"])).expect("first");
+
+            // A later sign-in leads with a different model, but still offers it.
+            let again = persist("tk-new", roster(&["m-a", "chosen"])).expect("second");
+            assert_eq!(again.default_model, None);
+            assert!(!again.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("chosen")
+            );
+        });
+    }
+
+    /// A model another provider still serves was not retired by this one, so the
+    /// tokamak roster says nothing about it either way.
+    #[test]
+    fn a_default_another_provider_serves_survives_a_tokamak_relogin() {
+        with_temp_home(|_| {
+            crate::core::agent::global_config::set_provider(
+                "local",
+                ProviderUpdate {
+                    base_url: Some("http://localhost:1337/v1".into()),
+                    models: Some(vec!["local-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            crate::core::agent::global_config::set_default_model_if_unset("local-model").unwrap();
+
+            let login = persist("tk-1", roster(&["m-a"])).expect("persist");
+            assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap().as_deref(),
+                Some("local-model")
+            );
+        });
+    }
+
+    /// `default_model` follows the provider's wire order, not the sorted roster:
+    /// a gateway that ranks its listing is stating a preference, and sorting
+    /// would silently reduce "first" to "alphabetically first".
+    #[test]
+    fn the_adopted_default_is_the_first_listed_not_the_first_sorted() {
+        with_temp_home(|_| {
+            let listing = json!({"data": [{"id": "zeta-flagship"}, {"id": "alpha-legacy"}]});
+            let roster = roster_of(&listing);
+            assert_eq!(roster.first_listed.as_deref(), Some("zeta-flagship"));
+            assert_eq!(
+                roster.stored,
+                vec!["alpha-legacy".to_string(), "zeta-flagship".to_string()],
+                "the stored roster stays sorted for a stable config write"
+            );
+
+            let login = persist("tk-1", roster).expect("persist");
+            assert_eq!(login.default_model.as_deref(), Some("zeta-flagship"));
+        });
+    }
+
+    /// An account with no models must not be recorded as having chosen one:
+    /// there is nothing to point at, and writing an empty default would make
+    /// the config look configured.
+    #[test]
+    fn an_empty_roster_adopts_no_default() {
+        with_temp_home(|_| {
+            let login = persist("tk-1", roster(&[])).expect("persist");
+            assert_eq!(login.default_model, None);
+            assert!(!login.replaced_default);
+            assert_eq!(
+                crate::core::agent::global_config::default_model().unwrap(),
+                None
+            );
         });
     }
 
@@ -533,7 +699,7 @@ mod tests {
     fn persist_minted_records_the_server_key_metadata() {
         with_temp_home(|_| {
             use crate::core::agent::global_config::provider_key_meta;
-            let login = persist_minted(&minted(Some("k-1"), Some(1700000000)), vec!["m-a".into()])
+            let login = persist_minted(&minted(Some("k-1"), Some(1700000000)), roster(&["m-a"]))
                 .expect("persist");
             assert_eq!(login.default_model.as_deref(), Some("m-a"));
             assert_eq!(login.account.as_deref(), Some("a@b.c"));
@@ -553,7 +719,7 @@ mod tests {
     #[test]
     fn legacy_persist_writes_no_key_metadata() {
         with_temp_home(|_| {
-            persist("tk-1", vec![]).expect("persist");
+            persist("tk-1", roster(&[])).expect("persist");
             use crate::core::agent::global_config::provider_key_meta;
             let meta = provider_key_meta(PROVIDER).expect("meta");
             assert!(meta.key_id.is_none());
@@ -567,11 +733,11 @@ mod tests {
     #[test]
     fn the_account_is_recorded_by_the_mint_and_cleared_by_a_paste() {
         with_temp_home(|_| {
-            persist_minted(&minted(Some("k-1"), None), vec![]).expect("persist");
+            persist_minted(&minted(Some("k-1"), None), roster(&[])).expect("persist");
             assert_eq!(account().as_deref(), Some("a@b.c"));
             assert_eq!(auth_status().account.as_deref(), Some("a@b.c"));
 
-            persist("tk-pasted", vec![]).expect("persist paste");
+            persist("tk-pasted", roster(&[])).expect("persist paste");
             assert_eq!(
                 account(),
                 None,
@@ -585,7 +751,7 @@ mod tests {
     fn auth_status_reflects_signed_in_state_and_metadata() {
         with_temp_home(|_| {
             assert!(!auth_status().signed_in);
-            persist_minted(&minted(Some("k-1"), Some(1700000000)), vec![]).expect("persist");
+            persist_minted(&minted(Some("k-1"), Some(1700000000)), roster(&[])).expect("persist");
             let status = auth_status();
             assert!(status.signed_in);
             assert_eq!(status.endpoint, BASE_URL);
@@ -644,7 +810,7 @@ mod tests {
     #[test]
     fn expiry_warning_is_quiet_without_a_recorded_expiry() {
         with_temp_home(|_| {
-            persist("tk-1", vec![]).expect("persist");
+            persist("tk-1", roster(&[])).expect("persist");
             assert_eq!(expiry_warning(), None);
         });
     }
@@ -653,7 +819,7 @@ mod tests {
     fn expiry_warning_fires_for_a_key_that_is_about_to_lapse() {
         with_temp_home(|_| {
             let soon = unix_now() + 2 * 24 * 60 * 60;
-            persist_minted(&minted(Some("k-1"), Some(soon)), vec![]).expect("persist");
+            persist_minted(&minted(Some("k-1"), Some(soon)), roster(&[])).expect("persist");
             let warning = expiry_warning().expect("a key expiring in 2 days must warn");
             assert!(warning.contains("2 days"), "{warning}");
         });
@@ -678,7 +844,7 @@ mod tests {
     #[test]
     fn logout_without_a_key_id_clears_locally_only() {
         with_temp_home(|_| {
-            persist_minted(&minted(None, None), vec!["m-a".into()]).expect("persist");
+            persist_minted(&minted(None, None), roster(&["m-a"])).expect("persist");
             assert!(auth_status().signed_in);
 
             assert_eq!(run_logout(), Logout::ClearedOnly);
@@ -695,7 +861,7 @@ mod tests {
     #[test]
     fn logout_clears_locally_even_when_revocation_fails() {
         with_temp_home(|_| {
-            persist_minted(&minted(Some("k-1"), None), vec!["m-a".into()]).expect("persist");
+            persist_minted(&minted(Some("k-1"), None), roster(&["m-a"])).expect("persist");
             assert_eq!(run_logout(), Logout::ClearedOnly);
             assert!(!auth_status().signed_in);
         });

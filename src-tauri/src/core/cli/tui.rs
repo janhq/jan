@@ -15428,8 +15428,10 @@ fn finish_tokamak_login(app: &mut App, result: Result<super::tokamak::Login, Str
                 models,
                 config_path,
                 default_model,
+                replaced_default,
                 account,
             } = login;
+            let repointed = replaced_default.then(|| default_model.clone()).flatten();
             finish_login(
                 app,
                 Ok(crate::core::cli::auth::LoginResult {
@@ -15441,6 +15443,14 @@ fn finish_tokamak_login(app: &mut App, result: Result<super::tokamak::Login, Str
             );
             if let Some(account) = account {
                 app.note(&format!("signed in to Tokamak as {account}"));
+            }
+            // Said out loud rather than applied quietly: the user picked the
+            // old default at some point, and a model silently swapped under
+            // them is worse than the 404 the swap avoids.
+            if let Some(model) = repointed {
+                app.note(&format!(
+                    "your default model is no longer offered - switched to {model}"
+                ));
             }
             if let Some(warning) = super::tokamak::expiry_warning() {
                 app.note(&warning);
@@ -15548,7 +15558,9 @@ fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult)
     if runnable.iter().any(|(_, model)| *model == app.model) {
         return;
     }
-    if let Some(model) = login.models.first() {
+    // The default the sign-in just settled on, when it wrote one: it is the
+    // provider's own first-listed model, where `models` is merely sorted.
+    if let Some(model) = login.default_model.as_ref().or_else(|| login.models.first()) {
         app.model = model.clone();
         let _ = super::cli_set_project_model(&app.agent_dir, &app.model);
     }
@@ -24959,6 +24971,7 @@ mod tests {
                 models: vec!["tokamak-1-preview".into()],
                 config_path: std::path::PathBuf::from("/tmp/config.toml"),
                 default_model: None,
+                replaced_default: false,
                 account: Some("a@b.c".into()),
             }),
         ));
