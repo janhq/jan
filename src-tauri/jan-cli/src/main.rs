@@ -238,8 +238,13 @@ enum Commands {
     /// Read recorded usage and spend from the provider's usage API
     #[command(display_order = 4)]
     Usage {
+        // Optional so bare `jan usage` answers "what have I spent" with the
+        // account summary. Unlike the TUI's bare `/usage` there is no session
+        // to estimate here -- a one-shot command has run no requests -- so the
+        // overview's local half does not exist and the account total is the
+        // whole answer.
         #[command(subcommand)]
-        cmd: UsageCommands,
+        cmd: Option<UsageCommands>,
         /// Print the provider's response body verbatim instead of a table.
         /// Reshaping it would mean re-serializing money fields, which is how a
         /// figure loses digits, so this forwards the bytes as received.
@@ -1017,16 +1022,16 @@ async fn handle_agent(cmd: AgentCommands) {
 /// documented; the rest are printed as flattened `path  value` pairs, so a
 /// field the server added since this build still shows up instead of being
 /// silently dropped by a struct that does not know about it.
-async fn handle_usage(cmd: UsageCommands, json: bool) -> Result<(), String> {
+async fn handle_usage(cmd: Option<UsageCommands>, json: bool) -> Result<(), String> {
     use app_lib::core::cli::tokamak::usage::{self, Query, UsageError};
 
     let query = match &cmd {
-        UsageCommands::Account => Query::Summary,
-        UsageCommands::Daily => Query::Daily,
-        UsageCommands::Requests => Query::Requests,
-        UsageCommands::Limits => Query::Limits,
-        UsageCommands::Generation { id } => Query::Generation(id.clone()),
-        UsageCommands::Correlate { client_request_id } => {
+        None | Some(UsageCommands::Account) => Query::Summary,
+        Some(UsageCommands::Daily) => Query::Daily,
+        Some(UsageCommands::Requests) => Query::Requests,
+        Some(UsageCommands::Limits) => Query::Limits,
+        Some(UsageCommands::Generation { id }) => Query::Generation(id.clone()),
+        Some(UsageCommands::Correlate { client_request_id }) => {
             Query::Correlated(client_request_id.clone())
         }
     };
@@ -1684,20 +1689,23 @@ mod tests {
                 other => panic!("expected a usage command, got {:?}", other.is_some()),
             }
         };
-        assert!(matches!(view(&["account"]), UsageCommands::Account));
-        assert!(matches!(view(&["daily"]), UsageCommands::Daily));
-        assert!(matches!(view(&["requests"]), UsageCommands::Requests));
-        assert!(matches!(view(&["limits"]), UsageCommands::Limits));
+        assert!(matches!(view(&["account"]), Some(UsageCommands::Account)));
+        assert!(matches!(view(&["daily"]), Some(UsageCommands::Daily)));
+        assert!(matches!(view(&["requests"]), Some(UsageCommands::Requests)));
+        assert!(matches!(view(&["limits"]), Some(UsageCommands::Limits)));
         match view(&["generation", "exec-1"]) {
-            UsageCommands::Generation { id } => assert_eq!(id, "exec-1"),
+            Some(UsageCommands::Generation { id }) => assert_eq!(id, "exec-1"),
             _ => panic!("expected a generation lookup"),
         }
         match view(&["correlate", "my-app-request-001"]) {
-            UsageCommands::Correlate { client_request_id } => {
+            Some(UsageCommands::Correlate { client_request_id }) => {
                 assert_eq!(client_request_id, "my-app-request-001");
             }
             _ => panic!("expected a correlation lookup"),
         }
+        // Bare `jan usage` is the account summary: with no session to
+        // estimate, the recorded total is the only answer there is.
+        assert!(view(&[]).is_none(), "the subcommand is optional");
     }
 
     /// An id is required, not optional: a bare `jan usage generation` would
@@ -1714,7 +1722,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Commands::Usage {
-                cmd: UsageCommands::Account,
+                cmd: Some(UsageCommands::Account),
                 json: true
             })
         ));
@@ -1722,7 +1730,7 @@ mod tests {
         assert!(matches!(
             cli.command,
             Some(Commands::Usage {
-                cmd: UsageCommands::Account,
+                cmd: Some(UsageCommands::Account),
                 json: false
             })
         ));

@@ -132,6 +132,32 @@ fn reported_rows(
     out
 }
 
+/// The account total, without the per-model table: the amount, what it bought
+/// and the window it covers. Three lines, because this is what someone asking
+/// "what have I spent" is owed before any breakdown.
+fn total_rows(summary: &crate::core::cli::tokamak::usage::AccountSummary) -> Vec<String> {
+    let mut out = vec![format!(
+        "  {}  {}",
+        reported_money(summary.total.cost.as_ref()),
+        reported_counts(&summary.total)
+    )];
+    if let Some(savings) = &summary.total.savings {
+        out.push(format!("  caching saved ${savings}"));
+    }
+    if let Some((start, end)) = &summary.period {
+        out.push(format!("  {} to {}", day_only(start), day_only(end)));
+    }
+    out
+}
+
+/// Just the account total, for the overview pane. `None` when the body is not
+/// a summary, so the caller can fall back to the generic field walk.
+pub fn account_total_lines(
+    payload: &crate::core::cli::tokamak::usage::Payload,
+) -> Option<Vec<String>> {
+    crate::core::cli::tokamak::usage::parse_account_summary(payload).map(|s| total_rows(&s))
+}
+
 /// Render a fetched account-usage payload.
 ///
 /// Each view leads with the figure that answers the question asked -- the
@@ -182,17 +208,7 @@ pub fn reported_usage_lines(
         usage::Query::Summary => match usage::parse_account_summary(payload) {
             Some(summary) => {
                 let mut out = vec!["account total".to_string()];
-                out.push(format!(
-                    "  {}  {}",
-                    reported_money(summary.total.cost.as_ref()),
-                    reported_counts(&summary.total)
-                ));
-                if let Some(savings) = &summary.total.savings {
-                    out.push(format!("  caching saved ${savings}"));
-                }
-                if let Some((start, end)) = &summary.period {
-                    out.push(format!("  {} to {}", day_only(start), day_only(end)));
-                }
+                out.extend(total_rows(&summary));
                 // Costliest first: a folded list must keep the models that
                 // account for the spend, and the server already ranked nothing.
                 let mut models = summary.by_model.clone();

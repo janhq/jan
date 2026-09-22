@@ -734,6 +734,18 @@ enum Readout {
     /// lives on the readout rather than on `App` so it resets with the dock:
     /// an expansion is a thing you did to this readout, not a preference.
     Session { all_models: bool },
+    /// Bare `/usage`: the session estimate and the account's recorded spend
+    /// in one pane, each labelled with its source.
+    ///
+    /// The two halves are never added together and never share a figure --
+    /// that is the whole reason this is one readout with two sections rather
+    /// than one combined number. The session half renders instantly from
+    /// local state; the account half arrives over the network, so it carries
+    /// its own state instead of holding the whole readout on a spinner.
+    Overview {
+        all_models: bool,
+        account: AccountSlot,
+    },
     /// `/usage <account view>`: requested, not yet fetched.
     ReportedLoading(super::tokamak::usage::Query),
     /// `/usage <account view>`: the fetched body, rendered at draw time.
@@ -752,6 +764,22 @@ enum Readout {
     ReportedError { title: String, message: String },
 }
 
+/// The account half of the overview, which is a network read and so has to
+/// be able to say "not yet", "not available" and "not configured" without
+/// taking the session half down with it.
+#[derive(Debug, Clone)]
+enum AccountSlot {
+    /// No Tokamak credential, so there is no account to read. Not an error:
+    /// most providers have no usage API and the session estimate is the whole
+    /// answer for them.
+    NotConfigured,
+    Loading,
+    Ready(Box<super::tokamak::usage::Payload>),
+    /// The read failed, and why. Shown rather than swallowed: a blank account
+    /// section would read as "you have spent nothing".
+    Failed(String),
+}
+
 impl Readout {
     /// The dock's title. Names the *source*, not just the command: "session
     /// estimate" and what the provider recorded are different claims about
@@ -761,6 +789,7 @@ impl Readout {
         match self {
             Readout::ContextLoading | Readout::Context(_) => "context".to_string(),
             Readout::Session { .. } => "session estimate".to_string(),
+            Readout::Overview { .. } => "usage".to_string(),
             Readout::ReportedLoading(query) => query.label().to_string(),
             Readout::Reported { title, .. } | Readout::ReportedError { title, .. } => title.clone(),
         }
@@ -6890,6 +6919,112 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
 
 /// Plain `/context` summary: current usage and autocompaction threshold first,
 /// followed by seven equal-scale category bars.
+/// The session half of a usage readout: the estimate, its model breakdown,
+/// and the provenance line that says it is an estimate.
+///
+/// Shared by `Readout::Session` and the overview's first section so the two
+/// cannot describe the same numbers differently.
+fn session_estimate_lines(app: &App, all_models: bool) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    if app.session_usage.is_empty() {
+        return vec![Line::styled("no usage yet this session".to_string(), dim)];
+    }
+    let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage, all_models)
+        .into_iter()
+        .map(Line::from)
+        .collect();
+    // The provenance line is not decoration: every figure above it is
+    // priced from a published rate sheet, and a user comparing it with
+    // an invoice has to know which one they are holding.
+    lines.push(Line::styled(
+        "estimated from the provider's published prices - not a bill".to_string(),
+        dim,
+    ));
+    // A capped session names its ceiling. The estimate above is the
+    // whole session's spend while the ceiling applies per run, so this
+    // states the limit rather than implying progress toward it -- the
+    // two numbers do not measure the same thing.
+    if let Some(ceiling) = app.cost_ceiling {
+        lines.push(Line::styled(
+            format!(
+                "each run stops at {} (--max-budget-usd)",
+                format_usd(ceiling.max_usd)
+            ),
+            dim,
+        ));
+    }
+    lines
+}
+
+/// Bare `/usage`: this session's estimate over the account's recorded spend.
+///
+/// Two sections, never one total. They measure different things -- a local
+/// guess at what this process has run up, and what the provider has actually
+/// recorded across every client on the account -- and adding them would
+/// double-count this very session while implying a precision neither has. The
+/// heading of each names its source, and the account half degrades to a
+/// reason rather than a blank when it cannot be read.
+fn overview_lines(
+    app: &App,
+    all_models: bool,
+    account: &AccountSlot,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut lines = vec![Line::styled(
+        "THIS SESSION (estimated)".to_string(),
+        Style::new().bold(),
+    )];
+    lines.extend(session_estimate_lines(app, all_models));
+
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        "ON YOUR ACCOUNT (recorded by the provider)".to_string(),
+        Style::new().bold(),
+    ));
+    match account {
+        AccountSlot::NotConfigured => lines.push(Line::styled(
+            "no account usage API is configured for this provider".to_string(),
+            dim,
+        )),
+        AccountSlot::Loading => lines.push(Line::raw("reading account usage...")),
+        AccountSlot::Failed(message) => {
+            lines.extend(wrap_text(message, dim, width).into_iter().map(Line::from));
+        }
+        AccountSlot::Ready(payload) => {
+            // The account total only -- the per-model breakdown belongs to
+            // `/usage account`, which is one keystroke away and is where
+            // someone who wants it is already going. An overview that printed
+            // both breakdowns would be two screens of table under a heading
+            // promising a summary.
+            let query = super::tokamak::usage::Query::Summary;
+            let reported = super::usage_view::account_total_lines(payload);
+            match reported {
+                Some(rows) => lines.extend(
+                    rows.iter()
+                        .flat_map(|line| wrap_text(line, Style::new(), width))
+                        .map(Line::from),
+                ),
+                // Unparseable: fall back to the same field walk every other
+                // reported view degrades to, rather than showing nothing.
+                None => lines.extend(
+                    super::usage_view::reported_usage_lines(&query, payload, false)
+                        .iter()
+                        .flat_map(|line| wrap_text(line, Style::new(), width))
+                        .map(Line::from),
+                ),
+            }
+        }
+    }
+
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        "/usage account · daily · requests · limits for the detail".to_string(),
+        dim,
+    ));
+    lines
+}
+
 /// The docked readout's body at `width`.
 ///
 /// Takes `App` because the session estimate is rendered from live state rather
@@ -6902,33 +7037,7 @@ fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static
         Readout::ContextLoading => vec![Line::raw("computing context...")],
         Readout::Context(report) => context_lines(report, width),
         Readout::Session { all_models } => {
-            if app.session_usage.is_empty() {
-                return vec![Line::styled("no usage yet this session".to_string(), dim)];
-            }
-            let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage, *all_models)
-                .into_iter()
-                .map(Line::from)
-                .collect();
-            // The provenance line is not decoration: every figure above it is
-            // priced from a published rate sheet, and a user comparing it with
-            // an invoice has to know which one they are holding.
-            lines.push(Line::styled(
-                "estimated from the provider's published prices - not a bill".to_string(),
-                dim,
-            ));
-            // A capped session names its ceiling. The estimate above is the
-            // whole session's spend while the ceiling applies per run, so this
-            // states the limit rather than implying progress toward it -- the
-            // two numbers do not measure the same thing.
-            if let Some(ceiling) = app.cost_ceiling {
-                lines.push(Line::styled(
-                    format!(
-                        "each run stops at {} (--max-budget-usd)",
-                        format_usd(ceiling.max_usd)
-                    ),
-                    dim,
-                ));
-            }
+            let mut lines = session_estimate_lines(app, *all_models);
             lines.push(Line::styled(
                 match &app.last_execution_id {
                     // A concrete id beats naming the command: this is the one
@@ -6940,6 +7049,10 @@ fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static
             ));
             lines
         }
+        Readout::Overview {
+            all_models,
+            account,
+        } => overview_lines(app, *all_models, account, width),
         Readout::ReportedLoading(query) => {
             vec![Line::raw(format!("reading {}...", query.label()))]
         }
@@ -10896,7 +11009,8 @@ async fn handle_key(
             // fall through to the catch-all and do nothing rather than
             // closing the dock.
             KeyCode::Char('m') if !ctrl => match &mut app.readout {
-                Some(Readout::Session { all_models }) => *all_models = !*all_models,
+                Some(Readout::Session { all_models })
+                | Some(Readout::Overview { all_models, .. }) => *all_models = !*all_models,
                 Some(Readout::Reported { all_rows, .. }) => *all_rows = !*all_rows,
                 _ => {}
             },
@@ -11896,8 +12010,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/usage",
-        hint: "[run|account|daily|requests|limits|<execution-id>]",
-        description: "This session's estimated cost, or what the provider recorded",
+        hint: "[session|run|account|daily|requests|limits|<execution-id>]",
+        description: "This session's estimated cost and your account's recorded spend",
         alias_of: None,
     },
     SlashCommand {
@@ -12322,13 +12436,32 @@ fn context_command(app: &mut App) {
 /// sent upstream, and no account-level spend is available to ask for.
 fn usage_command(app: &mut App, arg: &str) {
     match parse_usage_mode(arg) {
-        // The estimate is a glance-and-dismiss answer, not part of the
-        // conversation: it opens the same dock every other readout uses and
-        // writes nothing to the transcript. An empty session still opens it --
-        // "nothing yet" is the answer to the question that was asked, and
-        // answering it somewhere else would make the command's surface depend
-        // on its result.
+        // A glance-and-dismiss answer, not part of the conversation: it opens
+        // the same dock every other readout uses and writes nothing to the
+        // transcript. An empty session still opens it -- "nothing yet" is the
+        // answer to the question that was asked, and answering it somewhere
+        // else would make the command's surface depend on its result.
         UsageMode::Session => app.readout = Some(Readout::Session { all_models: false }),
+        // Bare `/usage` is "how much am I spending", which has two honest
+        // answers: this session's estimate and the account's recorded total.
+        // The session half draws immediately from local state, so the pane is
+        // never empty while the network read is in flight -- and when there is
+        // no account API to read, the overview is still the estimate plus a
+        // line saying so, rather than an error.
+        UsageMode::Overview => {
+            let configured = super::tokamak::auth_status().signed_in;
+            app.readout = Some(Readout::Overview {
+                all_models: false,
+                account: if configured {
+                    AccountSlot::Loading
+                } else {
+                    AccountSlot::NotConfigured
+                },
+            });
+            if configured {
+                app.reported_usage_request = Some(super::tokamak::usage::Query::Summary);
+            }
+        }
         UsageMode::Run => {
             // Every request this session made carries the session's correlation
             // id, so one lookup returns the whole run's executions -- which is
@@ -12357,7 +12490,7 @@ fn usage_command(app: &mut App, arg: &str) {
             if !super::tokamak::auth_status().signed_in {
                 app.note("no account usage API is configured for this provider");
                 app.system_detail_text(
-                    "account spend is read from Tokamak; `/usage` alone still shows this session's estimate",
+                    "account spend is read from Tokamak; `/usage` alone still estimates this session",
                 );
                 return;
             }
@@ -12374,8 +12507,11 @@ fn usage_command(app: &mut App, arg: &str) {
 /// What `/usage` was asked for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum UsageMode {
-    /// This session's local estimate: the default, and the only view that
-    /// works offline, mid-turn, and for a non-Tokamak provider.
+    /// The default: this session's estimate and the account's recorded spend,
+    /// side by side.
+    Overview,
+    /// This session's local estimate alone -- the only view that works
+    /// offline, mid-turn, and for a non-Tokamak provider.
     Session,
     /// An authoritative read from the provider's usage API.
     Account(super::tokamak::usage::Query),
@@ -12387,7 +12523,7 @@ enum UsageMode {
 }
 
 const USAGE_MODE_HELP: &str =
-    "/usage (this session) · run · account · daily · requests · limits · <execution-id>";
+    "/usage (overview) · session · run · account · daily · requests · limits · <execution-id>";
 
 /// Parse the argument to `/usage`.
 ///
@@ -12400,7 +12536,8 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
     use super::tokamak::usage::Query;
     let arg = arg.trim();
     match arg {
-        "" | "session" => UsageMode::Session,
+        "" => UsageMode::Overview,
+        "session" => UsageMode::Session,
         "run" => UsageMode::Run,
         "account" | "me" => UsageMode::Account(Query::Summary),
         "daily" => UsageMode::Account(Query::Daily),
@@ -15666,6 +15803,18 @@ fn finish_reported_usage(
     query: &super::tokamak::usage::Query,
     result: Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
 ) {
+    // The overview holds the account read in a slot beside the session
+    // estimate, so a landing result fills that slot rather than replacing the
+    // readout -- replacing it would throw away the half already on screen.
+    if let Some(Readout::Overview { account, .. }) = &mut app.readout {
+        if matches!(account, AccountSlot::Loading) {
+            *account = match result {
+                Ok(payload) => AccountSlot::Ready(Box::new(payload)),
+                Err(e) => AccountSlot::Failed(e.to_string()),
+            };
+        }
+        return;
+    }
     // Same rule as `finish_context_report`, and for the same reason: a result
     // only fills the readout that is still waiting for it.
     if !matches!(app.readout, Some(Readout::ReportedLoading(_))) {
@@ -32412,7 +32561,7 @@ mod tests {
     #[test]
     fn usage_command_with_no_requests_notes_it() {
         let mut app = test_app();
-        super::usage_command(&mut app, "");
+        super::usage_command(&mut app, "session");
         assert!(
             matches!(app.readout, Some(Readout::Session { .. })),
             "an empty session still opens the readout"
@@ -32448,14 +32597,166 @@ mod tests {
             .join("\n")
     }
 
-    /// A bare `/usage` must keep answering with the local session estimate.
-    /// It is the only view that works offline, mid-turn and for a provider
-    /// with no usage API, so adding account views must not have moved it.
+    /// Bare `/usage` is the overview -- "how much am I spending" has two
+    /// honest answers and the default shows both. `session` still names the
+    /// estimate alone, which is the only view that works offline, mid-turn
+    /// and for a provider with no usage API.
     #[test]
-    fn bare_usage_is_still_the_session_estimate() {
-        assert_eq!(super::parse_usage_mode(""), super::UsageMode::Session);
-        assert_eq!(super::parse_usage_mode("  "), super::UsageMode::Session);
+    fn bare_usage_is_the_overview_and_session_is_still_reachable() {
+        assert_eq!(super::parse_usage_mode(""), super::UsageMode::Overview);
+        assert_eq!(super::parse_usage_mode("  "), super::UsageMode::Overview);
         assert_eq!(super::parse_usage_mode("session"), super::UsageMode::Session);
+    }
+
+    /// The overview renders the session estimate immediately, without waiting
+    /// on the network: the half that can be answered locally must never be
+    /// held hostage by the half that cannot.
+    #[test]
+    fn the_overview_shows_the_session_estimate_before_the_account_lands() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100_000),
+                completion_tokens: Some(10_000),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        let text = readout_text(&app);
+        assert!(text.contains("THIS SESSION (estimated)"), "{text}");
+        assert!(text.contains("this session"), "{text}");
+        assert!(text.contains("ON YOUR ACCOUNT"), "{text}");
+        assert!(text.contains("reading account usage..."), "{text}");
+        // The estimate is on screen while the account read is still in flight.
+        assert!(text.contains("not a bill"), "{text}");
+    }
+
+    /// The two figures are labelled by source and never combined. An overview
+    /// that added them would double-count this session inside the account
+    /// total it is sitting next to.
+    #[test]
+    fn the_overview_keeps_the_estimate_and_the_charge_apart() {
+        use crate::core::cli::tokamak::usage::parse_payload_for_test;
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100_000),
+                completion_tokens: Some(10_000),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Ready(Box::new(parse_payload_for_test(ACCOUNT_BODY))),
+        });
+        let text = readout_text(&app);
+
+        // Each half names its source in its own heading.
+        let session_at = text.find("THIS SESSION (estimated)").expect("session heading");
+        let account_at = text
+            .find("ON YOUR ACCOUNT (recorded by the provider)")
+            .expect("account heading");
+        assert!(session_at < account_at, "local first, recorded second: {text}");
+
+        // The account's exact recorded figure, unrounded.
+        assert!(text.contains("$1240.10224445"), "{text}");
+        // The session half is marked as an estimate in its heading and again
+        // in its own provenance line, so neither figure can be mistaken for
+        // the other kind.
+        assert!(text.contains("(estimated)"), "{text}");
+        assert!(text.contains("not a bill"), "{text}");
+        // No combined figure anywhere.
+        assert!(!text.contains("total spend"), "{text}");
+        assert!(text.contains("/usage account"), "points at the detail: {text}");
+    }
+
+    /// A provider with no usage API still gets an overview: the estimate, and
+    /// a line saying why there is no account half. Not an error -- most
+    /// providers have no such API and the estimate is the whole answer.
+    #[test]
+    fn the_overview_without_an_account_api_is_still_the_estimate() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::NotConfigured,
+        });
+        let text = readout_text(&app);
+        assert!(text.contains("THIS SESSION"), "{text}");
+        assert!(
+            text.contains("no account usage API is configured"),
+            "{text}"
+        );
+    }
+
+    /// A failed account read says why, in place. A blank account section would
+    /// read as "you have spent nothing", which is the one thing it must not
+    /// say -- and it must not take the session half down with it.
+    #[test]
+    fn a_failed_account_read_does_not_blank_the_overview() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Err(UsageError::Failed("could not reach the server".to_string())),
+        );
+        assert!(
+            matches!(
+                app.readout,
+                Some(Readout::Overview {
+                    account: super::AccountSlot::Failed(_),
+                    ..
+                })
+            ),
+            "the slot holds the failure, the readout survives"
+        );
+        let text = readout_text(&app);
+        assert!(text.contains("could not reach the server"), "{text}");
+        assert!(text.contains("THIS SESSION"), "the estimate survives: {text}");
+    }
+
+    /// An account result fills the overview's slot rather than replacing the
+    /// whole readout, which would discard the session half already drawn.
+    #[test]
+    fn an_account_result_fills_the_overview_slot() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Ok(parse_payload_for_test(ACCOUNT_BODY)),
+        );
+        match &app.readout {
+            Some(Readout::Overview { account, .. }) => {
+                assert!(matches!(account, super::AccountSlot::Ready(_)));
+            }
+            _ => panic!("the overview should have survived the result landing"),
+        }
+        let text = readout_text(&app);
+        assert!(text.contains("$1240.10224445"), "{text}");
+        assert!(text.contains("15049 req"), "{text}");
+        // The overview shows the total, not the whole per-model table --
+        // that belongs to `/usage account`.
+        assert!(!text.contains("top models"), "{text}");
     }
 
     #[test]
@@ -33020,6 +33321,20 @@ mod tests {
                 Readout::ContextLoading,
                 Readout::Context(Box::new(report.clone())),
                 Readout::Session { all_models: false },
+                Readout::Overview {
+                    all_models: true,
+                    account: super::AccountSlot::Ready(Box::new(
+                        crate::core::cli::tokamak::usage::parse_payload_for_test(ACCOUNT_BODY),
+                    )),
+                },
+                Readout::Overview {
+                    all_models: false,
+                    account: super::AccountSlot::Loading,
+                },
+                Readout::Overview {
+                    all_models: false,
+                    account: super::AccountSlot::Failed("could not reach the server".to_string()),
+                },
                 Readout::ReportedLoading(crate::core::cli::tokamak::usage::Query::Summary),
                 Readout::Reported {
                     title: "account".to_string(),
@@ -33090,7 +33405,7 @@ mod tests {
         let mut app = test_app();
         super::context_command(&mut app);
         assert!(matches!(app.readout, Some(Readout::ContextLoading)));
-        super::usage_command(&mut app, "");
+        super::usage_command(&mut app, "session");
         assert!(
             matches!(app.readout, Some(Readout::Session { .. })),
             "the newer readout wins outright"
@@ -33105,7 +33420,7 @@ mod tests {
         let mut app = test_app();
         super::context_command(&mut app);
         // The user gave up on it and asked for the session estimate instead.
-        super::usage_command(&mut app, "");
+        super::usage_command(&mut app, "session");
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
         super::finish_context_report(&mut app, report);
         assert!(
