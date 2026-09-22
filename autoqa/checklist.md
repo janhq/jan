@@ -258,6 +258,17 @@ In `Settings -> General`:
 - [ ] Ensure that the fresh install of Jan launch
 - [ ] Do some basic check to see that all function still behaved as expected. To be extra careful, you can go through the whole list again. However, it is more advisable to just check to make sure that all the core functionality like `Thread` and `Model Providers` work as intended.
 
+## H. Channel gate (preview surfaces)
+Some surfaces ship in the `nightly` channel only - Cowork is one of them. The desktop e2e suite covers the stable half on every nightly run; this section is how a release candidate and its nightly build are checked by hand, because a release package cannot be built inside a test run.
+On the stable build:
+- [ ] The left bar shows no `Cowork` tab, and no `Home` / `Cowork` switcher above the chat list
+- [ ] `Settings` has no `Cowork` entry
+- [ ] Opening `/cowork` or `/artifacts` lands on `Home`, and `/settings/cowork` lands on `Settings -> General`
+- [ ] A thread, a project and a chat turn still work - the gate must not take the app down with it
+On the nightly build of the same commit:
+- [ ] The `Cowork` tab and switcher are present, and `/cowork` opens the surface
+- [ ] `Settings -> Cowork` is present and lists memory, skills and subagents
+
 # II. After release
 - [ ] Check that the App Updater works and user can update to the latest release without any problem
 - [ ] App restarts after the user finished an update
