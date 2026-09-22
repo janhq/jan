@@ -201,9 +201,9 @@ export interface ModelsService {
  * extension, not to the plugin.
  */
 export interface EngineVersionInfo {
-  /** llama.cpp's own version, e.g. "0.4.0". */
+  /** llama.cpp's own version, e.g. "0.4.1". */
   version: string
-  /** Upstream build tag, e.g. "b10809". */
+  /** Upstream build tag, e.g. "b10964". */
   tag: string
   buildNumber: string
   /** Full commit sha the build is pinned to. */
