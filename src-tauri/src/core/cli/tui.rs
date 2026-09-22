@@ -729,7 +729,11 @@ enum Readout {
     /// provider's published rates. Rendered from live `App` state at draw
     /// time rather than snapshotted here, so a readout left open during a turn
     /// keeps counting instead of freezing on the totals it opened with.
-    Session,
+    ///
+    /// The flag is whether the model list is expanded past the top few. It
+    /// lives on the readout rather than on `App` so it resets with the dock:
+    /// an expansion is a thing you did to this readout, not a preference.
+    Session { all_models: bool },
     /// `/usage <account view>`: requested, not yet fetched.
     ReportedLoading(super::tokamak::usage::Query),
     /// `/usage <account view>`: the fetched readout, already rendered.
@@ -747,7 +751,7 @@ impl Readout {
     fn title(&self) -> String {
         match self {
             Readout::ContextLoading | Readout::Context(_) => "context".to_string(),
-            Readout::Session => "session estimate".to_string(),
+            Readout::Session { .. } => "session estimate".to_string(),
             Readout::ReportedLoading(query) => query.label().to_string(),
             Readout::Reported { title, .. } => title.clone(),
         }
@@ -6440,13 +6444,36 @@ fn session_cost(
     priced.then_some((total, unpriced))
 }
 
-/// The `/usage` readout: one row per model this session billed against, then a
-/// total. Kept free of `App` so the arithmetic is testable on its own.
+/// How many models the session readout lists before folding the rest away.
+/// Enough to show where the money went, short enough that the dock stays a
+/// glance rather than a table; the rest are one keystroke away and are still
+/// counted in the total, so folding hides detail and never spend.
+const TOP_MODELS: usize = 3;
+
+/// One model's line in the session readout, kept as data until the whole set
+/// is known: the rows are ranked by cost and the label column is padded to the
+/// widest label actually shown, neither of which can be decided while walking
+/// the map.
+struct UsageRow {
+    label: String,
+    /// `None` is "the provider publishes no price", never zero.
+    cost: Option<f64>,
+    usage: super::model_catalog::TokenUsage,
+}
+
+/// The `/usage` readout: the session's own spend first, then the models that
+/// account for it, ranked by cost with the tail folded behind `m`.
+///
+/// Summary-before-detail rather than a flat list with the total at the bottom:
+/// the question this readout answers is "what has this session cost", and a
+/// list makes the reader add rows up to find out. Kept free of `App` so the
+/// arithmetic is testable on its own.
 fn usage_lines(
     usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+    all_models: bool,
 ) -> Vec<Vec<Span<'static>>> {
     let catalog = super::model_catalog::load();
-    let mut rows = Vec::new();
+    let mut rows: Vec<UsageRow> = Vec::new();
     let mut totals = super::model_catalog::TokenUsage::default();
     let mut total_cost = 0.0;
     let mut any_priced = false;
@@ -6461,41 +6488,98 @@ fn usage_lines(
             None => any_unpriced = true,
         }
         totals.merge(model_usage);
-        rows.push(vec![
-            Span::styled(format!("{}  ", key.label()), Style::new().cyan()),
-            Span::raw(usage_counts(model_usage)),
+        rows.push(UsageRow {
+            label: key.label(),
+            cost,
+            usage: model_usage.clone(),
+        });
+    }
+    // Ranked by what each model cost, so a truncated list keeps the models
+    // that matter. Unpriced models sort last by token volume rather than being
+    // treated as free: they have no cost to rank by, but hiding the busiest of
+    // them would hide the one most likely to be expensive.
+    rows.sort_by(|a, b| {
+        let tokens = |r: &UsageRow| r.usage.prompt_tokens + r.usage.completion_tokens;
+        match (a.cost, b.cost) {
+            (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => tokens(b).cmp(&tokens(a)),
+        }
+        .then_with(|| a.label.cmp(&b.label))
+    });
+
+    let indent = || Span::raw("  ");
+    let dim = Style::new().dark_gray();
+    let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+
+    out.push(vec![Span::styled("this session", Style::new().bold())]);
+    let mut summary = vec![indent()];
+    if any_priced {
+        summary.push(Span::styled(
+            format!("~{}  ", format_usd(total_cost)),
+            Style::new().yellow().bold(),
+        ));
+    }
+    summary.push(Span::raw(usage_counts(&totals)));
+    out.push(summary);
+    if any_unpriced && any_priced {
+        out.push(vec![
+            indent(),
+            Span::styled("excludes models with no published price", dim),
+        ]);
+    }
+
+    let shown = if all_models {
+        rows.len()
+    } else {
+        rows.len().min(TOP_MODELS)
+    };
+    let hidden = rows.len() - shown;
+    out.push(Vec::new());
+    out.push(vec![Span::styled(
+        if hidden > 0 { "top models" } else { "models" },
+        Style::new().bold(),
+    )]);
+    let width = rows[..shown]
+        .iter()
+        .map(|r| r.label.chars().count())
+        .max()
+        .unwrap_or(0);
+    for row in &rows[..shown] {
+        out.push(vec![
+            indent(),
             Span::styled(
-                match cost {
-                    Some(c) => format!("  ~{}", format_usd(c)),
+                format!("{:<width$}  ", row.label),
+                Style::new().cyan(),
+            ),
+            Span::styled(
+                match row.cost {
+                    Some(c) => format!("~{}", format_usd(c)),
                     // A model the provider publishes no prices for: say so,
                     // rather than let a total imply it cost nothing.
-                    None => "  (no published price)".to_string(),
+                    None => "(no published price)".to_string(),
                 },
                 Style::new().yellow(),
             ),
+            Span::raw(format!("  {}", usage_counts(&row.usage))),
         ]);
     }
-    if rows.len() > 1 || any_priced {
-        rows.push(vec![
-            Span::styled("total  ", Style::new().bold()),
-            Span::raw(usage_counts(&totals)),
+    if hidden > 0 {
+        out.push(vec![
+            indent(),
             Span::styled(
-                if any_priced {
-                    format!("  ~{}", format_usd(total_cost))
-                } else {
-                    String::new()
-                },
-                Style::new().yellow().bold(),
+                format!(
+                    "+{hidden} more model{}  ·  m to show all",
+                    if hidden == 1 { "" } else { "s" }
+                ),
+                dim,
             ),
         ]);
+    } else if rows.len() > TOP_MODELS {
+        out.push(vec![indent(), Span::styled("m to fold the tail", dim)]);
     }
-    if any_unpriced && any_priced {
-        rows.push(vec![Span::styled(
-            "the total excludes models with no published price",
-            Style::new().dim(),
-        )]);
-    }
-    rows
+    out
 }
 
 /// `N req · 12.3K in (8.1K cached) · 3.4K out`, the shape both the per-model
@@ -6803,11 +6887,11 @@ fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static
     match readout {
         Readout::ContextLoading => vec![Line::raw("computing context...")],
         Readout::Context(report) => context_lines(report, width),
-        Readout::Session => {
+        Readout::Session { all_models } => {
             if app.session_usage.is_empty() {
                 return vec![Line::styled("no usage yet this session".to_string(), dim)];
             }
-            let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage)
+            let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage, *all_models)
                 .into_iter()
                 .map(Line::from)
                 .collect();
@@ -10784,6 +10868,16 @@ async fn handle_key(
     // up.
     if app.readout.is_some() {
         match key.code {
+            // `m` folds the session readout's model list open and shut. Only
+            // that readout has a tail to fold, so elsewhere it falls through
+            // to the catch-all and does nothing rather than closing the dock.
+            KeyCode::Char('m')
+                if !ctrl && matches!(app.readout, Some(Readout::Session { .. })) =>
+            {
+                if let Some(Readout::Session { all_models }) = &mut app.readout {
+                    *all_models = !*all_models;
+                }
+            }
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
                 app.readout = None;
             }
@@ -12212,7 +12306,7 @@ fn usage_command(app: &mut App, arg: &str) {
         // "nothing yet" is the answer to the question that was asked, and
         // answering it somewhere else would make the command's surface depend
         // on its result.
-        UsageMode::Session => app.readout = Some(Readout::Session),
+        UsageMode::Session => app.readout = Some(Readout::Session { all_models: false }),
         UsageMode::Run => {
             // Every request this session made carries the session's correlation
             // id, so one lookup returns the whole run's executions -- which is
@@ -32074,7 +32168,7 @@ mod tests {
                 ),
             ]);
 
-            let text: Vec<String> = super::usage_lines(&usage)
+            let text: Vec<String> = super::usage_lines(&usage, false)
                 .iter()
                 .map(|row| row.iter().map(|s| s.content.to_string()).collect())
                 .collect();
@@ -32086,9 +32180,14 @@ mod tests {
                 "an unpriced model must say so: {joined}"
             );
             assert!(
-                joined.contains("the total excludes models with no published price"),
+                joined.contains("excludes models with no published price"),
                 "{joined}"
             );
+            // Summary before detail: the session's own total is readable
+            // without adding the model rows up.
+            let session = joined.find("this session").expect("a summary section");
+            let models = joined.find("models\n").expect("a models section");
+            assert!(session < models, "the summary leads: {joined}");
 
             // 60K fresh prompt + 40K cached + 10K completion, at the seeded rates.
             let expected = 60_000.0 * 0.000005 + 40_000.0 * 0.0000005 + 10_000.0 * 0.000025;
@@ -32097,6 +32196,82 @@ mod tests {
             assert!(partial, "the unpriced model makes the total partial");
             assert!(joined.contains(&super::format_usd(expected)), "{joined}");
         });
+    }
+
+    /// A long model list folds to the costliest few, and the fold states how
+    /// many it hid. Folding may hide *detail* only: the summary above it is
+    /// the whole session either way, so no spend disappears with the rows.
+    #[test]
+    fn the_model_list_folds_to_the_costliest_and_says_what_it_hid() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut usage = std::collections::BTreeMap::new();
+            for (i, name) in ["alpha", "bravo", "charlie", "delta", "echo"]
+                .iter()
+                .enumerate()
+            {
+                seed_priced_model("tokamak", name);
+                // Ascending spend, so the map's alphabetical order is not the
+                // ranked order and a naive truncation would keep the wrong
+                // three.
+                usage.insert(
+                    usage_key("tokamak", name),
+                    usage_of(1, 1_000 * (i as u64 + 1), 100, 0),
+                );
+            }
+            let render = |all| {
+                super::usage_lines(&usage, all)
+                    .iter()
+                    .map(|row| row.iter().map(|s| s.content.to_string()).collect())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            };
+
+            let folded = render(false);
+            assert!(folded.contains("top models"), "{folded}");
+            assert!(folded.contains("+2 more models"), "{folded}");
+            for kept in ["echo", "delta", "charlie"] {
+                assert!(folded.contains(kept), "the costliest stay: {folded}");
+            }
+            for hidden in ["alpha", "bravo"] {
+                assert!(!folded.contains(hidden), "the cheapest fold: {folded}");
+            }
+
+            let expanded = render(true);
+            for name in ["alpha", "bravo", "charlie", "delta", "echo"] {
+                assert!(expanded.contains(name), "{expanded}");
+            }
+            assert!(!expanded.contains("more model"), "{expanded}");
+
+            // The figure that matters is identical either way.
+            let total = super::format_usd(super::session_cost(&usage).expect("priced").0);
+            assert!(folded.contains(&total), "{folded}");
+            assert!(expanded.contains(&total), "{expanded}");
+        });
+    }
+
+    /// `m` toggles the fold, and only on the session readout -- on any other
+    /// readout it must not be mistaken for a close.
+    #[tokio::test]
+    async fn m_toggles_the_model_fold_without_closing_the_readout() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Session { all_models: false });
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::Session { all_models: true })),
+            "m expands"
+        );
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::Session { all_models: false })),
+            "m folds back"
+        );
+
+        app.readout = Some(Readout::ContextLoading);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::ContextLoading)),
+            "m is inert where there is no tail to fold"
+        );
     }
 
     /// With nothing priced there is no cost line at all, rather than a `$0.00`
@@ -32260,7 +32435,7 @@ mod tests {
         let mut app = test_app();
         super::usage_command(&mut app, "");
         assert!(
-            matches!(app.readout, Some(Readout::Session)),
+            matches!(app.readout, Some(Readout::Session { .. })),
             "an empty session still opens the readout"
         );
         assert!(
@@ -32811,7 +32986,7 @@ mod tests {
             vec![
                 Readout::ContextLoading,
                 Readout::Context(Box::new(report.clone())),
-                Readout::Session,
+                Readout::Session { all_models: false },
                 Readout::ReportedLoading(crate::core::cli::tokamak::usage::Query::Summary),
                 Readout::Reported {
                     title: "account".to_string(),
@@ -32872,7 +33047,7 @@ mod tests {
         assert!(matches!(app.readout, Some(Readout::ContextLoading)));
         super::usage_command(&mut app, "");
         assert!(
-            matches!(app.readout, Some(Readout::Session)),
+            matches!(app.readout, Some(Readout::Session { .. })),
             "the newer readout wins outright"
         );
     }
@@ -32889,7 +33064,7 @@ mod tests {
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
         super::finish_context_report(&mut app, report);
         assert!(
-            matches!(app.readout, Some(Readout::Session)),
+            matches!(app.readout, Some(Readout::Session { .. })),
             "the stale report must not displace what the user is now reading"
         );
     }
