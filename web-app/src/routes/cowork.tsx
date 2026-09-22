@@ -4,6 +4,7 @@ import ChatInput from '@/containers/ChatInput'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { route } from '@/constants/routes'
+import { ensureCoworkEnabled } from '@/lib/coworkAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import {
   Fragment,
@@ -148,6 +149,7 @@ import {
 } from '@/lib/skillCommands'
 
 export const Route = createFileRoute(route.cowork as any)({
+  beforeLoad: () => ensureCoworkEnabled(),
   component: CoworkPage,
 })
 
