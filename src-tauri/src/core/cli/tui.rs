@@ -716,6 +716,25 @@ enum ContextView {
     Ready(Box<ContextReport>),
 }
 
+/// Overlay state for the account-usage readouts (`/usage account`, `daily`,
+/// `limits`, and a single execution lookup).
+///
+/// Separate from [`ContextView`] because the two answer different questions
+/// from different sources: `/context` describes the current window from local
+/// state, while this holds figures the *server* reported. Keeping them in
+/// distinct overlays is what stops a charge and an estimate ever sharing a
+/// surface without saying which is which.
+enum ReportedUsageView {
+    /// Requested, not yet fetched. The network call is in flight (or queued
+    /// behind the loop picking up `reported_usage_request`).
+    Loading(super::tokamak::usage::Query),
+    /// The fetched readout: the view's title and its already-rendered lines.
+    Ready {
+        title: String,
+        lines: Vec<String>,
+    },
+}
+
 /// Off-loop MCP work the detail screen hands to the loop. Everything here
 /// either talks to a peer or waits on a browser, so none of it may run inside
 /// `handle_key`.
@@ -1987,6 +2006,13 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// Current account-usage overlay, if one is open. `None` when closed.
+    reported_usage_view: Option<ReportedUsageView>,
+    /// Set by `/usage <mode>` to ask the loop to perform the read off the
+    /// render loop. These are network calls against the provider's usage API,
+    /// so running one inline would freeze the frame for as long as the request
+    /// takes. Taken once, like `context_request`.
+    reported_usage_request: Option<super::tokamak::usage::Query>,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
     /// The `/mcp` detail screen's data, alongside the `McpServer` picker whose
@@ -2596,6 +2622,8 @@ impl App {
             settings_prompt: None,
             context_view: None,
             context_request: false,
+            reported_usage_view: None,
+            reported_usage_request: None,
             mcp_prompt: None,
             mcp_detail: None,
             agent_detail: None,
@@ -8639,6 +8667,30 @@ async fn await_context(
     joined.ok()
 }
 
+/// Await an in-flight account-usage read, parking forever when none is running
+/// so this can sit in the loop's `select!` unconditionally.
+#[allow(clippy::type_complexity)]
+async fn await_reported_usage(
+    task: &mut Option<
+        tokio::task::JoinHandle<(
+            super::tokamak::usage::Query,
+            Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+        )>,
+    >,
+) -> Option<(
+    super::tokamak::usage::Query,
+    Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+)> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A panicked job leaves the overlay on its loading state for the user to
+    // close, same as `await_context`.
+    joined.ok()
+}
+
 /// Await an in-flight `/login` verification, parking forever when none is
 /// running so this can sit in the loop's `select!` unconditionally.
 async fn await_login(
@@ -9302,6 +9354,11 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    type ReportedUsageResult = (
+        super::tokamak::usage::Query,
+        Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+    );
+    let mut reported_usage_task: Option<tokio::task::JoinHandle<ReportedUsageResult>> = None;
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
@@ -9448,6 +9505,17 @@ async fn chat_loop<B: Backend>(
             app.context_request = false;
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
+        }
+        // `/usage <view>` asked for an account read. It is a network call, so
+        // it runs off the render loop exactly like `/context`'s report: one at
+        // a time, with the overlay sitting on its loading state until it lands.
+        if reported_usage_task.is_none() {
+            if let Some(query) = app.reported_usage_request.take() {
+                reported_usage_task = Some(tokio::spawn(async move {
+                    let result = super::tokamak::usage::fetch(&query).await;
+                    (query, result)
+                }));
+            }
         }
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
@@ -9681,6 +9749,9 @@ async fn chat_loop<B: Backend>(
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
+            }
+            Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
+                finish_reported_usage(app, &query, result);
             }
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
@@ -10593,6 +10664,21 @@ async fn handle_key(
             }
             _ if ctrl_c => {
                 app.context_view = None;
+            }
+            _ => {}
+        }
+        return;
+    }
+    // The account-usage overlay owns the keyboard on the same terms as
+    // `/context`: it is the same kind of surface and must not behave
+    // differently under the same keys.
+    if app.reported_usage_view.is_some() {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
+                app.reported_usage_view = None;
+            }
+            _ if ctrl_c => {
+                app.reported_usage_view = None;
             }
             _ => {}
         }
@@ -11584,8 +11670,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/usage",
-        hint: "",
-        description: "Show this session's tokens and estimated cost, per model",
+        hint: "[account|daily|requests|limits|<execution-id>]",
+        description: "This session's estimated cost, or what the provider recorded",
         alias_of: None,
     },
     SlashCommand {
@@ -11894,7 +11980,7 @@ async fn run_command(
         }
         "compact" => compact_command(app),
         "context" => context_command(app),
-        "usage" => usage_command(app),
+        "usage" => usage_command(app, arg),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -12004,16 +12090,140 @@ fn context_command(app: &mut App) {
 /// [`super::model_catalog`]), so a model it publishes no price for is reported
 /// as such rather than counted as free. Local to the transcript: nothing is
 /// sent upstream, and no account-level spend is available to ask for.
-fn usage_command(app: &mut App) {
-    if app.session_usage.is_empty() {
-        app.note("no usage yet this session");
-        return;
+fn usage_command(app: &mut App, arg: &str) {
+    match parse_usage_mode(arg) {
+        UsageMode::Session => {
+            if app.session_usage.is_empty() {
+                app.note("no usage yet this session");
+                return;
+            }
+            app.note("session usage");
+            for row in usage_lines(&app.session_usage) {
+                app.system_detail(row);
+            }
+            app.system_detail_text(
+                "estimated from the provider's published prices - not a bill",
+            );
+            app.system_detail_text(
+                "/usage account for what the provider actually recorded",
+            );
+        }
+        UsageMode::Account(query) => {
+            // An account read needs a Tokamak key. Saying so here, before any
+            // request, keeps a user on another provider from watching a
+            // spinner resolve into an auth error.
+            if !super::tokamak::auth_status().signed_in {
+                app.note("no account usage API is configured for this provider");
+                app.system_detail_text(
+                    "account spend is read from Tokamak; `/usage` alone still shows this session's estimate",
+                );
+                return;
+            }
+            app.reported_usage_view = Some(ReportedUsageView::Loading(query.clone()));
+            app.reported_usage_request = Some(query);
+        }
+        UsageMode::Unknown(arg) => {
+            app.note(&format!("unknown usage view: {arg}"));
+            app.system_detail_text(USAGE_MODE_HELP);
+        }
     }
-    app.note("session usage");
-    for row in usage_lines(&app.session_usage) {
-        app.system_detail(row);
+}
+
+/// What `/usage` was asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum UsageMode {
+    /// This session's local estimate: the default, and the only view that
+    /// works offline, mid-turn, and for a non-Tokamak provider.
+    Session,
+    /// An authoritative read from the provider's usage API.
+    Account(super::tokamak::usage::Query),
+    Unknown(String),
+}
+
+const USAGE_MODE_HELP: &str =
+    "/usage (this session) · account · daily · requests · limits · <execution-id>";
+
+/// Parse the argument to `/usage`.
+///
+/// A bare `/usage` stays the session estimate it has always been -- the one
+/// answer available instantly and without a network -- so this only ever adds
+/// views. An argument that is not a known mode is treated as an execution id
+/// rather than rejected: that is the shape of the thing a user pastes, and an
+/// id that turns out not to exist reports a clean not-found.
+fn parse_usage_mode(arg: &str) -> UsageMode {
+    use super::tokamak::usage::Query;
+    let arg = arg.trim();
+    match arg {
+        "" | "session" => UsageMode::Session,
+        "account" | "me" => UsageMode::Account(Query::Summary),
+        "daily" => UsageMode::Account(Query::Daily),
+        "requests" => UsageMode::Account(Query::Requests),
+        "limits" => UsageMode::Account(Query::Limits),
+        other => {
+            // Anything else is taken as an execution id, but only when it is
+            // plausibly one: a word with no whitespace. A phrase is a typo, and
+            // sending it upstream to be told it does not exist would be a worse
+            // answer than naming the available views.
+            if other.split_whitespace().count() == 1 {
+                UsageMode::Account(Query::Generation(other.to_string()))
+            } else {
+                UsageMode::Unknown(other.to_string())
+            }
+        }
     }
-    app.system_detail_text("estimated from the provider's published prices - not a bill");
+}
+
+/// Render a fetched account-usage payload.
+///
+/// A generation lookup has a known schema and is rendered field by field; every
+/// other view is walked as raw text (see [`super::tokamak::usage::Payload`]),
+/// so a field the server added since this build still appears and no money
+/// field is rounded on the way through.
+fn reported_usage_lines(
+    query: &super::tokamak::usage::Query,
+    payload: &super::tokamak::usage::Payload,
+) -> Vec<String> {
+    use super::tokamak::usage;
+
+    let mut lines = match query {
+        usage::Query::Generation(_) | usage::Query::Correlated(_) => {
+            match usage::parse_generations_payload(payload) {
+                Ok(records) if records.is_empty() => vec!["no matching execution".to_string()],
+                Ok(records) => records
+                    .iter()
+                    .flat_map(|record| {
+                        usage::generation_lines(record)
+                            .into_iter()
+                            .chain(std::iter::once(String::new()))
+                    })
+                    .collect(),
+                Err(e) => vec![e.to_string()],
+            }
+        }
+        _ => {
+            let fields = payload.fields();
+            if fields.is_empty() {
+                vec!["the provider reported no figures for this view".to_string()]
+            } else {
+                // Padded to the widest path so the values line up as a column;
+                // a usage readout is scanned down the numbers, not read across.
+                let width = fields.iter().map(|(p, _)| p.len()).max().unwrap_or(0);
+                fields
+                    .iter()
+                    .map(|(path, value)| format!("{path:width$}  {value}"))
+                    .collect()
+            }
+        }
+    };
+    while lines.last().is_some_and(String::is_empty) {
+        lines.pop();
+    }
+    // The line that keeps the two kinds of number apart. Everything above came
+    // from the server; the session estimate lives behind a different command
+    // and the two are never added together.
+    lines.push(String::new());
+    lines.push("reported by the provider - not the local session estimate".to_string());
+    lines
 }
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
@@ -15228,6 +15438,31 @@ fn finish_context_report(app: &mut App, report: ContextReport) {
     }
 }
 
+/// Fold a finished account-usage read into its overlay. Like
+/// [`finish_context_report`], a result landing after the user closed the
+/// overlay is dropped rather than reopening it.
+///
+/// A failure fills the overlay rather than being swallowed: the user asked a
+/// question about money and "the request did not land" is a real answer, where
+/// an empty popup would read as "nothing was spent".
+fn finish_reported_usage(
+    app: &mut App,
+    query: &super::tokamak::usage::Query,
+    result: Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+) {
+    if app.reported_usage_view.is_none() {
+        return;
+    }
+    let lines = match result {
+        Ok(payload) => reported_usage_lines(query, &payload),
+        Err(e) => vec![e.to_string()],
+    };
+    app.reported_usage_view = Some(ReportedUsageView::Ready {
+        title: query.label().to_string(),
+        lines,
+    });
+}
+
 /// Open the add/edit wizard prefilled from a configured server.
 fn edit_mcp_server(app: &mut App, name: &str) {
     match super::mcp::get_server(name) {
@@ -16814,6 +17049,54 @@ fn draw(f: &mut Frame, app: &mut App) {
         let inner = block.inner(rect);
         // A frame with no room for the popup draws nothing -- and must still
         // fall through to the prompts below, so this never returns from `draw`.
+        if rect.width > 0 && rect.height > 0 {
+            f.render_widget(ratatui::widgets::Clear, rect);
+            f.render_widget(block, rect);
+        }
+        if inner.width > 0 && inner.height > 0 {
+            f.render_widget(Paragraph::new(lines), inner);
+        }
+    }
+
+    // The account-usage overlay, laid out exactly like `/context`'s so the two
+    // readouts are the same kind of surface. Only one can be open at a time --
+    // opening either closes the input path to the other -- so they never
+    // overlap.
+    if let Some(view) = &app.reported_usage_view {
+        let body = chunks[1];
+        let outer_w = body.width.saturating_sub(2).max(1);
+        let content_w = outer_w.saturating_sub(2).max(1) as usize;
+        let (title, lines): (String, Vec<Line<'static>>) = match view {
+            ReportedUsageView::Loading(query) => (
+                query.label().to_string(),
+                vec![Line::raw(format!("reading {}...", query.label()))],
+            ),
+            ReportedUsageView::Ready { title, lines } => (
+                title.clone(),
+                lines
+                    .iter()
+                    // Hard-wrapped rather than clipped: a truncated money
+                    // figure is a wrong money figure.
+                    .flat_map(|line| wrap_text(line, Style::new(), content_w))
+                    .map(Line::from)
+                    .collect(),
+            ),
+        };
+        let height = (lines.len() as u16 + 2).min(body.height);
+        let rect = ratatui::layout::Rect {
+            x: body.x + body.width.saturating_sub(outer_w) / 2,
+            y: body.y + body.height.saturating_sub(height) / 2,
+            width: outer_w,
+            height,
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::new().cyan())
+            .title(Span::styled(
+                format!(" {title} "),
+                Style::new().on_cyan().black().bold(),
+            ));
+        let inner = block.inner(rect);
         if rect.width > 0 && rect.height > 0 {
             f.render_widget(ratatui::widgets::Clear, rect);
             f.render_widget(block, rect);
@@ -31858,8 +32141,137 @@ mod tests {
     #[test]
     fn usage_command_with_no_requests_notes_it() {
         let mut app = test_app();
-        super::usage_command(&mut app);
+        super::usage_command(&mut app, "");
         assert!(transcript_text(&app).contains("no usage yet this session"));
+    }
+
+    /// A bare `/usage` must keep answering with the local session estimate.
+    /// It is the only view that works offline, mid-turn and for a provider
+    /// with no usage API, so adding account views must not have moved it.
+    #[test]
+    fn bare_usage_is_still_the_session_estimate() {
+        assert_eq!(super::parse_usage_mode(""), super::UsageMode::Session);
+        assert_eq!(super::parse_usage_mode("  "), super::UsageMode::Session);
+        assert_eq!(super::parse_usage_mode("session"), super::UsageMode::Session);
+    }
+
+    #[test]
+    fn usage_modes_map_to_their_documented_endpoints() {
+        use crate::core::cli::tokamak::usage::Query;
+        let account = |arg: &str| match super::parse_usage_mode(arg) {
+            super::UsageMode::Account(q) => q,
+            other => panic!("{arg} should be an account view, got {other:?}"),
+        };
+        assert_eq!(account("account"), Query::Summary);
+        assert_eq!(account("daily"), Query::Daily);
+        assert_eq!(account("requests"), Query::Requests);
+        assert_eq!(account("limits"), Query::Limits);
+    }
+
+    /// A pasted execution id is what a user actually types here, so a lone
+    /// unrecognized word is a lookup rather than an error.
+    #[test]
+    fn a_lone_word_is_taken_as_an_execution_id() {
+        use crate::core::cli::tokamak::usage::Query;
+        assert_eq!(
+            super::parse_usage_mode("0b7c1d2e-3f45-6789-abcd-ef0123456789"),
+            super::UsageMode::Account(Query::Generation(
+                "0b7c1d2e-3f45-6789-abcd-ef0123456789".to_string()
+            ))
+        );
+        // A phrase is a typo, not an id; naming the views beats a round trip
+        // that can only come back not-found.
+        assert!(matches!(
+            super::parse_usage_mode("how much did i spend"),
+            super::UsageMode::Unknown(_)
+        ));
+    }
+
+    /// Without a Tokamak key there is no account to read, and the TUI must say
+    /// so locally instead of opening an overlay that can only resolve into an
+    /// auth failure. Critically it is not an error: the session estimate is
+    /// still a valid answer and the note points at it.
+    #[test]
+    fn an_account_view_without_a_key_is_declined_not_attempted() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            super::usage_command(&mut app, "account");
+            let text = transcript_text(&app);
+            assert!(
+                text.contains("no account usage API is configured"),
+                "{text}"
+            );
+            assert!(
+                app.reported_usage_request.is_none(),
+                "nothing may be sent upstream without a key"
+            );
+            assert!(app.reported_usage_view.is_none(), "no overlay should open");
+        });
+    }
+
+    /// A view that landed must never be reopened after the user closed it,
+    /// matching `/context`'s overlay contract.
+    #[test]
+    fn a_usage_result_landing_after_close_is_dropped() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.reported_usage_view = None;
+        super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
+        assert!(app.reported_usage_view.is_none());
+    }
+
+    /// A failed read fills the overlay with the reason. An empty popup would
+    /// read as "you spent nothing", which is the one thing it must not say.
+    #[test]
+    fn a_failed_read_reports_the_reason_rather_than_an_empty_readout() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.reported_usage_view = Some(super::ReportedUsageView::Loading(Query::Summary));
+        super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
+        match &app.reported_usage_view {
+            Some(super::ReportedUsageView::Ready { lines, .. }) => {
+                let text = lines.join("\n");
+                assert!(text.contains("not found"), "{text}");
+                assert!(!text.is_empty());
+            }
+            _ => panic!("the overlay should hold the failure"),
+        }
+    }
+
+    /// Every server-sourced readout has to declare itself as such, because the
+    /// same command one word apart prints a local estimate.
+    #[test]
+    fn a_reported_readout_says_it_is_not_the_local_estimate() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        let payload = parse_payload_for_test(r#"{"spend_usd":"1.25"}"#);
+        let lines = super::reported_usage_lines(&Query::Summary, &payload).join("\n");
+        assert!(lines.contains("spend_usd"), "{lines}");
+        assert!(lines.contains("1.25"), "{lines}");
+        assert!(
+            lines.contains("reported by the provider - not the local session estimate"),
+            "{lines}"
+        );
+    }
+
+    /// The session readout points at the authoritative view rather than
+    /// leaving the user to believe the estimate is the bill.
+    #[test]
+    fn the_session_readout_points_at_the_account_view() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100),
+                completion_tokens: Some(10),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+        });
+        super::usage_command(&mut app, "");
+        let text = transcript_text(&app);
+        assert!(text.contains("not a bill"), "{text}");
+        assert!(text.contains("/usage account"), "{text}");
     }
 
     /// A report with a measured fill and no cache fields, the starting point for

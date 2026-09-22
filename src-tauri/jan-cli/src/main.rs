@@ -226,26 +226,37 @@ enum Commands {
         #[command(subcommand)]
         cmd: AuthCommands,
     },
-    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    /// Read recorded usage and spend from the provider's usage API
     #[command(display_order = 4)]
+    Usage {
+        #[command(subcommand)]
+        cmd: UsageCommands,
+        /// Print the provider's response body verbatim instead of a table.
+        /// Reshaping it would mean re-serializing money fields, which is how a
+        /// figure loses digits, so this forwards the bytes as received.
+        #[arg(long, global = true)]
+        json: bool,
+    },
+    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    #[command(display_order = 5)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
     /// Manage project-local plugins and their skills
-    #[command(display_order = 5)]
+    #[command(display_order = 6)]
     Plugin {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
     /// Serve Jan's built-in tools to another agent over MCP
-    #[command(display_order = 6)]
+    #[command(display_order = 7)]
     Mcp {
         #[command(subcommand)]
         cmd: McpServeCommands,
     },
     /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 7)]
+    #[command(display_order = 8)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -284,6 +295,35 @@ enum McpServeCommands {
         /// Bearer token for --transport http; a random one is generated and printed if omitted
         #[arg(long)]
         token: Option<String>,
+    },
+}
+
+/// Reads against the provider's usage API.
+///
+/// Deliberately a sibling of `jan auth` rather than a mode of the agent: these
+/// are account-level questions about money, answered by the server, and none of
+/// them runs a model or touches a project. Every one of them reports figures
+/// the provider recorded -- not the local per-session estimate the TUI's bare
+/// `/usage` prints, which is an estimate and says so.
+#[derive(Subcommand)]
+enum UsageCommands {
+    /// Usage across this account's credentials, not only the key in use
+    Account,
+    /// Daily usage totals
+    Daily,
+    /// Recently recorded requests
+    Requests,
+    /// Current usage-limit status (separate from wallet credit)
+    Limits,
+    /// Inspect one execution by its X-Tokamak-Execution-Id
+    Generation {
+        /// The execution id, from the response header of an inference request
+        id: String,
+    },
+    /// Find every execution tagged with an X-Client-Request-Id
+    Correlate {
+        /// The correlation id sent on the original request
+        client_request_id: String,
     },
 }
 
@@ -686,6 +726,12 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        Commands::Usage { cmd, json } => {
+            if let Err(e) = handle_usage(cmd, json).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Config { cmd } => {
             if let Err(e) = handle_agent_config(cmd) {
                 eprintln!("Error: {e}");
@@ -951,6 +997,75 @@ async fn handle_agent(cmd: AgentCommands) {
         eprintln!("Error: {e}");
         std::process::exit(1);
     }
+}
+
+/// `jan usage` handler: read recorded spend from the provider's usage API.
+///
+/// Every view goes through one fetch so failures, timeouts and the not-signed-in
+/// case are reported identically regardless of which endpoint was asked for. A
+/// generation lookup is then rendered field by field, because its schema is
+/// documented; the rest are printed as flattened `path  value` pairs, so a
+/// field the server added since this build still shows up instead of being
+/// silently dropped by a struct that does not know about it.
+async fn handle_usage(cmd: UsageCommands, json: bool) -> Result<(), String> {
+    use app_lib::core::cli::tokamak::usage::{self, Query, UsageError};
+
+    let query = match &cmd {
+        UsageCommands::Account => Query::Summary,
+        UsageCommands::Daily => Query::Daily,
+        UsageCommands::Requests => Query::Requests,
+        UsageCommands::Limits => Query::Limits,
+        UsageCommands::Generation { id } => Query::Generation(id.clone()),
+        UsageCommands::Correlate { client_request_id } => {
+            Query::Correlated(client_request_id.clone())
+        }
+    };
+
+    let payload = match usage::fetch(&query).await {
+        Ok(payload) => payload,
+        // A not-found is a real answer to "what did this execution cost", not a
+        // crash, but it is still a failed lookup: exit non-zero so a script
+        // cannot read it as a zero charge.
+        Err(e @ UsageError::NotFound) => return Err(e.to_string()),
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if json {
+        println!("{}", payload.as_str());
+        return Ok(());
+    }
+
+    match &query {
+        Query::Generation(_) | Query::Correlated(_) => {
+            let records = usage::parse_generations_payload(&payload).map_err(|e| e.to_string())?;
+            if records.is_empty() {
+                println!("No matching execution.");
+                return Ok(());
+            }
+            for (i, record) in records.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                for line in usage::generation_lines(record) {
+                    println!("{line}");
+                }
+            }
+        }
+        _ => {
+            let fields = payload.fields();
+            if fields.is_empty() {
+                println!("The provider reported no figures for this view.");
+                return Ok(());
+            }
+            let width = fields.iter().map(|(p, _)| p.len()).max().unwrap_or(0);
+            for (path, value) in fields {
+                println!("{path:width$}  {value}");
+            }
+        }
+    }
+    println!();
+    println!("Reported by the provider. Not the local per-session estimate.");
+    Ok(())
 }
 
 /// `jan auth` handler: report sign-in state or sign out.
@@ -1553,6 +1668,60 @@ mod tests {
             cli.command,
             Some(Commands::Auth {
                 cmd: AuthCommands::Logout
+            })
+        ));
+    }
+
+    #[test]
+    fn usage_subcommands_parse() {
+        let view = |argv: &[&str]| {
+            let mut full = vec!["jan", "usage"];
+            full.extend_from_slice(argv);
+            match Cli::parse_from(full).command {
+                Some(Commands::Usage { cmd, .. }) => cmd,
+                other => panic!("expected a usage command, got {:?}", other.is_some()),
+            }
+        };
+        assert!(matches!(view(&["account"]), UsageCommands::Account));
+        assert!(matches!(view(&["daily"]), UsageCommands::Daily));
+        assert!(matches!(view(&["requests"]), UsageCommands::Requests));
+        assert!(matches!(view(&["limits"]), UsageCommands::Limits));
+        match view(&["generation", "exec-1"]) {
+            UsageCommands::Generation { id } => assert_eq!(id, "exec-1"),
+            _ => panic!("expected a generation lookup"),
+        }
+        match view(&["correlate", "my-app-request-001"]) {
+            UsageCommands::Correlate { client_request_id } => {
+                assert_eq!(client_request_id, "my-app-request-001");
+            }
+            _ => panic!("expected a correlation lookup"),
+        }
+    }
+
+    /// An id is required, not optional: a bare `jan usage generation` would
+    /// otherwise have to invent one.
+    #[test]
+    fn a_generation_lookup_requires_an_id() {
+        assert!(Cli::try_parse_from(["jan", "usage", "generation"]).is_err());
+        assert!(Cli::try_parse_from(["jan", "usage", "correlate"]).is_err());
+    }
+
+    #[test]
+    fn usage_json_flag_parses_after_the_subcommand() {
+        let cli = Cli::parse_from(["jan", "usage", "account", "--json"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: UsageCommands::Account,
+                json: true
+            })
+        ));
+        let cli = Cli::parse_from(["jan", "usage", "account"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: UsageCommands::Account,
+                json: false
             })
         ));
     }

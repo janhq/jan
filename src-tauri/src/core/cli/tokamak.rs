@@ -19,6 +19,8 @@
 //! [`super::tui`] for `/login`); this module is UI-free so both share one
 //! implementation.
 
+pub mod usage;
+
 use std::path::PathBuf;
 use std::time::Duration;
 
