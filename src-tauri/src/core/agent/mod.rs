@@ -13,6 +13,7 @@ pub mod bg_shell;
 pub mod commands;
 pub mod compaction;
 pub mod context;
+pub mod correlation;
 pub mod events;
 pub mod genai_bridge;
 pub mod git;

@@ -2006,6 +2006,11 @@ struct App {
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// The provider's execution id for the most recent request that reported
+    /// one, so `/usage` can name something concrete to look up. `None` when no
+    /// request has reported one -- which is the normal case on the default
+    /// upstream path, where the response headers are unreachable.
+    last_execution_id: Option<String>,
     /// Current account-usage overlay, if one is open. `None` when closed.
     reported_usage_view: Option<ReportedUsageView>,
     /// Set by `/usage <mode>` to ask the loop to perform the read off the
@@ -2622,6 +2627,7 @@ impl App {
             settings_prompt: None,
             context_view: None,
             context_request: false,
+            last_execution_id: None,
             reported_usage_view: None,
             reported_usage_request: None,
             mcp_prompt: None,
@@ -5601,7 +5607,18 @@ impl App {
                 name,
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
-            StreamEvent::TurnUsage { usage } => {
+            StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
+                // The provider's handle for the request that just landed, kept
+                // so `/usage` can offer a lookup of what it actually cost
+                // instead of only the estimate. Only overwritten when one was
+                // reported: a path that cannot see the header (the default one)
+                // must not erase an id an earlier request did report.
+                if let Some(id) = execution_id {
+                    self.last_execution_id = Some(id);
+                }
                 // Session totals are per model: `/usage` prices each at its own
                 // published rates, and the current model is the one billed.
                 let key = self.usage_key();
@@ -5727,9 +5744,17 @@ impl App {
             // prefix (a child has its own). `--output-format json` is the
             // surface that folds child usage in, because that figure is a bill
             // rather than a rate.
-            StreamEvent::TurnUsage { usage } => {
+            StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
+                }
+                // A child's requests are billed to the same account, so its
+                // execution ids are as lookup-worthy as the parent's.
+                if let Some(id) = execution_id {
+                    self.last_execution_id = Some(id);
                 }
                 // A child's tokens are spend on the same account, against the
                 // model the dispatch inherited, so they belong in the session
@@ -11670,7 +11695,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/usage",
-        hint: "[account|daily|requests|limits|<execution-id>]",
+        hint: "[run|account|daily|requests|limits|<execution-id>]",
         description: "This session's estimated cost, or what the provider recorded",
         alias_of: None,
     },
@@ -12104,9 +12129,37 @@ fn usage_command(app: &mut App, arg: &str) {
             app.system_detail_text(
                 "estimated from the provider's published prices - not a bill",
             );
-            app.system_detail_text(
-                "/usage account for what the provider actually recorded",
-            );
+            match &app.last_execution_id {
+                // A concrete id beats naming the command: this is the one
+                // request whose real charge the user can look up right now.
+                Some(id) => app.system_detail_text(&format!(
+                    "/usage {id} for what the provider recorded for the last request"
+                )),
+                None => app.system_detail_text(
+                    "/usage account for what the provider actually recorded",
+                ),
+            }
+        }
+        UsageMode::Run => {
+            // Every request this session made carries the session's correlation
+            // id, so one lookup returns the whole run's executions -- which is
+            // the authoritative answer to the question bare `/usage` estimates.
+            let correlation = app
+                .args
+                .as_ref()
+                .and_then(|args| args.session_id.as_deref())
+                .and_then(|id| {
+                    crate::core::agent::correlation::session_request_id(Some(id))
+                });
+            match correlation {
+                Some(id) => usage_command(app, &format!("correlate {id}")),
+                None => {
+                    app.note("this run has no session id to correlate");
+                    app.system_detail_text(
+                        "executions are found by the id sent with each request; without a session there is none",
+                    );
+                }
+            }
         }
         UsageMode::Account(query) => {
             // An account read needs a Tokamak key. Saying so here, before any
@@ -12137,11 +12190,15 @@ enum UsageMode {
     Session,
     /// An authoritative read from the provider's usage API.
     Account(super::tokamak::usage::Query),
+    /// Every execution this run produced, found by its correlation id.
+    /// Resolved into an [`UsageMode::Account`] lookup once the session id is
+    /// known, which only the caller has.
+    Run,
     Unknown(String),
 }
 
 const USAGE_MODE_HELP: &str =
-    "/usage (this session) · account · daily · requests · limits · <execution-id>";
+    "/usage (this session) · run · account · daily · requests · limits · <execution-id>";
 
 /// Parse the argument to `/usage`.
 ///
@@ -12155,11 +12212,28 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
     let arg = arg.trim();
     match arg {
         "" | "session" => UsageMode::Session,
+        "run" => UsageMode::Run,
         "account" | "me" => UsageMode::Account(Query::Summary),
         "daily" => UsageMode::Account(Query::Daily),
         "requests" => UsageMode::Account(Query::Requests),
         "limits" => UsageMode::Account(Query::Limits),
         other => {
+            // `correlate <id>` is how `/usage run` re-enters this parser once it
+            // has resolved the session's correlation id, and is usable directly
+            // for an id from another run. Matched before the lone-word case
+            // below, or a bare `correlate` would be looked up as an execution
+            // id of that name.
+            if let Some(id) = other
+                .strip_prefix("correlate")
+                .map(str::trim)
+                .filter(|_| other == "correlate" || other.starts_with("correlate "))
+            {
+                return if id.is_empty() {
+                    UsageMode::Unknown(other.to_string())
+                } else {
+                    UsageMode::Account(Query::Correlated(id.to_string()))
+                };
+            }
             // Anything else is taken as an execution id, but only when it is
             // plausibly one: a word with no whitespace. A phrase is a typo, and
             // sending it upstream to be told it does not exist would be a worse
@@ -28725,6 +28799,7 @@ mod tests {
                 None,
                 &json!({"model": "m", "messages": [{"role": "user", "content": "go"}]}),
                 &tx,
+                None,
             ),
         )
         .await
@@ -29503,6 +29578,7 @@ mod tests {
                 cached_tokens: Some(900),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert_eq!(app.session_cached_tokens, 900);
 
@@ -30984,6 +31060,7 @@ mod tests {
                         total_tokens: Some(12_900),
                         ..Default::default()
                     },
+                    execution_id: None,
                 },
             );
             subagent_event(
@@ -31712,6 +31789,7 @@ mod tests {
                     total_tokens: Some(40_500),
                     ..Default::default()
                 },
+                execution_id: None,
             });
         }
         assert_eq!(app.turn_output_tokens, 1_500);
@@ -32080,9 +32158,11 @@ mod tests {
         };
         app.apply(StreamEvent::TurnUsage {
             usage: usage(100, 20),
+            execution_id: None,
         });
         app.apply(StreamEvent::TurnUsage {
             usage: usage(300, 40),
+            execution_id: None,
         });
 
         let recorded = app
@@ -32119,13 +32199,19 @@ mod tests {
             cached_tokens: None,
             cache_write_tokens: None,
         };
-        app.apply(StreamEvent::TurnUsage { usage: usage(100) });
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage(100),
+            execution_id: None,
+        });
         start_subagent(&mut app, "r0", "alpha");
         subagent_event(
             &mut app,
             "r0",
             "alpha",
-            StreamEvent::TurnUsage { usage: usage(400) },
+            StreamEvent::TurnUsage {
+                usage: usage(400),
+                execution_id: None,
+            },
         );
 
         let recorded = app.session_usage.values().next().expect("usage recorded");
@@ -32166,6 +32252,40 @@ mod tests {
         assert_eq!(account("daily"), Query::Daily);
         assert_eq!(account("requests"), Query::Requests);
         assert_eq!(account("limits"), Query::Limits);
+    }
+
+    /// `/usage run` asks the one question the session estimate approximates:
+    /// what this run actually cost. It resolves to a correlation lookup, which
+    /// is the only mechanism that works on the default upstream path.
+    #[test]
+    fn the_run_view_resolves_to_a_correlation_lookup() {
+        use crate::core::cli::tokamak::usage::Query;
+        assert_eq!(super::parse_usage_mode("run"), super::UsageMode::Run);
+        assert_eq!(
+            super::parse_usage_mode("correlate jan-session-7"),
+            super::UsageMode::Account(Query::Correlated("jan-session-7".to_string()))
+        );
+        // A correlation with no id would search for everything, and must not
+        // fall through to being looked up as an execution named "correlate".
+        assert!(matches!(
+            super::parse_usage_mode("correlate "),
+            super::UsageMode::Unknown(_)
+        ));
+        assert!(matches!(
+            super::parse_usage_mode("correlate"),
+            super::UsageMode::Unknown(_)
+        ));
+    }
+
+    /// Without a session there is no correlation id on any request, so there is
+    /// nothing to look up and saying so beats an empty result.
+    #[test]
+    fn the_run_view_without_a_session_says_so() {
+        let mut app = test_app();
+        super::usage_command(&mut app, "run");
+        let text = transcript_text(&app);
+        assert!(text.contains("no session id to correlate"), "{text}");
+        assert!(app.reported_usage_request.is_none());
     }
 
     /// A pasted execution id is what a user actually types here, so a lone
@@ -32267,6 +32387,7 @@ mod tests {
                 cached_tokens: None,
                 cache_write_tokens: None,
             },
+            execution_id: None,
         });
         super::usage_command(&mut app, "");
         let text = transcript_text(&app);
@@ -32406,6 +32527,7 @@ mod tests {
                 cached_tokens: Some(900),
                 ..Default::default()
             },
+            execution_id: None,
         });
         app.begin_turn();
         assert_eq!(app.turn_cached_tokens, 0, "the per-turn sample resets");
@@ -32418,6 +32540,7 @@ mod tests {
                 cached_tokens: Some(0),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert_eq!(app.session_prompt_tokens, 5_000, "both requests billed");
         assert_eq!(app.session_cached_tokens, 900);
@@ -32628,6 +32751,7 @@ mod tests {
                 total_tokens: Some(90_010),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert!(
             app.context_report().await.fill_reported,
@@ -32653,6 +32777,7 @@ mod tests {
                 total_tokens: Some(120_010),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert!(app.context_report().await.fill_reported);
         rewind_to(&mut app, 0, false);

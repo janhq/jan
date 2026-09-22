@@ -255,6 +255,11 @@ struct HttpModelInvoker {
     /// Native provider converters still use reqwest 0.12 while the default
     /// agent path uses genai's reqwest 0.13 client.
     converter_client: reqwest::Client,
+    /// Correlation id sent with every request this invoker makes, so the run's
+    /// executions are findable in the provider's usage records afterwards. See
+    /// [`crate::core::agent::correlation`]. `None` when the run has no session
+    /// to correlate.
+    client_request_id: Option<String>,
 }
 
 fn converter_http_client() -> reqwest::Client {
@@ -289,6 +294,7 @@ impl ModelInvoker for HttpModelInvoker {
                 converter.as_ref(),
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         } else {
@@ -300,6 +306,7 @@ impl ModelInvoker for HttpModelInvoker {
                 None,
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         }
@@ -2659,6 +2666,9 @@ async fn orchestrate_inner(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -3067,6 +3077,12 @@ pub(crate) async fn compact_history(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        // A compaction call is billed to the same session as the turn that
+        // triggered it, so it carries the same correlation id: leaving it out
+        // would make the session's recorded spend smaller than the bill.
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
@@ -3101,6 +3117,10 @@ pub(crate) async fn evaluate_goal(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        // Same session, same bill (see `compact_history`).
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
@@ -3495,7 +3515,10 @@ async fn run_turn_cycle(
         // Publish before the tool calls run: the numbers describe the request
         // that just landed, and a long tool phase shouldn't sit on them.
         if let Some(usage) = turn_usage.clone() {
-            let _ = events.send(StreamEvent::TurnUsage { usage });
+            let _ = events.send(StreamEvent::TurnUsage {
+                usage,
+                execution_id: crate::core::agent::correlation::execution_id_of(&completion),
+            });
         }
         budget.record(&turn_usage);
 
