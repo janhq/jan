@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "trustedrouter": {
+    "title": "TrustedRouter"
+  },
   "huggingface": {
     "title": "Hugging Face"
   },
