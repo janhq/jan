@@ -393,6 +393,14 @@ struct CompositeToolInvoker {
     /// the tool-event hooks fire inside the toolset and report through a sink
     /// that outlives the call (see [`CompositeToolInvoker::hook_sink`]).
     hook_notices_queue: std::sync::Arc<std::sync::Mutex<Vec<BackgroundNotice>>>,
+    /// Backgrounded `bash` commands this run is still owed a result from, and
+    /// the pings for those that have finished. `Arc` because the doorbell is
+    /// rung from the detached task inside the toolset, which outlives the call
+    /// (see [`CompositeToolInvoker::shell_done_sink`]). Parking on it is
+    /// bounded like a monitor, but by the registry rather than the command: a
+    /// backgrounded shell may never end, so one past its park budget is
+    /// abandoned with a notice telling the model where to collect it later.
+    bg_shells: std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -672,6 +680,24 @@ impl CompositeToolInvoker {
             &self.hooks,
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
+        )
+        .with_shell_done_sink(self.shell_done_sink())
+    }
+
+    /// Where a backgrounded `bash` command reports when it finally ends: the
+    /// run's shell registry, drained into a `<SYSTEM>` reminder at the top of
+    /// the next turn the way a finished subagent is.
+    fn shell_done_sink(&self) -> tauri_plugin_agent_tools::tools::ShellDoneSink {
+        // Shared rather than borrowed because the sink outlives the call that
+        // created it, the way the hook and output sinks do.
+        let shells = self.bg_shells.clone();
+        std::sync::Arc::new(
+            move |event: tauri_plugin_agent_tools::tools::ShellEvent| match event {
+                tauri_plugin_agent_tools::tools::ShellEvent::Backgrounded(handoff) => {
+                    shells.start(handoff)
+                }
+                tauri_plugin_agent_tools::tools::ShellEvent::Finished(done) => shells.finish(done),
+            },
         )
     }
 
@@ -1237,6 +1263,18 @@ impl ToolInvoker for CompositeToolInvoker {
         out.extend(std::mem::take(
             &mut *self.hook_notices_queue.lock().unwrap(),
         ));
+        // A backgrounded shell that finished rides the same channel. It carries
+        // a headline, like a monitor match and unlike a subagent: no other row
+        // reports that the command ended.
+        out.extend(
+            self.bg_shells
+                .take_notices()
+                .into_iter()
+                .map(|n| BackgroundNotice {
+                    headline: Some(n.headline),
+                    text: n.text,
+                }),
+        );
         out
     }
 
@@ -1248,6 +1286,12 @@ impl ToolInvoker for CompositeToolInvoker {
             // A queued hook answer is owed to the model the same way a monitor
             // match is: the turn that would end must deliver it first.
             || !self.hook_notices_queue.lock().unwrap().is_empty()
+            // Likewise a backgrounded command: ending the run here would drop
+            // the output of a build the model is still waiting on. Bounded
+            // too, though the bound is the park's rather than the command's --
+            // a shell has no deadline of its own, so `BackgroundShells`
+            // abandons one past its budget with a notice saying so.
+            || self.bg_shells.has_pending_work()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
@@ -1267,24 +1311,32 @@ impl ToolInvoker for CompositeToolInvoker {
         // Each wait returns on a notice OR when its own side has nothing left,
         // so an exhausted side must not be selected over: it would win
         // instantly every time and starve the side actually being waited on.
-        // The re-check between iterations is what `run_turn_cycle` does anyway.
-        // A session-owned set is still selected while a subagent is awaited: a
-        // match landing then should wake the park like a finished child does.
-        let sub_pending = self
+        // Hence only the pending sides are collected here. The re-check between
+        // iterations is what `run_turn_cycle` does anyway, and a session-owned
+        // monitor set is still selected while a subagent is awaited: a match
+        // landing then should wake the park like a finished child does.
+        //
+        // A list of futures rather than a match over every combination of
+        // (subagent, monitor, shell): with three sources the arms would be
+        // eight, and a fourth would double them again. `select_all` keeps the
+        // same guarantee with one rule.
+        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> =
+            Vec::new();
+        if let Some(ctx) = self
             .subagents
             .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work());
-        let mon_pending = self.monitors.has_pending_work();
-        match (self.subagents.as_ref(), sub_pending, mon_pending) {
-            (Some(ctx), true, true) => {
-                tokio::select! {
-                    _ = ctx.bg.wait_for_notice() => {}
-                    _ = self.monitors.wait_for_notice() => {}
-                }
-            }
-            (Some(ctx), true, false) => ctx.bg.wait_for_notice().await,
-            (_, _, true) => self.monitors.wait_for_notice().await,
-            _ => {}
+            .filter(|ctx| ctx.bg.has_pending_work())
+        {
+            waits.push(Box::pin(ctx.bg.wait_for_notice()));
+        }
+        if self.monitors.has_pending_work() {
+            waits.push(Box::pin(self.monitors.wait_for_notice()));
+        }
+        if self.bg_shells.has_pending_work() {
+            waits.push(Box::pin(self.bg_shells.wait_for_notice()));
+        }
+        if !waits.is_empty() {
+            let _ = futures::future::select_all(waits).await;
         }
     }
 
@@ -2628,6 +2680,9 @@ async fn orchestrate_inner(
             hooks: crate::core::agent::hooks_config::resolve_hooks(root),
             plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: std::sync::Arc::new(
+                crate::core::agent::bg_shell::BackgroundShells::default(),
+            ),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -6567,6 +6622,9 @@ mod tests {
             hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
             plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: std::sync::Arc::new(
+                crate::core::agent::bg_shell::BackgroundShells::default(),
+            ),
         }
     }
 
