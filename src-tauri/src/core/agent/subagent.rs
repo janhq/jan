@@ -934,19 +934,94 @@ pub(crate) struct ParentRun {
     pub(crate) model: String,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
+    /// The parent's remaining money ceiling, or `None` when it meters none.
+    ///
+    /// Every child gets the *whole* remainder rather than a share of it, which
+    /// means N children may each spend it: the ceiling bounds any one lineage,
+    /// not the fan-out. Splitting it N ways is worse -- the split would have to
+    /// be chosen before anyone knows which child does the work, and starving a
+    /// child of budget mid-task fails the run the user asked for. The parent's
+    /// own ceiling still stops the run once those charges land on it.
+    pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
 }
 
-/// Build the child request body shared by every subagent run.
+/// The model a dispatch will actually be billed for: the definition's own when
+/// it names one, else the dispatching run's. Resolved in one place because the
+/// request body and the ceiling priced against it must not disagree.
+fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
+    resolved
+        .definition
+        .model
+        .clone()
+        .unwrap_or_else(|| parent.model.clone())
+}
+
+/// The per-token rates a model is published at, or `None` when it cannot be
+/// priced at all.
+///
+/// The lookup names no provider: a child's serving provider is not resolved on
+/// this path, and the catalog's provider-less `get` answers only on an
+/// unambiguous hit -- two providers quoting one id at different prices is a
+/// `None`, which is the correct direction here (a refusal, not a guess).
+#[cfg(feature = "cli")]
+fn published_rates(model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    crate::core::cli::model_catalog::load()
+        .get(None, model)
+        .and_then(|info| info.rates())
+}
+
+/// No model catalog outside the `cli` build, so nothing here can be priced.
+/// Metered runs only ever start on the CLI path, so this is the unreachable
+/// case -- and answering `None` refuses rather than invents a rate.
+#[cfg(not(feature = "cli"))]
+fn published_rates(_model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    None
+}
+
+/// The money ceiling a child actually runs under: the parent's limit, priced
+/// against the model the child will be billed for.
+///
+/// A definition may name its own model, and the parent's rates are the *parent*
+/// model's. Forwarding them unchanged bills the child at a price nobody quoted:
+/// a pricier child is undercounted -- against the user, not in their favour --
+/// and a child with no published price would run on invented rates, the exact
+/// thing `resolve_cost_ceiling` refuses for the parent. So when the models
+/// differ the child's own rates are looked up, and a dispatch that cannot be
+/// priced is refused rather than metered wrongly.
+///
+/// The limit itself is inherited whole (see [`ParentRun::cost_remaining`]);
+/// only the rates are re-resolved.
+fn child_cost_ceiling(
+    model: &str,
+    parent: &ParentRun,
+) -> Result<Option<crate::core::agent::session::CostCeiling>, SubagentError> {
+    let Some(ceiling) = parent.cost_remaining else {
+        return Ok(None);
+    };
+    if model == parent.model {
+        return Ok(Some(ceiling));
+    }
+    let rates = published_rates(model).ok_or_else(|| {
+        SubagentError::Upstream(format!(
+            "cannot dispatch a subagent on {model} under a ${:.4} ceiling: this model has no \
+             published price, and metering it at {}'s rates would charge the run against a \
+             price nobody quoted. Drop the definition's own model so the child runs on the \
+             run's, or remove the limit.",
+            ceiling.max_usd, parent.model
+        ))
+    })?;
+    Ok(Some(crate::core::agent::session::CostCeiling { rates, ..ceiling }))
+}
+
+/// Build the child request body shared by every subagent run. `parent` is the
+/// inheritance the child runs under, which the dispatch path has already
+/// re-priced for the child's own model (see [`child_cost_ceiling`]).
 fn child_body(
     resolved: &ResolvedDispatch,
     description: &str,
     parent: &ParentRun,
 ) -> serde_json::Value {
-    let model = resolved
-        .definition
-        .model
-        .clone()
-        .unwrap_or_else(|| parent.model.clone());
+    let model = child_model(resolved, parent);
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
@@ -961,6 +1036,26 @@ fn child_body(
     }
     if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child dispatched by a capped run is capped too: subagents are where a
+    // run's spend multiplies, so a ceiling the children did not inherit would
+    // be one the parent could spend around by fanning out. The rates here are
+    // the ones `child_cost_ceiling` resolved for `model` above, so the limit
+    // and the price it is metered at describe the same model.
+    if let Some(ceiling) = parent.cost_remaining {
+        body.insert(
+            "max_budget_usd".to_string(),
+            serde_json::json!(ceiling.max_usd),
+        );
+        body.insert(
+            "token_rates".to_string(),
+            serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            }),
+        );
     }
     // A child's own tool-call turns carry `reasoning_content`, so the parent's
     // opt-out has to travel with the dispatch or a strict provider still sees
@@ -1097,6 +1192,13 @@ pub(crate) fn spawn_subagent(
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let registry = SubagentRegistry::load(project_root);
     let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+    // Re-priced before anything is spawned: a child whose own model cannot be
+    // metered under this ceiling fails the dispatch here rather than running on
+    // the parent's prices.
+    let parent = &ParentRun {
+        cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
+        ..parent.clone()
+    };
 
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
@@ -1302,7 +1404,11 @@ pub(crate) fn spawn_dispatch_plan(
     let registry = SubagentRegistry::load(project_root);
     for phase in &plan.phases {
         for req in &phase.subagents {
-            resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            // Priced up front for the same reason the permission check is: a
+            // later phase naming an unpriceable model must fail the whole plan
+            // now, not after the earlier phases have already been billed.
+            child_cost_ceiling(&child_model(&resolved, parent), parent)?;
         }
     }
 
@@ -2248,7 +2354,93 @@ mod tests {
             model: "m".to_string(),
             budget_remaining: None,
             send_reasoning: true,
+            cost_remaining: None,
         }
+    }
+
+    /// A capped parent's children are capped too. Subagents are where a run's
+    /// spend multiplies, so a ceiling that stopped at the parent would be one
+    /// any run could spend around by dispatching.
+    #[test]
+    fn child_body_inherits_the_parents_cost_ceiling() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+
+        let uncapped = child_body(&resolved, "task", &parent_run());
+        assert!(
+            uncapped.get("max_budget_usd").is_none(),
+            "an unmetered parent must not invent a ceiling: {uncapped}"
+        );
+        assert!(uncapped.get("token_rates").is_none());
+
+        let capped = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                    rates: crate::core::agent::session::TokenRates {
+                        prompt_usd: 1e-6,
+                        completion_usd: 2e-6,
+                        cache_read_usd: None,
+                        cache_write_usd: None,
+                    },
+                    max_usd: 0.25,
+                }),
+                ..parent_run()
+            },
+        );
+        assert_eq!(capped["max_budget_usd"], serde_json::json!(0.25));
+        // The rates travel with the limit: a child that inherited the ceiling
+        // but not the prices could not meter itself against it.
+        assert_eq!(capped["token_rates"]["prompt_usd"], serde_json::json!(1e-6));
+        assert_eq!(
+            capped["token_rates"]["completion_usd"],
+            serde_json::json!(2e-6)
+        );
+    }
+
+    /// A definition naming its own model must not be metered at the parent's
+    /// prices. The parent's ceiling is the parent *model's* rates, so carrying
+    /// them onto a differently-priced child bills the run against a price
+    /// nobody quoted -- and undercounts a pricier child, i.e. against the user.
+    /// A child that cannot be priced is refused, the same answer
+    /// `resolve_cost_ceiling` gives for an unpriced parent.
+    #[test]
+    fn a_child_on_its_own_model_is_not_billed_at_the_parents_rates() {
+        let ceiling = crate::core::agent::session::CostCeiling {
+            rates: crate::core::agent::session::TokenRates {
+                prompt_usd: 1e-6,
+                completion_usd: 2e-6,
+                cache_read_usd: None,
+                cache_write_usd: None,
+            },
+            max_usd: 0.25,
+        };
+        let parent = ParentRun {
+            cost_remaining: Some(ceiling),
+            ..parent_run()
+        };
+
+        // Same model: the parent's own rates are the right ones, inherited whole.
+        assert_eq!(
+            child_cost_ceiling(&parent.model, &parent).expect("same model prices"),
+            Some(ceiling)
+        );
+
+        // A different model with no published price is refused rather than run
+        // on the parent's rates. The name cannot appear in any real catalog.
+        let refused = child_cost_ceiling("no-such-model-jan-test", &parent)
+            .expect_err("an unpriceable child under a ceiling must be refused");
+        let message = refused.to_string();
+        assert!(message.contains("no-such-model-jan-test"), "{message}");
+        assert!(message.contains("no published price"), "{message}");
+
+        // An unmetered parent is unchanged: nothing to price, nothing to refuse.
+        assert_eq!(
+            child_cost_ceiling("no-such-model-jan-test", &parent_run()).expect("unmetered"),
+            None
+        );
     }
 
     /// `[agent].send_reasoning = false` has to reach the child body: a child

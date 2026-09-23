@@ -595,6 +595,58 @@ pub(crate) fn set_default_model_if_unset(model: &str) -> Result<bool, String> {
     Ok(true)
 }
 
+/// Why `default_model` was (re)pointed, so a caller can tell the user which of
+/// the two happened -- adopting a default is routine, replacing one the user
+/// chose needs saying out loud.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DefaultModelChange {
+    /// There was no default; `model` was adopted.
+    Adopted,
+    /// The previous default is no longer offered by any provider, so it was
+    /// replaced by `model`.
+    Repointed,
+}
+
+/// Point `default_model` at `model` when there is no default, **or** when the
+/// current default is not offered by any configured provider. Returns what
+/// changed, or `None` when the existing default was left alone.
+///
+/// The second case is the one [`set_default_model_if_unset`] cannot handle. A
+/// sign-in replaces a provider's roster wholesale, so a re-login after the
+/// upstream retires a model leaves `default_model` pointing at something no
+/// provider serves. That is not an "explicit choice" worth protecting any more:
+/// it is a fossil, and every run fails on it with a 404 (or, for a cost
+/// ceiling, is refused as unpriceable) with nothing connecting the failure to
+/// the sign-in that caused it.
+///
+/// A default some *other* provider still offers is left alone -- this provider's
+/// roster says nothing about models it never served.
+pub(crate) fn adopt_default_model(model: &str) -> Result<Option<DefaultModelChange>, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Ok(None);
+    }
+    let mut config = load_raw()?;
+    let current = config
+        .default_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let change = match current {
+        None => DefaultModelChange::Adopted,
+        // Already fine, and re-pointing an offered default would overwrite a
+        // deliberate choice on every sign-in.
+        Some(current) if config.providers.values().any(|p| p.models.contains(&current)) => {
+            return Ok(None)
+        }
+        Some(_) => DefaultModelChange::Repointed,
+    };
+    config.default_model = Some(model.to_string());
+    write_raw(&config)?;
+    Ok(Some(change))
+}
+
 /// Server-assigned metadata for a provider's stored key, when a v5 device-flow
 /// login recorded any. Used by `jan auth status` / the expiry warning and by
 /// `jan auth logout` to revoke the exact key.
@@ -1296,6 +1348,48 @@ models = ["gpt-4o"]
             assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
             assert!(!set_default_model_if_unset("m2").expect("set again"));
             assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+        });
+    }
+
+    /// `adopt_default_model` is the sign-in half that `set_default_model_if_unset`
+    /// cannot do: it distinguishes "the user chose this" from "this is a fossil
+    /// no configured provider serves any more".
+    #[test]
+    fn adopting_a_default_replaces_only_one_no_provider_offers() {
+        with_temp_home(|_| {
+            let offer = |models: &[&str]| {
+                set_provider(
+                    "tokamak",
+                    ProviderUpdate {
+                        models: Some(models.iter().map(|m| (*m).to_string()).collect()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            };
+
+            // Nothing chosen yet: adopted.
+            offer(&["m1", "m2"]);
+            assert_eq!(
+                adopt_default_model("m1").expect("adopt"),
+                Some(DefaultModelChange::Adopted)
+            );
+
+            // Still offered, so it is a live choice and must survive.
+            assert_eq!(adopt_default_model("m2").expect("leave"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+
+            // Retired upstream: now it is a fossil, and re-pointing is reported.
+            offer(&["m2", "m3"]);
+            assert_eq!(
+                adopt_default_model("m2").expect("repoint"),
+                Some(DefaultModelChange::Repointed)
+            );
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
+
+            // A blank candidate is never written: it would read as configured.
+            assert_eq!(adopt_default_model("   ").expect("blank"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
         });
     }
 

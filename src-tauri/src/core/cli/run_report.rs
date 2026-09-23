@@ -112,6 +112,10 @@ pub(crate) struct RunReport {
     /// never read -- is the alarm this counter exists to raise.
     cached_tokens: Option<u64>,
     cache_write_tokens: Option<u64>,
+    /// Provider execution ids seen this run, in request order. Each is a handle
+    /// to one billing record; the `usage` above is only an estimate of the same
+    /// requests.
+    execution_ids: Vec<String>,
 }
 
 impl RunReport {
@@ -138,8 +142,17 @@ impl RunReport {
             // Reasoning is display-only: it must not enter the piped/plain-text
             // report answer, which is reserved for the final completion.
             StreamEvent::Reasoning { .. } => {}
-StreamEvent::TurnUsage { usage } => {
+StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
                 self.usage.add(usage);
+                // Recorded so a scripted run can look up what the provider
+                // actually charged for each request it made, rather than only
+                // the local estimate this report already carries.
+                if let Some(id) = execution_id {
+                    self.execution_ids.push(id.clone());
+                }
                 accumulate(&mut self.cached_tokens, usage.cached_tokens);
                 accumulate(&mut self.cache_write_tokens, usage.cache_write_tokens);
             }
@@ -202,6 +215,8 @@ StreamEvent::TurnUsage { usage } => {
                 estimated_cost_usd: self
                     .usage
                     .cost_usd(super::model_catalog::load().get(provider, model)),
+                execution_ids: (!self.execution_ids.is_empty())
+                    .then(|| self.execution_ids.clone()),
             },
         }
     }
@@ -326,6 +341,13 @@ struct ReportUsage {
     cache_write_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     estimated_cost_usd: Option<f64>,
+    /// Provider execution ids for the requests this run made, when the upstream
+    /// returned them. `jan usage generation <id>` turns one into the recorded
+    /// charge -- the authoritative counterpart to `estimated_cost_usd`. Omitted
+    /// rather than empty when none were reported, so its absence is never read
+    /// as "no requests were made".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_ids: Option<Vec<String>>,
 }
 
 /// Fold one request's optional cache total into the run's. An absent field adds
@@ -618,6 +640,7 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(9011, 655),
+                execution_id: None,
             },
             token("done"),
             StreamEvent::Done {
@@ -656,6 +679,7 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(8123, 0),
+                execution_id: None,
             },
             token("I started reviewing auth.rs and"),
             StreamEvent::Error {
@@ -713,7 +737,7 @@ mod tests {
             }
             value(report.finish(None, None, "m", 1, Some("done")))
         };
-        let turn = |usage| StreamEvent::TurnUsage { usage };
+        let turn = |usage| StreamEvent::TurnUsage { usage, execution_id: None };
 
         let silent = envelope(vec![turn(usage(1_000, 10))]);
         assert!(silent["usage"]["cached_tokens"].is_null(), "{silent}");
@@ -752,9 +776,11 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(100, 10),
+                execution_id: None,
             },
             child(StreamEvent::TurnUsage {
                 usage: usage(50, 5),
+                execution_id: None,
             }),
             // A child's own turns and prose belong to the child, not this run.
             child(StreamEvent::Step { index: 9, max: 0 }),
@@ -762,6 +788,7 @@ mod tests {
             StreamEvent::Step { index: 2, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(200, 20),
+                execution_id: None,
             },
         ] {
             report.observe(&ev);
@@ -797,6 +824,7 @@ mod tests {
             let mut report = RunReport::default();
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000_000, 100_000),
+                execution_id: None,
             });
             let out = value(report.finish(None, None, "priced-model", 1, Some("done")));
             assert_eq!(out["usage"]["estimated_cost_usd"], 2.0);
@@ -804,6 +832,7 @@ mod tests {
             let mut report = RunReport::default();
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000, 100),
+                execution_id: None,
             });
             let out = value(report.finish(None, None, "unknown-model", 1, Some("done")));
             assert!(
