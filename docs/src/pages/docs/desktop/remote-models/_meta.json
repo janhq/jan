@@ -20,6 +20,9 @@
   "openrouter": {
     "title": "OpenRouter"
   },
+  "unorouter": {
+    "title": "UnoRouter"
+  },
   "huggingface": {
     "title": "Hugging Face"
   },

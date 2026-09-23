@@ -35,6 +35,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('llamacpp')).toBe('Llama.cpp')
     expect(getProviderTitle('openai')).toBe('OpenAI')
     expect(getProviderTitle('openrouter')).toBe('OpenRouter')
+    expect(getProviderTitle('unorouter')).toBe('UnoRouter')
     expect(getProviderTitle('gemini')).toBe('Gemini')
     expect(getProviderTitle('nvidia')).toBe('NVIDIA NIM')
   })
