@@ -38,9 +38,14 @@ pip install -r requirements.txt
 ```
 
 3. Ensure Jan application is installed in one of the default locations:
-   - Windows: `%LOCALAPPDATA%\Programs\jan\Jan.exe`
-   - macOS: `~/Applications/Jan.app/Contents/MacOS/Jan`
-   - Linux: `jan` (in PATH)
+   - Windows: `%LOCALAPPDATA%\Programs\jan\Jan-Desktop.exe`
+   - macOS: `~/Applications/Jan.app/Contents/MacOS/Jan-Desktop`
+   - Linux: `Jan-Desktop` (in PATH, installed to `/usr/bin` by the .deb and AppImage)
+
+   Nightly and beta builds rename the executable, so it is `Jan-Desktop-nightly`
+   (`Jan-Desktop-nightly.exe` on Windows) and the app is `Jan-nightly.app` on macOS.
+   CI passes the name explicitly through `JAN_PROCESS_NAME`; the defaults above only
+   apply to local runs.
 
 ## Quick Start
 
@@ -54,7 +59,7 @@ python main.py
 python main.py --tests-dir "my_tests"
 
 # Run with custom Jan app path
-python main.py --jan-app-path "C:/Custom/Path/Jan.exe"
+python main.py --jan-app-path "C:/Custom/Path/Jan-Desktop.exe"
 
 # Skip auto computer server start (if already running)
 python main.py --skip-server-start
@@ -90,7 +95,7 @@ python main.py \
 | `--launch-name`         | `LAUNCH_NAME`         | _auto-generated_                | ReportPortal launch name                          |
 | **Jan Application**     |
 | `--jan-app-path`        | `JAN_APP_PATH`        | _auto-detected_                 | Path to Jan application executable                |
-| `--jan-process-name`    | `JAN_PROCESS_NAME`    | `Jan.exe` (Windows) / `Jan` (macOS) / `Jan-nightly` | Jan process name for monitoring    |
+| `--jan-process-name`    | `JAN_PROCESS_NAME`    | `Jan-Desktop`                   | Jan process name for monitoring, matched as a substring, so the default also matches `Jan-Desktop-nightly` |
 | **Model Configuration** |
 | `--model-name`          | `MODEL_NAME`          | `ByteDance-Seed/UI-TARS-1.5-7B` | AI model name                                     |
 | `--model-base-url`      | `MODEL_BASE_URL`      | `http://10.200.108.58:1234/v1`  | Model API endpoint                                |
@@ -117,8 +122,8 @@ RP_TOKEN=your_secret_token
 LAUNCH_NAME=my_local_run
 
 # Jan Application
-JAN_APP_PATH=C:\Custom\Path\Jan.exe
-JAN_PROCESS_NAME=Jan.exe
+JAN_APP_PATH=C:\Custom\Path\Jan-Desktop.exe
+JAN_PROCESS_NAME=Jan-Desktop.exe
 
 # Model Configuration
 MODEL_NAME=gpt-4
@@ -288,7 +293,7 @@ When enabled, results are uploaded to ReportPortal including:
 
    ```bash
    # Specify custom path
-   python main.py --jan-app-path "D:/Apps/Jan/Jan.exe"
+   python main.py --jan-app-path "D:/Apps/Jan/Jan-Desktop.exe"
    ```
 
 3. **Windows dependencies missing**:
