@@ -167,6 +167,15 @@ pub(crate) struct OrchestrationArgs {
     /// cancel and on session reset). Never inherited by a child run, which
     /// cannot dispatch grandchildren anyway.
     pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
+    /// Set only on a child run: how it speaks back to the agent that dispatched
+    /// it, mid-run, through `message_parent`. The inverse direction (parent to
+    /// child) rides the steering channel instead, since the child's loop already
+    /// has the safe boundary to apply it at.
+    ///
+    /// Deliberately separate from `subagent_bg`, which a child clears so it
+    /// cannot dispatch grandchildren: this is the one subagent capability a
+    /// child has, and it grants nothing else.
+    pub parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -633,6 +642,10 @@ struct CompositeToolInvoker {
     /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
     /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
     subagent_bg_outlive_run: bool,
+    /// Set only when this run is itself a subagent: the channel its
+    /// `message_parent` calls report through. `None` for a top-level run, where
+    /// the tool is neither advertised nor executable.
+    parent_link: Option<crate::core::agent::subagent::ParentLink>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -857,30 +870,44 @@ fn output_sink(
 }
 
 /// The model-facing summary of a phased `dispatch_subagent` call.
+///
+/// Every started child is listed on its own line with the `run_id` that
+/// addresses it, because that id is what `await_subagent` and `message_subagent`
+/// take. Reporting names alone (what this used to do) left the model holding a
+/// batch of children it could not address for the entire window in which
+/// addressing them is useful -- the first id it learned arrived in the
+/// completion notice, by which time the child was done.
 fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> String {
-    let names = d.first_phase_names.join(", ");
+    let roster = d
+        .first_phase
+        .iter()
+        .map(|c| match &d.blackboard_dir {
+            Some(dir) => format!("  - {} (run_id: {}) -> {dir}/{}.md", c.name, c.run_id, c.name),
+            None => format!("  - {} (run_id: {})", c.name, c.run_id),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
     let where_answers = match &d.blackboard_dir {
-        Some(dir) => format!(
-            " Each answer is written to {dir}/<name>.md; read those files when you need them."
-        ),
-        None => " Each answer rides the note that tells you it finished.".to_string(),
+        Some(_) => " Read an answer from the file listed against it when you need it.",
+        None => " Each answer rides the note that tells you it finished.",
     };
     let head = if d.phase_count > 1 {
         format!(
-            "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running: {}. Later phases \
-             start automatically as each phase finishes, each receiving the previous phase's \
-             results.",
-            d.phase_count, d.total_subagents, names
+            "Dispatched a {}-phase plan of {} subagents. Phase 1 is now running:\n{roster}\nLater \
+             phases start automatically as each phase finishes, each receiving the previous \
+             phase's results; their run ids are reported as they start.",
+            d.phase_count, d.total_subagents
         )
     } else {
         format!(
-            "Dispatched {} subagent(s) running concurrently in the background: {}.",
-            d.total_subagents, names
+            "Dispatched {} subagent(s) running concurrently in the background:\n{roster}",
+            d.total_subagents
         )
     };
     format!(
-        "{head}{where_answers} These tasks are the subagents' now -- do not do them yourself; \
-         you'll be pinged as each finishes."
+        "{head}\n{where_answers} Use a run_id above to steer one with message_subagent while it \
+         runs. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
+         each finishes."
     )
 }
 
@@ -1273,6 +1300,26 @@ impl CompositeToolInvoker {
         self.sandbox.then_some(self.scratch_root.as_path())
     }
 
+    /// Execute a child run's `message_parent` call. Synchronous by design: the
+    /// message is queued on the parent's notice channel and the child carries on
+    /// -- nothing here waits for the parent to read it.
+    fn handle_message_parent(&self, args: &serde_json::Value) -> String {
+        let Some(link) = &self.parent_link else {
+            return "ERROR: this run has no parent agent to message".to_string();
+        };
+        let Some(message) = args
+            .get("message")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+        else {
+            return "ERROR: missing required argument 'message'".to_string();
+        };
+        match crate::core::agent::subagent::message_parent(link, message) {
+            Ok(s) => s,
+            Err(e) => format!("ERROR: {e}"),
+        }
+    }
+
     /// Execute one subagent tool call, returning the model-facing result string
     /// (an `ERROR:`-prefixed message on failure, matching the tool-result
     /// convention). The registry is loaded fresh from disk each call so a
@@ -1316,6 +1363,17 @@ impl CompositeToolInvoker {
                     self.subagent_scratch(),
                 ) {
                     Ok(d) => format_dispatched_plan(&d),
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "message_subagent" => {
+                let (target, message) =
+                    match crate::core::agent::subagent::parse_message_args(args) {
+                        Ok(v) => v,
+                        Err(e) => return format!("ERROR: {e}"),
+                    };
+                match crate::core::agent::subagent::message_subagent(&ctx.bg, &target, &message) {
+                    Ok(s) => s,
                     Err(e) => format!("ERROR: {e}"),
                 }
             }
@@ -1820,6 +1878,21 @@ impl ToolInvoker for CompositeToolInvoker {
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 let content = self.handle_ask_tool(&args).await;
                 out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            if name == crate::core::agent::subagent::MESSAGE_PARENT_TOOL {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|value| serde_json::from_str(value).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                out.push(ToolOutcome::plain(id, self.handle_message_parent(&args)));
                 continue;
             }
             if name == "todo" {
@@ -2397,6 +2470,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // into, so background work must be settled before the run returns.
         bg_shells: None,
         subagent_bg: None,
+        // A server-side proxy run is top-level: nothing dispatched it.
+        parent_link: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -2532,6 +2607,7 @@ fn advertise_local_tools(
     ask_enabled: bool,
     todo_enabled: bool,
     #[cfg(feature = "cli")] host_tools: &crate::core::agent::host_tools::HostToolSet,
+    has_parent: bool,
 ) {
     let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
     if project_root.is_some() {
@@ -2585,6 +2661,14 @@ fn advertise_local_tools(
                     if name == "await_subagent" {
                         continue;
                     }
+                    // message_subagent, by contrast, IS advertised up front
+                    // even though it is useful only once a child is running.
+                    // The tool array is built once per run and sits in the
+                    // cached prompt prefix, so gating it on "is a child live
+                    // right now" would move every byte behind the cache line
+                    // each time a child starts or finishes. Its description
+                    // says it addresses a running child, and a call naming a
+                    // finished or unknown id answers with what to do instead.
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;
@@ -2657,6 +2741,17 @@ fn advertise_local_tools(
             }
             openai_tools.push(tool.schema());
         }
+    }
+    // A child run's one link back to the agent that dispatched it. Advertised
+    // on the mirror-image gate to the subagent tools above: exactly the runs
+    // that cannot dispatch (`subagents_enabled == false`, i.e. children) have a
+    // parent to talk to. Like `ask`, it needs no project.
+    let parent_tool = crate::core::agent::subagent::MESSAGE_PARENT_TOOL;
+    if has_parent
+        && !permissions.is_denied(parent_tool)
+        && allowed_names.is_none_or(|allowed| allowed.contains(parent_tool))
+    {
+        openai_tools.push(crate::core::agent::subagent::message_parent_tool_schema());
     }
 }
 
@@ -2860,6 +2955,9 @@ pub(crate) async fn context_advertised_tools(
         ask_enabled,
         todo_enabled,
         host_tools,
+        // The `/context` view sizes an interactive session's own run, which is
+        // top-level by construction and so has no parent to message.
+        false,
     );
     tools
 }
@@ -3007,6 +3105,9 @@ async fn orchestrate_inner(
         monitors: session_monitors,
         bg_shells: session_bg_shells,
         subagent_bg: session_subagent_bg,
+        // Read through `args` where it is needed (tool advertisement, the
+        // invoker), so this stays a plain destructure of the rest.
+        parent_link: _,
         sandbox,
         compaction,
     } = args;
@@ -3265,6 +3366,7 @@ async fn orchestrate_inner(
         todo_registry.is_some(),
         #[cfg(feature = "cli")]
         host_tools,
+        args.parent_link.is_some(),
     );
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -3416,6 +3518,7 @@ async fn orchestrate_inner(
             host_tool_route: host_tool_route.clone(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
+            parent_link: args.parent_link.clone(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -8066,6 +8169,7 @@ mod tests {
             ),
             monitors_outlive_run: false,
             bg_shells_outlive_run: false,
+            parent_link: None,
             subagent_bg_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
@@ -8737,6 +8841,7 @@ mod tests {
             false,
             false,
             &set,
+            false,
         );
         let names: Vec<&str> = tools
             .iter()
@@ -10677,4 +10782,247 @@ mod tests {
             "the event channel never closed while a backgrounded bash job was still running"
         );
     }
+
+    // ---- subagent messaging advertisement --------------------------------
+
+    /// The names `advertise_local_tools` produces for a run with the given
+    /// dispatch/parent shape, in a throwaway project dir.
+    fn advertised_for(subagents_enabled: bool, has_parent: bool) -> Vec<String> {
+        let root = std::env::temp_dir().join(format!(
+            "jan-advertise-{}-{}",
+            std::process::id(),
+            subagents_enabled as u8 * 2 + has_parent as u8
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            None,
+            &tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Normal,
+            subagents_enabled,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            has_parent,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        tools
+            .iter()
+            .map(|t| t["function"]["name"].as_str().unwrap_or_default().to_string())
+            .collect()
+    }
+
+    /// A parent can steer a child; the reverse channel is not its to call.
+    #[test]
+    fn a_dispatching_run_is_offered_message_subagent_but_not_message_parent() {
+        let names = advertised_for(true, false);
+        assert!(names.iter().any(|n| n == "message_subagent"));
+        assert!(names.iter().any(|n| n == "dispatch_subagent"));
+        assert!(!names
+            .iter()
+            .any(|n| n == crate::core::agent::subagent::MESSAGE_PARENT_TOOL));
+    }
+
+    /// The scope boundary: messaging must not become a second level of fan-out.
+    /// A child gets the reply channel and nothing that dispatches or steers.
+    #[test]
+    fn a_child_run_is_offered_message_parent_but_cannot_dispatch_or_steer() {
+        let names = advertised_for(false, true);
+        assert!(names
+            .iter()
+            .any(|n| n == crate::core::agent::subagent::MESSAGE_PARENT_TOOL));
+        assert!(!names.iter().any(|n| n == "message_subagent"));
+        assert!(!names.iter().any(|n| n == "dispatch_subagent"));
+    }
+
+    /// Plan mode is read-only: a dispatched child could mutate, so neither the
+    /// dispatch nor the steering tool is advertised.
+    #[test]
+    fn plan_mode_advertises_no_subagent_messaging() {
+        let root = std::env::temp_dir().join(format!("jan-advertise-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            None,
+            &tauri_plugin_agent_tools::permissions::ToolPermissions::allow_all(),
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Plan,
+            true,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            false,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(!tools
+            .iter()
+            .any(|t| t["function"]["name"] == "message_subagent"));
+    }
+
+    /// The dispatch result is the only place a live child's id is shown, so it
+    /// must pair every started child with the id the other tools take.
+    #[test]
+    fn a_dispatch_reports_every_child_with_its_run_id() {
+        use crate::core::agent::subagent::{DispatchedChild, DispatchedPlan};
+        let out = format_dispatched_plan(&DispatchedPlan {
+            phase_count: 1,
+            total_subagents: 2,
+            first_phase: vec![
+                DispatchedChild {
+                    name: "explorer-a".to_string(),
+                    run_id: "sub-explorer-a-1".to_string(),
+                },
+                DispatchedChild {
+                    name: "explorer-b".to_string(),
+                    run_id: "sub-explorer-b-2".to_string(),
+                },
+            ],
+            blackboard_dir: Some("blackboard".to_string()),
+        });
+        assert!(out.contains("sub-explorer-a-1"), "{out}");
+        assert!(out.contains("sub-explorer-b-2"), "{out}");
+        assert!(out.contains("blackboard/explorer-a.md"), "{out}");
+        assert!(out.contains("message_subagent"), "{out}");
+    }
+
+    /// A multi-phase plan must not invent ids for children that do not exist:
+    /// only the phase actually running is listed.
+    #[test]
+    fn a_multi_phase_dispatch_reports_only_the_started_phase() {
+        use crate::core::agent::subagent::{DispatchedChild, DispatchedPlan};
+        let out = format_dispatched_plan(&DispatchedPlan {
+            phase_count: 2,
+            total_subagents: 3,
+            first_phase: vec![DispatchedChild {
+                name: "researcher".to_string(),
+                run_id: "sub-researcher-1".to_string(),
+            }],
+            blackboard_dir: None,
+        });
+        assert!(out.contains("sub-researcher-1"), "{out}");
+        assert_eq!(out.matches("run_id:").count(), 1, "{out}");
+        assert!(out.contains("reported as they start"), "{out}");
+    }
+
+    /// `message_parent` is a child-only capability: a top-level run that somehow
+    /// names it is refused rather than panicking on the missing link.
+    #[test]
+    fn message_parent_without_a_parent_is_refused() {
+        let root = std::env::temp_dir().join(format!("jan-msg-parent-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(
+            root.clone(),
+            tx,
+            Arc::new(Mutex::new(HashMap::new())),
+        );
+        let out = invoker.handle_message_parent(&serde_json::json!({ "message": "hi" }));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(out.starts_with("ERROR:"), "{out}");
+        assert!(out.contains("no parent"), "{out}");
+    }
+
+
+    /// The end-to-end claim of parent-to-child steering, exercised over the same
+    /// loop a child runs in and the same postman `run_subagent` installs: a
+    /// message queued on a child's inbox while a tool call is in flight is
+    /// applied at the next turn boundary, after the tool result has landed, and
+    /// never interrupts the call.
+    #[tokio::test]
+    async fn a_message_queued_mid_tool_call_reaches_the_child_after_the_result() {
+        use crate::core::agent::subagent::ChildInbox;
+        let (events, _rx) = mpsc::unbounded_channel();
+        let (steering, mut requests) = mpsc::unbounded_channel::<SteeringRequest>();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({"choices": [{"message": {"content": "done"}, "finish_reason": "stop"}]}),
+        ]);
+
+        // A tool that writes to the inbox the moment it is invoked, standing in
+        // for a parent steering the child while its tool call is in flight --
+        // the window the whole feature exists for.
+        struct WritesWhileRunning {
+            inbox: std::sync::Arc<ChildInbox>,
+        }
+        #[async_trait]
+        impl ToolInvoker for WritesWhileRunning {
+            async fn invoke(
+                &self,
+                tool_calls: &[serde_json::Value],
+            ) -> Result<Vec<ToolOutcome>, String> {
+                self.inbox
+                    .push("actually, check loop.rs".to_string())
+                    .unwrap();
+                Ok(tool_calls
+                    .iter()
+                    .map(|tc| {
+                        let id = tc["id"].as_str().unwrap_or("").to_string();
+                        ToolOutcome::plain(id, "MOCK_RESULT".to_string())
+                    })
+                    .collect())
+            }
+        }
+        let inbox = std::sync::Arc::new(ChildInbox::default());
+        let tools = WritesWhileRunning {
+            inbox: inbox.clone(),
+        };
+
+        // Verbatim the postman in `run_subagent`.
+        let postman_inbox = inbox.clone();
+        let postman = tokio::spawn(async move {
+            while let Some(request) = requests.recv().await {
+                let _ = request.reply.send(postman_inbox.drain());
+            }
+        });
+
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &events,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "start"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &tools,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            Some(&steering),
+            None,
+        )
+        .await
+        .unwrap();
+
+        {
+            let sent = model.requests.lock().unwrap();
+            let messages = sent[1]["messages"].as_array().unwrap();
+            let roles: Vec<&str> = messages
+                .iter()
+                .map(|m| m["role"].as_str().unwrap())
+                .collect();
+            // The steered message sits after the tool result, not in place of it.
+            assert_eq!(roles, ["user", "assistant", "tool", "user"]);
+            let steered = messages.last().unwrap()["content"].as_str().unwrap();
+            assert!(steered.contains("actually, check loop.rs"), "{steered}");
+            assert!(steered.contains("orchestrating agent"), "{steered}");
+        }
+        assert!(
+            inbox.drain().is_empty(),
+            "the boundary drain consumed the message exactly once"
+        );
+        drop(steering);
+        postman.await.unwrap();
+    }
+
 }

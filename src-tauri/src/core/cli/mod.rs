@@ -1271,6 +1271,8 @@ fn build_cli_orchestration_args(
         // later turn, so it must park until the command reports back.
         bg_shells: None,
         subagent_bg: None,
+        // A top-level run: there is no agent above it to message.
+        parent_link: None,
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
