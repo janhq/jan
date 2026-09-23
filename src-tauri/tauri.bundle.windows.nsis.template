@@ -119,9 +119,10 @@ Var LockedFile
 ; aborts. A mapped image can still be renamed on the same volume, which is the
 ; replacement MSDN's "Dynamic-Link Library Updates" prescribes: the old copy
 ; keeps serving whoever holds it and the new one is written over the freed name.
-; The leftover is deleted by the next install, or by the uninstaller's
-; `RMDir /r`; scheduling it with /REBOOTOK instead would raise the reboot flag on
-; a per-user install that cannot honour it.
+; The leftover is deleted by CleanFreedBinaries once this install has written the
+; new copy - or, for one a process still has mapped, left to the next install and
+; the uninstaller's `RMDir /r`; scheduling it with /REBOOTOK instead would raise
+; the reboot flag on a per-user install that cannot honour it.
 ;
 ; The path is freed by *renaming* it, never by deleting it. The rename works for
 ; an idle file and for a mapped image alike, and the `.old` copy it leaves is
@@ -222,6 +223,33 @@ Var LockedFile
       ${ExitDo}
     ${EndIf}
   ${Loop}
+!macroend
+
+; Deletes a `.old` copy the frees left behind, once the new file is on disk.
+; Best effort: a copy a running process still has mapped cannot be deleted, so
+; it stays until the next install or the uninstaller - the same leftover a
+; mapped upgrade has always produced. The stray error flag is cleared so nothing
+; downstream reads it.
+!macro DeleteFreedBinary path
+  Delete "${path}.old"
+  ClearErrors
+!macroend
+
+!macro DeleteFreedPattern dir pattern
+  Delete "${dir}\${pattern}.old"
+  ClearErrors
+!macroend
+
+; The frees rename rather than delete, so on a successful install every bundled
+; binary is briefly on disk twice. Called once the writes are done and the
+; section can no longer abort, which is what makes that safe.
+!macro CleanFreedBinaries
+  !insertmacro DeleteFreedBinary "$INSTDIR\resources\bin\jan-llama-worker.exe"
+  !insertmacro DeleteFreedPattern "$INSTDIR\resources\bin" "ggml*.dll"
+  !insertmacro DeleteFreedPattern "$INSTDIR\resources\bin" "cudart64_*.dll"
+  !insertmacro DeleteFreedPattern "$INSTDIR\resources\bin" "cublas*.dll"
+  !insertmacro DeleteFreedBinary "$INSTDIR\bun.exe"
+  !insertmacro DeleteFreedBinary "$INSTDIR\uv.exe"
 !macroend
 
 ; Everything a previous install may still have mapped, freed before the first
@@ -908,6 +936,10 @@ Section Install
   ; Copy external binaries
     File /a "/oname=bun.exe" "jan_workspace\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
     File /a "/oname=uv.exe" "jan_workspace\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
+
+  ; Every bundled binary has been written, and nothing below can abort, so the
+  ; `.old` copies the frees left are no longer needed as a way back.
+  !insertmacro CleanFreedBinaries
 
   ; Create file associations
 
