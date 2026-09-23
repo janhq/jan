@@ -16,6 +16,10 @@ on:
         type: boolean
         description: 'If true, builds both .deb and .appimage but disables auto-updater'
         default: false
+      version:
+        type: string
+        description: 'Version to stamp into the app, when it is not a nightly (e.g. 0.8.5-rc1-beta). Empty builds a nightly version.'
+        default: ''
   pull_request:
     branches:
       - release/**
@@ -75,6 +79,10 @@ jobs:
   get-update-version:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/template-get-update-version.yml
+    # Empty for every caller that is not a manual build (and for a manual build
+    # that wants a nightly version): the template then computes it as before.
+    with:
+      version: ${{ github.event.inputs.version }}
 
   build-macos:
     uses: ./.github/workflows/template-tauri-build-macos.yml
