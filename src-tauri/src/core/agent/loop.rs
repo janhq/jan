@@ -3323,18 +3323,25 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// The original span stays in the record - only the projection omits it - so a
 /// later turn, a different provider, or a changed `keep_recent` can still
 /// rebuild from it.
+///
+/// The summarizer's request is billed like any other, so its usage is folded
+/// into `budget` here. A turn can compact several times (the preflight plus the
+/// overflow retries), and spend the budget never saw would make `/usage` and
+/// the money ceiling agree with each other while both undercounted.
 async fn compact(
     transcript: &mut Transcript,
     keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
+    budget: &mut SessionBudget,
 ) -> Result<Option<usize>, String> {
     let Some(plan) = transcript.compaction_plan(keep_recent) else {
         return Ok(None);
     };
     let summarized = plan.summarize.len();
-    let summary =
+    let (summary, usage) =
         crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+    budget.record_side_request(&usage);
     transcript.record_compaction(summary, plan.covers);
     Ok(Some(summarized))
 }
@@ -3495,15 +3502,18 @@ async fn run_turn_cycle(
                 // nothing safe left to drop, and retrying here would spin.
                 if !preflighted {
                     preflighted = true;
-                    if let Some(budget) = compaction {
+                    // Named apart from the run's `budget` (money and tokens
+                    // spent), which the compaction below is itself charged to.
+                    if let Some(window) = compaction {
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
-                        if estimate > budget.trigger_tokens() {
+                        if estimate > window.trigger_tokens() {
                             if let Some(dropped) = compact(
                                 &mut transcript,
                                 crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
+                                budget,
                             )
                             .await?
                             {
@@ -3511,8 +3521,8 @@ async fn run_turn_cycle(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
                                      token trigger on a {} token window, compacted {dropped} \
                                      messages into a summary before dispatch",
-                                    budget.trigger_tokens(),
-                                    budget.context_window
+                                    window.trigger_tokens(),
+                                    window.context_window
                                 );
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
@@ -3527,7 +3537,7 @@ async fn run_turn_cycle(
                                     text: format!(
                                         "compacted {dropped} messages into a summary before sending \
                                          ({estimate} tokens against a {} token budget)",
-                                        budget.trigger_tokens()
+                                        window.trigger_tokens()
                                     ),
                                 });
                                 continue;
@@ -3550,9 +3560,10 @@ async fn run_turn_cycle(
                             .await;
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped = compact(&mut transcript, keep_recent, model_id, model)
-                            .await?
-                            .ok_or(e)?;
+                        let dropped =
+                            compact(&mut transcript, keep_recent, model_id, model, budget)
+                                .await?
+                                .ok_or(e)?;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -3729,6 +3740,7 @@ async fn run_turn_cycle(
                     crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                     model_id,
                     model,
+                    budget,
                 )
                 .await
                 {
@@ -6082,6 +6094,60 @@ mod tests {
         assert!(
             result["choices"][0]["message"].get("tool_calls").is_none(),
             "unanswered tool calls must not survive on the final message: {result}"
+        );
+    }
+
+    /// A compaction is a paid request and has to reach the run's budget. It is
+    /// not the metered dispatch, so nothing else charges it: a turn can make up
+    /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
+    /// retries), and spend the budget never saw would leave `/usage` and the
+    /// money ceiling agreeing with each other while both undercounted.
+    #[tokio::test]
+    async fn compacting_charges_the_summarizer_to_the_run() {
+        // A history long enough to have a span worth summarizing.
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript
+                .record_message(json!({ "role": "assistant", "content": format!("ack {i}") }));
+        }
+
+        let mut summary = final_answer("the story so far");
+        summary["usage"] = json!({
+            "prompt_tokens": 500_000,
+            "completion_tokens": 1_000,
+            "total_tokens": 501_000,
+        });
+        let model = MockModel::new(vec![summary]);
+
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                // $1 per million either way: this summarizer call costs $0.501.
+                rates: crate::core::agent::session::TokenRates {
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.25,
+            },
+        ));
+        assert!(!budget.over_cost_ceiling(), "nothing spent yet");
+
+        let dropped = compact(&mut transcript, 4, "m", &model, &mut budget)
+            .await
+            .expect("the summarizer answered")
+            .expect("a long history has a span to compact");
+        assert!(dropped > 0);
+
+        let spent = budget.spent_usd().expect("metered");
+        assert!(
+            (spent - 0.501).abs() < 1e-9,
+            "the summarizer's own request is billed: {spent}"
+        );
+        assert!(
+            budget.over_cost_ceiling(),
+            "a compaction can exhaust the ceiling on its own"
         );
     }
 

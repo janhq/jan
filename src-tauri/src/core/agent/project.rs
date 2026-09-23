@@ -120,10 +120,10 @@ pub(crate) struct BudgetSection {
     #[serde(default)]
     pub max_tokens: Option<u64>,
     /// USD a run may spend before it stops. Unlike `max_tokens` this is a hard
-    /// bound, and unlike it this can be wrong in the user's favour only: it is
-    /// priced from the provider's published rates, so a model with no published
-    /// price cannot be capped at all and a run that asks for one is refused
-    /// rather than run uncapped.
+    /// bound. It is priced from the provider's published rates, so a model with
+    /// no published price cannot be capped at all and a run that asks for one is
+    /// refused rather than run uncapped -- including a subagent whose definition
+    /// names a model of its own (see `child_cost_ceiling`).
     #[serde(default)]
     pub max_usd: Option<f64>,
 }

@@ -16,6 +16,52 @@ use super::tui::format_tokens;
 /// How many rows the account and daily views show before folding.
 const TOP_REPORTED_ROWS: usize = 5;
 
+/// How much of a ranked list to show, and whether the reader can change it.
+///
+/// Not a bool, because "show everything" has two different meanings here and
+/// only one of them may print a keybinding. The TUI's docked readout folds and
+/// unfolds with `m`; `jan usage` writes to a pipe, where nothing is folded (a
+/// view that silently dropped rows would be wrong for the scripts reading it)
+/// and there is no `m` to press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fold {
+    /// Docked: the tail is folded away, with the hint that shows it.
+    Folded,
+    /// Docked and unfolded: every row, with the hint that folds it back.
+    Unfolded,
+    /// Piped: every row and no hint at all.
+    Fixed,
+}
+
+impl Fold {
+    /// The docked spelling of an `all_rows` flag.
+    pub fn docked(all_rows: bool) -> Self {
+        if all_rows {
+            Self::Unfolded
+        } else {
+            Self::Folded
+        }
+    }
+
+    fn shows_all(self) -> bool {
+        !matches!(self, Self::Folded)
+    }
+
+    /// The trailing line offering the other half of the fold, or `None` when
+    /// there is no key to press.
+    fn hint(self, hidden: usize, noun: &str) -> Option<String> {
+        match self {
+            Self::Fixed => None,
+            _ if hidden > 0 => Some(format!(
+                "  +{hidden} more {noun}{}  ·  m to show all",
+                if hidden == 1 { "" } else { "s" }
+            )),
+            Self::Unfolded => Some("  m to fold the tail".to_string()),
+            Self::Folded => None,
+        }
+    }
+}
+
 /// A reported money amount, as the server wrote it, prefixed for display.
 ///
 /// No reformatting and no rounding: the text is the figure. Deliberately not
@@ -90,13 +136,13 @@ fn reported_counts(row: &crate::core::cli::tokamak::usage::Aggregate) -> String 
 fn reported_rows(
     heading: &str,
     rows: &[crate::core::cli::tokamak::usage::Aggregate],
-    all: bool,
+    fold: Fold,
     noun: &str,
 ) -> Vec<String> {
     if rows.is_empty() {
         return Vec::new();
     }
-    let shown = if all {
+    let shown = if fold.shows_all() {
         rows.len()
     } else {
         rows.len().min(TOP_REPORTED_ROWS)
@@ -121,14 +167,10 @@ fn reported_rows(
             reported_counts(row)
         ));
     }
-    if hidden > 0 {
-        out.push(format!(
-            "  +{hidden} more {noun}{}  ·  m to show all",
-            if hidden == 1 { "" } else { "s" }
-        ));
-    } else if rows.len() > TOP_REPORTED_ROWS {
-        out.push("  m to fold the tail".to_string());
-    }
+    out.extend(
+        fold.hint(hidden, noun)
+            .filter(|_| hidden > 0 || rows.len() > TOP_REPORTED_ROWS),
+    );
     out
 }
 
@@ -166,10 +208,14 @@ pub fn account_total_lines(
 /// session estimate. A payload this build cannot parse falls back to the raw
 /// field walk rather than reporting nothing, so a server-side schema change
 /// degrades to a flat dump instead of an empty readout.
+///
+/// `fold` says how much of each ranked list to show and whether a keybinding
+/// for the other half may be printed -- see [`Fold`], which is what keeps the
+/// docked readout's `m` hint out of a piped `jan usage`.
 pub fn reported_usage_lines(
     query: &crate::core::cli::tokamak::usage::Query,
     payload: &crate::core::cli::tokamak::usage::Payload,
-    all_rows: bool,
+    fold: Fold,
 ) -> Vec<String> {
     use crate::core::cli::tokamak::usage;
 
@@ -218,7 +264,7 @@ pub fn reported_usage_lines(
                         .unwrap_or(std::cmp::Ordering::Equal)
                         .then_with(|| a.label.cmp(&b.label))
                 });
-                out.extend(reported_rows("top models", &models, all_rows, "model"));
+                out.extend(reported_rows("top models", &models, fold, "model"));
                 out
             }
             None => raw_fields(),
@@ -227,9 +273,14 @@ pub fn reported_usage_lines(
             Some(days) if days.is_empty() => {
                 vec!["no recorded days".to_string()]
             }
-            // Already newest-first from the server, and a daily view is read
-            // in date order rather than by size, so this one is not re-ranked.
-            Some(days) => {
+            // Sorted, not ranked: a daily view is read in date order rather
+            // than by size, so the order is the dates' own. The server already
+            // sends them newest-first, but "most recent day" below names a
+            // specific date and would state the wrong one if that ever
+            // changed -- and a descending sort on an ISO date string is a
+            // string sort, so it costs nothing to not depend on it.
+            Some(mut days) => {
+                days.sort_by(|a, b| b.label.cmp(&a.label));
                 let mut out = vec!["most recent day".to_string()];
                 out.push(format!(
                     "  {}  {}",
@@ -244,7 +295,7 @@ pub fn reported_usage_lines(
                         ..day.clone()
                     })
                     .collect();
-                out.extend(reported_rows("by day", &dated, all_rows, "day"));
+                out.extend(reported_rows("by day", &dated, fold, "day"));
                 out
             }
             None => raw_fields(),
@@ -254,7 +305,7 @@ pub fn reported_usage_lines(
                 vec!["no recorded requests".to_string()]
             }
             Some(records) => {
-                let shown = if all_rows {
+                let shown = if fold.shows_all() {
                     records.len()
                 } else {
                     records.len().min(TOP_REPORTED_ROWS)
@@ -302,14 +353,10 @@ pub fn reported_usage_lines(
                             .unwrap_or_default()
                     ));
                 }
-                if hidden > 0 {
-                    out.push(format!(
-                        "  +{hidden} more request{}  ·  m to show all",
-                        if hidden == 1 { "" } else { "s" }
-                    ));
-                } else if records.len() > TOP_REPORTED_ROWS {
-                    out.push("  m to fold the tail".to_string());
-                }
+                out.extend(
+                    fold.hint(hidden, "request")
+                        .filter(|_| hidden > 0 || records.len() > TOP_REPORTED_ROWS),
+                );
                 out
             }
             None => raw_fields(),
@@ -359,7 +406,7 @@ mod tests {
         // field walk is the fallback, so a server-side schema change degrades
         // to a flat dump rather than an empty readout.
         let payload = parse_payload_for_test(r#"{"spend_usd":"1.25"}"#);
-        let lines = super::reported_usage_lines(&Query::Summary, &payload, false).join("\n");
+        let lines = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Folded).join("\n");
         assert!(lines.contains("spend_usd"), "{lines}");
         assert!(lines.contains("1.25"), "{lines}");
         assert!(
@@ -376,7 +423,7 @@ mod tests {
     fn the_account_view_leads_with_the_total_and_folds_the_models() {
         use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
         let payload = parse_payload_for_test(ACCOUNT_BODY);
-        let folded = super::reported_usage_lines(&Query::Summary, &payload, false).join("\n");
+        let folded = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Folded).join("\n");
 
         assert!(folded.contains("account total"), "{folded}");
         // Exact server text, never reformatted through the estimate's
@@ -393,11 +440,30 @@ mod tests {
         assert!(folded.contains("+1 more model  ·  m to show all"), "{folded}");
         assert!(!folded.contains("cheap-model"), "the cheapest folds: {folded}");
 
-        let all = super::reported_usage_lines(&Query::Summary, &payload, true).join("\n");
+        let all = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Unfolded).join("\n");
         assert!(all.contains("cheap-model"), "{all}");
         assert!(!all.contains("more model"), "{all}");
         // The figure that matters does not move between the two.
         assert!(all.contains("$1240.10224445"), "{all}");
+    }
+
+    /// `jan usage` writes to a pipe, where every row is printed (a view that
+    /// silently dropped rows would be wrong for the scripts reading it) and
+    /// there is no `m` to press. Offering the keystroke anyway names an
+    /// affordance that does not exist on this surface.
+    #[test]
+    fn a_piped_view_shows_every_row_and_offers_no_keystroke() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        let payload = parse_payload_for_test(ACCOUNT_BODY);
+        let piped = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Fixed)
+            .join("\n");
+
+        // Nothing folded: the row the docked view hides is here.
+        assert!(piped.contains("cheap-model"), "{piped}");
+        assert!(!piped.contains(" m to "), "no keybinding in a pipe: {piped}");
+        assert!(!piped.contains("more model"), "{piped}");
+        // The figures are the same ones the dock shows.
+        assert!(piped.contains("$1240.10224445"), "{piped}");
     }
 
     /// Ranking is by spend, so a folded list keeps the models the money went
@@ -406,7 +472,7 @@ mod tests {
     fn account_models_rank_by_spend_not_by_name() {
         use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
         let payload = parse_payload_for_test(ACCOUNT_BODY);
-        let lines = super::reported_usage_lines(&Query::Summary, &payload, true);
+        let lines = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Unfolded);
         let position = |needle: &str| {
             lines
                 .iter()
@@ -437,7 +503,7 @@ mod tests {
                 "by_model":[{"model":"priced","request_count":1,"estimated_cost_usd":"1.0"},
                             {"model":"unpriced","request_count":1,"estimated_cost_usd":null}]}"#,
         );
-        let lines = super::reported_usage_lines(&Query::Summary, &payload, true);
+        let lines = super::reported_usage_lines(&Query::Summary, &payload, super::Fold::Unfolded);
         let text = lines.join("\n");
         assert!(text.contains("unavailable"), "{text}");
         assert!(!text.contains("$0"), "an unknown cost is never a zero: {text}");
@@ -459,13 +525,38 @@ mod tests {
                  "total_completion_tokens":939555,"request_count":915,
                  "estimated_cost_usd":"57.56311"}]"#,
         );
-        let lines = super::reported_usage_lines(&Query::Daily, &payload, false);
+        let lines = super::reported_usage_lines(&Query::Daily, &payload, super::Fold::Folded);
         let text = lines.join("\n");
         assert!(text.contains("most recent day"), "{text}");
         assert!(text.contains("$66.8881106"), "{text}");
         // A midnight bucket is a date, not a time of day.
         assert!(text.contains("2026-09-22"), "{text}");
         assert!(!text.contains("00:00"), "a daily bucket has no clock: {text}");
+        let position = |needle: &str| lines.iter().rposition(|l| l.contains(needle)).unwrap();
+        assert!(position("2026-09-22") < position("2026-09-21"), "{lines:?}");
+    }
+
+    /// "most recent day" names a specific date, so it must be the newest one in
+    /// the body rather than whichever the server happened to send first. The
+    /// server sends them newest-first today; this view does not depend on it.
+    #[test]
+    fn the_daily_view_finds_the_newest_day_whatever_order_it_arrives_in() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        // Oldest-first, the reverse of what the server sends.
+        let payload = parse_payload_for_test(
+            r#"[{"date":"2026-09-21T00:00:00Z","total_prompt_tokens":10,
+                 "total_completion_tokens":1,"request_count":1,
+                 "estimated_cost_usd":"1.00"},
+                {"date":"2026-09-22T00:00:00Z","total_prompt_tokens":20,
+                 "total_completion_tokens":2,"request_count":2,
+                 "estimated_cost_usd":"2.00"}]"#,
+        );
+        let lines = super::reported_usage_lines(&Query::Daily, &payload, super::Fold::Folded);
+        let head = lines[..3].join("\n");
+        assert!(head.contains("most recent day"), "{head}");
+        assert!(head.contains("2026-09-22"), "the newest date, not the first: {head}");
+        assert!(head.contains("$2.00"), "{head}");
+        // And the table under it reads newest-first too.
         let position = |needle: &str| lines.iter().rposition(|l| l.contains(needle)).unwrap();
         assert!(position("2026-09-22") < position("2026-09-21"), "{lines:?}");
     }
@@ -482,7 +573,7 @@ mod tests {
                  "estimated_cost_usd":"0.0322445","status":200,
                  "created_at":"2026-09-22T08:57:20.751721Z"}]}"#,
         );
-        let text = super::reported_usage_lines(&Query::Requests, &payload, false).join("\n");
+        let text = super::reported_usage_lines(&Query::Requests, &payload, super::Fold::Folded).join("\n");
         assert!(text.contains("1 recorded request"), "{text}");
         assert!(text.contains("4b1e70d6"), "the id to look up: {text}");
         assert!(text.contains("$0.0322445"), "{text}");
@@ -498,7 +589,7 @@ mod tests {
     fn the_limits_view_answers_whether_spending_is_allowed() {
         use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
         let allowed = parse_payload_for_test(r#"{"allowed":true,"decisions":null}"#);
-        let text = super::reported_usage_lines(&Query::Limits, &allowed, false).join("\n");
+        let text = super::reported_usage_lines(&Query::Limits, &allowed, super::Fold::Folded).join("\n");
         assert!(text.contains("spending is allowed"), "{text}");
         assert!(text.contains("no limit decisions recorded"), "{text}");
         // The two checks are separate upstream; an allowed limit is not credit.
@@ -507,7 +598,7 @@ mod tests {
         let blocked = parse_payload_for_test(
             r#"{"allowed":false,"decisions":[{"limit":"monthly","used":"120.00"}]}"#,
         );
-        let text = super::reported_usage_lines(&Query::Limits, &blocked, false).join("\n");
+        let text = super::reported_usage_lines(&Query::Limits, &blocked, super::Fold::Folded).join("\n");
         assert!(text.contains("blocked by a usage limit"), "{text}");
         assert!(text.contains("monthly"), "{text}");
         assert!(text.contains("120.00"), "{text}");

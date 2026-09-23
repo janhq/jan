@@ -317,7 +317,9 @@ pub(crate) async fn compact_conversation(
     };
 
     let kept = &rest[cut..];
-    let summary = summarize(&rest[..cut], model_id, model).await?;
+    // The interactive `/compact` meters nothing: it is not inside a run's
+    // budget, so there is no ceiling for this request to be charged against.
+    let (summary, _usage) = summarize(&rest[..cut], model_id, model).await?;
 
     let mut out = Vec::with_capacity(system_msgs.len() + 1 + kept.len());
     out.extend_from_slice(system_msgs);
@@ -330,14 +332,20 @@ pub(crate) async fn compact_conversation(
 /// transcript's compaction path, where the summary becomes an event rather than
 /// a rewritten list. The node carries [`SUMMARY_MARKER`], so a later turn reads
 /// it as condensed history instead of mistaking it for a prompt.
+///
+/// Returns the summarizer's own reported usage alongside the node. A compaction
+/// is a paid request like any other -- a turn can make several of them (the
+/// preflight plus up to `MAX_COMPACTION_ATTEMPTS` overflow retries) -- so the
+/// caller folds it into the run's budget instead of letting the spend go
+/// unrecorded. `None` when the summarizer reported none or never ran.
 pub(crate) async fn summarize_span(
     span: &[Value],
     model_id: &str,
     model: &dyn ModelInvoker,
-) -> Result<Value, String> {
+) -> Result<(Value, Option<crate::core::agent::events::Usage>), String> {
     summarize(span, model_id, model)
         .await
-        .map(|text| summary_message(&text))
+        .map(|(text, usage)| (summary_message(&text), usage))
 }
 
 /// Flatten a span of wire messages into a plain-text transcript. Rendering
@@ -407,10 +415,18 @@ fn clamp_middle(text: &str, max: usize) -> String {
 /// the caller must block rather than fabricate a fallback note for a
 /// smaller-window model. Every other failure and empty/unreadable completion
 /// stays recoverable and returns [`FALLBACK_NOTE`].
-async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) -> Result<String, String> {
+/// The reported usage rides back with the text so the caller can charge it: see
+/// [`summarize_span`]. A path that produced no request (an empty span) or a
+/// failure that degraded to [`FALLBACK_NOTE`] reports `None` rather than zeros,
+/// which is the same "nothing to charge" answer without inventing a figure.
+async fn summarize(
+    dropped: &[Value],
+    model_id: &str,
+    model: &dyn ModelInvoker,
+) -> Result<(String, Option<crate::core::agent::events::Usage>), String> {
     let transcript = clamp_middle(&render_transcript(dropped), SUMMARY_INPUT_CHARS);
     if transcript.trim().is_empty() {
-        return Ok(FALLBACK_NOTE.to_string());
+        return Ok((FALLBACK_NOTE.to_string(), None));
     }
     let request = json!({
         "model": model_id,
@@ -430,7 +446,10 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
                 .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .map(str::to_string);
-            Ok(summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()))
+            // Charged whatever the body said: a completion whose text was empty
+            // still cost what the provider reported for it.
+            let usage = crate::core::agent::events::Usage::from_completion(&completion);
+            Ok((summary.unwrap_or_else(|| FALLBACK_NOTE.to_string()), usage))
         }
         Err(e) => {
             // A model-switch compaction targets the (smaller) new model: if the
@@ -439,7 +458,7 @@ async fn summarize(dropped: &[Value], model_id: &str, model: &dyn ModelInvoker) 
             if crate::core::agent::upstream::is_context_overflow_error(&e) {
                 Err(e)
             } else {
-                Ok(FALLBACK_NOTE.to_string())
+                Ok((FALLBACK_NOTE.to_string(), None))
             }
         }
     }

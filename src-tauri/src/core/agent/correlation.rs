@@ -92,7 +92,13 @@ fn sanitize(raw: &str) -> String {
 /// The completion JSON is the only value the invoker returns, so an id read
 /// from the response headers is attached to it under this key. Namespaced with
 /// a leading underscore so it cannot collide with a field a provider actually
-/// sends, and stripped before the completion is stored or resent.
+/// sends.
+///
+/// Nothing strips it back out, and nothing needs to: every consumer projects
+/// the fields it wants (`choices[].message`, `usage`, `finish_reason`) rather
+/// than forwarding the body, so this key never reaches a transcript or a
+/// resent request. A consumer that did forward a whole completion would have
+/// to drop it here first.
 pub const EXECUTION_ID_FIELD: &str = "_jan_execution_id";
 
 /// Attach a captured execution id to a completion body.

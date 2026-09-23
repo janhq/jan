@@ -44,12 +44,16 @@ const USAGE_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Header Tokamak returns on an inference response, naming that execution.
 /// Every per-request lookup in this module is keyed by it.
-pub const EXECUTION_ID_HEADER: &str = "X-Tokamak-Execution-Id";
+///
+/// Re-exported rather than redeclared: the send path that reads this header off
+/// a response lives in `agent::correlation`, and two spellings of one header
+/// name is one rename away from a lookup that silently finds nothing.
+pub use crate::core::agent::correlation::EXECUTION_ID_HEADER;
 
 /// Header a caller may send on an inference request to correlate it later.
 /// A correlation value can match several executions; it is not an idempotency
-/// key, and nothing here treats it as one.
-pub const CLIENT_REQUEST_ID_HEADER: &str = "X-Client-Request-Id";
+/// key, and nothing here treats it as one. Re-exported for the reason above.
+pub use crate::core::agent::correlation::CLIENT_REQUEST_ID_HEADER;
 
 /// Why a usage read did not produce an answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -254,12 +258,14 @@ impl From<GenerationWire> for Generation {
 pub struct Payload(String);
 
 impl Payload {
-    /// Flatten to `(dotted.path, value)` pairs, sorted by path, with scalars
-    /// rendered as their source text. Objects recurse by key, arrays by index.
+    /// Flatten to `(dotted.path, value)` pairs with scalars rendered as their
+    /// source text. Objects recurse by key, arrays by index.
     ///
-    /// Sorted rather than source-ordered because JSON object order is not
-    /// meaningful and a stable order is what makes the output diffable between
-    /// two runs.
+    /// The order is [`flatten`]'s: object keys sorted (JSON object order is not
+    /// meaningful, and a stable order is what makes the output diffable between
+    /// two runs), array elements in index order. Deliberately *not* re-sorted by
+    /// path afterwards -- a string sort puts `days[10]` before `days[2]`, which
+    /// reorders a list the server sent in a meaningful order.
     pub fn fields(&self) -> Vec<(String, String)> {
         let mut out = Vec::new();
         match serde_json::from_str::<&RawValue>(&self.0) {
@@ -268,7 +274,6 @@ impl Payload {
             // would be a panic over a usage readout.
             Err(_) => out.push((String::new(), self.0.clone())),
         }
-        out.sort_by(|a, b| a.0.cmp(&b.0));
         out
     }
 

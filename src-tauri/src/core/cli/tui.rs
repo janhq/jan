@@ -3629,7 +3629,12 @@ impl App {
     /// every keystroke but leaves a cursor blinking in the composer promises a
     /// field that is not there.
     fn blocking_dock(&self) -> Option<&'static str> {
-        if self.login.is_some() {
+        if self.account_login.is_some() {
+            // First in `handle_key` too, and it outranks `login`: this dock owns
+            // the OAuth code being typed or pasted, so a queued ask that
+            // consumed a keystroke here would swallow the secret.
+            Some("finish signing in above")
+        } else if self.login.is_some() {
             Some("sign in in the dock above")
         } else if self.browser_confirm.is_some() {
             Some("answer the question above")
@@ -7008,7 +7013,11 @@ fn overview_lines(
                 // Unparseable: fall back to the same field walk every other
                 // reported view degrades to, rather than showing nothing.
                 None => lines.extend(
-                    super::usage_view::reported_usage_lines(&query, payload, false)
+                    super::usage_view::reported_usage_lines(
+                        &query,
+                        payload,
+                        super::usage_view::Fold::Folded,
+                    )
                         .iter()
                         .flat_map(|line| wrap_text(line, Style::new(), width))
                         .map(Line::from),
@@ -7061,7 +7070,11 @@ fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static
             payload,
             all_rows,
             ..
-        } => super::usage_view::reported_usage_lines(query, payload, *all_rows)
+        } => super::usage_view::reported_usage_lines(
+            query,
+            payload,
+            super::usage_view::Fold::docked(*all_rows),
+        )
             .iter()
             // Hard-wrapped rather than clipped: a truncated money figure is a
             // wrong money figure.
@@ -24831,7 +24844,17 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 7] = [
+        let setups: [DockSetup; 8] = [
+            // The account OAuth dock takes every keystroke and outranks the
+            // API-key one, so it has to block the field as hard as the rest.
+            ("account_login", |app| {
+                app.account_login = Some(super::AccountLoginPrompt::new(
+                    crate::core::cli::auth::account::begin(
+                        crate::core::cli::auth::account::AccountProvider::Claude,
+                    )
+                    .expect("an account login session builds offline"),
+                ))
+            }),
             // A readout is docked like any other prompt and owns the same
             // keys, so the field must go inactive for it too.
             ("readout", |app| {

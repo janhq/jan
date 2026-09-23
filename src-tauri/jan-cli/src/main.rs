@@ -1051,10 +1051,16 @@ async fn handle_usage(cmd: Option<UsageCommands>, json: bool) -> Result<(), Stri
     }
 
     // The same renderer the TUI readout draws, so the two surfaces cannot
-    // drift: one place decides how a reported charge is displayed. Nothing is
-    // folded here -- a fold is an interactive affordance, and a piped view
-    // that silently dropped rows would be wrong for the scripts reading it.
-    for line in app_lib::core::cli::usage_view::reported_usage_lines(&query, &payload, true) {
+    // drift: one place decides how a reported charge is displayed. `Fixed`
+    // because nothing is folded here -- a fold is an interactive affordance,
+    // and a piped view that silently dropped rows would be wrong for the
+    // scripts reading it -- and because there is no `m` to press in a pipe, so
+    // the keybinding hint must not print either.
+    for line in app_lib::core::cli::usage_view::reported_usage_lines(
+        &query,
+        &payload,
+        app_lib::core::cli::usage_view::Fold::Fixed,
+    ) {
         println!("{line}");
     }
     Ok(())

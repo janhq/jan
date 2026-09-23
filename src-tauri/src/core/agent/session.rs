@@ -144,6 +144,31 @@ impl SessionBudget {
         self.spent_tokens
     }
 
+    /// Charge a request that is not part of the conversation being replayed --
+    /// today, the compaction summarizer.
+    ///
+    /// Money is charged in full, exactly as the provider bills it: this is a
+    /// paid request, and a turn can make several of them (the preflight
+    /// compaction plus each overflow retry), so leaving them out would let a
+    /// run spend past its ceiling while the ceiling read as unreached.
+    ///
+    /// Tokens count the completion only, and the prompt baseline is left alone.
+    /// [`Self::record`] meters the conversation's *marginal* growth by
+    /// comparing each request's prompt against the last one's; a side request
+    /// carries a different prompt entirely (a rendered transcript), so letting
+    /// it set that baseline would make the next real turn's growth arbitrary.
+    pub(crate) fn record_side_request(&mut self, usage: &Option<Usage>) {
+        let Some(usage) = usage.as_ref() else {
+            return;
+        };
+        self.spent_tokens = self
+            .spent_tokens
+            .saturating_add(usage.completion_tokens.unwrap_or(0));
+        if let Some(ceiling) = &self.ceiling {
+            self.spent_usd += ceiling.rates.cost_of(usage);
+        }
+    }
+
     pub(crate) fn spent(&self) -> u64 {
         self.spent_tokens
     }
@@ -171,9 +196,12 @@ impl SessionBudget {
     ///
     /// Checked after a request rather than before, because the cost of a
     /// request is not known until the provider reports its usage. The overshoot
-    /// is therefore bounded by one request, which is the tightest bound
-    /// available to a caller that cannot price a completion it has not yet
-    /// received.
+    /// is therefore bounded by the requests made between two checks, which is
+    /// the tightest bound available to a caller that cannot price a completion
+    /// it has not yet received. That is the metered dispatch plus any
+    /// compactions the same turn made -- all of them charged (see
+    /// [`Self::record_side_request`]), so the ceiling is never read as unreached
+    /// because of spend nobody counted.
     pub(crate) fn over_cost_ceiling(&self) -> bool {
         matches!(self.ceiling, Some(c) if self.spent_usd >= c.max_usd)
     }
@@ -323,6 +351,44 @@ mod tests {
         assert!(!b.over_cost_ceiling(), "$0.40 of $0.50");
         b.record(&usage_with_parts(100_000, 10_000, 110_000));
         assert!(b.over_cost_ceiling(), "$0.60 is past $0.50");
+    }
+
+    /// A compaction is a paid request, and a turn can make several of them (the
+    /// preflight plus each overflow retry). Spend the budget never saw would let
+    /// a run go past its ceiling while `/usage` and the ceiling agreed with each
+    /// other about a figure that was simply too low.
+    #[test]
+    fn a_side_request_is_charged_without_moving_the_prompt_baseline() {
+        let mut b = capped(1.0);
+        b.record(&usage_with_parts(100_000, 10_000, 110_000));
+        let after_turn = b.spent_usd().expect("metered");
+
+        // A summarizer call: its own prompt, its own completion, all billed.
+        b.record_side_request(&usage_with_parts(20_000, 500, 20_500));
+        let charged = b.spent_usd().expect("metered") - after_turn;
+        let expected = 20_000.0 * 1e-6 + 500.0 * 10e-6;
+        assert!((charged - expected).abs() < 1e-12, "{charged} != {expected}");
+
+        // The next real turn's marginal token spend is still measured against
+        // the conversation's own last prompt (100K), not the summarizer's 20K:
+        // a side request replays a different prompt entirely, so letting it set
+        // that baseline would make the next turn's growth arbitrary.
+        b.record(&usage_with_parts(100_100, 200, 100_300));
+        assert_eq!(
+            b.spent(),
+            110_000 + 500 + 300,
+            "the turn after a side request grows by 100 prompt + 200 completion"
+        );
+    }
+
+    /// An unmetered run charges a side request nothing and reports nothing,
+    /// exactly as it does for an ordinary one.
+    #[test]
+    fn a_side_request_on_an_unmetered_run_stays_unmetered() {
+        let mut b = SessionBudget::new(None);
+        b.record_side_request(&usage_with_parts(1_000, 100, 1_100));
+        assert_eq!(b.spent_usd(), None);
+        assert_eq!(b.spent(), 100);
     }
 
     /// A `0` ceiling is honest rather than a synonym for unbounded -- which is
