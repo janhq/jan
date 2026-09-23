@@ -123,17 +123,20 @@ Var LockedFile
 ; `RMDir /r`; scheduling it with /REBOOTOK instead would raise the reboot flag on
 ; a per-user install that cannot honour it.
 ;
+; The path is freed by *renaming* it, never by deleting it. The rename works for
+; an idle file and for a mapped image alike, and the `.old` copy it leaves is
+; what RestoreBundledFiles puts back when a later path turns out to be locked.
+; Deleting an idle file would free the name just as well, but an install that
+; then aborts has destroyed a file it cannot restore, which is how an upgrade
+; that ended in the abort below was reported as a missing
+; `jan-llama-worker.exe`.
+;
 ; A failure is recorded in $LockedFile rather than swallowed, so the install can
 ; stop before it has written anything instead of dying part-extracted.
 !macro UnlockBundledBinary path
   ${If} ${FileExists} "${path}"
     StrCpy $R6 0
     ${Do}
-      ClearErrors
-      Delete "${path}"
-      ${IfNot} ${Errors}
-        ${ExitDo}
-      ${EndIf}
       ClearErrors
       Delete "${path}.old"
       ClearErrors
@@ -179,6 +182,48 @@ Var LockedFile
   ${Loop}
 !macroend
 
+; Puts a freed file back under its real name, so an install that cannot go ahead
+; leaves the previous one exactly as it was. Only ever called from the abort
+; path: after the frees and before the first `File` write.
+;
+; The real name is restored only when it is free, so a `.old` copy can never
+; land on top of a file the install has already written.
+!macro RestoreBundledBinary path
+  ${If} ${FileExists} "${path}.old"
+  ${AndIfNot} ${FileExists} "${path}"
+    ClearErrors
+    Rename "${path}.old" "${path}"
+    ClearErrors
+  ${EndIf}
+!macroend
+
+; The same, over a wildcard. Rescanned like the unlock pass, because the renames
+; mutate the directory being enumerated and a `.old` file does not match its own
+; `*.dll` pattern, so a pass cannot see what it just restored.
+!macro RestoreBundledPattern dir pattern
+  StrCpy $R2 0
+  ${Do}
+    FindFirst $R8 $R9 "${dir}\${pattern}.old"
+    ${Do}
+      ${If} $R9 == ""
+        ${ExitDo}
+      ${EndIf}
+      ; Strip the trailing ".old" with an explicit length: `StrCpy`'s negative
+      ; maxlen is not what this file otherwise relies on.
+      StrLen $R3 "$R9"
+      IntOp $R3 $R3 - 4
+      StrCpy $R7 "$R9" $R3
+      !insertmacro RestoreBundledBinary "${dir}\$R7"
+      FindNext $R8 $R9
+    ${Loop}
+    FindClose $R8
+    IntOp $R2 $R2 + 1
+    ${If} $R2 >= 3
+      ${ExitDo}
+    ${EndIf}
+  ${Loop}
+!macroend
+
 ; Everything a previous install may still have mapped, freed before the first
 ; `File` write so a lock aborts with the app's own message instead of NSIS's
 ; mid-extraction one. bun and uv are not stopped by name: the user's own bun may
@@ -192,6 +237,17 @@ Var LockedFile
   !insertmacro UnlockBundledBinary "$INSTDIR\bun.exe"
   !insertmacro UnlockBundledBinary "$INSTDIR\uv.exe"
   ${If} $LockedFile != ""
+    ; Nothing has been written yet, so undo the frees: the install refuses and
+    ; the previous one stays usable. Without this the app is left without the
+    ; worker under its real name, and reports
+    ; "jan-llama-worker.exe was not found in the app resources or next to the
+    ; executable" on the next launch.
+    !insertmacro RestoreBundledBinary "$INSTDIR\resources\bin\jan-llama-worker.exe"
+    !insertmacro RestoreBundledPattern "$INSTDIR\resources\bin" "ggml*.dll"
+    !insertmacro RestoreBundledPattern "$INSTDIR\resources\bin" "cudart64_*.dll"
+    !insertmacro RestoreBundledPattern "$INSTDIR\resources\bin" "cublas*.dll"
+    !insertmacro RestoreBundledBinary "$INSTDIR\bun.exe"
+    !insertmacro RestoreBundledBinary "$INSTDIR\uv.exe"
     nsis_tauri_utils::StrReplace "$(failedToKillApp)" "{{product_name}}" "${PRODUCTNAME}"
     Pop $R3
     Abort "$R3$\n$LockedFile"
