@@ -1,6 +1,15 @@
 name: get-update-version
 on:
   workflow_call:
+    inputs:
+      # A manual build asks for a stamped version the auto-rule cannot derive:
+      # `0.8.5-rc1-beta`, say, so the build is a beta rather than a nightly.
+      # Empty is every other caller's answer, and the computed version stands.
+      version:
+        description: 'Version to stamp into the app, overriding the computed one. Empty computes it as before.'
+        type: string
+        required: false
+        default: ''
     outputs:
       new_version:
         description: 'The new version of the app'
@@ -45,7 +54,10 @@ jobs:
             exit 1
           }
 
-            if ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}; then
+            if [ -n "${{ inputs.version }}" ]; then
+            echo "Manual version stamp, skipping the tag lookup"
+            echo "::set-output name=new_version::${{ inputs.version }}"
+          elif ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') }}; then
             echo "Tag detected, set output follow tag"
             sanitized_tag="${{ steps.tag.outputs.tag }}"
             # Remove the 'v' prefix if it exists
