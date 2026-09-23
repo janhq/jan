@@ -52,56 +52,46 @@ def get_computer_config():
 def get_default_jan_path():
     """Get default Jan app path based on OS"""
     if IS_WINDOWS:
-        # Try multiple common locations on Windows
+        # The installed executable is Jan-Desktop.exe, or Jan-Desktop-<channel>.exe
+        # on nightly and beta (see .github/scripts/rename-tauri-app.sh and
+        # autoqa/scripts/windows_install.ps1).
         possible_paths = [
-            os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan.exe"),
-            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'jan', 'Jan.exe'),
-            os.path.join(os.environ.get('APPDATA', ''), 'jan', 'Jan.exe'),
-            r"C:\Program Files\jan\Jan.exe",
-            r"C:\Program Files (x86)\jan\Jan.exe"
+            os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan-Desktop.exe"),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'jan', 'Jan-Desktop.exe'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''), 'Programs', 'jan-nightly', 'Jan-Desktop-nightly.exe'),
+            os.path.join(os.environ.get('APPDATA', ''), 'jan', 'Jan-Desktop.exe'),
+            r"C:\Program Files\jan\Jan-Desktop.exe",
+            r"C:\Program Files (x86)\jan\Jan-Desktop.exe"
         ]
-        
-        # Return first existing path, or first option as default
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        # If none exist, return the most likely default
-        return possible_paths[0]
-    
+
     elif IS_LINUX:
-        # Linux possible locations
+        # The .deb and AppImage install the binary as Jan-Desktop, or
+        # Jan-Desktop-nightly on nightly (see autoqa/scripts/run_tests.sh).
         possible_paths = [
-            "/usr/bin/Jan",
-            "/usr/local/bin/Jan",
-            os.path.expanduser("~/Applications/Jan/Jan"),
-            "/opt/Jan/Jan"
+            "/usr/bin/Jan-Desktop",
+            "/usr/bin/Jan-Desktop-nightly",
+            "/usr/local/bin/Jan-Desktop",
+            "/opt/Jan/Jan-Desktop"
         ]
-        
-        # Return first existing path, or first option as default
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        # Default to nightly build path
-        return "/usr/bin/Jan"
-    
+
     elif IS_MACOS:
-        # macOS defaults
+        # productName names the .app, mainBinaryName names the executable inside it.
         possible_paths = [
-            "/Applications/Jan.app/Contents/MacOS/Jan",
-            os.path.expanduser("~/Applications/Jan.app/Contents/MacOS/Jan")
+            "/Applications/Jan.app/Contents/MacOS/Jan-Desktop",
+            os.path.expanduser("~/Applications/Jan.app/Contents/MacOS/Jan-Desktop"),
+            "/Applications/Jan-nightly.app/Contents/MacOS/Jan-Desktop-nightly"
         ]
-        
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-        
-        return possible_paths[0]
-    
+
     else:
         # Unknown platform
         return "jan"
+
+    # Return first existing path, or the most likely default
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+
+    return possible_paths[0]
 
 def start_computer_server():
     """Start computer server in background thread"""
@@ -178,7 +168,7 @@ Examples:
   python main.py --enable-reportportal --rp-token YOUR_TOKEN
   
   # Run with custom Jan app path
-  python main.py --jan-app-path "C:/Custom/Path/Jan.exe"
+  python main.py --jan-app-path "C:/Custom/Path/Jan-Desktop.exe"
   
   # Run with different model
   python main.py --model-name "gpt-4" --model-base-url "https://api.openai.com/v1"
@@ -238,8 +228,9 @@ Examples:
     )
     jan_group.add_argument(
         '--jan-process-name',
-        default=os.getenv('JAN_PROCESS_NAME', 'Jan.exe' if IS_WINDOWS else ('Jan' if IS_MACOS else 'Jan-nightly')),
-        help='Jan process name for monitoring (env: JAN_PROCESS_NAME, default: platform-specific)'
+        default=os.getenv('JAN_PROCESS_NAME', 'Jan-Desktop'),
+        help='Jan process name for monitoring, matched as a substring (env: JAN_PROCESS_NAME, '
+             'default: %(default)s, which also matches Jan-Desktop-nightly)'
     )
     
     # Model/Agent arguments

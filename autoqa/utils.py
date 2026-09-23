@@ -21,7 +21,7 @@ if IS_WINDOWS:
         gw = None
         logger.warning("pygetwindow not available on this system")
 
-def is_jan_running(jan_process_name="Jan.exe"):
+def is_jan_running(jan_process_name="Jan-Desktop"):
     """
     Check if Jan application is currently running
     """
@@ -33,7 +33,7 @@ def is_jan_running(jan_process_name="Jan.exe"):
             pass
     return False
 
-def force_close_jan(jan_process_name="Jan.exe"):
+def force_close_jan(jan_process_name="Jan-Desktop"):
     """
     Force close Jan application if it's running
     """
@@ -225,11 +225,11 @@ def start_jan_app(jan_app_path=None):
     # Set default path based on platform
     if jan_app_path is None:
         if IS_WINDOWS:
-            jan_app_path = os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan.exe")
+            jan_app_path = os.path.expanduser(r"~\AppData\Local\Programs\jan\Jan-Desktop.exe")
         elif IS_LINUX:
-            jan_app_path = "/usr/bin/Jan"  # or "/usr/bin/Jan" for regular
+            jan_app_path = "/usr/bin/Jan-Desktop"  # Jan-Desktop-nightly on nightly
         elif IS_MACOS:
-            jan_app_path = "/Applications/Jan.app/Contents/MacOS/Jan"  # Default macOS path
+            jan_app_path = "/Applications/Jan.app/Contents/MacOS/Jan-Desktop"  # Default macOS path
         else:
             raise NotImplementedError(f"Platform {platform.system()} not supported")
     
