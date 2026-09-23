@@ -6,6 +6,8 @@
 //! builds with or without Tauri so the desktop app and the headless CLI share
 //! one implementation. This module owns orchestration only.
 
+/// Completion pings for backgrounded `bash` commands.
+pub mod bg_shell;
 // Tauri IPC surface for the desktop agent; the CLI drives the loop directly.
 #[cfg(not(feature = "cli"))]
 pub mod commands;

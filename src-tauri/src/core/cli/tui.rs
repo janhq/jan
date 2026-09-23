@@ -2106,6 +2106,17 @@ struct App {
     /// runs; a match landing between runs starts a turn of its own
     /// (`submit_monitor_notices`).
     monitor_set: Arc<MonitorSet>,
+    /// The session-owned backgrounded-shell registry, shared with every run
+    /// through `OrchestrationArgs::bg_shells`. A command outlives the turn that
+    /// started it, so the model can answer and the user can keep talking while
+    /// it runs; output landing between runs starts a turn of its own
+    /// (`submit_background_notices`). Distinct from `bg_shells`, which is the
+    /// process-wide display snapshot behind the footer chip and `/shells`.
+    shell_set: Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// The session-owned background-subagent registry, on the same terms as
+    /// `shell_set`. Children outlive the run that dispatched them, so their
+    /// panels survive a run end and a completion between runs starts a turn.
+    subagent_set: Arc<crate::core::agent::subagent::BackgroundSubagents>,
     /// Committed finished-subagent summary rows, expandable to their full
     /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
@@ -2623,6 +2634,10 @@ impl App {
             subagents: Vec::new(),
             monitors: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
+            shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
+            subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+                crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            )),
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             starting: Vec::new(),
@@ -2730,8 +2745,13 @@ impl App {
         self.reasoning_blocks.clear();
         self.expanded_traces.clear();
         self.subagent_blocks.clear();
+        // Aborts the children themselves, not just their panels: the
+        // conversation they would report into is going away.
+        self.stop_subagents();
         self.subagents.clear();
         self.stop_monitors();
+        // Pings for work whose conversation is gone have no turn to join.
+        self.shell_set.take_notices();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -3208,7 +3228,18 @@ impl App {
     /// so publishing here would emit an extra intermediate state. A new caller
     /// that does not follow that pattern owns the `publish_agent_status()`.
     fn close_live_background(&mut self) {
-        for panel in std::mem::take(&mut self.subagents) {
+        // Children are session-owned: one still running outlives the run that
+        // dispatched it, so its panel stays docked exactly as a still-watching
+        // monitor does. Only children this run will never hear from again are
+        // summarized as interrupted. `subagent_set` is the authority on what is
+        // still alive -- a panel whose run id it no longer knows is finished or
+        // aborted, whatever the panel last rendered.
+        let live = self.subagent_set.live_run_ids();
+        let panels = std::mem::take(&mut self.subagents);
+        let (still_running, finished): (Vec<_>, Vec<_>) = panels
+            .into_iter()
+            .partition(|panel| live.contains(&panel.run_id));
+        for panel in finished {
             // A later-phase subagent that never started has no run to summarize;
             // drop it rather than report a phantom "interrupted (0 calls)".
             if panel.pending {
@@ -3216,6 +3247,7 @@ impl App {
             }
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
+        self.subagents = still_running;
         self.awaiting.clear();
         // Session monitors outlive the run, so the dock keeps whatever is
         // still watching; a run that ended is no longer parked on anything.
@@ -3230,6 +3262,22 @@ impl App {
     fn stop_monitors(&mut self) {
         self.monitor_set.stop_all();
         self.monitors.clear();
+    }
+
+    /// Abort every background child and undock its panel. Cancelling stops the
+    /// whole session's background work, not just the turn in flight: children
+    /// used to die with the run through `AbortOnDrop`, and a session-owned
+    /// registry must not quietly turn Esc into "keep working". Also called when
+    /// the conversation goes away (reset, thread switch), where a later
+    /// completion would have no turn to join.
+    fn stop_subagents(&mut self) {
+        self.subagent_set.abort_all();
+        for panel in std::mem::take(&mut self.subagents) {
+            if panel.pending {
+                continue;
+            }
+            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
+        }
     }
 
     /// Deliver monitor pings that landed while no run was active. Each headline
@@ -3253,6 +3301,37 @@ impl App {
         }
         for notice in &notices {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        self.begin_turn();
+        self.want_start = true;
+        self.persist();
+    }
+
+    /// Deliver backgrounded-shell and subagent pings that landed while no run
+    /// was active, on exactly the terms `submit_monitor_notices` delivers a
+    /// monitor match: headline where the user is looking, text as the same
+    /// `<SYSTEM>` reminder the loop attaches mid-run, then one turn so the
+    /// model reacts. A shell carries a headline (nothing else reports that the
+    /// command ended); a finished subagent does not, since its `SubagentEnd`
+    /// row already did.
+    fn submit_background_notices(&mut self) {
+        let shells = self.shell_set.take_notices();
+        let subagents = self.subagent_set.take_notices();
+        if shells.is_empty() && subagents.is_empty() {
+            return;
+        }
+        for notice in &shells {
+            self.note(&notice.headline);
+        }
+        if self.model.is_empty() {
+            self.note("background update dropped: not signed in, run /login first");
+            return;
+        }
+        for notice in &shells {
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        for text in &subagents {
+            crate::core::agent::reminder::attach(&mut self.history, text);
         }
         self.begin_turn();
         self.want_start = true;
@@ -6040,6 +6119,10 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
+        // Esc/Ctrl-C stops the session's background work too, not just the
+        // turn: children died with the run before they were session-owned, and
+        // cancel must not quietly become "keep working in the background".
+        self.stop_subagents();
         self.close_live_background();
         self.publish_agent_status();
         self.detail = "cancelled".to_string();
@@ -8436,6 +8519,31 @@ async fn await_monitor_ping(set: &Arc<MonitorSet>, idle: bool) {
     set.wait_for_notice().await
 }
 
+/// Await a backgrounded-shell ping the TUI must deliver itself, on the same
+/// terms as [`await_monitor_ping`]: only between runs, since a running loop
+/// drains the same registry at the top of each turn.
+async fn await_shell_ping(
+    set: &Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    idle: bool,
+) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
+/// Await a background-subagent ping the TUI must deliver itself, on the same
+/// terms as [`await_monitor_ping`].
+async fn await_subagent_ping(
+    set: &Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    idle: bool,
+) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
 /// Await the next event of the active run, or park forever when idle.
 async fn next_event(current: &mut Option<CurrentRun>) -> RunEvent {
     match current {
@@ -8842,6 +8950,17 @@ pub async fn run(
     // model's answer ends the run instead of parking on it.
     let monitor_set = Arc::new(MonitorSet::new());
     args.monitors = Some(monitor_set.clone());
+    // Background shells and subagents are session-owned for the same reason:
+    // the model finishing its turn must end the run even with work still
+    // running, so a typed message starts an ordinary turn instead of queueing
+    // behind work that may take minutes. Their completions are delivered as a
+    // fresh turn by `submit_background_notices`.
+    let shell_set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+    args.bg_shells = Some(shell_set.clone());
+    let subagent_set = Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+        args.max_parallel_subagents,
+    ));
+    args.subagent_bg = Some(subagent_set.clone());
     let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
@@ -8900,6 +9019,8 @@ pub async fn run(
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
+    app.shell_set = shell_set;
+    app.subagent_set = subagent_set;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -9131,6 +9252,13 @@ async fn chat_loop<B: Backend>(
     // Cloned out of `app` so the select arm below can await it while other
     // arms borrow `app` mutably.
     let monitor_set = app.monitor_set.clone();
+    let shell_set = app.shell_set.clone();
+    let subagent_set = app.subagent_set.clone();
+    // The durable channel session-owned children report into, read for the
+    // whole session rather than for one run: a child outliving the run that
+    // dispatched it must still reach its panel and emit its closing bracket.
+    let (session_events_tx, mut session_events) = mpsc::unbounded_channel::<StreamEvent>();
+    subagent_set.install_session_events(session_events_tx);
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -9517,6 +9645,12 @@ async fn chat_loop<B: Backend>(
             _ = await_monitor_ping(&monitor_set, current.is_none() && !app.want_start) => {
                 app.submit_monitor_notices();
             }
+            _ = await_shell_ping(&shell_set, current.is_none() && !app.want_start) => {
+                app.submit_background_notices();
+            }
+            _ = await_subagent_ping(&subagent_set, current.is_none() && !app.want_start) => {
+                app.submit_background_notices();
+            }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
             }
@@ -9641,6 +9775,13 @@ async fn chat_loop<B: Backend>(
                     RunEvent::Steering(request) => app.steer_run(request),
                 }
                 drain_stream_events(app, &mut current).await;
+            }
+            // Children stream here whether or not a run is open. Applied with
+            // the same handler, so a panel updates and closes identically
+            // between runs; `current` is untouched, since a child's events say
+            // nothing about the run that dispatched it.
+            Some(ev) = session_events.recv() => {
+                apply_stream_event(app, Some(ev), &mut current).await;
             }
         }
     }
@@ -15824,7 +15965,10 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.reasoning_blocks.clear();
     app.expanded_traces.clear();
     app.subagent_blocks.clear();
+    // The conversation these would report into is being replaced.
+    app.stop_subagents();
     app.stop_monitors();
+    app.shell_set.take_notices();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -19061,7 +19205,8 @@ mod tests {
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
-        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping, brand,
+        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping,
+        await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
@@ -24525,6 +24670,8 @@ mod tests {
             session_id: None,
             sandbox: None,
             monitors: Some(app.monitor_set.clone()),
+            bg_shells: Some(app.shell_set.clone()),
+            subagent_bg: Some(app.subagent_set.clone()),
             compaction: None,
         })
     }
@@ -34228,6 +34375,119 @@ mod tests {
             .await
             .expect("idle: the ping is ours to deliver");
         let busy = tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, false));
+        assert!(
+            busy.await.is_err(),
+            "a run is active, so the loop drains it"
+        );
+    }
+
+    /// The point of making the registries session-owned: when the model has
+    /// finished and only background work is left, the run is over, so a typed
+    /// message starts an ordinary turn instead of queueing behind a command
+    /// that may run for minutes.
+    #[test]
+    fn input_with_background_work_running_starts_a_turn_instead_of_queueing() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let mut app = test_app();
+        app.submit_user("start the build".into());
+        app.shell_set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        // The model answered and the run ended: background work no longer
+        // holds it open, so the session is idle.
+        app.on_done("stop".into(), None);
+        assert_eq!(app.status, Status::Idle, "the run ends under live work");
+        assert!(!app.run_is_live());
+
+        app.want_start = false;
+        app.submit_user("while that runs, what does the readme say?".into());
+
+        assert!(
+            app.message_queue.is_empty(),
+            "an idle agent takes the message directly: {:?}",
+            app.message_queue.len()
+        );
+        assert!(app.want_start, "a normal turn starts");
+        assert_eq!(app.status, Status::Running);
+        assert!(
+            app.shell_set.has_pending_work(),
+            "the command keeps running across the new turn"
+        );
+    }
+
+    /// A backgrounded command finishing between runs delivers like a monitor
+    /// match: headline on screen, text as a `<SYSTEM>` reminder, one new turn.
+    #[test]
+    fn a_background_shell_ping_between_runs_starts_a_turn() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "build it" }));
+        app.history
+            .push(serde_json::json!({ "role": "assistant", "content": "building" }));
+        app.shell_set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: Some("/tmp/build.log".to_string()),
+        });
+        app.shell_set.finish(ShellDone {
+            id: 1,
+            command: "cargo build".to_string(),
+            elapsed_secs: 12,
+            output_path: Some("/tmp/build.log".to_string()),
+            failed: false,
+        });
+
+        app.submit_background_notices();
+
+        assert!(app.want_start, "a ping arms one turn");
+        assert_eq!(app.status, Status::Running);
+        let last = app.history.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"].as_str().unwrap().contains("cargo build"));
+        assert!(
+            transcript_text(&app).contains("cargo build"),
+            "the headline reports the command ended: {}",
+            transcript_text(&app)
+        );
+    }
+
+    /// The loop drains the registry itself while a run is up, so the TUI's
+    /// wait must stay parked then rather than racing it for the same ping.
+    #[tokio::test]
+    async fn await_shell_ping_only_fires_between_runs() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+        let parked = tokio::time::timeout(Duration::from_millis(20), await_shell_ping(&set, true));
+        assert!(parked.await.is_err(), "nothing could fire, so it parks");
+
+        set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        set.finish(ShellDone {
+            id: 1,
+            command: "cargo build".to_string(),
+            elapsed_secs: 1,
+            output_path: None,
+            failed: false,
+        });
+        tokio::time::timeout(Duration::from_secs(5), await_shell_ping(&set, true))
+            .await
+            .expect("idle: the ping is ours to deliver");
+        let busy = tokio::time::timeout(Duration::from_millis(20), await_shell_ping(&set, false));
         assert!(
             busy.await.is_err(),
             "a run is active, so the loop drains it"

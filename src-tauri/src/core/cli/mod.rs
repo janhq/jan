@@ -1093,6 +1093,10 @@ fn build_cli_orchestration_args(
         // Run-owned here, so a headless run parks on its watchers: nobody is
         // there to talk to meanwhile. The TUI installs its session set itself.
         monitors: None,
+        // Run-owned for the same reason: a headless run has no one to start a
+        // later turn, so it must park until the command reports back.
+        bg_shells: None,
+        subagent_bg: None,
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,

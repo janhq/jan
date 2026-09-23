@@ -693,6 +693,18 @@ pub(crate) struct BackgroundSubagents {
     /// whole life, so the parent stays parked across the gap where one phase has
     /// finished (`running == 0`) but the driver has not yet spawned the next.
     plans_pending: std::sync::atomic::AtomicUsize,
+    /// Where a child's events go when the registry outlives any one run.
+    ///
+    /// A child dispatched by run N but still working after it ends would
+    /// otherwise stream `ToolCall`/`SubagentEnd` into run N's channel, which
+    /// its consumer stopped reading the moment the run finished: the panel
+    /// freezes and the closing bracket is lost. So a session installs one
+    /// durable channel here and every child reports into that instead. `None`
+    /// for a run-owned registry, where the dispatching run's sender is correct
+    /// precisely because no child outlives it.
+    session_events: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>>,
+    >,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -718,7 +730,34 @@ impl BackgroundSubagents {
             wake: Arc::new(tokio::sync::Notify::new()),
             running: std::sync::atomic::AtomicUsize::new(0),
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
+            session_events: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Install the durable channel a session's children report into. Called
+    /// once at session start; see [`Self::session_events`].
+    ///
+    /// Only a session owns a registry that outlives its runs, and only the TUI
+    /// has one, so this does not exist in the desktop build.
+    #[cfg(feature = "cli")]
+    pub(crate) fn install_session_events(
+        &self,
+        tx: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) {
+        *self.session_events.lock().unwrap() = Some(tx);
+    }
+
+    /// The channel a child dispatched now should report into: the session's
+    /// durable one when this registry outlives runs, else the dispatching run's.
+    fn child_events(
+        &self,
+        run_events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent> {
+        self.session_events
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| run_events.clone())
     }
 
     /// Mark a multi-phase plan as driving, keeping the parent parked until the
@@ -750,6 +789,15 @@ impl BackgroundSubagents {
         !self.notices.lock().unwrap().is_empty()
             || self.running.load(std::sync::atomic::Ordering::SeqCst) > 0
             || self.plans_pending.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// Whether a ping is queued and not yet taken. Unlike
+    /// [`Self::has_pending_work`] this says nothing about children still
+    /// running: a set that outlives its run consults it to decide whether the
+    /// model has something to react to *now*, since a child finishing later
+    /// starts a turn of its own rather than holding this one open.
+    pub(crate) fn has_queued_notices(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
     }
 
     /// Park until a ping is available, or until nothing is left to wait for.
@@ -836,6 +884,21 @@ impl BackgroundSubagents {
             });
         }
         self.notices.lock().unwrap().clear();
+    }
+
+    /// The run ids of children still registered, i.e. dispatched and not yet
+    /// finished or aborted. A session-owned registry is the authority on which
+    /// live panels survive a run end: what the run streamed says only what it
+    /// last saw, not what is still running.
+    #[cfg(feature = "cli")]
+    pub(crate) fn live_run_ids(&self) -> std::collections::HashSet<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|entry| !entry.finished.load(std::sync::atomic::Ordering::SeqCst))
+            .map(|entry| entry.run_id.clone())
+            .collect()
     }
 
     /// Wait for every still-registered child to finish on its own, rather than
@@ -936,6 +999,14 @@ async fn run_subagent(
     // A child's monitors are its own and die with it; nothing would pick up a
     // match left in the session set once the child has returned.
     child_args.monitors = None;
+    // Likewise its backgrounded shells: a child's run is the only thing that
+    // could deliver their output, so they stay run-owned and it parks on them
+    // rather than handing the session a command nobody is reading for.
+    child_args.bg_shells = None;
+    // A child cannot dispatch subagents at all (`subagents_enabled = false`
+    // above), so it has no registry to share; clearing this keeps it from
+    // inheriting the parent session's by accident.
+    child_args.subagent_bg = None;
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -1057,8 +1128,10 @@ pub(crate) fn spawn_subagent(
     }
 
     let parent_args = parent_args.clone();
-    let task_events = events.clone();
-    let entry_events = events.clone();
+    // A session-owned registry routes the child to its durable channel, so a
+    // child outliving this run keeps reporting somewhere that is still read.
+    let task_events = bg.child_events(events);
+    let entry_events = bg.child_events(events);
     let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
@@ -2597,6 +2670,8 @@ mod tests {
             max_parallel_subagents: 1,
             auto_approve: false,
             monitors: None,
+            bg_shells: None,
+            subagent_bg: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
