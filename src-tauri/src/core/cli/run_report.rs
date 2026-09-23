@@ -283,6 +283,50 @@ pub(crate) struct Init {
     /// `type` tags. Empty when the run does not read stdin at all, which is
     /// the honest answer for a read-only stream: nothing can be sent back.
     input_kinds: Vec<&'static str>,
+    /// The content-part form of the `user` message, when this run accepts it:
+    /// the caps a client must stay inside and the image types it may send.
+    /// `null` when the run reads no stdin -- there is no channel to describe --
+    /// which is also why this is additively separate from `input_kinds`: a
+    /// client that reads only the kinds still learns `user`, and one that
+    /// negotiates the caps gets them from the same record.
+    input_content_parts: Option<InputContentParts>,
+}
+
+/// The caps on a `user` message's content-part array, as `init` advertises them.
+///
+/// A client that sends an image is sending bytes into a channel with no
+/// backpressure, so the limits are part of the handshake rather than something
+/// to discover by being rejected. Each is the cap the parser enforces: this is
+/// the same constant, not a copy of it.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+pub(crate) struct InputContentParts {
+    /// The image types an `image_url` part may name, as MIME types.
+    mime_types: Vec<&'static str>,
+    /// Most decoded bytes one image may carry.
+    max_image_bytes: usize,
+    /// Most decoded bytes across the images of one message.
+    max_message_image_bytes: usize,
+    /// Most images one message may carry.
+    max_images: usize,
+    /// Most bytes one input line may occupy. Applies to every kind, not just
+    /// `user`: the cap is the reader's, before anything is parsed.
+    max_line_bytes: usize,
+    /// Most bytes of a rejected line `input_error` echoes back.
+    max_echo_bytes: usize,
+}
+
+impl InputContentParts {
+    pub(crate) fn current() -> Self {
+        use super::stream_input;
+        Self {
+            mime_types: super::user_message::IMAGE_MIME_TYPES.to_vec(),
+            max_image_bytes: stream_input::MAX_IMAGE_BYTES,
+            max_message_image_bytes: stream_input::MAX_MESSAGE_IMAGE_BYTES,
+            max_images: stream_input::MAX_IMAGES,
+            max_line_bytes: stream_input::MAX_LINE_BYTES,
+            max_echo_bytes: stream_input::MAX_ECHO_BYTES,
+        }
+    }
 }
 
 impl Init {
@@ -292,6 +336,7 @@ impl Init {
         cwd: Option<String>,
         tools: Vec<String>,
         input_kinds: Vec<&'static str>,
+        input_content_parts: Option<InputContentParts>,
     ) -> Self {
         Self {
             kind: "init",
@@ -301,6 +346,7 @@ impl Init {
             cwd,
             tools,
             input_kinds,
+            input_content_parts,
         }
     }
 }
@@ -504,8 +550,15 @@ mod tests {
             documented_tags_after(&doc, "the CLI rather than by the loop: ");
 
         let minted = [
-            serde_json::to_value(Init::new("id", "m", Some("/tmp".to_string()), Vec::new(), Vec::new()))
-                .unwrap(),
+            serde_json::to_value(Init::new(
+                "id",
+                "m",
+                Some("/tmp".to_string()),
+                Vec::new(),
+                Vec::new(),
+                None,
+            ))
+            .unwrap(),
             serde_json::to_value(RunReport::default().finish(None, None, "m", 1, None)).unwrap(),
             serde_json::to_value(PermissionDecisionRecord::new(
                 "req",
@@ -568,6 +621,7 @@ mod tests {
             Some("/tmp/project".to_string()),
             vec!["read".to_string(), "write".to_string()],
             vec!["user", "abort", "permission"],
+            Some(InputContentParts::current()),
         ))
         .unwrap();
         assert_eq!(
@@ -580,6 +634,18 @@ mod tests {
                 "cwd": "/tmp/project",
                 "tools": ["read", "write"],
                 "input_kinds": ["user", "abort", "permission"],
+                // The caps a client stays inside, as the wire carries them.
+                // Pinned as literals in both places a client reads them from:
+                // here the record, and in the CLI's own suite the handshake as
+                // it actually reaches stdout.
+                "input_content_parts": {
+                    "mime_types": ["image/png", "image/jpeg", "image/gif", "image/webp"],
+                    "max_image_bytes": 5_242_880,
+                    "max_message_image_bytes": 10_485_760,
+                    "max_images": 8,
+                    "max_line_bytes": 16_777_216,
+                    "max_echo_bytes": 4_096,
+                },
             })
         );
     }
@@ -595,10 +661,14 @@ mod tests {
             Some("/tmp".to_string()),
             Vec::new(),
             Vec::new(),
+            None,
         ))
         .unwrap();
         assert_eq!(out["input_kinds"], serde_json::json!([]));
         assert_eq!(out["input_kinds"].as_array().unwrap().len(), 0);
+        // And no caps to describe: there is no channel for them to bound, so a
+        // client reads `null` rather than a limit that applies to nothing.
+        assert!(out["input_content_parts"].is_null(), "{out}");
     }
 
     /// A run given no project root reports none. The alternative -- a path
@@ -606,8 +676,15 @@ mod tests {
     /// to?" with a directory nothing is confined to.
     #[test]
     fn init_without_a_project_root_reports_cwd_absent() {
-        let out =
-            serde_json::to_value(Init::new("id", "m", None, Vec::new(), Vec::new())).unwrap();
+        let out = serde_json::to_value(Init::new(
+            "id",
+            "m",
+            None,
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
+        .unwrap();
         assert!(out["cwd"].is_null(), "{out}");
     }
 

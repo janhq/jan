@@ -241,6 +241,7 @@ mod tests {
                 None,
                 Vec::new(),
                 Vec::new(),
+                None,
             ))
             .unwrap(),
             serde_json::to_value(report).unwrap(),

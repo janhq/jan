@@ -866,6 +866,17 @@
           "items": {
             "type": "string"
           }
+        },
+        "input_content_parts": {
+          "description": "The content-part form of the `user` message, when this run accepts it:\nthe caps a client must stay inside and the image types it may send.\n`null` when the run reads no stdin -- there is no channel to describe --\nwhich is also why this is additively separate from `input_kinds`: a\nclient that reads only the kinds still learns `user`, and one that\nnegotiates the caps gets them from the same record.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InputContentParts"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -875,6 +886,57 @@
         "model",
         "tools",
         "input_kinds"
+      ]
+    },
+    "InputContentParts": {
+      "description": "The caps on a `user` message's content-part array, as `init` advertises them.\n\nA client that sends an image is sending bytes into a channel with no\nbackpressure, so the limits are part of the handshake rather than something\nto discover by being rejected. Each is the cap the parser enforces: this is\nthe same constant, not a copy of it.",
+      "type": "object",
+      "properties": {
+        "mime_types": {
+          "description": "The image types an `image_url` part may name, as MIME types.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_image_bytes": {
+          "description": "Most decoded bytes one image may carry.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "max_message_image_bytes": {
+          "description": "Most decoded bytes across the images of one message.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "max_images": {
+          "description": "Most images one message may carry.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "max_line_bytes": {
+          "description": "Most bytes one input line may occupy. Applies to every kind, not just\n`user`: the cap is the reader's, before anything is parsed.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "max_echo_bytes": {
+          "description": "Most bytes of a rejected line `input_error` echoes back.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "mime_types",
+        "max_image_bytes",
+        "max_message_image_bytes",
+        "max_images",
+        "max_line_bytes",
+        "max_echo_bytes"
       ]
     },
     "RunResult": {
@@ -1056,25 +1118,40 @@
           "type": "string"
         },
         "line": {
-          "description": "The line that was rejected, so the client can match it to what it wrote.",
+          "description": "The line that was rejected, so the client can match it to what it wrote.\nTruncated to [`MAX_ECHO_BYTES`], because a rejected line may be as large\nas [`MAX_LINE_BYTES`] and echoing it whole would hand the client back the\ncost the cap just removed.",
           "type": "string"
+        },
+        "line_truncated": {
+          "description": "True when `line` is a prefix of what the client sent, so a client that\nmatches on the echo knows why it is short.",
+          "type": "boolean"
         }
       },
       "required": [
         "type",
         "message",
-        "line"
+        "line",
+        "line_truncated"
       ]
     },
     "InputLine": {
       "description": "One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields\neach carries. The wire shape is a serde type rather than a hand-rolled walk\nover a `Value` so the protocol schema can be derived from it -- `jan cli\nagent schema` publishes this shape, and a hand-written copy of it would be\ncorrect only until the parser moved.\n\nThe `type` field is read separately, before deserializing: an unknown kind is\nreported against [`INPUT_KINDS`], which is the list `init` advertises.",
       "oneOf": [
         {
-          "description": "A follow-up turn for the run in flight.",
+          "description": "A follow-up turn for the run in flight: `text`, or `content` as an\nOpenAI content-part array. Exactly one of the two, which JSON Schema\ncannot state, so the doc says it and the parser enforces it. A\ncontent-part message carries text parts and `image_url` parts, whose URL\nis a base64 `data:` URL -- the run shares no filesystem with a client.",
           "type": "object",
           "properties": {
             "text": {
-              "type": "string"
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "content": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": true
             },
             "type": {
               "type": "string",
@@ -1082,8 +1159,7 @@
             }
           },
           "required": [
-            "type",
-            "text"
+            "type"
           ]
         },
         {
