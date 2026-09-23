@@ -489,6 +489,13 @@
             "usage": {
               "$ref": "#/$defs/Usage"
             },
+            "execution_id": {
+              "description": "The provider's id for the execution that produced this usage, when\nit reported one. This is the handle a per-request billing lookup is\nkeyed by, so a consumer can ask what this one request actually\ncost rather than only what it estimates.\n\nA sibling of `usage` rather than a field inside it, because it is a\nbilling handle and not a token count. Absent on the default upstream\npath, which cannot see the response headers (see\n[`crate::core::agent::correlation`]); that is a limitation to report,\nnot a reason to synthesize one.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "turn_usage"
@@ -996,6 +1003,16 @@
             "null"
           ],
           "format": "double"
+        },
+        "execution_ids": {
+          "description": "Provider execution ids for the requests this run made, when the upstream\nreturned them. `jan usage generation <id>` turns one into the recorded\ncharge -- the authoritative counterpart to `estimated_cost_usd`. Omitted\nrather than empty when none were reported, so its absence is never read\nas \"no requests were made\".",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": [
