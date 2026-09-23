@@ -15,7 +15,7 @@
 
 ## Prerequisites
 
-- Python 3.8+
+- Python 3.11+ (CI runs 3.13; `cua-computer~=0.3.5` in `requirements.txt` requires 3.11)
 - Jan application installed
 - Windows Sandbox (for computer provider)
 - Computer server package installed
