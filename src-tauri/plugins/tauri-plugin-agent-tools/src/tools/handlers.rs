@@ -26,10 +26,11 @@ const MAX_LINES: usize = 2000;
 /// text file whose name ends in an image extension) cannot flood the model
 /// context as a base64 blob.
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
-/// bash output caps: generous enough that typical command output reaches the
-/// model intact on a large-context run, spilling to a temp file only past this.
-const BASH_MAX_BYTES: usize = 256 * 1024;
-const BASH_MAX_LINES: usize = 10_000;
+/// bash output caps, matching the `read` tool. Overflow is not lost: it spills
+/// to a temp file the `read` tool can page through, so the cap is tuned for
+/// context economy (~16k tokens worst case) rather than for fitting everything.
+const BASH_MAX_BYTES: usize = MAX_BYTES;
+const BASH_MAX_LINES: usize = MAX_LINES;
 const GREP_MAX_LINE: usize = 500;
 const LS_DEFAULT_LIMIT: usize = 500;
 const FIND_DEFAULT_LIMIT: usize = 1000;
@@ -896,6 +897,9 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // The child's pid stays registered until the task ends so a shutdown can
     // reap its whole process tree if it is still running.
     let (tx, mut rx) = oneshot::channel();
+    // Taken before the race so a backgrounded command's reported runtime covers
+    // its whole life, not just the part after the timeout.
+    let started = std::time::Instant::now();
     let spill_scratch = ctx.scratch_root.map(Path::to_path_buf);
     // Owned for the detached task, which unregisters from the same session
     // bucket the child was registered under.
@@ -945,31 +949,106 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
             if let Some(pid) = pid {
                 proc::mark_backgrounded(ctx.thread_id, pid);
             }
-            match new_temp_path(ctx.scratch_root) {
-                Some(path) => {
-                    let display =
-                        crate::tools::sandbox::scratch_display_path(ctx.scratch_root, &path);
+            // Rung by the detached task once the command really ends, so the
+            // caller can ping the model rather than leaving it to poll the file.
+            let done_sink = ctx.shell_done_sink.clone();
+            let command_owned = command.to_string();
+            let id = next_background_id();
+            let temp = new_temp_path(ctx.scratch_root);
+            let display = temp
+                .as_ref()
+                .map(|p| crate::tools::sandbox::scratch_display_path(ctx.scratch_root, p));
+            // Raised before this call returns, so the caller is already owed a
+            // result by the time the turn that made the call can end. It
+            // carries the path too, so a caller that stops waiting can still
+            // say where the output will land.
+            if let Some(sink) = &done_sink {
+                sink(crate::tools::ShellEvent::Backgrounded(
+                    crate::tools::ShellBackgrounded {
+                        id,
+                        command: command_owned.clone(),
+                        timeout_secs,
+                        output_path: display.clone(),
+                    },
+                ));
+            }
+            match (temp, display) {
+                (Some(path), Some(display)) => {
+                    let done_display = display.clone();
                     tokio::spawn(async move {
                         let out = rx.await.unwrap_or_else(|_| {
                             "ERROR: background command ended without producing output".to_string()
                         });
-                        write_background_output(&path, &out);
+                        // The file is published before the doorbell rings, so a
+                        // model reacting to the ping always finds the output
+                        // already there -- and if publishing failed the ping
+                        // says nothing was captured rather than naming a file
+                        // that is absent or stale.
+                        let published = write_background_output(&path, &out);
+                        if let Some(sink) = done_sink {
+                            sink(crate::tools::ShellEvent::Finished(crate::tools::ShellDone {
+                                id,
+                                command: command_owned,
+                                elapsed_secs: started.elapsed().as_secs(),
+                                output_path: published.then_some(done_display),
+                                failed: bash_result_failed(&out),
+                            }));
+                        }
                     });
+                    let ping = if ctx.shell_done_sink.is_some() {
+                        // The bound is quoted alongside the promise: the model
+                        // needs to know both when it will be told and when the
+                        // run stops holding itself open for a command that may
+                        // never end.
+                        format!(
+                            " You do not have to wait or poll for it: you are notified \
+                             automatically when it finishes, so carry on with other work. \
+                             If it is still running after about {}s you are told that \
+                             instead, and the run is free to end -- the file still appears \
+                             when the command eventually finishes.",
+                            crate::tools::shell_park_budget_secs(timeout_secs)
+                        )
+                    } else {
+                        String::new()
+                    };
                     format!(
                         "Command exceeded {timeout_secs}s and is still running in the \
                          background. Its result will be written to {display} once it \
                          finishes; read that file to collect it (if the output was large \
-                         that file keeps a tail and points to the full log)."
+                         that file keeps a tail and points to the full log).{ping}"
                     )
                 }
-                None => format!(
-                    "Command exceeded {timeout_secs}s and is still running in the \
-                     background, but a file to capture its output could not be created, \
-                     so the output will not be collected."
-                ),
+                _ => {
+                    // No file, but the completion is still worth reporting: the
+                    // model otherwise has no way to learn the command ended.
+                    tokio::spawn(async move {
+                        let out = rx.await.unwrap_or_default();
+                        if let Some(sink) = done_sink {
+                            sink(crate::tools::ShellEvent::Finished(crate::tools::ShellDone {
+                                id,
+                                command: command_owned,
+                                elapsed_secs: started.elapsed().as_secs(),
+                                output_path: None,
+                                failed: bash_result_failed(&out),
+                            }));
+                        }
+                    });
+                    format!(
+                        "Command exceeded {timeout_secs}s and is still running in the \
+                         background, but a file to capture its output could not be created, \
+                         so the output will not be collected."
+                    )
+                }
             }
         }
     }
+}
+
+/// Serial number for one backgrounded command, so a completion can be paired
+/// with the hand-off that created it.
+fn next_background_id() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Atomically publish a backgrounded command's formatted output at `path`: write
@@ -977,21 +1056,29 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 /// `path` never observes a half-written file (existence means complete). Uses
 /// [`open_spill_file`] so the write never follows a symlink; leaves nothing
 /// behind on failure.
-fn write_background_output(path: &Path, content: &str) {
+///
+/// Returns whether `path` now holds this command's output. The caller reports
+/// the path to the model only on `true`: on ENOSPC, or a leftover `.part` from
+/// an earlier crash, the promise "its output is in {path}" would otherwise name
+/// a file that is absent or stale.
+#[must_use]
+fn write_background_output(path: &Path, content: &str) -> bool {
     use std::io::Write;
     let part = path.with_extension("part");
     let Ok(mut file) = open_spill_file(&part) else {
-        return;
+        return false;
     };
     if file.write_all(content.as_bytes()).is_err() || file.flush().is_err() {
         drop(file);
         remove_spill_file(&part);
-        return;
+        return false;
     }
     drop(file);
     if std::fs::rename(&part, path).is_err() {
         remove_spill_file(&part);
+        return false;
     }
+    true
 }
 
 /// Drain a running child's stdout+stderr into a bounded rolling buffer (so a
@@ -3014,6 +3101,89 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// The doorbell: a backgrounded command must announce itself the moment it
+    /// is detached (so the caller knows a result is owed and does not end the
+    /// run under it) and report again when it really finishes, naming the file
+    /// the output was published to. The order matters -- the file is written
+    /// before the ping, so reacting to the ping always finds it there.
+    #[tokio::test]
+    async fn a_backgrounded_command_rings_the_doorbell_when_it_finishes() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = events.clone();
+        let ctx = ToolContext::new(&root, &store, &[]).with_shell_done_sink(std::sync::Arc::new(
+            move |e: crate::tools::ShellEvent| seen.lock().unwrap().push(e),
+        ));
+        let out = super::execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 0.3; echo done; exit 3", "timeout": 0}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert!(out.contains("still running in the background"), "{out}");
+        assert!(
+            out.contains("pinged automatically") || out.contains("notified automatically"),
+            "a sink-backed run must tell the model not to poll: {out}"
+        );
+        // Owed immediately, before the command has ended.
+        let handoff = {
+            let got = events.lock().unwrap();
+            let [crate::tools::ShellEvent::Backgrounded(handoff)] = got.as_slice() else {
+                panic!("must announce the hand-off synchronously: {got:?}");
+            };
+            handoff.clone()
+        };
+        assert_eq!(
+            handoff.timeout_secs, 0,
+            "the park budget is sized from this"
+        );
+        assert!(
+            handoff.output_path.is_some(),
+            "the hand-off names the file, so a caller that gives up can still say where"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+        let got = events.lock().unwrap().clone();
+        let Some(crate::tools::ShellEvent::Finished(done)) = got.get(1) else {
+            panic!("no completion event: {got:?}");
+        };
+        assert_eq!(
+            done.id, handoff.id,
+            "the completion closes its own hand-off"
+        );
+        assert!(done.failed, "exit 3 must be reported as a failure");
+        assert!(done.command.contains("echo done"), "names the command");
+        let path = done.output_path.clone().expect("an output file");
+        let collected =
+            super::execute_builtin(lookup("read").unwrap(), &json!({"path": path}), &ctx)
+                .await
+                .0;
+        assert!(
+            collected.contains("done"),
+            "the output must already be readable when the ping lands: {collected}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Without a sink the tool must not promise a ping that will never come.
+    #[tokio::test]
+    async fn backgrounding_without_a_doorbell_still_tells_the_model_to_read_the_file() {
+        let root = unique_root();
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "sleep 2", "timeout": 0}),
+            &root,
+        )
+        .await;
+        assert!(out.contains("result will be written to"), "{out}");
+        assert!(
+            !out.contains("notified automatically"),
+            "no sink, no promise of a ping: {out}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
@@ -3134,23 +3304,53 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Typical command output (well under the caps) must reach the model whole:
+    /// lowering the caps for context economy must not start truncating the
+    /// everyday `cargo check` / `git status` sized result.
     #[tokio::test]
-    async fn bash_output_past_old_64kb_cap_survives_intact() {
+    async fn bash_output_under_the_cap_survives_intact() {
         let root = unique_root();
-        // ~128KB of output: over the shared 64KB cap, under the bash cap.
+        // ~32KB over 500 lines: half the byte cap, a quarter of the line cap.
+        let out = execute_builtin(
+            lookup("bash").unwrap(),
+            &json!({"command": "for i in $(seq 1 500); do printf '%064d\\n' \"$i\"; done"}),
+            &root,
+        )
+        .await;
+        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
+        assert!(
+            !out.contains("output truncated"),
+            "should not truncate: len={}",
+            out.len()
+        );
+        assert!(out.contains("000500"), "last line lost: end of {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The counterpart: past the cap the notice appears. Pinned just above
+    /// 64KB so the test fails if the cap drifts back up to the old 256KB.
+    #[tokio::test]
+    async fn bash_output_past_the_byte_cap_is_truncated() {
+        let root = unique_root();
+        // ~128KB over 2000 lines of 64 chars: over the byte cap, at the line cap.
         let out = execute_builtin(
             lookup("bash").unwrap(),
             &json!({"command": "for i in $(seq 1 2000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
         .await;
-        assert!(!out.starts_with("ERROR"), "unexpected: {out}");
         assert!(
-            !out.contains("[truncated"),
-            "should not truncate: len={}",
+            out.contains("output truncated at"),
+            "should truncate: end of {out}"
+        );
+        // Pinned just above BASH_MAX_BYTES (not at some loose multiple of it):
+        // the notice alone already fails at the old 256KB cap, so only a tight
+        // bound actually pins the byte cap itself.
+        assert!(
+            out.len() < BASH_MAX_BYTES + 6 * 1024,
+            "cap not honoured: len={}",
             out.len()
         );
-        assert!(out.len() > 64 * 1024, "expected >64KB, got {}", out.len());
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3317,9 +3517,8 @@ mod tests {
     #[tokio::test]
     async fn bash_line_overflow_keeps_the_tail_not_the_head() {
         let root = unique_root();
-        // 12000 short lines: over the 10000-line cap but under the byte cap.
-        // Tail truncation must keep the LAST lines (final result/errors) and
-        // drop the earliest ones.
+        // 12000 short lines: well over the line cap. Tail truncation must keep
+        // the LAST lines (final result/errors) and drop the earliest ones.
         let out = execute_builtin(
             lookup("bash").unwrap(),
             &json!({"command": "for i in $(seq 1 12000); do echo \"L$i\"; done"}),

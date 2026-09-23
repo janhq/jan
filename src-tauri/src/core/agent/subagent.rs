@@ -693,6 +693,18 @@ pub(crate) struct BackgroundSubagents {
     /// whole life, so the parent stays parked across the gap where one phase has
     /// finished (`running == 0`) but the driver has not yet spawned the next.
     plans_pending: std::sync::atomic::AtomicUsize,
+    /// Where a child's events go when the registry outlives any one run.
+    ///
+    /// A child dispatched by run N but still working after it ends would
+    /// otherwise stream `ToolCall`/`SubagentEnd` into run N's channel, which
+    /// its consumer stopped reading the moment the run finished: the panel
+    /// freezes and the closing bracket is lost. So a session installs one
+    /// durable channel here and every child reports into that instead. `None`
+    /// for a run-owned registry, where the dispatching run's sender is correct
+    /// precisely because no child outlives it.
+    session_events: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>>,
+    >,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -718,7 +730,34 @@ impl BackgroundSubagents {
             wake: Arc::new(tokio::sync::Notify::new()),
             running: std::sync::atomic::AtomicUsize::new(0),
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
+            session_events: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Install the durable channel a session's children report into. Called
+    /// once at session start; see [`Self::session_events`].
+    ///
+    /// Only a session owns a registry that outlives its runs, and only the TUI
+    /// has one, so this does not exist in the desktop build.
+    #[cfg(feature = "cli")]
+    pub(crate) fn install_session_events(
+        &self,
+        tx: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) {
+        *self.session_events.lock().unwrap() = Some(tx);
+    }
+
+    /// The channel a child dispatched now should report into: the session's
+    /// durable one when this registry outlives runs, else the dispatching run's.
+    fn child_events(
+        &self,
+        run_events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent> {
+        self.session_events
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| run_events.clone())
     }
 
     /// Mark a multi-phase plan as driving, keeping the parent parked until the
@@ -750,6 +789,15 @@ impl BackgroundSubagents {
         !self.notices.lock().unwrap().is_empty()
             || self.running.load(std::sync::atomic::Ordering::SeqCst) > 0
             || self.plans_pending.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    /// Whether a ping is queued and not yet taken. Unlike
+    /// [`Self::has_pending_work`] this says nothing about children still
+    /// running: a set that outlives its run consults it to decide whether the
+    /// model has something to react to *now*, since a child finishing later
+    /// starts a turn of its own rather than holding this one open.
+    pub(crate) fn has_queued_notices(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
     }
 
     /// Park until a ping is available, or until nothing is left to wait for.
@@ -838,6 +886,21 @@ impl BackgroundSubagents {
         self.notices.lock().unwrap().clear();
     }
 
+    /// The run ids of children still registered, i.e. dispatched and not yet
+    /// finished or aborted. A session-owned registry is the authority on which
+    /// live panels survive a run end: what the run streamed says only what it
+    /// last saw, not what is still running.
+    #[cfg(feature = "cli")]
+    pub(crate) fn live_run_ids(&self) -> std::collections::HashSet<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|entry| !entry.finished.load(std::sync::atomic::Ordering::SeqCst))
+            .map(|entry| entry.run_id.clone())
+            .collect()
+    }
+
     /// Wait for every still-registered child to finish on its own, rather than
     /// aborting it. Called on a clean parent exit so dispatched work that the
     /// model never explicitly awaited is not silently discarded mid-flight.
@@ -871,19 +934,94 @@ pub(crate) struct ParentRun {
     pub(crate) model: String,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
+    /// The parent's remaining money ceiling, or `None` when it meters none.
+    ///
+    /// Every child gets the *whole* remainder rather than a share of it, which
+    /// means N children may each spend it: the ceiling bounds any one lineage,
+    /// not the fan-out. Splitting it N ways is worse -- the split would have to
+    /// be chosen before anyone knows which child does the work, and starving a
+    /// child of budget mid-task fails the run the user asked for. The parent's
+    /// own ceiling still stops the run once those charges land on it.
+    pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
 }
 
-/// Build the child request body shared by every subagent run.
+/// The model a dispatch will actually be billed for: the definition's own when
+/// it names one, else the dispatching run's. Resolved in one place because the
+/// request body and the ceiling priced against it must not disagree.
+fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
+    resolved
+        .definition
+        .model
+        .clone()
+        .unwrap_or_else(|| parent.model.clone())
+}
+
+/// The per-token rates a model is published at, or `None` when it cannot be
+/// priced at all.
+///
+/// The lookup names no provider: a child's serving provider is not resolved on
+/// this path, and the catalog's provider-less `get` answers only on an
+/// unambiguous hit -- two providers quoting one id at different prices is a
+/// `None`, which is the correct direction here (a refusal, not a guess).
+#[cfg(feature = "cli")]
+fn published_rates(model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    crate::core::cli::model_catalog::load()
+        .get(None, model)
+        .and_then(|info| info.rates())
+}
+
+/// No model catalog outside the `cli` build, so nothing here can be priced.
+/// Metered runs only ever start on the CLI path, so this is the unreachable
+/// case -- and answering `None` refuses rather than invents a rate.
+#[cfg(not(feature = "cli"))]
+fn published_rates(_model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    None
+}
+
+/// The money ceiling a child actually runs under: the parent's limit, priced
+/// against the model the child will be billed for.
+///
+/// A definition may name its own model, and the parent's rates are the *parent*
+/// model's. Forwarding them unchanged bills the child at a price nobody quoted:
+/// a pricier child is undercounted -- against the user, not in their favour --
+/// and a child with no published price would run on invented rates, the exact
+/// thing `resolve_cost_ceiling` refuses for the parent. So when the models
+/// differ the child's own rates are looked up, and a dispatch that cannot be
+/// priced is refused rather than metered wrongly.
+///
+/// The limit itself is inherited whole (see [`ParentRun::cost_remaining`]);
+/// only the rates are re-resolved.
+fn child_cost_ceiling(
+    model: &str,
+    parent: &ParentRun,
+) -> Result<Option<crate::core::agent::session::CostCeiling>, SubagentError> {
+    let Some(ceiling) = parent.cost_remaining else {
+        return Ok(None);
+    };
+    if model == parent.model {
+        return Ok(Some(ceiling));
+    }
+    let rates = published_rates(model).ok_or_else(|| {
+        SubagentError::Upstream(format!(
+            "cannot dispatch a subagent on {model} under a ${:.4} ceiling: this model has no \
+             published price, and metering it at {}'s rates would charge the run against a \
+             price nobody quoted. Drop the definition's own model so the child runs on the \
+             run's, or remove the limit.",
+            ceiling.max_usd, parent.model
+        ))
+    })?;
+    Ok(Some(crate::core::agent::session::CostCeiling { rates, ..ceiling }))
+}
+
+/// Build the child request body shared by every subagent run. `parent` is the
+/// inheritance the child runs under, which the dispatch path has already
+/// re-priced for the child's own model (see [`child_cost_ceiling`]).
 fn child_body(
     resolved: &ResolvedDispatch,
     description: &str,
     parent: &ParentRun,
 ) -> serde_json::Value {
-    let model = resolved
-        .definition
-        .model
-        .clone()
-        .unwrap_or_else(|| parent.model.clone());
+    let model = child_model(resolved, parent);
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
@@ -898,6 +1036,26 @@ fn child_body(
     }
     if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child dispatched by a capped run is capped too: subagents are where a
+    // run's spend multiplies, so a ceiling the children did not inherit would
+    // be one the parent could spend around by fanning out. The rates here are
+    // the ones `child_cost_ceiling` resolved for `model` above, so the limit
+    // and the price it is metered at describe the same model.
+    if let Some(ceiling) = parent.cost_remaining {
+        body.insert(
+            "max_budget_usd".to_string(),
+            serde_json::json!(ceiling.max_usd),
+        );
+        body.insert(
+            "token_rates".to_string(),
+            serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            }),
+        );
     }
     // A child's own tool-call turns carry `reasoning_content`, so the parent's
     // opt-out has to travel with the dispatch or a strict provider still sees
@@ -936,6 +1094,14 @@ async fn run_subagent(
     // A child's monitors are its own and die with it; nothing would pick up a
     // match left in the session set once the child has returned.
     child_args.monitors = None;
+    // Likewise its backgrounded shells: a child's run is the only thing that
+    // could deliver their output, so they stay run-owned and it parks on them
+    // rather than handing the session a command nobody is reading for.
+    child_args.bg_shells = None;
+    // A child cannot dispatch subagents at all (`subagents_enabled = false`
+    // above), so it has no registry to share; clearing this keeps it from
+    // inheriting the parent session's by accident.
+    child_args.subagent_bg = None;
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -1026,6 +1192,13 @@ pub(crate) fn spawn_subagent(
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let registry = SubagentRegistry::load(project_root);
     let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+    // Re-priced before anything is spawned: a child whose own model cannot be
+    // metered under this ceiling fails the dispatch here rather than running on
+    // the parent's prices.
+    let parent = &ParentRun {
+        cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
+        ..parent.clone()
+    };
 
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
@@ -1057,8 +1230,10 @@ pub(crate) fn spawn_subagent(
     }
 
     let parent_args = parent_args.clone();
-    let task_events = events.clone();
-    let entry_events = events.clone();
+    // A session-owned registry routes the child to its durable channel, so a
+    // child outliving this run keeps reporting somewhere that is still read.
+    let task_events = bg.child_events(events);
+    let entry_events = bg.child_events(events);
     let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
@@ -1229,7 +1404,11 @@ pub(crate) fn spawn_dispatch_plan(
     let registry = SubagentRegistry::load(project_root);
     for phase in &plan.phases {
         for req in &phase.subagents {
-            resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            // Priced up front for the same reason the permission check is: a
+            // later phase naming an unpriceable model must fail the whole plan
+            // now, not after the earlier phases have already been billed.
+            child_cost_ceiling(&child_model(&resolved, parent), parent)?;
         }
     }
 
@@ -2175,7 +2354,93 @@ mod tests {
             model: "m".to_string(),
             budget_remaining: None,
             send_reasoning: true,
+            cost_remaining: None,
         }
+    }
+
+    /// A capped parent's children are capped too. Subagents are where a run's
+    /// spend multiplies, so a ceiling that stopped at the parent would be one
+    /// any run could spend around by dispatching.
+    #[test]
+    fn child_body_inherits_the_parents_cost_ceiling() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+
+        let uncapped = child_body(&resolved, "task", &parent_run());
+        assert!(
+            uncapped.get("max_budget_usd").is_none(),
+            "an unmetered parent must not invent a ceiling: {uncapped}"
+        );
+        assert!(uncapped.get("token_rates").is_none());
+
+        let capped = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                    rates: crate::core::agent::session::TokenRates {
+                        prompt_usd: 1e-6,
+                        completion_usd: 2e-6,
+                        cache_read_usd: None,
+                        cache_write_usd: None,
+                    },
+                    max_usd: 0.25,
+                }),
+                ..parent_run()
+            },
+        );
+        assert_eq!(capped["max_budget_usd"], serde_json::json!(0.25));
+        // The rates travel with the limit: a child that inherited the ceiling
+        // but not the prices could not meter itself against it.
+        assert_eq!(capped["token_rates"]["prompt_usd"], serde_json::json!(1e-6));
+        assert_eq!(
+            capped["token_rates"]["completion_usd"],
+            serde_json::json!(2e-6)
+        );
+    }
+
+    /// A definition naming its own model must not be metered at the parent's
+    /// prices. The parent's ceiling is the parent *model's* rates, so carrying
+    /// them onto a differently-priced child bills the run against a price
+    /// nobody quoted -- and undercounts a pricier child, i.e. against the user.
+    /// A child that cannot be priced is refused, the same answer
+    /// `resolve_cost_ceiling` gives for an unpriced parent.
+    #[test]
+    fn a_child_on_its_own_model_is_not_billed_at_the_parents_rates() {
+        let ceiling = crate::core::agent::session::CostCeiling {
+            rates: crate::core::agent::session::TokenRates {
+                prompt_usd: 1e-6,
+                completion_usd: 2e-6,
+                cache_read_usd: None,
+                cache_write_usd: None,
+            },
+            max_usd: 0.25,
+        };
+        let parent = ParentRun {
+            cost_remaining: Some(ceiling),
+            ..parent_run()
+        };
+
+        // Same model: the parent's own rates are the right ones, inherited whole.
+        assert_eq!(
+            child_cost_ceiling(&parent.model, &parent).expect("same model prices"),
+            Some(ceiling)
+        );
+
+        // A different model with no published price is refused rather than run
+        // on the parent's rates. The name cannot appear in any real catalog.
+        let refused = child_cost_ceiling("no-such-model-jan-test", &parent)
+            .expect_err("an unpriceable child under a ceiling must be refused");
+        let message = refused.to_string();
+        assert!(message.contains("no-such-model-jan-test"), "{message}");
+        assert!(message.contains("no published price"), "{message}");
+
+        // An unmetered parent is unchanged: nothing to price, nothing to refuse.
+        assert_eq!(
+            child_cost_ceiling("no-such-model-jan-test", &parent_run()).expect("unmetered"),
+            None
+        );
     }
 
     /// `[agent].send_reasoning = false` has to reach the child body: a child
@@ -2597,6 +2862,8 @@ mod tests {
             max_parallel_subagents: 1,
             auto_approve: false,
             monitors: None,
+            bg_shells: None,
+            subagent_bg: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,

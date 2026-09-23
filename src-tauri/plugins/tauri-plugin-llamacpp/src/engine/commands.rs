@@ -481,9 +481,9 @@ pub async fn get_engine_info(
 /// therefore no use to a settings screen that wants to name the engine.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EngineVersion {
-    /// llama.cpp's own version, e.g. `0.4.0`.
+    /// llama.cpp's own version, e.g. `0.4.1`.
     pub version: String,
-    /// The upstream build tag the source was taken from, e.g. `b10809`.
+    /// The upstream build tag the source was taken from, e.g. `b10964`.
     pub tag: String,
     /// The same tag's build number, which is what the shim reports back over
     /// the FFI and what a version mismatch is checked against.

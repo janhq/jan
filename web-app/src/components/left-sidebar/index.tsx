@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useLocation } from '@tanstack/react-router'
 import { isCoworkRoute, route } from '@/constants/routes'
+import { isCoworkEnabled } from '@/lib/version'
 
 export function LeftSidebar() {
   const { open: isLeftPanelOpen } = useLeftPanel()
@@ -25,7 +26,7 @@ export function LeftSidebar() {
   const [lastSurfacePath, setLastSurfacePath] = useState(pathname)
   if (!inSettings && lastSurfacePath !== pathname) setLastSurfacePath(pathname)
   const surfacePath = inSettings ? lastSurfacePath : pathname
-  const isCowork = isCoworkRoute(surfacePath)
+  const isCowork = isCoworkRoute(surfacePath) && isCoworkEnabled()
   return (
     <div className='relative z-50'>
       <Sidebar variant="floating" collapsible="offcanvas">

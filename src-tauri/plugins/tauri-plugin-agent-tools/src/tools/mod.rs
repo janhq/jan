@@ -174,6 +174,11 @@ pub struct ToolContext<'a> {
     /// Where a hook's `context` answer and failure notices go. `None` drops
     /// them, which is what a caller with nowhere to show them wants.
     pub hook_sink: Option<HookSink>,
+    /// Rung when a `bash` call that outran its timeout finally finishes, so the
+    /// caller can ping the model instead of leaving it to poll the output file.
+    /// `None` keeps the pull-only behaviour, which is right for a surface with
+    /// no conversation to deliver into.
+    pub shell_done_sink: Option<ShellDoneSink>,
 }
 
 impl std::fmt::Debug for ToolContext<'_> {
@@ -202,6 +207,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("hooks", &self.hooks.map(|h| h.len()).unwrap_or(0))
             .field("plan_mode", &self.plan_mode)
             .field("hook_sink", &self.hook_sink.is_some())
+            .field("shell_done_sink", &self.shell_done_sink.is_some())
             .finish()
     }
 }
@@ -214,6 +220,85 @@ pub type OutputSink = std::sync::Arc<dyn Fn(String) + Send + Sync>;
 /// next turn, and notices about hooks that failed. `Arc` for the same reason
 /// [`OutputSink`] is one -- the toolset hands it to code that outlives the call.
 pub type HookSink = std::sync::Arc<dyn Fn(crate::tools::hooks::HookReport) + Send + Sync>;
+
+/// A `bash` command that outran its timeout and is now running detached: what
+/// the caller needs to know that a result is owed, and for how long to hold the
+/// run open waiting for it.
+#[derive(Debug, Clone)]
+pub struct ShellBackgrounded {
+    /// Pairs this hand-off with the [`ShellDone`] that ends it. A caller
+    /// tracking several commands needs the pairing to be exact: matching on the
+    /// command line would confuse two runs of the same build.
+    pub id: u64,
+    /// The command line, for the ping the user and model read.
+    pub command: String,
+    /// The timeout the call was given, which is what the caller sizes its park
+    /// budget from (see [`shell_park_budget_secs`]): a command handed 600s is
+    /// expected to be slow, one handed 5s is not.
+    pub timeout_secs: u64,
+    /// Where the output will be published, if a file could be created. Known
+    /// here as well as in [`ShellDone`] so a caller that gives up waiting can
+    /// still tell the model where to collect the result later.
+    pub output_path: Option<String>,
+}
+
+/// A backgrounded `bash` command that has finished: what the caller needs to
+/// tell the model where its output landed.
+#[derive(Debug, Clone)]
+pub struct ShellDone {
+    /// The id of the [`ShellBackgrounded`] this closes.
+    pub id: u64,
+    /// The command line, for the ping the user and model read.
+    pub command: String,
+    /// How long the command ran in total, wall clock.
+    pub elapsed_secs: u64,
+    /// The path the output was published at, in the spelling that resolves from
+    /// both the `read` tool and the sandboxed shell. `None` when no file could
+    /// be created *or the write failed*, so there is nothing to collect: a ping
+    /// must never name a file that is absent or stale.
+    pub output_path: Option<String>,
+    /// Whether the command reported a nonzero exit or a signal.
+    pub failed: bool,
+}
+
+/// The life of a backgrounded `bash` command, as the caller sees it.
+///
+/// Two events rather than one because the caller has to know a result is owed
+/// *before* the `bash` call returns: a run that learned of the command only
+/// when it ended could end first, with nowhere to deliver the answer.
+#[derive(Debug, Clone)]
+pub enum ShellEvent {
+    /// The command outran its timeout and is now running detached. Raised
+    /// synchronously, before `bash` returns.
+    Backgrounded(ShellBackgrounded),
+    /// It finally ended. Raised from the detached task, after the output file
+    /// (if any) has been published.
+    Finished(ShellDone),
+}
+
+/// Where a backgrounded shell reports. `Arc` for the same reason [`OutputSink`]
+/// is one: the toolset hands it to a detached task that outlives the `bash`
+/// call which created it.
+pub type ShellDoneSink = std::sync::Arc<dyn Fn(ShellEvent) + Send + Sync>;
+
+/// How long a caller should hold a run open waiting for one backgrounded
+/// command, in seconds.
+///
+/// A backgrounded command has no deadline of its own -- `npm run dev`,
+/// `tail -f` or a hung build never ends -- so, unlike a monitor, waiting on it
+/// unbounded would park the run forever. The budget is sized from the call's
+/// own timeout (a command given a long one is expected to be slow) and clamped
+/// at both ends: never less than a minute, never more than the ceiling a
+/// monitor gets. Quoted to the model by `bash` and enforced by the caller, so
+/// both describe the same bound.
+pub fn shell_park_budget_secs(timeout_secs: u64) -> u64 {
+    const MIN_PARK_SECS: u64 = 60;
+    /// The same ceiling `monitor::DEFAULT_TIMEOUT_SECS` gives a watcher.
+    const MAX_PARK_SECS: u64 = 1800;
+    timeout_secs
+        .saturating_mul(4)
+        .clamp(MIN_PARK_SECS, MAX_PARK_SECS)
+}
 
 /// Renders a local HTML/SVG file (path, width, height, scale) to PNG bytes.
 ///
@@ -257,7 +342,15 @@ impl<'a> ToolContext<'a> {
             hooks: None,
             plan_mode: false,
             hook_sink: None,
+            shell_done_sink: None,
         }
+    }
+
+    /// Report finished background shells to `sink`. See
+    /// [`Self::shell_done_sink`].
+    pub fn with_shell_done_sink(mut self, sink: ShellDoneSink) -> Self {
+        self.shell_done_sink = Some(sink);
+        self
     }
 
     /// Attach the run's lifecycle hooks, the plan-mode flag they honor, and

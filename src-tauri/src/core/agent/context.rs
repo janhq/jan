@@ -26,7 +26,12 @@ const GUIDELINES: &str =
 - Tool output is complete and verbatim. Trust it. Do not re-run a command to check for hidden or \
 missing output: when output is cut it always carries an explicit `[output truncated ...]` notice, so \
 its absence means you have everything. A command's `[exit N]` line is the authoritative result -- \
-`[exit 0]` is success even if there is text on stderr (many tools write normal status there).";
+`[exit 0]` is success even if there is text on stderr (many tools write normal status there).\n\
+- You may end your turn while background work is still running -- a backgrounded shell command, a \
+dispatched subagent, a monitor. You are notified automatically when each one finishes, and the \
+notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothing is lost by \
+stopping. Do not idle, poll a file in a loop, or narrate waiting: say what you started, then either \
+get on with unrelated work or finish the turn.";
 
 /// The one instructions file Jan reads, discovered by walking from the project
 /// root up to the filesystem root. Another agent's file (`AGENTS.md`,
@@ -555,6 +560,28 @@ mod tests {
         assert!(out.contains("Call `ask` when the user's answer would materially change"));
         assert!(out.contains("Tool output is complete and verbatim"));
         assert!(out.contains("Do not re-run a command to check"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The permission to stop while background work runs is unconditional: it
+    /// applies to a backgrounded shell and a monitor, which exist on runs with
+    /// subagents disabled, so it must not live in the gated subagent block.
+    #[test]
+    fn guidelines_permit_ending_a_turn_while_background_work_runs() {
+        let root = scratch_project("bgturn");
+        let without_subagents = default_prompt(None, &root, None, false).expect("prompt");
+        assert!(
+            without_subagents.contains("You may end your turn while background work is still running"),
+            "missing the permission: {without_subagents}"
+        );
+        assert!(
+            without_subagents.contains("notified automatically"),
+            "must say the notice arrives on its own"
+        );
+        assert!(
+            !without_subagents.contains("dispatch_subagent"),
+            "the subagent block must still be gated off"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

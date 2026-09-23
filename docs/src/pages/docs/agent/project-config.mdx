@@ -80,6 +80,7 @@ instructions_file = "AGENT.md"
 # 0 disables the cap.
 [budget]
 # max_tokens = 128000
+# max_usd = 5.00
 
 [tools]
 default = "read-only"
@@ -125,6 +126,7 @@ Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-
 | Key | Default | Description |
 | --- | --- | --- |
 | `max_tokens` | `128000` | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to `128000` when unset |
+| `max_usd` | unset | USD one run may spend before it stops -- a hard bound, unlike `max_tokens`. Priced from the provider's published rates, so a model with no published price is refused rather than run uncapped. Subagents inherit it. Overridden per invocation by `--max-budget-usd` |
 
 A marker for how far one run has gone, distinct from the per-request context window. It tracks the
 run's marginal token spend (replayed context is not recharged each turn).

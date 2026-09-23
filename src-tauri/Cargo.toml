@@ -149,7 +149,10 @@ rmcp = { version = "3.2.0", features = [
     "reqwest",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# `raw_value` keeps a JSON number as the text the server sent. Money fields in
+# the Tokamak usage API must round-trip exactly, and a plain parse routes every
+# number through f64 (see core/cli/tokamak/usage.rs).
+serde_json = { version = "1.0", features = ["raw_value"] }
 serde_yaml = "0.9.34"
 toml = "0.8"
 toml_edit = "0.23"

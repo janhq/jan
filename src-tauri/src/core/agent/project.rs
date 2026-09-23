@@ -119,6 +119,13 @@ pub(crate) struct SkillsSection {
 pub(crate) struct BudgetSection {
     #[serde(default)]
     pub max_tokens: Option<u64>,
+    /// USD a run may spend before it stops. Unlike `max_tokens` this is a hard
+    /// bound. It is priced from the provider's published rates, so a model with
+    /// no published price cannot be capped at all and a run that asks for one is
+    /// refused rather than run uncapped -- including a subagent whose definition
+    /// names a model of its own (see `child_cost_ceiling`).
+    #[serde(default)]
+    pub max_usd: Option<f64>,
 }
 
 /// `[agent]` — resolves the model and per-run knobs for CLI agent runs.
@@ -247,11 +254,15 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
 
-# The run's only cap: new token spend across all turns (replayed context is not
-# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
-# 0 disables the cap so the agent runs until the task is done or cancelled.
+# New token spend across all turns (replayed context is not recharged each
+# turn). Advisory: crossing it compacts and files a note, it does not stop the
+# run. Defaults to 128000 when unset; 0 disables the cap.
 [budget]
 # max_tokens = 128000
+# USD this run may spend before it stops -- unlike max_tokens, a hard bound.
+# Priced from the provider's published rates, so a model with no published
+# price is refused rather than run uncapped. Overridden by --max-budget-usd.
+# max_usd = 5.00
 
 [tools]
 # read-only | deny | allow. read-only (default) exposes MCP tools and built-in

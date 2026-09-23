@@ -117,6 +117,20 @@ pub(crate) struct OrchestrationArgs {
     /// child) scopes monitors to the run, which then parks on them. Never
     /// inherited by a child run, which gets its own per-run set.
     pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// A backgrounded-shell registry owned by the session rather than by this
+    /// run. When set, a command still running does not park the run: the
+    /// model's turn ends and the owner starts a new turn when the command
+    /// finishes. `None` (a headless run, a child) scopes shells to the run,
+    /// which then parks on them. Never inherited by a child run.
+    pub bg_shells: Option<std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>>,
+    /// A background-subagent registry owned by the session rather than by this
+    /// run, on the same terms as `monitors` and `bg_shells`: a child still
+    /// running does not park the run, and its completion starts a turn of its
+    /// own. A session set is also exempt from the run-scoped `AbortOnDrop`
+    /// teardown -- the owner decides when children die (the TUI kills them on
+    /// cancel and on session reset). Never inherited by a child run, which
+    /// cannot dispatch grandchildren anyway.
+    pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -241,6 +255,11 @@ struct HttpModelInvoker {
     /// Native provider converters still use reqwest 0.12 while the default
     /// agent path uses genai's reqwest 0.13 client.
     converter_client: reqwest::Client,
+    /// Correlation id sent with every request this invoker makes, so the run's
+    /// executions are findable in the provider's usage records afterwards. See
+    /// [`crate::core::agent::correlation`]. `None` when the run has no session
+    /// to correlate.
+    client_request_id: Option<String>,
 }
 
 fn converter_http_client() -> reqwest::Client {
@@ -275,6 +294,7 @@ impl ModelInvoker for HttpModelInvoker {
                 converter.as_ref(),
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         } else {
@@ -286,6 +306,7 @@ impl ModelInvoker for HttpModelInvoker {
                 None,
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         }
@@ -322,6 +343,9 @@ struct SubagentContext {
     parent_args: OrchestrationArgs,
     model_id: String,
     max_session_tokens: Option<u64>,
+    /// The run's money ceiling, forwarded to every child (see
+    /// [`crate::core::agent::subagent::ParentRun::cost_remaining`]).
+    cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
     /// The parent's `send_reasoning`, forwarded to every child body: a child
     /// resends the reasoning of its own tool-call turns, so an opt-out that
     /// stopped at the parent would still break a strict provider.
@@ -393,6 +417,22 @@ struct CompositeToolInvoker {
     /// the tool-event hooks fire inside the toolset and report through a sink
     /// that outlives the call (see [`CompositeToolInvoker::hook_sink`]).
     hook_notices_queue: std::sync::Arc<std::sync::Mutex<Vec<BackgroundNotice>>>,
+    /// Backgrounded `bash` commands this run is still owed a result from, and
+    /// the pings for those that have finished. `Arc` because the doorbell is
+    /// rung from the detached task inside the toolset, which outlives the call
+    /// (see [`CompositeToolInvoker::shell_done_sink`]). Parking on it is
+    /// bounded like a monitor, but by the registry rather than the command: a
+    /// backgrounded shell may never end, so one past its park budget is
+    /// abandoned with a notice telling the model where to collect it later.
+    bg_shells: std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// Whether `bg_shells` outlives this run. A session-owned registry never
+    /// parks the run on a command that has not finished: the owner delivers a
+    /// later completion as a fresh turn, so the user can keep talking meanwhile.
+    bg_shells_outlive_run: bool,
+    /// Whether the subagent registry in `subagents` outlives this run, on the
+    /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
+    /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
+    subagent_bg_outlive_run: bool,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -656,6 +696,31 @@ impl CompositeToolInvoker {
         }
     }
 
+    /// Whether the backgrounded shells owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`]: a queued
+    /// ping always, plus a command still running when the registry dies with
+    /// the run (nothing else could deliver its output).
+    fn shells_owed(&self) -> bool {
+        if self.bg_shells_outlive_run {
+            self.bg_shells.has_queued_notices()
+        } else {
+            self.bg_shells.has_pending_work()
+        }
+    }
+
+    /// Whether the background subagents owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`].
+    fn subagents_owed(&self) -> bool {
+        let Some(ctx) = self.subagents.as_ref() else {
+            return false;
+        };
+        if self.subagent_bg_outlive_run {
+            ctx.bg.has_queued_notices()
+        } else {
+            ctx.bg.has_pending_work()
+        }
+    }
+
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
         tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
@@ -672,6 +737,24 @@ impl CompositeToolInvoker {
             &self.hooks,
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
+        )
+        .with_shell_done_sink(self.shell_done_sink())
+    }
+
+    /// Where a backgrounded `bash` command reports when it finally ends: the
+    /// run's shell registry, drained into a `<SYSTEM>` reminder at the top of
+    /// the next turn the way a finished subagent is.
+    fn shell_done_sink(&self) -> tauri_plugin_agent_tools::tools::ShellDoneSink {
+        // Shared rather than borrowed because the sink outlives the call that
+        // created it, the way the hook and output sinks do.
+        let shells = self.bg_shells.clone();
+        std::sync::Arc::new(
+            move |event: tauri_plugin_agent_tools::tools::ShellEvent| match event {
+                tauri_plugin_agent_tools::tools::ShellEvent::Backgrounded(handoff) => {
+                    shells.start(handoff)
+                }
+                tauri_plugin_agent_tools::tools::ShellEvent::Finished(done) => shells.finish(done),
+            },
         )
     }
 
@@ -850,6 +933,7 @@ impl CompositeToolInvoker {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
+                        cost_remaining: ctx.cost_ceiling,
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -1237,17 +1321,35 @@ impl ToolInvoker for CompositeToolInvoker {
         out.extend(std::mem::take(
             &mut *self.hook_notices_queue.lock().unwrap(),
         ));
+        // A backgrounded shell that finished rides the same channel. It carries
+        // a headline, like a monitor match and unlike a subagent: no other row
+        // reports that the command ended.
+        out.extend(
+            self.bg_shells
+                .take_notices()
+                .into_iter()
+                .map(|n| BackgroundNotice {
+                    headline: Some(n.headline),
+                    text: n.text,
+                }),
+        );
         out
     }
 
     fn background_pending(&self) -> bool {
-        self.subagents
-            .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work())
+        self.subagents_owed()
             || self.monitors_owed()
             // A queued hook answer is owed to the model the same way a monitor
             // match is: the turn that would end must deliver it first.
             || !self.hook_notices_queue.lock().unwrap().is_empty()
+            // Likewise a backgrounded command: ending the run here would drop
+            // the output of a build the model is still waiting on. Bounded
+            // too, though the bound is the park's rather than the command's --
+            // a shell has no deadline of its own, so `BackgroundShells`
+            // abandons one past its budget with a notice saying so. A
+            // session-owned registry never parks on a command still running:
+            // its owner starts a turn when the output lands.
+            || self.shells_owed()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
@@ -1267,24 +1369,32 @@ impl ToolInvoker for CompositeToolInvoker {
         // Each wait returns on a notice OR when its own side has nothing left,
         // so an exhausted side must not be selected over: it would win
         // instantly every time and starve the side actually being waited on.
-        // The re-check between iterations is what `run_turn_cycle` does anyway.
-        // A session-owned set is still selected while a subagent is awaited: a
-        // match landing then should wake the park like a finished child does.
-        let sub_pending = self
+        // Hence only the pending sides are collected here. The re-check between
+        // iterations is what `run_turn_cycle` does anyway, and a session-owned
+        // monitor set is still selected while a subagent is awaited: a match
+        // landing then should wake the park like a finished child does.
+        //
+        // A list of futures rather than a match over every combination of
+        // (subagent, monitor, shell): with three sources the arms would be
+        // eight, and a fourth would double them again. `select_all` keeps the
+        // same guarantee with one rule.
+        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> =
+            Vec::new();
+        if let Some(ctx) = self
             .subagents
             .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work());
-        let mon_pending = self.monitors.has_pending_work();
-        match (self.subagents.as_ref(), sub_pending, mon_pending) {
-            (Some(ctx), true, true) => {
-                tokio::select! {
-                    _ = ctx.bg.wait_for_notice() => {}
-                    _ = self.monitors.wait_for_notice() => {}
-                }
-            }
-            (Some(ctx), true, false) => ctx.bg.wait_for_notice().await,
-            (_, _, true) => self.monitors.wait_for_notice().await,
-            _ => {}
+            .filter(|ctx| ctx.bg.has_pending_work())
+        {
+            waits.push(Box::pin(ctx.bg.wait_for_notice()));
+        }
+        if self.monitors.has_pending_work() {
+            waits.push(Box::pin(self.monitors.wait_for_notice()));
+        }
+        if self.bg_shells.has_pending_work() {
+            waits.push(Box::pin(self.bg_shells.wait_for_notice()));
+        }
+        if !waits.is_empty() {
+            let _ = futures::future::select_all(waits).await;
         }
     }
 
@@ -1797,6 +1907,10 @@ pub(crate) async fn run_server_side_openai_orchestration(
         session_id: None,
         sandbox: None,
         monitors: None,
+        // Run-owned: the proxy has no conversation to deliver a later ping
+        // into, so background work must be settled before the run returns.
+        bg_shells: None,
+        subagent_bg: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -2025,6 +2139,30 @@ fn advertise_local_tools(
     if todo_enabled && allowed_names.is_none_or(|allowed| allowed.contains("todo")) {
         openai_tools.push(crate::core::agent::todo::todo_tool_schema());
     }
+}
+
+/// The last completion of a run stopped by its money ceiling, rewritten into a
+/// terminal answer.
+///
+/// Two things have to change. The `finish_reason` becomes `budget_exceeded`, so
+/// a caller can tell a run that ran out of money from one the model chose to
+/// end -- the difference between "here is your answer" and "here is as far as
+/// your budget got". And any `tool_calls` are dropped: this completion is
+/// returned *instead of* executing them, so leaving them on the message would
+/// hand the caller an assistant turn whose calls are never answered, which is
+/// an invalid conversation to resume from.
+fn halted_over_budget(mut completion: serde_json::Value) -> serde_json::Value {
+    if let Some(choice) = completion
+        .get_mut("choices")
+        .and_then(|c| c.as_array_mut())
+        .and_then(|choices| choices.first_mut())
+    {
+        if let Some(message) = choice.get_mut("message").and_then(|m| m.as_object_mut()) {
+            message.remove("tool_calls");
+        }
+        choice["finish_reason"] = serde_json::json!("budget_exceeded");
+    }
+    completion
 }
 
 fn stop_reason_of(completion: &serde_json::Value) -> String {
@@ -2293,6 +2431,8 @@ async fn orchestrate_inner(
         run_mode,
         session_id,
         monitors: session_monitors,
+        bg_shells: session_bg_shells,
+        subagent_bg: session_subagent_bg,
         sandbox,
         compaction,
     } = args;
@@ -2554,6 +2694,9 @@ async fn orchestrate_inner(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -2562,24 +2705,36 @@ async fn orchestrate_inner(
     };
 
     let max_session_tokens = body_session_budget(json_body);
-    let mut budget = SessionBudget::new(max_session_tokens);
+    let cost_ceiling = body_cost_ceiling(json_body);
+    let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
 
     // Top-level runs index their final assistant answer into project memory;
     // isolated child (subagent) runs skip it to keep history independent.
     let index_memory = system_prompt_override.is_none();
 
     if let Some(root) = project_root {
-        // Background subagents are scoped to this run: `_bg_guard` aborts any
-        // still-running child when `orchestrate_inner` returns or is cancelled.
-        // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(
-            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
-        );
-        let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
+        // Background subagents are scoped to this run unless the session owns
+        // them: `_bg_guard` aborts any still-running child when
+        // `orchestrate_inner` returns or is cancelled. The cap
+        // (`max_parallel_subagents`) is snapshotted here, at run start.
+        let bg = session_subagent_bg.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+                *max_parallel_subagents,
+            ))
+        });
+        // A session set outlives the run by design, so the run-scoped teardown
+        // must not arm for it: the owner decides when its children die (the
+        // TUI aborts them on cancel and on session reset). Arming it here would
+        // kill on the first turn's return exactly the children this change
+        // exists to keep running.
+        let _bg_guard = session_subagent_bg
+            .is_none()
+            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
             model_id: model_id.clone(),
             max_session_tokens,
+            cost_ceiling,
             send_reasoning: body_send_reasoning(json_body),
             bg: bg.clone(),
         });
@@ -2620,6 +2775,8 @@ async fn orchestrate_inner(
             subagents,
             monitors: session_monitors.clone().unwrap_or_default(),
             monitors_outlive_run: session_monitors.is_some(),
+            bg_shells_outlive_run: session_bg_shells.is_some(),
+            subagent_bg_outlive_run: session_subagent_bg.is_some(),
             auto_approve: *auto_approve,
             run_mode,
             // Resolved once per run, like every other config-derived field: a
@@ -2628,6 +2785,7 @@ async fn orchestrate_inner(
             hooks: crate::core::agent::hooks_config::resolve_hooks(root),
             plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: session_bg_shells.clone().unwrap_or_default(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -2722,8 +2880,11 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them.
-        if result.is_ok() {
+        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // set is skipped: nothing is about to abort those children, and waiting
+        // here would hold the run open for precisely the work the session set
+        // exists to outlive it.
+        if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
@@ -2946,6 +3107,12 @@ pub(crate) async fn compact_history(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        // A compaction call is billed to the same session as the turn that
+        // triggered it, so it carries the same correlation id: leaving it out
+        // would make the session's recorded spend smaller than the bill.
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
@@ -2980,6 +3147,10 @@ pub(crate) async fn evaluate_goal(
             .await
             .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
         converter_client: converter_http_client(),
+        // Same session, same bill (see `compact_history`).
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
@@ -3031,6 +3202,35 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .get("max_session_tokens")
         .and_then(|v| v.as_u64())
         .filter(|v| *v > 0)
+}
+
+/// Money ceiling for a request body: `max_budget_usd` plus the `token_rates` to
+/// charge against. Both are required, because a limit with no prices cannot be
+/// enforced and prices with no limit meter nothing -- either alone is a
+/// configuration the caller got wrong, and silently running uncapped is the
+/// one outcome a cost ceiling must never produce. The CLI refuses that case up
+/// front (`resolve_cost_ceiling`); here it simply does not meter.
+///
+/// `0` is not special-cased: a `0` ceiling stops the run at the first billed
+/// request, which is what asking to spend nothing means.
+fn body_cost_ceiling(
+    json_body: &serde_json::Value,
+) -> Option<crate::core::agent::session::CostCeiling> {
+    let max_usd = json_body
+        .get("max_budget_usd")
+        .and_then(|v| v.as_f64())
+        .filter(|v| v.is_finite() && *v >= 0.0)?;
+    let rates = json_body.get("token_rates")?;
+    let rate = |key: &str| rates.get(key).and_then(|v| v.as_f64()).filter(|v| *v >= 0.0);
+    Some(crate::core::agent::session::CostCeiling {
+        rates: crate::core::agent::session::TokenRates {
+            prompt_usd: rate("prompt_usd")?,
+            completion_usd: rate("completion_usd")?,
+            cache_read_usd: rate("cache_read_usd"),
+            cache_write_usd: rate("cache_write_usd"),
+        },
+        max_usd,
+    })
 }
 
 async fn receive_steering(
@@ -3123,18 +3323,25 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// The original span stays in the record - only the projection omits it - so a
 /// later turn, a different provider, or a changed `keep_recent` can still
 /// rebuild from it.
+///
+/// The summarizer's request is billed like any other, so its usage is folded
+/// into `budget` here. A turn can compact several times (the preflight plus the
+/// overflow retries), and spend the budget never saw would make `/usage` and
+/// the money ceiling agree with each other while both undercounted.
 async fn compact(
     transcript: &mut Transcript,
     keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
+    budget: &mut SessionBudget,
 ) -> Result<Option<usize>, String> {
     let Some(plan) = transcript.compaction_plan(keep_recent) else {
         return Ok(None);
     };
     let summarized = plan.summarize.len();
-    let summary =
+    let (summary, usage) =
         crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+    budget.record_side_request(&usage);
     transcript.record_compaction(summary, plan.covers);
     Ok(Some(summarized))
 }
@@ -3187,8 +3394,44 @@ async fn run_turn_cycle(
     let mut closeout_nudged = false;
     // The monitor set last published as `StreamEvent::Monitors`.
     let mut shown_monitors = Vec::new();
+    // The last completion this cycle received, so a run stopped by its money
+    // ceiling returns the work it actually did rather than an error with no
+    // answer in it. `None` only before the first request.
+    let mut last_completion: Option<serde_json::Value> = None;
 
     while unlimited || turn < max_turns {
+        // The money ceiling is enforced here, at the one point every path that
+        // would start another request passes through -- the `continue`s below
+        // (truncated response, closeout nudge, steering, tool results) each
+        // lead back to a paid request, so checking at any one of them would
+        // leave the others uncapped.
+        //
+        // A ceiling stops the run; it does not fail it. The turns already taken
+        // are real work the user is being billed for, so the answer is returned
+        // with `finish_reason: "budget_exceeded"` rather than discarded into an
+        // error with no result.
+        if budget.over_cost_ceiling() {
+            if let Some(completion) = last_completion.take() {
+                let spent = budget.spent_usd().unwrap_or(0.0);
+                let max = budget.max_usd().unwrap_or(0.0);
+                log::info!("agent: stopping the run, spent ${spent:.4} of a ${max:.4} ceiling");
+                // Recorded so a resumed thread shows why it stopped mid-task,
+                // rather than looking like the model chose to stop. A system
+                // note, not an assistant turn: the model never wrote it.
+                transcript.record_message(serde_json::json!({
+                    "role": "system",
+                    "content": format!(
+                        "[cost ceiling reached] This run stopped after spending about \
+                         ${spent:.4} against its ${max:.4} ceiling. The task may be \
+                         unfinished; raising --max-budget-usd and resuming continues it."
+                    ),
+                }));
+                let _ = events.send(StreamEvent::MessagesUpdated {
+                    messages: client_history(&transcript, send_reasoning),
+                });
+                return Ok(halted_over_budget(completion));
+            }
+        }
         for message in receive_steering(
             steering,
             project(&transcript, volatile_system.as_deref(), send_reasoning),
@@ -3259,15 +3502,18 @@ async fn run_turn_cycle(
                 // nothing safe left to drop, and retrying here would spin.
                 if !preflighted {
                     preflighted = true;
-                    if let Some(budget) = compaction {
+                    // Named apart from the run's `budget` (money and tokens
+                    // spent), which the compaction below is itself charged to.
+                    if let Some(window) = compaction {
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
-                        if estimate > budget.trigger_tokens() {
+                        if estimate > window.trigger_tokens() {
                             if let Some(dropped) = compact(
                                 &mut transcript,
                                 crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
+                                budget,
                             )
                             .await?
                             {
@@ -3275,8 +3521,8 @@ async fn run_turn_cycle(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
                                      token trigger on a {} token window, compacted {dropped} \
                                      messages into a summary before dispatch",
-                                    budget.trigger_tokens(),
-                                    budget.context_window
+                                    window.trigger_tokens(),
+                                    window.context_window
                                 );
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
@@ -3291,7 +3537,7 @@ async fn run_turn_cycle(
                                     text: format!(
                                         "compacted {dropped} messages into a summary before sending \
                                          ({estimate} tokens against a {} token budget)",
-                                        budget.trigger_tokens()
+                                        window.trigger_tokens()
                                     ),
                                 });
                                 continue;
@@ -3314,9 +3560,10 @@ async fn run_turn_cycle(
                             .await;
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped = compact(&mut transcript, keep_recent, model_id, model)
-                            .await?
-                            .ok_or(e)?;
+                        let dropped =
+                            compact(&mut transcript, keep_recent, model_id, model, budget)
+                                .await?
+                                .ok_or(e)?;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -3370,11 +3617,15 @@ async fn run_turn_cycle(
             transcript.record_prompt_tail(text);
         }
 
+        last_completion = Some(completion.clone());
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
         // that just landed, and a long tool phase shouldn't sit on them.
         if let Some(usage) = turn_usage.clone() {
-            let _ = events.send(StreamEvent::TurnUsage { usage });
+            let _ = events.send(StreamEvent::TurnUsage {
+                usage,
+                execution_id: crate::core::agent::correlation::execution_id_of(&completion),
+            });
         }
         budget.record(&turn_usage);
 
@@ -3489,6 +3740,7 @@ async fn run_turn_cycle(
                     crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                     model_id,
                     model,
+                    budget,
                 )
                 .await
                 {
@@ -5772,6 +6024,133 @@ mod tests {
         })
     }
 
+    /// A run stopped by its money ceiling returns the work it already did,
+    /// rather than failing. The turns taken are real work the user is billed
+    /// for, so discarding them into an error would charge for an answer it then
+    /// threw away -- and the caller could not tell "out of budget" from "the
+    /// provider broke".
+    #[tokio::test]
+    async fn the_cost_ceiling_stops_the_run_and_keeps_the_answer() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // One request whose usage alone blows a $0.01 ceiling, then a second
+        // the loop must never make.
+        let mut expensive = bash_call_completion();
+        expensive["usage"] = json!({
+            "prompt_tokens": 1_000_000,
+            "completion_tokens": 0,
+            "total_tokens": 1_000_000,
+        });
+        let model = MockModel::new(vec![expensive, final_answer("never reached")]);
+        let tool = FixedTool {
+            content: "ok".to_string(),
+        };
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                rates: crate::core::agent::session::TokenRates {
+                    // $1 per million prompt tokens, so one request costs $1.
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.01,
+            },
+        ));
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("a ceiling stops the run, it does not fail it");
+
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "the second request is the one the ceiling exists to prevent"
+        );
+        assert_eq!(
+            result["choices"][0]["finish_reason"],
+            json!("budget_exceeded"),
+            "a caller must be able to tell this from a model that chose to stop: {result}"
+        );
+        // The returned completion asked for a tool call that will never be
+        // answered, so leaving it on the message would hand the caller an
+        // invalid conversation to resume from.
+        assert!(
+            result["choices"][0]["message"].get("tool_calls").is_none(),
+            "unanswered tool calls must not survive on the final message: {result}"
+        );
+    }
+
+    /// A compaction is a paid request and has to reach the run's budget. It is
+    /// not the metered dispatch, so nothing else charges it: a turn can make up
+    /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
+    /// retries), and spend the budget never saw would leave `/usage` and the
+    /// money ceiling agreeing with each other while both undercounted.
+    #[tokio::test]
+    async fn compacting_charges_the_summarizer_to_the_run() {
+        // A history long enough to have a span worth summarizing.
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript
+                .record_message(json!({ "role": "assistant", "content": format!("ack {i}") }));
+        }
+
+        let mut summary = final_answer("the story so far");
+        summary["usage"] = json!({
+            "prompt_tokens": 500_000,
+            "completion_tokens": 1_000,
+            "total_tokens": 501_000,
+        });
+        let model = MockModel::new(vec![summary]);
+
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                // $1 per million either way: this summarizer call costs $0.501.
+                rates: crate::core::agent::session::TokenRates {
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.25,
+            },
+        ));
+        assert!(!budget.over_cost_ceiling(), "nothing spent yet");
+
+        let dropped = compact(&mut transcript, 4, "m", &model, &mut budget)
+            .await
+            .expect("the summarizer answered")
+            .expect("a long history has a span to compact");
+        assert!(dropped > 0);
+
+        let spent = budget.spent_usd().expect("metered");
+        assert!(
+            (spent - 0.501).abs() < 1e-9,
+            "the summarizer's own request is billed: {spent}"
+        );
+        assert!(
+            budget.over_cost_ceiling(),
+            "a compaction can exhaust the ceiling on its own"
+        );
+    }
+
     async fn bash_result_is_error_flag(content: &str) -> bool {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
@@ -6475,6 +6854,86 @@ mod tests {
         );
     }
 
+    /// The wire boundary where a run becomes metered, or silently does not.
+    /// The CLI refuses an unpriceable ceiling up front, but this function is
+    /// what the loop actually believes, and it is reached by three callers
+    /// (the plain CLI, the TUI, and a subagent dispatch). A body that carries
+    /// a limit but no rates, or rates but no limit, is a caller bug -- and
+    /// running uncapped is the one outcome a cost ceiling must never produce
+    /// silently, so the pairing is asserted here rather than assumed.
+    #[test]
+    fn a_cost_ceiling_needs_both_a_limit_and_the_rates_to_meter_it() {
+        let rates = json!({ "prompt_usd": 1e-6, "completion_usd": 10e-6 });
+
+        assert!(body_cost_ceiling(&json!({})).is_none(), "nothing asked for");
+        assert!(
+            body_cost_ceiling(&json!({ "max_budget_usd": 2.0 })).is_none(),
+            "a limit with no prices cannot be enforced"
+        );
+        assert!(
+            body_cost_ceiling(&json!({ "token_rates": rates })).is_none(),
+            "prices with no limit meter nothing"
+        );
+        // Rates that are present but incomplete are not a ceiling either: the
+        // two required legs of the formula have no sane default, and guessing
+        // one would meter against a price the user was never shown.
+        assert!(
+            body_cost_ceiling(&json!({
+                "max_budget_usd": 2.0,
+                "token_rates": { "prompt_usd": 1e-6 },
+            }))
+            .is_none(),
+            "a half-specified rate sheet is not a rate sheet"
+        );
+
+        let ceiling = body_cost_ceiling(&json!({
+            "max_budget_usd": 2.5,
+            "token_rates": {
+                "prompt_usd": 1e-6,
+                "completion_usd": 10e-6,
+                "cache_read_usd": 0.1e-6,
+                "cache_write_usd": 1.25e-6,
+            },
+        }))
+        .expect("a limit and its rates together are a ceiling");
+        assert_eq!(ceiling.max_usd, 2.5);
+        assert_eq!(ceiling.rates.prompt_usd, 1e-6);
+        assert_eq!(ceiling.rates.cache_read_usd, Some(0.1e-6));
+
+        // Cache rates are genuinely optional -- a provider may publish none --
+        // and their absence bills the cached share at the prompt rate rather
+        // than voiding the ceiling.
+        let no_cache = body_cost_ceiling(&json!({
+            "max_budget_usd": 1.0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("cache rates are optional");
+        assert_eq!(no_cache.rates.cache_read_usd, None);
+
+        // `0` is a real ceiling (stop at the first billed request), not a
+        // synonym for unbounded the way `max_session_tokens: 0` is. The two
+        // limits sit side by side in the same body, so this must not drift.
+        let zero = body_cost_ceiling(&json!({
+            "max_budget_usd": 0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("zero is a ceiling, not an absence");
+        assert_eq!(zero.max_usd, 0.0);
+
+        // Nonsense amounts do not meter. A negative or non-finite ceiling is
+        // never satisfiable, and treating it as `0` would stop every run.
+        for bad in [json!(-1.0), json!("2.00"), json!(null)] {
+            assert!(
+                body_cost_ceiling(&json!({
+                    "max_budget_usd": bad,
+                    "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+                }))
+                .is_none(),
+                "{bad} is not an amount"
+            );
+        }
+    }
+
     #[test]
     fn stop_reason_reads_first_choice() {
         let completion = json!({ "choices": [{ "finish_reason": "tool_calls" }] });
@@ -6562,11 +7021,16 @@ mod tests {
                 tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
             ),
             monitors_outlive_run: false,
+            bg_shells_outlive_run: false,
+            subagent_bg_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
             plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: std::sync::Arc::new(
+                crate::core::agent::bg_shell::BackgroundShells::default(),
+            ),
         }
     }
 
@@ -8092,6 +8556,77 @@ mod tests {
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("READY on port 1337"));
         assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shell counterpart of
+    /// `a_session_owned_monitor_does_not_park_the_run_until_it_fires`: a
+    /// command still running must not hold the run open when the session owns
+    /// the registry, so the model's turn can end and the user can type into an
+    /// idle agent. A queued completion is still owed, since it has to reach
+    /// the model somewhere.
+    #[tokio::test]
+    async fn a_session_owned_background_shell_does_not_park_the_run_until_it_finishes() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.bg_shells_outlive_run = true;
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: Some("/tmp/out.log".to_string()),
+        });
+        assert!(
+            !invoker.background_pending(),
+            "a command still running must not park a session-owned run"
+        );
+
+        invoker.bg_shells.finish(ShellDone {
+            id: 1,
+            command: "sleep 600".to_string(),
+            elapsed_secs: 1,
+            output_path: Some("/tmp/out.log".to_string()),
+            failed: false,
+        });
+        assert!(
+            invoker.background_pending(),
+            "a queued completion is owed to the model"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].headline.is_some(), "a shell reports its own end");
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run-owned registry keeps the old contract: nothing else could deliver
+    /// the output, so the run parks until the command reports back. This is
+    /// the headless and child-run path.
+    #[tokio::test]
+    async fn a_run_owned_background_shell_still_parks_the_run() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry);
+        assert!(!invoker.bg_shells_outlive_run, "run-owned by default");
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        assert!(
+            invoker.background_pending(),
+            "nothing else could deliver this output, so the run waits"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
