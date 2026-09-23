@@ -87,9 +87,10 @@ python main.py \
 | `--rp-endpoint`         | `RP_ENDPOINT`         | `https://reportportal.menlo.ai` | ReportPortal endpoint URL                         |
 | `--rp-project`          | `RP_PROJECT`          | `default_personal`              | ReportPortal project name                         |
 | `--rp-token`            | `RP_TOKEN`            | -                               | ReportPortal API token (required when RP enabled) |
+| `--launch-name`         | `LAUNCH_NAME`         | _auto-generated_                | ReportPortal launch name                          |
 | **Jan Application**     |
 | `--jan-app-path`        | `JAN_APP_PATH`        | _auto-detected_                 | Path to Jan application executable                |
-| `--jan-process-name`    | `JAN_PROCESS_NAME`    | `Jan.exe`                       | Jan process name for monitoring                   |
+| `--jan-process-name`    | `JAN_PROCESS_NAME`    | `Jan.exe` (Windows) / `Jan` (macOS) / `Jan-nightly` | Jan process name for monitoring    |
 | **Model Configuration** |
 | `--model-name`          | `MODEL_NAME`          | `ByteDance-Seed/UI-TARS-1.5-7B` | AI model name                                     |
 | `--model-base-url`      | `MODEL_BASE_URL`      | `http://10.200.108.58:1234/v1`  | Model API endpoint                                |
@@ -113,6 +114,7 @@ ENABLE_REPORTPORTAL=true
 RP_ENDPOINT=https://reportportal.example.com
 RP_PROJECT=my_project
 RP_TOKEN=your_secret_token
+LAUNCH_NAME=my_local_run
 
 # Jan Application
 JAN_APP_PATH=C:\Custom\Path\Jan.exe
@@ -154,6 +156,9 @@ autoqa/
 ├── test_runner.py         # Test execution logic
 ├── screen_recorder.py     # Screen recording functionality
 ├── reportportal_handler.py # ReportPortal integration
+├── checklist.md           # Manual QA checklist the automated suite mirrors
+├── requirements.txt       # Python dependencies
+├── scripts/               # Platform install/cleanup scripts used by CI (see scripts/README.md)
 ├── tests/                 # Test files directory
 │   ├── basic/
 │   │   ├── login_test.txt
