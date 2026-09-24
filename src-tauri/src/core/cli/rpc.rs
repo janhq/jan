@@ -544,17 +544,41 @@ pub async fn serve() -> Result<(), String> {
                         Ok(set) if active.as_ref().is_some_and(|t| t.session_id == set.session_id) => turn_active(&id),
                         Ok(set) if set.model.trim().is_empty() => error(&id, -32602, "model must not be empty"),
                         Ok(set) => {
-                            let session = sessions.get_mut(&set.session_id).expect("checked");
-                            match rebuild_agent(session, Some(set.model)) {
-                                Ok(agent) => {
-                                    // The same registry: nothing is pending between
-                                    // turns, and keeping it keeps one per session.
-                                    let registry = Arc::clone(&session.agent.args.host_tool_requests);
-                                    session.agent = agent;
-                                    session.agent.args.host_tool_requests = registry;
-                                    response(&id, json!({"model":session.agent.model}))
-                                }
+                            // Refuse a model no configured provider serves. The
+                            // turn would fail closed on it too -- nothing goes
+                            // out on the session's behalf -- but this is the
+                            // point at which a client can still be told, and the
+                            // session must not be left pinned to a model that
+                            // cannot serve it, which the next turn would report
+                            // as a failure of the client's own input.
+                            let provider_configs = sessions
+                                .get(&set.session_id)
+                                .expect("checked")
+                                .agent
+                                .args
+                                .provider_configs
+                                .clone();
+                            match crate::core::agent::upstream::resolve_upstream_for_model(
+                                &set.model,
+                                provider_configs,
+                            )
+                            .await
+                            {
                                 Err(message) => error(&id, -32602, &message),
+                                Ok(_) => {
+                                    let session = sessions.get_mut(&set.session_id).expect("checked");
+                                    match rebuild_agent(session, Some(set.model)) {
+                                        Ok(agent) => {
+                                            // The same registry: nothing is pending between
+                                            // turns, and keeping it keeps one per session.
+                                            let registry = Arc::clone(&session.agent.args.host_tool_requests);
+                                            session.agent = agent;
+                                            session.agent.args.host_tool_requests = registry;
+                                            response(&id, json!({"model":session.agent.model}))
+                                        }
+                                        Err(message) => error(&id, -32602, &message),
+                                    }
+                                }
                             }
                         }
                     },
