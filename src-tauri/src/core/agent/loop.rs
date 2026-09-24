@@ -352,6 +352,11 @@ struct SubagentContext {
     send_reasoning: bool,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    /// The registry's teardown generation when this run started. A dispatch may
+    /// only admit a child while it is still current, so a tool call that
+    /// resolves after the run was cancelled starts nothing (see
+    /// [`crate::core::agent::subagent::BackgroundSubagents::generation`]).
+    bg_generation: u64,
 }
 
 /// Dispatches built-in tool calls to native handlers (gated by `resolve_decision`)
@@ -927,6 +932,7 @@ impl CompositeToolInvoker {
                 };
                 match spawn_dispatch_plan(
                     &ctx.bg,
+                    ctx.bg_generation,
                     &ctx.parent_args,
                     plan,
                     &crate::core::agent::subagent::ParentRun {
@@ -2736,6 +2742,7 @@ async fn orchestrate_inner(
             max_session_tokens,
             cost_ceiling,
             send_reasoning: body_send_reasoning(json_body),
+            bg_generation: bg.generation(),
             bg: bg.clone(),
         });
         // Resolved once above, where the system prompt also needed it.

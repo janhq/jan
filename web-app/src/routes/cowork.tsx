@@ -908,6 +908,9 @@ function CoworkPage() {
                     },
                     writeBlackboard: (name, content) =>
                       writeBlackboard(sid, name, content),
+                    // A cancelled run dispatches no further phase; see
+                    // `DispatchPlanCallbacks.signal`.
+                    signal: controller.signal,
                     // begin at dispatch, finish at completion: with the plan hold
                     // above, inbox.pending() never reads false mid-plan.
                     onDispatch: () => inbox.begin(),
@@ -935,8 +938,9 @@ function CoworkPage() {
                     .then((finalPhase) => {
                       // Ring once for the whole plan, after its last phase. Queue
                       // the ping (note, not finish) since the plan-hold slot is
-                      // released by the finally below.
-                      if (multi) {
+                      // released by the finally below. A cancelled run gets no
+                      // notice: the plan did not finish, and nobody is waiting.
+                      if (multi && !controller.signal.aborted) {
                         inbox.note(
                           planCompletionNotice({
                             phaseCount: plan.phases.length,

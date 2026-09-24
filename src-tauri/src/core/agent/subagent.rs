@@ -645,6 +645,9 @@ struct BackgroundEntry {
     /// which used to be rare and, now that collection is optional, would be the
     /// common case.
     finished: Arc<std::sync::atomic::AtomicBool>,
+    /// The run counters this child holds, released exactly once whether it
+    /// finishes or is aborted. See [`ChildSlot`].
+    slot: Arc<ChildSlot>,
 }
 
 /// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
@@ -693,6 +696,13 @@ pub(crate) struct BackgroundSubagents {
     /// whole life, so the parent stays parked across the gap where one phase has
     /// finished (`running == 0`) but the driver has not yet spawned the next.
     plans_pending: std::sync::atomic::AtomicUsize,
+    /// How many times this registry has been torn down. A session-owned registry
+    /// is reused by the runs after the one it was created for, so cancellation
+    /// cannot be a sticky flag on it: a plan driver and a dispatch both need to
+    /// know whether a teardown happened *after they started*, not whether one
+    /// ever happened at all. Both capture this value when they begin and stop
+    /// when it has moved.
+    generation: std::sync::atomic::AtomicU64,
     /// Where a child's events go when the registry outlives any one run.
     ///
     /// A child dispatched by run N but still working after it ends would
@@ -730,6 +740,7 @@ impl BackgroundSubagents {
             wake: Arc::new(tokio::sync::Notify::new()),
             running: std::sync::atomic::AtomicUsize::new(0),
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
+            generation: std::sync::atomic::AtomicU64::new(0),
             session_events: std::sync::Mutex::new(None),
         }
     }
@@ -800,6 +811,13 @@ impl BackgroundSubagents {
         !self.notices.lock().unwrap().is_empty()
     }
 
+    /// The registry's teardown generation -- see [`Self::generation`]. A caller
+    /// that will outlive the run it belongs to (a plan driver, a dispatch taken
+    /// now and resolved later) captures this and compares it later.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Park until a ping is available, or until nothing is left to wait for.
     ///
     /// The waiter is registered *before* the state is re-read (`enable`), so a
@@ -824,29 +842,51 @@ impl BackgroundSubagents {
         }
     }
 
-    /// Park until every `run_id` in `ids` has finished (or is gone from the
-    /// registry -- collected or aborted). The phase-plan driver's barrier between
-    /// one phase and the next. Mirrors [`wait_for_notice`]'s wake discipline:
-    /// the waiter is registered (`enable`) before the flags are re-read, so a
-    /// child finishing in the window is not missed.
-    async fn await_phase(&self, ids: &[String]) {
+    /// Park until every `run_id` in `ids` has finished, or until the run that
+    /// dispatched them was torn down (`generation` no longer matches the plan's).
+    /// The phase-plan driver's barrier between one phase and the next. Mirrors
+    /// [`wait_for_notice`]'s wake discipline: the waiter is registered (`enable`)
+    /// before the flags are re-read, so a child finishing in the window is not
+    /// missed.
+    ///
+    /// An id is done when its child *finished* -- collected or not, the entry
+    /// stays either way. Absence is not completion: a child is in the registry
+    /// before it can run (`spawn_subagent` registers it in the same critical
+    /// section that admits it), so the only way an id the driver was handed can
+    /// be missing is teardown, and that is the other exit. The barrier cannot
+    /// open on it, because a phase that never finished has nothing on the
+    /// blackboard for the next one to read.
+    ///
+    /// The two exits are different facts and the driver must not conflate them:
+    /// `Finished` means the phase completed and the next one may start,
+    /// `TornDown` means the run is gone and no phase may start at all.
+    async fn await_phase(&self, ids: &[String], generation: u64) -> PhaseGate {
         use std::sync::atomic::Ordering;
         loop {
             let waiter = self.wake.notified();
             tokio::pin!(waiter);
             waiter.as_mut().enable();
-            let all_done = {
+            // Both reads happen under the lock `abort_all` drains under, so a
+            // teardown either has published its generation already (seen here)
+            // or is still waiting for this lock -- in which case the ids cannot
+            // be missing from the map yet.
+            let gate = {
                 let guard = self.inner.lock().unwrap();
-                ids.iter().all(|id| {
-                    guard
-                        .get(id)
-                        .is_none_or(|e| e.finished.load(Ordering::SeqCst))
-                })
+                if self.generation.load(Ordering::SeqCst) != generation {
+                    Some(PhaseGate::TornDown)
+                } else if ids
+                    .iter()
+                    .all(|id| guard.get(id).is_some_and(|e| e.finished.load(Ordering::SeqCst)))
+                {
+                    Some(PhaseGate::Finished)
+                } else {
+                    None
+                }
             };
-            if all_done {
-                return;
+            match gate {
+                Some(done) => return done,
+                None => waiter.await,
             }
-            waiter.await;
         }
     }
 
@@ -869,9 +909,22 @@ impl BackgroundSubagents {
     /// emit), so consumers never see an unbracketed `SubagentStart`.
     pub(crate) fn abort_all(&self) {
         use crate::core::agent::events::StreamEvent;
+        // Record the teardown before draining. Tearing down is the one event a
+        // detached plan driver and an in-flight dispatch cannot otherwise see,
+        // so it is published first: a dispatch registering under the lock below
+        // reads the new value and refuses, and one that read the old value has
+        // already inserted and is found by the drain beneath it.
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            // Release the counters here rather than leaving it to the aborted
+            // tasks: a cancelled run must owe nothing the moment its teardown
+            // returns, and a session-owned registry outlives this call. Exactly
+            // once, so the child's own guard (which drops when the runtime
+            // cancels it) cannot double-count -- see `ChildSlot::release`.
+            entry.slot.release(self);
             // A child that ran to completion already emitted its own end event;
             // this is only closing the bracket for one cut off mid-run.
             if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
@@ -884,6 +937,11 @@ impl BackgroundSubagents {
             });
         }
         self.notices.lock().unwrap().clear();
+        // Everything a parked waiter re-reads just changed, and `notify_waiters`
+        // only reaches waiters already registered: without this a driver whose
+        // children were just aborted would stay parked on ids that will never
+        // finish again.
+        self.wake.notify_waiters();
     }
 
     /// The run ids of children still registered, i.e. dispatched and not yet
@@ -913,6 +971,141 @@ impl BackgroundSubagents {
         for rx in receivers {
             let _ = rx.await;
         }
+    }
+}
+
+/// Why a phase barrier returned. Only `Finished` means the next phase may start:
+/// `TornDown` means the run it belongs to is gone and the plan must end without
+/// starting anything else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PhaseGate {
+    Finished,
+    TornDown,
+}
+
+impl PhaseGate {
+    fn torn_down(self) -> bool {
+        self == PhaseGate::TornDown
+    }
+}
+
+impl BackgroundSubagents {
+    /// A dispatch scope for a caller that will outlive the dispatch it takes
+    /// now. Production callers hold one from run start ([`DispatchScope`] is
+    /// built from the run's own generation); the CLI's tests take one on the
+    /// spot, which is the only config whose tests dispatch at all.
+    #[cfg(all(test, feature = "cli"))]
+    pub(crate) fn scope(self: &Arc<Self>) -> DispatchScope {
+        DispatchScope {
+            bg: self.clone(),
+            generation: self.generation(),
+        }
+    }
+}
+
+/// What a dispatch registers into: the registry, plus the generation it belongs
+/// to (see [`BackgroundSubagents::generation`]). A child is admitted only while
+/// that generation is still current, so a dispatch that resolves after the run
+/// it belongs to was torn down -- a tool call already in flight, a plan driver
+/// still walking its phases -- starts nothing instead of fathering a child no
+/// teardown will ever reach.
+#[derive(Clone)]
+pub(crate) struct DispatchScope {
+    pub(crate) bg: Arc<BackgroundSubagents>,
+    generation: u64,
+}
+
+impl DispatchScope {
+    /// Whether a teardown has happened since this scope was taken.
+    fn is_stale(&self) -> bool {
+        self.bg.generation() != self.generation
+    }
+}
+
+/// The counters one child holds while it is dispatched, released exactly once.
+///
+/// Both decrements used to live in the child's own task, after the awaited work,
+/// where an aborted task never reached them: every child a teardown cut off
+/// leaked its slot, and a registry that outlives the abort (a session's) then
+/// reported work owed forever -- `wait_for_notice` parks on `running == 0` and
+/// never returns.
+///
+/// So the hold is a value instead of a step: the child's task carries a
+/// [`SlotGuard`] that releases on drop, which happens on completion *and* when a
+/// teardown aborts the task and the runtime drops its future. `released` keeps
+/// that idempotent, because the two paths can race: `abort_all` releases
+/// synchronously so a cancelled run owes nothing the moment its teardown
+/// returns, and the guard that follows then skips what teardown already did.
+struct ChildSlot {
+    /// Set by whoever takes the child off the semaphore waitlist: its own
+    /// admission, or a teardown revoking the queue slot of a child still parked.
+    /// A swap makes that one decision -- one of the two decrements `queued`, the
+    /// other sees `true` and leaves it alone -- because a child can leave the
+    /// waitlist at the same moment a teardown reaches for it.
+    admitted: std::sync::atomic::AtomicBool,
+    /// Set once the child's counters are released, by whichever of its own
+    /// guard or a teardown gets there first.
+    released: std::sync::atomic::AtomicBool,
+}
+
+impl ChildSlot {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            admitted: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    /// The child held a permit from the moment it was dispatched, so it never
+    /// joined the waitlist and there is no queue slot to revoke. Recorded before
+    /// the entry is published, while the registry is still locked, so a teardown
+    /// can never meet a child that has a permit but no record of it.
+    fn admitted_at_dispatch(&self) {
+        self.admitted
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Leave the waitlist: either this admission, or a teardown that reached a
+    /// child still parked. The swap is what keeps `queued` exact when the two
+    /// race -- the child resuming from `acquire_owned` in the same moment
+    /// `abort_all` drains it.
+    fn leave_queue(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if !self.admitted.swap(true, Ordering::SeqCst) {
+            registry.queued.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Release the counters this child holds, once.
+    fn release(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if self.released.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // A child aborted while it was still parked never reached its own
+        // `leave_queue`: the task does that the moment its permit arrives.
+        self.leave_queue(registry);
+        registry.running.fetch_sub(1, Ordering::SeqCst);
+        registry.wake.notify_waiters();
+    }
+}
+
+/// A child task's hold on its [`ChildSlot`]: dropping it releases the counters.
+struct SlotGuard {
+    registry: Arc<BackgroundSubagents>,
+    hold: Arc<ChildSlot>,
+}
+
+impl SlotGuard {
+    /// The child holds its permit now, so it stops counting as queued.
+    fn leave_queue(&self) {
+        self.hold.leave_queue(&self.registry);
+    }
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.hold.release(&self.registry);
     }
 }
 
@@ -1170,7 +1363,7 @@ async fn run_subagent(
 /// suppresses only the `<SYSTEM>` ping; the child still fills its blackboard
 /// file, decrements the running count, and wakes the phase driver's barrier.
 pub(crate) fn spawn_subagent(
-    bg: &Arc<BackgroundSubagents>,
+    scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
@@ -1181,6 +1374,7 @@ pub(crate) fn spawn_subagent(
     use crate::core::agent::events::StreamEvent;
     use std::sync::atomic::Ordering;
 
+    let bg = &scope.bg;
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -1207,6 +1401,16 @@ pub(crate) fn spawn_subagent(
         reserve_blackboard_result(s, &name).map(|path| (scratch_display_path(Some(s), &path), path))
     });
     let display_path = result_file.as_ref().map(|(display, _)| display.clone());
+
+    // Admission and registration are one critical section: a teardown either
+    // finds the entry below and aborts that child, or has already published its
+    // generation and this dispatch is refused here. Holding the lock across
+    // `tokio::spawn` is safe -- nothing a starting child does touches `inner`;
+    // a child reports its progress through `notices`.
+    let mut entries = bg.inner.lock().unwrap();
+    if scope.is_stale() {
+        return Err(SubagentError::Cancelled);
+    }
 
     // Try to grab a permit at dispatch time. On success the child is admitted
     // immediately; on exhaustion it joins the semaphore waitlist (FIFO) and is
@@ -1242,8 +1446,22 @@ pub(crate) fn spawn_subagent(
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let finished_task = finished.clone();
     let notice_path = display_path.clone();
+    let slot = ChildSlot::new();
+    let slot_task = slot.clone();
+    // A permit taken here means this child never joined the waitlist: record it
+    // while the registry is still locked, before the entry below is reachable.
+    if admitted.is_ok() {
+        slot.admitted_at_dispatch();
+    }
     registry.running.fetch_add(1, Ordering::SeqCst);
     let handle = tokio::spawn(async move {
+        // Held for the child's whole life, including the wait for a permit, so a
+        // teardown that aborts it here releases its slot exactly as a completion
+        // would. Declared first, so it drops last: after the notice is queued.
+        let _slot = SlotGuard {
+            registry: registry.clone(),
+            hold: slot_task,
+        };
         let permit = match admitted {
             Ok(p) => p,
             Err(_) => {
@@ -1251,7 +1469,7 @@ pub(crate) fn spawn_subagent(
                     .acquire_owned()
                     .await
                     .expect("subagent semaphore is never closed");
-                registry.queued.fetch_sub(1, Ordering::SeqCst);
+                _slot.leave_queue();
                 p
             }
         };
@@ -1278,12 +1496,10 @@ pub(crate) fn spawn_subagent(
                 completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
             );
         }
-        registry.running.fetch_sub(1, Ordering::SeqCst);
-        registry.wake.notify_waiters();
         let _ = tx.send(result);
     });
 
-    bg.inner.lock().unwrap().insert(
+    entries.insert(
         run_id.clone(),
         BackgroundEntry {
             result: Some(rx),
@@ -1293,8 +1509,10 @@ pub(crate) fn spawn_subagent(
             events: entry_events,
             display_path: display_path.clone(),
             finished,
+            slot,
         },
     );
+    drop(entries);
     Ok(Dispatched { run_id })
 }
 
@@ -1382,6 +1600,7 @@ fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
 /// so a bad subagent fails the dispatch atomically, before any child starts.
 pub(crate) fn spawn_dispatch_plan(
     bg: &Arc<BackgroundSubagents>,
+    generation: u64,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     plan: DispatchPlan,
     parent: &ParentRun,
@@ -1438,6 +1657,10 @@ pub(crate) fn spawn_dispatch_plan(
         bg.begin_plan();
     }
 
+    let scope = DispatchScope {
+        bg: bg.clone(),
+        generation,
+    };
     let mut phases = plan.phases.into_iter();
     let first = phases.next().expect("non-empty checked above");
     let mut first_names = Vec::with_capacity(first.subagents.len());
@@ -1446,7 +1669,7 @@ pub(crate) fn spawn_dispatch_plan(
     // a multi-phase plan keeps every child silent and rings once when it ends.
     for req in first.subagents {
         first_names.push(req.name.clone());
-        match spawn_subagent(bg, parent_args, req, parent, events, scratch, !multi) {
+        match spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi) {
             Ok(d) => first_ids.push(d.run_id),
             Err(e) => {
                 if multi {
@@ -1459,7 +1682,7 @@ pub(crate) fn spawn_dispatch_plan(
 
     if multi {
         let remaining: Vec<Phase> = phases.collect();
-        let driver_bg = bg.clone();
+        let driver_scope = scope.clone();
         let driver_args = parent_args.clone();
         let driver_parent = parent.clone();
         let driver_events = events.clone();
@@ -1468,7 +1691,7 @@ pub(crate) fn spawn_dispatch_plan(
         let driver_dir = blackboard_dir.clone();
         tokio::spawn(async move {
             run_phase_plan(
-                driver_bg,
+                driver_scope,
                 driver_args,
                 driver_parent,
                 driver_events,
@@ -1512,7 +1735,7 @@ struct PlanSummary {
 /// should wake the parent rather than be swallowed until the terminal ping.
 #[allow(clippy::too_many_arguments)]
 async fn run_phase_plan(
-    bg: Arc<BackgroundSubagents>,
+    scope: DispatchScope,
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
     parent: ParentRun,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
@@ -1522,8 +1745,23 @@ async fn run_phase_plan(
     phases: Vec<Phase>,
     summary: PlanSummary,
 ) {
+    let generation = scope.generation;
     for phase in phases {
-        bg.await_phase(&prev_ids).await;
+        // A torn-down run stops the plan where it stands, and releases its hold
+        // on the park. This is a detached task: the run that spawned it can be
+        // gone (`AbortOnDrop` fired) while it waits, and without this check it
+        // would read the barrier's "the children I was waiting on are gone" as
+        // "phase done" and start the phases still ahead of it as children
+        // nobody owns.
+        if scope
+            .bg
+            .await_phase(&prev_ids, generation)
+            .await
+            .torn_down()
+        {
+            scope.bg.end_plan();
+            return;
+        }
         let inputs = read_blackboard(scratch.as_deref(), &prev_names);
         let mut ids = Vec::with_capacity(phase.subagents.len());
         let mut names = Vec::with_capacity(phase.subagents.len());
@@ -1533,13 +1771,26 @@ async fn run_phase_plan(
             // aligned: a child that never started has no blackboard file for the
             // next phase to read and no answer for the terminal notice to report.
             let name = req.name.clone();
-            match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref(), false)
-            {
+            match spawn_subagent(
+                &scope,
+                &parent_args,
+                req,
+                &parent,
+                &events,
+                scratch.as_deref(),
+                false,
+            ) {
                 Ok(d) => {
                     ids.push(d.run_id);
                     names.push(name);
                 }
-                Err(e) => bg.push_notice(
+                // The run was torn down between the barrier and this dispatch:
+                // the rest of the phase is dead work and the plan rings nothing.
+                Err(SubagentError::Cancelled) => {
+                    scope.bg.end_plan();
+                    return;
+                }
+                Err(e) => scope.bg.push_notice(
                     "plan",
                     format!("A subagent in the next phase could not start: {e}"),
                 ),
@@ -1548,18 +1799,31 @@ async fn run_phase_plan(
         prev_ids = ids;
         prev_names = names;
     }
-    // Ring the doorbell once, only after the last phase's last child is done.
-    bg.await_phase(&prev_ids).await;
-    let notice = plan_completion_notice(&bg, &prev_ids, &prev_names, &summary).await;
-    bg.push_notice("plan", notice);
+    // Ring the doorbell once, only after the last phase's last child is done --
+    // and never for a plan whose run was torn down while that last phase ran.
+    if scope
+        .bg
+        .await_phase(&prev_ids, generation)
+        .await
+        .torn_down()
+    {
+        scope.bg.end_plan();
+        return;
+    }
+    let notice = plan_completion_notice(&scope.bg, &prev_ids, &prev_names, &summary).await;
+    scope.bg.push_notice("plan", notice);
     // Release the plan hold now that the terminal ping is queued.
-    bg.end_plan();
+    scope.bg.end_plan();
 }
 
 /// The single `<SYSTEM>` ping delivered when a multi-phase plan finishes.
-/// Confined: point the parent at the blackboard, where every phase's answers
-/// live. Unconfined: there is no blackboard, so collect and inline the final
-/// phase's answers (bounded), since they have nowhere else to be read from.
+///
+/// Per child, never per dispatch: the driver knows the names it *started*, and a
+/// name is not an answer. A child that failed, was aborted, or produced nothing
+/// has to read as exactly that, or the one line that tells the model where the
+/// plan's answers are is the one line it cannot trust. Same shape as the TS
+/// port's `planCompletionNotice`: a child whose answer was spilled is pointed at
+/// its file, a failed one carries its error, and a quiet one says so.
 async fn plan_completion_notice(
     bg: &Arc<BackgroundSubagents>,
     final_ids: &[String],
@@ -1571,35 +1835,47 @@ async fn plan_completion_notice(
         total_subagents,
         blackboard_dir,
     } = summary;
-    match blackboard_dir {
-        Some(dir) => format!(
-            "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases. \
-             The final phase produced: {}. Every answer is on the blackboard at {dir} \
-             (blackboard/<name>.md) -- read the files you need.",
-            final_names.join(", ")
-        ),
-        None => {
-            let mut parts = Vec::with_capacity(final_ids.len());
-            for (id, name) in final_ids.iter().zip(final_names) {
-                // Bounded per answer: the notice concatenates the whole final
-                // phase, so an uncapped inline (what `compose_subagent_result`
-                // returns with no path) could blow the parent's context. Matches
-                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
-                let body = match await_subagent(bg, id).await {
-                    Ok(c) => {
-                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
-                        c.text[..cut].to_string()
-                    }
-                    Err(e) => format!("failed: {e}"),
-                };
-                parts.push(format!("### {name}\n\n{body}"));
+    let mut parts = Vec::with_capacity(final_ids.len());
+    for (id, name) in final_ids.iter().zip(final_names) {
+        // Collecting here is also what makes the claim truthful: the answer and
+        // the path it was written to come from the child, not from the list of
+        // names it was dispatched under.
+        let body = match await_subagent(bg, id).await {
+            Ok(Collected { text, .. }) if text.trim().is_empty() => {
+                "produced nothing".to_string()
             }
-            format!(
-                "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} \
-                 phases. Final phase answers:\n\n{}",
-                parts.join("\n\n")
-            )
-        }
+            // The path the child's own task wrote to, so this points at the file
+            // that exists rather than one reconstructed from the name.
+            Ok(Collected {
+                display_path: Some(path),
+                ..
+            }) => format!("see {path}"),
+            // No spill file (an unconfined run has no scratch): the answer has
+            // nowhere to be read from later, so it rides inline, bounded -- the
+            // notice concatenates the whole final phase.
+            Ok(Collected { text, .. }) => {
+                let cut = char_boundary(&text, SUBAGENT_INLINE_MAX_BYTES);
+                text[..cut].to_string()
+            }
+            Err(e) => format!("failed: {e}"),
+        };
+        parts.push(format!("### {name}\n\n{body}"));
+    }
+    let headline = format!(
+        "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases."
+    );
+    match blackboard_dir {
+        // Confined: point the parent at the blackboard, where the answers that
+        // exist live.
+        Some(dir) => format!(
+            "{headline} Final phase:\n\n{}\n\nEvery answer is on the blackboard at {dir} \
+             (blackboard/<name>.md) -- read the files you need.",
+            parts.join("\n\n")
+        ),
+        None => format!(
+            "{headline} Final phase answers:\n\n{}",
+            parts.join("\n\n")
+        ),
     }
 }
 
@@ -1662,10 +1938,12 @@ pub(crate) async fn await_subagent(
     };
     // Keep the entry (and its abort handle) in the registry while awaiting, so a
     // parent cancellation mid-await can still reach this child via `abort_all`.
-    // Taking `result` above already makes a second await error out. Remove the
-    // now-spent entry once the await resolves (a no-op if teardown drained it).
+    // Taking `result` above already makes a second await error out, and the
+    // entry *stays* after this returns (a no-op if teardown drained it): a
+    // child that is gone from the registry then means exactly one thing -- it
+    // was torn down -- which is what lets the phase barrier tell "finished and
+    // collected" from "never was", instead of reading both as done.
     let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
-    bg.inner.lock().unwrap().remove(run_id);
     // Collected explicitly, so the queued ping for this run is redundant.
     bg.drop_notice(run_id);
     outcome.map(|text| Collected { text, display_path })
@@ -2693,6 +2971,7 @@ mod tests {
             events,
             display_path: None,
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            slot: ChildSlot::new(),
         }
     }
 
@@ -2879,7 +3158,7 @@ mod tests {
         args: &crate::core::agent::r#loop::OrchestrationArgs,
         events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     ) -> String {
-        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None, true)
+        spawn_subagent(&bg.scope(), args, req("reviewer", None), &parent_run(), events, None, true)
             .unwrap()
             .run_id
     }
@@ -3033,7 +3312,8 @@ mod tests {
                 },
             ],
         };
-        let d = spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+        let d = spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .unwrap();
         assert_eq!(d.phase_count, 2);
         assert_eq!(d.total_subagents, 3);
         assert!(bg.has_pending_work(), "a multi-phase plan holds the run open");
@@ -3079,6 +3359,338 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// F1: a plan whose run is cancelled starts no further phase. `abort_all` is
+    /// what `AbortOnDrop` calls when the run's future is dropped, and the driver
+    /// is a detached task that survives that -- so it has to be told, not merely
+    /// orphaned. (Reproduction from the audit: 10/10 rounds before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_cancelled_run_starts_no_further_phase() {
+        use crate::core::agent::events::StreamEvent;
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("phasecancel");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        let d = spawn_dispatch_plan(
+            &bg,
+            bg.generation(),
+            &args,
+            plan,
+            &parent_run(),
+            &tx,
+            Some(&scratch),
+        )
+        .unwrap();
+        // Phase 1 started; the driver owns the remaining phase.
+        assert_eq!(d.first_phase_names, vec!["alpha".to_string()]);
+        assert_eq!(bg.plans_pending.load(Ordering::SeqCst), 1);
+
+        bg.abort_all(); // what the run's teardown does when it is cancelled
+
+        // The driver must both stop and release the park the run is held by.
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while bg.plans_pending.load(Ordering::SeqCst) > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("a cancelled plan releases its hold on the run");
+
+        let mut started = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::SubagentStart { name, .. }
+            | StreamEvent::SubagentQueued { name, .. } = ev
+            {
+                started.push(name);
+            }
+        }
+        assert!(
+            !started.iter().any(|n| n == "collector"),
+            "a cancelled plan started another phase: {started:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dispatch that resolves after the run it belongs to was torn down starts
+    /// nothing: the scope it holds is stale. This is the window between a tool
+    /// call being decided and its child being admitted, and the only way a child
+    /// could be born that no teardown would ever reach.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_dispatch_after_teardown_is_refused() {
+        let root = unique_root("late_spawn");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Taken while the run was alive, as the tool loop's scope is.
+        let scope = bg.scope();
+
+        bg.abort_all();
+
+        let dispatched =
+            spawn_subagent(&scope, &args, req("late", None), &parent_run(), &tx, None, true);
+        assert!(
+            matches!(dispatched, Err(SubagentError::Cancelled)),
+            "a dispatch after teardown must be refused, not started"
+        );
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "a refused dispatch registers nothing"
+        );
+        assert_eq!(bg.running.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(bg.queued.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F2: absence is not completion. A child is registered before it can run,
+    /// so an id the driver was handed can only be missing because the registry
+    /// was torn down -- and a phase that never finished has nothing on the
+    /// blackboard for the next phase to read. (Reproduction from the audit: the
+    /// barrier returned immediately before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn an_absent_child_never_satisfies_the_barrier() {
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let waited = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            bg.await_phase(&["never-registered".to_string()], bg.generation()),
+        )
+        .await;
+        assert!(
+            waited.is_err(),
+            "the barrier opened for a child that was never registered"
+        );
+    }
+
+    /// The other half of the same rule: an id that *has* finished satisfies the
+    /// barrier whether or not the parent collected it. The entry survives
+    /// collection precisely so the two absences stay distinguishable -- a
+    /// barrier that waited for a collected child would park the plan forever.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_collected_child_satisfies_the_barrier() {
+        let root = unique_root("barrier_collected");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let id = dispatch_reviewer(&bg, &args, &tx);
+        // Wait for it to finish without collecting it, then collect it: the
+        // entry stays either way, and both states are "done" to the barrier.
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("an uncollected finished child satisfies the barrier");
+        assert_eq!(gate, PhaseGate::Finished);
+
+        let _ = await_subagent(&bg, &id).await; // fails without a provider; fine
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("a collected child satisfies the barrier");
+        assert_eq!(gate, PhaseGate::Finished);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F6: a child the teardown cut off releases the slot it held. Both
+    /// decrements used to sit inside the child's task, past the awaited work an
+    /// abort never returns from, so every aborted child leaked its slot and a
+    /// registry that survives the abort -- a session's -- reported work owed
+    /// forever. (Reproduction from the audit: 20/20 rounds before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abort_all_leaves_nothing_owed() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_owed");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Occupy the only slot, so the first dispatch parks on the semaphore
+        // (queued) rather than being admitted -- both accounting fields in play.
+        let running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        let _r2 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.running.load(Ordering::SeqCst), 2);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 2);
+        // Admit the first, so the abort below has to release a running child and
+        // a parked one.
+        drop(running);
+        tokio::task::yield_now().await;
+        assert!(bg.has_pending_work());
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.running.load(Ordering::SeqCst),
+            0,
+            "an aborted child leaked its slot"
+        );
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "a parked child leaked its queue slot");
+        assert!(
+            !bg.has_pending_work(),
+            "the registry still reports work owed after teardown"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The other way the same counters can go wrong: a child admitted at dispatch
+    /// took a permit, not a place in the waitlist, so a teardown that reaches it
+    /// before its task is ever polled must not revoke a queue slot it never took.
+    /// `queued` is a `usize` -- the spurious decrement wraps it, and every queue
+    /// position reported to the model afterwards is garbage. Deterministic on a
+    /// current-thread runtime, where the spawned task cannot run before the abort
+    /// below. (Found by self-review after the fix above; it passed the whole suite
+    /// as it stood.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_teardown_never_untracks_a_child_that_was_never_queued() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_unqueued");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // A free permit: admitted here and now, never queued.
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0);
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.queued.load(Ordering::SeqCst),
+            0,
+            "a child that was never queued lost a queue slot"
+        );
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The waiter half of the same finding: `wait_for_notice` parks on
+    /// `running == 0 && plans_pending == 0`, so a teardown that leaves counters
+    /// behind parks it for good -- and without a wake it would not even look.
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_parked_waiter_wakes_when_the_run_is_torn_down() {
+        let root = unique_root("abort_wake");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the slot so the child cannot finish on its own: the waiter must
+        // park, deterministically, with exactly one child outstanding.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+
+        let waiter_bg = bg.clone();
+        let waiter = tokio::spawn(async move { waiter_bg.wait_for_notice().await });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !waiter.is_finished(),
+            "the waiter parks while a child is outstanding"
+        );
+
+        bg.abort_all();
+
+        tokio::time::timeout(std::time::Duration::from_secs(10), waiter)
+            .await
+            .expect("a parked waiter wakes when the registry is torn down")
+            .expect("the waiter task did not panic");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F4: the plan's single line must not present a child that produced nothing
+    /// as an answer. The driver knows the names it *started*; only the children
+    /// know what they produced, and the notice has to ask them.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn the_terminal_notice_reports_what_each_child_produced() {
+        let root = unique_root("phasenotice");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        spawn_dispatch_plan(
+            &bg,
+            bg.generation(),
+            &args,
+            plan,
+            &parent_run(),
+            &tx,
+            Some(&scratch),
+        )
+        .unwrap();
+
+        let mut all = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                all.extend(bg.take_notices());
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        let notice = all.join("\n");
+        // Children fail without a provider, and a failure is not an answer: the
+        // notice names the child and says what became of it, instead of naming it
+        // under a claim of production.
+        assert!(
+            notice.contains("### collector"),
+            "the notice still reports the child: {notice}"
+        );
+        assert!(
+            notice.contains("failed:"),
+            "a child that produced nothing reads as failed: {notice}"
+        );
+        assert!(
+            !notice.contains("blackboard/collector.md"),
+            "a child with no answer is not offered as one: {notice}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The doorbell contract: a multi-phase plan wakes the parent exactly once,
     /// after the last phase's last child finishes -- not per intermediate child.
     #[cfg(feature = "cli")]
@@ -3103,7 +3715,8 @@ mod tests {
                 },
             ],
         };
-        spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+        spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .unwrap();
 
         let mut all = Vec::new();
         tokio::time::timeout(std::time::Duration::from_secs(20), async {
