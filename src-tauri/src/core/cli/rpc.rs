@@ -133,6 +133,18 @@ fn output_lines(mut rx: mpsc::Receiver<Value>) -> std::thread::JoinHandle<()> {
     })
 }
 
+async fn forward_events(
+    source: &mut mpsc::UnboundedReceiver<StreamEvent>,
+    events: &mpsc::Sender<TurnMessage>,
+) -> Result<(), String> {
+    while let Some(event) = source.recv().await {
+        events
+            .try_send(TurnMessage::Event(event))
+            .map_err(|_| "RPC event queue overloaded or closed".to_owned())?;
+    }
+    Ok(())
+}
+
 fn start_turn(
     session: &mut Session,
     input: Value,
@@ -160,19 +172,32 @@ fn start_turn(
     });
     let runner = tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let forward = tokio::spawn({
-            let events = events.clone();
-            async move {
-                while let Some(event) = rx.recv().await {
-                    if events.send(TurnMessage::Event(event)).await.is_err() {
-                        break;
+        let mut result = {
+            let engine = run_orchestration_steered(&tx, &body, &args, Some(&steering_tx));
+            tokio::pin!(engine);
+            loop {
+                tokio::select! {
+                    run = &mut engine => break run,
+                    event = rx.recv() => {
+                        match event {
+                            Some(event) => {
+                                if events.try_send(TurnMessage::Event(event)).is_err() {
+                                    break Err("RPC event queue overloaded or closed".to_owned());
+                                }
+                            }
+                            None => break Err("RPC event stream closed".to_owned()),
+                        }
                     }
                 }
             }
-        });
-        let result = run_orchestration_steered(&tx, &body, &args, Some(&steering_tx)).await;
+        };
+        // The run is complete, so stop producing events and drain only what
+        // the engine already emitted. A full bounded queue is an overload,
+        // not permission to buffer the remaining deltas without a bound.
         drop(tx);
-        let _ = forward.await;
+        if let Err(message) = forward_events(&mut rx, &events).await {
+            result = Err(message);
+        }
         let _ = events.send(TurnMessage::Finished(result)).await;
     });
     Ok(ActiveTurn {
@@ -276,6 +301,7 @@ pub async fn serve() -> Result<(), String> {
                     Ok(value) => value,
                     Err(_) => { send_reply(&out, error(&Value::Null, -32700, "Parse error")).await?; continue; }
                 };
+                let has_id = request.get("id").is_some();
                 let id = request.get("id").cloned().unwrap_or(Value::Null);
                 let method = request.get("method").and_then(Value::as_str).unwrap_or("");
                 let params = &request["params"];
@@ -284,6 +310,10 @@ pub async fn serve() -> Result<(), String> {
                     continue;
                 }
                 if method == "initialize" {
+                    // A new handshake replaces the previous one; a failed
+                    // negotiation cannot authorize `initialized` or methods.
+                    negotiated = false;
+                    initialized = false;
                     let reply = match serde_json::from_value::<InitializeParams>(params.clone()) {
                         Ok(init) if init.protocol_version == PROTOCOL_VERSION && !init.client_info.name.is_empty() && !init.client_info.version.is_empty() => {
                             negotiated = true;
@@ -294,7 +324,7 @@ pub async fn serve() -> Result<(), String> {
                     send_reply(&out, reply).await?;
                     continue;
                 }
-                if method == "initialized" && negotiated && id.is_null() {
+                if method == "initialized" && negotiated && !has_id {
                     initialized = true;
                     continue;
                 }
@@ -339,13 +369,23 @@ pub async fn serve() -> Result<(), String> {
                         }
                         Ok(SessionIdParams { session_id: sid }) if sessions.contains_key(&sid) => {
                             let source = sessions.get(&sid).expect("checked");
-                            let project = source.agent.args.project_root.as_deref().ok_or("session has no project root")?;
-                            let agent = prepare_agent_session(&project.to_string_lossy(), Some(source.agent.model.clone()), ProviderOverrides::default(), SessionFlags { require_model: true, ..Default::default() }, None)?;
-                            let fork = uuid::Uuid::new_v4().to_string();
-                            let history = source.history.clone();
-                            let ephemeral = source.ephemeral;
-                            sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral });
-                            response(&id, json!({"sessionId":fork}))
+                            let project = source.agent.args.project_root.as_deref().ok_or_else(|| "session has no project root".to_owned());
+                            match project.and_then(|project| prepare_agent_session(
+                                &project.to_string_lossy(),
+                                Some(source.agent.model.clone()),
+                                ProviderOverrides::default(),
+                                SessionFlags { require_model: true, ..Default::default() },
+                                None,
+                            )) {
+                                Ok(agent) => {
+                                    let fork = uuid::Uuid::new_v4().to_string();
+                                    let history = source.history.clone();
+                                    let ephemeral = source.ephemeral;
+                                    sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral });
+                                    response(&id, json!({"sessionId":fork}))
+                                }
+                                Err(message) => error(&id, -32602, &message),
+                            }
                         }
                         Ok(_) => error(&id, -32602, "unknown sessionId"),
                     },
@@ -435,7 +475,7 @@ pub async fn serve() -> Result<(), String> {
                     },
                     _ => error(&id, -32601, "Method not found"),
                 };
-                if !id.is_null() { send_reply(&out, reply).await?; }
+                if has_id { send_reply(&out, reply).await?; }
             }
             message = async { active.as_mut().expect("active").events.recv().await }, if active.is_some() => {
                 let Some(message) = message else {
@@ -488,4 +528,24 @@ pub async fn serve() -> Result<(), String> {
         .join()
         .map_err(|_| "RPC output writer panicked".to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn event_forwarder_stops_receiving_when_its_bounded_queue_is_full() {
+        let (upstream, mut source) = mpsc::unbounded_channel();
+        let (downstream, _blocked) = mpsc::channel(1);
+        downstream
+            .send(TurnMessage::Event(StreamEvent::Parked))
+            .await
+            .unwrap();
+        let forward = tokio::spawn(async move { forward_events(&mut source, &downstream).await });
+
+        upstream.send(StreamEvent::Parked).unwrap();
+        assert!(forward.await.unwrap().unwrap_err().contains("overloaded"));
+        assert!(upstream.send(StreamEvent::Parked).is_err(), "events should stop at the bounded boundary");
+    }
 }

@@ -291,6 +291,57 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     let _ = std::fs::remove_dir_all(scratch);
 }
 
+#[test]
+fn failed_fork_does_not_close_other_sessions() {
+    let scratch = scratch("failed-fork");
+    let home = scratch.join("home");
+    configure(&home, &provider(1, 0));
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let session_id = rpc.start_session(&project);
+    std::fs::write(project.join(".jan/agent/agent.toml"), "[agent\n").unwrap();
+
+    let failure = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"session/fork","params":{"sessionId":session_id}}));
+    assert_eq!(failure["id"], 4);
+    assert_eq!(failure["error"]["code"], -32602);
+    let resumed = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"session/resume","params":{"sessionId":session_id}}));
+    assert_eq!(resumed["result"]["sessionId"], session_id);
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+#[test]
+fn failed_initialize_revokes_the_previous_handshake() {
+    let scratch = scratch("handshake");
+    let mut rpc = Rpc::open(&scratch.join("home"));
+    rpc.handshake();
+    let failure = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"initialize","params":{"protocolVersion":999,"clientInfo":{"name":"test","version":"1"}}}));
+    assert_eq!(failure["error"]["code"], -32602);
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
+    let refused =
+        rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"session/list","params":{}}));
+    assert_eq!(refused["error"]["code"], -32002);
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+#[test]
+fn an_explicit_null_id_gets_an_answer() {
+    let scratch = scratch("null-id");
+    let mut rpc = Rpc::open(&scratch.join("home"));
+    rpc.handshake();
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":null,"method":"session/list","params":{}}));
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":7,"method":"session/list","params":{}}));
+    let first = rpc.read();
+    assert!(first["id"].is_null(), "{first}");
+    assert!(first["result"]["sessions"].is_array(), "{first}");
+    let next = rpc.read();
+    assert_eq!(next["id"], 7);
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
 /// A client that stops reading cannot grow the server without bound: the queue
 /// fills at its cap, the run ends with a terminal outcome that says so, and
 /// that outcome still reaches the client once it reads again - through the slot
