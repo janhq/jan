@@ -518,15 +518,10 @@ fn drive(
 /// `details` goes to the client as `tool_details` and never into a provider
 /// request.
 ///
-/// What reaches the provider is the parts' text only. The agent's transcript
-/// carries the parts verbatim (pinned in loop.rs by
-/// `host_parts_are_the_tool_message_and_details_stay_off_the_wire`), but the
-/// `genai` bridge flattens every content-part array to text on the way out --
-/// `genai_bridge::multimodal_content_parts_are_flattened_to_their_text` pins
-/// that for user turns too -- and genai's tool response is text-only. The
-/// assertion below that no `image_url` is sent is a trap: when the bridge
-/// learns to forward tool images, it fails and should become the positive
-/// check that the image arrived.
+/// The provider sees the parts' text as the tool message and the image in the
+/// user turn right after it: `genai`'s tool response is text-only, so the
+/// bridge carries a tool's image there (`genai_bridge::flush_tool_images`).
+/// The details never leave the host's side.
 #[test]
 fn host_result_parts_reach_the_model_and_details_do_not() {
     let scratch = Scratch::new("parts");
@@ -569,9 +564,17 @@ fn host_result_parts_reach_the_model_and_details_do_not() {
         tool_message["content"], "front camera",
         "the parts' text is the tool message: {tool_message}"
     );
+    let messages = body["messages"].as_array().expect("messages");
+    let tool_at = messages.iter().position(|m| m["role"] == "tool").expect("tool");
+    let carried = &messages[tool_at + 1];
+    assert_eq!(carried["role"], "user", "the image follows the tool message: {body}");
     assert!(
-        !requests[1].contains("QUJD"),
-        "the bridge now forwards tool images: turn this into the positive check"
+        carried["content"]
+            .as_array()
+            .expect("a content-part array")
+            .iter()
+            .any(|p| p["image_url"]["url"] == "data:image/png;base64,QUJD"),
+        "the host's image reached the provider: {carried}"
     );
     assert!(
         !requests.iter().any(|r| r.contains("DETAILS-ONLY-FOR-THE-HOST")),

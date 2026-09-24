@@ -268,8 +268,9 @@ and can try again. The check covers `type`, `properties`, `required`, `additiona
 which reaches the model as the tool's error. It is either a string or a content-part array of
 `text` and `image_url` parts, held to the same caps as a `user` message. The parts are kept as the
 tool message, in order, in the session transcript; the `tool_result` event carries only their text
-(or `(image)` for an image alone). Today the provider request carries the text of the parts only:
-images in tool messages are not yet forwarded to the model. An optional `details` object is for your
+(or `(image)` for an image alone). On the provider request the tool message is the parts' text,
+and the images follow the run of tool messages as one user message, each labeled with the call it
+answers: most providers accept only text in a tool message. An optional `details` object is for your
 own display: it is **never sent to the model**, and the run echoes it as a record right after that
 call's `tool_result`:
 

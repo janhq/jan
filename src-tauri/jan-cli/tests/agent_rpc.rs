@@ -667,17 +667,24 @@ fn a_host_tool_round_trips_with_content_parts() {
 
     let requests = seen.lock().unwrap();
     assert_eq!(requests.len(), 2, "the result never reached the model");
-    let wire_tool = requests[1]["messages"]
-        .as_array()
-        .unwrap()
+    let wire = requests[1]["messages"].as_array().unwrap();
+    let tool_at = wire
         .iter()
-        .find(|m| m["role"] == "tool")
-        .expect("the follow-up request carries the tool message")
-        .clone();
-    // Only the text is asserted on the wire: the OpenAI-compatible bridge sends a
-    // tool message as text (`genai` tool responses are text-only), so the image
-    // is checked at the loop's tool message above until the bridge forwards it.
-    assert!(wire_tool.to_string().contains("frame captured"), "{wire_tool}");
+        .position(|m| m["role"] == "tool")
+        .expect("the follow-up request carries the tool message");
+    // A tool message is text on the wire (`genai` tool responses are
+    // text-only), so the image rides in the user turn right after it.
+    assert!(wire[tool_at].to_string().contains("frame captured"), "{}", wire[tool_at]);
+    let carried = &wire[tool_at + 1];
+    assert_eq!(carried["role"], "user", "{carried}");
+    assert!(
+        carried["content"]
+            .as_array()
+            .expect("a content-part array")
+            .iter()
+            .any(|p| p["image_url"]["url"] == image),
+        "the host's image reached the model: {carried}"
+    );
     assert!(
         !requests[1].to_string().contains("\"frame\":7"),
         "details must never reach the model: {}",
