@@ -15,7 +15,7 @@
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
 //! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
 //! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`. Four tags are minted by
+//! `turn_usage`, `done`, `error`, `permission_request`, `tool_request`. Four tags are minted by
 //! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
 //! `input_error`. `init` is the handshake a client reads before any other record
 //! (see [`Init`]); `permission_decision` reports how this CLI answered a gated

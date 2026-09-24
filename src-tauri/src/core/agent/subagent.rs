@@ -2855,6 +2855,8 @@ mod tests {
             permissions: ToolPermissions::allow_all(),
             project_root: Some(root.to_path_buf()),
             permission_requests: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,

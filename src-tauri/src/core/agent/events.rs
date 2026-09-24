@@ -233,6 +233,21 @@ pub enum StreamEvent {
         prompt_kind: String,
         offers_always: bool,
     },
+    /// A host-registered tool was called and the run is waiting for the host to
+    /// execute it. The client replies with a `tool_result` line carrying this
+    /// `request_id`; until it does, the turn is parked on this one call.
+    ///
+    /// `tool_name` is the name the *host* declared, not the `host__`-prefixed
+    /// name the model calls: the host dispatches on the name it chose and never
+    /// has to know this layer's prefixing rule.
+    ToolRequest {
+        request_id: String,
+        tool_name: String,
+        /// The arguments the model produced, already parsed from the call's
+        /// JSON string. Validated against nothing here -- the host owns the
+        /// schema it declared and is the only party that can enforce it.
+        args: serde_json::Value,
+    },
 }
 
 /// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
@@ -564,6 +579,14 @@ pub(crate) mod tests {
                     offers_always: true,
                 },
             ),
+            (
+                "ToolRequest",
+                StreamEvent::ToolRequest {
+                    request_id: "host-1".into(),
+                    tool_name: "observe".into(),
+                    args: serde_json::json!({ "camera": "front" }),
+                },
+            ),
         ]
     }
 
@@ -596,7 +619,8 @@ pub(crate) mod tests {
             | StreamEvent::TurnUsage { .. }
             | StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
-            | StreamEvent::PermissionRequest { .. } => {}
+            | StreamEvent::PermissionRequest { .. }
+            | StreamEvent::ToolRequest { .. } => {}
         }
     }
 

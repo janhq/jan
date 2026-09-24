@@ -1121,6 +1121,8 @@ fn build_cli_orchestration_args(
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolSet,
+    host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
     auto_approve: bool,
     plan: bool,
     max_parallel_subagents: u32,
@@ -1135,6 +1137,8 @@ fn build_cli_orchestration_args(
         permissions,
         project_root: Some(project_root),
         permission_requests,
+        host_tools,
+        host_tool_requests,
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
@@ -1638,6 +1642,13 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
+        // Host tools are declared per *run*, by a client on stdin, so the
+        // session is built without them and the duplex headless path installs
+        // the declared set before orchestration starts. Every other surface
+        // (the TUI, a subagent) leaves this empty and never emits a
+        // `tool_request`.
+        crate::core::agent::host_tools::HostToolSet::new(),
+        crate::core::agent::host_tools::new_registry(),
         flags.auto_approve,
         flags.plan,
         max_parallel_subagents,
@@ -1946,7 +1957,12 @@ async fn run_agent_loop(
         .is_stream_json()
         .then(|| Arc::new(StreamInput::default()));
     let reader = input.as_ref().map(|input| {
-        spawn_input_reader(Arc::clone(input), Arc::clone(&permission_requests), format)
+        spawn_input_reader(
+            Arc::clone(input),
+            Arc::clone(&permission_requests),
+            Arc::clone(&args.host_tool_requests),
+            format,
+        )
     });
     let client = input.clone();
 
@@ -2178,14 +2194,21 @@ enum InputFlow {
     Stop,
 }
 
+/// The registries a client line can resolve against.
+struct InputTargets<'a> {
+    permissions: &'a PermissionRegistry,
+    host_tools: &'a crate::core::agent::host_tools::HostToolRegistry,
+}
+
 /// Apply one client line. `Err` is the message reported back to the client; it
 /// is never fatal, since this is a peer process's output and one malformed line
 /// must not cost the work already done.
 async fn apply_input_line(
     line: &str,
     input: &StreamInput,
-    registry: &PermissionRegistry,
+    targets: &InputTargets<'_>,
 ) -> Result<InputFlow, String> {
+    let registry = targets.permissions;
     match parse_input_line(line)? {
         InputMessage::User(text) => {
             input.queue_user(text);
@@ -2212,6 +2235,15 @@ async fn apply_input_line(
             };
             let _ = sender.send(decision);
             Ok(InputFlow::Decided(request_id, decision))
+        }
+        InputMessage::ToolResult { request_id, result } => {
+            // Same single-use rule as a permission decision, and the same
+            // reason: the run has already fed this answer to the model, so a
+            // second one cannot be applied and must be reported rather than
+            // silently dropped.
+            crate::core::agent::host_tools::respond(targets.host_tools, &request_id, Ok(result))
+                .await?;
+            Ok(InputFlow::Continue)
         }
     }
 }
@@ -2300,15 +2332,21 @@ fn read_bounded_line<R: std::io::BufRead>(
 ///
 /// End of input is not an abort: a client that has said everything it means to
 /// say may close the pipe and still want its answer. It *is* the end of the
-/// only thing that can answer a permission request, though, so the exit is
-/// latched and anything already waiting is released -- see
-/// [`strand_pending_permissions`].
+/// only thing that can answer a permission request or run a host tool, though,
+/// so the exit is latched and anything already waiting is released -- see
+/// [`strand_pending_permissions`] and
+/// [`crate::core::agent::host_tools::strand_all`].
 async fn read_input_lines(
     mut lines: mpsc::UnboundedReceiver<ClientLine>,
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolRegistry,
     format: OutputFormat,
 ) {
+    let targets = InputTargets {
+        permissions: &registry,
+        host_tools: &host_tools,
+    };
     while let Some(line) = lines.recv().await {
         if line.oversized {
             report_input_error(
@@ -2322,7 +2360,7 @@ async fn read_input_lines(
         if line.trim().is_empty() {
             continue;
         }
-        match apply_input_line(&line, &input, &registry).await {
+        match apply_input_line(&line, &input, &targets).await {
             Ok(InputFlow::Continue) => {}
             Ok(InputFlow::Decided(request_id, decision)) => {
                 if format.is_stream_json() {
@@ -2337,6 +2375,9 @@ async fn read_input_lines(
     // otherwise be recorded as the client's to answer and find no reader.
     input.mark_client_gone();
     strand_pending_permissions(&registry, format).await;
+    // A host tool call cannot be answered by anyone else, so a parked turn is
+    // released with a typed failure rather than waiting on a dead pipe.
+    crate::core::agent::host_tools::strand_all(&host_tools).await;
 }
 
 /// Name the follow-ups the run ended before reaching. Queued turns are joined
@@ -2377,9 +2418,16 @@ async fn strand_pending_permissions(registry: &PermissionRegistry, format: Outpu
 fn spawn_input_reader(
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolRegistry,
     format: OutputFormat,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(read_input_lines(stdin_lines(), input, registry, format))
+    tokio::spawn(read_input_lines(
+        stdin_lines(),
+        input,
+        registry,
+        host_tools,
+        format,
+    ))
 }
 
 /// Tell the client its line was rejected, on whichever stream it is reading.
@@ -2640,6 +2688,18 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
                 let _ = sender.send(decision);
             }
         }
+        // Only a host process can answer this, and only over the duplex
+        // channel; a text-format run cannot declare host tools at all (the
+        // flag requires stream-json both ways), so this is diagnostics only.
+        StreamEvent::ToolRequest {
+            request_id,
+            tool_name,
+            ..
+        } => {
+            eprintln!(
+                "\x1b[33m[host tool] '{tool_name}' - awaiting '{request_id}' on stdin\x1b[0m"
+            );
+        }
     }
 }
 
@@ -2712,6 +2772,7 @@ mod tests {
             lines,
             Arc::clone(&input),
             Arc::clone(&registry),
+            crate::core::agent::host_tools::new_registry(),
             OutputFormat::Json,
         )
         .await;
@@ -2740,17 +2801,56 @@ mod tests {
         registry.lock().await.insert("perm-1".to_string(), tx);
         let line = r#"{"type":"permission","request_id":"perm-1","decision":"deny"}"#;
 
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let targets = InputTargets {
+            permissions: &registry,
+            host_tools: &host_tools,
+        };
         assert_eq!(
-            apply_input_line(line, &input, &registry).await,
+            apply_input_line(line, &input, &targets).await,
             Ok(InputFlow::Decided(
                 "perm-1".to_string(),
                 PermissionDecision::Deny
             ))
         );
-        let err = apply_input_line(line, &input, &registry)
+        let err = apply_input_line(line, &input, &targets)
             .await
             .expect_err("nothing is pending any more");
         assert!(err.contains("no permission request 'perm-1'"), "{err}");
+    }
+
+    /// The same single-use rule for a host tool answer, and the same reason:
+    /// the first result has already been fed to the model.
+    #[tokio::test]
+    async fn a_second_tool_result_for_one_request_is_rejected() {
+        let input = StreamInput::default();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        // The id comes from the registry: the counter is process-wide, so a
+        // literal would depend on which tests ran first.
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let targets = InputTargets {
+            permissions: &registry,
+            host_tools: &host_tools,
+        };
+        let line = format!(r#"{{"type":"tool_result","request_id":"{id}","content":"moved"}}"#);
+        let line = line.as_str();
+
+        assert_eq!(
+            apply_input_line(line, &input, &targets).await,
+            Ok(InputFlow::Continue)
+        );
+        assert_eq!(
+            answer.await.expect("the run's tool wait is answered"),
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "moved".to_string(),
+                is_error: false,
+            })
+        );
+        let err = apply_input_line(line, &input, &targets)
+            .await
+            .expect_err("nothing is pending any more");
+        assert!(err.contains(&format!("no host tool request '{id}'")), "{err}");
     }
 
     /// The wedge this guards: with a client on stdin the CLI answers nothing
@@ -2773,6 +2873,7 @@ mod tests {
             lines,
             Arc::clone(&input),
             Arc::clone(&registry),
+            crate::core::agent::host_tools::new_registry(),
             OutputFormat::StreamJson,
         )
         .await;
@@ -2786,6 +2887,34 @@ mod tests {
             input.client_gone(),
             "later requests must not be recorded as the client's to answer"
         );
+    }
+
+    /// The same wedge for a host tool, where it is sharper: only the client can
+    /// answer a `tool_request`, so a pipe that closes mid-call would park the
+    /// turn forever rather than merely losing a decision default.
+    #[tokio::test]
+    async fn a_pending_host_tool_call_is_released_when_the_client_leaves() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (_id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+
+        let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+        drop(lines_tx);
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::clone(&registry),
+            Arc::clone(&host_tools),
+            OutputFormat::StreamJson,
+        )
+        .await;
+
+        assert_eq!(
+            answer.await.expect("the wait is settled, not dropped"),
+            Err(crate::core::agent::host_tools::HostToolError::ClientGone)
+        );
+        assert!(host_tools.lock().await.is_empty());
     }
 
     /// The other half of the same wedge: a request raised *after* the pipe

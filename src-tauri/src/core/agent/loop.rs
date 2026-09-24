@@ -71,6 +71,11 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
+    /// Tools a host process registered for this run, and the registry their
+    /// calls are answered through. Empty and unused on every surface except a
+    /// duplex headless run: only a client on stdin can execute one.
+    pub host_tools: crate::core::agent::host_tools::HostToolSet,
+    pub host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
     /// Present only when a client can render and answer structured questions.
     pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     /// Session's canonical todo list. Present for the top-level run only;
@@ -2422,6 +2427,8 @@ async fn orchestrate_inner(
         permissions,
         project_root,
         permission_requests,
+        host_tools,
+        host_tool_requests,
         ask_requests,
         todo_registry,
         system_prompt_override,
