@@ -26,10 +26,6 @@ class HostToolCall:
     aborted: threading.Event
     """Set when the runtime withdraws the request; a late answer is refused."""
 
-    @property
-    def cancelled(self) -> bool:
-        return self.aborted.is_set()
-
 
 @dataclass
 class HostTool:
