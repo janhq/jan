@@ -839,13 +839,20 @@ impl BackgroundSubagents {
         }
     }
 
-    /// Park until every `run_id` in `ids` has finished (or is gone from the
-    /// registry -- collected or aborted), or until the run that dispatched them
-    /// was torn down (`generation` no longer matches the plan's). The phase-plan
-    /// driver's barrier between one phase and the next. Mirrors
+    /// Park until every `run_id` in `ids` has finished, or until the run that
+    /// dispatched them was torn down (`generation` no longer matches the plan's).
+    /// The phase-plan driver's barrier between one phase and the next. Mirrors
     /// [`wait_for_notice`]'s wake discipline: the waiter is registered (`enable`)
     /// before the flags are re-read, so a child finishing in the window is not
     /// missed.
+    ///
+    /// An id is done when its child *finished* -- collected or not, the entry
+    /// stays either way. Absence is not completion: a child is in the registry
+    /// before it can run (`spawn_subagent` registers it in the same critical
+    /// section that admits it), so the only way an id the driver was handed can
+    /// be missing is teardown, and that is the other exit. The barrier cannot
+    /// open on it, because a phase that never finished has nothing on the
+    /// blackboard for the next one to read.
     ///
     /// The two exits are different facts and the driver must not conflate them:
     /// `Finished` means the phase completed and the next one may start,
@@ -866,7 +873,7 @@ impl BackgroundSubagents {
                     Some(PhaseGate::TornDown)
                 } else if ids
                     .iter()
-                    .all(|id| guard.get(id).is_none_or(|e| e.finished.load(Ordering::SeqCst)))
+                    .all(|id| guard.get(id).is_some_and(|e| e.finished.load(Ordering::SeqCst)))
                 {
                     Some(PhaseGate::Finished)
                 } else {
@@ -1806,10 +1813,12 @@ pub(crate) async fn await_subagent(
     };
     // Keep the entry (and its abort handle) in the registry while awaiting, so a
     // parent cancellation mid-await can still reach this child via `abort_all`.
-    // Taking `result` above already makes a second await error out. Remove the
-    // now-spent entry once the await resolves (a no-op if teardown drained it).
+    // Taking `result` above already makes a second await error out, and the
+    // entry *stays* after this returns (a no-op if teardown drained it): a
+    // child that is gone from the registry then means exactly one thing -- it
+    // was torn down -- which is what lets the phase barrier tell "finished and
+    // collected" from "never was", instead of reading both as done.
     let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
-    bg.inner.lock().unwrap().remove(run_id);
     // Collected explicitly, so the queued ping for this run is redundant.
     bg.drop_notice(run_id);
     outcome.map(|text| Collected { text, display_path })
@@ -3319,6 +3328,61 @@ mod tests {
             bg.inner.lock().unwrap().is_empty(),
             "a refused dispatch registers nothing"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F2: absence is not completion. A child is registered before it can run,
+    /// so an id the driver was handed can only be missing because the registry
+    /// was torn down -- and a phase that never finished has nothing on the
+    /// blackboard for the next phase to read. (Reproduction from the audit: the
+    /// barrier returned immediately before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn an_absent_child_never_satisfies_the_barrier() {
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let waited = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            bg.await_phase(&["never-registered".to_string()], bg.generation()),
+        )
+        .await;
+        assert!(
+            waited.is_err(),
+            "the barrier opened for a child that was never registered"
+        );
+    }
+
+    /// The other half of the same rule: an id that *has* finished satisfies the
+    /// barrier whether or not the parent collected it. The entry survives
+    /// collection precisely so the two absences stay distinguishable -- a
+    /// barrier that waited for a collected child would park the plan forever.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_collected_child_satisfies_the_barrier() {
+        let root = unique_root("barrier_collected");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let id = dispatch_reviewer(&bg, &args, &tx);
+        // Wait for it to finish without collecting it, then collect it: the
+        // entry stays either way, and both states are "done" to the barrier.
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("an uncollected finished child satisfies the barrier");
+        assert!(gate == PhaseGate::Finished);
+
+        let _ = await_subagent(&bg, &id).await; // fails without a provider; fine
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("a collected child satisfies the barrier");
+        assert!(gate == PhaseGate::Finished);
         let _ = std::fs::remove_dir_all(&root);
     }
 
