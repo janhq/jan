@@ -14,9 +14,7 @@ use super::rpc_schema::{
     SessionModelSetParams, SessionStartParams, SessionToolsSetParams, ToolRespondParams,
     ToolResultContent, TurnStartParams, TurnSteerParams,
 };
-use super::stream_input::{
-    parse_input_line, MAX_IMAGES, MAX_IMAGE_BYTES, MAX_LINE_BYTES, MAX_MESSAGE_IMAGE_BYTES,
-};
+use super::stream_input::{parse_input_line, MAX_LINE_BYTES};
 use super::{agent_dir_for, cli_save_thread, prepare_agent_session, AgentSession, SessionFlags};
 use crate::core::agent::events::{StreamEvent, PROTOCOL_VERSION};
 use crate::core::agent::host_tools::{HostToolDecl, HostToolResult, HostToolSet};
@@ -146,60 +144,11 @@ async fn tools_view(session: &Session) -> Value {
     json!({"tools":tools,"toolSpecs":specs})
 }
 
-/// Validate a content-part tool result against the caps a user message has,
-/// returning its text parts joined by newlines (the result's text summary).
-///
-/// A local copy of the stream-json user-content check: that one is private to
-/// `stream_input` and labels its errors for `user`. The two should converge
-/// once the stream-json `tool_result` accepts parts too.
+/// Validate a content-part tool result with the same checks the stream-json
+/// `tool_result` uses, returning its text summary.
 fn check_result_parts(parts: &[Value]) -> Result<String, String> {
-    if parts.is_empty() {
-        return Err("tool result content is empty".to_owned());
-    }
-    let mut texts = Vec::new();
-    let mut images = 0usize;
-    let mut image_bytes = 0usize;
-    for part in parts {
-        match part.get("type").and_then(Value::as_str) {
-            Some("text") => texts.push(
-                part.get("text")
-                    .and_then(Value::as_str)
-                    .ok_or("a 'text' part needs a string 'text'")?,
-            ),
-            Some("image_url") => {
-                let url = part
-                    .get("image_url")
-                    .and_then(|v| v.get("url"))
-                    .and_then(Value::as_str)
-                    .ok_or("an 'image_url' part needs a string 'image_url.url'")?;
-                let (_, decoded) = super::user_message::data_url_mime_and_len(url)?;
-                if decoded > MAX_IMAGE_BYTES {
-                    return Err(format!(
-                        "image is {decoded} bytes decoded, over the {MAX_IMAGE_BYTES} byte cap"
-                    ));
-                }
-                images += 1;
-                if images > MAX_IMAGES {
-                    return Err(format!("tool result carries more than {MAX_IMAGES} images"));
-                }
-                image_bytes += decoded;
-                if image_bytes > MAX_MESSAGE_IMAGE_BYTES {
-                    return Err(format!(
-                        "images total {image_bytes} bytes decoded, over the \
-                         {MAX_MESSAGE_IMAGE_BYTES} byte cap"
-                    ));
-                }
-            }
-            Some(other) => {
-                return Err(format!("unsupported content part '{other}' (text, image_url)"))
-            }
-            None => return Err("every content part needs a string 'type'".to_owned()),
-        }
-    }
-    if images == 0 && texts.iter().all(|text| text.trim().is_empty()) {
-        return Err("tool result content carries neither text nor an image".to_owned());
-    }
-    Ok(texts.join("\n"))
+    super::stream_input::check_content_parts(parts, "tool_result")?;
+    Ok(super::stream_input::summarize_parts(parts))
 }
 
 fn host_result(params: ToolRespondParams) -> Result<(String, HostToolResult), String> {
@@ -826,6 +775,7 @@ pub async fn serve() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::cli::stream_input::{MAX_IMAGES, MAX_IMAGE_BYTES};
 
     #[tokio::test]
     async fn event_forwarder_stops_receiving_when_its_bounded_queue_is_full() {

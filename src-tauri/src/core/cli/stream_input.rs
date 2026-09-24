@@ -166,7 +166,7 @@ pub(crate) enum ToolResultContent {
 /// still needs a line that says something arrived.
 const IMAGE_ONLY_SUMMARY: &str = "(image)";
 
-fn summarize_parts(parts: &[serde_json::Value]) -> String {
+pub(crate) fn summarize_parts(parts: &[serde_json::Value]) -> String {
     let texts: Vec<&str> = parts
         .iter()
         .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
@@ -272,7 +272,7 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
 /// where every refusal lives: a part type that is not `text` or `image_url`, a
 /// part missing the field its type requires, an image type outside
 /// [`IMAGE_MIME_TYPES`](super::user_message::IMAGE_MIME_TYPES), and each cap.
-fn check_content_parts(parts: &[serde_json::Value], label: &str) -> Result<(), String> {
+pub(crate) fn check_content_parts(parts: &[serde_json::Value], label: &str) -> Result<(), String> {
     if parts.is_empty() {
         return Err(format!("'{label}' content is empty"));
     }
