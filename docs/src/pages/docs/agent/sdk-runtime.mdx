@@ -1,0 +1,108 @@
+---
+title: Process & Failures (Preview)
+description: Own the jan process from an embedding app - lifecycle, permission prompts, stopping a run, exit codes, and which failures are safe to retry.
+keywords: [Jan, Jan Agent, SDK, stream-json, process, permissions, abort, exit codes, errors, retry]
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Process & Failures (Preview)
+
+Your code owns the `jan` process: it starts it, answers it, and must see it end. This page covers
+the lifecycle of one run, the prompts your code answers, how to stop a run, and what each failure
+looks like - including which ones are safe to retry.
+
+<Callout type="warning">
+Preview, `agent-nightly` channel only; see [Agent SDK](/docs/agent/sdk) for what your build
+supports. The shapes named here are defined in the [CLI reference](/docs/agent/cli#streaming-json-in-both-directions).
+</Callout>
+
+## One task, one process
+
+Start one `jan cli agent run` per task. It prints `init`, does the work, prints `result`, and
+exits. Everything your code parses is on **stdout**; stderr carries human-readable logs and
+warnings, so pass it through or log it, but don't parse it.
+
+- **A run belongs to the process that started it.** Separate clients start separate processes;
+  nothing attaches to a run from outside, and a session id does not either.
+- **Follow-ups join the running task.** A `user` message on stdin joins at the next turn boundary.
+  Once the `result` is out, the run is over.
+- **Continue later in a new process** with `--resume=<id>`, using the `session_id` from `init`.
+- **Close and reap.** Close stdin once the `result` has arrived, then wait for the process to exit,
+  so it never outlives your code. Both examples end this way:
+
+<Tabs items={['JavaScript', 'Python']}>
+  <Tabs.Tab>
+```js filename="examples/agent-sdk/js/host-tool.mjs"
+run.stdin.end()
+const code = await exited
+rmSync(scratch, { recursive: true, force: true })
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```python filename="examples/agent-sdk/python/host_tool.py"
+        run.stdin.close()
+        run.wait()
+```
+  </Tabs.Tab>
+</Tabs>
+
+`--project` confines the agent's built-in file and shell tools to one directory; the examples use a
+fresh temporary directory, so a recipe cannot touch the directory you run it from.
+
+## Answer permission prompts
+
+A default headless run auto-approves every tool call, which is what an unattended script wants.
+Start it with `--safe` and your code decides instead: writes, shell commands, MCP tools and
+[host tools](/docs/agent/sdk-tools) each arrive as a `permission_request` first.
+
+```text
+stdout  {"type":"permission_request","request_id":"perm-1","tool_name":"host__get_weather","capability":"run","path":null,"prompt_kind":"mcp","offers_always":true}
+stdin   {"type":"permission","request_id":"perm-1","decision":"allow_once"}
+stdout  {"type":"permission_decision","request_id":"perm-1","decision":"allow_once"}
+```
+
+- `decision` is `allow_once`, `allow_always` (when `offers_always` is `true`) or `deny`.
+- A denied call reaches the model as a failed tool call, and the run goes on.
+- Each `request_id` is answered once.
+- The run waits for your answer. Closing stdin denies every prompt still pending and every prompt
+  after it, and the run then finishes on its own.
+
+The [host tools example](/docs/agent/sdk-tools#3-decide-who-approves-the-call) approves its own
+tool and refuses everything else.
+
+## Stop a run
+
+- **Ask it to stop:** write `{"type":"abort"}`. The run ends with `stop_reason: "aborted"`,
+  `is_error: false`, and exit code `0`. Tool calls that already ran are not undone.
+- **Bound it up front:** `--max-turns`, `--max-session-tokens` and `--max-budget-usd` - see
+  [`run`](/docs/agent/cli#run).
+- **Kill the process** only as a last resort: there is no `result`, so the outcome of the task is
+  unknown.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The run finished: a normal stop, `aborted`, or `budget_exceeded` |
+| `1` | The run failed. The `result` has `is_error: true` and an `error` object |
+| `2` | The command line was rejected - an unknown flag, for example. Nothing is printed on stdout |
+
+## Failures and retries
+
+A retry starts the task again in a new process. It is safe only if nothing with a side effect ran:
+every tool call the stream showed before the failure - a `tool_request` your code answered, a write
+or a shell command the run made - really happened, and runs again on a retry. Check the stream
+before retrying; never re-run a host side effect blindly.
+
+| Condition | What you see | Retry |
+| --- | --- | --- |
+| `jan` not found | `Error: spawn jan ENOENT` (Node.js), `FileNotFoundError` (Python) | Safe once fixed - nothing ran |
+| Flag unknown to this build | `error: unexpected argument ...` on stderr, exit `2` | Safe after `jan update` - nothing ran |
+| No model configured, or a bad `--host-tools` file | `result` alone, no `init`, `error.code: "setup_error"`, exit `1` | Safe once fixed - nothing ran |
+| Provider refused or failed | An `error` record, then `result` with `error.code: "upstream_error"`, exit `1` | Only if the stream showed no tool calls |
+| Conversation too long for the model | `error.code: "context_overflow"`, exit `1` | Only if the stream showed no tool calls; shorten the task or start a new session |
+| Any other failure | `error.code` is the raw code, exit `1` | Check the stream first |
+| Your tool failed | Your `tool_result` with `is_error: true` - the model sees it and goes on | Not needed |
+| A line on stdin was invalid | An `input_error` record; the line is skipped and the run goes on | Fix the client |
+| The process crashed or was killed | stdout ends without a `result` | Outcome unknown: reconcile your own side effects first |

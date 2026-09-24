@@ -1,53 +1,82 @@
 ---
-title: Agent SDK
-description: Choose a path for embedding Jan Agent and see which SDK guides are not yet available.
-keywords: [Jan, Jan Agent, SDK, JavaScript, Python, embedding, stream-json, RPC]
+title: Agent SDK (Preview)
+description: Embed Jan Agent in your own JavaScript or Python application - choose a path, and see what the nightly channel supports today.
+keywords:
+  [
+    Jan,
+    Jan Agent,
+    SDK,
+    embedding,
+    JavaScript,
+    Python,
+    stream-json,
+    host tools,
+    headless,
+  ]
 ---
 
 import { Callout } from 'nextra/components'
 
-# Agent SDK
+# Agent SDK (Preview)
 
-Want to put Jan Agent inside your own application? Start with the transport you can use today.
-The JavaScript and Python SDK packages are not released, so there is no SDK package to install or
-SDK quickstart to run yet. [The Agent quickstart](/docs/agent/quickstart) is for using Jan from a
-terminal, not for embedding an SDK.
+Want Jan Agent inside your own application - a script, a service, a robot controller - instead of
+in a terminal? You start `jan cli agent run` as a child process and talk to it over **`stream-json`**:
+one JSON record per line on stdout, one message per line on stdin. Your code sees every token, tool
+call and permission prompt, and can hand the agent **host tools**: tools your code executes.
+
+<Callout type="warning">
+The Agent SDK is a preview. It ships with Jan Agent in the `agent-nightly` channel, not in stable
+releases - expect nightly-quality builds. There is no SDK package to install yet: the recipes here
+drive the `jan` binary with nothing but Node.js or Python and their standard libraries.
+</Callout>
 
 ## Choose your path
 
-| You want to | State | Start here |
+| You want to | Start here |
+| --- | --- |
+| Run a first embedded task from Node.js | [JavaScript quickstart](/docs/agent/sdk-ts) |
+| Run a first embedded task from Python | [Python quickstart](/docs/agent/sdk-python) |
+| Let the model call a function in your code | [Host tools](/docs/agent/sdk-tools) |
+| Own the process: permissions, stopping, failures, exit codes | [Process & failures](/docs/agent/sdk-runtime) |
+| Look up a record's fields, or validate against the generated schema | [CLI reference: streaming JSON](/docs/agent/cli#streaming-json-in-both-directions) |
+| Use Jan interactively instead | [Quickstart](/docs/agent/quickstart) |
+
+Every code block these pages attribute to a file is an excerpt of a runnable example in
+[`examples/agent-sdk/`](https://github.com/janhq/jan/tree/main/examples/agent-sdk). CI runs each
+example against `jan` built from the same commit, and fails when a page's excerpt no longer
+matches its source.
+
+## How one run works
+
+```text
+   your app                                   jan cli agent run
+   | spawn --output-format stream-json        |
+   |       --input-format stream-json         |
+   | <------------------------------ init --- |  session, model, tools, caps
+   | <------------- token, tool_call, ... --- |  the run, as it happens
+   | <---------------------- tool_request --- |  the model called your host tool
+   | ---- tool_result ----------------------> |
+   | <---------------- permission_request --- |  only when the run asks (--safe)
+   | ---- permission -----------------------> |
+   | <---------------------------- result --- |  answer, stop reason, usage; the process exits
+```
+
+One process runs one task. Follow-up messages on stdin join the same run, and `--resume` continues
+a saved session in a new process.
+
+## What your build supports
+
+Check the build you run rather than trusting a page: the `init` record says what this run accepts.
+
+| Capability | How to tell | Nightly `0.8.4-49` (published 2026-09-22) |
 | --- | --- | --- |
-| Use Jan interactively or run a one-shot CLI task | Available in the Jan CLI | [Agent quickstart](/docs/agent/quickstart) and [CLI reference](/docs/agent/cli) |
-| Embed the current `stream-json` CLI transport | Shipped; your application owns the Jan process and stdin/stdout | [CLI `run` and `schema` reference](/docs/agent/cli#streaming-json-in-both-directions) and [generated record guide](/docs/agent/protocol) |
-| Embed addressable sessions with RPC | Merged in [PR #9049](https://github.com/janhq/jan/pull/9049); not in a release yet | [CLI `rpc` reference](/docs/agent/cli#rpc) and [generated record guide](/docs/agent/protocol) |
-| Let the model call tools your application runs | Available over `stream-json` (`--host-tools`) and RPC (`session/start` `tools`, `tool/respond`); not in a release yet | [RPC host tools](/docs/agent/protocol#rpc-host-tools) and [CLI `run` reference](/docs/agent/cli#streaming-json-in-both-directions) |
-| Build a JavaScript or TypeScript app with the SDK | Planned; package not released ([#367](https://github.com/janhq/jan-internal/issues/367)) | Use `stream-json` now, or wait for the JS/TS SDK quickstart |
-| Build a Python app with the SDK | Planned; package not released ([#367](https://github.com/janhq/jan-internal/issues/367)) | Use `stream-json` now, or wait for the Python SDK quickstart |
+| Streamed events and a terminal `result` | `init.protocol_version` is `1` | Yes |
+| Follow-ups, permission answers, `abort` | `init.input_kinds` lists `user`, `permission` and `abort` | Yes |
+| [Host tools](/docs/agent/sdk-tools) | `jan cli agent run --help` lists `--host-tools`; `init.input_kinds` lists `tool_result` | No - on `main`, arriving with the next nightly |
+| The generated JSON Schema | `jan cli agent schema` exists | No - on `main`, arriving with the next nightly |
+| Images in a `user` message | `init.input_content_parts` is not `null` | No. Builds from `main` accept and validate them but **do not forward them to the model yet**: only the text parts reach the provider |
 
-<Callout type="warning">
-No JavaScript or Python Jan Agent SDK package is installable yet. RPC is merged but not in a
-release, and it is a transport, not an SDK. Host tool callbacks work on both transports: declared,
-correlated by request id, answered with text or content parts, and cancelled on interrupt.
-</Callout>
-
-## Guides and recipes on the way
-
-These are planned pages, not links to runnable examples or released APIs:
-
-| Planned page | What it will cover | What it waits for |
-| --- | --- | --- |
-| JavaScript / TypeScript quickstart (`sdk-ts.mdx`) | First embedded turn, streamed outcome, one host tool, close | Released JS/TS SDK and host callbacks |
-| Python quickstart (`sdk-python.mdx`) | Direct Python runtime, first turn, host tool, close without Node | Released Python SDK and host callbacks |
-| Host tools (`sdk-tools.mdx`) | Callback validation, correlated results, permission and active tools as SDK calls | Released SDKs (the wire contract is in [RPC host tools](/docs/agent/protocol#rpc-host-tools)) |
-| Images (`sdk-images.mdx`) | Prompt images, image-bearing results and sampled capture | Corresponding runtime and SDK support |
-| Runtime and failures (`sdk-runtime.mdx`) | Process ownership, shutdown, permission and recovery | Released SDK runtime contract |
-| Migration (`sdk-migration.mdx`) | Moving an existing `stream-json` harness to an SDK | Released SDKs and feature parity |
-| Examples (`sdk-examples.mdx`) | Task-based index of checked-in, verified recipes | Runnable released-SDK examples |
-
-For wire shapes you can inspect today, use the [generated protocol records](/docs/agent/protocol).
-This page does not promise SDK install commands, versions or supported platforms before the
-packages are released. Availability checked on 2026-09-24 against
-[#367](https://github.com/janhq/jan-internal/issues/367),
-[#368](https://github.com/janhq/jan-internal/issues/368),
-[#386](https://github.com/janhq/jan-internal/issues/386) and
-[PR #9049](https://github.com/janhq/jan/pull/9049); recheck at publication.
+Not in any build yet: images in a host tool result, host tools called from subagents, and the
+JavaScript and Python SDK packages. Addressable sessions over JSON-RPC (`jan cli agent rpc`) are in
+review in [janhq/jan#9049](https://github.com/janhq/jan/pull/9049), not released. Run `jan update`
+to move to the newest nightly.
