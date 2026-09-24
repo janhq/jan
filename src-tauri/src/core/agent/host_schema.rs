@@ -2,10 +2,6 @@
 //! declared schema, and the mapping from a host's tool name to the function
 //! name a provider will accept.
 
-// Landed ahead of its consumer (host_tools.rs, #386); drop this once
-// `HostTool::validate` and the declaration path call into the module.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 

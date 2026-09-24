@@ -1011,6 +1011,19 @@ impl CompositeToolInvoker {
         {
             return (hook_denied_msg(name, &reason), None, None);
         }
+        // After the hook, so a policy sees every attempted call, and before
+        // the request exists, so the host -- possibly driving hardware --
+        // never receives arguments its own schema forbids.
+        if let Err(why) = tool.validate(args) {
+            return (
+                format!(
+                    "ERROR: arguments for host tool '{}' do not match its schema: {why}",
+                    tool.name
+                ),
+                None,
+                None,
+            );
+        }
         let (request_id, receiver) =
             crate::core::agent::host_tools::register(&self.host_tool_requests).await;
         // The host declared `observe` and dispatches on `observe`; the `host__`
@@ -8280,6 +8293,71 @@ mod tests {
             out[0].content,
             "ERROR: host tool 'observe' was cancelled before it answered"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The host's schema is enforced before the host is asked: a call with too
+    /// few joints goes back to the model as an error naming the path, and the
+    /// host never sees a `tool_request` for it.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn arguments_that_break_the_host_schema_never_reach_the_host() {
+        let root = hooks_root("hosttoolvalidate");
+        let set = crate::core::agent::host_tools::HostToolSet::declare(vec![
+            crate::core::agent::host_tools::HostToolDecl {
+                name: "move_arm".to_string(),
+                description: String::new(),
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "joints": { "type": "array", "items": { "type": "number" }, "minItems": 6 }
+                    },
+                    "required": ["joints"]
+                })),
+                capability: None,
+                unknown: Default::default(),
+            },
+        ])
+        .expect("declares");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(
+            out[0].content,
+            "ERROR: arguments for host tool 'move_arm' do not match its schema: \
+             /joints: expected at least 6 items, got 3"
+        );
+        // A valid call still goes through, so the refusal above was the schema.
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3,4,5,6]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["move_arm"], "only the valid call reached the host");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dotted host name is advertised under its mapped wire name, and the
+    /// host is asked under the name it declared.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_mapped_host_name_is_requested_under_its_original_name() {
+        let root = hooks_root("hosttoolmapped");
+        let set = host_tool_set(&["yam.move_ee_ik"]);
+        let wire = set.all()[0].qualified_name.clone();
+        assert!(wire.starts_with("host__yam_move_ee_ik_"), "{wire}");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker.invoke(&[hooked_tool_call(&wire, "{}")]).await.unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["yam.move_ee_ik"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 

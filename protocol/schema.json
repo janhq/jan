@@ -966,7 +966,7 @@
       ]
     },
     "InputContentParts": {
-      "description": "The caps on a `user` message's content-part array, as `init` advertises them.\n\nA client that sends an image is sending bytes into a channel with no\nbackpressure, so the limits are part of the handshake rather than something\nto discover by being rejected. Each is the cap the parser enforces: this is\nthe same constant, not a copy of it.",
+      "description": "The caps on a content-part array -- a `user` message's, and a `tool_result`'s,\nwhich is held to the same limits -- as `init` advertises them.\n\nA client that sends an image is sending bytes into a channel with no\nbackpressure, so the limits are part of the handshake rather than something\nto discover by being rejected. Each is the cap the parser enforces: this is\nthe same constant, not a copy of it.",
       "type": "object",
       "properties": {
         "mime_types": {
@@ -1274,18 +1274,25 @@
           ]
         },
         {
-          "description": "The answer to a `tool_request` this run emitted: the host executed the\ntool and this is its result, which becomes the model's tool message.\n\n`content` is required even for a failure. A tool message with nothing in\nit tells the model only that something happened, which is worse than a\nshort error.",
+          "description": "The answer to a `tool_request` this run emitted: the host executed the\ntool and this is its result, which becomes the model's tool message.\n\n`content` is required even for a failure. A tool message with nothing in\nit tells the model only that something happened, which is worse than a\nshort error. It is either a string or an OpenAI content-part array\n(`text` and `image_url` parts, under the same caps as a `user` message),\nso a camera can hand the model a frame.\n\n`details` is any JSON object the host wants a display to have. It is\nnever sent to the model: the run echoes it as a `tool_details` record\nafter the `tool_result`, and that is all.",
           "type": "object",
           "properties": {
             "request_id": {
               "type": "string"
             },
             "content": {
-              "type": "string"
+              "$ref": "#/$defs/ToolResultContent"
             },
             "is_error": {
               "type": "boolean",
               "default": false
+            },
+            "details": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             },
             "type": {
               "type": "string",
@@ -1307,6 +1314,18 @@
         "allow_once",
         "allow_always",
         "deny"
+      ]
+    },
+    "ToolResultContent": {
+      "description": "A `tool_result`'s `content`: a plain string, or a content-part array.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": true
+        }
       ]
     }
   },

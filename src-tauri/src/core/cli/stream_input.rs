@@ -26,6 +26,9 @@
 //! run ([`super::user_message`] holds the shape both paths build). Parts are
 //! passed through verbatim; the caps below are what a line is measured against
 //! first, because an unbounded channel is a denial of service on the run.
+//! A `tool_result` may answer with the same content-part array, under the same
+//! caps, plus a `details` object that is echoed for displays and never sent to
+//! the model.
 
 use crate::core::agent::host_tools::HostToolResult;
 use std::collections::VecDeque;
@@ -133,13 +136,47 @@ pub(crate) enum InputLine {
     ///
     /// `content` is required even for a failure. A tool message with nothing in
     /// it tells the model only that something happened, which is worse than a
-    /// short error.
+    /// short error. It is either a string or an OpenAI content-part array
+    /// (`text` and `image_url` parts, under the same caps as a `user` message),
+    /// so a camera can hand the model a frame.
+    ///
+    /// `details` is any JSON object the host wants a display to have. It is
+    /// never sent to the model: the run echoes it as a `tool_details` record
+    /// after the `tool_result`, and that is all.
     ToolResult {
         request_id: String,
-        content: String,
+        content: ToolResultContent,
         #[serde(default)]
         is_error: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        details: Option<serde_json::Map<String, serde_json::Value>>,
     },
+}
+
+/// A `tool_result`'s `content`: a plain string, or a content-part array.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(untagged, expecting = "'content' to be a string or a content-part array")]
+pub(crate) enum ToolResultContent {
+    Text(String),
+    Parts(Vec<serde_json::Value>),
+}
+
+/// What a text-only reader of a parts result sees: hooks, the `tool_result`
+/// event and the `ERROR: ` prefix all work on text, so an image-only answer
+/// still needs a line that says something arrived.
+const IMAGE_ONLY_SUMMARY: &str = "(image)";
+
+fn summarize_parts(parts: &[serde_json::Value]) -> String {
+    let texts: Vec<&str> = parts
+        .iter()
+        .filter(|p| p.get("type").and_then(|v| v.as_str()) == Some("text"))
+        .filter_map(|p| p.get("text").and_then(|v| v.as_str()))
+        .collect();
+    if texts.is_empty() {
+        IMAGE_ONLY_SUMMARY.to_string()
+    } else {
+        texts.join("\n")
+    }
 }
 
 /// The decisions a client may answer a `permission_request` with: the wire
@@ -187,7 +224,7 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
                 Ok(InputMessage::User(text))
             }
             (None, Some(parts)) => {
-                check_user_content(&parts)?;
+                check_content_parts(&parts, "user")?;
                 Ok(InputMessage::UserParts(parts))
             }
         },
@@ -203,28 +240,41 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
             request_id,
             content,
             is_error,
-        } => Ok(InputMessage::ToolResult {
-            request_id,
-            result: HostToolResult {
-                content,
-                parts: None,
-                details: None,
-                is_error,
-            },
-        }),
+            details,
+        } => {
+            // Checked before the request is touched: an over-cap answer is
+            // refused as a line, and the request stays pending for a retry.
+            let (content, parts) = match content {
+                ToolResultContent::Text(text) => (text, None),
+                ToolResultContent::Parts(parts) => {
+                    check_content_parts(&parts, "tool_result")?;
+                    (summarize_parts(&parts), Some(parts))
+                }
+            };
+            Ok(InputMessage::ToolResult {
+                request_id,
+                result: HostToolResult {
+                    content,
+                    parts,
+                    details: details.map(serde_json::Value::Object),
+                    is_error,
+                },
+            })
+        }
     }
 }
 
-/// Validate a client's content-part array before it is queued.
+/// Validate a client's content-part array before it is queued. `label` is the
+/// input kind it arrived on (`user`, `tool_result`), for the error text.
 ///
 /// The parts are passed through verbatim afterwards -- the shape is the model's,
 /// and re-encoding it here would be a second place to get it wrong -- so this is
 /// where every refusal lives: a part type that is not `text` or `image_url`, a
 /// part missing the field its type requires, an image type outside
 /// [`IMAGE_MIME_TYPES`](super::user_message::IMAGE_MIME_TYPES), and each cap.
-fn check_user_content(parts: &[serde_json::Value]) -> Result<(), String> {
+fn check_content_parts(parts: &[serde_json::Value], label: &str) -> Result<(), String> {
     if parts.is_empty() {
-        return Err("'user' content is empty".to_string());
+        return Err(format!("'{label}' content is empty"));
     }
     let mut images = 0usize;
     let mut image_bytes = 0usize;
@@ -278,7 +328,7 @@ fn check_user_content(parts: &[serde_json::Value]) -> Result<(), String> {
         }
     }
     if !has_text && images == 0 {
-        return Err("'user' content carries neither text nor an image".to_string());
+        return Err(format!("'{label}' content carries neither text nor an image"));
     }
     Ok(())
 }
@@ -453,6 +503,92 @@ mod tests {
                 },
             }
         );
+    }
+
+    /// A host answers with parts the way a client sends a `user` image: the
+    /// parts are carried verbatim for the model, the text summary is what
+    /// text-only readers see, and `details` rides along untouched.
+    #[test]
+    fn a_tool_result_may_carry_parts_and_details() {
+        let line = r#"{"type":"tool_result","request_id":"host-3","content":[
+            {"type":"text","text":"front camera"},
+            {"type":"image_url","image_url":{"url":"data:image/png;base64,QUJD"}},
+            {"type":"text","text":"exposure ok"}
+        ],"details":{"exposure":12,"frames":[1,2]}}"#;
+        let InputMessage::ToolResult { request_id, result } = parse_input_line(line).expect(line)
+        else {
+            panic!("expected a tool result");
+        };
+        assert_eq!(request_id, "host-3");
+        assert_eq!(result.content, "front camera\nexposure ok");
+        let parts = result.parts.expect("parts carried");
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[1]["image_url"]["url"], "data:image/png;base64,QUJD");
+        assert_eq!(
+            result.details,
+            Some(serde_json::json!({ "exposure": 12, "frames": [1, 2] }))
+        );
+        assert!(!result.is_error);
+    }
+
+    /// An image with no text still leaves hooks and the `tool_result` event
+    /// something to show.
+    #[test]
+    fn an_image_only_tool_result_has_a_placeholder_summary() {
+        let line = r#"{"type":"tool_result","request_id":"h","content":[
+            {"type":"image_url","image_url":{"url":"data:image/png;base64,QUJD"}}
+        ]}"#;
+        let InputMessage::ToolResult { result, .. } = parse_input_line(line).expect(line) else {
+            panic!("expected a tool result");
+        };
+        assert_eq!(result.content, IMAGE_ONLY_SUMMARY);
+        assert_eq!(result.parts.map(|p| p.len()), Some(1));
+        assert_eq!(result.details, None);
+    }
+
+    /// The `user` caps apply to a tool result, and the refusal names the kind
+    /// it came in on so a host can tell which of its lines was wrong.
+    #[test]
+    fn tool_result_parts_are_held_to_the_user_caps() {
+        let image = |bytes: usize| -> serde_json::Value {
+            let payload = "A".repeat(bytes / 3 * 4);
+            serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/png;base64,{payload}") }
+            })
+        };
+        let result = |content: serde_json::Value| {
+            serde_json::json!({ "type": "tool_result", "request_id": "h", "content": content })
+                .to_string()
+        };
+        let err = parse_input_line(&result(serde_json::json!([image(MAX_IMAGE_BYTES + 3)])))
+            .expect_err("over the per-image cap");
+        assert!(err.contains("over the 5242880 byte cap"), "{err}");
+        let err = parse_input_line(&result(serde_json::json!(vec![image(3); MAX_IMAGES + 1])))
+            .expect_err("over the image count");
+        assert!(err.contains("more than 8 images"), "{err}");
+        for (content, marker) in [
+            (serde_json::json!([]), "'tool_result' content is empty"),
+            (
+                serde_json::json!([{ "type": "text", "text": " " }]),
+                "'tool_result' content carries neither text nor an image",
+            ),
+            (
+                serde_json::json!([{ "type": "audio" }]),
+                "unsupported content part 'audio'",
+            ),
+            (serde_json::json!(7), "'content' to be a string or a content-part array"),
+        ] {
+            let err = parse_input_line(&result(content.clone())).expect_err("refused");
+            assert!(err.contains(marker), "{content}: {err} lacks {marker}");
+        }
+        // `details` is an object or nothing: a bare value has no keys for a
+        // display to render, so it is refused rather than wrapped.
+        let err = parse_input_line(
+            r#"{"type":"tool_result","request_id":"h","content":"x","details":5}"#,
+        )
+        .expect_err("details must be an object");
+        assert!(err.contains("expected a map"), "{err}");
     }
 
     /// The advertised kinds and the accepted ones are one list. A kind the

@@ -304,7 +304,8 @@ pub(crate) struct Init {
     input_content_parts: Option<InputContentParts>,
 }
 
-/// The caps on a `user` message's content-part array, as `init` advertises them.
+/// The caps on a content-part array -- a `user` message's, and a `tool_result`'s,
+/// which is held to the same limits -- as `init` advertises them.
 ///
 /// A client that sends an image is sending bytes into a channel with no
 /// backpressure, so the limits are part of the handshake rather than something

@@ -22,6 +22,15 @@
 //! with [`HostCapability`]: `read` opts a sensor into the read-only class,
 //! `actuator` opts a tool out of `auto_approve`. The loop applies the class;
 //! this module only carries it.
+//!
+//! Two things it does own. Names: a host's own name (`yam.move_ee_ik`) is
+//! kept for `tool_request`, while the model is shown a provider-safe wire
+//! name -- `host__<name>` when the name is already safe, otherwise a sanitized
+//! stem plus a short hash of the original (see
+//! [`host_schema::wire_name`](crate::core::agent::host_schema::wire_name)).
+//! And arguments: [`HostTool::validate`] checks a call against the declared
+//! schema before the host is asked, because neither the provider nor every
+//! host can be relied on to enforce it.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -44,6 +53,7 @@ pub const NAME_PREFIX: &str = "host__";
 /// Cap on the advertised `host__<name>` name. Several providers reject a
 /// function name past 64 characters, and they reject the *request* rather than
 /// just the tool, so one over-long name would break every call in the run.
+/// A longer name is hashed into this budget rather than refused.
 const MAX_NAME_LEN: usize = 64;
 
 /// Cap on how many tools one host may declare. Generous next to any real tool
@@ -79,10 +89,6 @@ pub(crate) enum HostToolError {
     /// The run withdrew the request (abort, interrupt) before the host
     /// answered. Distinct from `ClientGone` so the model is told the call was
     /// cancelled rather than that the host vanished.
-    // Raised only by `cancel_all`, which the abort / `turn/interrupt` paths
-    // of the stream-json and RPC surfaces call; until those land nothing
-    // outside the tests constructs it.
-    #[allow(dead_code)]
     Cancelled,
 }
 
@@ -155,9 +161,6 @@ pub(crate) async fn strand_all(registry: &HostToolRegistry) -> Vec<String> {
 /// Withdraw every pending call: the run was aborted or interrupted while the
 /// host still held requests. Same draining as `strand_all`, but the model is
 /// told the call was cancelled. Returns the released ids.
-// See `HostToolError::Cancelled`: the abort / interrupt callers land with
-// the stream-json and RPC cancellation records.
-#[allow(dead_code)]
 pub(crate) async fn cancel_all(registry: &HostToolRegistry) -> Vec<String> {
     release_all(registry, HostToolError::Cancelled).await
 }
@@ -223,7 +226,8 @@ pub struct HostToolDecl {
 /// A registered host tool.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct HostTool {
-    /// The name the model calls, already prefixed (`host__<name>`).
+    /// The name the model calls: `host__<name>` for a provider-safe name, and
+    /// otherwise the mapped `host__<sanitized>_<hash>` wire name.
     pub qualified_name: String,
     /// The name the *host* used. `tool_request` carries this, not the qualified
     /// name: the host asked for `observe` and must be able to dispatch on
@@ -237,6 +241,15 @@ pub struct HostTool {
 }
 
 impl HostTool {
+    /// Check a call's arguments against the declared `parameters`, before the
+    /// host is asked to run it. See [`host_schema::validate`] for the subset;
+    /// the error is `<json pointer>: <reason>`.
+    ///
+    /// [`host_schema::validate`]: crate::core::agent::host_schema::validate
+    pub fn validate(&self, args: &serde_json::Value) -> Result<(), String> {
+        crate::core::agent::host_schema::validate(&self.parameters, args)
+    }
+
     /// The OpenAI tool schema advertised for this tool.
     ///
     /// The host's `parameters` are embedded unchanged. That is deliberate and it
@@ -263,8 +276,8 @@ impl HostTool {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeclError {
     EmptyName,
+    /// The name cannot be mapped to a wire name; carries the mapper's reason.
     UnsafeName(String),
-    NameTooLong(String),
     Reserved(String),
     Duplicate(String),
     NonObjectSchema(String),
@@ -276,14 +289,7 @@ impl std::fmt::Display for DeclError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DeclError::EmptyName => write!(f, "a host tool has an empty name"),
-            DeclError::UnsafeName(n) => write!(
-                f,
-                "host tool name '{n}' must be ASCII letters, digits, '_' or '-' and cannot contain '__'"
-            ),
-            DeclError::NameTooLong(n) => write!(
-                f,
-                "host tool name '{n}' is too long: '{NAME_PREFIX}{n}' exceeds {MAX_NAME_LEN} characters"
-            ),
+            DeclError::UnsafeName(reason) => write!(f, "{reason}"),
             DeclError::Reserved(n) => {
                 write!(f, "host tool name '{n}' is reserved by a built-in tool")
             }
@@ -366,13 +372,12 @@ impl HostToolSet {
             if let Some(key) = entry.unknown.keys().next() {
                 return Err(DeclError::UnknownKey(name, key.clone()));
             }
-            if !is_safe_name(&name) {
-                return Err(DeclError::UnsafeName(name));
-            }
-            let qualified_name = format!("{NAME_PREFIX}{name}");
-            if qualified_name.len() > MAX_NAME_LEN {
-                return Err(DeclError::NameTooLong(name));
-            }
+            // R14: a dotted or otherwise provider-unsafe name is mapped to a
+            // wire name rather than refused, so a host need not keep its own
+            // mapping table; `name` stays what the host dispatches on.
+            let qualified_name =
+                crate::core::agent::host_schema::wire_name(&name, MAX_NAME_LEN, NAME_PREFIX)
+                    .map_err(DeclError::UnsafeName)?;
             // A host tool is prefixed, so it cannot collide with a built-in on
             // the wire. The check is on the *bare* name anyway: a host that
             // registers `bash` or `read` has almost certainly misunderstood
@@ -381,6 +386,9 @@ impl HostToolSet {
             if is_reserved(&name) {
                 return Err(DeclError::Reserved(name));
             }
+            // Mapped names are hashed, so two different names meet here only
+            // when a safe name spells out another's mapping; either way the
+            // model could not tell them apart.
             if set.get(&qualified_name).is_some() {
                 return Err(DeclError::Duplicate(name));
             }
@@ -412,18 +420,6 @@ fn is_reserved(name: &str) -> bool {
         || name == tauri_plugin_agent_tools::tools::monitor::MONITOR_TOOL_NAME
         || matches!(name, "ask" | "todo")
         || crate::core::agent::subagent::is_subagent_tool(name)
-}
-
-/// Host tool names are restricted to what every provider accepts in a function
-/// name and what cannot be confused with the `__` qualifier separator. A host
-/// whose internal name is outside this set maps it on its own side and maps it
-/// back on the result, which is what the reference consumer already does.
-fn is_safe_name(name: &str) -> bool {
-    !name.is_empty()
-        && !name.contains("__")
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 #[cfg(test)]
@@ -569,15 +565,37 @@ mod tests {
         }
     }
 
+    /// R14: a name no provider would accept is mapped, not refused. The model
+    /// calls the wire name; the host keeps dispatching on the name it chose.
     #[test]
-    fn an_unsafe_name_is_refused() {
+    fn an_unsafe_name_is_mapped() {
         for name in ["yam.move_ee_ik", "has space", "unicode\u{00e9}", "a__b"] {
-            assert_eq!(
-                HostToolSet::declare(vec![decl(name)]),
-                Err(DeclError::UnsafeName(name.to_string())),
-                "'{name}' must be refused"
+            let set = HostToolSet::declare(vec![decl(name)])
+                .unwrap_or_else(|e| panic!("'{name}' must be mapped: {e}"));
+            let tool = &set.all()[0];
+            assert_eq!(tool.name, name);
+            let wire = tool.qualified_name.strip_prefix(NAME_PREFIX).expect("prefixed");
+            assert!(!wire.contains("__"), "{wire}");
+            assert!(
+                wire.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+                "{wire}"
             );
+            assert!(set.is_host_tool(&tool.qualified_name));
         }
+        let set = HostToolSet::declare(vec![decl("yam.move_ee_ik")]).expect("declares");
+        assert!(
+            set.all()[0].qualified_name.starts_with("host__yam_move_ee_ik_"),
+            "{}",
+            set.all()[0].qualified_name
+        );
+    }
+
+    #[test]
+    fn a_name_with_a_control_character_is_refused() {
+        assert!(matches!(
+            HostToolSet::declare(vec![decl("bad\u{7}name")]),
+            Err(DeclError::UnsafeName(_))
+        ));
     }
 
     #[test]
@@ -588,12 +606,50 @@ mod tests {
         );
     }
 
+    /// Past the provider limit the name is hashed into it rather than refused.
     #[test]
-    fn an_over_long_name_is_refused() {
+    fn an_over_long_name_is_mapped_within_the_limit() {
         let long = "t".repeat(MAX_NAME_LEN);
+        let set = HostToolSet::declare(vec![decl(&long)]).expect("mapped");
+        let tool = &set.all()[0];
+        assert_eq!(tool.name, long);
+        assert!(tool.qualified_name.len() <= MAX_NAME_LEN, "{}", tool.qualified_name);
+    }
+
+    /// Two names that differ only in characters the mapping drops still get
+    /// distinct wire names; the one real collision -- a safe name spelled the
+    /// same as another's mapping -- is refused as a duplicate.
+    #[test]
+    fn a_wire_name_collision_is_a_duplicate() {
+        let set = HostToolSet::declare(vec![decl("a.b"), decl("a b")]).expect("distinct");
+        assert_ne!(set.all()[0].qualified_name, set.all()[1].qualified_name);
+        let mapped = HostToolSet::declare(vec![decl("a.b")]).expect("declares").all()[0]
+            .qualified_name
+            .strip_prefix(NAME_PREFIX)
+            .expect("prefixed")
+            .to_string();
         assert_eq!(
-            HostToolSet::declare(vec![decl(&long)]),
-            Err(DeclError::NameTooLong(long))
+            HostToolSet::declare(vec![decl("a.b"), decl(&mapped)]),
+            Err(DeclError::Duplicate(mapped))
+        );
+    }
+
+    #[test]
+    fn validate_checks_the_declared_schema() {
+        let set = HostToolSet::declare(vec![HostToolDecl {
+            parameters: Some(json!({
+                "type": "object",
+                "properties": { "n": { "type": "integer" } },
+                "required": ["n"]
+            })),
+            ..decl("count")
+        }])
+        .expect("declares");
+        let tool = &set.all()[0];
+        assert_eq!(tool.validate(&json!({ "n": 3 })), Ok(()));
+        assert_eq!(
+            tool.validate(&json!({})),
+            Err("/: missing required property 'n'".to_string())
         );
     }
 

@@ -112,8 +112,9 @@ const HOST_TO_SESSION: &[InputRow] = &[
         contract: "tool_result",
         here: Some("tool_result"),
         // The contract answers with the tool's own `result` JSON under the
-        // request's `id`; this build takes `request_id` with a `content` string
-        // and an `is_error` flag, the shape a model tool message takes.
+        // request's `id`; this build takes `request_id` with `content` (a string
+        // or a content-part array), an `is_error` flag and optional `details`,
+        // the shape a model tool message takes.
         fields: &[("id", "\"call-7\""), ("result", "{\"ok\":true}")],
     },
 ];
@@ -152,14 +153,18 @@ const SESSION_TO_HOST: &[OutputRow] = &[
     },
     OutputRow {
         contract: "tool_request",
-        here: None,
+        here: Some("tool_request"),
+        // The contract's `id` / `name` are `request_id` / `tool_name` here;
+        // `tool_name` is the host's own declared name, not the wire name the
+        // model called. `run_id` attributes a subagent's call and is absent
+        // for the main run, so a main-run request is unchanged on the wire.
         contract_requires: &[
             ("id", "\"call-7\""),
             ("name", "\"observe\""),
             ("args", "{}"),
         ],
-        build_produces: &[],
-        optional: &[],
+        build_produces: &["request_id", "tool_name", "args", "run_id"],
+        optional: &["run_id"],
     },
     OutputRow {
         contract: "turn_count",
@@ -204,8 +209,9 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         contract: "tool_end",
         here: Some("tool_result"),
         // R11 wants a failure flag (carried as `is_error`) and structured
-        // `details` (absent). `content` being a `String` is R2's gap as much as
-        // a naming one: an image-bearing result cannot be expressed here.
+        // `details`, which travel as a separate `tool_details` record right
+        // after this one rather than on it. `content` stays the text summary;
+        // a host result's image parts go to the model, not onto this event.
         contract_requires: &[
             ("name", "\"command\""),
             ("error", "null"),
@@ -364,17 +370,27 @@ fn every_unimplemented_host_row_is_refused_by_name() {
 
 /// Rows the build does not emit are not events yet.
 ///
-/// Probed with the contract's own message, so the row stops failing here the
-/// moment a variant lands and the table has to move with it.
+/// Probed by *tag*, not merely by whether the contract's message parses: a
+/// variant that lands under the contract's tag with different field names still
+/// refuses the contract's probe, but with a missing- or invalid-field error
+/// rather than an unknown variant. Only the unknown-variant refusal means the
+/// tag is genuinely free, so anything else fails loudly and the table has to
+/// move with the code.
 #[test]
 fn every_unimplemented_session_row_is_not_an_event_yet() {
     for row in SESSION_TO_HOST.iter().filter(|r| r.here.is_none()) {
         let message = probe(row.contract, row.contract_requires);
-        if let Ok(event) = serde_json::from_value::<StreamEvent>(message) {
-            panic!(
+        match serde_json::from_value::<StreamEvent>(message) {
+            Ok(event) => panic!(
                 "'{}' is now an event ({event:?}) - move this row in SESSION_TO_HOST",
                 row.contract
-            );
+            ),
+            Err(e) => assert!(
+                e.to_string().contains("unknown variant"),
+                "'{}' is already a StreamEvent tag (refused as: {e}) - move this row in \
+                 SESSION_TO_HOST and record what the build produces",
+                row.contract
+            ),
         }
     }
 }
@@ -414,6 +430,12 @@ fn every_implemented_session_row_carries_exactly_the_fields_claimed() {
                 // and not in `optional`.
                 full.then(super::run_report::InputContentParts::current),
             )),
+            "tool_request" => serde_json::to_value(StreamEvent::ToolRequest {
+                request_id: "host-1".to_string(),
+                tool_name: "observe".to_string(),
+                args: serde_json::json!({}),
+                run_id: full.then(|| "sub-1".to_string()),
+            }),
             "step" => serde_json::to_value(StreamEvent::Step { index: 2, max: 0 }),
             "token" => serde_json::to_value(StreamEvent::Token {
                 text: "hi".to_string(),
