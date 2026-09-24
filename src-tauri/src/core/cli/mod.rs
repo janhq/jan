@@ -15,6 +15,8 @@ pub mod mcp_serve;
 mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;
+/// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
+pub mod protocol_schema;
 pub mod run_report;
 pub mod providers;
 mod secret_input;
@@ -23,6 +25,8 @@ pub mod telemetry;
 pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
+/// The user-message wire shape, shared by the TUI and the headless channel.
+mod user_message;
 pub mod usage_view;
 pub mod updater;
 pub mod worktree;
@@ -737,10 +741,11 @@ use crate::core::agent::r#loop::{
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{
-    ndjson_line, Init, OutputFormat, PermissionDecisionRecord, RunReport,
+    ndjson_line, Init, InputContentParts, OutputFormat, PermissionDecisionRecord, RunReport,
 };
 use crate::core::cli::stream_input::{
     parse_input_line, InputErrorRecord, InputFormat, InputMessage, StreamInput, INPUT_KINDS,
+    MAX_ECHO_BYTES, MAX_LINE_BYTES,
 };
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -2099,7 +2104,19 @@ async fn init_record(
     } else {
         Vec::new()
     };
-    Init::new(session_id, model, cwd, tools, input_kinds)
+    // The caps go with the kinds: a client that can send an image should learn
+    // the limits from the handshake rather than by having a message rejected.
+    let input_content_parts = input_format
+        .is_stream_json()
+        .then(InputContentParts::current);
+    Init::new(
+        session_id,
+        model,
+        cwd,
+        tools,
+        input_kinds,
+        input_content_parts,
+    )
 }
 
 /// A rendered tool schema's name, out of the OpenAI `{"type":"function",
@@ -2174,6 +2191,10 @@ async fn apply_input_line(
             input.queue_user(text);
             Ok(InputFlow::Continue)
         }
+        InputMessage::UserParts(parts) => {
+            input.queue_user_parts(parts);
+            Ok(InputFlow::Continue)
+        }
         InputMessage::Abort => {
             input.abort();
             Ok(InputFlow::Stop)
@@ -2195,23 +2216,84 @@ async fn apply_input_line(
     }
 }
 
+/// One line from the client, bounded.
+struct ClientLine {
+    text: String,
+    /// True when the line went past [`MAX_LINE_BYTES`] and was cut: `text` is
+    /// then the echo-sized prefix, and the line is rejected without being
+    /// parsed.
+    oversized: bool,
+}
+
 /// Client lines, read on a detached OS thread.
 ///
 /// Not `tokio::io::stdin`: that parks the read on the runtime's blocking pool,
 /// which shutdown waits for, so a client that keeps stdin open -- which is what
 /// a duplex client does for the whole run -- leaves the process alive after its
 /// terminal record has been printed. A plain thread dies with the process.
-fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
+///
+/// The read is bounded rather than line-at-a-time: a line is only as long as
+/// the client says it is, and `BufRead::lines` would hold whatever arrives in
+/// memory before the cap could be applied to it.
+fn stdin_lines() -> mpsc::UnboundedReceiver<ClientLine> {
     let (tx, rx) = mpsc::unbounded_channel();
     std::thread::spawn(move || {
-        use std::io::BufRead as _;
-        for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+        let mut reader = std::io::stdin().lock();
+        while let Ok(Some(line)) = read_bounded_line(&mut reader) {
             if tx.send(line).is_err() {
                 return;
             }
         }
     });
     rx
+}
+
+/// Read one line, keeping at most [`MAX_LINE_BYTES`] of it and discarding the
+/// rest rather than growing to hold it.
+///
+/// A line over the cap keeps only its first [`MAX_ECHO_BYTES`]: it can never be
+/// parsed, so the only use its bytes have left is the echo in `input_error`.
+/// Cutting there can split a character, which is why the kept bytes go through
+/// `from_utf8_lossy` -- the echo is for a human, and a line that is over the cap
+/// is already being refused.
+fn read_bounded_line<R: std::io::BufRead>(
+    reader: &mut R,
+) -> std::io::Result<Option<ClientLine>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut oversized = false;
+    let mut saw_any = false;
+    loop {
+        let available = match reader.fill_buf()? {
+            [] => break,
+            buf => buf,
+        };
+        saw_any = true;
+        let newline = available.iter().position(|b| *b == b'\n');
+        let take = newline.map_or(available.len(), |i| i + 1);
+        if !oversized {
+            let room = MAX_LINE_BYTES.saturating_sub(bytes.len());
+            if take <= room {
+                bytes.extend_from_slice(&available[..take]);
+            } else {
+                bytes.truncate(MAX_ECHO_BYTES.min(bytes.len()));
+                oversized = true;
+            }
+        }
+        reader.consume(take);
+        if newline.is_some() {
+            break;
+        }
+    }
+    if !saw_any {
+        return Ok(None);
+    }
+    while matches!(bytes.last(), Some(b'\n') | Some(b'\r')) {
+        bytes.pop();
+    }
+    Ok(Some(ClientLine {
+        text: String::from_utf8_lossy(&bytes).into_owned(),
+        oversized,
+    }))
 }
 
 /// Consume client messages until `abort` or end of input.
@@ -2222,12 +2304,21 @@ fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
 /// latched and anything already waiting is released -- see
 /// [`strand_pending_permissions`].
 async fn read_input_lines(
-    mut lines: mpsc::UnboundedReceiver<String>,
+    mut lines: mpsc::UnboundedReceiver<ClientLine>,
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
     format: OutputFormat,
 ) {
     while let Some(line) = lines.recv().await {
+        if line.oversized {
+            report_input_error(
+                format,
+                &format!("line is over the {MAX_LINE_BYTES} byte cap"),
+                &line.text,
+            );
+            continue;
+        }
+        let line = line.text;
         if line.trim().is_empty() {
             continue;
         }
@@ -2254,7 +2345,10 @@ async fn read_input_lines(
 /// the text is what the client needs to decide whether to send it again.
 fn report_dropped_follow_ups(input: &StreamInput, format: OutputFormat) {
     for turn in input.take_queued() {
-        let text = turn["content"].as_str().unwrap_or_default().to_string();
+        // The text, whether it arrived as a string or as content parts: an
+        // image-only follow-up reads as empty here, which is all this report
+        // needs to say about it.
+        let text = crate::core::cli::user_message::text_of_content(&turn["content"]);
         report_input_error(format, "run ended before this follow-up was read", &text);
     }
 }
@@ -2606,7 +2700,12 @@ mod tests {
         ];
         let (lines_tx, lines) = mpsc::unbounded_channel();
         for line in script {
-            lines_tx.send(line.to_string()).expect("reader is alive");
+            lines_tx
+                .send(ClientLine {
+                    text: line.to_string(),
+                    oversized: false,
+                })
+                .expect("reader is alive");
         }
         drop(lines_tx);
         read_input_lines(
@@ -2668,7 +2767,7 @@ mod tests {
             .insert("perm-1".to_string(), answer_tx);
 
         // No lines at all: the client opened the pipe and closed it again.
-        let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+        let (lines_tx, lines) = mpsc::unbounded_channel::<ClientLine>();
         drop(lines_tx);
         read_input_lines(
             lines,
@@ -2722,6 +2821,70 @@ mod tests {
                 "{err}"
             );
         }
+    }
+
+    /// A content-part follow-up reaches the queue as the client wrote it: the
+    /// same parts `upstream.rs` hands the provider, not a re-encoding of them.
+    #[tokio::test]
+    async fn a_content_part_follow_up_is_queued_verbatim() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let parts = serde_json::json!([
+            { "type": "text", "text": "what is in this shot?" },
+            { "type": "image_url",
+              "image_url": { "url": "data:image/png;base64,QUJD", "detail": "high" } }
+        ]);
+        let line = serde_json::json!({ "type": "user", "content": parts }).to_string();
+        let (lines_tx, lines) = mpsc::unbounded_channel();
+        lines_tx
+            .send(ClientLine {
+                text: line,
+                oversized: false,
+            })
+            .expect("reader is alive");
+        drop(lines_tx);
+        read_input_lines(lines, Arc::clone(&input), registry, OutputFormat::Json).await;
+
+        let queued = input.take_queued();
+        assert_eq!(queued.len(), 1, "the follow-up is queued as one turn");
+        assert_eq!(queued[0]["role"], "user");
+        assert_eq!(queued[0]["content"], parts);
+    }
+
+    /// A line over the cap is refused without being parsed, and what the reader
+    /// keeps of it is bounded: the cap exists so the bytes are not carried on.
+    #[test]
+    fn a_line_over_the_cap_is_refused_and_its_echo_bounded() {
+        let mut bytes = vec![b'x'; MAX_LINE_BYTES + 1024];
+        bytes.push(b'\n');
+        bytes.extend_from_slice(br#"{"type":"user","text":"after"}"#);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
+
+        let first = read_bounded_line(&mut reader).unwrap().expect("a line");
+        assert!(first.oversized);
+        assert_eq!(first.text.len(), MAX_ECHO_BYTES, "the echo, not the line");
+        // Resynchronised on the next line rather than treating the overflow as
+        // the end of input.
+        let second = read_bounded_line(&mut reader)
+            .unwrap()
+            .expect("the line after the overflow");
+        assert!(!second.oversized);
+        assert_eq!(second.text, r#"{"type":"user","text":"after"}"#);
+        assert!(read_bounded_line(&mut reader).unwrap().is_none());
+    }
+
+    /// The rejected echo the client sees is the bounded one, so a client that
+    /// matches on `input_error.line` still can.
+    #[test]
+    fn an_over_cap_line_is_reported_with_a_truncated_echo() {
+        let line = "x".repeat(MAX_ECHO_BYTES * 3);
+        let record = serde_json::to_value(InputErrorRecord::new("line is over the cap", &line))
+            .expect("a JSON record");
+        assert_eq!(
+            record["line"].as_str().expect("a string").len(),
+            MAX_ECHO_BYTES
+        );
+        assert_eq!(record["line_truncated"], serde_json::json!(true));
     }
 
     /// A queued follow-up the run never reached is reported rather than

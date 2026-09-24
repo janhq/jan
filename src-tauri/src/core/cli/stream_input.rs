@@ -17,12 +17,37 @@
 //! A line that parses as none of them is reported as an `input_error` record
 //! and skipped: the reader is a peer process's output, so one bad line must not
 //! be able to end a run that is otherwise healthy.
+//!
+//! A `user` line carries either `text` or `content`, an OpenAI content-part
+//! array, so a client can send an image without a filesystem in common with the
+//! run ([`super::user_message`] holds the shape both paths build). Parts are
+//! passed through verbatim; the caps below are what a line is measured against
+//! first, because an unbounded channel is a denial of service on the run.
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::Notify;
+
+/// Most bytes one line may occupy. The reader stops accumulating at this point
+/// and discards the rest of the line, so a client that sends a gigabyte costs
+/// the cap in memory rather than the gigabyte.
+pub(crate) const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Most decoded bytes one `image_url` part may carry.
+pub(crate) const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
+
+/// Most decoded bytes across the images of one message.
+pub(crate) const MAX_MESSAGE_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+
+/// Most images one message may carry.
+pub(crate) const MAX_IMAGES: usize = 8;
+
+/// Most bytes of a rejected line echoed back in `input_error`. A rejected line
+/// may be as large as [`MAX_LINE_BYTES`], and echoing it whole would move the
+/// cost the cap just removed from the parser onto the client's own reader.
+pub(crate) const MAX_ECHO_BYTES: usize = 4 * 1024;
 
 /// How a non-interactive run is spoken to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
@@ -52,6 +77,9 @@ pub(crate) const INPUT_KINDS: [&str; 3] = ["user", "abort", "permission"];
 pub(crate) enum InputMessage {
     /// A follow-up turn for the run in flight.
     User(String),
+    /// A follow-up turn whose content is an OpenAI content-part array, already
+    /// validated against the caps and passed through as the client wrote it.
+    UserParts(Vec<serde_json::Value>),
     /// Stop the run; the terminal envelope still reports what it had produced.
     Abort,
     /// The answer to a `permission_request` this run emitted.
@@ -59,6 +87,57 @@ pub(crate) enum InputMessage {
         request_id: String,
         decision: PermissionDecision,
     },
+}
+
+/// One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields
+/// each carries. The wire shape is a serde type rather than a hand-rolled walk
+/// over a `Value` so the protocol schema can be derived from it -- `jan cli
+/// agent schema` publishes this shape, and a hand-written copy of it would be
+/// correct only until the parser moved.
+///
+/// The `type` field is read separately, before deserializing: an unknown kind is
+/// reported against [`INPUT_KINDS`], which is the list `init` advertises.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum InputLine {
+    /// A follow-up turn for the run in flight: `text`, or `content` as an
+    /// OpenAI content-part array. Exactly one of the two, which JSON Schema
+    /// cannot state, so the doc says it and the parser enforces it. A
+    /// content-part message carries text parts and `image_url` parts, whose URL
+    /// is a base64 `data:` URL -- the run shares no filesystem with a client.
+    User {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        text: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        content: Option<Vec<serde_json::Value>>,
+    },
+    /// Stop the run; the terminal envelope still reports what it had produced.
+    Abort,
+    /// The answer to a `permission_request` this run emitted.
+    Permission {
+        request_id: String,
+        decision: InputDecision,
+    },
+}
+
+/// The decisions a client may answer a `permission_request` with: the wire
+/// vocabulary, which [`parse_input_line`] maps onto the tool gate's own enum.
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum InputDecision {
+    AllowOnce,
+    AllowAlways,
+    Deny,
+}
+
+impl From<InputDecision> for PermissionDecision {
+    fn from(decision: InputDecision) -> Self {
+        match decision {
+            InputDecision::AllowOnce => PermissionDecision::AllowOnce,
+            InputDecision::AllowAlways => PermissionDecision::AllowAlways,
+            InputDecision::Deny => PermissionDecision::Deny,
+        }
+    }
 }
 
 /// Parse one NDJSON line. The error is what the client is told on the stream,
@@ -69,70 +148,150 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
     let Some(kind) = value.get("type").and_then(|v| v.as_str()) else {
         return Err("missing string field 'type'".to_string());
     };
-    match kind {
-        "user" => {
-            let text = value
-                .get("text")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'user' needs a string field 'text'".to_string())?;
-            if text.trim().is_empty() {
-                return Err("'user' text is empty".to_string());
-            }
-            Ok(InputMessage::User(text.to_string()))
-        }
-        "abort" => Ok(InputMessage::Abort),
-        "permission" => {
-            let request_id = value
-                .get("request_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'permission' needs a string field 'request_id'".to_string())?;
-            let decision = value
-                .get("decision")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| "'permission' needs a string field 'decision'".to_string())?;
-            let decision = match decision {
-                "allow_once" => PermissionDecision::AllowOnce,
-                "allow_always" => PermissionDecision::AllowAlways,
-                "deny" => PermissionDecision::Deny,
-                other => {
-                    return Err(format!(
-                        "unknown decision '{other}' (allow_once, allow_always, deny)"
-                    ))
-                }
-            };
-            Ok(InputMessage::Permission {
-                request_id: request_id.to_string(),
-                decision,
-            })
-        }
-        other => Err(format!(
-            "unknown type '{other}' ({})",
+    if !INPUT_KINDS.contains(&kind) {
+        return Err(format!(
+            "unknown type '{kind}' ({})",
             INPUT_KINDS.join(", ")
-        )),
+        ));
     }
+    match serde_json::from_value::<InputLine>(value).map_err(|e| e.to_string())? {
+        InputLine::User { text, content } => match (text, content) {
+            (Some(_), Some(_)) => Err("'user' takes 'text' or 'content', not both".to_string()),
+            (None, None) => Err("'user' needs 'text' or 'content'".to_string()),
+            (Some(text), None) => {
+                if text.trim().is_empty() {
+                    return Err("'user' text is empty".to_string());
+                }
+                Ok(InputMessage::User(text))
+            }
+            (None, Some(parts)) => {
+                check_user_content(&parts)?;
+                Ok(InputMessage::UserParts(parts))
+            }
+        },
+        InputLine::Abort => Ok(InputMessage::Abort),
+        InputLine::Permission {
+            request_id,
+            decision,
+        } => Ok(InputMessage::Permission {
+            request_id,
+            decision: decision.into(),
+        }),
+    }
+}
+
+/// Validate a client's content-part array before it is queued.
+///
+/// The parts are passed through verbatim afterwards -- the shape is the model's,
+/// and re-encoding it here would be a second place to get it wrong -- so this is
+/// where every refusal lives: a part type that is not `text` or `image_url`, a
+/// part missing the field its type requires, an image type outside
+/// [`IMAGE_MIME_TYPES`](super::user_message::IMAGE_MIME_TYPES), and each cap.
+fn check_user_content(parts: &[serde_json::Value]) -> Result<(), String> {
+    if parts.is_empty() {
+        return Err("'user' content is empty".to_string());
+    }
+    let mut images = 0usize;
+    let mut image_bytes = 0usize;
+    let mut has_text = false;
+    for part in parts {
+        let kind = part
+            .get("type")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "every content part needs a string 'type'".to_string())?;
+        match kind {
+            "text" => {
+                let text = part
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "a 'text' part needs a string 'text'".to_string())?;
+                has_text |= !text.trim().is_empty();
+            }
+            "image_url" => {
+                let url = part
+                    .get("image_url")
+                    .and_then(|v| v.get("url"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        "an 'image_url' part needs a string 'image_url.url'".to_string()
+                    })?;
+                // The decoded length, not the payload's: base64 inflates by
+                // 4/3, so a payload under the cap can be an image over it.
+                let (_, decoded) = super::user_message::data_url_mime_and_len(url)?;
+                if decoded > MAX_IMAGE_BYTES {
+                    return Err(format!(
+                        "image is {decoded} bytes decoded, over the {MAX_IMAGE_BYTES} byte cap"
+                    ));
+                }
+                images += 1;
+                if images > MAX_IMAGES {
+                    return Err(format!("message carries more than {MAX_IMAGES} images"));
+                }
+                image_bytes += decoded;
+                if image_bytes > MAX_MESSAGE_IMAGE_BYTES {
+                    return Err(format!(
+                        "images total {image_bytes} bytes decoded, over the \
+                         {MAX_MESSAGE_IMAGE_BYTES} byte cap"
+                    ));
+                }
+            }
+            other => {
+                return Err(format!(
+                    "unsupported content part '{other}' (text, image_url)"
+                ))
+            }
+        }
+    }
+    if !has_text && images == 0 {
+        return Err("'user' content carries neither text nor an image".to_string());
+    }
+    Ok(())
 }
 
 /// A rejected input line, reported on stdout. Deliberately *not* a
 /// [`StreamEvent::Error`](crate::core::agent::events::StreamEvent::Error): the
 /// report folds that into the run's outcome, so a typo in one line would mark
 /// an otherwise successful run as failed.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct InputErrorRecord<'a> {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "input_error"))]
     kind: &'static str,
     message: &'a str,
     /// The line that was rejected, so the client can match it to what it wrote.
+    /// Truncated to [`MAX_ECHO_BYTES`], because a rejected line may be as large
+    /// as [`MAX_LINE_BYTES`] and echoing it whole would hand the client back the
+    /// cost the cap just removed.
     line: &'a str,
+    /// True when `line` is a prefix of what the client sent, so a client that
+    /// matches on the echo knows why it is short.
+    line_truncated: bool,
 }
 
 impl<'a> InputErrorRecord<'a> {
     pub(crate) fn new(message: &'a str, line: &'a str) -> Self {
+        let echoed = echo_prefix(line);
         Self {
             kind: "input_error",
             message,
-            line,
+            line: echoed,
+            line_truncated: echoed.len() < line.len(),
         }
     }
+}
+
+/// The first [`MAX_ECHO_BYTES`] of `line`, cut at a character boundary.
+fn echo_prefix(line: &str) -> &str {
+    if line.len() <= MAX_ECHO_BYTES {
+        return line;
+    }
+    let mut end = MAX_ECHO_BYTES;
+    while !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    &line[..end]
 }
 
 /// What the reader task and the run share: the queue the steering handshake
@@ -149,6 +308,14 @@ impl StreamInput {
     pub(crate) fn queue_user(&self, text: String) {
         self.lock()
             .push_back(serde_json::json!({ "role": "user", "content": text }));
+    }
+
+    /// Queue a follow-up whose content is a content-part array, as the client
+    /// wrote it: the `user` message the run appends is the client's own parts,
+    /// not a re-encoding of them.
+    pub(crate) fn queue_user_parts(&self, parts: Vec<serde_json::Value>) {
+        self.lock()
+            .push_back(serde_json::json!({ "role": "user", "content": parts }));
     }
 
     /// Hand the queue to a steering handshake. Empty is the normal answer: the
@@ -250,18 +417,137 @@ mod tests {
             ("not json at all", "not JSON"),
             (r#"{"text":"hi"}"#, "missing string field 'type'"),
             (r#"{"type":"steer","text":"hi"}"#, "unknown type 'steer'"),
-            (r#"{"type":"user"}"#, "string field 'text'"),
+            (r#"{"type":"user"}"#, "'user' needs 'text' or 'content'"),
+            (
+                r#"{"type":"user","text":"a","content":[{"type":"text","text":"b"}]}"#,
+                "'user' takes 'text' or 'content', not both",
+            ),
             (r#"{"type":"user","text":"  "}"#, "is empty"),
-            (r#"{"type":"permission","decision":"deny"}"#, "'request_id'"),
-            (r#"{"type":"permission","request_id":"p"}"#, "'decision'"),
+            (r#"{"type":"user","content":[]}"#, "content is empty"),
+            (
+                r#"{"type":"user","content":[{"type":"audio","audio":{"url":"x"}}]}"#,
+                "unsupported content part 'audio'",
+            ),
+            (
+                r#"{"type":"user","content":[{"type":"text"}]}"#,
+                "a 'text' part needs a string 'text'",
+            ),
+            (
+                r#"{"type":"user","content":[{"type":"image_url","image_url":{}}]}"#,
+                "needs a string 'image_url.url'",
+            ),
+            (
+                r#"{"type":"user","content":[{"type":"image_url","image_url":{"url":"/tmp/a.png"}}]}"#,
+                "must be a data: URL",
+            ),
+            (
+                r#"{"type":"user","content":[{"type":"image_url","image_url":{"url":"data:image/svg+xml;base64,QUJD"}}]}"#,
+                "unsupported image type",
+            ),
+            (
+                r#"{"type":"user","content":[{"type":"text","text":"  "}]}"#,
+                "carries neither text nor an image",
+            ),
+            (r#"{"type":"permission","decision":"deny"}"#, "missing field `request_id`"),
+            (r#"{"type":"permission","request_id":"p"}"#, "missing field `decision`"),
             (
                 r#"{"type":"permission","request_id":"p","decision":"maybe"}"#,
-                "unknown decision 'maybe'",
+                "unknown variant `maybe`, expected one of `allow_once`, `allow_always`, `deny`",
             ),
         ] {
             let err = parse_input_line(line).expect_err(line);
             assert!(err.contains(marker), "{line}: {err} lacks {marker}");
         }
+    }
+
+    /// A line carrying an image with no text at all is a message, not a typo:
+    /// the model reads the image and nothing else.
+    #[test]
+    fn an_image_only_message_is_accepted() {
+        let line = r#"{"type":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,QUJD"}}]}"#;
+        let message = parse_input_line(line).expect("an image-only message");
+        let InputMessage::UserParts(parts) = message else {
+            panic!("expected parts, got {message:?}");
+        };
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0]["type"], "image_url");
+    }
+
+    /// A content-part message is accepted and carried as written: the parts the
+    /// client sent are the parts that reach the request, extensions included.
+    #[test]
+    fn content_parts_are_carried_as_written() {
+        let line = r#"{"type":"user","content":[
+            {"type":"text","text":"what changed here?","cache_control":{"type":"ephemeral"}},
+            {"type":"image_url","image_url":{"url":"data:image/jpeg;base64,QUJD","detail":"high"}}
+        ]}"#;
+        let InputMessage::UserParts(parts) = parse_input_line(line).expect(line) else {
+            panic!("expected parts");
+        };
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0]["cache_control"]["type"], "ephemeral");
+        assert_eq!(parts[1]["image_url"]["detail"], "high");
+        assert_eq!(parts[1]["image_url"]["url"], "data:image/jpeg;base64,QUJD");
+    }
+
+    /// Each cap is enforced on the decoded size, the count, and the total, and
+    /// the refusal names the cap it crossed.
+    #[test]
+    fn the_content_caps_are_enforced() {
+        let image = |bytes: usize| -> serde_json::Value {
+            let payload = "A".repeat(bytes / 3 * 4);
+            serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": format!("data:image/png;base64,{payload}") }
+            })
+        };
+        let message = |parts: Vec<serde_json::Value>| {
+            serde_json::json!({ "type": "user", "content": parts }).to_string()
+        };
+
+        let over_one = parse_input_line(&message(vec![image(MAX_IMAGE_BYTES + 3)]))
+            .expect_err("over the per-image cap");
+        assert!(over_one.contains("over the 5242880 byte cap"), "{over_one}");
+
+        let at_one = message(vec![image(MAX_IMAGE_BYTES)]);
+        assert!(
+            parse_input_line(&at_one).is_ok(),
+            "exactly at the cap is inside it"
+        );
+
+        let too_many = message(vec![image(3); MAX_IMAGES + 1]);
+        let err = parse_input_line(&too_many).expect_err("over the image count");
+        assert!(err.contains("more than 8 images"), "{err}");
+
+        let over_total = message(vec![image(MAX_IMAGE_BYTES); 3]);
+        let err = parse_input_line(&over_total).expect_err("over the message total");
+        assert!(err.contains("over the 10485760 byte cap"), "{err}");
+    }
+
+    /// The echo in a rejection is bounded: the client sent a line whose size
+    /// was already refused, and handing it all back would move the cost the cap
+    /// removed from the parser onto the client's reader.
+    #[test]
+    fn a_rejected_line_is_echoed_truncated() {
+        let line = "y".repeat(MAX_ECHO_BYTES + 1);
+        let record = serde_json::to_value(InputErrorRecord::new("nope", &line)).expect("record");
+        assert_eq!(record["line"].as_str().map(str::len), Some(MAX_ECHO_BYTES));
+        assert_eq!(record["line_truncated"], serde_json::json!(true));
+
+        let short = serde_json::to_value(InputErrorRecord::new("nope", "bad")).expect("record");
+        assert_eq!(short["line"], serde_json::json!("bad"));
+        assert_eq!(short["line_truncated"], serde_json::json!(false));
+    }
+
+    /// Truncation cuts on a character boundary: the echo is text a client
+    /// prints, and half a code point would be a decoding error there.
+    #[test]
+    fn the_echo_cuts_on_a_character_boundary() {
+        let line = "é".repeat(MAX_ECHO_BYTES);
+        let record = serde_json::to_value(InputErrorRecord::new("nope", &line)).expect("record");
+        let echoed = record["line"].as_str().expect("a string");
+        assert!(echoed.len() <= MAX_ECHO_BYTES);
+        assert!(line.starts_with(echoed));
     }
 
     #[test]
@@ -276,6 +562,19 @@ mod tests {
         assert_eq!(drained[0]["content"], "first");
         assert_eq!(drained[1]["content"], "second");
         assert!(input.take_queued().is_empty());
+    }
+
+    /// A parts turn queues beside a text turn as the same kind of message: same
+    /// role, same position, content as an array instead of a string.
+    #[test]
+    fn a_parts_turn_queues_as_the_same_message_kind() {
+        let input = StreamInput::default();
+        let parts = vec![serde_json::json!({ "type": "text", "text": "hi" })];
+        input.queue_user_parts(parts.clone());
+        let drained = input.take_queued();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0]["role"], "user");
+        assert_eq!(drained[0]["content"], serde_json::json!(parts));
     }
 
     /// The latch, not just the notification: an abort landing before the run

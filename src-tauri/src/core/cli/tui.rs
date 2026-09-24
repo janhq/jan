@@ -47,6 +47,7 @@ use super::agent_status::AgentStatusReporter;
 use super::brand;
 use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
+use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
 use super::{
     is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
@@ -1563,14 +1564,6 @@ struct Checkpoint {
     user_index: usize,
     preview: String,
     sha: String,
-}
-
-/// An image staged by `/image <path>`, sent with the next user message as an
-/// OpenAI `image_url` content part. `name` is the basename shown in the
-/// transcript; `data_url` is the `data:<mime>;base64,...` payload.
-struct PendingImage {
-    name: String,
-    data_url: String,
 }
 
 /// One entry in the file-path hint popup triggered by typing `@`.
@@ -16685,32 +16678,6 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     }
 }
 
-/// Largest image accepted from a path or the clipboard, before base64 (which
-/// inflates it by 4/3).
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-
-/// Infer an image MIME type from a file extension. `None` when the extension is
-/// not a known image type.
-fn image_mime_of(path: &str) -> Option<&'static str> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        _ => None,
-    }
-}
-
-/// Infer an image MIME type from a file extension, defaulting to PNG.
-fn image_mime(path: &str) -> &'static str {
-    image_mime_of(path).unwrap_or("image/png")
-}
-
 /// Read an image file into a `PendingImage` (base64 data URL + basename).
 fn load_image_file(path: &str) -> Result<PendingImage, String> {
     use base64::Engine;
@@ -16819,26 +16786,6 @@ fn clipboard_image() -> Result<PendingImage, String> {
         name: "clipboard.png".to_string(),
         data_url: format!("data:image/png;base64,{b64}"),
     })
-}
-
-/// Build the OpenAI-shaped user message: a plain string with no images, else a
-/// content-part array (text first, then `image_url` parts) matching the desktop
-/// web-app wire shape.
-fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value {
-    if images.is_empty() {
-        return serde_json::json!({ "role": "user", "content": text });
-    }
-    let mut parts = Vec::with_capacity(images.len() + 1);
-    if !text.is_empty() {
-        parts.push(serde_json::json!({ "type": "text", "text": text }));
-    }
-    for img in images {
-        parts.push(serde_json::json!({
-            "type": "image_url",
-            "image_url": { "url": img.data_url, "detail": "auto" }
-        }));
-    }
-    serde_json::json!({ "role": "user", "content": parts })
 }
 
 /// Split a user message's `content` into display text and one label per attached

@@ -154,6 +154,15 @@ test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 
+# protocol/schema.json is committed, and core::cli::protocol_schema fails when it
+# no longer matches the types that define the channel. This is the fix for that
+# failure, not an optional extra: change a protocol type, run this, commit both.
+# `cd` rather than `--manifest-path` because jan-cli is its own workspace and its
+# .cargo/config.toml is what points the build at src-tauri/target. The feature
+# set matches build-cli, so this does not compile a second configuration.
+protocol-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent schema --out ../../protocol/schema.json
+
 test: test-prepare install-rust-targets
 	yarn build:mlx-server
 	$(MAKE) build-cli
