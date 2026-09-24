@@ -327,7 +327,7 @@
           ]
         },
         {
-          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).",
+          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. `run_subagent` clears the child's host tool set\nrather than relying on this, which is why the case cannot arise.",
           "type": "object",
           "properties": {
             "run_id": {
@@ -886,7 +886,7 @@
           }
         },
         "tool_specs": {
-          "description": "The full schemas of the host tools this run installed, as advertised.\nA host compares these against what it declared, which is the only way\nto know its constraints survived rather than trusting that they did;\nthe names in `tools` alone cannot answer that. Omitted entirely when\nthe run declared no host tools, so an ordinary run's handshake is\nunchanged.",
+          "description": "The full schemas of the host tools this run advertises. A host compares\nthese against what it declared, which is the only way to know its\nconstraints survived rather than trusting that they did; the names in\n`tools` alone cannot answer that.\n\nThis is the advertised subset, not everything declared: a deny list, an\nallowlist or Plan mode can withhold a host tool, and its absence here is\nhow a host learns that happened. Omitted entirely when the run\nadvertises no host tools, so an ordinary run's handshake is unchanged.",
           "type": "array",
           "items": true
         },

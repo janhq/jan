@@ -941,6 +941,14 @@ impl CompositeToolInvoker {
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
+    ///
+    /// Plugin and host tools are prompted through here too: `prompt_kind` is
+    /// `"mcp"` for all three because it names the *class* a consumer renders --
+    /// an opaque third-party capability -- not which subsystem runs the call.
+    /// The `tool_name` is the qualified one the model called (`host__move`),
+    /// which is what a user needs to see; note that the matching `tool_request`
+    /// carries the host's bare name (`move`) instead, since the host dispatches
+    /// on the name it declared.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
         let request_id = next_permission_id();
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -7657,6 +7665,7 @@ mod tests {
                     name: n.to_string(),
                     description: String::new(),
                     parameters: None,
+                    unknown: Default::default(),
                 })
                 .collect(),
         )

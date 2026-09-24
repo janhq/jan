@@ -133,6 +133,11 @@ pub enum StreamEvent {
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
     /// ToolResult/PermissionRequest); the child's terminal Done/Error is never
     /// wrapped (its result is delivered via `await_subagent`).
+    ///
+    /// Never a `ToolRequest`: a client answers a request by `request_id` on
+    /// stdin, and it is told nothing about this wrapper, so a nested request
+    /// would be unanswerable. `run_subagent` clears the child's host tool set
+    /// rather than relying on this, which is why the case cannot arise.
     Subagent {
         run_id: String,
         name: String,

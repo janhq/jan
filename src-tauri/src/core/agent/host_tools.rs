@@ -33,12 +33,22 @@ use tokio::sync::{oneshot, Mutex};
 /// built-in (`bash`, `read`) or collide with a plugin or MCP tool. Mirrors
 /// `plugin_tools::NAME_PREFIX`; the model sees the qualified name and calls it
 /// by that.
+///
+/// The dispatcher tests this prefix before reaching MCP, so an MCP tool that is
+/// itself named `host__x` is shadowed by a declared host tool of the same name.
+/// That is the same precedence the `plugin__` convention already has, and it
+/// resolves in favour of the party that declared the name for this run.
 pub const NAME_PREFIX: &str = "host__";
 
 /// Cap on the advertised `host__<name>` name. Several providers reject a
 /// function name past 64 characters, and they reject the *request* rather than
 /// just the tool, so one over-long name would break every call in the run.
 const MAX_NAME_LEN: usize = 64;
+
+/// Cap on how many tools one host may declare. Generous next to any real tool
+/// set; it exists so a malformed or generated file cannot put an unbounded
+/// number of schemas into every request's prefix.
+const MAX_HOST_TOOLS: usize = 128;
 
 static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -116,6 +126,18 @@ pub(crate) async fn strand_all(registry: &HostToolRegistry) {
 }
 
 /// One tool as the host declares it.
+///
+/// Unknown keys are rejected rather than ignored, via `unknown` below rather
+/// than serde's `deny_unknown_fields`: this type is deserialized from the
+/// `jan-cli` crate, which resolves its own lockfile, and the attribute expands
+/// to code bound to a `serde_core` that crate's graph has two copies of.
+/// Collecting the surplus keys instead needs nothing outside `serde_json`.
+///
+/// Validating the set at startup is the whole point of declaring it up front: a
+/// misspelled `paramters` that parsed would silently register the
+/// empty-argument schema, the model would be told the tool takes nothing, and
+/// the mistake would surface as a call with no arguments rather than as the
+/// typo it is.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct HostToolDecl {
     pub name: String,
@@ -124,6 +146,11 @@ pub struct HostToolDecl {
     /// JSON Schema for the tool's arguments, passed to the provider verbatim.
     #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+    /// Every key that is none of the above, kept only so `declare` can refuse
+    /// it by name. Never serialized back: a declaration this process re-emits
+    /// is the set it accepted, which by then has no unknown keys.
+    #[serde(flatten, default, skip_serializing)]
+    pub unknown: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// A registered host tool.
@@ -171,6 +198,8 @@ pub enum DeclError {
     Reserved(String),
     Duplicate(String),
     NonObjectSchema(String),
+    TooMany(usize),
+    UnknownKey(String, String),
 }
 
 impl std::fmt::Display for DeclError {
@@ -192,6 +221,14 @@ impl std::fmt::Display for DeclError {
             DeclError::NonObjectSchema(n) => write!(
                 f,
                 "host tool '{n}' parameters must be a JSON Schema object"
+            ),
+            DeclError::TooMany(n) => write!(
+                f,
+                "{n} host tools declared, more than the {MAX_HOST_TOOLS} a run accepts"
+            ),
+            DeclError::UnknownKey(n, key) => write!(
+                f,
+                "host tool '{n}' has an unknown field '{key}' (expected name, description, parameters)"
             ),
         }
     }
@@ -239,11 +276,25 @@ impl HostToolSet {
     /// Validate and register a host's declarations, rejecting the whole set on
     /// the first problem.
     pub fn declare(entries: Vec<HostToolDecl>) -> Result<Self, DeclError> {
+        // Every schema is repeated in the cached prefix of every request for
+        // the whole run, so an oversized set is paid for per turn rather than
+        // once. Capped for the same reason the channel caps images and line
+        // length: a declaration file is host input, and unbounded host input
+        // with a per-turn cost is a way to make a run expensive by accident.
+        if entries.len() > MAX_HOST_TOOLS {
+            return Err(DeclError::TooMany(entries.len()));
+        }
         let mut set = Self::new();
         for entry in entries {
             let name = entry.name.trim().to_string();
             if name.is_empty() {
                 return Err(DeclError::EmptyName);
+            }
+            // Before anything else about the tool: a key this parser does not
+            // know is a typo in the host's file, and guessing which field was
+            // meant would register a tool the host did not describe.
+            if let Some(key) = entry.unknown.keys().next() {
+                return Err(DeclError::UnknownKey(name, key.clone()));
             }
             if !is_safe_name(&name) {
                 return Err(DeclError::UnsafeName(name));
@@ -314,6 +365,7 @@ mod tests {
             name: name.to_string(),
             description: "does a thing".to_string(),
             parameters: None,
+            unknown: Default::default(),
         }
     }
 
@@ -352,6 +404,7 @@ mod tests {
             name: "move_arm".to_string(),
             description: "move".to_string(),
             parameters: Some(parameters.clone()),
+            unknown: Default::default(),
         }])
         .expect("declares");
         assert_eq!(set.all()[0].schema()["function"]["parameters"], parameters);
@@ -373,6 +426,54 @@ mod tests {
         let err = HostToolSet::declare(vec![decl("observe"), decl("observe")])
             .expect_err("duplicate refused");
         assert_eq!(err, DeclError::Duplicate("observe".to_string()));
+    }
+
+    /// A declaration file is host input whose cost is paid in every request's
+    /// prefix, so the set is bounded like the channel's other host input.
+    #[test]
+    fn an_oversized_declaration_is_refused() {
+        let entries: Vec<HostToolDecl> = (0..=MAX_HOST_TOOLS)
+            .map(|i| decl(&format!("tool_{i}")))
+            .collect();
+        let n = entries.len();
+        assert_eq!(HostToolSet::declare(entries), Err(DeclError::TooMany(n)));
+
+        // The cap itself is allowed: the boundary is inclusive, so a host that
+        // declares exactly the limit is not refused.
+        let entries: Vec<HostToolDecl> = (0..MAX_HOST_TOOLS)
+            .map(|i| decl(&format!("tool_{i}")))
+            .collect();
+        assert_eq!(
+            HostToolSet::declare(entries).expect("the cap is allowed").len(),
+            MAX_HOST_TOOLS
+        );
+    }
+
+    /// Validating the set up front is the point of declaring it, so a key the
+    /// parser does not know is a mistake to report rather than to drop. A
+    /// misspelled `parameters` would otherwise register the empty schema and
+    /// tell the model the tool takes no arguments.
+    #[test]
+    fn an_unknown_key_in_a_declaration_is_refused() {
+        let decl: HostToolDecl = serde_json::from_str(
+            r#"{"name":"observe","description":"d","paramters":{"type":"object"}}"#,
+        )
+        .expect("the surplus key is collected, not a parse error");
+        assert_eq!(
+            HostToolSet::declare(vec![decl]),
+            Err(DeclError::UnknownKey(
+                "observe".to_string(),
+                "paramters".to_string()
+            ))
+        );
+
+        // And the schema really would have been lost: the typo means
+        // `parameters` never arrived, so accepting it would advertise a tool
+        // that takes no arguments at all.
+        let decl: HostToolDecl =
+            serde_json::from_str(r#"{"name":"observe","paramters":{"type":"object"}}"#)
+                .expect("parses");
+        assert_eq!(decl.parameters, None);
     }
 
     #[test]
@@ -429,6 +530,7 @@ mod tests {
             name: "observe".to_string(),
             description: String::new(),
             parameters: Some(json!("string")),
+            unknown: Default::default(),
         }]);
         assert_eq!(err, Err(DeclError::NonObjectSchema("observe".to_string())));
     }

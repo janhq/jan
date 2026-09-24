@@ -1649,9 +1649,9 @@ fn prepare_agent_session(
         permission_requests.clone(),
         // Host tools are declared per *run*, by a client on stdin, so the
         // session is built without them and the duplex headless path installs
-        // the declared set before orchestration starts. Every other surface
-        // (the TUI, a subagent) leaves this empty and never emits a
-        // `tool_request`.
+        // the declared set before orchestration starts. The TUI leaves this
+        // empty, and `run_subagent` clears it for a child, so neither emits a
+        // `tool_request` -- only a run with a client that can answer one does.
         crate::core::agent::host_tools::HostToolSet::new(),
         crate::core::agent::host_tools::new_registry(),
         flags.auto_approve,
@@ -1884,30 +1884,56 @@ async fn run_agent_loop(
     // pairing leaves a gated call unanswerable. Rejected rather than silently
     // upgraded: a caller parsing plain text should not have the format changed
     // under it.
-    if input_format.is_stream_json() && !format.is_stream_json() {
-        return Err(
-            "--input-format stream-json requires --output-format stream-json (the client answers \
-             permission requests, so it must be reading them)"
-                .to_string(),
-        );
-    }
-    // Declared before anything is spent: a malformed or unacceptable tool set
-    // is the host's own mistake, and finding out at the first call -- mid-task,
-    // after paid requests -- is worse than refusing to start.
-    let host_tools = match host_tools {
-        Some(path) => {
-            if !input_format.is_stream_json() {
-                return Err(
-                    "--host-tools requires --input-format stream-json (a host tool call is \
-                     answered with a tool_result message on stdin)"
-                        .to_string(),
+    let started = std::time::Instant::now();
+    // Every refusal below is a setup failure like any other, so it is reported
+    // the way `prepare_agent_run`'s is: one `result` record with
+    // `error.code: "setup_error"`. Returning early instead would leave a
+    // machine consumer an empty stdout and a human string on stderr, which is
+    // the one thing this channel promises never to do -- and a mistyped
+    // `--host-tools` path is the first failure a host is likely to hit.
+    let setup = (|| {
+        if input_format.is_stream_json() && !format.is_stream_json() {
+            return Err(
+                "--input-format stream-json requires --output-format stream-json (the client \
+                 answers permission requests, so it must be reading them)"
+                    .to_string(),
+            );
+        }
+        // Declared before anything is spent: a malformed or unacceptable tool
+        // set is the host's own mistake, and finding out at the first call --
+        // mid-task, after paid requests -- is worse than refusing to start.
+        match host_tools {
+            Some(path) => {
+                if !input_format.is_stream_json() {
+                    return Err(
+                        "--host-tools requires --input-format stream-json (a host tool call is \
+                         answered with a tool_result message on stdin)"
+                            .to_string(),
+                    );
+                }
+                load_host_tools(path)
+            }
+            None => Ok(crate::core::agent::host_tools::HostToolSet::new()),
+        }
+    })();
+    let host_tools = match setup {
+        Ok(host_tools) => host_tools,
+        Err(e) => {
+            if format.is_machine() {
+                print_report(
+                    format,
+                    RunReport::setup_failure(&e).finish(
+                        None,
+                        None,
+                        "",
+                        started.elapsed().as_millis(),
+                        None,
+                    ),
                 );
             }
-            load_host_tools(path)?
+            return Err(e);
         }
-        None => crate::core::agent::host_tools::HostToolSet::new(),
     };
-    let started = std::time::Instant::now();
     let prepared = prepare_agent_run(
         project,
         task,
@@ -2141,7 +2167,7 @@ async fn init_record(
     model: &str,
     input_format: InputFormat,
 ) -> Init {
-    let tools = crate::core::agent::r#loop::context_advertised_tools(
+    let tools: Vec<String> = crate::core::agent::r#loop::context_advertised_tools(
         &args.mcp_servers,
         &args.mcp_settings,
         &args.permissions,
@@ -2160,7 +2186,20 @@ async fn init_record(
     // Only the host tools' schemas are echoed, not every advertised tool's: the
     // host is comparing these against what it sent, and a built-in's schema is
     // this process's own business.
-    let tool_specs = args.host_tools.schemas();
+    //
+    // Filtered to what `tools` actually advertises rather than to everything
+    // declared. A deny list, an allowlist or Plan mode can withhold a host tool,
+    // and a host that saw its schema echoed anyway would conclude the tool was
+    // live and wait for a call that is never coming. Echoing the advertised set
+    // lets it detect the suppression instead.
+    let tool_specs = args
+        .host_tools
+        .schemas()
+        .into_iter()
+        .filter(|spec| {
+            tool_name(spec).is_some_and(|name| tools.iter().any(|t| t == &name))
+        })
+        .collect();
     // The project root the run's tools are confined to, as the run itself sees
     // it. A caller that built these args without one gets `null`: any path
     // substituted here would claim a confinement the run does not have.

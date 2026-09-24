@@ -279,12 +279,15 @@ pub(crate) struct Init {
     /// provider caches on, so a set that reorders between runs is a cache miss
     /// (see the tool-ordering note in `upstream.rs`).
     tools: Vec<String>,
-    /// The full schemas of the host tools this run installed, as advertised.
-    /// A host compares these against what it declared, which is the only way
-    /// to know its constraints survived rather than trusting that they did;
-    /// the names in `tools` alone cannot answer that. Omitted entirely when
-    /// the run declared no host tools, so an ordinary run's handshake is
-    /// unchanged.
+    /// The full schemas of the host tools this run advertises. A host compares
+    /// these against what it declared, which is the only way to know its
+    /// constraints survived rather than trusting that they did; the names in
+    /// `tools` alone cannot answer that.
+    ///
+    /// This is the advertised subset, not everything declared: a deny list, an
+    /// allowlist or Plan mode can withhold a host tool, and its absence here is
+    /// how a host learns that happened. Omitted entirely when the run
+    /// advertises no host tools, so an ordinary run's handshake is unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tool_specs: Vec<serde_json::Value>,
     /// What `--input-format stream-json` accepts from this client, as message
