@@ -251,9 +251,11 @@ and match it: `sha256` is that digest, `mime_type` and `bytes` describe the imag
 `tool_call_id` names the host tool call whose result carried it (`null` for an image the user
 attached).
 
-Emitted for subagent turns as well as the main run's, and for the run's side calls (a compaction
-summary, a `/goal` evaluation), since those are real requests with real spend. It is a record on
-the event stream, so it also reaches RPC clients as `item/request_provenance`.
+Emitted for subagent turns as well as the main run's, and for the side calls a run makes (a
+compaction summary, a `/goal` evaluation inside a turn), since those are real requests with real
+spend. A record rides the stream of the run that made the request, so it also reaches RPC clients as
+`item/request_provenance`. A request made with no run in flight -- the TUI's `/compact`, a `/goal`
+evaluation between turns -- has no run stream to ride and is not reported.
 
 The record deliberately carries no prompt, completion, header, or credential -- `request_sha256` is
 how the two sides agree they are talking about the same request. The digest covers the body Jan
