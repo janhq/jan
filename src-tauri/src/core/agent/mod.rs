@@ -27,6 +27,11 @@ pub mod global_config;
 #[cfg(feature = "cli")]
 pub mod goal;
 pub mod hooks_config;
+// Host tools are executed by a client over the headless stdio channel, so the
+// capability exists only where that channel does. The desktop build has no peer
+// that could answer a `tool_request`.
+#[cfg(feature = "cli")]
+pub mod host_tools;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;

@@ -5182,6 +5182,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.max_parallel_subagents,
             args.ask_requests.is_some(),
             args.todo_registry.is_some(),
+            &args.host_tools,
         )
         .await
         .iter()
@@ -5544,6 +5545,11 @@ impl App {
                 ));
                 self.publish_agent_status();
             }
+            // Host tools belong to a headless run driven by a host process.
+            // The TUI is that host's opposite number -- there is no peer on
+            // stdin to execute a callback -- so it never declares them and
+            // cannot receive this.
+            StreamEvent::ToolRequest { .. } => {}
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
@@ -25251,6 +25257,8 @@ mod tests {
             permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,

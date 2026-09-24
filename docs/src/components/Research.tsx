@@ -72,7 +72,7 @@ const Research = () => {
     <div className="nextra-wrap-container mx-auto w-full max-w-[1400px] px-5 py-16 lg:px-10 lg:py-24">
       {/* ── Header: title + category pills ─────────────────────────────── */}
       <div className="flex flex-col gap-8 sm:flex-row sm:items-end sm:justify-between">
-        <h1 className="font-serif text-5xl !font-normal leading-none lg:text-7xl">
+        <h1 className="font-serif text-5xl !font-semibold leading-none lg:text-7xl">
           Research
         </h1>
         <div className="flex flex-wrap gap-2">
@@ -107,7 +107,7 @@ const Research = () => {
               <Cover post={featured} className="aspect-[4/3]" />
               <div className="flex flex-col gap-4">
                 <Meta post={featured} />
-                <h2 className="font-serif text-3xl !font-normal leading-tight transition-opacity group-hover:opacity-70 lg:text-5xl">
+                <h2 className="font-serif text-3xl !font-semibold leading-tight transition-opacity group-hover:opacity-70 lg:text-5xl">
                   {featured.title}
                 </h2>
                 <p className="text-lg leading-relaxed text-black/60 dark:text-white/60">

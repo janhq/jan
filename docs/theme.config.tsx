@@ -40,8 +40,12 @@ const config: DocsThemeConfig = {
     text: 'Edit this page on GitHub →',
   },
   useNextSeoProps() {
+    const { frontMatter } = useConfig()
+    const noindex = frontMatter?.noindex === true
     return {
       titleTemplate: '%s - Jan',
+      noindex,
+      nofollow: noindex,
       twitter: {
         cardType: 'summary_large_image',
         site: '@jandotai',
