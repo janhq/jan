@@ -79,10 +79,6 @@ pub(crate) enum HostToolError {
     /// The run withdrew the request (abort, interrupt) before the host
     /// answered. Distinct from `ClientGone` so the model is told the call was
     /// cancelled rather than that the host vanished.
-    // Raised only by `cancel_all`, which the abort / `turn/interrupt` paths
-    // of the stream-json and RPC surfaces call; until those land nothing
-    // outside the tests constructs it.
-    #[allow(dead_code)]
     Cancelled,
 }
 
@@ -155,9 +151,6 @@ pub(crate) async fn strand_all(registry: &HostToolRegistry) -> Vec<String> {
 /// Withdraw every pending call: the run was aborted or interrupted while the
 /// host still held requests. Same draining as `strand_all`, but the model is
 /// told the call was cancelled. Returns the released ids.
-// See `HostToolError::Cancelled`: the abort / interrupt callers land with
-// the stream-json and RPC cancellation records.
-#[allow(dead_code)]
 pub(crate) async fn cancel_all(registry: &HostToolRegistry) -> Vec<String> {
     release_all(registry, HostToolError::Cancelled).await
 }

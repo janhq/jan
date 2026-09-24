@@ -82,12 +82,91 @@
         "ephemeral": {
           "type": "boolean",
           "default": false
+        },
+        "tools": {
+          "description": "Host tools this session may call. Kept as raw values until declaration\nso a malformed entry is reported as `invalid_tools` with the reason,\nrather than as a generic params error that names nothing.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostToolDeclSchema"
+          },
+          "default": []
+        },
+        "builtins": {
+          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo`, subagent or monitor tools.",
+          "type": "boolean",
+          "default": true
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionOwner",
+          "default": "jan"
         }
       },
       "additionalProperties": false,
       "required": [
         "cwd"
-      ]
+      ],
+      "$defs": {
+        "HostToolDeclSchema": {
+          "description": "The declaration shape, for the document only: the dispatcher parses the\nreal `HostToolDecl`, which lives outside this module and carries no schema.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "parameters": {
+              "description": "JSON Schema for the arguments, advertised to the model verbatim.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "default": null
+            },
+            "capability": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HostCapability"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "HostCapability": {
+          "description": "What a host says a tool does, which decides how the loop treats it.\nAbsent means opaque: prompted unless `auto_approve`, sequential, withheld in\nPlan mode -- the plugin/MCP default.",
+          "oneOf": [
+            {
+              "description": "Observes without side effects (a camera, a sensor): never prompted,\nadvertised in Plan mode, and run concurrently with other reads.",
+              "type": "string",
+              "const": "read"
+            },
+            {
+              "description": "Acts on the world: prompted even under `auto_approve` unless the host\nowns the gate, run sequentially, withheld in Plan mode.",
+              "type": "string",
+              "const": "actuator"
+            }
+          ]
+        },
+        "PermissionOwner": {
+          "description": "Who gates host tool calls. `jan` prompts through `permission_request` the\nway any opaque tool is prompted; `host` means the host's own callback is\nthe gate, so Jan never asks about a host tool.",
+          "type": "string",
+          "enum": [
+            "jan",
+            "host"
+          ]
+        }
+      }
     },
     "session/resume": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -195,6 +274,172 @@
       "required": [
         "requestId",
         "decision"
+      ]
+    },
+    "tool/respond": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ToolRespondParams",
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/ToolResultContent"
+        },
+        "isError": {
+          "type": "boolean",
+          "default": false
+        },
+        "details": {
+          "description": "Host/UI-only data, echoed as `item/tool_details` and never sent to the\nmodel.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "content"
+      ],
+      "$defs": {
+        "ToolResultContent": {
+          "description": "A host tool's answer: text, or OpenAI content parts (`text` / `image_url`\nwith a base64 `data:` URL) under the same caps as a user message.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": true
+            }
+          ]
+        }
+      }
+    },
+    "session/tools/get": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionIdParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ]
+    },
+    "session/tools/set": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionToolsSetParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostToolDeclSchema"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "tools"
+      ],
+      "$defs": {
+        "HostToolDeclSchema": {
+          "description": "The declaration shape, for the document only: the dispatcher parses the\nreal `HostToolDecl`, which lives outside this module and carries no schema.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "parameters": {
+              "description": "JSON Schema for the arguments, advertised to the model verbatim.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "default": null
+            },
+            "capability": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HostCapability"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "HostCapability": {
+          "description": "What a host says a tool does, which decides how the loop treats it.\nAbsent means opaque: prompted unless `auto_approve`, sequential, withheld in\nPlan mode -- the plugin/MCP default.",
+          "oneOf": [
+            {
+              "description": "Observes without side effects (a camera, a sensor): never prompted,\nadvertised in Plan mode, and run concurrently with other reads.",
+              "type": "string",
+              "const": "read"
+            },
+            {
+              "description": "Acts on the world: prompted even under `auto_approve` unless the host\nowns the gate, run sequentially, withheld in Plan mode.",
+              "type": "string",
+              "const": "actuator"
+            }
+          ]
+        }
+      }
+    },
+    "session/model/set": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionModelSetParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "model"
+      ]
+    },
+    "session/reset": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionIdParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
       ]
     }
   },
