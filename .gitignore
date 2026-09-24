@@ -38,7 +38,10 @@ archive/
 # auto qa
 autoqa/trajectories
 autoqa/recordings
-autoqa/__pycache__
+
+# python bytecode
+__pycache__/
+*.py[cod]
 
 # Astro / Starlight specific
 website/dist/
