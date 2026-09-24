@@ -495,14 +495,21 @@ pub fn worker_file_name() -> &'static str {
     }
 }
 
+/// Where the worker would sit beside the app executable, whether or not it is
+/// actually there. Separate from `sidecar_path` so a failure can report the
+/// path it looked at instead of just saying it found nothing.
+pub fn sidecar_candidate() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    Some(exe.parent()?.join(worker_file_name()))
+}
+
 /// The worker beside the app executable.
 ///
 /// This is the dev layout (`target/<profile>/`). A bundled app puts it under the
 /// resource directory instead, which only the Tauri side can resolve, so
 /// `commands::resolve_worker_exe` checks that first and falls back here.
 pub fn sidecar_path() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    let candidate = exe.parent()?.join(worker_file_name());
+    let candidate = sidecar_candidate()?;
     candidate.is_file().then_some(candidate)
 }
 
