@@ -38,6 +38,85 @@ pub struct SessionStartParams {
     pub model: Option<String>,
     #[serde(default)]
     pub ephemeral: bool,
+    /// Host tools this session may call. Kept as raw values until declaration
+    /// so a malformed entry is reported as `invalid_tools` with the reason,
+    /// rather than as a generic params error that names nothing.
+    #[serde(default)]
+    #[schemars(with = "Vec<HostToolDeclSchema>")]
+    pub tools: Vec<serde_json::Value>,
+    /// `false` advertises only the host tools: no built-ins, MCP, plugin,
+    /// `ask`, `todo`, subagent or monitor tools.
+    #[serde(default = "builtins_default")]
+    pub builtins: bool,
+    #[serde(default)]
+    pub permissions: PermissionOwner,
+}
+
+fn builtins_default() -> bool {
+    true
+}
+
+/// Who gates host tool calls. `jan` prompts through `permission_request` the
+/// way any opaque tool is prompted; `host` means the host's own callback is
+/// the gate, so Jan never asks about a host tool.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionOwner {
+    #[default]
+    Jan,
+    Host,
+}
+
+/// The declaration shape, for the document only: the dispatcher parses the
+/// real `HostToolDecl`, which lives outside this module and carries no schema.
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HostToolDeclSchema {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    /// JSON Schema for the arguments, advertised to the model verbatim.
+    #[serde(default)]
+    pub parameters: Option<serde_json::Map<String, serde_json::Value>>,
+    #[serde(default)]
+    pub capability: Option<crate::core::agent::host_tools::HostCapability>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionToolsSetParams {
+    pub session_id: String,
+    #[schemars(with = "Vec<HostToolDeclSchema>")]
+    pub tools: Vec<serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionModelSetParams {
+    pub session_id: String,
+    pub model: String,
+}
+
+/// A host tool's answer: text, or OpenAI content parts (`text` / `image_url`
+/// with a base64 `data:` URL) under the same caps as a user message.
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ToolResultContent {
+    Text(String),
+    Parts(Vec<serde_json::Value>),
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolRespondParams {
+    pub request_id: String,
+    pub content: ToolResultContent,
+    #[serde(default)]
+    pub is_error: bool,
+    /// Host/UI-only data, echoed as `item/tool_details` and never sent to the
+    /// model.
+    #[serde(default)]
+    pub details: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema)]
@@ -100,7 +179,12 @@ pub fn document() -> serde_json::Value {
             "turn/start": schemars::schema_for!(TurnStartParams),
             "turn/steer": schemars::schema_for!(TurnSteerParams),
             "turn/interrupt": schemars::schema_for!(SessionIdParams),
-            "permission/respond": schemars::schema_for!(PermissionResponseParams)
+            "permission/respond": schemars::schema_for!(PermissionResponseParams),
+            "tool/respond": schemars::schema_for!(ToolRespondParams),
+            "session/tools/get": schemars::schema_for!(SessionIdParams),
+            "session/tools/set": schemars::schema_for!(SessionToolsSetParams),
+            "session/model/set": schemars::schema_for!(SessionModelSetParams),
+            "session/reset": schemars::schema_for!(SessionIdParams)
         },
         "notifications": schemars::schema_for!(RpcNotification),
         "events": schemars::schema_for!(crate::core::agent::events::StreamEvent)
@@ -195,8 +279,13 @@ mod tests {
                 "session/archive",
                 "session/fork",
                 "session/list",
+                "session/model/set",
+                "session/reset",
                 "session/resume",
                 "session/start",
+                "session/tools/get",
+                "session/tools/set",
+                "tool/respond",
                 "turn/interrupt",
                 "turn/start",
                 "turn/steer",
