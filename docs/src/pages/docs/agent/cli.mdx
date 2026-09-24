@@ -342,6 +342,36 @@ A unit test compares the file against a fresh generation, so a change to a proto
 land without the document moving with it, and generating twice from unchanged types is
 byte-identical rather than a diff.
 
+### `rpc-schema`
+
+Print the RPC surface as a JSON Schema document, generated from the Rust types that deserialize each
+request. Like `schema`, no project and no provider are involved. It describes this surface only: the
+`stream-json` records are in `protocol/schema.json`, and ACP has no document yet.
+
+```bash
+jan cli agent rpc-schema                                  # stdout
+jan cli agent rpc-schema --out protocol/rpc-schema.json   # or a file
+```
+
+| Property | Contents |
+| --- | --- |
+| `protocol_version` | The envelope version a client asserts in `initialize` |
+| `envelope` | The JSON-RPC 2.0 request frame |
+| `requests` | One entry per callable method, with the params it accepts: `initialize`, `session/list` (no params, so an empty object), `session/start`, `session/resume`, `session/fork`, `session/archive`, `turn/start`, `turn/steer`, `turn/interrupt`, `permission/respond` |
+| `notifications` | The frame a notification uses - a `method` plus `params`. The `item/<tag>` method names come from each event's `type`, and `params.event` is the `StreamEvent` below |
+| `events` | The `StreamEvent` an `item/<tag>` notification carries |
+
+The committed copy is `protocol/rpc-schema.json`:
+
+```bash
+make protocol-rpc-schema   # regenerate it after changing an RPC type
+```
+
+A unit test compares the file against a fresh generation, and a second pins the method list the document
+declares. The integration test then calls every method the document names and requires an answer that
+is not `-32601`, so the artifact cannot offer a verb the server does not dispatch. CI regenerates both
+this document and `protocol/schema.json` in one job and fails on a diff.
+
 ## `jan plugin`
 
 Manage project-local plugins without the interactive console. Plugin commands use
