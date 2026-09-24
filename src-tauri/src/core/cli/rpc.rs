@@ -9,7 +9,10 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use super::providers::ProviderOverrides;
-use super::rpc_schema::{InitializeParams, SessionStartParams};
+use super::rpc_schema::{
+    InitializeParams, PermissionResponseParams, SessionIdParams, SessionStartParams,
+    TurnStartParams, TurnSteerParams,
+};
 use super::stream_input::{parse_input_line, MAX_LINE_BYTES};
 use super::{agent_dir_for, cli_save_thread, prepare_agent_session, AgentSession, SessionFlags};
 use crate::core::agent::events::{StreamEvent, PROTOCOL_VERSION};
@@ -314,18 +317,28 @@ pub async fn serve() -> Result<(), String> {
                             },
                         }
                     }
-                    "session/list" => response(&id, json!({"sessions":sessions.values().map(|s| json!({"id":s.id,"model":s.agent.model,"turns":s.turns})).collect::<Vec<_>>()})),
-                    "session/resume" => match params["sessionId"].as_str() {
-                        Some(sid) => match sessions.get(sid) {
+                    // Takes no params, so the only shape it accepts is none: an
+                    // object, or the omitted-params `null` JSON-RPC allows.
+                    // As a list request it is also the one method where a
+                    // scalar in place of params is a client bug worth naming.
+                    "session/list" => match params {
+                        Value::Object(_) | Value::Null => response(&id, json!({"sessions":sessions.values().map(|s| json!({"id":s.id,"model":s.agent.model,"turns":s.turns})).collect::<Vec<_>>()})),
+                        _ => error(&id, -32602, "session/list takes no params"),
+                    },
+                    "session/resume" => match serde_json::from_value::<SessionIdParams>(params.clone()) {
+                        Err(_) => error(&id, -32602, "session/resume requires sessionId"),
+                        Ok(SessionIdParams { session_id: sid }) => match sessions.get(&sid) {
                             Some(session) => response(&id, json!({"sessionId":sid,"model":session.agent.model,"turns":session.turns})),
                             None => error(&id, -32602, "unknown sessionId (RPC sessions belong to their process)"),
                         },
-                        None => error(&id, -32602, "session/resume requires sessionId"),
                     },
-                    "session/fork" => match params["sessionId"].as_str() {
-                        Some(sid) if active.as_ref().is_some_and(|t| t.session_id == sid) => error(&id, -32001, "session busy"),
-                        Some(sid) if sessions.contains_key(sid) => {
-                            let source = sessions.get(sid).expect("checked");
+                    "session/fork" => match serde_json::from_value::<SessionIdParams>(params.clone()) {
+                        Err(_) => error(&id, -32602, "unknown sessionId"),
+                        Ok(SessionIdParams { session_id: sid }) if active.as_ref().is_some_and(|t| t.session_id == sid) => {
+                            error(&id, -32001, "session busy")
+                        }
+                        Ok(SessionIdParams { session_id: sid }) if sessions.contains_key(&sid) => {
+                            let source = sessions.get(&sid).expect("checked");
                             let project = source.agent.args.project_root.as_deref().ok_or("session has no project root")?;
                             let agent = prepare_agent_session(&project.to_string_lossy(), Some(source.agent.model.clone()), ProviderOverrides::default(), SessionFlags { require_model: true, ..Default::default() }, None)?;
                             let fork = uuid::Uuid::new_v4().to_string();
@@ -334,53 +347,64 @@ pub async fn serve() -> Result<(), String> {
                             sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral });
                             response(&id, json!({"sessionId":fork}))
                         }
-                        _ => error(&id, -32602, "unknown sessionId"),
+                        Ok(_) => error(&id, -32602, "unknown sessionId"),
                     },
-                    "session/archive" => match params["sessionId"].as_str() {
-                        Some(sid) if active.as_ref().is_some_and(|t| t.session_id == sid) => error(&id, -32001, "session busy"),
-                        Some(sid) if sessions.remove(sid).is_some() => response(&id, json!({})),
-                        _ => error(&id, -32602, "unknown sessionId"),
+                    "session/archive" => match serde_json::from_value::<SessionIdParams>(params.clone()) {
+                        Err(_) => error(&id, -32602, "unknown sessionId"),
+                        Ok(SessionIdParams { session_id: sid }) if active.as_ref().is_some_and(|t| t.session_id == sid) => {
+                            error(&id, -32001, "session busy")
+                        }
+                        Ok(SessionIdParams { session_id: sid }) if sessions.remove(&sid).is_some() => response(&id, json!({})),
+                        Ok(_) => error(&id, -32602, "unknown sessionId"),
                     },
                     "turn/start" => {
                         if active.is_some() {
                             error(&id, -32001, "another turn is active; retry after turn/completed")
-                        } else if let (Some(sid), Some(input)) = (params["sessionId"].as_str(), params.get("input")) {
-                            let parsed = json!({"type":"user","content":input});
-                            let content = if let Some(text) = input.as_str() {
-                                parse_input_line(&json!({"type":"user","text":text}).to_string()).map(|_| Value::String(text.to_owned()))
-                            } else if input.is_array() {
-                                parse_input_line(&parsed.to_string()).map(|_| input.clone())
-                            } else { Err("input must be text or content parts".to_string()) };
-                            match (sessions.get_mut(sid), content) {
-                                (Some(session), Ok(content)) => {
-                                    match start_turn(session, content, &out) {
-                                        Ok(turn) => {
-                                            let tid = turn.turn_id.clone();
-                                            active = Some(turn);
-                                            response(&id, json!({"turnId":tid}))
+                        } else {
+                            match serde_json::from_value::<TurnStartParams>(params.clone()) {
+                                Err(_) => error(&id, -32602, "turn/start requires sessionId and input"),
+                                Ok(TurnStartParams { session_id, input }) => {
+                                    let parsed = json!({"type":"user","content":input});
+                                    let content = if let Some(text) = input.as_str() {
+                                        parse_input_line(&json!({"type":"user","text":text}).to_string()).map(|_| Value::String(text.to_owned()))
+                                    } else if input.is_array() {
+                                        parse_input_line(&parsed.to_string()).map(|_| input)
+                                    } else { Err("input must be text or content parts".to_string()) };
+                                    match (sessions.get_mut(&session_id), content) {
+                                        (Some(session), Ok(content)) => {
+                                            match start_turn(session, content, &out) {
+                                                Ok(turn) => {
+                                                    let tid = turn.turn_id.clone();
+                                                    active = Some(turn);
+                                                    response(&id, json!({"turnId":tid}))
+                                                }
+                                                // The turn would have no room to report its
+                                                // outcome on, so it is refused while the
+                                                // client drains what is already queued.
+                                                Err(message) => error(&id, -32001, &message),
+                                            }
                                         }
-                                        // The turn would have no room to report its
-                                        // outcome on, so it is refused while the
-                                        // client drains what is already queued.
-                                        Err(message) => error(&id, -32001, &message),
+                                        (None, _) => error(&id, -32602, "unknown sessionId"),
+                                        (_, Err(message)) => error(&id, -32602, &message),
                                     }
                                 }
-                                (None, _) => error(&id, -32602, "unknown sessionId"),
-                                (_, Err(message)) => error(&id, -32602, &message),
                             }
-                        } else { error(&id, -32602, "turn/start requires sessionId and input") }
-                    }
-                    "turn/steer" => match (active.as_ref(), params["sessionId"].as_str(), params["input"].as_str()) {
-                        (Some(turn), Some(sid), Some(text)) if turn.session_id == sid && !text.trim().is_empty() => {
-                            turn.pending.lock().await.push(json!({"role":"user","content":text}));
-                            response(&id, json!({}))
                         }
-                        _ => error(&id, -32602, "turn/steer requires an active session and nonempty input"),
+                    }
+                    "turn/steer" => match serde_json::from_value::<TurnSteerParams>(params.clone()) {
+                        Err(_) => error(&id, -32602, "turn/steer requires an active session and nonempty input"),
+                        Ok(TurnSteerParams { session_id: sid, input: text }) => match active.as_ref() {
+                            Some(turn) if turn.session_id == sid && !text.trim().is_empty() => {
+                                turn.pending.lock().await.push(json!({"role":"user","content":text}));
+                                response(&id, json!({}))
+                            }
+                            _ => error(&id, -32602, "turn/steer requires an active session and nonempty input"),
+                        },
                     },
-                    "turn/interrupt" => match (active.take(), params["sessionId"].as_str()) {
-                        (Some(turn), Some(sid)) if turn.session_id == sid => {
+                    "turn/interrupt" => match (active.take(), serde_json::from_value::<SessionIdParams>(params.clone())) {
+                        (Some(turn), Ok(SessionIdParams { session_id: sid })) if turn.session_id == sid => {
                             turn.runner.abort();
-                            if let Some(session) = sessions.get_mut(sid) {
+                            if let Some(session) = sessions.get_mut(&sid) {
                                 session.agent.permission_requests.lock().await.clear();
                             }
                             finish_turn(&mut sessions, turn, Err("interrupted".to_owned()), true)?;
@@ -391,9 +415,9 @@ pub async fn serve() -> Result<(), String> {
                             error(&id, -32602, "no active turn for sessionId")
                         }
                     },
-                    "permission/respond" => match (active.as_ref(), params["requestId"].as_str(), params["decision"].as_str()) {
-                        (Some(turn), Some(request_id), Some(decision)) => {
-                            let decision = match decision {
+                    "permission/respond" => match (active.as_ref(), serde_json::from_value::<PermissionResponseParams>(params.clone())) {
+                        (Some(turn), Ok(PermissionResponseParams { request_id, decision })) => {
+                            let decision = match decision.as_str() {
                                 "allow_once" => Some(tauri_plugin_agent_tools::tools::gate::PermissionDecision::AllowOnce),
                                 "allow_always" => Some(tauri_plugin_agent_tools::tools::gate::PermissionDecision::AllowAlways),
                                 "deny" => Some(tauri_plugin_agent_tools::tools::gate::PermissionDecision::Deny),
@@ -401,7 +425,7 @@ pub async fn serve() -> Result<(), String> {
                             };
                             if let Some(decision) = decision {
                                 let session = sessions.get(&turn.session_id).expect("active session");
-                                match session.agent.permission_requests.lock().await.remove(request_id) {
+                                match session.agent.permission_requests.lock().await.remove(&request_id) {
                                     Some(sender) => { let _ = sender.send(decision); response(&id, json!({})) }
                                     None => error(&id, -32602, "no permission request is pending"),
                                 }
