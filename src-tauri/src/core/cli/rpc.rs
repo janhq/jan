@@ -477,7 +477,18 @@ pub async fn serve() -> Result<(), String> {
                     let reply = match serde_json::from_value::<InitializeParams>(params.clone()) {
                         Ok(init) if init.protocol_version == PROTOCOL_VERSION && !init.client_info.name.is_empty() && !init.client_info.version.is_empty() => {
                             negotiated = true;
-                            response(&id, json!({"protocolVersion":PROTOCOL_VERSION,"serverInfo":{"name":"jan","version":env!("CARGO_PKG_VERSION")},"capabilities":{"session":true,"turn":true}}))
+                            // The caps a content-part array is held to -- a `turn/start`
+                            // input's and a `tool/respond` content's, the same limits
+                            // `init` advertises to a stream-json client. A client that
+                            // sends an image is sending bytes into a channel with no
+                            // backpressure, so it learns the limits from the handshake
+                            // rather than by having a message rejected.
+                            response(&id, json!({
+                                "protocolVersion": PROTOCOL_VERSION,
+                                "serverInfo": {"name":"jan","version":env!("CARGO_PKG_VERSION")},
+                                "capabilities": {"session":true,"turn":true},
+                                "input_content_parts": super::run_report::InputContentParts::current(),
+                            }))
                         }
                         _ => error(&id, -32602, "Unsupported protocol version or malformed clientInfo"),
                     };
