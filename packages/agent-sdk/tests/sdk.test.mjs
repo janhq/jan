@@ -433,6 +433,10 @@ test('interrupting a turn settles it once, and abandons its parked call', { skip
   // The parked call is withdrawn rather than answered: the runtime would refuse
   // a late answer as not pending, so the SDK must not write one.
   assert.ok(events.some((event) => event.type === 'tool_request_cancelled'))
+  // The handler is told on its own turn of the event loop, so the terminal
+  // record can arrive first; wait for the notice instead of racing it.
+  const deadline = Date.now() + 5000
+  while (!aborted && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10))
   assert.equal(aborted, true, 'the handler was told to stop')
   assert.equal(answered, 1)
   assert.equal(turn.dropped, 0)
@@ -482,6 +486,31 @@ test('a permission request the runtime owns is answered by the host', { skip: mi
   assert.equal(result.stopReason, 'completed')
   assert.deepEqual(calls, [{ position: 'bin' }], 'the call ran once the host allowed it')
   assert.ok(events.some((event) => event.type === 'tool_request'))
+})
+
+test("a steer lands in the model's next request", { skip: missingRuntime }, async (t) => {
+  const { provider, scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera_observe', { frame: 1 }), PROSE('the left bench is clear')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    permissions: 'host',
+    tools: [{ name: 'camera_observe', capability: 'read', handler: () => ({ text: 'the bench' }) }],
+  })
+
+  const turn = await session.prompt('look at the bench')
+  for await (const event of turn) {
+    if (event.type === 'tool_request') await session.steer('also check the left bench')
+  }
+
+  const result = await turn.result()
+  assert.equal(result.stopReason, 'completed')
+  // The steer is delivered at the turn's next safe point, which is the request
+  // the runtime builds from the tool result.
+  assert.ok(provider.bodies[1].includes('also check the left bench'))
 })
 
 test('two sessions never see each other’s events', { skip: missingRuntime }, async (t) => {
