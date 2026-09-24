@@ -512,8 +512,12 @@ enum AgentCommands {
     /// Serve addressable sessions over JSON-RPC on stdin/stdout
     Rpc,
     /// Print the RPC request and event schemas, generated from the types that
-    /// define the envelope
-    RpcSchema,
+    /// define the envelope (see `protocol/rpc-schema.json`)
+    RpcSchema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -1035,11 +1039,9 @@ async fn handle_agent(cmd: AgentCommands) {
         AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
         AgentCommands::Rpc => app_lib::core::cli::rpc::serve().await,
         // Like `schema`: no project root and no provider are involved, so the
-        // document is the same one on any machine.
-        AgentCommands::RpcSchema => {
-            println!("{}", app_lib::core::cli::rpc_schema::document());
-            Ok(())
-        }
+        // artifact is the same one on any machine. `--out` is what CI and
+        // `make protocol-rpc-schema` use.
+        AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -1629,7 +1631,8 @@ mod tests {
     }
 
     /// `rpc` and `rpc-schema` are the long-lived session transport and its
-    /// generated schema: neither involves a project, a provider, or a flag.
+    /// generated artifact: neither involves a project or a provider, and
+    /// `rpc-schema --out` is the only flag between them.
     #[test]
     fn rpc_subcommands_parse() {
         let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);
@@ -1643,14 +1646,38 @@ mod tests {
         ));
 
         let cli = Cli::parse_from(["jan", "cli", "agent", "rpc-schema"]);
-        assert!(matches!(
-            cli.command,
-            Some(Commands::Cli {
-                cmd: CliCommands::Agent {
-                    cmd: AgentCommands::RpcSchema
-                }
-            })
-        ));
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "rpc-schema",
+            "--out",
+            "protocol/rpc-schema.json",
+        ]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema --out`");
+        };
+        assert_eq!(
+            out.as_deref(),
+            Some(std::path::Path::new("protocol/rpc-schema.json"))
+        );
     }
 
     /// Running out of turns while the model is still calling tools is the one
