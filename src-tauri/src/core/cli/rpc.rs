@@ -475,7 +475,13 @@ pub async fn serve() -> Result<(), String> {
     }
     if let Some(turn) = active {
         turn.runner.abort();
-        turn.steerer.abort();
+        // stdin closing is not stdout closing: a client that asked the process
+        // to end but keeps reading still gets the record that says its turn
+        // ended, which is the one thing it cannot infer from the channel
+        // closing. The turn was stopped by the client, so that is what the
+        // record reports, and it goes out on the slot the turn reserved - the
+        // writer below drains the queue before joining.
+        finish_turn(&mut sessions, turn, Ok(Value::Null), true)?;
     }
     drop(out);
     writer

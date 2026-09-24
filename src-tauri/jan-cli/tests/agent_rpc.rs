@@ -94,7 +94,7 @@ fn configure(home: &Path, base_url: &str) {
 /// The RPC process as a client drives it: LF-delimited frames in and out.
 struct Rpc {
     child: Child,
-    input: ChildStdin,
+    input: Option<ChildStdin>,
     output: BufReader<ChildStdout>,
 }
 
@@ -112,7 +112,7 @@ impl Rpc {
         let output = BufReader::new(child.stdout.take().unwrap());
         Self {
             child,
-            input,
+            input: Some(input),
             output,
         }
     }
@@ -126,9 +126,39 @@ impl Rpc {
         serde_json::from_str(&line).expect("one JSON-RPC line")
     }
 
+    /// Read frames until one matches, or the channel closes with none.
+    fn read_until(
+        &mut self,
+        mut matches: impl FnMut(&serde_json::Value) -> bool,
+    ) -> Option<serde_json::Value> {
+        for _ in 0..50_000 {
+            let mut line = String::new();
+            if self.output.read_line(&mut line).unwrap() == 0 {
+                return None;
+            }
+            let record: serde_json::Value = serde_json::from_str(&line).expect("one JSON-RPC line");
+            if matches(&record) {
+                return Some(record);
+            }
+        }
+        panic!("no matching record in 50000 frames");
+    }
+
     fn send(&mut self, frame: serde_json::Value) {
-        writeln!(self.input, "{frame}").unwrap();
-        self.input.flush().unwrap();
+        self.raw(&frame.to_string());
+    }
+
+    /// Write a line the client could only produce by hand, malformed included.
+    fn raw(&mut self, line: &str) {
+        let input = self.input.as_mut().expect("stdin is open");
+        writeln!(input, "{line}").unwrap();
+        input.flush().unwrap();
+    }
+
+    /// Close stdin while leaving stdout readable: the client asks the process
+    /// to end and then keeps listening to it.
+    fn close_stdin(&mut self) {
+        self.input.take();
     }
 
     /// One request, and the one frame it is answered with.
@@ -182,8 +212,7 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     assert_eq!(unknown["error"]["code"], -32601);
     // Malformed JSON is a transport fault with its own code, and it does not
     // desynchronize the channel: the next request is still answered.
-    writeln!(rpc.input, "{{not json").unwrap();
-    rpc.input.flush().unwrap();
+    rpc.raw("{not json");
     let parse_error = rpc.read();
     assert_eq!(parse_error["error"]["code"], -32700, "{parse_error}");
     // An unknown additive notification is ignored rather than fatal: a frame
@@ -310,5 +339,42 @@ fn rpc_survives_a_client_that_stops_reading() {
     );
 
     rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// Closing stdin asks the process to end, but stdin is not stdout: the client
+/// can still read, and the turn that was running when it asked is the one case
+/// where it cannot infer the outcome from anything else on the channel. It gets
+/// a terminal record, on the slot the turn reserved for it, before the process
+/// exits.
+#[test]
+fn closing_stdin_closes_the_active_turn() {
+    let scratch = scratch("stdin-close");
+    let home = scratch.join("home");
+    // Enough deltas that the turn is still producing when stdin closes.
+    let provider_url = provider(20_000, 0);
+    configure(&home, &provider_url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+
+    let project = scratch.join("project");
+    let session_id = rpc.start_session(&project);
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"talk"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+
+    std::thread::sleep(Duration::from_millis(200));
+    rpc.close_stdin();
+
+    let terminal = rpc
+        .read_until(|record| record["method"] == "turn/completed")
+        .expect("a terminal record for the turn the client abandoned");
+    assert_eq!(terminal["params"]["turnId"], turn["result"]["turnId"]);
+    assert_eq!(
+        terminal["params"]["stopReason"], "interrupted",
+        "{terminal}"
+    );
+
+    // Nothing is left running: the process exits once the queue is drained.
+    assert!(rpc.child.wait().unwrap().success());
     let _ = std::fs::remove_dir_all(scratch);
 }
