@@ -678,6 +678,77 @@
             "id",
             "details"
           ]
+        },
+        {
+          "description": "What the run is about to send a provider, emitted immediately before\neach request goes out -- the hook an experiment harness needs to hold two\nruns comparable (pi's `onPayload` is the shape Robot Studio already\nrecords).\n\nEvery outbound request gets one, including the side calls a turn makes\n(compaction, a session title) and every child run's own requests; the\nhashes describe the body Jan built for the adapter, so two runs can be\ncompared field by field. Nothing here is model input or output: it never\njoins the transcript, and a consumer may render it, store it or ignore\nit.",
+          "type": "object",
+          "properties": {
+            "run_id": {
+              "description": "Which run made the request: `None` for the main run, the child's\nrun id for a subagent.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session_id": {
+              "description": "The session the request belongs to, as the run's handshake names it\n(the correlation id the request carries is derived from it).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "provider": {
+              "description": "The configured provider the model resolved to.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "model": {
+              "description": "The model id the upstream receives, without a `<provider>/` prefix.",
+              "type": "string"
+            },
+            "api_type": {
+              "description": "The wire API the request is built for (`anthropic`, `google`,\n`openai-responses`), absent for chat/completions.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "request_sha256": {
+              "description": "SHA-256 of the request body as Jan built it, canonical JSON -- the\nvalue that makes two runs comparable even when a field this record\ndoes not itemize has changed.",
+              "type": "string"
+            },
+            "body_bytes": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "tools_sha256": {
+              "description": "SHA-256 of the `tools` array as sent, able to change while the model\nid does not.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "images": {
+              "description": "Every image in the body, in order, hashed over its decoded bytes so\nthe host can hash the same frame it captured.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ProvenanceImage"
+              }
+            },
+            "type": {
+              "type": "string",
+              "const": "request_provenance"
+            }
+          },
+          "required": [
+            "type",
+            "model",
+            "request_sha256",
+            "body_bytes"
+          ]
         }
       ]
     },
@@ -894,6 +965,37 @@
           "minimum": 0
         }
       }
+    },
+    "ProvenanceImage": {
+      "description": "One image in an outbound request, as [`StreamEvent::RequestProvenance`]\nreports it: identity, not content.",
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 over the image's decoded bytes.",
+          "type": "string"
+        },
+        "mime_type": {
+          "type": "string"
+        },
+        "bytes": {
+          "description": "Decoded length in bytes.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "tool_call_id": {
+          "description": "The host tool call whose result carried it, when one did. `None` for an\nimage the user attached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "mime_type",
+        "bytes"
+      ]
     },
     "Init": {
       "description": "The first record of a `--output-format stream-json` channel, and the only\none a client may require before any other.\n\nIt exists because the rest of the stream is unversioned and unaddressable: a\nconsumer sees events and nothing else, so it cannot tell which contract it\nis reading, whose run it is watching, or what it is allowed to send back.\nThose are the questions a handshake answers, and a consumer that has to\ninfer them from a side channel (a CLI flag it passed, a config file it read)\nis one refactor away from being wrong.\n\nField names are snake_case like the rest of this channel -- the event tags\nand the envelope's `session_id`/`stop_reason` set that convention, so the\nhandshake follows it rather than introducing a second one for two fields.\n\nThe compatibility rule for what a client may assume:\n\n- a v1 client may rely on `protocol_version`, `session_id` and `model`\n  always being present;\n- fields may be added without a version bump, so a client ignores unknown\n  ones and unknown tags rather than failing;\n- a tag is never renamed and never removed within v1;\n- behaviour beyond v1 is asserted against `protocol_version`, not assumed.",

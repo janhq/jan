@@ -1307,6 +1307,9 @@ async fn run_subagent(
     {
         child_args.host_tool_route = Some((events.clone(), run_id.clone()));
     }
+    // Every build gets the child's own id, not just the headless one: a
+    // provenance record has to name the run that made the request.
+    child_args.run_id = Some(run_id.clone());
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -3136,6 +3139,7 @@ mod tests {
         use std::sync::Arc;
         use tauri_plugin_agent_tools::permissions::ToolPermissions;
         OrchestrationArgs {
+            run_id: None,
             client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: Arc::new(tokio::sync::Mutex::new(
                 HashMap::<String, ProviderConfig>::new(),

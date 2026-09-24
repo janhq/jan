@@ -43,6 +43,7 @@ pub mod plugin_commands;
 pub mod plugins;
 pub mod project;
 pub mod prompt;
+pub mod provenance;
 pub mod reminder;
 pub mod session;
 pub mod skill_hub;
