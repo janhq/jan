@@ -60,7 +60,7 @@ const Hero = () => {
 
         <div className="relative inline-block mt-20">
           <QuoteIcon />
-          <h1 className="text-6xl lg:text-[80px] !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+          <h1 className="text-6xl lg:text-[80px] !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
             Chat with AI <br /> without privacy concerns
           </h1>
 

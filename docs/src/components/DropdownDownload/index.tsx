@@ -166,6 +166,35 @@ const DropdownDownload = ({ lastRelease }: Props) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpuInfo])
 
+  // Flatpak isn't a GitHub release asset, so its size can't come from
+  // lastRelease.assets like the others. Pull the download size from Flathub.
+  useEffect(() => {
+    let cancelled = false
+    const fetchFlatpakSize = async () => {
+      try {
+        const res = await fetch('https://flathub.org/api/v2/summary/ai.jan.Jan')
+        const data = await res.json()
+        const downloadSize =
+          data?.branches?.stable?.download_size ?? data?.download_size
+        if (!cancelled && typeof downloadSize === 'number') {
+          setSystems((prev) =>
+            prev.map((system) =>
+              system.href?.includes('flathub.org')
+                ? { ...system, size: formatFileSize(downloadSize) }
+                : system
+            )
+          )
+        }
+      } catch (error) {
+        console.error('Failed to fetch Flathub download size:', error)
+      }
+    }
+    fetchFlatpakSize()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const [menu, setMenu] = useState<HTMLButtonElement | null>(null)
 
   const [refDropdownContent, setRefDropdownContent] =

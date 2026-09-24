@@ -84,7 +84,7 @@ const ResearchPostLayout = ({
       </a>
 
       <div className="max-w-[720px] mx-auto mt-8">
-        <h1 className="text-4xl lg:text-5xl !font-normal leading-tight font-serif">
+        <h1 className="text-4xl lg:text-5xl !font-semibold leading-tight font-serif">
           {title}
         </h1>
 
@@ -106,7 +106,7 @@ const ResearchPostLayout = ({
       {keepReading.length > 0 && (
         <div className="mx-auto mt-24 max-w-[1100px] border-t border-black/[0.07] pt-16 dark:border-white/[0.08]">
           <div className="flex items-end justify-between">
-            <h2 className="font-serif text-3xl !font-normal lg:text-4xl">Keep reading</h2>
+            <h2 className="font-serif text-3xl !font-semibold lg:text-4xl">Keep reading</h2>
             <a
               href="/research"
               className="text-xs font-medium uppercase tracking-widest text-black/50 transition-colors hover:text-black dark:text-white/50 dark:hover:text-white"
