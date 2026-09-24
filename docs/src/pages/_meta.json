@@ -54,6 +54,7 @@
   "tokamak": {
     "type": "page",
     "title": "Tokamak",
+    "display": "hidden",
     "theme": {
       "layout": "raw"
     }

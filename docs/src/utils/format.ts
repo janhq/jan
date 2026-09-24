@@ -29,7 +29,8 @@ export const totalDownload = (release: []) => {
 
     return formatCompactNumber(count)
   } else {
-    // return dummy to avoid rate limit API when in dev mode
-    return formatCompactNumber(9000000)
+    // return dummy to avoid rate limit API when in dev mode (kept close to the
+    // real prod total so the dev preview isn't misleading)
+    return formatCompactNumber(6600000)
   }
 }

@@ -57,7 +57,7 @@ const CTANewsletter = () => {
                 width={800}
                 height={800}
               />
-              <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight font-serif mt-8">
+              <h1 className="text-5xl lg:text-7xl !font-semibold leading-tight lg:leading-tight font-serif mt-8">
                 The Soul of a New Machine
               </h1>
               <p className="leading-relaxed text-black/60 dark:text-white/60">

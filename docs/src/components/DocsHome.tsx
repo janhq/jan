@@ -48,7 +48,7 @@ const DocsHome = () => {
   return (
     <div className="nextra-wrap-container py-16 lg:py-24">
       <div className="text-center max-w-2xl mx-auto px-4">
-        <h1 className="flex items-center justify-center gap-3 lg:gap-4 text-5xl lg:text-6xl !font-normal leading-none font-serif">
+        <h1 className="flex items-center justify-center gap-3 lg:gap-4 text-5xl lg:text-6xl !font-semibold leading-none font-serif">
           <img
             src={LogoJanSVG.src}
             alt=""
