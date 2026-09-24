@@ -353,6 +353,11 @@ fn start_turn(
 
 /// A new agent for `source`'s project, on `model` or the one it has, carrying
 /// its host tools and gate. History and registry are the caller's to decide.
+///
+/// The rebuilt agent keeps the session's own id: a model change replaces the
+/// agent, not the session, and a run that reported a different session after
+/// `session/model/set` would rename something the client is still holding.
+/// `session/fork` names its new session itself, after this returns.
 fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession, String> {
     let project = source
         .agent
@@ -367,6 +372,7 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
         SessionFlags { require_model: true, ..Default::default() },
         None,
     )?;
+    agent.args.session_id = Some(source.id.clone());
     agent.args.host_tools = source.agent.args.host_tools.clone();
     agent.args.host_owns_gate = source.agent.args.host_owns_gate;
     Ok(agent)
@@ -506,6 +512,11 @@ pub async fn serve() -> Result<(), String> {
                                         agent.args.host_tools = host_tools;
                                         agent.args.host_owns_gate = start.permissions == PermissionOwner::Host;
                                         let sid = uuid::Uuid::new_v4().to_string();
+                                        // The run reports the session by the id this client holds, not
+                                        // by the private one the agent was built with: provenance and the
+                                        // correlation id are the client's handle on the session, and an id
+                                        // nothing else can name is not a handle.
+                                        agent.args.session_id = Some(sid.clone());
                                         let session = Session { agent, history: Vec::new(), id: sid.clone(), turns: 0, ephemeral: start.ephemeral, builtins: start.builtins };
                                         let mut result = tools_view(&session).await;
                                         result["sessionId"] = json!(sid);
@@ -640,8 +651,10 @@ pub async fn serve() -> Result<(), String> {
                             // A fresh registry (from the rebuild): the fork is its
                             // own session, and a reply must never cross into it.
                             match rebuild_agent(source, None) {
-                                Ok(agent) => {
+                                Ok(mut agent) => {
                                     let fork = uuid::Uuid::new_v4().to_string();
+                                    // The fork is its own session, so it reports its own id.
+                                    agent.args.session_id = Some(fork.clone());
                                     let history = source.history.clone();
                                     let ephemeral = source.ephemeral;
                                     let builtins = source.builtins;
