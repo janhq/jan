@@ -220,6 +220,27 @@ fn assert_handshake(first: &serde_json::Value, project: &Path) {
         serde_json::json!(["user", "abort", "permission"]),
         "a client is told what it may send back"
     );
+    // The caps travel with the kinds, so a client that sends an image reads the
+    // limits off the handshake instead of discovering them by rejection. Pinned
+    // as literals: this is the published contract, not this build's internals.
+    let parts = &first["input_content_parts"];
+    assert_eq!(
+        parts["mime_types"],
+        serde_json::json!(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+        "a client is told which image types it may send"
+    );
+    assert_eq!(
+        parts,
+        &serde_json::json!({
+            "mime_types": ["image/png", "image/jpeg", "image/gif", "image/webp"],
+            "max_image_bytes": 5_242_880,
+            "max_message_image_bytes": 10_485_760,
+            "max_images": 8,
+            "max_line_bytes": 16_777_216,
+            "max_echo_bytes": 4_096,
+        }),
+        "the advertised caps are the ones the parser enforces"
+    );
 }
 
 #[test]
