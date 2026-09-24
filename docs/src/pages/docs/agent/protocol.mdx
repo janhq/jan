@@ -1,0 +1,65 @@
+---
+title: Agent Protocol Records
+description: Read the generated stream-json and RPC records and check each surface's availability.
+keywords: [Jan, Jan Agent, protocol, stream-json, RPC, ACP, JSON Schema, reference]
+---
+
+import { Callout } from 'nextra/components'
+
+# Agent Protocol Records
+
+Building a client against Jan's wire protocol? Use the generated artifacts for record shapes,
+then check the surface's release state before treating a method or event as available. For a first
+CLI run, start with the [Agent quickstart](/docs/agent/quickstart); for an embedding path, see
+[Agent SDK](/docs/agent/sdk).
+
+## Read the generated records
+
+- **`stream-json`:** [`protocol/schema.json`](https://github.com/janhq/jan/blob/08f88a4aca8ac77ec444c454635b5bbd633f0f15/protocol/schema.json) is generated from the Rust types for the input and
+  output records of `jan cli agent run --output-format stream-json`. Read its root `input` and
+  `output` schemas and follow references into `$defs` for individual record definitions. The
+  `x-protocol-version` keyword identifies the contract version. Print the same generated document
+  with `jan cli agent schema`, or write it with `jan cli agent schema --out protocol/schema.json`.
+  The [CLI `schema` section](/docs/agent/cli#schema) explains the transport.
+- **RPC:** [`protocol/rpc-schema.json`](https://github.com/janhq/jan/blob/bbe3f3e3649cb67ee94dfbd9a689594c62837e84/protocol/rpc-schema.json) is generated from the RPC envelope and typed request and event
+  definitions. Read its `protocol_version`, `envelope`, `requests`, `notifications` and `events`
+  sections to navigate the artifact rather than copying field declarations from this page. Print
+  it with `jan cli agent rpc-schema`, or write it with
+  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The implementation and artifact are in
+  [PR #9049](https://github.com/janhq/jan/pull/9049), which is in review, not released. See the
+  [CLI `rpc` section](/docs/agent/cli#rpc) for the proposed transport.
+
+Both artifacts are generated and checked for drift against their Rust source by the `protocol
+schema` job in `.github/workflows/rust-check.yml`, which regenerates both and fails the job on a
+diff of either. `protocol/schema.json` describes **only `stream-json`**; it
+is not an RPC or ACP schema. `protocol/rpc-schema.json` describes RPC records, not an ACP adapter
+or a published SDK. Neither artifact is a per-surface capability inventory, and there is no
+checked-in generated availability inventory. Do not infer release or runtime support from a
+record appearing in a schema.
+
+## Surface availability
+
+Checked on **2026-09-24**. This table records the known availability of each surface, not the
+negotiated capabilities of a particular session. Recheck release and feature availability before
+publishing or deploying a client.
+
+| | `stream-json` | RPC | ACP |
+| --- | --- | --- | --- |
+| **Release state** | **Shipped** in `main` | **In review**, not released | **Planned**, no implementation |
+| **Record reference** | Generated `protocol/schema.json` | Generated `protocol/rpc-schema.json`, committed on the PR #9049 branch | No ACP record artifact or implemented surface |
+| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; `.github/workflows/rust-check.yml:130-176`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) open, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
+
+A schema says which records a transport accepts or emits. A surface inventory would say what
+that surface *can* do, but the table above is an evidence-backed release snapshot, not a generated
+inventory and not a list of supported verbs. The `init` record for `stream-json` reports what
+**this run** accepts (see `src-tauri/src/core/cli/mod.rs:2106-2121` and
+[CLI protocol version](/docs/agent/cli#the-protocol-version)). RPC's `initialize` response reports
+what **this RPC session** negotiated (`src-tauri/src/core/cli/rpc.rs:286-297`). Do not copy
+`stream-json`'s `init` fields into RPC or treat a negotiated response as universal availability.
+
+<Callout type="warning">
+RPC is implemented in an open PR, not a shipped CLI or SDK release. ACP remains planned. JavaScript
+and Python SDK packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)),
+and host-tool callbacks are not available ([#368](https://github.com/janhq/jan-internal/issues/368)).
+Use the shipped `stream-json` transport if you need an integration today.
+</Callout>

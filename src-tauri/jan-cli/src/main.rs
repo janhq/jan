@@ -516,6 +516,15 @@ enum AgentCommands {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
+    /// Serve addressable sessions over JSON-RPC on stdin/stdout
+    Rpc,
+    /// Print the RPC request and event schemas, generated from the types that
+    /// define the envelope (see `protocol/rpc-schema.json`)
+    RpcSchema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -736,7 +745,18 @@ async fn main() {
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
     // `jan mcp serve` is driven by another program, not a person: nobody reads
     // the notice, and an update fetch on every spawn is a cost the peer pays.
-    if !matches!(command, Commands::Update { .. } | Commands::Mcp { .. }) {
+    // `jan cli agent rpc` is the same deal - the peer owns the process, and a
+    // notice on stdout would land inside the protocol channel.
+    if !matches!(
+        command,
+        Commands::Update { .. }
+            | Commands::Mcp { .. }
+            | Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            }
+    ) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -1026,10 +1046,32 @@ async fn handle_agent(cmd: AgentCommands) {
         // No project and no provider: the schema comes from the types alone, so
         // it is the same document on any machine and in any directory.
         AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
+        AgentCommands::Rpc => app_lib::core::cli::rpc::serve().await,
+        // Like `schema`: no project root and no provider are involved, so the
+        // artifact is the same one on any machine. `--out` is what CI and
+        // `make protocol-rpc-schema` use.
+        AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        std::process::exit(exit_code(&e));
+    }
+}
+
+/// Classify a failed one-shot run for the shell.
+///
+/// Running out of turns with the model still calling tools is not the same
+/// outcome as a crash or a usage error: the run stopped where the caller asked
+/// it to stop, but it has no final answer, so a pipeline that only reads the
+/// exit code would take an unfinished task for a finished one. `--output-format
+/// json` carries the same distinction as `stop_reason: "error"` with this
+/// message, for consumers that never look at the code.
+fn exit_code(error: &str) -> i32 {
+    const TURN_LIMIT: &str = "-turn limit while the model was still calling tools";
+    if error.starts_with("reached the ") && error.ends_with(TURN_LIMIT) {
+        53
+    } else {
+        1
     }
 }
 
@@ -1595,6 +1637,67 @@ mod tests {
             panic!("expected `cli agent schema --out`");
         };
         assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
+    }
+
+    /// `rpc` and `rpc-schema` are the long-lived session transport and its
+    /// generated artifact: neither involves a project or a provider, and
+    /// `rpc-schema --out` is the only flag between them.
+    #[test]
+    fn rpc_subcommands_parse() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            })
+        ));
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc-schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "rpc-schema",
+            "--out",
+            "protocol/rpc-schema.json",
+        ]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema --out`");
+        };
+        assert_eq!(
+            out.as_deref(),
+            Some(std::path::Path::new("protocol/rpc-schema.json"))
+        );
+    }
+
+    /// Running out of turns while the model is still calling tools is the one
+    /// failure the shell can read as a limit rather than a crash. The message is
+    /// the only marker it has, so the classifier must match that message and not
+    /// some phrase inside a different one.
+    #[test]
+    fn turn_limit_exhaustion_has_its_own_exit_code() {
+        assert_eq!(exit_code("reached the 8-turn limit while the model was still calling tools"), 53);
+        assert_eq!(exit_code("reached the end of the response stream"), 1);
+        assert_eq!(exit_code("upstream returned 500"), 1);
     }
 
     #[test]

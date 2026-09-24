@@ -163,6 +163,13 @@ test-rust: stub-resources
 protocol-schema:
 	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent schema --out ../../protocol/schema.json
 
+# The same guard for the RPC surface: protocol/rpc-schema.json is committed, and
+# core::cli::rpc_schema fails when it no longer matches the types that define the
+# envelope. It covers this surface only - stream-json records are in
+# protocol/schema.json, and ACP has no document yet.
+protocol-rpc-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent rpc-schema --out ../../protocol/rpc-schema.json
+
 test: test-prepare install-rust-targets
 	yarn build:mlx-server
 	$(MAKE) build-cli
