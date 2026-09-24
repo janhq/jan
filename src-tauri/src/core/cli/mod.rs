@@ -2032,11 +2032,7 @@ async fn run_agent_loop(
             // would park forever.
             if let StreamEvent::ToolRequest { request_id, .. } = &ev {
                 if !duplex {
-                    crate::core::agent::host_tools::strand(
-                        &host_tool_requests,
-                        request_id,
-                    )
-                    .await;
+                    crate::core::agent::host_tools::strand(&host_tool_requests, request_id).await;
                     continue;
                 }
             }
