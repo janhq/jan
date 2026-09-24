@@ -784,6 +784,63 @@ describe('runDispatchPlan', () => {
     expect(briefs.collector).toContain('beta findings')
   })
 
+  // Mirrors the Rust `a_cancelled_run_starts_no_further_phase`: a run cancelled
+  // while a phase is running starts no phase after it. Before the fix the
+  // collector was dispatched anyway -- promoted in the UI, cancelled on arrival,
+  // and announced by a terminal notice for a plan nobody was waiting for.
+  it('starts no further phase once the run is aborted', async () => {
+    const controller = new AbortController()
+    const started: string[] = []
+    const plan: DispatchPlan = {
+      phases: [
+        { number: 0, subagents: [req('alpha')] },
+        { number: 1, subagents: [req('collector')] },
+      ],
+    }
+
+    const finalPhase = await runDispatchPlan(plan, 'c1', {
+      signal: controller.signal,
+      runOne: async (r) => {
+        started.push(r.name)
+        // Cancelled while phase 0 is still running.
+        if (r.name === 'alpha') controller.abort()
+        return okResult(`${r.name} out`)
+      },
+      writeBlackboard: async (name) => `/tmp/blackboard/${name}.md`,
+      onDispatch: () => {},
+      onComplete: () => {},
+    })
+
+    expect(started).toEqual(['alpha'])
+    // No final phase: the caller must not ring a doorbell for a plan that never
+    // finished, so the half-done phase 1 is not offered as one.
+    expect(finalPhase).toEqual([])
+  })
+
+  it('dispatches nothing when the run is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const started: string[] = []
+
+    const finalPhase = await runDispatchPlan(
+      { phases: [{ number: 0, subagents: [req('alpha')] }] },
+      'c1',
+      {
+        signal: controller.signal,
+        runOne: async (r) => {
+          started.push(r.name)
+          return okResult('out')
+        },
+        writeBlackboard: async (name) => `/tmp/blackboard/${name}.md`,
+        onDispatch: () => {},
+        onComplete: () => {},
+      }
+    )
+
+    expect(started).toEqual([])
+    expect(finalPhase).toEqual([])
+  })
+
   it('keys each subagent `${callId}-${name}` and writes real answers to the blackboard', async () => {
     const dispatched: string[] = []
     const writes: string[] = []
