@@ -87,6 +87,7 @@ tool and refuses everything else.
 | `0` | The run finished: a normal stop, `aborted`, or `budget_exceeded` |
 | `1` | The run failed. The `result` has `is_error: true` and an `error` object |
 | `2` | The command line was rejected - an unknown flag, for example. Nothing is printed on stdout |
+| `53` | `--max-turns` ran out while the model was still calling tools. The `result` has `is_error: true`; there is no final answer |
 
 ## Failures and retries
 
@@ -102,6 +103,7 @@ before retrying; never re-run a host side effect blindly.
 | No model configured, or a bad `--host-tools` file | `result` alone, no `init`, `error.code: "setup_error"`, exit `1` | Safe once fixed - nothing ran |
 | Provider refused or failed | An `error` record, then `result` with `error.code: "upstream_error"`, exit `1` | Only if the stream showed no tool calls |
 | Conversation too long for the model | `error.code: "context_overflow"`, exit `1` | Only if the stream showed no tool calls; shorten the task or start a new session |
+| Turn cap reached | `error.message: "reached the N-turn limit while the model was still calling tools"`, exit `53` | Not as is: the tool calls it made already ran. Raise `--max-turns` or narrow the task |
 | Any other failure | `error.code` is the raw code, exit `1` | Check the stream first |
 | Your tool failed | Your `tool_result` with `is_error: true` - the model sees it and goes on | Not needed |
 | A line on stdin was invalid | An `input_error` record; the line is skipped and the run goes on | Fix the client |
