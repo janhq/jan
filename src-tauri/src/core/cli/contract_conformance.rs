@@ -110,7 +110,10 @@ const HOST_TO_SESSION: &[InputRow] = &[
     },
     InputRow {
         contract: "tool_result",
-        here: None,
+        here: Some("tool_result"),
+        // The contract answers with the tool's own `result` JSON under the
+        // request's `id`; this build takes `request_id` with a `content` string
+        // and an `is_error` flag, the shape a model tool message takes.
         fields: &[("id", "\"call-7\""), ("result", "{\"ok\":true}")],
     },
 ];
@@ -121,8 +124,10 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         contract: "ready",
         here: Some("init"),
         // R5 compares `tool_specs` for value equality and R8 filters `models`
-        // to the ones that accept images. Neither is carried, and `provider` is
-        // not either: a client cannot tell which provider answered.
+        // to the ones that accept images. `tool_specs` travels with the
+        // handshake, but only when the run advertises a host tool; `models` does
+        // not, and `provider` does not either: a client cannot tell which
+        // provider answered.
         contract_requires: &[
             ("model", "\"claude-sonnet-4-5\""),
             ("provider", "\"anthropic\""),
@@ -136,10 +141,14 @@ const SESSION_TO_HOST: &[OutputRow] = &[
             "model",
             "cwd",
             "tools",
+            "tool_specs",
             "input_kinds",
             "input_content_parts",
         ],
-        optional: &[],
+        // Skipped when the run advertises no host tool, so an ordinary run's
+        // handshake is unchanged - and a host-tool run's schema round-trip reads
+        // it off a field that is genuinely there.
+        optional: &["tool_specs"],
     },
     OutputRow {
         contract: "tool_request",
@@ -288,21 +297,39 @@ fn line_for(row: &InputRow) -> String {
     probe(row.contract, row.fields).to_string()
 }
 
-/// The only host -> session row this build implements parses, as its own kind.
+/// Every host -> session row this build implements parses, as its own kind.
 #[test]
-fn the_implemented_host_row_parses_as_its_own_kind() {
+fn the_implemented_host_rows_parse_as_their_own_kind() {
     for row in HOST_TO_SESSION.iter().filter(|r| r.here.is_some()) {
         let here = row.here.expect("filtered");
         // Built the way a client that read `init.input_kinds` would build it,
-        // not from the contract's fields, which this row does not share.
-        let line = match here {
-            "abort" => serde_json::json!({ "type": "abort" }).to_string(),
+        // not from the contract's fields, which neither row shares.
+        let (line, expected) = match here {
+            "abort" => (
+                serde_json::json!({ "type": "abort" }).to_string(),
+                InputMessage::Abort,
+            ),
+            "tool_result" => (
+                serde_json::json!({
+                    "type": "tool_result",
+                    "request_id": "call-7",
+                    "content": "ok",
+                })
+                .to_string(),
+                InputMessage::ToolResult {
+                    request_id: "call-7".to_string(),
+                    result: crate::core::agent::host_tools::HostToolResult {
+                        content: "ok".to_string(),
+                        is_error: false,
+                    },
+                },
+            ),
             other => panic!("{other} is claimed as implemented and has no sample line"),
         };
         assert_eq!(
             super::stream_input::parse_input_line(&line)
                 .unwrap_or_else(|e| panic!("{here} is advertised but refused: {e}")),
-            InputMessage::Abort,
+            expected,
             "{here} must parse as the kind the table names, not merely parse"
         );
     }
@@ -364,12 +391,20 @@ fn every_unimplemented_session_row_is_not_an_event_yet() {
 #[test]
 fn every_implemented_session_row_carries_exactly_the_fields_claimed() {
     let sample = |here: &str, full: bool| -> serde_json::Value {
+        let host_tool = serde_json::json!({
+            "type": "function",
+            "function": { "name": "bash" },
+        });
         match here {
             "init" => serde_json::to_value(super::run_report::Init::new(
                 "thread-1",
                 "claude-sonnet-4-5",
                 Some("/tmp/project".to_string()),
                 vec!["bash".to_string()],
+                // Only the full sample advertises a host tool, because
+                // `tool_specs` is skipped when empty: the empty sample cannot
+                // show it, which is exactly what the row's `optional` says.
+                if full { vec![host_tool] } else { Vec::new() },
                 vec!["user", "abort"],
                 // The stream-json handshake's own caps, absent on a run that
                 // reads no stdin. Always on the wire either way (`null`, not
@@ -477,27 +512,38 @@ fn every_implemented_session_row_declares_what_it_produces() {
 
 /// The `ready` row is the one a client blocks on, so its gap is named here
 /// rather than discovered by whoever ports the first SDK.
+///
+/// The count in the name moves with the gap: `tool_specs` landed on the
+/// handshake, so what `ready` still waits for is `provider` and `models`.
 #[test]
-fn the_handshake_lacks_exactly_the_three_fields_ready_requires() {
+fn the_handshake_lacks_exactly_the_two_fields_ready_requires() {
+    let spec = serde_json::json!({
+        "type": "function",
+        "function": { "name": "host__observe" },
+    });
     let init = serde_json::to_value(super::run_report::Init::new(
         "thread-1",
         "claude-sonnet-4-5",
         None,
-        vec![],
+        vec!["host__observe".to_string()],
+        // Non-empty, so `tool_specs` is on the record rather than skipped: a
+        // sample that left it empty would pass this test with the field absent
+        // from the wire, which is the failure mode R5 cannot see either.
+        vec![spec],
         vec!["user"],
         // What the handshake carries for a stream-json run; `ready` requires
         // none of it, so it does not change the gap this test names.
         Some(super::run_report::InputContentParts::current()),
     ))
     .expect("init serializes");
-    for missing in ["provider", "models", "tool_specs"] {
+    for missing in ["provider", "models"] {
         assert!(
             init.get(missing).is_none(),
             "`{missing}` is now on the handshake, so R5/R8's read-back is reachable - \
              move `ready` in SESSION_TO_HOST"
         );
     }
-    for carried in ["model", "tools"] {
+    for carried in ["model", "tools", "tool_specs"] {
         assert!(
             init.get(carried).is_some(),
             "`{carried}` is required by `ready` and is already carried"
