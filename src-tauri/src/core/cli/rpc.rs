@@ -4,7 +4,8 @@ use std::io::{BufRead, Write};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc::{self, OwnedPermit};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use super::providers::ProviderOverrides;
@@ -33,6 +34,12 @@ struct ActiveTurn {
     steerer: JoinHandle<()>,
     pending: Arc<Mutex<Vec<Value>>>,
     updated_history: Option<Vec<Value>>,
+    /// The slot the terminal record is written through, held for the whole
+    /// turn. Reserving it up front is what makes "the outcome always arrives"
+    /// a property of the channel rather than a convention every other writer
+    /// has to keep: `capacity()` counts it as taken, so no notification, reply
+    /// or event can be queued in its place.
+    terminal: OwnedPermit<Value>,
 }
 
 enum TurnMessage {
@@ -59,6 +66,15 @@ fn notify(out: &mpsc::Sender<Value>, method: &str, params: Value) -> Result<(), 
         out,
         json!({"jsonrpc":"2.0","method":method,"params":params}),
     )
+}
+
+/// A record a client is owed an answer with: it waits for room instead of
+/// taking the slot the turn's terminal record reserved, and instead of turning
+/// a client that stopped reading into a process that died holding the answer.
+async fn send_reply(out: &mpsc::Sender<Value>, record: Value) -> Result<(), String> {
+    out.send(record)
+        .await
+        .map_err(|_| "RPC client closed stdout".to_owned())
 }
 
 fn read_line(reader: &mut impl BufRead) -> std::io::Result<Option<(Vec<u8>, bool)>> {
@@ -114,7 +130,18 @@ fn output_lines(mut rx: mpsc::Receiver<Value>) -> std::thread::JoinHandle<()> {
     })
 }
 
-fn start_turn(session: &mut Session, input: Value) -> ActiveTurn {
+fn start_turn(
+    session: &mut Session,
+    input: Value,
+    out: &Arc<mpsc::Sender<Value>>,
+) -> Result<ActiveTurn, String> {
+    // Before the turn is accepted, not after: a queue with no room for the
+    // terminal record is a queue this turn cannot report on, and accepting it
+    // anyway is how a client that stopped reading loses the one record that
+    // says the turn ended.
+    let terminal = mpsc::Sender::clone(out)
+        .try_reserve_owned()
+        .map_err(|_| "RPC output queue is full; retry after draining notifications".to_owned())?;
     session.history.push(json!({"role":"user","content":input}));
     let body = session.agent.body(json!(session.history));
     let args = session.agent.args.clone();
@@ -145,7 +172,7 @@ fn start_turn(session: &mut Session, input: Value) -> ActiveTurn {
         let _ = forward.await;
         let _ = events.send(TurnMessage::Finished(result)).await;
     });
-    ActiveTurn {
+    Ok(ActiveTurn {
         session_id: session.id.clone(),
         turn_id: uuid::Uuid::new_v4().to_string(),
         events: receiver,
@@ -153,21 +180,29 @@ fn start_turn(session: &mut Session, input: Value) -> ActiveTurn {
         steerer,
         pending,
         updated_history: None,
-    }
+        terminal,
+    })
 }
 
 fn finish_turn(
     sessions: &mut HashMap<String, Session>,
     turn: ActiveTurn,
-    out: &mpsc::Sender<Value>,
     result: Result<Value, String>,
     interrupted: bool,
 ) -> Result<(), String> {
-    turn.steerer.abort();
+    let ActiveTurn {
+        session_id,
+        turn_id,
+        steerer,
+        updated_history,
+        terminal,
+        ..
+    } = turn;
+    steerer.abort();
     let session = sessions
-        .get_mut(&turn.session_id)
+        .get_mut(&session_id)
         .ok_or("active session missing")?;
-    if let Some(history) = turn.updated_history {
+    if let Some(history) = updated_history {
         session.history = history;
     }
     let stop_reason = if interrupted {
@@ -203,20 +238,24 @@ fn finish_turn(
         }
     }
     session.turns += 1;
-    notify(
-        out,
-        "turn/completed",
-        json!({
-            "sessionId":turn.session_id,"turnId":turn.turn_id,
+    // Through the slot the turn reserved, so this cannot be the record that
+    // fails to fit: a client that stopped reading gets the outcome when it
+    // starts again instead of a process that died holding it.
+    terminal.send(json!({
+        "jsonrpc":"2.0","method":"turn/completed",
+        "params": {
+            "sessionId":session_id,"turnId":turn_id,
             "stopReason":if error_message.is_some() { "error" } else { stop_reason },"error":error_message
-        }),
-    )
+        }
+    }));
+    Ok(())
 }
 
 /// One runtime owns many addressable sessions. All writes share one bounded output queue.
 pub async fn serve() -> Result<(), String> {
     let mut input = input_lines();
     let (out, writer) = mpsc::channel(OUTPUT_CAPACITY);
+    let out = Arc::new(out);
     let writer = output_lines(writer);
     let mut initialized = false;
     let mut negotiated = false;
@@ -227,18 +266,18 @@ pub async fn serve() -> Result<(), String> {
             message = input.recv() => {
                 let Some((line, too_long)) = message else { break; };
                 if too_long {
-                    send(&out, error(&Value::Null, -32600, "Input line exceeds max_line_bytes"))?;
+                    send_reply(&out, error(&Value::Null, -32600, "Input line exceeds max_line_bytes")).await?;
                     continue;
                 }
                 let request: Value = match serde_json::from_slice(&line) {
                     Ok(value) => value,
-                    Err(_) => { send(&out, error(&Value::Null, -32700, "Parse error"))?; continue; }
+                    Err(_) => { send_reply(&out, error(&Value::Null, -32700, "Parse error")).await?; continue; }
                 };
                 let id = request.get("id").cloned().unwrap_or(Value::Null);
                 let method = request.get("method").and_then(Value::as_str).unwrap_or("");
                 let params = &request["params"];
                 if request["jsonrpc"] != "2.0" || method.is_empty() {
-                    send(&out, error(&id, -32600, "Invalid Request"))?;
+                    send_reply(&out, error(&id, -32600, "Invalid Request")).await?;
                     continue;
                 }
                 if method == "initialize" {
@@ -249,7 +288,7 @@ pub async fn serve() -> Result<(), String> {
                         }
                         _ => error(&id, -32602, "Unsupported protocol version or malformed clientInfo"),
                     };
-                    send(&out, reply)?;
+                    send_reply(&out, reply).await?;
                     continue;
                 }
                 if method == "initialized" && negotiated && id.is_null() {
@@ -257,7 +296,7 @@ pub async fn serve() -> Result<(), String> {
                     continue;
                 }
                 if !initialized {
-                    send(&out, error(&id, -32002, "Server not initialized"))?;
+                    send_reply(&out, error(&id, -32002, "Server not initialized")).await?;
                     continue;
                 }
                 let reply = match method {
@@ -314,10 +353,17 @@ pub async fn serve() -> Result<(), String> {
                             } else { Err("input must be text or content parts".to_string()) };
                             match (sessions.get_mut(sid), content) {
                                 (Some(session), Ok(content)) => {
-                                    let turn = start_turn(session, content);
-                                    let tid = turn.turn_id.clone();
-                                    active = Some(turn);
-                                    response(&id, json!({"turnId":tid}))
+                                    match start_turn(session, content, &out) {
+                                        Ok(turn) => {
+                                            let tid = turn.turn_id.clone();
+                                            active = Some(turn);
+                                            response(&id, json!({"turnId":tid}))
+                                        }
+                                        // The turn would have no room to report its
+                                        // outcome on, so it is refused while the
+                                        // client drains what is already queued.
+                                        Err(message) => error(&id, -32001, &message),
+                                    }
                                 }
                                 (None, _) => error(&id, -32602, "unknown sessionId"),
                                 (_, Err(message)) => error(&id, -32602, &message),
@@ -337,7 +383,7 @@ pub async fn serve() -> Result<(), String> {
                             if let Some(session) = sessions.get_mut(sid) {
                                 session.agent.permission_requests.lock().await.clear();
                             }
-                            finish_turn(&mut sessions, turn, &out, Err("interrupted".to_owned()), true)?;
+                            finish_turn(&mut sessions, turn, Err("interrupted".to_owned()), true)?;
                             response(&id, json!({}))
                         }
                         (other, _) => {
@@ -365,29 +411,39 @@ pub async fn serve() -> Result<(), String> {
                     },
                     _ => error(&id, -32601, "Method not found"),
                 };
-                if !id.is_null() { out.send(reply).await.map_err(|_| "RPC client closed stdout".to_string())?; }
+                if !id.is_null() { send_reply(&out, reply).await?; }
             }
             message = async { active.as_mut().expect("active").events.recv().await }, if active.is_some() => {
-                let Some(message) = message else { continue; };
+                let Some(message) = message else {
+                    // The run's task is gone without an outcome: a panic in the
+                    // engine, or an abort this loop did not make. The turn still
+                    // owes the client a terminal record, and this arm would be
+                    // ready with `None` on every pass until it got one.
+                    let turn = active.take().expect("active");
+                    finish_turn(&mut sessions, turn, Err("the run ended without an outcome".to_owned()), false)?;
+                    continue;
+                };
                 let turn = active.as_mut().expect("active");
                 match message {
                     TurnMessage::Event(event) => {
                         if let StreamEvent::MessagesUpdated { messages } = &event { turn.updated_history = Some(messages.clone()); }
                         let wire = serde_json::to_value(&event).map_err(|e| e.to_string())?;
                         let method = format!("item/{}", wire["type"].as_str().ok_or("event has no tag")?);
-                        // Leave the terminal slot free. On overflow, terminate the run
-                        // rather than accumulating unbounded model deltas.
-                        if out.capacity() <= 1 {
+                        // The turn's terminal record has its own slot, so this
+                        // bound only covers the streamed events: when the client
+                        // is not reading them, the turn ends rather than
+                        // accumulating unbounded model deltas.
+                        if out.capacity() == 0 {
                             let turn = active.take().expect("active");
                             turn.runner.abort();
-                            finish_turn(&mut sessions, turn, &out, Err("RPC output queue overloaded".to_owned()), false)?;
+                            finish_turn(&mut sessions, turn, Err("RPC output queue overloaded".to_owned()), false)?;
                         } else {
                             notify(&out, &method, json!({"sessionId":turn.session_id,"turnId":turn.turn_id,"event":wire}))?;
                         }
                     }
                     TurnMessage::Finished(result) => {
                         let turn = active.take().expect("active");
-                        finish_turn(&mut sessions, turn, &out, result, false)?;
+                        finish_turn(&mut sessions, turn, result, false)?;
                     }
                 }
             }

@@ -5,8 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::time::Duration;
 
-/// A stub OpenAI-compatible provider that streams `tokens` deltas and then stops.
-fn provider(tokens: usize) -> String {
+/// A stub OpenAI-compatible provider that streams `tokens` deltas of
+/// `token_bytes` each and then stops.
+fn provider(tokens: usize, token_bytes: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -37,10 +38,10 @@ fn provider(tokens: usize) -> String {
             std::io::Read::read_exact(&mut reader, &mut request).unwrap();
             let mut answer = String::new();
             for index in 0..tokens.max(1) {
-                let text = if index == 0 {
-                    "stub answer"
+                let text = if index == 0 && token_bytes == 0 {
+                    "stub answer".to_owned()
                 } else {
-                    " and more"
+                    "x".repeat(token_bytes.max(1))
                 };
                 let chunk = serde_json::json!({
                     "id":"stub-1","object":"chat.completion.chunk","created":1,"model":"stub-model",
@@ -161,7 +162,7 @@ impl Rpc {
 fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     let scratch = scratch("lifecycle");
     let home = scratch.join("home");
-    let provider_url = provider(1);
+    let provider_url = provider(1, 0);
     configure(&home, &provider_url);
     let mut rpc = Rpc::open(&home);
 
@@ -189,7 +190,8 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     // with no id gets no answer, so the next frame the client reads is the
     // response to the request it sent after it.
     rpc.send(serde_json::json!({"jsonrpc":"2.0","method":"not-a-notification","params":{}}));
-    let after = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":15,"method":"session/list","params":{}}));
+    let after =
+        rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":15,"method":"session/list","params":{}}));
     assert_eq!(after["id"], 15, "{after}");
 
     let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"say hi"}}));
@@ -262,12 +264,19 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
 
 /// A client that stops reading cannot grow the server without bound: the queue
 /// fills at its cap, the run ends with a terminal outcome that says so, and
-/// that outcome still reaches the client once it reads again.
+/// that outcome still reaches the client once it reads again - through the slot
+/// the turn reserved for it, never through one the client's records could take.
+///
+/// The reservation's other half, a `turn/start` refused with `-32001` because
+/// the queue has no room left for its terminal record, is not asserted here: on
+/// this platform the writer drains a full queue into the stdout pipe faster
+/// than a stalled client can be caught holding it, so the refusal is a guard
+/// against a slower pipe rather than a state a test can park in.
 #[test]
-fn rpc_ends_the_turn_a_client_stopped_reading() {
+fn rpc_survives_a_client_that_stops_reading() {
     let scratch = scratch("overload");
     let home = scratch.join("home");
-    let provider_url = provider(8_000);
+    let provider_url = provider(20_000, 0);
     configure(&home, &provider_url);
     let mut rpc = Rpc::open(&home);
     rpc.handshake();
@@ -279,11 +288,11 @@ fn rpc_ends_the_turn_a_client_stopped_reading() {
 
     // Stop reading. The writer blocks on the pipe, the bounded queue fills
     // behind it, and the producer ends the turn instead of buffering the
-    // 8000 deltas the provider still has to send.
+    // deltas the provider still has to send.
     std::thread::sleep(Duration::from_secs(2));
 
     let mut terminal = None;
-    for _ in 0..10_000 {
+    for _ in 0..20_000 {
         let record = rpc.read();
         if record["method"] == "turn/completed" {
             terminal = Some(record);
