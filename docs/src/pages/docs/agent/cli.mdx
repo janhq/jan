@@ -156,7 +156,7 @@ had said before it broke as `result`:
   "is_error": true,
   "result": "I started reviewing auth.rs and...",
   "stop_reason": "error",
-  "error": { "code": "upstream_error", "message": "[400] tool_choice does not match any of the specified tools" },
+  "error": { "code": "upstream_error", "message": "Upstream returned HTTP 400: tool_choice does not match any of the specified tools" },
   "session_id": null,
   "model": "tokamak-1-preview",
   "num_turns": 1,
@@ -171,7 +171,7 @@ had said before it broke as `result`:
 | `result` | The final answer, or the partial answer of the turn that failed. Reasoning is stripped |
 | `stop_reason` | The upstream finish reason, `budget_exceeded` when `--max-budget-usd` stopped the run, or `error` |
 | `error.code` | `context_overflow`, `upstream_error`, `setup_error`, or the raw code |
-| `session_id` | Short session id for `--resume`. `null` when the run failed before producing one |
+| `session_id` | Short session id for `--resume`. `null` only when no thread was saved: a fresh run that fails before its first save reports `null`, while a resumed run keeps the id it already had |
 | `num_turns` | Agent turns taken. Subagent turns are not counted |
 | `usage` | Summed over every request the run made, subagents included |
 | `usage.cached_tokens` | Prompt tokens the provider served from its cache. `null` when the route reported no cache usage at all, `0` when it reported a zero read |
