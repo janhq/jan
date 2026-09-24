@@ -217,7 +217,7 @@ fn assert_handshake(first: &serde_json::Value, project: &Path) {
     );
     assert_eq!(
         first["input_kinds"],
-        serde_json::json!(["user", "abort", "permission"]),
+        serde_json::json!(["user", "abort", "permission", "tool_result"]),
         "a client is told what it may send back"
     );
     // The caps travel with the kinds, so a client that sends an image reads the
@@ -240,6 +240,10 @@ fn assert_handshake(first: &serde_json::Value, project: &Path) {
             "max_echo_bytes": 4_096,
         }),
         "the advertised caps are the ones the parser enforces"
+    );
+    assert!(
+        first.get("tool_specs").is_none(),
+        "a run that declared no host tools carries no specs: {first}"
     );
 }
 

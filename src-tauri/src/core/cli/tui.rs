@@ -5182,6 +5182,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.max_parallel_subagents,
             args.ask_requests.is_some(),
             args.todo_registry.is_some(),
+            &args.host_tools,
         )
         .await
         .iter()

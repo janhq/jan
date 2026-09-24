@@ -606,6 +606,31 @@
             "prompt_kind",
             "offers_always"
           ]
+        },
+        {
+          "description": "A host-registered tool was called and the run is waiting for the host to\nexecute it. The client replies with a `tool_result` line carrying this\n`request_id`; until it does, the turn is parked on this one call.\n\n`tool_name` is the name the *host* declared, not the `host__`-prefixed\nname the model calls: the host dispatches on the name it chose and never\nhas to know this layer's prefixing rule.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "args": {
+              "description": "The arguments the model produced, already parsed from the call's\nJSON string. Validated against nothing here -- the host owns the\nschema it declared and is the only party that can enforce it."
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_request"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "tool_name",
+            "args"
+          ]
         }
       ]
     },
@@ -859,6 +884,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "tool_specs": {
+          "description": "The full schemas of the host tools this run installed, as advertised.\nA host compares these against what it declared, which is the only way\nto know its constraints survived rather than trusting that they did;\nthe names in `tools` alone cannot answer that. Omitted entirely when\nthe run declared no host tools, so an ordinary run's handshake is\nunchanged.",
+          "type": "array",
+          "items": true
         },
         "input_kinds": {
           "description": "What `--input-format stream-json` accepts from this client, as message\n`type` tags. Empty when the run does not read stdin at all, which is\nthe honest answer for a read-only stream: nothing can be sent back.",
@@ -1134,7 +1164,7 @@
       ]
     },
     "InputLine": {
-      "description": "One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields\neach carries. The wire shape is a serde type rather than a hand-rolled walk\nover a `Value` so the protocol schema can be derived from it -- `jan cli\nagent schema` publishes this shape, and a hand-written copy of it would be\ncorrect only until the parser moved.\n\nThe `type` field is read separately, before deserializing: an unknown kind is\nreported against [`INPUT_KINDS`], which is the list `init` advertises.",
+      "description": "One input line, as the wire shape: the [`INPUT_KINDS`], with the fields\neach carries. The wire shape is a serde type rather than a hand-rolled walk\nover a `Value` so the protocol schema can be derived from it -- `jan cli\nagent schema` publishes this shape, and a hand-written copy of it would be\ncorrect only until the parser moved.\n\nThe `type` field is read separately, before deserializing: an unknown kind is\nreported against [`INPUT_KINDS`], which is the list `init` advertises.",
       "oneOf": [
         {
           "description": "A follow-up turn for the run in flight: `text`, or `content` as an\nOpenAI content-part array. Exactly one of the two, which JSON Schema\ncannot state, so the doc says it and the parser enforces it. A\ncontent-part message carries text parts and `image_url` parts, whose URL\nis a base64 `data:` URL -- the run shares no filesystem with a client.",
@@ -1194,6 +1224,31 @@
             "type",
             "request_id",
             "decision"
+          ]
+        },
+        {
+          "description": "The answer to a `tool_request` this run emitted: the host executed the\ntool and this is its result, which becomes the model's tool message.\n\n`content` is required even for a failure. A tool message with nothing in\nit tells the model only that something happened, which is worse than a\nshort error.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "is_error": {
+              "type": "boolean",
+              "default": false
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_result"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "content"
           ]
         }
       ]

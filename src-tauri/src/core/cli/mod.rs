@@ -1075,6 +1075,7 @@ pub async fn cli_agent_run(
     resume: Option<ResumeRequest>,
     format: OutputFormat,
     input_format: InputFormat,
+    host_tools: Option<&str>,
 ) -> Result<(), String> {
     run_agent_loop(
         project,
@@ -1086,6 +1087,7 @@ pub async fn cli_agent_run(
         resume,
         format,
         input_format,
+        host_tools,
     )
     .await
 }
@@ -1109,6 +1111,9 @@ pub async fn cli_agent_step(
         None,
         OutputFormat::Text,
         InputFormat::Text,
+        // `step` is a debugging path with no client on stdin, so there is
+        // nothing that could execute a host tool.
+        None,
     )
     .await
 }
@@ -1845,6 +1850,20 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+/// Read a host's tool declarations from the file `--host-tools` names.
+///
+/// Every failure is the host's to fix and is reported with the path, since a
+/// host that mistyped one is otherwise left guessing which of its tools the run
+/// disagreed with.
+fn load_host_tools(path: &str) -> Result<crate::core::agent::host_tools::HostToolSet, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read --host-tools file '{path}': {e}"))?;
+    let decls: Vec<crate::core::agent::host_tools::HostToolDecl> = serde_json::from_str(&raw)
+        .map_err(|e| format!("--host-tools file '{path}' is not a list of tool declarations: {e}"))?;
+    crate::core::agent::host_tools::HostToolSet::declare(decls)
+        .map_err(|e| format!("--host-tools file '{path}': {e}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_agent_loop(
     project: &str,
@@ -1856,6 +1875,7 @@ async fn run_agent_loop(
     resume: Option<ResumeRequest>,
     format: OutputFormat,
     input_format: InputFormat,
+    host_tools: Option<&str>,
 ) -> Result<(), String> {
     // A duplex run switches off both of the CLI's own answer paths, so the
     // client is the only thing that can resolve a permission request -- and it
@@ -1871,6 +1891,22 @@ async fn run_agent_loop(
                 .to_string(),
         );
     }
+    // Declared before anything is spent: a malformed or unacceptable tool set
+    // is the host's own mistake, and finding out at the first call -- mid-task,
+    // after paid requests -- is worse than refusing to start.
+    let host_tools = match host_tools {
+        Some(path) => {
+            if !input_format.is_stream_json() {
+                return Err(
+                    "--host-tools requires --input-format stream-json (a host tool call is \
+                     answered with a tool_result message on stdin)"
+                        .to_string(),
+                );
+            }
+            load_host_tools(path)?
+        }
+        None => crate::core::agent::host_tools::HostToolSet::new(),
+    };
     let started = std::time::Instant::now();
     let prepared = prepare_agent_run(
         project,
@@ -1884,7 +1920,7 @@ async fn run_agent_loop(
     // A setup failure never reaches the event stream, so a JSON consumer would
     // otherwise get an empty stdout and have to parse the human error off stderr.
     let PreparedRun {
-        args,
+        mut args,
         body,
         provider,
         permission_requests,
@@ -1908,6 +1944,10 @@ async fn run_agent_loop(
             return Err(e);
         }
     };
+    // Installed after the session is built, since host tools are declared per
+    // run rather than per project: the same session config serves a run with
+    // them and one without.
+    args.host_tools = host_tools;
 
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
@@ -2100,11 +2140,16 @@ async fn init_record(
         args.max_parallel_subagents,
         args.ask_requests.is_some(),
         args.todo_registry.is_some(),
+        &args.host_tools,
     )
     .await
     .iter()
     .filter_map(tool_name)
     .collect();
+    // Only the host tools' schemas are echoed, not every advertised tool's: the
+    // host is comparing these against what it sent, and a built-in's schema is
+    // this process's own business.
+    let tool_specs = args.host_tools.schemas();
     // The project root the run's tools are confined to, as the run itself sees
     // it. A caller that built these args without one gets `null`: any path
     // substituted here would claim a confinement the run does not have.
@@ -2130,6 +2175,7 @@ async fn init_record(
         model,
         cwd,
         tools,
+        tool_specs,
         input_kinds,
         input_content_parts,
     )
@@ -2899,7 +2945,7 @@ mod tests {
         let host_tools = crate::core::agent::host_tools::new_registry();
         let (_id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
 
-        let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+        let (lines_tx, lines) = mpsc::unbounded_channel::<ClientLine>();
         drop(lines_tx);
         read_input_lines(
             lines,
@@ -2942,6 +2988,7 @@ mod tests {
                 None,
                 format,
                 InputFormat::StreamJson,
+                None,
             )
             .await
             .expect_err("the pairing is required");
@@ -2972,7 +3019,14 @@ mod tests {
             })
             .expect("reader is alive");
         drop(lines_tx);
-        read_input_lines(lines, Arc::clone(&input), registry, OutputFormat::Json).await;
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            registry,
+            crate::core::agent::host_tools::new_registry(),
+            OutputFormat::Json,
+        )
+        .await;
 
         let queued = input.take_queued();
         assert_eq!(queued.len(), 1, "the follow-up is queued as one turn");
