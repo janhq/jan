@@ -1,8 +1,18 @@
 /* eslint-disable @next/next/no-img-element */
-import { Computer, Search, Rocket, Bot } from 'lucide-react'
+import { Computer, Search, Rocket, Bot, type LucideIcon } from 'lucide-react'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
-const SECTIONS = [
+type Section = {
+  icon: LucideIcon
+  title: string
+  description: string
+  tags: string
+  href: string
+  external?: boolean
+  chip: string
+}
+
+const SECTIONS: Section[] = [
   {
     icon: Computer,
     title: 'Jan Desktop',
@@ -23,7 +33,14 @@ const SECTIONS = [
   },
 ]
 
-const COMMON_PATHS = [
+type CommonPath = {
+  icon: LucideIcon
+  title: string
+  href: string
+  external?: boolean
+}
+
+const COMMON_PATHS: CommonPath[] = [
   { icon: Rocket, title: 'Desktop Quickstart', href: '/docs/desktop/quickstart' },
   { icon: Bot, title: 'Jan Agent Quickstart', href: '/docs/agent/quickstart' },
 ]
