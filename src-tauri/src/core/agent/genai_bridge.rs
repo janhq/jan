@@ -228,6 +228,8 @@ fn messages_from_body(
 
     let mut system: Option<String> = None;
     let mut out: Vec<ChatMessage> = Vec::with_capacity(raw.len());
+    // Images from the current run of tool messages, waiting for the run to end.
+    let mut tool_images: Vec<ContentPart> = Vec::new();
 
     for msg in raw {
         let role = msg
@@ -235,6 +237,11 @@ fn messages_from_body(
             .and_then(|v| v.as_str())
             .ok_or("Each message must include a string 'role'")?;
         let content = msg.get("content");
+        // A user turn right after the run takes the images itself (see the
+        // user arm); any other role closes the run with its own carrier.
+        if !matches!(role, "tool" | "user") {
+            flush_tool_images(&mut out, &mut tool_images);
+        }
 
         match role {
             "system" | "developer" => {
@@ -252,6 +259,13 @@ fn messages_from_body(
                     .and_then(|v| v.as_str())
                     .unwrap_or_default()
                     .to_string();
+                let images = content_images(content);
+                if !images.is_empty() {
+                    tool_images.push(ContentPart::Text(format!(
+                        "[image output of tool call {call_id}]"
+                    )));
+                    tool_images.extend(images);
+                }
                 out.push(ChatMessage::new(
                     ChatRole::Tool,
                     ToolResponse::new(call_id, content_text(content)),
@@ -292,18 +306,98 @@ fn messages_from_body(
                     parts.into_iter().collect::<MessageContent>(),
                 ));
             }
-            // Everything else is a user turn. Multimodal content-part arrays are
-            // flattened to their text; images are not yet forwarded (see below).
+            // Everything else is a user turn. A content-part array keeps its
+            // images in place; a text-only one stays a plain string, which is
+            // what the adapters serialize it as anyway.
             _ => {
-                out.push(ChatMessage::new(
-                    ChatRole::User,
-                    content_text(content),
-                ));
+                let mut parts = content_parts(content);
+                // Pending tool images lead this turn rather than forming one
+                // of their own, so two user turns never sit back to back.
+                if role == "user" && !tool_images.is_empty() {
+                    let mut carried = std::mem::take(&mut tool_images);
+                    carried.append(&mut parts);
+                    parts = carried;
+                }
+                let message = if parts.iter().all(ContentPart::is_text) {
+                    MessageContent::from(content_text(content))
+                } else {
+                    MessageContent::from(parts)
+                };
+                out.push(ChatMessage::new(ChatRole::User, message));
             }
         }
     }
+    flush_tool_images(&mut out, &mut tool_images);
 
     Ok((system, out))
+}
+
+/// Emit the images a run of tool messages produced as one user message.
+///
+/// `genai`'s `ToolResponse` carries only a string, so an image a tool returned
+/// (a `read` of a PNG, a host camera frame) cannot ride in its tool message.
+/// It goes in a user turn right after the run instead: after, not between, the
+/// tool messages, because OpenAI rejects any message interleaved with the
+/// replies to one assistant turn's calls. Each image is labeled with the call
+/// it answers so a batch of several stays attributable.
+///
+/// The carrier is only ever followed by an assistant turn or the end of the
+/// request: a user turn that follows the run absorbs the images instead
+/// (see the user arm of [`messages_from_body`]). That matters to adapters
+/// that demand alternating roles, like genai's Anthropic one, which, unlike
+/// `server::converters`, does not merge adjacent user turns. The agent
+/// sends `api_type: None` down this path today, but nothing here relies on
+/// it.
+fn flush_tool_images(out: &mut Vec<ChatMessage>, pending: &mut Vec<ContentPart>) {
+    if pending.is_empty() {
+        return;
+    }
+    let parts = std::mem::take(pending);
+    out.push(ChatMessage::new(ChatRole::User, MessageContent::from(parts)));
+}
+
+/// The parts of an OpenAI `content` field in order: text and images. Anything
+/// else (audio, a malformed image) is skipped rather than failing the request,
+/// matching how the text-only path always treated unknown parts.
+fn content_parts(content: Option<&serde_json::Value>) -> Vec<ContentPart> {
+    match content {
+        Some(serde_json::Value::String(s)) => vec![ContentPart::Text(s.clone())],
+        Some(serde_json::Value::Array(parts)) => parts
+            .iter()
+            .filter_map(|p| match p.get("type").and_then(|t| t.as_str()) {
+                Some("text") => p
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .map(|t| ContentPart::Text(t.to_string())),
+                Some("image_url") => image_part(p),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Only the image parts of a `content` field.
+fn content_images(content: Option<&serde_json::Value>) -> Vec<ContentPart> {
+    content_parts(content)
+        .into_iter()
+        .filter(ContentPart::is_binary)
+        .collect()
+}
+
+/// One OpenAI `image_url` part as a `genai` binary. A `data:` URL becomes inline
+/// base64 so every adapter can re-encode it natively (Anthropic and Gemini do
+/// not accept data URLs); any other URL is passed through as a URL.
+fn image_part(part: &serde_json::Value) -> Option<ContentPart> {
+    let url = part.get("image_url")?.get("url")?.as_str()?;
+    match url.strip_prefix("data:") {
+        Some(rest) => {
+            let (mime, data) = rest.split_once(";base64,")?;
+            (!mime.is_empty() && !data.is_empty())
+                .then(|| ContentPart::from_binary_base64(mime, data, None))
+        }
+        None => Some(ContentPart::from_binary_url("image/*", url, None)),
+    }
 }
 
 /// Text of an OpenAI `content` field: a bare string, or the concatenated `text`
@@ -891,6 +985,7 @@ async fn run_once(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use genai::chat::{Binary, BinarySource};
     use serde_json::json;
 
     /// The trailing slash is load-bearing: `Url::join` would otherwise replace
@@ -1076,8 +1171,20 @@ mod tests {
         );
     }
 
+    /// The image's base64 payload, when `part` is an inline image.
+    fn inline_image(part: &ContentPart) -> Option<(&str, &str)> {
+        match part {
+            ContentPart::Binary(Binary {
+                content_type,
+                source: BinarySource::Base64(data),
+                ..
+            }) => Some((content_type.as_str(), data.as_ref())),
+            _ => None,
+        }
+    }
+
     #[test]
-    fn multimodal_content_parts_are_flattened_to_their_text() {
+    fn user_content_parts_keep_their_images_in_order() {
         let body = json!({
             "model": "m",
             "messages": [{
@@ -1091,12 +1198,124 @@ mod tests {
         });
         let (_, req) = chat_request_from_body(&body).unwrap();
         let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
+        assert_eq!(parts.len(), 3, "{parts:?}");
+        assert!(matches!(parts[0], ContentPart::Text(t) if t == "look: "));
+        assert_eq!(inline_image(parts[1]), Some(("image/png", "AAA")));
+        assert!(matches!(parts[2], ContentPart::Text(t) if t == "what is it?"));
+    }
+
+    #[test]
+    fn a_remote_image_url_is_forwarded_as_a_url() {
+        let body = json!({
+            "model": "m",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    { "type": "image_url", "image_url": { "url": "https://x.test/a.jpg" } }
+                ]
+            }]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
         assert!(
-            parts
-                .iter()
-                .any(|p| matches!(p, ContentPart::Text(t) if t == "look: what is it?")),
-            "text parts joined: {parts:?}"
+            matches!(parts[0], ContentPart::Binary(Binary { source: BinarySource::Url(u), .. })
+                if u == "https://x.test/a.jpg"),
+            "{parts:?}"
         );
+    }
+
+    /// `ToolResponse.content` is a string, so a tool's image cannot ride in
+    /// the tool message. It follows the run of tool messages, never between
+    /// them (that would split the replies to one assistant turn's calls, which
+    /// OpenAI rejects), and a user turn right after absorbs it, so no two user
+    /// turns sit back to back for an adapter that demands alternation.
+    #[test]
+    fn tool_images_lead_the_next_user_turn() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "cam", "arguments": "{}" } },
+                    { "id": "c2", "type": "function", "function": { "name": "ls", "arguments": "{}" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "text", "text": "frame" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c2", "content": "a.txt" },
+                { "role": "user", "content": "next" }
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
+        assert_eq!(roles, ["Assistant", "Tool", "Tool", "User"]);
+        let tool: Vec<&ContentPart> = req.messages[1].content.iter().collect();
+        assert!(
+            matches!(tool[0], ContentPart::ToolResponse(tr) if tr.call_id == "c1" && tr.content == "frame"),
+            "the tool message keeps its text: {tool:?}"
+        );
+        let user: Vec<&ContentPart> = req.messages[3].content.iter().collect();
+        assert!(
+            matches!(user[0], ContentPart::Text(t) if t.contains("c1")),
+            "the image is labeled with the call it answers: {user:?}"
+        );
+        assert_eq!(inline_image(user[1]), Some(("image/png", "QUJD")));
+        assert!(matches!(user[2], ContentPart::Text(t) if t == "next"), "{user:?}");
+    }
+
+    /// With no user turn to absorb them, the images get their own carrier,
+    /// and the assistant turn after it keeps the roles alternating.
+    #[test]
+    fn tool_images_without_a_following_user_turn_get_a_carrier() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "cam", "arguments": "{}" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }
+                ]},
+                { "role": "assistant", "content": "a red square" }
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
+        assert_eq!(roles, ["Assistant", "Tool", "User", "Assistant"]);
+    }
+
+    #[test]
+    fn a_trailing_tool_image_is_still_forwarded() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/jpeg;base64,QUJD" } }
+                ]}
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        assert_eq!(req.messages.len(), 2);
+        let carried: Vec<&ContentPart> = req.messages[1].content.iter().collect();
+        assert_eq!(inline_image(carried[1]), Some(("image/jpeg", "QUJD")));
+    }
+
+    #[test]
+    fn a_malformed_image_part_is_dropped_not_fatal() {
+        let body = json!({
+            "model": "m",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    { "type": "text", "text": "hi" },
+                    { "type": "image_url", "image_url": { "url": "data:image/png,notbase64" } },
+                    { "type": "image_url" }
+                ]
+            }]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let parts: Vec<&ContentPart> = req.messages[0].content.iter().collect();
+        assert_eq!(parts.len(), 1, "{parts:?}");
     }
 
     #[test]

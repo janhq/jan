@@ -1082,6 +1082,7 @@ pub async fn cli_agent_run(
     format: OutputFormat,
     input_format: InputFormat,
     host_tools: Option<&str>,
+    host_gate: bool,
 ) -> Result<(), String> {
     run_agent_loop(
         project,
@@ -1094,6 +1095,7 @@ pub async fn cli_agent_run(
         format,
         input_format,
         host_tools,
+        host_gate,
     )
     .await
 }
@@ -1120,6 +1122,7 @@ pub async fn cli_agent_step(
         // `step` is a debugging path with no client on stdin, so there is
         // nothing that could execute a host tool.
         None,
+        false,
     )
     .await
 }
@@ -1150,6 +1153,8 @@ fn build_cli_orchestration_args(
         permission_requests,
         host_tools,
         host_tool_requests,
+        host_owns_gate: false,
+        host_tool_route: None,
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
@@ -1882,6 +1887,7 @@ async fn run_agent_loop(
     format: OutputFormat,
     input_format: InputFormat,
     host_tools: Option<&str>,
+    host_gate: bool,
 ) -> Result<(), String> {
     // A duplex run switches off both of the CLI's own answer paths, so the
     // client is the only thing that can resolve a permission request -- and it
@@ -1908,6 +1914,11 @@ async fn run_agent_loop(
         // Declared before anything is spent: a malformed or unacceptable tool
         // set is the host's own mistake, and finding out at the first call --
         // mid-task, after paid requests -- is worse than refusing to start.
+        // Handing the gate to a host that declared no tools would be a no-op
+        // the caller probably did not mean; say so rather than ignore it.
+        if host_gate && host_tools.is_none() {
+            return Err("--host-gate requires --host-tools".to_string());
+        }
         match host_tools {
             Some(path) => {
                 if !input_format.is_stream_json() {
@@ -1980,6 +1991,9 @@ async fn run_agent_loop(
     // run rather than per project: the same session config serves a run with
     // them and one without.
     args.host_tools = host_tools;
+    // `--host-gate`: the host's own callback is the approval step, so Jan
+    // raises no `permission_request` for a host tool of any class.
+    args.host_owns_gate = host_gate;
 
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
@@ -2028,18 +2042,23 @@ async fn run_agent_loop(
     let input = input_format
         .is_stream_json()
         .then(|| Arc::new(StreamInput::default()));
+    // Created before the reader so it can report the host requests it releases
+    // on the same channel as the run's events: the printer then orders those
+    // records before the final result, which it prints only once every sender
+    // (the reader's included) has dropped.
+    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let reader = input.as_ref().map(|input| {
         spawn_input_reader(
             Arc::clone(input),
             Arc::clone(&permission_requests),
             Arc::clone(&args.host_tool_requests),
+            tx.clone(),
             format,
         )
     });
     let client = input.clone();
     let host_tool_requests = Arc::clone(&args.host_tool_requests);
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     // The report is folded in both formats from the same stream the printer
     // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
@@ -2064,7 +2083,17 @@ async fn run_agent_loop(
             // would park forever.
             if let StreamEvent::ToolRequest { request_id, .. } = &ev {
                 if !duplex {
-                    crate::core::agent::host_tools::strand(&host_tool_requests, request_id).await;
+                    // The request is already on stdout, so its withdrawal is
+                    // too; printed here because this task is the stream's order.
+                    if crate::core::agent::host_tools::strand(&host_tool_requests, request_id)
+                        .await
+                    {
+                        let cancelled = request_cancelled(request_id, CANCEL_CLIENT_GONE);
+                        report.observe(&cancelled);
+                        if format.is_stream_json() {
+                            print_json_line(&cancelled);
+                        }
+                    }
                     continue;
                 }
             }
@@ -2094,6 +2123,12 @@ async fn run_agent_loop(
     };
     if let Some(reader) = reader {
         reader.abort();
+    }
+    // A request still registered now belongs to a call the run dropped (it
+    // failed or stopped mid-batch); nothing will await its answer, so the host
+    // is told to stop working on it before the result record closes the stream.
+    for id in crate::core::agent::host_tools::cancel_all(&args.host_tool_requests).await {
+        let _ = tx.send(request_cancelled(&id, CANCEL_ABORTED));
     }
     let aborted = outcome.is_none();
     let result = outcome.unwrap_or_else(|| Err(ABORTED_BY_CLIENT.to_string()));
@@ -2272,6 +2307,14 @@ async fn run_steered(
     let outcome = tokio::select! {
         result = run_orchestration_steered(tx, body, args, Some(&steering_tx)) => Some(result),
         _ = input.aborted() => {
+            // A host still holding a request must be told to drop it: the run
+            // it would answer is gone. Released here, not by the reader, so
+            // the records land before `done` and cannot race the reader's
+            // shutdown; `cancel_all` rather than `strand_all` so a child still
+            // awaiting one is told it was cancelled, not that the host left.
+            for id in crate::core::agent::host_tools::cancel_all(&args.host_tool_requests).await {
+                let _ = tx.send(request_cancelled(&id, CANCEL_ABORTED));
+            }
             // The loop emits its own terminal event; an abort pre-empts it, so
             // the report is given one here or it would read as a clean stop.
             let _ = tx.send(StreamEvent::Done {
@@ -2283,6 +2326,18 @@ async fn run_steered(
     };
     steerer.abort();
     outcome
+}
+
+/// `tool_request_cancelled` reasons this surface raises: the client stopped the
+/// run, or it can no longer answer (stdin closed).
+const CANCEL_ABORTED: &str = "aborted";
+const CANCEL_CLIENT_GONE: &str = "client_gone";
+
+fn request_cancelled(request_id: &str, reason: &str) -> StreamEvent {
+    StreamEvent::ToolRequestCancelled {
+        request_id: request_id.to_string(),
+        reason: reason.to_string(),
+    }
 }
 
 /// What a client line asks the reader to do next.
@@ -2437,18 +2492,24 @@ fn read_bounded_line<R: std::io::BufRead>(
 /// only thing that can answer a permission request or run a host tool, though,
 /// so the exit is latched and anything already waiting is released -- see
 /// [`strand_pending_permissions`] and
-/// [`crate::core::agent::host_tools::strand_all`].
+/// [`crate::core::agent::host_tools::strand_all`]. Each released host request
+/// is reported on `events` as `tool_request_cancelled`.
+///
+/// An `abort` leaves the host requests alone: the run's abort path withdraws
+/// them itself, as `aborted` rather than `client_gone`.
 async fn read_input_lines(
     mut lines: mpsc::UnboundedReceiver<ClientLine>,
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
     host_tools: crate::core::agent::host_tools::HostToolRegistry,
+    events: mpsc::UnboundedSender<StreamEvent>,
     format: OutputFormat,
 ) {
     let targets = InputTargets {
         permissions: &registry,
         host_tools: &host_tools,
     };
+    let mut aborted = false;
     while let Some(line) = lines.recv().await {
         if line.oversized {
             report_input_error(
@@ -2469,7 +2530,10 @@ async fn read_input_lines(
                     print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
                 }
             }
-            Ok(InputFlow::Stop) => break,
+            Ok(InputFlow::Stop) => {
+                aborted = true;
+                break;
+            }
             Err(message) => report_input_error(format, &message, &line),
         }
     }
@@ -2477,9 +2541,14 @@ async fn read_input_lines(
     // otherwise be recorded as the client's to answer and find no reader.
     input.mark_client_gone();
     strand_pending_permissions(&registry, format).await;
+    if aborted {
+        return;
+    }
     // A host tool call cannot be answered by anyone else, so a parked turn is
     // released with a typed failure rather than waiting on a dead pipe.
-    crate::core::agent::host_tools::strand_all(&host_tools).await;
+    for id in crate::core::agent::host_tools::strand_all(&host_tools).await {
+        let _ = events.send(request_cancelled(&id, CANCEL_CLIENT_GONE));
+    }
 }
 
 /// Name the follow-ups the run ended before reaching. Queued turns are joined
@@ -2521,6 +2590,7 @@ fn spawn_input_reader(
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
     host_tools: crate::core::agent::host_tools::HostToolRegistry,
+    events: mpsc::UnboundedSender<StreamEvent>,
     format: OutputFormat,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(read_input_lines(
@@ -2528,6 +2598,7 @@ fn spawn_input_reader(
         input,
         registry,
         host_tools,
+        events,
         format,
     ))
 }
@@ -2802,6 +2873,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
                 "\x1b[33m[host tool] '{tool_name}' - awaiting '{request_id}' on stdin\x1b[0m"
             );
         }
+        StreamEvent::ToolRequestCancelled { request_id, reason } => {
+            eprintln!("\x1b[2m[host tool] '{request_id}' cancelled ({reason})\x1b[0m");
+        }
+        // Structured data for a host's own display; text output has none.
+        StreamEvent::ToolDetails { .. } => {}
     }
 }
 
@@ -2875,6 +2951,7 @@ mod tests {
             Arc::clone(&input),
             Arc::clone(&registry),
             crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
             OutputFormat::Json,
         )
         .await;
@@ -2946,6 +3023,8 @@ mod tests {
             answer.await.expect("the run's tool wait is answered"),
             Ok(crate::core::agent::host_tools::HostToolResult {
                 content: "moved".to_string(),
+                parts: None,
+                details: None,
                 is_error: false,
             })
         );
@@ -2976,6 +3055,7 @@ mod tests {
             Arc::clone(&input),
             Arc::clone(&registry),
             crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
             OutputFormat::StreamJson,
         )
         .await;
@@ -2999,15 +3079,17 @@ mod tests {
         let input = Arc::new(StreamInput::default());
         let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
         let host_tools = crate::core::agent::host_tools::new_registry();
-        let (_id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
 
         let (lines_tx, lines) = mpsc::unbounded_channel::<ClientLine>();
         drop(lines_tx);
+        let (events_tx, mut events) = mpsc::unbounded_channel();
         read_input_lines(
             lines,
             Arc::clone(&input),
             Arc::clone(&registry),
             Arc::clone(&host_tools),
+            events_tx,
             OutputFormat::StreamJson,
         )
         .await;
@@ -3017,6 +3099,100 @@ mod tests {
             Err(crate::core::agent::host_tools::HostToolError::ClientGone)
         );
         assert!(host_tools.lock().await.is_empty());
+        // The host is told, on the run's own stream, which request it lost.
+        assert_eq!(
+            serde_json::to_value(events.recv().await.expect("a record")).unwrap(),
+            serde_json::json!({
+                "type": "tool_request_cancelled",
+                "request_id": id,
+                "reason": "client_gone"
+            })
+        );
+        assert!(events.recv().await.is_none(), "one record per released request");
+    }
+
+    /// An `abort` stops the reader but leaves host requests to the run's abort
+    /// path, which withdraws them as `aborted`; releasing them here as well
+    /// would report the same request twice under two reasons.
+    #[tokio::test]
+    async fn an_abort_leaves_host_requests_to_the_run() {
+        let input = Arc::new(StreamInput::default());
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (id, _answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let (lines_tx, lines) = mpsc::unbounded_channel();
+        lines_tx
+            .send(ClientLine {
+                text: r#"{"type":"abort"}"#.to_string(),
+                oversized: false,
+            })
+            .expect("reader is alive");
+        drop(lines_tx);
+        let (events_tx, mut events) = mpsc::unbounded_channel();
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::clone(&host_tools),
+            events_tx,
+            OutputFormat::StreamJson,
+        )
+        .await;
+        assert!(events.recv().await.is_none());
+        assert!(host_tools.lock().await.contains_key(&id));
+        // What the abort path then does: the host is told, and a reply the
+        // host was already writing is refused as no longer pending.
+        let released = crate::core::agent::host_tools::cancel_all(&host_tools).await;
+        assert_eq!(released, vec![id.clone()]);
+        let late = format!(r#"{{"type":"tool_result","request_id":"{id}","content":"late"}}"#);
+        let targets = InputTargets {
+            permissions: &Arc::new(Mutex::new(HashMap::new())),
+            host_tools: &host_tools,
+        };
+        let err = apply_input_line(&late, &input, &targets)
+            .await
+            .expect_err("nothing pending");
+        assert!(err.contains("is pending (answered, cancelled, or never issued)"), "{err}");
+    }
+
+    /// An over-cap tool result is refused as a line, and the request is still
+    /// pending: the host can shrink the image and answer again.
+    #[tokio::test]
+    async fn an_over_cap_tool_result_leaves_the_request_pending() {
+        let input = StreamInput::default();
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let targets = InputTargets {
+            permissions: &permissions,
+            host_tools: &host_tools,
+        };
+        let big = "A".repeat((stream_input::MAX_IMAGE_BYTES + 3) / 3 * 4);
+        let line = serde_json::json!({
+            "type": "tool_result",
+            "request_id": id,
+            "content": [{ "type": "image_url",
+                          "image_url": { "url": format!("data:image/png;base64,{big}") } }]
+        })
+        .to_string();
+        let err = apply_input_line(&line, &input, &targets)
+            .await
+            .expect_err("over the cap");
+        assert!(err.contains("byte cap"), "{err}");
+        assert!(host_tools.lock().await.contains_key(&id), "still pending");
+        let retry = serde_json::json!({
+            "type": "tool_result",
+            "request_id": id,
+            "content": [{ "type": "text", "text": "smaller" }],
+            "details": { "retry": 1 }
+        })
+        .to_string();
+        assert_eq!(
+            apply_input_line(&retry, &input, &targets).await,
+            Ok(InputFlow::Continue)
+        );
+        let result = answer.await.expect("delivered").expect("answered");
+        assert_eq!(result.content, "smaller");
+        assert_eq!(result.details, Some(serde_json::json!({ "retry": 1 })));
     }
 
     /// The other half of the same wedge, and the sharper half: a request raised
@@ -3061,6 +3237,7 @@ mod tests {
                 format,
                 InputFormat::StreamJson,
                 None,
+                false,
             )
             .await
             .expect_err("the pairing is required");
@@ -3096,6 +3273,7 @@ mod tests {
             Arc::clone(&input),
             registry,
             crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
             OutputFormat::Json,
         )
         .await;

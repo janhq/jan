@@ -476,12 +476,19 @@ enum AgentCommands {
         #[arg(long, value_enum, default_value_t = InputFormat::Text)]
         input_format: InputFormat,
         /// JSON file declaring tools this host executes: a list of
-        /// `{"name", "description", "parameters"}`. The model calls them as
-        /// `host__<name>`; each call arrives as a `tool_request` on stdout and
+        /// `{"name", "description", "parameters", "capability"}`. The model
+        /// calls them as `host__<name>` (a name outside `[A-Za-z0-9_-]` is
+        /// mapped to a safe one); each call arrives as a `tool_request` on stdout and
         /// must be answered with a `tool_result` on stdin, so this requires
         /// `--input-format stream-json`
         #[arg(long, value_name = "FILE")]
         host_tools: Option<String>,
+        /// The host approves its own tool calls: Jan raises no
+        /// `permission_request` for any host tool (built-ins are unaffected).
+        /// For a host whose `tool_request` handler is itself the approval
+        /// step; requires `--host-tools`
+        #[arg(long, requires = "host_tools")]
+        host_gate: bool,
     },
     /// Run a single turn (debugging)
     Step {
@@ -991,6 +998,7 @@ async fn handle_agent(cmd: AgentCommands) {
             output_format,
             input_format,
             host_tools,
+            host_gate,
         } => {
             cli_agent_run(
                 &project,
@@ -1010,6 +1018,7 @@ async fn handle_agent(cmd: AgentCommands) {
                 output_format,
                 input_format,
                 host_tools.as_deref(),
+                host_gate,
             )
             .await
         }
@@ -1566,6 +1575,30 @@ mod tests {
             "yaml"
         ])
         .is_err());
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its host gate.
+    fn parsed_host_gate(extra: &[&str]) -> bool {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { host_gate, .. },
+                    },
+            }) => host_gate,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// The gate is only the host's when the host has tools to gate: without
+    /// `--host-tools` the flag would silently do nothing, so clap refuses it.
+    #[test]
+    fn host_gate_is_off_by_default_and_requires_host_tools() {
+        assert!(!parsed_host_gate(&["--host-tools", "tools.json"]));
+        assert!(parsed_host_gate(&["--host-tools", "tools.json", "--host-gate"]));
+        assert!(Cli::try_parse_from(["jan", "cli", "agent", "run", "task", "--host-gate"]).is_err());
     }
 
     /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.

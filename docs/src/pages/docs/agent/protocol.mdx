@@ -25,9 +25,10 @@ CLI run, start with the [Agent quickstart](/docs/agent/quickstart); for an embed
   definitions. Read its `protocol_version`, `envelope`, `requests`, `notifications` and `events`
   sections to navigate the artifact rather than copying field declarations from this page. Print
   it with `jan cli agent rpc-schema`, or write it with
-  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The implementation and artifact are in
-  [PR #9049](https://github.com/janhq/jan/pull/9049), which is in review, not released. See the
-  [CLI `rpc` section](/docs/agent/cli#rpc) for the proposed transport.
+  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The transport merged in
+  [PR #9049](https://github.com/janhq/jan/pull/9049) and is not in a release yet. See the
+  [CLI `rpc` section](/docs/agent/cli#rpc) for the transport and [RPC host tools](#rpc-host-tools)
+  below for host callbacks.
 
 Both artifacts are generated and checked for drift against their Rust source by the `protocol
 schema` job in `.github/workflows/rust-check.yml`, which regenerates both and fails the job on a
@@ -45,9 +46,9 @@ publishing or deploying a client.
 
 | | `stream-json` | RPC | ACP |
 | --- | --- | --- | --- |
-| **Release state** | **Shipped** in `main` | **In review**, not released | **Planned**, no implementation |
-| **Record reference** | Generated `protocol/schema.json` | Generated `protocol/rpc-schema.json`, committed on the PR #9049 branch | No ACP record artifact or implemented surface |
-| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; `.github/workflows/rust-check.yml:130-176`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) open, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
+| **Release state** | **Shipped** in `main` | **Merged** in `main`, not released | **Planned**, no implementation |
+| **Record reference** | Generated `protocol/schema.json` | Generated `protocol/rpc-schema.json` | No ACP record artifact or implemented surface |
+| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; `.github/workflows/rust-check.yml:130-176`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) merged, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
 
 A schema says which records a transport accepts or emits. A surface inventory would say what
 that surface *can* do, but the table above is an evidence-backed release snapshot, not a generated
@@ -58,8 +59,82 @@ what **this RPC session** negotiated (`src-tauri/src/core/cli/rpc.rs:286-297`). 
 `stream-json`'s `init` fields into RPC or treat a negotiated response as universal availability.
 
 <Callout type="warning">
-RPC is implemented in an open PR, not a shipped CLI or SDK release. ACP remains planned. JavaScript
-and Python SDK packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)),
-and host-tool callbacks are not available ([#368](https://github.com/janhq/jan-internal/issues/368)).
-Use the shipped `stream-json` transport if you need an integration today.
+RPC is not in a shipped CLI or SDK release yet. ACP remains planned. JavaScript and Python SDK
+packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)). Host tools
+exist on both `stream-json` (`--host-tools`) and RPC (below).
 </Callout>
+
+## RPC host tools
+
+A host declares tools on `session/start`; the model calls them, Jan sends the call to the host,
+and the host's answer becomes the model's tool message. Request and parameter shapes are in the
+`requests` section of `protocol/rpc-schema.json`.
+
+### Declaring tools
+
+`session/start` accepts three optional fields next to `cwd`, `model` and `ephemeral`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `tools` | `[]` | Declarations `{name, description?, parameters?, capability?}`. `capability` is `read` or `actuator`; absent is opaque. |
+| `builtins` | `true` | `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo`, subagent or monitor tools. |
+| `permissions` | `"jan"` | `"host"` means the host's callback is the gate: Jan never sends a `permission_request` for a host tool. Built-ins are unaffected. |
+
+The result is `{sessionId, model, tools, toolSpecs}`. `tools` lists the names the next turn
+advertises (with `builtins: false`, only the host tools). `toolSpecs` echoes the schemas of the
+host tools that are actually advertised, so a host can compare them with what it sent and see a
+tool that a deny list or Plan mode withheld. A declaration Jan refuses (reserved name, duplicate,
+unknown key, non-object `parameters`) fails the whole call with `-32602` and
+`data: {"kind": "invalid_tools"}`, and the message names the problem.
+
+Host tools are advertised as `host__<name>`. Every other tool source has its own prefix
+(`plugin__`, MCP server names) and duplicates within the host set are refused, so a host tool can
+never shadow or be shadowed by another source. The host's own name is what it receives back.
+
+### Answering calls
+
+A call arrives as the notification `item/tool_request` with
+`event: {request_id, tool_name, args, run_id?}`. `run_id` is set when a subagent made the call.
+Answer it with:
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tool/respond","params":{
+  "requestId":"host-1",
+  "content":[{"type":"text","text":"frame captured"},
+             {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}],
+  "isError":false,
+  "details":{"frame":7}}}
+```
+
+`content` is a string or an array of `text` / `image_url` parts, and images are held to the same
+caps as a user message. The parts are kept, in order, as the tool message in the transcript; where
+an image goes on the provider request depends on the provider's API (see
+[tool result images](./cli#tool-result-images)). `details` is for the host's display only: Jan
+emits it as `item/tool_details`, never sends it to the model, and does not persist it with the
+thread. A reply for a request that is no longer pending (already answered, cancelled, or never
+issued) fails with `-32602` and `data: {"kind": "not_pending"}`.
+
+`turn/interrupt` withdraws every request the host still holds. For each one Jan sends
+`item/tool_request_cancelled` with `reason: "interrupted"`, and all of them arrive before the
+turn's `turn/completed`. When stdin closes, pending requests are cancelled the same way with
+`reason: "client_gone"`, but those records are best effort.
+
+### Changing a session between turns
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `session/tools/get` | `{sessionId}` | `{tools, toolSpecs}` |
+| `session/tools/set` | `{sessionId, tools}` | `{tools, toolSpecs}`. Replaces the host set; refusals are `invalid_tools`. |
+| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins` and `permissions` are kept. |
+| `session/reset` | `{sessionId}` | `{tools, toolSpecs}`. History is cleared; model and tools are kept. |
+
+These four methods are refused while that session's turn is running: `-32001` with
+`data: {"retryable": true, "kind": "turn_active"}`. Retry after `turn/completed`. (`session/fork`
+and `session/archive` of a busy session, and a second `turn/start`, keep their plain retryable
+`-32001`.) An unknown `sessionId` is `-32602`. `session/fork` copies the host
+tools, `builtins` and `permissions`, but pending requests are never shared between sessions.
+`session/list` entries include `hostTools`, the number of declared host tools.
+
+Every mutating method is answered. A client that gets no answer, for example because the process
+died, should treat the session as gone and close it. This fail-closed handling belongs to the SDK
+or client, not the wire protocol.

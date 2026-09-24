@@ -203,8 +203,8 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
 
     let project = scratch.join("project");
     let session_id = rpc.start_session(&project);
-    let incompatible = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":11,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"host_tool"}]}}));
-    assert_eq!(incompatible["error"]["code"], -32602);
+    let unknown_option = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":11,"method":"session/start","params":{"cwd":project,"model":"stub-model","hostTools":[]}}));
+    assert_eq!(unknown_option["error"]["code"], -32602);
     let invalid_image = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":12,"method":"turn/start","params":{"sessionId":session_id,"input":[{"type":"image_url","image_url":{"url":"data:image/bmp;base64,AA=="}}]}}));
     assert_eq!(invalid_image["error"]["code"], -32602);
     let unknown =
@@ -478,5 +478,382 @@ fn closing_stdin_closes_the_active_turn() {
 
     // Nothing is left running: the process exits once the queue is drained.
     assert!(rpc.child.wait().unwrap().success());
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// The model calls the declared host tool; its arguments satisfy the schema.
+const HOST_TOOL_CALL: &str = concat!(
+    "data: {\"id\":\"stub-1\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+    "\"model\":\"stub-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",",
+    "\"tool_calls\":[{\"index\":0,\"id\":\"call-1\",\"type\":\"function\",\"function\":",
+    "{\"name\":\"host__robot_arm_move\",\"arguments\":\"{\\\"position\\\":\\\"bin\\\"}\"}}]},",
+    "\"finish_reason\":null}]}\n\n",
+    "data: {\"id\":\"stub-1\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+    "\"model\":\"stub-model\",\"choices\":[{\"index\":0,\"delta\":{},",
+    "\"finish_reason\":\"tool_calls\"}],",
+    "\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,\"total_tokens\":7}}\n\n",
+    "data: [DONE]\n\n",
+);
+
+/// Plain prose, which ends the turn.
+const PROSE: &str = concat!(
+    "data: {\"id\":\"stub-2\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+    "\"model\":\"stub-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",",
+    "\"content\":\"the arm reached bin\"},\"finish_reason\":null}]}\n\n",
+    "data: {\"id\":\"stub-2\",\"object\":\"chat.completion.chunk\",\"created\":1,",
+    "\"model\":\"stub-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],",
+    "\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":4,\"total_tokens\":13}}\n\n",
+    "data: [DONE]\n\n",
+);
+
+/// Serve `replies` in order, one per connection, repeating the last, and keep
+/// every request body: what the model was sent is where a host tool's result
+/// has to land for the round trip to mean anything.
+fn scripted_provider(
+    replies: &'static [&'static str],
+) -> (String, std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for (index, connection) in listener.incoming().enumerate() {
+            let Ok(mut stream) = connection else { break };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut size = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    size = n.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut request = vec![0; size];
+            if std::io::Read::read_exact(&mut reader, &mut request).is_err() {
+                continue;
+            }
+            sink.lock()
+                .unwrap()
+                .push(serde_json::from_slice(&request).unwrap_or(serde_json::Value::Null));
+            let reply = replies[index.min(replies.len() - 1)];
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len());
+        }
+    });
+    (url, seen)
+}
+
+/// One declared host tool, as a host would send it on `session/start`.
+fn arm_tool() -> serde_json::Value {
+    serde_json::json!({
+        "name": "robot_arm_move",
+        "description": "Move the arm.",
+        "parameters": {
+            "type": "object",
+            "properties": {"position": {"type": "string"}},
+            "required": ["position"]
+        }
+    })
+}
+
+/// A session over `tools`, gated by the host so no `permission_request`
+/// interleaves with the host tool traffic under test.
+fn start_host_session(
+    rpc: &mut Rpc,
+    cwd: &Path,
+    tools: serde_json::Value,
+    builtins: bool,
+) -> serde_json::Value {
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{
+        "cwd":cwd,"model":"stub-model","tools":tools,"builtins":builtins,"permissions":"host"
+    }}));
+    assert!(started["result"]["sessionId"].is_string(), "{started}");
+    started["result"].clone()
+}
+
+/// Read until the reply to request `id`, keeping the notifications passed on
+/// the way so a test can assert their order.
+fn reply_to(rpc: &mut Rpc, id: u64, seen: &mut Vec<serde_json::Value>) -> serde_json::Value {
+    rpc.read_until(|record| {
+        if record["id"] == id {
+            return true;
+        }
+        seen.push(record.clone());
+        false
+    })
+    .expect("the request is answered")
+}
+
+fn tool_request_id(rpc: &mut Rpc) -> String {
+    let request = rpc
+        .read_until(|record| record["method"] == "item/tool_request")
+        .expect("the model's call reaches the host");
+    assert_eq!(request["params"]["event"]["tool_name"], "robot_arm_move", "{request}");
+    assert_eq!(request["params"]["event"]["args"]["position"], "bin", "{request}");
+    request["params"]["event"]["request_id"]
+        .as_str()
+        .expect("a request id")
+        .to_owned()
+}
+
+/// The whole host tool loop over RPC: declared on `session/start`, called by
+/// the model, surfaced as `item/tool_request`, answered with content parts
+/// through `tool/respond`, and carried into the model's next request.
+#[test]
+fn a_host_tool_round_trips_with_content_parts() {
+    let scratch = scratch("host-round-trip");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[HOST_TOOL_CALL, PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+
+    let started = start_host_session(&mut rpc, &project, serde_json::json!([arm_tool()]), true);
+    assert_eq!(started["model"], "stub-model", "{started}");
+    let tools = started["tools"].as_array().expect("advertised names");
+    assert!(tools.iter().any(|t| t == "host__robot_arm_move"), "{started}");
+    assert!(tools.iter().any(|t| t == "bash"), "built-ins stay by default: {started}");
+    assert_eq!(started["toolSpecs"][0]["function"]["name"], "host__robot_arm_move");
+    assert_eq!(started["toolSpecs"][0]["function"]["parameters"], arm_tool()["parameters"]);
+    let session_id = started["sessionId"].as_str().unwrap().to_owned();
+
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"move the arm"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+    let request_id = tool_request_id(&mut rpc);
+
+    let image = "data:image/png;base64,iVBORw0KGgo=";
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"tool/respond","params":{
+        "requestId":request_id,
+        "content":[{"type":"text","text":"frame captured"},{"type":"image_url","image_url":{"url":image}}],
+        "details":{"frame":7}
+    }}));
+    let mut notes = Vec::new();
+    let answered = reply_to(&mut rpc, 5, &mut notes);
+    assert_eq!(answered["result"], serde_json::json!({}), "{answered}");
+    let terminal = rpc
+        .read_until(|record| {
+            notes.push(record.clone());
+            record["method"] == "turn/completed"
+        })
+        .expect("the turn completes");
+    assert_eq!(terminal["params"]["stopReason"], "completed", "{terminal}");
+
+    // The details are the host's: surfaced as their own event and nowhere else.
+    assert!(
+        notes.iter().any(|n| n["method"] == "item/tool_details"
+            && n["params"]["event"]["details"]["frame"] == 7),
+        "{notes:?}"
+    );
+    // The loop's tool message is the parts, verbatim and in order.
+    let history = notes
+        .iter()
+        .rev()
+        .find(|n| n["method"] == "item/messages_updated")
+        .expect("the history is published");
+    let tool_message = history["params"]["event"]["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == "tool")
+        .expect("a tool message")
+        .clone();
+    assert_eq!(tool_message["content"][0]["text"], "frame captured", "{tool_message}");
+    assert_eq!(tool_message["content"][1]["image_url"]["url"], image, "{tool_message}");
+
+    let requests = seen.lock().unwrap();
+    assert_eq!(requests.len(), 2, "the result never reached the model");
+    let wire = requests[1]["messages"].as_array().unwrap();
+    let tool_at = wire
+        .iter()
+        .position(|m| m["role"] == "tool")
+        .expect("the follow-up request carries the tool message");
+    // A tool message is text on the wire (`genai` tool responses are
+    // text-only), so the image rides in the user turn right after it.
+    assert!(wire[tool_at].to_string().contains("frame captured"), "{}", wire[tool_at]);
+    let carried = &wire[tool_at + 1];
+    assert_eq!(carried["role"], "user", "{carried}");
+    assert!(
+        carried["content"]
+            .as_array()
+            .expect("a content-part array")
+            .iter()
+            .any(|p| p["image_url"]["url"] == image),
+        "the host's image reached the model: {carried}"
+    );
+    assert!(
+        !requests[1].to_string().contains("\"frame\":7"),
+        "details must never reach the model: {}",
+        requests[1]
+    );
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// A host that names its tool after a built-in has misunderstood whose
+/// implementation runs, and is told so before any session exists.
+#[test]
+fn a_reserved_host_tool_name_is_refused_as_invalid_tools() {
+    let scratch = scratch("host-reserved");
+    let home = scratch.join("home");
+    configure(&home, &provider(1, 0));
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+
+    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"bash"}]}}));
+    assert_eq!(refused["error"]["code"], -32602, "{refused}");
+    assert_eq!(refused["error"]["data"]["kind"], "invalid_tools", "{refused}");
+    assert!(refused["error"]["message"].as_str().unwrap().contains("reserved"), "{refused}");
+    // A malformed entry is the same kind, naming where it is.
+    let typo = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"x","capability":"write"}]}}));
+    assert_eq!(typo["error"]["data"]["kind"], "invalid_tools", "{typo}");
+    assert!(typo["error"]["message"].as_str().unwrap().contains("tools[0]"), "{typo}");
+    let listed = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"session/list","params":{}}));
+    assert_eq!(listed["result"]["sessions"], serde_json::json!([]), "{listed}");
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// The running turn has already built its request from the session's tools,
+/// model and history, so changing them mid-turn is refused as retryable; once
+/// the turn ends the change applies and `session/tools/get` shows it.
+#[test]
+fn session_mutations_wait_for_the_active_turn() {
+    let scratch = scratch("host-mutation");
+    let home = scratch.join("home");
+    let (url, _seen) = scripted_provider(&[HOST_TOOL_CALL, PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let started = start_host_session(&mut rpc, &project, serde_json::json!([arm_tool()]), true);
+    let session_id = started["sessionId"].as_str().unwrap().to_owned();
+
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"move the arm"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+    // Parked on the host: the turn is certainly still active.
+    let request_id = tool_request_id(&mut rpc);
+
+    let camera = serde_json::json!([{"name":"camera","capability":"read"}]);
+    let mut notes = Vec::new();
+    for (id, method, params) in [
+        (5, "session/tools/set", serde_json::json!({"sessionId":session_id,"tools":camera})),
+        (6, "session/model/set", serde_json::json!({"sessionId":session_id,"model":"stub-model"})),
+        (7, "session/reset", serde_json::json!({"sessionId":session_id})),
+    ] {
+        rpc.send(serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}));
+        let refused = reply_to(&mut rpc, id, &mut notes);
+        assert_eq!(refused["error"]["code"], -32001, "{method}: {refused}");
+        assert_eq!(refused["error"]["data"]["kind"], "turn_active", "{method}: {refused}");
+        assert_eq!(refused["error"]["data"]["retryable"], true, "{method}: {refused}");
+    }
+    let unknown = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":8,"method":"session/tools/get","params":{"sessionId":"nope"}}));
+    assert_eq!(unknown["error"]["code"], -32602, "{unknown}");
+
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":9,"method":"tool/respond","params":{"requestId":request_id,"content":"moved"}}));
+    let answered = reply_to(&mut rpc, 9, &mut notes);
+    assert_eq!(answered["result"], serde_json::json!({}), "{answered}");
+    rpc.read_until(|record| record["method"] == "turn/completed")
+        .expect("the turn completes");
+
+    let set = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":10,"method":"session/tools/set","params":{"sessionId":session_id,"tools":camera}}));
+    let tools = set["result"]["tools"].as_array().expect("advertised names");
+    assert!(tools.iter().any(|t| t == "host__camera"), "{set}");
+    assert!(!tools.iter().any(|t| t == "host__robot_arm_move"), "the set is replaced: {set}");
+    let got = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":11,"method":"session/tools/get","params":{"sessionId":session_id}}));
+    assert_eq!(got["result"], set["result"], "{got}");
+    let model = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":12,"method":"session/model/set","params":{"sessionId":session_id,"model":"stub-model"}}));
+    assert_eq!(model["result"], serde_json::json!({"model":"stub-model"}), "{model}");
+    let after_model = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":13,"method":"session/tools/get","params":{"sessionId":session_id}}));
+    assert_eq!(after_model["result"], set["result"], "a model switch keeps the host tools: {after_model}");
+    let reset = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":14,"method":"session/reset","params":{"sessionId":session_id}}));
+    assert_eq!(reset["result"], set["result"], "a reset keeps the tools: {reset}");
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// `builtins: false` is a session that exposes the host's tools and nothing
+/// else, which the provider's request is the only honest witness of.
+#[test]
+fn builtins_false_advertises_only_host_tools() {
+    let scratch = scratch("host-only");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let started = start_host_session(&mut rpc, &project, serde_json::json!([arm_tool()]), false);
+    assert_eq!(started["tools"], serde_json::json!(["host__robot_arm_move"]), "{started}");
+    let session_id = started["sessionId"].as_str().unwrap().to_owned();
+
+    rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"hi"}}));
+    let terminal = rpc
+        .read_until(|record| record["method"] == "turn/completed")
+        .expect("the turn completes");
+    assert_eq!(terminal["params"]["stopReason"], "completed", "{terminal}");
+
+    let requests = seen.lock().unwrap();
+    let names: Vec<&str> = requests[0]["tools"]
+        .as_array()
+        .expect("the request advertises tools")
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str())
+        .collect();
+    assert_eq!(names, ["host__robot_arm_move"], "{}", requests[0]);
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// An interrupt withdraws what the host still holds, and says so before the
+/// turn's terminal record; an answer after that has nothing to resolve.
+#[test]
+fn interrupting_withdraws_pending_host_requests() {
+    let scratch = scratch("host-interrupt");
+    let home = scratch.join("home");
+    let (url, _seen) = scripted_provider(&[HOST_TOOL_CALL, PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let started = start_host_session(&mut rpc, &project, serde_json::json!([arm_tool()]), true);
+    let session_id = started["sessionId"].as_str().unwrap().to_owned();
+
+    rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"move the arm"}}));
+    let request_id = tool_request_id(&mut rpc);
+
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"turn/interrupt","params":{"sessionId":session_id}}));
+    let mut notes = Vec::new();
+    let acknowledged = reply_to(&mut rpc, 5, &mut notes);
+    assert_eq!(acknowledged["result"], serde_json::json!({}), "{acknowledged}");
+    let cancelled = notes
+        .iter()
+        .position(|n| n["method"] == "item/tool_request_cancelled")
+        .unwrap_or_else(|| panic!("no cancellation record: {notes:?}"));
+    assert_eq!(notes[cancelled]["params"]["event"]["request_id"], request_id);
+    assert_eq!(notes[cancelled]["params"]["event"]["reason"], "interrupted");
+    let completed = notes
+        .iter()
+        .position(|n| n["method"] == "turn/completed")
+        .unwrap_or_else(|| panic!("no terminal record: {notes:?}"));
+    assert!(cancelled < completed, "{notes:?}");
+    assert_eq!(notes[completed]["params"]["stopReason"], "interrupted");
+
+    let late = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":6,"method":"tool/respond","params":{"requestId":request_id,"content":"too late"}}));
+    assert_eq!(late["error"]["code"], -32602, "{late}");
+    assert_eq!(late["error"]["data"]["kind"], "not_pending", "{late}");
+
+    rpc.close();
     let _ = std::fs::remove_dir_all(scratch);
 }

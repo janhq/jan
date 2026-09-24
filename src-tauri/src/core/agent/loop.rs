@@ -78,6 +78,18 @@ pub(crate) struct OrchestrationArgs {
     pub host_tools: crate::core::agent::host_tools::HostToolSet,
     #[cfg(feature = "cli")]
     pub host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
+    /// The host's own callback is the permission gate for its tools: Jan never
+    /// emits a `permission_request` for a host tool, whatever its capability.
+    /// Built-ins are unaffected. Inherited by children with the tool set.
+    #[cfg(feature = "cli")]
+    pub host_owns_gate: bool,
+    /// Where this run's `tool_request`s go when it is not the run the client
+    /// reads: the root events sender and this run's id. A subagent's own
+    /// events reach stdout wrapped in `Subagent { .. }`, a shape no client may
+    /// answer, so its requests bypass that channel and are emitted unwrapped,
+    /// attributed by `run_id`. `None` for the main run.
+    #[cfg(feature = "cli")]
+    pub host_tool_route: Option<(mpsc::UnboundedSender<StreamEvent>, String)>,
     /// Present only when a client can render and answer structured questions.
     pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     /// Session's canonical todo list. Present for the top-level run only;
@@ -168,6 +180,12 @@ pub(crate) struct ToolOutcome {
     pub content: String,
     pub diff: Option<String>,
     pub images: Vec<tauri_plugin_agent_tools::tools::ImageContentPart>,
+    /// Content parts a host tool returned. When set they *are* the tool
+    /// message, verbatim and in order; `content` is then only the text summary
+    /// for hooks and the `tool_result` event.
+    pub parts: Option<Vec<serde_json::Value>>,
+    /// Host/UI-only data, emitted as `tool_details` and never sent to the model.
+    pub details: Option<serde_json::Value>,
 }
 
 impl ToolOutcome {
@@ -177,8 +195,46 @@ impl ToolOutcome {
             content,
             diff: None,
             images: Vec::new(),
+            parts: None,
+            details: None,
         }
     }
+}
+
+/// What a host tool call produced: the text summary, the content parts that
+/// replace it on the wire when the host sent any, and the display-only details.
+#[cfg(feature = "cli")]
+type HostCallResult = (String, Option<Vec<serde_json::Value>>, Option<serde_json::Value>);
+
+/// The gate class of one host tool call, from its declared capability and
+/// whether the host owns the gate.
+// Off the headless build there are no host tools, so only `Opaque` is built.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostGate {
+    /// Declared `read`: never prompted, allowed in Plan mode, concurrent.
+    Read,
+    /// The host's callback is the gate: never prompted here, sequential.
+    Host,
+    /// Declared `actuator`: prompted even under `auto_approve`, sequential.
+    Actuator,
+    /// Undeclared: prompted unless `auto_approve`, sequential.
+    Opaque,
+}
+
+/// Mark a failed host result's content parts the way a failed text result is
+/// marked, so the model can tell an error from an answer: the first text part
+/// gains the `ERROR: ` prefix, or one is put in front when there is none.
+#[cfg(feature = "cli")]
+fn mark_parts_as_error(mut parts: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let first_text = parts
+        .iter_mut()
+        .find(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"));
+    match first_text.and_then(|p| p.get_mut("text")) {
+        Some(serde_json::Value::String(text)) => text.insert_str(0, "ERROR: "),
+        _ => parts.insert(0, serde_json::json!({ "type": "text", "text": "ERROR" })),
+    }
+    parts
 }
 
 /// One background ping. `text` is what reaches the model as a `<SYSTEM>`
@@ -433,6 +489,12 @@ struct CompositeToolInvoker {
     host_tools: crate::core::agent::host_tools::HostToolSet,
     #[cfg(feature = "cli")]
     host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
+    /// See [`OrchestrationArgs::host_owns_gate`].
+    #[cfg(feature = "cli")]
+    host_owns_gate: bool,
+    /// See [`OrchestrationArgs::host_tool_route`].
+    #[cfg(feature = "cli")]
+    host_tool_route: Option<(mpsc::UnboundedSender<StreamEvent>, String)>,
     /// `context` answers and failure notices raised by hooks during this run,
     /// drained into `<SYSTEM>` reminders alongside the monitor's. `Arc` because
     /// the tool-event hooks fire inside the toolset and report through a sink
@@ -881,17 +943,56 @@ impl CompositeToolInvoker {
         }
     }
 
+    /// How the gate treats a call to host tool `name`. Off the headless build
+    /// there are no host tools, so the answer is never consulted there.
+    fn host_gate(&self, name: &str) -> HostGate {
+        #[cfg(feature = "cli")]
+        {
+            use crate::core::agent::host_tools::HostCapability;
+            let capability = self.host_tools.get(name).and_then(|t| t.capability);
+            match capability {
+                // Plan mode and concurrency follow the capability even when
+                // the host owns the gate; only the prompt is the host's.
+                Some(HostCapability::Read) => HostGate::Read,
+                _ if self.host_owns_gate => HostGate::Host,
+                Some(HostCapability::Actuator) => HostGate::Actuator,
+                None => HostGate::Opaque,
+            }
+        }
+        #[cfg(not(feature = "cli"))]
+        {
+            let _ = name;
+            HostGate::Opaque
+        }
+    }
+
+    /// Ask the user about a host tool call, honoring a thread-scoped "allow
+    /// always" the user already gave for it.
+    async fn approve_host_tool(&self, name: &str) -> bool {
+        if self.grants.lock().unwrap().covers_mcp(name) {
+            return true;
+        }
+        match self.prompt_mcp_permission(name).await {
+            PermissionDecision::AllowOnce => true,
+            PermissionDecision::AllowAlways => {
+                self.grants.lock().unwrap().grant_mcp(name);
+                true
+            }
+            PermissionDecision::Deny => false,
+        }
+    }
+
     /// Hand a host tool call to the client and wait for its answer.
     ///
-    /// The returned string is what the model sees, in every outcome: a host
-    /// that fails, or one that goes away mid-call, still produces a tool
-    /// message. An unanswered call would otherwise leave the conversation with
-    /// an assistant turn whose call is never resolved, which is not a state the
-    /// run can be resumed from.
+    /// The returned text is what the model sees, in every outcome, unless the
+    /// host answered with content parts: a host that fails, or one that goes
+    /// away mid-call, still produces a tool message. An unanswered call would
+    /// otherwise leave the conversation with an assistant turn whose call is
+    /// never resolved, which is not a state the run can be resumed from.
     #[cfg(feature = "cli")]
-    async fn call_host_tool(&self, name: &str, args: &serde_json::Value) -> String {
+    async fn call_host_tool(&self, name: &str, args: &serde_json::Value) -> HostCallResult {
         let Some(tool) = self.host_tools.get(name) else {
-            return format!("ERROR: host tool '{name}' is not registered");
+            return (format!("ERROR: host tool '{name}' is not registered"), None, None);
         };
         // The same hook bracket the plugin path fires, for the same reason: a
         // host tool is still a tool call, and a PreToolUse policy that could
@@ -908,29 +1009,62 @@ impl CompositeToolInvoker {
             )
             .await
         {
-            return hook_denied_msg(name, &reason);
+            return (hook_denied_msg(name, &reason), None, None);
+        }
+        // After the hook, so a policy sees every attempted call, and before
+        // the request exists, so the host -- possibly driving hardware --
+        // never receives arguments its own schema forbids.
+        if let Err(why) = tool.validate(args) {
+            return (
+                format!(
+                    "ERROR: arguments for host tool '{}' do not match its schema: {why}",
+                    tool.name
+                ),
+                None,
+                None,
+            );
         }
         let (request_id, receiver) =
             crate::core::agent::host_tools::register(&self.host_tool_requests).await;
         // The host declared `observe` and dispatches on `observe`; the `host__`
-        // prefix is this layer's business, not the host's.
-        let _ = self.events.send(StreamEvent::ToolRequest {
+        // prefix is this layer's business, not the host's. A child's request
+        // goes to the root channel unwrapped, so the client answers it exactly
+        // as it answers the main run's.
+        let (sink, run_id) = match &self.host_tool_route {
+            Some((sender, run_id)) => (sender, Some(run_id.clone())),
+            None => (&self.events, None),
+        };
+        let _ = sink.send(StreamEvent::ToolRequest {
             request_id: request_id.clone(),
             tool_name: tool.name.clone(),
             args: args.clone(),
+            run_id,
         });
-        let content = match receiver.await {
+        let (content, parts, details) = match receiver.await {
             Ok(Ok(result)) => {
                 if result.is_error {
-                    format!("ERROR: {}", result.content)
+                    let parts = result.parts.map(mark_parts_as_error);
+                    (format!("ERROR: {}", result.content), parts, result.details)
                 } else {
-                    result.content
+                    (result.content, result.parts, result.details)
                 }
+            }
+            Ok(Err(crate::core::agent::host_tools::HostToolError::Cancelled)) => {
+                self.host_tool_requests.lock().await.remove(&request_id);
+                (
+                    format!("ERROR: host tool '{}' was cancelled before it answered", tool.name),
+                    None,
+                    None,
+                )
             }
             // Stranded by a closed pipe, or the sender dropped with the run.
             Ok(Err(crate::core::agent::host_tools::HostToolError::ClientGone)) | Err(_) => {
                 self.host_tool_requests.lock().await.remove(&request_id);
-                format!("ERROR: host tool '{}' was not answered: the client is gone", tool.name)
+                (
+                    format!("ERROR: host tool '{}' was not answered: the client is gone", tool.name),
+                    None,
+                    None,
+                )
             }
         };
         self.fire_hooks(
@@ -941,7 +1075,7 @@ impl CompositeToolInvoker {
             },
         )
         .await;
-        content
+        (content, parts, details)
     }
 
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
@@ -1521,6 +1655,10 @@ impl ToolInvoker for CompositeToolInvoker {
         // that prompts, writes, execs, or dispatches stays sequential so
         // permission prompts don't interleave and writes can't race.
         let mut read_futures = Vec::new();
+        // Host tools declared `read`: auto-allowed like the built-in reads and
+        // run concurrently with each other once the gating pass is over.
+        #[cfg(feature = "cli")]
+        let mut host_read_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         for tc in tool_calls {
             let name = tc
                 .get("function")
@@ -1609,18 +1747,20 @@ impl ToolInvoker for CompositeToolInvoker {
                 out.push(ToolOutcome::plain(id, content));
                 continue;
             }
-            // Host tools execute in the client, not here. Dispatched on the
-            // same terms as a plugin or MCP tool -- opaque capability, so
-            // prompted and withheld in Plan mode -- but the call leaves the
-            // process instead of running in it. `is_host_tool` is constant
-            // `false` off the headless build, which has no client to ask.
+            // Host tools execute in the client, not here. The call leaves the
+            // process instead of running in it, and the host's declared
+            // capability decides the gate (see `host_gate`). `is_host_tool` is
+            // constant `false` off the headless build, which has no client.
             if self.is_host_tool(name) {
                 let id = tc
                     .get("id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                if self.run_mode == crate::core::agent::plan::RunMode::Plan {
+                let gate = self.host_gate(name);
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan
+                    && gate != HostGate::Read
+                {
                     out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
                     continue;
                 }
@@ -1637,16 +1777,25 @@ impl ToolInvoker for CompositeToolInvoker {
                     .and_then(|v| v.as_str())
                     .and_then(|s| serde_json::from_str(s).ok())
                     .unwrap_or(serde_json::Value::Object(Default::default()));
-                let approved = self.auto_approve
-                    || self.grants.lock().unwrap().covers_mcp(name)
-                    || match self.prompt_mcp_permission(name).await {
-                        PermissionDecision::AllowOnce => true,
-                        PermissionDecision::AllowAlways => {
-                            self.grants.lock().unwrap().grant_mcp(name);
-                            true
-                        }
-                        PermissionDecision::Deny => false,
-                    };
+                // A read is deferred and joined with the other auto-allowed
+                // reads below, so two camera frames do not wait on each other.
+                // `self` is borrowed by the future, which is why these are
+                // collected here and only driven after this loop is done.
+                #[cfg(feature = "cli")]
+                if gate == HostGate::Read {
+                    host_read_calls.push((id, name.to_string(), args));
+                    continue;
+                }
+                let approved = match gate {
+                    HostGate::Read | HostGate::Host => true,
+                    // An actuator is prompted even under `auto_approve`: that
+                    // is the whole point of declaring one. A session grant
+                    // still covers it, since the user said so explicitly.
+                    HostGate::Actuator => self.approve_host_tool(name).await,
+                    HostGate::Opaque => {
+                        self.auto_approve || self.approve_host_tool(name).await
+                    }
+                };
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
@@ -1655,15 +1804,21 @@ impl ToolInvoker for CompositeToolInvoker {
                     continue;
                 }
                 #[cfg(feature = "cli")]
-                let content = self.call_host_tool(name, &args).await;
+                {
+                    let (content, parts, details) = self.call_host_tool(name, &args).await;
+                    out.push(ToolOutcome {
+                        parts,
+                        details,
+                        ..ToolOutcome::plain(id, content)
+                    });
+                }
                 // Unreachable off the headless build, where `is_host_tool` is
                 // constant `false`.
                 #[cfg(not(feature = "cli"))]
-                let content = {
+                {
                     let _ = &args;
-                    String::new()
-                };
-                out.push(ToolOutcome::plain(id, content));
+                    out.push(ToolOutcome::plain(id, String::new()));
+                }
                 continue;
             }
             // Plugin-declared tools are dispatched ahead of the MCP fallback:
@@ -1895,10 +2050,9 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
-                        id,
-                        content: text,
                         diff,
                         images: images.unwrap_or_default(),
+                        ..ToolOutcome::plain(id, text)
                     }
                 });
                 continue;
@@ -1992,14 +2146,25 @@ impl ToolInvoker for CompositeToolInvoker {
                 }
             };
             out.push(ToolOutcome {
-                id,
-                content: text,
                 diff,
                 images: images.unwrap_or_default(),
+                ..ToolOutcome::plain(id, text)
             });
         }
         if !read_futures.is_empty() {
             out.extend(futures::future::join_all(read_futures).await);
+        }
+        #[cfg(feature = "cli")]
+        if !host_read_calls.is_empty() {
+            let calls = host_read_calls.iter().map(|(id, name, args)| async move {
+                let (content, parts, details) = self.call_host_tool(name, args).await;
+                ToolOutcome {
+                    parts,
+                    details,
+                    ..ToolOutcome::plain(id.clone(), content)
+                }
+            });
+            out.extend(futures::future::join_all(calls).await);
         }
         if !mcp_calls.is_empty() {
             let results = self.mcp.invoke(&mcp_calls).await?;
@@ -2305,12 +2470,18 @@ fn advertise_local_tools(
         openai_tools.push(crate::core::agent::todo::todo_tool_schema());
     }
     // Host tools run in the client, not here, so they need no project root --
-    // like `ask` and `todo` they are advertised independent of that gate. What
-    // they do share with plugin and MCP tools is an opaque capability, so they
-    // are withheld entirely in read-only Plan mode and honor the deny list.
+    // like `ask` and `todo` they are advertised independent of that gate. An
+    // undeclared or actuator tool shares the plugin/MCP treatment and is
+    // withheld in read-only Plan mode; one the host declared `read` stays.
+    // Every one honors the deny list.
     #[cfg(feature = "cli")]
-    if !planning {
+    {
         for tool in host_tools.all() {
+            let is_read =
+                tool.capability == Some(crate::core::agent::host_tools::HostCapability::Read);
+            if planning && !is_read {
+                continue;
+            }
             if permissions.is_denied(&tool.qualified_name) {
                 continue;
             }
@@ -2611,6 +2782,10 @@ async fn orchestrate_inner(
         host_tools,
         #[cfg(feature = "cli")]
         host_tool_requests,
+        #[cfg(feature = "cli")]
+        host_owns_gate,
+        #[cfg(feature = "cli")]
+        host_tool_route,
         ask_requests,
         todo_registry,
         system_prompt_override,
@@ -2980,6 +3155,10 @@ async fn orchestrate_inner(
             host_tools: host_tools.clone(),
             #[cfg(feature = "cli")]
             host_tool_requests: host_tool_requests.clone(),
+            #[cfg(feature = "cli")]
+            host_owns_gate: *host_owns_gate,
+            #[cfg(feature = "cli")]
+            host_tool_route: host_tool_route.clone(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
         };
@@ -4148,6 +4327,8 @@ async fn run_turn_cycle(
                 content,
                 diff,
                 images,
+                parts,
+                details,
             } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
             // convention is reserved for hard tool failures the model must
@@ -4168,11 +4349,23 @@ async fn run_turn_cycle(
                 is_error,
                 diff: diff.clone(),
             });
+            // Display-only, and after the result so a consumer can attach it
+            // to a row it has already drawn. Never reaches the transcript.
+            if let Some(details) = details {
+                let _ = events.send(StreamEvent::ToolDetails {
+                    id: id.clone(),
+                    details,
+                });
+            }
             // A `read` of an image carries OpenAI `image_url` content parts; the
             // tool message is then a content-part array (text note first, the
             // image parts after) so a vision model sees the image. Other results
-            // stay plain text, preserving the standard tool protocol.
-            let wire_content = if images.is_empty() {
+            // stay plain text, preserving the standard tool protocol. A host
+            // that answered with content parts chose the message itself, so
+            // its parts go out verbatim.
+            let wire_content = if let Some(parts) = parts {
+                serde_json::Value::Array(parts)
+            } else if images.is_empty() {
                 serde_json::Value::String(content.clone())
             } else {
                 let mut parts = vec![serde_json::json!({
@@ -5171,13 +5364,14 @@ mod tests {
                             .unwrap_or("")
                             .to_string();
                         ToolOutcome {
-                            id,
-                            content: "Read image pic.png (image/png, 10 bytes)".to_string(),
-                            diff: None,
                             images: vec![tauri_plugin_agent_tools::tools::ImageContentPart {
                                 data_url: "data:image/png;base64,QUJD".to_string(),
                                 name: "pic.png".to_string(),
                             }],
+                            ..ToolOutcome::plain(
+                                id,
+                                "Read image pic.png (image/png, 10 bytes)".to_string(),
+                            )
                         }
                     })
                     .collect())
@@ -5222,6 +5416,99 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,QUJD");
         assert_eq!(content[1]["image_url"]["detail"], "auto");
+    }
+
+    /// A host tool that answered with content parts chose the tool message
+    /// itself: the parts go out verbatim and in order. Its details are for the
+    /// host's display only, so they arrive as a `tool_details` event right
+    /// after the result and never appear in what the model is sent.
+    #[tokio::test]
+    async fn host_parts_are_the_tool_message_and_details_stay_off_the_wire() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        struct PartsTool;
+        #[async_trait]
+        impl ToolInvoker for PartsTool {
+            async fn invoke(
+                &self,
+                tool_calls: &[serde_json::Value],
+            ) -> Result<Vec<ToolOutcome>, String> {
+                Ok(tool_calls
+                    .iter()
+                    .map(|tc| ToolOutcome {
+                        parts: Some(vec![
+                            json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }),
+                            json!({ "type": "text", "text": "after the image" }),
+                        ]),
+                        details: Some(json!({ "secret_pose": [1, 2, 3] })),
+                        ..ToolOutcome::plain(
+                            tc["id"].as_str().unwrap_or("").to_string(),
+                            "after the image".to_string(),
+                        )
+                    })
+                    .collect())
+            }
+        }
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &PartsTool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let tool_msg = requests[1]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .cloned()
+            .expect("a tool message");
+        assert_eq!(
+            tool_msg["content"],
+            json!([
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } },
+                { "type": "text", "text": "after the image" },
+            ])
+        );
+        assert!(
+            !requests[1].to_string().contains("secret_pose"),
+            "details must never reach the model"
+        );
+
+        let mut seen = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::ToolResult { id, content, .. } => seen.push(format!("result {id} {content}")),
+                StreamEvent::ToolDetails { id, details } => seen.push(format!("details {id} {details}")),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            seen,
+            [
+                "result call_1 after the image".to_string(),
+                r#"details call_1 {"secret_pose":[1,2,3]}"#.to_string(),
+            ]
+        );
     }
 
     /// The reported incident, end to end: mid-run, the model emits a tool
@@ -7227,6 +7514,10 @@ mod tests {
             host_tools: crate::core::agent::host_tools::HostToolSet::new(),
             #[cfg(feature = "cli")]
             host_tool_requests: crate::core::agent::host_tools::new_registry(),
+            #[cfg(feature = "cli")]
+            host_owns_gate: false,
+            #[cfg(feature = "cli")]
+            host_tool_route: None,
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: std::sync::Arc::new(
                 crate::core::agent::bg_shell::BackgroundShells::default(),
@@ -7626,6 +7917,7 @@ mod tests {
                     request_id,
                     tool_name,
                     args,
+                    ..
                 } = ev
                 {
                     match reply {
@@ -7672,11 +7964,442 @@ mod tests {
                     name: n.to_string(),
                     description: String::new(),
                     parameters: None,
+                    capability: None,
                     unknown: Default::default(),
                 })
                 .collect(),
         )
         .expect("the test names are valid")
+    }
+
+    /// A host tool set whose entries each declare a capability.
+    #[cfg(feature = "cli")]
+    fn host_tool_set_with(
+        tools: &[(&str, Option<crate::core::agent::host_tools::HostCapability>)],
+    ) -> crate::core::agent::host_tools::HostToolSet {
+        crate::core::agent::host_tools::HostToolSet::declare(
+            tools
+                .iter()
+                .map(|(n, capability)| crate::core::agent::host_tools::HostToolDecl {
+                    name: n.to_string(),
+                    description: String::new(),
+                    parameters: None,
+                    capability: *capability,
+                    unknown: Default::default(),
+                })
+                .collect(),
+        )
+        .expect("the test names are valid")
+    }
+
+    #[cfg(feature = "cli")]
+    fn host_ok(content: &str) -> crate::core::agent::host_tools::HostToolResult {
+        crate::core::agent::host_tools::HostToolResult {
+            content: content.to_string(),
+            parts: None,
+            details: None,
+            is_error: false,
+        }
+    }
+
+    /// Answers every `tool_request` with `content` and every permission
+    /// prompt with `decision`, recording what it saw: the request tool names
+    /// and the prompted tool names. Ends when the invoker's sender drops.
+    #[cfg(feature = "cli")]
+    fn answering_host(
+        invoker: &CompositeToolInvoker,
+        mut events: mpsc::UnboundedReceiver<StreamEvent>,
+        decision: PermissionDecision,
+    ) -> tokio::task::JoinHandle<(Vec<String>, Vec<String>)> {
+        let registry = invoker.host_tool_requests.clone();
+        let permissions = invoker.permission_requests.clone();
+        tokio::spawn(async move {
+            let mut asked = Vec::new();
+            let mut prompted = Vec::new();
+            while let Some(ev) = events.recv().await {
+                match ev {
+                    StreamEvent::ToolRequest {
+                        request_id,
+                        tool_name,
+                        ..
+                    } => {
+                        crate::core::agent::host_tools::respond(
+                            &registry,
+                            &request_id,
+                            Ok(host_ok("done")),
+                        )
+                        .await
+                        .expect("pending");
+                        asked.push(tool_name);
+                    }
+                    StreamEvent::PermissionRequest {
+                        request_id,
+                        tool_name,
+                        ..
+                    } => {
+                        if let Some(tx) = permissions.lock().await.remove(&request_id) {
+                            let _ = tx.send(decision);
+                        }
+                        prompted.push(tool_name);
+                    }
+                    _ => {}
+                }
+            }
+            (asked, prompted)
+        })
+    }
+
+    /// A `read` host tool is the sensor case: no prompt even with
+    /// `auto_approve` off, and two calls in one batch are in flight together.
+    /// The stub host answers only once it holds *both* requests, so a
+    /// sequential dispatch would deadlock here (bounded by the timeout).
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn read_host_tools_run_concurrently_without_a_prompt() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolread");
+        let (mut invoker, mut events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("camera", Some(HostCapability::Read))]),
+        );
+        invoker.auto_approve = false;
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            let mut pending = Vec::new();
+            while let Some(ev) = events.recv().await {
+                match ev {
+                    StreamEvent::ToolRequest { request_id, .. } => pending.push(request_id),
+                    StreamEvent::PermissionRequest { tool_name, .. } => {
+                        panic!("a read host tool was prompted: {tool_name}")
+                    }
+                    _ => {}
+                }
+                if pending.len() == 2 {
+                    for (i, id) in pending.iter().enumerate() {
+                        crate::core::agent::host_tools::respond(
+                            &registry,
+                            id,
+                            Ok(host_ok(&format!("frame {i}"))),
+                        )
+                        .await
+                        .expect("pending");
+                    }
+                    return pending;
+                }
+            }
+            panic!("only {} requests arrived", pending.len());
+        });
+
+        let mut first = hooked_tool_call("host__camera", "{}");
+        first["id"] = json!("c1");
+        let mut second = hooked_tool_call("host__camera", "{}");
+        second["id"] = json!("c2");
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            invoker.invoke(&[first, second]),
+        )
+        .await
+        .expect("both reads were in flight together")
+        .unwrap();
+        let pending = host.await.expect("the stub host ran");
+        assert_eq!(pending.len(), 2);
+        let mut ids: Vec<&str> = out.iter().map(|o| o.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["c1", "c2"]);
+        assert!(out.iter().all(|o| o.content.starts_with("frame ")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode is read-only, and a host tool declared `read` is exactly that,
+    /// so it stays both advertised and callable; the others are withheld.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_read_host_tool_is_available_in_plan_mode() {
+        use crate::core::agent::host_tools::HostCapability;
+        let set = host_tool_set_with(&[
+            ("camera", Some(HostCapability::Read)),
+            ("arm", Some(HostCapability::Actuator)),
+            ("opaque", None),
+        ]);
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            None,
+            &ToolPermissions::allow_all(),
+            None,
+            crate::core::agent::plan::RunMode::Plan,
+            false,
+            1,
+            false,
+            false,
+            &set,
+        );
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["function"]["name"].as_str())
+            .collect();
+        assert_eq!(names, ["host__camera"]);
+
+        let root = hooks_root("hosttoolreadplan");
+        let (mut invoker, events) = host_invoker(root.clone(), set);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__camera", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__arm", "{}")])
+            .await
+            .unwrap();
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["camera"]);
+        assert!(prompted.is_empty(), "{prompted:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Declaring an actuator is how a host opts a tool out of `auto_approve`:
+    /// the user is asked every time, and a denial never reaches the host.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn an_actuator_host_tool_is_prompted_even_under_auto_approve() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolactuator");
+        let (invoker, events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("arm", Some(HostCapability::Actuator)), ("opaque", None)]),
+        );
+        assert!(invoker.auto_approve);
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__arm", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "ERROR: tool 'host__arm' denied by user");
+        // The undeclared tool keeps today's behaviour: auto-approved.
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__opaque", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert_eq!(prompted, ["host__arm"]);
+        assert_eq!(asked, ["opaque"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With the host owning the gate its callback is the only prompt: Jan
+    /// raises no `permission_request` for any host tool class, even with
+    /// `auto_approve` off.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_host_that_owns_the_gate_is_never_prompted_for() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolhostgate");
+        let (mut invoker, events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("arm", Some(HostCapability::Actuator)), ("opaque", None)]),
+        );
+        invoker.auto_approve = false;
+        invoker.host_owns_gate = true;
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[
+                hooked_tool_call("host__arm", "{}"),
+                hooked_tool_call("host__opaque", "{}"),
+            ])
+            .await
+            .unwrap();
+        assert!(out.iter().all(|o| o.content == "done"));
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert!(prompted.is_empty(), "{prompted:?}");
+        assert_eq!(asked, ["arm", "opaque"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child's host call goes out on the root sender, unwrapped, with its
+    /// run id; nothing reaches the child's own channel, which the forwarder
+    /// would wrap into a shape no client may answer.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_routed_host_call_is_emitted_unwrapped_with_its_run_id() {
+        let root = hooks_root("hosttoolroute");
+        let (mut invoker, mut own_events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let (route_tx, mut route_rx) = mpsc::unbounded_channel();
+        invoker.host_tool_route = Some((route_tx, "sub-7".to_string()));
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            match route_rx.recv().await {
+                Some(StreamEvent::ToolRequest {
+                    request_id,
+                    tool_name,
+                    run_id,
+                    ..
+                }) => {
+                    crate::core::agent::host_tools::respond(&registry, &request_id, Ok(host_ok("seen")))
+                        .await
+                        .expect("pending in the shared registry");
+                    (tool_name, run_id)
+                }
+                other => panic!("expected a tool_request, got {other:?}"),
+            }
+        });
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__observe", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "seen");
+        assert_eq!(
+            host.await.expect("the stub host ran"),
+            ("observe".to_string(), Some("sub-7".to_string()))
+        );
+        while let Ok(ev) = own_events.try_recv() {
+            assert!(
+                !matches!(ev, StreamEvent::ToolRequest { .. }),
+                "the request must not enter the child's own channel"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A withdrawn request still settles the call, and the model is told it
+    /// was cancelled rather than that the host vanished.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_cancelled_host_call_tells_the_model_so() {
+        let root = hooks_root("hosttoolcancel");
+        let (invoker, mut events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            while let Some(ev) = events.recv().await {
+                if let StreamEvent::ToolRequest { request_id, .. } = ev {
+                    let released = crate::core::agent::host_tools::cancel_all(&registry).await;
+                    assert_eq!(released, vec![request_id]);
+                    return;
+                }
+            }
+        });
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__observe", "{}")])
+            .await
+            .unwrap();
+        host.await.expect("the stub host ran");
+        assert_eq!(
+            out[0].content,
+            "ERROR: host tool 'observe' was cancelled before it answered"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The host's schema is enforced before the host is asked: a call with too
+    /// few joints goes back to the model as an error naming the path, and the
+    /// host never sees a `tool_request` for it.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn arguments_that_break_the_host_schema_never_reach_the_host() {
+        let root = hooks_root("hosttoolvalidate");
+        let set = crate::core::agent::host_tools::HostToolSet::declare(vec![
+            crate::core::agent::host_tools::HostToolDecl {
+                name: "move_arm".to_string(),
+                description: String::new(),
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "joints": { "type": "array", "items": { "type": "number" }, "minItems": 6 }
+                    },
+                    "required": ["joints"]
+                })),
+                capability: None,
+                unknown: Default::default(),
+            },
+        ])
+        .expect("declares");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(
+            out[0].content,
+            "ERROR: arguments for host tool 'move_arm' do not match its schema: \
+             /joints: expected at least 6 items, got 3"
+        );
+        // A valid call still goes through, so the refusal above was the schema.
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3,4,5,6]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["move_arm"], "only the valid call reached the host");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dotted host name is advertised under its mapped wire name, and the
+    /// host is asked under the name it declared.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_mapped_host_name_is_requested_under_its_original_name() {
+        let root = hooks_root("hosttoolmapped");
+        let set = host_tool_set(&["yam.move_ee_ik"]);
+        let wire = set.all()[0].qualified_name.clone();
+        assert!(wire.starts_with("host__yam_move_ee_ik_"), "{wire}");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker.invoke(&[hooked_tool_call(&wire, "{}")]).await.unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["yam.move_ee_ik"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Parts and details a host answers with survive dispatch onto the
+    /// outcome; a failed result's parts carry the error marker too.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn host_parts_and_details_reach_the_outcome() {
+        let root = hooks_root("hosttoolparts");
+        let (invoker, events) = host_invoker(root.clone(), host_tool_set(&["camera"]));
+        let parts = vec![
+            json!({ "type": "text", "text": "front camera" }),
+            json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }),
+        ];
+        let host = stub_host(
+            invoker.host_tool_requests.clone(),
+            events,
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "front camera".to_string(),
+                parts: Some(parts.clone()),
+                details: Some(json!({ "exposure": 12 })),
+                is_error: false,
+            }),
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__camera", "{}")])
+            .await
+            .unwrap();
+        host.await.expect("the stub host ran");
+        assert_eq!(out[0].content, "front camera");
+        assert_eq!(out[0].parts.as_deref(), Some(parts.as_slice()));
+        assert_eq!(out[0].details, Some(json!({ "exposure": 12 })));
+
+        assert_eq!(
+            mark_parts_as_error(parts.clone())[0],
+            json!({ "type": "text", "text": "ERROR: front camera" })
+        );
+        assert_eq!(
+            mark_parts_as_error(vec![parts[1].clone()])[0],
+            json!({ "type": "text", "text": "ERROR" })
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// R1 end to end: the call leaves as a `tool_request` carrying the host's
@@ -7691,6 +8414,8 @@ mod tests {
             events,
             Ok(crate::core::agent::host_tools::HostToolResult {
                 content: "two cameras, both clear".to_string(),
+                parts: None,
+                details: None,
                 is_error: false,
             }),
         );
@@ -7724,6 +8449,8 @@ mod tests {
             events,
             Ok(crate::core::agent::host_tools::HostToolResult {
                 content: "arm is estopped".to_string(),
+                parts: None,
+                details: None,
                 is_error: true,
             }),
         );

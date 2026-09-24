@@ -110,7 +110,8 @@ jan cli agent run --max-turns 5 --max-session-tokens 20000 "triage the build fai
 | `--provider`, `--api-key` | Credential overrides for this run |
 | `--output-format <FORMAT>` | `text` (default) streams the answer; `json` prints one result object; `stream-json` prints one JSON event per line |
 | `--input-format <FORMAT>` | `text` (default) ignores stdin; `stream-json` reads client messages while the run is in flight. Requires `--output-format stream-json` |
-| `--host-tools <FILE>` | JSON file declaring tools **the client executes**, as a list of `{"name", "description", "parameters"}`. The model calls them as `host__<name>`; each call arrives as a `tool_request` on stdout and must be answered with a `tool_result` on stdin, so this requires `--input-format stream-json`. Validated before the run starts |
+| `--host-tools <FILE>` | JSON file declaring tools **the client executes**, as a list of `{"name", "description", "parameters", "capability"}`. The model calls them as `host__<name>` (see [name mapping](#host-tools)); each call arrives as a `tool_request` on stdout and must be answered with a `tool_result` on stdin, so this requires `--input-format stream-json`. Validated before the run starts |
+| `--host-gate` | The host approves its own tool calls: the run raises no `permission_request` for any host tool, whatever its capability. Built-in tools are unaffected. Requires `--host-tools` |
 
 <Callout type="info">
 `run` takes a positional task, so a space-separated `--resume ID` would swallow it. Write the value
@@ -207,6 +208,7 @@ thing that can answer a permission request and it needs to be reading them.
 | Follow-up turn with an image | `{"type":"user","content":[{"type":"text","text":"what changed here?"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo..."}}]}` |
 | Permission answer | `{"type":"permission","request_id":"perm-1","decision":"allow_once"}` |
 | Host tool result | `{"type":"tool_result","request_id":"host-1","content":"{\"ok\":true}","is_error":false}` |
+| Host tool result with an image | `{"type":"tool_result","request_id":"host-2","content":[{"type":"text","text":"front camera"},{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo..."}}],"details":{"exposure":12}}` |
 | Stop the run | `{"type":"abort"}` |
 
 A follow-up joins the run at the next turn boundary. A `user` message carries either `text` or
@@ -227,29 +229,101 @@ line cannot end a healthy run.
 #### Host tools
 
 A host tool is one the **client** implements: a device only the host can reach, an editor's own
-buffer, anything whose state does not live in this process. Declare the set with `--host-tools`,
-and the run advertises each to the model as `host__<name>`.
+buffer, anything whose state does not live in this process. Declare the set with `--host-tools`:
+
+```json
+[
+  {"name": "camera", "description": "Grab a frame.", "capability": "read"},
+  {"name": "yam.move_ee_ik", "description": "Move the arm.", "capability": "actuator",
+   "parameters": {"type": "object", "properties": {"joints": {"type": "array", "items": {"type": "number"}, "minItems": 6}}, "required": ["joints"]}}
+]
+```
+
+Each tool is advertised to the model as `host__<name>`. A name that is not ASCII letters, digits,
+`_` and `-`, contains `__`, or would make the advertised name longer than 64 characters is
+**mapped** rather than refused: other characters become `_`, and an 8-hex-digit hash of the
+original name is appended so names that sanitize alike stay distinct. `yam.move_ee_ik` is
+advertised as `host__yam_move_ee_ik_<hash>`. The mapping is deterministic, and `init.tool_specs`
+shows the name the model will call. Still refused: an empty name, a name with a control character,
+a built-in's name (`bash`, `read`, ...), and two declarations that land on the same advertised name.
 
 When the model calls one, the run emits a `tool_request` and waits:
 
 ```json
-{"type":"tool_request","request_id":"host-1","tool_name":"robot_arm_move","args":{"position":"bin"}}
+{"type":"tool_request","request_id":"host-1","tool_name":"yam.move_ee_ik","args":{"joints":[0,0,0,0,0,0]}}
 ```
 
-`tool_name` is the name **you declared**, not the `host__`-prefixed one the model calls: you
-dispatch on the name you chose. Answer it with a `tool_result` carrying the same `request_id`.
-`content` is a string and is required even for a failure -- set `is_error: true` and put the reason
-in `content`, which reaches the model as the tool's error. Each `request_id` is answerable once.
+`tool_name` is the name **you declared**, never the advertised one: you dispatch on the name you
+chose. A call made by a subagent carries that subagent's `run_id` as well; a main-run request has
+none. Answer either with a `tool_result` carrying the same `request_id`.
 
-A host tool is gated exactly as an MCP tool is: prompted rather than auto-approved (its
-`permission_request` carries `prompt_kind: "mcp"`, the class for any opaque third-party
-capability, naming the qualified `host__<name>`), withheld entirely in read-only plan mode, and
-subject to the same deny list. The `init` handshake echoes the schemas actually advertised in
-`tool_specs`, so a tool you declared but that is missing there was withheld by policy and will
-never be called.
+Before a request is emitted, the call's arguments are checked against the tool's `parameters`. A
+call that breaks the schema never reaches you; the model is told
+`ERROR: arguments for host tool '<name>' do not match its schema: /joints: expected at least 6 items, got 3`
+and can try again. The check covers `type`, `properties`, `required`, `additionalProperties`,
+`items`, `minItems`, `maxItems`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`,
+`exclusiveMinimum`, `exclusiveMaximum` and `pattern`; any other keyword is ignored, never failed.
 
-Because only the client can answer, a `tool_request` left unanswered when stdin closes is failed
-rather than left to hang: the model is told the client is gone and the turn finishes.
+`content` is required even for a failure -- set `is_error: true` and put the reason in `content`,
+which reaches the model as the tool's error. It is either a string or a content-part array of
+`text` and `image_url` parts, held to the same caps as a `user` message. The parts are kept as the
+tool message, in order, in the session transcript; the `tool_result` event carries only their text
+(or `(image)` for an image alone).
+
+<a id="tool-result-images"></a>Where an image lands on the provider request depends on the provider's API:
+
+| Provider API | Tool image goes |
+|---|---|
+| OpenAI-compatible (`/chat/completions`, local servers, most gateways) | Tool message carries the text; the images lead the next user turn, each labeled with the call it answers |
+| Anthropic Messages | Inside the call's `tool_result` block, as `image` blocks |
+| Google Gemini 3+ | Nested in the call's `functionResponse.parts` as `inlineData` |
+| Google Gemini 2.x and earlier | Beside the `functionResponse`, in the same turn |
+| OpenAI Responses | In the `function_call_output`'s item list, as `input_image` |
+
+Gemini accepts only inline (`data:`) images in a tool result; a remote image URL there is dropped. An
+image in the transcript is re-sent on every later request of the session, and it is **not counted**
+by the context indicator or auto-compaction (an image's token cost depends on its resolution and
+the provider). A tool that returns a frame every turn should keep images small, or return a
+fresh frame only when asked.
+
+An optional `details` object is for your own display: it is **never sent to the model**, and the
+run echoes it as a record right after that call's `tool_result`:
+
+```json
+{"type":"tool_details","id":"call_7","details":{"exposure":12}}
+```
+
+`details` are run-scoped: they are not saved with the thread, so a resumed session has the tool
+result but not its details. Keep anything your UI needs after a resume on your side, keyed by the
+call `id`.
+
+A result over a cap is an `input_error` and the request stays pending, so you can answer again.
+Each `request_id` is answerable once; a late or repeated answer is an `input_error` naming it as not
+pending.
+
+`capability` decides how a call is treated:
+
+| `capability` | Prompted | Plan mode | Several in one turn |
+| --- | --- | --- | --- |
+| `read` | never | advertised | run concurrently |
+| `actuator` | always, even when the run auto-approves | withheld | one at a time |
+| absent | unless the run auto-approves (the default; `--safe` turns it off) | withheld | one at a time |
+
+A prompt is a `permission_request` with `prompt_kind: "mcp"`, naming the advertised
+`host__<name>`. With `--host-gate` none is raised for any host tool, because your `tool_request`
+handler is the gate. The deny list applies to every class. The `init` handshake echoes the schemas
+actually advertised in `tool_specs`, so a tool you declared that is missing there was withheld by
+policy and will never be called. Host tools are never served by `jan mcp serve`.
+
+A request you should no longer answer is withdrawn with a record, printed before the final `result`:
+
+```json
+{"type":"tool_request_cancelled","request_id":"host-1","reason":"aborted"}
+```
+
+`reason` is `aborted` after an `abort` message (the model is told the call was cancelled) and
+`client_gone` when stdin closed first (it is told the client is gone). Either way the turn finishes
+rather than hanging on an answer that cannot arrive.
 
 <Callout type="info">
 Closing stdin is not an abort -- the run finishes and still prints its `result`. But it does end the
@@ -337,7 +411,7 @@ turn/completed                                             -> {sessionId,turnId,
 
 The `item/*` payload contains the existing `StreamEvent` object unchanged. A client can also call `session/list`, `session/resume`, `session/fork`, `session/archive`, `turn/steer`, `turn/interrupt` and `permission/respond {requestId,decision}`. Session ids address this **process**, not another RPC process. `turn/interrupt` closes the turn with one `turn/completed` carrying `stopReason: "interrupted"`, and puts that record on the wire before it answers the request. A client that closes stdin ends the process, and the turn that is still running is closed with `stopReason: "interrupted"` before it exits. An outstanding permission request is never granted - closing the channel is not an approval, and the gate's fallback for a request that is dropped without an answer is denial. Only one turn is active per process; a second `turn/start` returns `-32001` with `data.retryable: true` rather than silently queueing it, and so does a `turn/start` arriving while the output queue has no room left for the terminal record - the turn is refused instead of accepted and then lost. `turn/completed.stopReason` is the turn's outcome (`completed`, `error`, `interrupted`), not the upstream finish reason: that one is the `stop_reason` inside `item/done`. Transport errors (`-32700` malformed JSON, `-32600` invalid request, `-32601` unknown method, `-32602` bad params) differ from an agent failure reported by `turn/completed` with `stopReason: "error"`.
 
-Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence. Host tool callbacks are **not implemented** on this RPC surface yet; `session/start` refuses a `tools` field rather than advertising it as supported. The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
+Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence. Host tools are declared on `session/start` (`tools`, `builtins`) and answered with `tool/respond`; see [Protocol](./protocol#rpc-host-tools). The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
 
 ### `schema`
 

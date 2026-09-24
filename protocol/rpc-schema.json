@@ -82,12 +82,91 @@
         "ephemeral": {
           "type": "boolean",
           "default": false
+        },
+        "tools": {
+          "description": "Host tools this session may call. Kept as raw values until declaration\nso a malformed entry is reported as `invalid_tools` with the reason,\nrather than as a generic params error that names nothing.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostToolDeclSchema"
+          },
+          "default": []
+        },
+        "builtins": {
+          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo`, subagent or monitor tools.",
+          "type": "boolean",
+          "default": true
+        },
+        "permissions": {
+          "$ref": "#/$defs/PermissionOwner",
+          "default": "jan"
         }
       },
       "additionalProperties": false,
       "required": [
         "cwd"
-      ]
+      ],
+      "$defs": {
+        "HostToolDeclSchema": {
+          "description": "The declaration shape, for the document only: the dispatcher parses the\nreal `HostToolDecl`, which lives outside this module and carries no schema.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "parameters": {
+              "description": "JSON Schema for the arguments, advertised to the model verbatim.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "default": null
+            },
+            "capability": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HostCapability"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "HostCapability": {
+          "description": "What a host says a tool does, which decides how the loop treats it.\nAbsent means opaque: prompted unless `auto_approve`, sequential, withheld in\nPlan mode -- the plugin/MCP default.",
+          "oneOf": [
+            {
+              "description": "Observes without side effects (a camera, a sensor): never prompted,\nadvertised in Plan mode, and run concurrently with other reads.",
+              "type": "string",
+              "const": "read"
+            },
+            {
+              "description": "Acts on the world: prompted even under `auto_approve` unless the host\nowns the gate, run sequentially, withheld in Plan mode.",
+              "type": "string",
+              "const": "actuator"
+            }
+          ]
+        },
+        "PermissionOwner": {
+          "description": "Who gates host tool calls. `jan` prompts through `permission_request` the\nway any opaque tool is prompted; `host` means the host's own callback is\nthe gate, so Jan never asks about a host tool.",
+          "type": "string",
+          "enum": [
+            "jan",
+            "host"
+          ]
+        }
+      }
     },
     "session/resume": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -195,6 +274,172 @@
       "required": [
         "requestId",
         "decision"
+      ]
+    },
+    "tool/respond": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "ToolRespondParams",
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string"
+        },
+        "content": {
+          "$ref": "#/$defs/ToolResultContent"
+        },
+        "isError": {
+          "type": "boolean",
+          "default": false
+        },
+        "details": {
+          "description": "Host/UI-only data, echoed as `item/tool_details` and never sent to the\nmodel.",
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "default": null
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "requestId",
+        "content"
+      ],
+      "$defs": {
+        "ToolResultContent": {
+          "description": "A host tool's answer: text, or OpenAI content parts (`text` / `image_url`\nwith a base64 `data:` URL) under the same caps as a user message.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": true
+            }
+          ]
+        }
+      }
+    },
+    "session/tools/get": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionIdParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
+      ]
+    },
+    "session/tools/set": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionToolsSetParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostToolDeclSchema"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "tools"
+      ],
+      "$defs": {
+        "HostToolDeclSchema": {
+          "description": "The declaration shape, for the document only: the dispatcher parses the\nreal `HostToolDecl`, which lives outside this module and carries no schema.",
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string",
+              "default": ""
+            },
+            "parameters": {
+              "description": "JSON Schema for the arguments, advertised to the model verbatim.",
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true,
+              "default": null
+            },
+            "capability": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/HostCapability"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ]
+        },
+        "HostCapability": {
+          "description": "What a host says a tool does, which decides how the loop treats it.\nAbsent means opaque: prompted unless `auto_approve`, sequential, withheld in\nPlan mode -- the plugin/MCP default.",
+          "oneOf": [
+            {
+              "description": "Observes without side effects (a camera, a sensor): never prompted,\nadvertised in Plan mode, and run concurrently with other reads.",
+              "type": "string",
+              "const": "read"
+            },
+            {
+              "description": "Acts on the world: prompted even under `auto_approve` unless the host\nowns the gate, run sequentially, withheld in Plan mode.",
+              "type": "string",
+              "const": "actuator"
+            }
+          ]
+        }
+      }
+    },
+    "session/model/set": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionModelSetParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId",
+        "model"
+      ]
+    },
+    "session/reset": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "title": "SessionIdParams",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "sessionId"
       ]
     }
   },
@@ -508,7 +753,7 @@
         ]
       },
       {
-        "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).",
+        "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. A child's host tool call is routed to the root\nchannel unwrapped instead, attributed by `ToolRequest.run_id`.",
         "type": "object",
         "properties": {
           "run_id": {
@@ -786,6 +1031,78 @@
           "capability",
           "prompt_kind",
           "offers_always"
+        ]
+      },
+      {
+        "description": "A host-registered tool was called and the run is waiting for the host to\nexecute it. The client replies with a `tool_result` line carrying this\n`request_id`; until it does, the turn is parked on this one call.\n\n`tool_name` is the name the *host* declared, not the `host__`-prefixed\nname the model calls: the host dispatches on the name it chose and never\nhas to know this layer's prefixing rule.",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "args": {
+            "description": "The arguments the model produced, already parsed from the call's\nJSON string. Validated against nothing here -- the host owns the\nschema it declared and is the only party that can enforce it."
+          },
+          "run_id": {
+            "description": "Which run raised the request: `None` for the main run, the child's\nrun id for a subagent. Attribution only -- the host answers by\n`request_id` alone, and a child's request is emitted unwrapped at\nthe top level so the same answer path serves both.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_request"
+          }
+        },
+        "required": [
+          "type",
+          "request_id",
+          "tool_name",
+          "args"
+        ]
+      },
+      {
+        "description": "A pending [`StreamEvent::ToolRequest`] was withdrawn: the host must not\nanswer it any more, and a late answer is reported as not pending.\n`reason` is `aborted` | `interrupted` | `client_gone`.",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_request_cancelled"
+          }
+        },
+        "required": [
+          "type",
+          "request_id",
+          "reason"
+        ]
+      },
+      {
+        "description": "Host/UI-only structured data a host tool returned alongside its result,\nemitted right after that call's [`StreamEvent::ToolResult`] (same `id`).\nNever sent to the model; a display may render it or ignore it.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "details": true,
+          "type": {
+            "type": "string",
+            "const": "tool_details"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "details"
         ]
       }
     ],

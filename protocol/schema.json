@@ -327,7 +327,7 @@
           ]
         },
         {
-          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. `run_subagent` clears the child's host tool set\nrather than relying on this, which is why the case cannot arise.",
+          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. A child's host tool call is routed to the root\nchannel unwrapped instead, attributed by `ToolRequest.run_id`.",
           "type": "object",
           "properties": {
             "run_id": {
@@ -620,6 +620,13 @@
             "args": {
               "description": "The arguments the model produced, already parsed from the call's\nJSON string. Validated against nothing here -- the host owns the\nschema it declared and is the only party that can enforce it."
             },
+            "run_id": {
+              "description": "Which run raised the request: `None` for the main run, the child's\nrun id for a subagent. Attribution only -- the host answers by\n`request_id` alone, and a child's request is emitted unwrapped at\nthe top level so the same answer path serves both.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "tool_request"
@@ -630,6 +637,46 @@
             "request_id",
             "tool_name",
             "args"
+          ]
+        },
+        {
+          "description": "A pending [`StreamEvent::ToolRequest`] was withdrawn: the host must not\nanswer it any more, and a late answer is reported as not pending.\n`reason` is `aborted` | `interrupted` | `client_gone`.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_request_cancelled"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "reason"
+          ]
+        },
+        {
+          "description": "Host/UI-only structured data a host tool returned alongside its result,\nemitted right after that call's [`StreamEvent::ToolResult`] (same `id`).\nNever sent to the model; a display may render it or ignore it.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "details": true,
+            "type": {
+              "type": "string",
+              "const": "tool_details"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "details"
           ]
         }
       ]
@@ -919,7 +966,7 @@
       ]
     },
     "InputContentParts": {
-      "description": "The caps on a `user` message's content-part array, as `init` advertises them.\n\nA client that sends an image is sending bytes into a channel with no\nbackpressure, so the limits are part of the handshake rather than something\nto discover by being rejected. Each is the cap the parser enforces: this is\nthe same constant, not a copy of it.",
+      "description": "The caps on a content-part array -- a `user` message's, and a `tool_result`'s,\nwhich is held to the same limits -- as `init` advertises them.\n\nA client that sends an image is sending bytes into a channel with no\nbackpressure, so the limits are part of the handshake rather than something\nto discover by being rejected. Each is the cap the parser enforces: this is\nthe same constant, not a copy of it.",
       "type": "object",
       "properties": {
         "mime_types": {
@@ -1227,18 +1274,25 @@
           ]
         },
         {
-          "description": "The answer to a `tool_request` this run emitted: the host executed the\ntool and this is its result, which becomes the model's tool message.\n\n`content` is required even for a failure. A tool message with nothing in\nit tells the model only that something happened, which is worse than a\nshort error.",
+          "description": "The answer to a `tool_request` this run emitted: the host executed the\ntool and this is its result, which becomes the model's tool message.\n\n`content` is required even for a failure. A tool message with nothing in\nit tells the model only that something happened, which is worse than a\nshort error. It is either a string or an OpenAI content-part array\n(`text` and `image_url` parts, under the same caps as a `user` message),\nso a camera can hand the model a frame.\n\n`details` is any JSON object the host wants a display to have. It is\nnever sent to the model: the run echoes it as a `tool_details` record\nafter the `tool_result`, and that is all.",
           "type": "object",
           "properties": {
             "request_id": {
               "type": "string"
             },
             "content": {
-              "type": "string"
+              "$ref": "#/$defs/ToolResultContent"
             },
             "is_error": {
               "type": "boolean",
               "default": false
+            },
+            "details": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": true
             },
             "type": {
               "type": "string",
@@ -1260,6 +1314,18 @@
         "allow_once",
         "allow_always",
         "deny"
+      ]
+    },
+    "ToolResultContent": {
+      "description": "A `tool_result`'s `content`: a plain string, or a content-part array.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": true
+        }
       ]
     }
   },
