@@ -205,7 +205,12 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
             is_error,
         } => Ok(InputMessage::ToolResult {
             request_id,
-            result: HostToolResult { content, is_error },
+            result: HostToolResult {
+                content,
+                parts: None,
+                details: None,
+                is_error,
+            },
         }),
     }
 }
@@ -421,6 +426,8 @@ mod tests {
                 request_id: "host-1".to_string(),
                 result: HostToolResult {
                     content: "3 joints moved".to_string(),
+                    parts: None,
+                    details: None,
                     is_error: false,
                 },
             }
@@ -440,6 +447,8 @@ mod tests {
                 request_id: "host-2".to_string(),
                 result: HostToolResult {
                     content: "arm is estopped".to_string(),
+                    parts: None,
+                    details: None,
                     is_error: true,
                 },
             }

@@ -125,6 +125,19 @@ async fn unserved_tool_is_refused_without_running() {
     assert!(!dir.path().join("out.txt").exists());
 }
 
+/// Host tools execute in the client that declared them for one run; Jan's
+/// MCP server serves only built-ins, so a `host__` name is never offered,
+/// even with every opt-in on.
+#[test]
+fn host_tools_are_never_served() {
+    let mut opts = options(&PathBuf::from("."));
+    opts.served.allow_write = true;
+    opts.served.allow_exec = true;
+    let server = JanToolServer::new(opts);
+    assert!(!tool_names(&server).iter().any(|n| n.starts_with("host__")));
+    assert!(!ServedTools::default().is_served("host__observe"));
+}
+
 #[tokio::test]
 async fn unknown_tool_is_refused() {
     let dir = tempfile::tempdir().expect("tempdir");

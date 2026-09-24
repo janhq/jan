@@ -327,7 +327,7 @@
           ]
         },
         {
-          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. `run_subagent` clears the child's host tool set\nrather than relying on this, which is why the case cannot arise.",
+          "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. A child's host tool call is routed to the root\nchannel unwrapped instead, attributed by `ToolRequest.run_id`.",
           "type": "object",
           "properties": {
             "run_id": {
@@ -620,6 +620,13 @@
             "args": {
               "description": "The arguments the model produced, already parsed from the call's\nJSON string. Validated against nothing here -- the host owns the\nschema it declared and is the only party that can enforce it."
             },
+            "run_id": {
+              "description": "Which run raised the request: `None` for the main run, the child's\nrun id for a subagent. Attribution only -- the host answers by\n`request_id` alone, and a child's request is emitted unwrapped at\nthe top level so the same answer path serves both.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "type": {
               "type": "string",
               "const": "tool_request"
@@ -630,6 +637,46 @@
             "request_id",
             "tool_name",
             "args"
+          ]
+        },
+        {
+          "description": "A pending [`StreamEvent::ToolRequest`] was withdrawn: the host must not\nanswer it any more, and a late answer is reported as not pending.\n`reason` is `aborted` | `interrupted` | `client_gone`.",
+          "type": "object",
+          "properties": {
+            "request_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "tool_request_cancelled"
+            }
+          },
+          "required": [
+            "type",
+            "request_id",
+            "reason"
+          ]
+        },
+        {
+          "description": "Host/UI-only structured data a host tool returned alongside its result,\nemitted right after that call's [`StreamEvent::ToolResult`] (same `id`).\nNever sent to the model; a display may render it or ignore it.",
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "details": true,
+            "type": {
+              "type": "string",
+              "const": "tool_details"
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "details"
           ]
         }
       ]

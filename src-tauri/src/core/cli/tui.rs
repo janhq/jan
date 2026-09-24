@@ -5549,7 +5549,9 @@ impl App {
             // The TUI is that host's opposite number -- there is no peer on
             // stdin to execute a callback -- so it never declares them and
             // cannot receive this.
-            StreamEvent::ToolRequest { .. } => {}
+            StreamEvent::ToolRequest { .. }
+            | StreamEvent::ToolRequestCancelled { .. }
+            | StreamEvent::ToolDetails { .. } => {}
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
@@ -25259,6 +25261,8 @@ mod tests {
             )),
             host_tools: crate::core::agent::host_tools::HostToolSet::new(),
             host_tool_requests: crate::core::agent::host_tools::new_registry(),
+            host_owns_gate: false,
+            host_tool_route: None,
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,

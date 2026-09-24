@@ -320,6 +320,8 @@ fn the_implemented_host_rows_parse_as_their_own_kind() {
                     request_id: "call-7".to_string(),
                     result: crate::core::agent::host_tools::HostToolResult {
                         content: "ok".to_string(),
+                        parts: None,
+                        details: None,
                         is_error: false,
                     },
                 },

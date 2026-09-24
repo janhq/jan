@@ -136,8 +136,8 @@ pub enum StreamEvent {
     ///
     /// Never a `ToolRequest`: a client answers a request by `request_id` on
     /// stdin, and it is told nothing about this wrapper, so a nested request
-    /// would be unanswerable. `run_subagent` clears the child's host tool set
-    /// rather than relying on this, which is why the case cannot arise.
+    /// would be unanswerable. A child's host tool call is routed to the root
+    /// channel unwrapped instead, attributed by `ToolRequest.run_id`.
     Subagent {
         run_id: String,
         name: String,
@@ -252,6 +252,23 @@ pub enum StreamEvent {
         /// JSON string. Validated against nothing here -- the host owns the
         /// schema it declared and is the only party that can enforce it.
         args: serde_json::Value,
+        /// Which run raised the request: `None` for the main run, the child's
+        /// run id for a subagent. Attribution only -- the host answers by
+        /// `request_id` alone, and a child's request is emitted unwrapped at
+        /// the top level so the same answer path serves both.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+    },
+    /// A pending [`StreamEvent::ToolRequest`] was withdrawn: the host must not
+    /// answer it any more, and a late answer is reported as not pending.
+    /// `reason` is `aborted` | `interrupted` | `client_gone`.
+    ToolRequestCancelled { request_id: String, reason: String },
+    /// Host/UI-only structured data a host tool returned alongside its result,
+    /// emitted right after that call's [`StreamEvent::ToolResult`] (same `id`).
+    /// Never sent to the model; a display may render it or ignore it.
+    ToolDetails {
+        id: String,
+        details: serde_json::Value,
     },
 }
 
@@ -590,6 +607,21 @@ pub(crate) mod tests {
                     request_id: "host-1".into(),
                     tool_name: "observe".into(),
                     args: serde_json::json!({ "camera": "front" }),
+                    run_id: Some("run-1".into()),
+                },
+            ),
+            (
+                "ToolRequestCancelled",
+                StreamEvent::ToolRequestCancelled {
+                    request_id: "host-1".into(),
+                    reason: "aborted".into(),
+                },
+            ),
+            (
+                "ToolDetails",
+                StreamEvent::ToolDetails {
+                    id: "t1".into(),
+                    details: serde_json::json!({ "pose": [0, 1] }),
                 },
             ),
         ]
@@ -625,7 +657,9 @@ pub(crate) mod tests {
             | StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
             | StreamEvent::PermissionRequest { .. }
-            | StreamEvent::ToolRequest { .. } => {}
+            | StreamEvent::ToolRequest { .. }
+            | StreamEvent::ToolRequestCancelled { .. }
+            | StreamEvent::ToolDetails { .. } => {}
         }
     }
 
@@ -825,6 +859,51 @@ pub(crate) mod tests {
                 "prompt_kind": "write",
                 "offers_always": true
             })
+        );
+    }
+
+    /// `run_id` is additive: a main-run request serializes exactly as it did
+    /// before the field existed, so a v1 host sees no change.
+    #[test]
+    fn host_tool_events_serialize_to_wire_shape() {
+        let main = serde_json::to_value(StreamEvent::ToolRequest {
+            request_id: "host-1".into(),
+            tool_name: "observe".into(),
+            args: json!({}),
+            run_id: None,
+        })
+        .unwrap();
+        assert_eq!(
+            main,
+            json!({ "type": "tool_request", "request_id": "host-1", "tool_name": "observe", "args": {} })
+        );
+        let old: StreamEvent = serde_json::from_value(main).expect("no run_id reads back");
+        assert!(matches!(old, StreamEvent::ToolRequest { run_id: None, .. }));
+
+        let child = serde_json::to_value(StreamEvent::ToolRequest {
+            request_id: "host-2".into(),
+            tool_name: "observe".into(),
+            args: json!({}),
+            run_id: Some("sub-1".into()),
+        })
+        .unwrap();
+        assert_eq!(child["run_id"], "sub-1");
+
+        assert_eq!(
+            serde_json::to_value(StreamEvent::ToolRequestCancelled {
+                request_id: "host-1".into(),
+                reason: "aborted".into(),
+            })
+            .unwrap(),
+            json!({ "type": "tool_request_cancelled", "request_id": "host-1", "reason": "aborted" })
+        );
+        assert_eq!(
+            serde_json::to_value(StreamEvent::ToolDetails {
+                id: "c1".into(),
+                details: json!({ "k": 1 }),
+            })
+            .unwrap(),
+            json!({ "type": "tool_details", "id": "c1", "details": { "k": 1 } })
         );
     }
 

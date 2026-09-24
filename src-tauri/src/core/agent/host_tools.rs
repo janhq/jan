@@ -15,12 +15,13 @@
 //! the same reason: exactly one answer per request, and a client that goes away
 //! must not park a turn forever.
 //!
-//! What this module does not do is decide policy. A host tool is treated
-//! exactly as a plugin or MCP tool is -- prompted rather than auto-allowed, and
-//! withheld entirely in read-only Plan mode -- because its capability is just as
-//! opaque from here. That default is the shipped answer to "what class does an
-//! undeclared tool land in", and a host tool that mutates the physical world is
-//! the case it was written for.
+//! What this module does not do is decide policy. An undeclared host tool is
+//! treated exactly as a plugin or MCP tool is -- prompted rather than
+//! auto-allowed, and withheld entirely in read-only Plan mode -- because its
+//! capability is just as opaque from here. A host that knows better says so
+//! with [`HostCapability`]: `read` opts a sensor into the read-only class,
+//! `actuator` opts a tool out of `auto_approve`. The loop applies the class;
+//! this module only carries it.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -57,7 +58,16 @@ static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 /// without ending the turn.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HostToolResult {
+    /// The text summary: what hooks, the `tool_result` event and the `ERROR: `
+    /// prefix see. When `parts` is given this is its text parts joined by
+    /// newlines, so a consumer that only reads text loses nothing but images.
     pub content: String,
+    /// OpenAI content parts (`text` / `image_url`), passed verbatim and in order
+    /// as the model's tool message. `None` means the message is `content`.
+    pub parts: Option<Vec<serde_json::Value>>,
+    /// Host/UI-only structured data. Never sent to the model: it is emitted as
+    /// a `tool_details` event so a display can render it, and that is all.
+    pub details: Option<serde_json::Value>,
     pub is_error: bool,
 }
 
@@ -66,6 +76,14 @@ pub(crate) struct HostToolResult {
 pub(crate) enum HostToolError {
     /// The client disconnected, or the run ended, before answering.
     ClientGone,
+    /// The run withdrew the request (abort, interrupt) before the host
+    /// answered. Distinct from `ClientGone` so the model is told the call was
+    /// cancelled rather than that the host vanished.
+    // Raised only by `cancel_all`, which the abort / `turn/interrupt` paths
+    // of the stream-json and RPC surfaces call; until those land nothing
+    // outside the tests constructs it.
+    #[allow(dead_code)]
+    Cancelled,
 }
 
 pub(crate) type HostToolOutcome = Result<HostToolResult, HostToolError>;
@@ -99,7 +117,11 @@ pub(crate) async fn respond(
         .lock()
         .await
         .remove(request_id)
-        .ok_or_else(|| format!("no host tool request '{request_id}' is pending"))?;
+        .ok_or_else(|| {
+            format!(
+                "no host tool request '{request_id}' is pending (answered, cancelled, or never issued)"
+            )
+        })?;
     sender
         .send(outcome)
         .map_err(|_| format!("host tool request '{request_id}' is no longer pending"))
@@ -108,21 +130,63 @@ pub(crate) async fn respond(
 /// Fail one pending call closed. Used for a request raised *after* the client
 /// left: `strand_all` runs once when stdin closes, so a later call would
 /// otherwise wait on a reader that no longer exists.
-pub(crate) async fn strand(registry: &HostToolRegistry, request_id: &str) {
+///
+/// Returns whether the request was still pending, so the caller emits a
+/// cancellation record only for a request this call actually released.
+pub(crate) async fn strand(registry: &HostToolRegistry, request_id: &str) -> bool {
     let sender = registry.lock().await.remove(request_id);
-    if let Some(sender) = sender {
-        let _ = sender.send(Err(HostToolError::ClientGone));
+    match sender {
+        Some(sender) => {
+            let _ = sender.send(Err(HostToolError::ClientGone));
+            true
+        }
+        None => false,
     }
 }
 
 /// Fail every pending call closed. Called when the client's stdin closes: a
 /// host that cannot answer must not leave the turn parked on a reply that can
-/// never arrive.
-pub(crate) async fn strand_all(registry: &HostToolRegistry) {
+/// never arrive. Returns the released request ids (sorted, so records come out
+/// in a stable order) for the caller to report.
+pub(crate) async fn strand_all(registry: &HostToolRegistry) -> Vec<String> {
+    release_all(registry, HostToolError::ClientGone).await
+}
+
+/// Withdraw every pending call: the run was aborted or interrupted while the
+/// host still held requests. Same draining as `strand_all`, but the model is
+/// told the call was cancelled. Returns the released ids.
+// See `HostToolError::Cancelled`: the abort / interrupt callers land with
+// the stream-json and RPC cancellation records.
+#[allow(dead_code)]
+pub(crate) async fn cancel_all(registry: &HostToolRegistry) -> Vec<String> {
+    release_all(registry, HostToolError::Cancelled).await
+}
+
+async fn release_all(registry: &HostToolRegistry, error: HostToolError) -> Vec<String> {
     let pending = std::mem::take(&mut *registry.lock().await);
-    for (_, sender) in pending {
-        let _ = sender.send(Err(HostToolError::ClientGone));
+    let mut ids = Vec::with_capacity(pending.len());
+    for (id, sender) in pending {
+        let _ = sender.send(Err(error.clone()));
+        ids.push(id);
     }
+    ids.sort();
+    ids
+}
+
+/// What a host says a tool does, which decides how the loop treats it.
+/// Absent means opaque: prompted unless `auto_approve`, sequential, withheld in
+/// Plan mode -- the plugin/MCP default.
+#[derive(
+    Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum HostCapability {
+    /// Observes without side effects (a camera, a sensor): never prompted,
+    /// advertised in Plan mode, and run concurrently with other reads.
+    Read,
+    /// Acts on the world: prompted even under `auto_approve` unless the host
+    /// owns the gate, run sequentially, withheld in Plan mode.
+    Actuator,
 }
 
 /// One tool as the host declares it.
@@ -146,6 +210,9 @@ pub struct HostToolDecl {
     /// JSON Schema for the tool's arguments, passed to the provider verbatim.
     #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+    /// How the loop should treat calls to this tool; absent is opaque.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<HostCapability>,
     /// Every key that is none of the above, kept only so `declare` can refuse
     /// it by name. Never serialized back: a declaration this process re-emits
     /// is the set it accepted, which by then has no unknown keys.
@@ -164,6 +231,9 @@ pub struct HostTool {
     pub name: String,
     pub description: String,
     pub parameters: serde_json::Value,
+    /// The declared class; `None` is opaque. See [`HostCapability`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capability: Option<HostCapability>,
 }
 
 impl HostTool {
@@ -228,7 +298,7 @@ impl std::fmt::Display for DeclError {
             ),
             DeclError::UnknownKey(n, key) => write!(
                 f,
-                "host tool '{n}' has an unknown field '{key}' (expected name, description, parameters)"
+                "host tool '{n}' has an unknown field '{key}' (expected name, description, parameters, capability)"
             ),
         }
     }
@@ -323,6 +393,7 @@ impl HostToolSet {
                 name,
                 description: entry.description.trim().to_string(),
                 parameters,
+                capability: entry.capability,
             });
         }
         Ok(set)
@@ -365,6 +436,7 @@ mod tests {
             name: name.to_string(),
             description: "does a thing".to_string(),
             parameters: None,
+            capability: None,
             unknown: Default::default(),
         }
     }
@@ -404,6 +476,7 @@ mod tests {
             name: "move_arm".to_string(),
             description: "move".to_string(),
             parameters: Some(parameters.clone()),
+            capability: None,
             unknown: Default::default(),
         }])
         .expect("declares");
@@ -530,6 +603,7 @@ mod tests {
             name: "observe".to_string(),
             description: String::new(),
             parameters: Some(json!("string")),
+            capability: None,
             unknown: Default::default(),
         }]);
         assert_eq!(err, Err(DeclError::NonObjectSchema("observe".to_string())));
@@ -541,6 +615,8 @@ mod tests {
         let (id, receiver) = register(&registry).await;
         let result = HostToolResult {
             content: "ok".to_string(),
+            parts: None,
+            details: None,
             is_error: false,
         };
         respond(&registry, &id, Ok(result.clone()))
@@ -551,6 +627,8 @@ mod tests {
         // reported, rather than overwriting a result the run already used.
         assert!(respond(&registry, &id, Ok(HostToolResult {
             content: "again".to_string(),
+            parts: None,
+            details: None,
             is_error: false,
         }))
         .await
@@ -566,5 +644,82 @@ mod tests {
             receiver.await.expect("delivered"),
             Err(HostToolError::ClientGone)
         );
+    }
+
+    /// The caller emits one cancellation record per released id, so the ids
+    /// must come back -- and only the ones that were actually pending.
+    #[tokio::test]
+    async fn strand_all_returns_the_ids_it_released() {
+        let registry = new_registry();
+        let (a, ra) = register(&registry).await;
+        let (b, rb) = register(&registry).await;
+        let mut expected = vec![a, b];
+        expected.sort();
+        assert_eq!(strand_all(&registry).await, expected);
+        assert_eq!(ra.await.expect("delivered"), Err(HostToolError::ClientGone));
+        assert_eq!(rb.await.expect("delivered"), Err(HostToolError::ClientGone));
+        // Nothing left: a second drain releases nothing and reports nothing.
+        assert!(strand_all(&registry).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn strand_reports_whether_it_released_the_request() {
+        let registry = new_registry();
+        let (id, receiver) = register(&registry).await;
+        assert!(strand(&registry, &id).await);
+        assert_eq!(
+            receiver.await.expect("delivered"),
+            Err(HostToolError::ClientGone)
+        );
+        assert!(!strand(&registry, &id).await, "already released");
+    }
+
+    #[tokio::test]
+    async fn cancel_all_withdraws_pending_calls_as_cancelled() {
+        let registry = new_registry();
+        let (id, receiver) = register(&registry).await;
+        assert_eq!(cancel_all(&registry).await, vec![id.clone()]);
+        assert_eq!(
+            receiver.await.expect("delivered"),
+            Err(HostToolError::Cancelled)
+        );
+        // A late reply names the request and says why it might be gone.
+        let err = respond(&registry, &id, Ok(HostToolResult {
+            content: "late".to_string(),
+            parts: None,
+            details: None,
+            is_error: false,
+        }))
+        .await
+        .expect_err("nothing pending");
+        assert_eq!(
+            err,
+            format!("no host tool request '{id}' is pending (answered, cancelled, or never issued)")
+        );
+    }
+
+    #[test]
+    fn a_declared_capability_is_carried_onto_the_tool() {
+        let decls: Vec<HostToolDecl> = serde_json::from_str(
+            r#"[{"name":"camera","capability":"read"},
+                {"name":"arm","capability":"actuator"},
+                {"name":"plain"}]"#,
+        )
+        .expect("parses");
+        let set = HostToolSet::declare(decls).expect("declares");
+        assert_eq!(set.all()[0].capability, Some(HostCapability::Read));
+        assert_eq!(set.all()[1].capability, Some(HostCapability::Actuator));
+        assert_eq!(set.all()[2].capability, None);
+        // An unknown class is a parse error, not a silent opaque default.
+        assert!(serde_json::from_str::<HostToolDecl>(
+            r#"{"name":"x","capability":"write"}"#
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn the_unknown_key_message_lists_capability() {
+        let msg = DeclError::UnknownKey("x".to_string(), "k".to_string()).to_string();
+        assert!(msg.contains("capability"), "{msg}");
     }
 }

@@ -1150,6 +1150,8 @@ fn build_cli_orchestration_args(
         permission_requests,
         host_tools,
         host_tool_requests,
+        host_owns_gate: false,
+        host_tool_route: None,
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
@@ -2802,6 +2804,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
                 "\x1b[33m[host tool] '{tool_name}' - awaiting '{request_id}' on stdin\x1b[0m"
             );
         }
+        StreamEvent::ToolRequestCancelled { request_id, reason } => {
+            eprintln!("\x1b[2m[host tool] '{request_id}' cancelled ({reason})\x1b[0m");
+        }
+        // Structured data for a host's own display; text output has none.
+        StreamEvent::ToolDetails { .. } => {}
     }
 }
 
@@ -2946,6 +2953,8 @@ mod tests {
             answer.await.expect("the run's tool wait is answered"),
             Ok(crate::core::agent::host_tools::HostToolResult {
                 content: "moved".to_string(),
+                parts: None,
+                details: None,
                 is_error: false,
             })
         );
