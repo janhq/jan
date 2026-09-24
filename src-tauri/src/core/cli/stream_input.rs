@@ -8,10 +8,13 @@
 //! to stop the run is to kill it. This module is the reply path -- the same
 //! `{"type": ...}` framing in the other direction.
 //!
-//! Three kinds, matching the three things a caller cannot say today:
+//! Four kinds, matching the things a caller cannot otherwise say:
 //! `user` (a follow-up joined to the run in flight at the next turn boundary,
-//! via the orchestration loop's existing steering handshake), `abort`, and
-//! `permission` (a decision keyed to a `permission_request` already on stdout).
+//! via the orchestration loop's existing steering handshake), `abort`,
+//! `permission` (a decision keyed to a `permission_request` already on stdout),
+//! and `tool_result` (the answer to a `tool_request`, which is how a host
+//! executes a tool this process cannot: see
+//! [`crate::core::agent::host_tools`]).
 //! [`INPUT_KINDS`] is that set as data: the `init` record advertises it, so a
 //! client learns what it may send without being told out of band.
 //! A line that parses as none of them is reported as an `input_error` record
@@ -24,6 +27,7 @@
 //! passed through verbatim; the caps below are what a line is measured against
 //! first, because an unbounded channel is a denial of service on the run.
 
+use crate::core::agent::host_tools::HostToolResult;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -70,7 +74,7 @@ impl InputFormat {
 /// and the `init` record advertises them to a client that has not read the
 /// docs. A kind added to the parser without a line here would be a capability
 /// no client is told about, so a test pins the two together.
-pub(crate) const INPUT_KINDS: [&str; 3] = ["user", "abort", "permission"];
+pub(crate) const INPUT_KINDS: [&str; 4] = ["user", "abort", "permission", "tool_result"];
 
 /// One well-formed line from the client.
 #[derive(Debug, PartialEq, Eq)]
@@ -87,9 +91,15 @@ pub(crate) enum InputMessage {
         request_id: String,
         decision: PermissionDecision,
     },
+    /// The answer to a `tool_request` this run emitted: the host ran the tool
+    /// and this is what the model should see.
+    ToolResult {
+        request_id: String,
+        result: HostToolResult,
+    },
 }
 
-/// One input line, as the wire shape: the three [`INPUT_KINDS`], with the fields
+/// One input line, as the wire shape: the [`INPUT_KINDS`], with the fields
 /// each carries. The wire shape is a serde type rather than a hand-rolled walk
 /// over a `Value` so the protocol schema can be derived from it -- `jan cli
 /// agent schema` publishes this shape, and a hand-written copy of it would be
@@ -117,6 +127,18 @@ pub(crate) enum InputLine {
     Permission {
         request_id: String,
         decision: InputDecision,
+    },
+    /// The answer to a `tool_request` this run emitted: the host executed the
+    /// tool and this is its result, which becomes the model's tool message.
+    ///
+    /// `content` is required even for a failure. A tool message with nothing in
+    /// it tells the model only that something happened, which is worse than a
+    /// short error.
+    ToolResult {
+        request_id: String,
+        content: String,
+        #[serde(default)]
+        is_error: bool,
     },
 }
 
@@ -176,6 +198,14 @@ pub(crate) fn parse_input_line(line: &str) -> Result<InputMessage, String> {
         } => Ok(InputMessage::Permission {
             request_id,
             decision: decision.into(),
+        }),
+        InputLine::ToolResult {
+            request_id,
+            content,
+            is_error,
+        } => Ok(InputMessage::ToolResult {
+            request_id,
+            result: HostToolResult { content, is_error },
         }),
     }
 }
@@ -363,7 +393,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_three_message_kinds_parse() {
+    fn the_message_kinds_parse() {
         assert_eq!(
             parse_input_line(r#"{"type":"user","text":"also check the tests"}"#).unwrap(),
             InputMessage::User("also check the tests".to_string())
@@ -380,6 +410,38 @@ mod tests {
             InputMessage::Permission {
                 request_id: "perm-1".to_string(),
                 decision: PermissionDecision::AllowOnce,
+            }
+        );
+        assert_eq!(
+            parse_input_line(
+                r#"{"type":"tool_result","request_id":"host-1","content":"3 joints moved"}"#
+            )
+            .unwrap(),
+            InputMessage::ToolResult {
+                request_id: "host-1".to_string(),
+                result: HostToolResult {
+                    content: "3 joints moved".to_string(),
+                    is_error: false,
+                },
+            }
+        );
+    }
+
+    /// A host tool that failed is still an answer: the model is told what went
+    /// wrong and can choose another route, rather than the turn ending.
+    #[test]
+    fn a_failed_tool_result_is_carried_as_one() {
+        assert_eq!(
+            parse_input_line(
+                r#"{"type":"tool_result","request_id":"host-2","content":"arm is estopped","is_error":true}"#
+            )
+            .unwrap(),
+            InputMessage::ToolResult {
+                request_id: "host-2".to_string(),
+                result: HostToolResult {
+                    content: "arm is estopped".to_string(),
+                    is_error: true,
+                },
             }
         );
     }
@@ -400,6 +462,9 @@ mod tests {
                 "user" => r#"{"type":"user","text":"hello"}"#,
                 "abort" => r#"{"type":"abort"}"#,
                 "permission" => r#"{"type":"permission","request_id":"p1","decision":"deny"}"#,
+                "tool_result" => {
+                    r#"{"type":"tool_result","request_id":"h1","content":"done"}"#
+                }
                 other => panic!("'{other}' is advertised but has no sample line here"),
             };
             assert!(
@@ -453,6 +518,18 @@ mod tests {
             (
                 r#"{"type":"permission","request_id":"p","decision":"maybe"}"#,
                 "unknown variant `maybe`, expected one of `allow_once`, `allow_always`, `deny`",
+            ),
+            (
+                r#"{"type":"tool_result","content":"x"}"#,
+                "missing field `request_id`",
+            ),
+            (
+                r#"{"type":"tool_result","request_id":"h1"}"#,
+                "missing field `content`",
+            ),
+            (
+                r#"{"type":"tool_result","request_id":"h1","content":"x","is_error":"yes"}"#,
+                "invalid type: string \"yes\", expected a boolean",
             ),
         ] {
             let err = parse_input_line(line).expect_err(line);

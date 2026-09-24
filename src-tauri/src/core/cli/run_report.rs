@@ -15,7 +15,7 @@
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
 //! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
 //! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`. Four tags are minted by
+//! `turn_usage`, `done`, `error`, `permission_request`, `tool_request`. Four tags are minted by
 //! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
 //! `input_error`. `init` is the handshake a client reads before any other record
 //! (see [`Init`]); `permission_decision` reports how this CLI answered a gated
@@ -279,6 +279,17 @@ pub(crate) struct Init {
     /// provider caches on, so a set that reorders between runs is a cache miss
     /// (see the tool-ordering note in `upstream.rs`).
     tools: Vec<String>,
+    /// The full schemas of the host tools this run advertises. A host compares
+    /// these against what it declared, which is the only way to know its
+    /// constraints survived rather than trusting that they did; the names in
+    /// `tools` alone cannot answer that.
+    ///
+    /// This is the advertised subset, not everything declared: a deny list, an
+    /// allowlist or Plan mode can withhold a host tool, and its absence here is
+    /// how a host learns that happened. Omitted entirely when the run
+    /// advertises no host tools, so an ordinary run's handshake is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_specs: Vec<serde_json::Value>,
     /// What `--input-format stream-json` accepts from this client, as message
     /// `type` tags. Empty when the run does not read stdin at all, which is
     /// the honest answer for a read-only stream: nothing can be sent back.
@@ -335,6 +346,7 @@ impl Init {
         model: &str,
         cwd: Option<String>,
         tools: Vec<String>,
+        tool_specs: Vec<serde_json::Value>,
         input_kinds: Vec<&'static str>,
         input_content_parts: Option<InputContentParts>,
     ) -> Self {
@@ -345,6 +357,7 @@ impl Init {
             model: model.to_string(),
             cwd,
             tools,
+            tool_specs,
             input_kinds,
             input_content_parts,
         }
@@ -556,6 +569,7 @@ mod tests {
                 Some("/tmp".to_string()),
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
                 None,
             ))
             .unwrap(),
@@ -620,6 +634,7 @@ mod tests {
             "stub-model",
             Some("/tmp/project".to_string()),
             vec!["read".to_string(), "write".to_string()],
+            Vec::new(),
             vec!["user", "abort", "permission"],
             Some(InputContentParts::current()),
         ))
@@ -650,6 +665,36 @@ mod tests {
         );
     }
 
+    /// R5: a host compares the schemas it gets back against the ones it sent,
+    /// so they travel in the handshake verbatim -- constraints a normalizer
+    /// would strip included.
+    #[test]
+    fn init_echoes_the_host_tool_schemas_it_installed() {
+        let spec = serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "host__observe",
+                "description": "look",
+                "parameters": {
+                    "type": "object",
+                    "properties": { "n": { "type": "array", "minItems": 2 } },
+                    "additionalProperties": false
+                }
+            }
+        });
+        let out = serde_json::to_value(Init::new(
+            "id",
+            "m",
+            Some("/tmp".to_string()),
+            vec!["host__observe".to_string()],
+            vec![spec.clone()],
+            vec!["user", "tool_result"],
+            None,
+        ))
+        .unwrap();
+        assert_eq!(out["tool_specs"], serde_json::json!([spec]));
+    }
+
     /// A run that does not read stdin accepts nothing, and the record says so
     /// with an empty list rather than by omitting the field: a client asking
     /// "may I send anything back?" gets an answer either way.
@@ -659,6 +704,7 @@ mod tests {
             "id",
             "m",
             Some("/tmp".to_string()),
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             None,
@@ -682,10 +728,15 @@ mod tests {
             None,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
             None,
         ))
         .unwrap();
         assert!(out["cwd"].is_null(), "{out}");
+        assert!(
+            out.get("tool_specs").is_none(),
+            "a run with no host tools leaves the handshake as it was: {out}"
+        );
     }
 
     /// The envelope carries the same version, so a `--output-format json`

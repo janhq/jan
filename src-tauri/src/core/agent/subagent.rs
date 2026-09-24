@@ -1295,6 +1295,18 @@ async fn run_subagent(
     // above), so it has no registry to share; clearing this keeps it from
     // inheriting the parent session's by accident.
     child_args.subagent_bg = None;
+    // Host tools are the client's to execute, and a client answers a
+    // `tool_request` it can see. A child's events reach stdout wrapped in
+    // `Subagent { .. }`, a shape no client is told it may answer, so a child
+    // that inherited the set would raise a request nobody could resolve: the
+    // strand guard matches only a top-level request, and the turn would park.
+    // A child therefore advertises no host tools at all, for the same reason
+    // `ask_requests` is cleared above -- no client is attached to a child run.
+    #[cfg(feature = "cli")]
+    {
+        child_args.host_tools = crate::core::agent::host_tools::HostToolSet::new();
+        child_args.host_tool_requests = crate::core::agent::host_tools::new_registry();
+    }
 
     let body = child_body(&resolved, &description, &parent);
 
@@ -3134,6 +3146,8 @@ mod tests {
             permissions: ToolPermissions::allow_all(),
             project_root: Some(root.to_path_buf()),
             permission_requests: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
@@ -4022,6 +4036,26 @@ mod tests {
         assert_eq!(def.scope, SubagentScope::Project);
         assert_eq!(def.system_prompt, "You are code-explorer.");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child's events reach stdout wrapped in `Subagent { .. }`, and the
+    /// forwarder is a *negative* match: anything not explicitly held back is
+    /// forwarded, so a nested `ToolRequest` would be handed to a client that is
+    /// told nothing about the wrapper and could not answer it. Nothing here
+    /// filters that shape, which is exactly why `run_subagent` clears the
+    /// child's host tool set instead: the request is never raised at all.
+    #[test]
+    fn a_nested_tool_request_would_reach_the_parent_unfiltered() {
+        use crate::core::agent::events::StreamEvent;
+        assert!(
+            forward_to_parent(&StreamEvent::ToolRequest {
+                request_id: "host-1".to_string(),
+                tool_name: "robot_arm_move".to_string(),
+                args: serde_json::json!({}),
+            }),
+            "the forwarder does not hold back a nested tool_request, so a child \
+             must never own host tools in the first place"
+        );
     }
 
     #[test]

@@ -287,6 +287,7 @@ async fn advertise(project: &Path) -> Vec<Value> {
         4,
         false,
         true,
+        &crate::core::agent::host_tools::HostToolSet::new(),
     )
     .await;
     // An empty array would make every array comparison below vacuous.
