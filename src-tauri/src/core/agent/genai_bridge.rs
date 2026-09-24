@@ -237,7 +237,9 @@ fn messages_from_body(
             .and_then(|v| v.as_str())
             .ok_or("Each message must include a string 'role'")?;
         let content = msg.get("content");
-        if role != "tool" {
+        // A user turn right after the run takes the images itself (see the
+        // user arm); any other role closes the run with its own carrier.
+        if !matches!(role, "tool" | "user") {
             flush_tool_images(&mut out, &mut tool_images);
         }
 
@@ -308,7 +310,14 @@ fn messages_from_body(
             // images in place; a text-only one stays a plain string, which is
             // what the adapters serialize it as anyway.
             _ => {
-                let parts = content_parts(content);
+                let mut parts = content_parts(content);
+                // Pending tool images lead this turn rather than forming one
+                // of their own, so two user turns never sit back to back.
+                if role == "user" && !tool_images.is_empty() {
+                    let mut carried = std::mem::take(&mut tool_images);
+                    carried.append(&mut parts);
+                    parts = carried;
+                }
                 let message = if parts.iter().all(ContentPart::is_text) {
                     MessageContent::from(content_text(content))
                 } else {
@@ -331,6 +340,14 @@ fn messages_from_body(
 /// tool messages, because OpenAI rejects any message interleaved with the
 /// replies to one assistant turn's calls. Each image is labeled with the call
 /// it answers so a batch of several stays attributable.
+///
+/// The carrier is only ever followed by an assistant turn or the end of the
+/// request: a user turn that follows the run absorbs the images instead
+/// (see the user arm of [`messages_from_body`]). That matters to adapters
+/// that demand alternating roles, like genai's Anthropic one, which, unlike
+/// `server::converters`, does not merge adjacent user turns. The agent
+/// sends `api_type: None` down this path today, but nothing here relies on
+/// it.
 fn flush_tool_images(out: &mut Vec<ChatMessage>, pending: &mut Vec<ContentPart>) {
     if pending.is_empty() {
         return;
@@ -1208,11 +1225,12 @@ mod tests {
     }
 
     /// `ToolResponse.content` is a string, so a tool's image cannot ride in
-    /// the tool message. It follows the run of tool messages as a user turn:
-    /// placing it between two tool messages would split the replies to one
-    /// assistant turn's calls, which OpenAI rejects.
+    /// the tool message. It follows the run of tool messages, never between
+    /// them (that would split the replies to one assistant turn's calls, which
+    /// OpenAI rejects), and a user turn right after absorbs it, so no two user
+    /// turns sit back to back for an adapter that demands alternation.
     #[test]
-    fn tool_images_follow_the_tool_run_as_one_user_message() {
+    fn tool_images_lead_the_next_user_turn() {
         let body = json!({
             "model": "m",
             "messages": [
@@ -1230,18 +1248,40 @@ mod tests {
         });
         let (_, req) = chat_request_from_body(&body).unwrap();
         let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
-        assert_eq!(roles, ["Assistant", "Tool", "Tool", "User", "User"]);
+        assert_eq!(roles, ["Assistant", "Tool", "Tool", "User"]);
         let tool: Vec<&ContentPart> = req.messages[1].content.iter().collect();
         assert!(
             matches!(tool[0], ContentPart::ToolResponse(tr) if tr.call_id == "c1" && tr.content == "frame"),
             "the tool message keeps its text: {tool:?}"
         );
-        let carried: Vec<&ContentPart> = req.messages[3].content.iter().collect();
+        let user: Vec<&ContentPart> = req.messages[3].content.iter().collect();
         assert!(
-            matches!(carried[0], ContentPart::Text(t) if t.contains("c1")),
-            "the image is labeled with the call it answers: {carried:?}"
+            matches!(user[0], ContentPart::Text(t) if t.contains("c1")),
+            "the image is labeled with the call it answers: {user:?}"
         );
-        assert_eq!(inline_image(carried[1]), Some(("image/png", "QUJD")));
+        assert_eq!(inline_image(user[1]), Some(("image/png", "QUJD")));
+        assert!(matches!(user[2], ContentPart::Text(t) if t == "next"), "{user:?}");
+    }
+
+    /// With no user turn to absorb them, the images get their own carrier,
+    /// and the assistant turn after it keeps the roles alternating.
+    #[test]
+    fn tool_images_without_a_following_user_turn_get_a_carrier() {
+        let body = json!({
+            "model": "m",
+            "messages": [
+                { "role": "assistant", "content": "", "tool_calls": [
+                    { "id": "c1", "type": "function", "function": { "name": "cam", "arguments": "{}" } }
+                ]},
+                { "role": "tool", "tool_call_id": "c1", "content": [
+                    { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }
+                ]},
+                { "role": "assistant", "content": "a red square" }
+            ]
+        });
+        let (_, req) = chat_request_from_body(&body).unwrap();
+        let roles: Vec<_> = req.messages.iter().map(|m| format!("{:?}", m.role)).collect();
+        assert_eq!(roles, ["Assistant", "Tool", "User", "Assistant"]);
     }
 
     #[test]

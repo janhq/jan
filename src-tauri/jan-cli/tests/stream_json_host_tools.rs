@@ -630,3 +630,69 @@ fn a_dotted_host_name_round_trips_through_its_wire_name() {
     assert_eq!(requests.len(), 2);
     assert!(requests[1].contains("moved"), "{}", requests[1]);
 }
+
+/// A refused `tool_result` does not consume the request: the client is told
+/// with an `input_error`, the call stays pending, and a corrected line settles
+/// it. Getting a line wrong must cost the host a retry, not the whole turn.
+#[test]
+fn a_refused_result_leaves_the_request_pending_for_a_retry() {
+    let scratch = Scratch::new("retry");
+    let (url, seen) = stub_provider(&[CAMERA_CALL, ANSWER]);
+    scratch.configure(&url);
+    let decl = scratch.declare(r#"[{"name":"camera","description":"Grab a frame.","capability":"read"}]"#);
+    let mut child = scratch.spawn_duplex(decl.to_str().expect("utf-8 path"));
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let stdout = BufReader::new(child.stdout.take().expect("piped stdout"));
+    let mut records = Vec::new();
+    let mut request_id = None;
+    for line in stdout.lines() {
+        let Ok(line) = line else { break };
+        let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let kind = msg["type"].as_str().unwrap_or_default().to_string();
+        if kind == "tool_request" {
+            request_id = Some(msg["request_id"].clone());
+            // An unsupported part: refused as a whole, before it can resolve
+            // the call.
+            let bad = serde_json::json!({
+                "type": "tool_result",
+                "request_id": msg["request_id"],
+                "content": [{ "type": "audio", "data": "AAAA" }],
+            });
+            writeln!(stdin, "{bad}").expect("send the bad result");
+            stdin.flush().expect("flush");
+        }
+        if kind == "input_error" {
+            let good = serde_json::json!({
+                "type": "tool_result",
+                "request_id": request_id.clone().expect("the request came first"),
+                "content": "RETRIED-FRAME",
+            });
+            writeln!(stdin, "{good}").expect("send the corrected result");
+            stdin.flush().expect("flush");
+        }
+        records.push(msg);
+        if kind == "result" {
+            break;
+        }
+    }
+    drop(stdin);
+    let out = child.wait_with_output().expect("collect the run");
+    assert!(
+        out.status.success(),
+        "the run did not end cleanly: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let tags: Vec<&str> = records.iter().filter_map(|r| r["type"].as_str()).collect();
+    let refused = tags.iter().position(|t| *t == "input_error").expect("the bad line was refused");
+    let settled = tags.iter().position(|t| *t == "tool_result").expect("the retry settled the call");
+    assert!(refused < settled, "{tags:?}");
+    assert!(
+        !tags.contains(&"tool_request_cancelled"),
+        "a refused line must not withdraw the request: {tags:?}"
+    );
+    let requests = seen.lock().expect("request log");
+    assert_eq!(requests.len(), 2, "the turn never resumed");
+    assert!(requests[1].contains("RETRIED-FRAME"), "{}", requests[1]);
+}

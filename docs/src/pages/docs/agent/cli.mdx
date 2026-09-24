@@ -268,15 +268,34 @@ and can try again. The check covers `type`, `properties`, `required`, `additiona
 which reaches the model as the tool's error. It is either a string or a content-part array of
 `text` and `image_url` parts, held to the same caps as a `user` message. The parts are kept as the
 tool message, in order, in the session transcript; the `tool_result` event carries only their text
-(or `(image)` for an image alone). On the provider request the tool message is the parts' text,
-and the images follow the run of tool messages as one user message, each labeled with the call it
-answers: most providers accept only text in a tool message. An optional `details` object is for your
-own display: it is **never sent to the model**, and the run echoes it as a record right after that
-call's `tool_result`:
+(or `(image)` for an image alone).
+
+<a id="tool-result-images"></a>Where an image lands on the provider request depends on the provider's API:
+
+| Provider API | Tool image goes |
+|---|---|
+| OpenAI-compatible (`/chat/completions`, local servers, most gateways) | Tool message carries the text; the images lead the next user turn, each labeled with the call it answers |
+| Anthropic Messages | Inside the call's `tool_result` block, as `image` blocks |
+| Google Gemini 3+ | Nested in the call's `functionResponse.parts` as `inlineData` |
+| Google Gemini 2.x and earlier | Beside the `functionResponse`, in the same turn |
+| OpenAI Responses | In the `function_call_output`'s item list, as `input_image` |
+
+Gemini accepts only inline (`data:`) images in a tool result; a remote image URL there is dropped. An
+image in the transcript is re-sent on every later request of the session, and it is **not counted**
+by the context indicator or auto-compaction (an image's token cost depends on its resolution and
+the provider). A tool that returns a frame every turn should keep images small, or return a
+fresh frame only when asked.
+
+An optional `details` object is for your own display: it is **never sent to the model**, and the
+run echoes it as a record right after that call's `tool_result`:
 
 ```json
 {"type":"tool_details","id":"call_7","details":{"exposure":12}}
 ```
+
+`details` are run-scoped: they are not saved with the thread, so a resumed session has the tool
+result but not its details. Keep anything your UI needs after a resume on your side, keyed by the
+call `id`.
 
 A result over a cap is an `input_error` and the request stays pending, so you can answer again.
 Each `request_id` is answerable once; a late or repeated answer is an `input_error` naming it as not
