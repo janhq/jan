@@ -64,6 +64,19 @@ packages are not released ([#367](https://github.com/janhq/jan-internal/issues/3
 exist on both `stream-json` (`--host-tools`) and RPC (below).
 </Callout>
 
+## RPC stream events
+
+A turn's events reach the client as notifications named `item/<tag>`, where `<tag>` is the event's
+own `type` on the `stream-json` surface: one naming rule for both, and no second list to keep in
+sync. `protocol/rpc-schema.json` publishes the resulting notification names in its `events`
+section, generated from the same Rust enum that produces them (`src-tauri/src/core/cli/rpc.rs:736`),
+so a record can be looked up there rather than inferred from this page.
+
+A `request_provenance` event therefore arrives as `item/request_provenance`, carrying the identity
+of each outbound provider request (run, session, provider, model, wire API, body and tool-array
+hashes, image hashes) and none of its content. See
+[Request provenance](/docs/agent/cli#request-provenance) for the record's fields.
+
 ## RPC host tools
 
 A host declares tools on `session/start`; the model calls them, Jan sends the call to the host,

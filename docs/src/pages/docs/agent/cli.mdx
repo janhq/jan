@@ -226,6 +226,41 @@ it crossed.
 line that parses as none of these is reported as an `input_error` record and skipped, so one bad
 line cannot end a healthy run.
 
+#### Request provenance
+
+Every outbound provider request emits a `request_provenance` record immediately before it goes out,
+so a harness that records runs can tell **what was sent** without being handed the prompt. The
+record is identity, not content:
+
+```json
+{"type":"request_provenance","session_id":"3f7a91c2","provider":"anthropic","model":"claude-sonnet-5","api_type":"anthropic","request_sha256":"9f2c...","body_bytes":9011,"tools_sha256":"1ab4...","images":[{"sha256":"77de...","mime_type":"image/png","bytes":41234,"tool_call_id":"call_7"}]}
+```
+
+| Field | Notes |
+| --- | --- |
+| `run_id` | The run that made the request. Absent for the main run, set to the subagent's own id for a child's turns |
+| `session_id` | The session the request belongs to, as the `init` record names it. The correlation id the request itself carries is derived from it |
+| `provider`, `model`, `api_type` | The configured provider the model resolved to, the bare model id the upstream receives, and the wire API the body is built for (`anthropic`, `google`, `openai-responses`; absent when the body is chat/completions) |
+| `request_sha256` | SHA-256 of the request body as Jan built it, as canonical JSON (object keys sorted): the whole request's identity, so two runs are comparable even when something this record does not itemize changed |
+| `body_bytes` | The built body's serialized length, measured before the provider adapter serializes it its own way |
+| `tools_sha256` | SHA-256 of the `tools` array exactly as sent. Absent when the request carries no non-empty tool list. The tool array can change while the model id does not, which is why it is hashed separately from the body |
+| `images` | One entry per image in the body, in order. Absent when there are none |
+
+`images` hashes each image over its **decoded** bytes, so a host can hash the same frame it captured
+and match it: `sha256` is that digest, `mime_type` and `bytes` describe the image, and
+`tool_call_id` names the host tool call whose result carried it (`null` for an image the user
+attached).
+
+Emitted for subagent turns as well as the main run's, and for the run's side calls (a compaction
+summary, a `/goal` evaluation), since those are real requests with real spend. It is a record on
+the event stream, so it also reaches RPC clients as `item/request_provenance`.
+
+The record deliberately carries no prompt, completion, header, or credential -- `request_sha256` is
+how the two sides agree they are talking about the same request. The digest covers the body Jan
+built, before the provider's adapter serializes it into that provider's own shape, so it is stable
+for a given run and comparable across runs against the same provider. Two runs on different wire
+APIs differ by construction: the tool array each provider is sent is not the same shape.
+
 #### Host tools
 
 A host tool is one the **client** implements: a device only the host can reach, an editor's own
