@@ -1,0 +1,40 @@
+{
+  "name": "@janhq/agent-sdk",
+  "version": "0.1.0",
+  "description": "JavaScript and TypeScript client for the Jan agent runtime: sessions, streamed turns, and host tools over `jan cli agent rpc`",
+  "keywords": [
+    "jan",
+    "agent",
+    "sdk",
+    "json-rpc"
+  ],
+  "homepage": "https://jan.ai",
+  "license": "AGPL-3.0",
+  "author": "Jan <service@jan.ai>",
+  "type": "module",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "check-types": "node scripts/generate.mjs --check && tsc -p tsconfig.json",
+    "test": "node --test tests/sdk.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.2"
+  }
+}
