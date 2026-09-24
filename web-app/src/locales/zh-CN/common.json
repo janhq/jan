@@ -62,7 +62,21 @@
   "deny": "拒绝",
   "start": "开始",
   "stop": "停止",
-  "preview": "预览",
+  "preview": {
+    "loading": "正在打开…",
+    "unsupported": "Jan 无法显示此类文件。请用其他应用打开查看。",
+    "outside": "此文件已不在会话工作区中。",
+    "tooLarge": "文件过大，无法预览。请用其他应用打开查看。",
+    "reload": "重新加载",
+    "allowNetwork": "允许网络访问",
+    "unsandboxed": "在非沙盒模式下运行：保存的数据和本地文件可用",
+    "unresolvedRefs_one": "此页面链接的 1 个文件无法在预览中加载。请在浏览器中打开查看。",
+    "unresolvedRefs_other": "此页面链接的 {{count}} 个文件无法在预览中加载。请在浏览器中打开查看。",
+    "externalRefs_one": "此页面从网络加载的 1 个资源已被阻止。开启“允许网络访问”即可加载。",
+    "externalRefs_other": "此页面从网络加载的 {{count}} 个资源已被阻止。开启“允许网络访问”即可加载。",
+    "scriptErrors_one": "页面报告了一个错误：{{message}}",
+    "scriptErrors_other": "页面报告了 {{count}} 个错误。第一个：{{message}}"
+  },
   "compactWidth": "紧凑宽度",
   "fullWidth": "全宽",
   "dark": "深色",
@@ -224,7 +238,32 @@
   "modelSettings": {
     "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "模型设置 - {{modelId}}",
-    "description": "配置模型设置以优化性能和行为。"
+    "description": "配置模型设置以优化性能和行为。",
+    "samplingDefaults": {
+      "title": "默认采样参数",
+      "description": "此模型的默认采样器设置。除非被助手级或请求级设置覆盖，否则将使用这些值。"
+    },
+    "specDraft": {
+      "section": "投机解码",
+      "enable": "启用投机解码",
+      "enableDescription": "每步起草多个 token 并一次性验证，从而加快生成速度。使用模型内置的 MTP heads，或随模型一起下载的 draft 模型（MTP、Eagle3、DFlash 或 DSpark）。",
+      "nMax": "最大起草 token 数",
+      "nMaxDescription": "每步起草的最大 token 数。默认为 16。",
+      "nMin": "最小起草 token 数",
+      "nMinDescription": "每步起草的最小 token 数。默认为 0。",
+      "pMin": "最小起草概率",
+      "pMinDescription": "贪心起草的最小概率（0–1）。默认为 0.75。"
+    },
+    "templateKwargs": {
+      "section": "聊天模板选项",
+      "description": "此模型的聊天模板接受的额外选项。以 chat_template_kwargs 形式随每个请求发送；将值保留为默认值可让模板自行决定。",
+      "addCustom": "添加自定义选项",
+      "keyPlaceholder": "名称",
+      "valuePlaceholder": "值",
+      "add": "添加",
+      "cancel": "取消",
+      "remove": "移除"
+    }
   },
   "projects": {
     "title": "项目",
@@ -280,8 +319,22 @@
       "updateButton": "更新",
       "alreadyExists": "项目\"{{projectName}}\"已存在",
       "createSuccess": "项目\"{{projectName}}\"创建成功",
-      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\""
-    }
+      "renameSuccess": "项目从\"{{oldName}}\"重命名为\"{{newName}}\"",
+      "assistant": "助手",
+      "selectAssistant": "选择一个助手（可选）",
+      "noAssistant": "无助手",
+      "addAssistant": "添加助手",
+      "updateSuccess": "项目“{{projectName}}”更新成功"
+    },
+    "selectAssistant": "选择助手",
+    "noAssistantAssigned": "此项目未分配助手",
+    "files": "文件",
+    "filesDescription": "添加 PDF、文档或其他文本，供此项目引用。",
+    "conversation": "对话",
+    "instructions": "指令",
+    "setup": "设置",
+    "instructionsDescription": "自定义回复的语气和风格",
+    "manageInstructions": "管理指令"
   },
   "dialogs": {
     "changeDataFolder": {
@@ -304,6 +357,10 @@
     },
     "messageMetadata": {
       "title": "消息元数据"
+    },
+    "deleteAllThreadsInProject": {
+      "title": "删除所有对话",
+      "description": "“{{projectName}}”中的 {{count}} 个对话将被删除。此操作无法撤销。"
     }
   },
   "errorDialog": {
@@ -398,6 +455,58 @@
     "threadRemovedFromProject": {
       "title": "线程已移除",
       "description": "线程已成功从\"{{projectName}}\"中移除"
+    },
+    "openSettings": "打开设置",
+    "downloadTokenRequired": {
+      "title": "需要 Hugging Face token",
+      "description": "此模型需要 Hugging Face 访问 token。请在设置中添加您的 token 后重试。"
+    },
+    "downloadLicenseRequired": {
+      "title": "请在 Hugging Face 上接受模型许可协议",
+      "description": "下载前，您必须在该模型的 Hugging Face 页面上接受其许可协议。"
+    },
+    "downloadRateLimited": {
+      "title": "已被 Hugging Face 限流",
+      "description": "您已被限流。添加 token 可以提高速率限制。请稍后重试。"
+    },
+    "fileUploaded": {
+      "title": "文件已处理",
+      "description": "文件已成功处理并建立索引"
+    },
+    "uploadFailed": {
+      "title": "处理失败",
+      "description": "文件处理失败",
+      "subjectThisFile": "此文件",
+      "pdfMalformedXref": "{{subject}} 的 PDF 交叉引用表格式错误，无法解析。请尝试在 PDF 查看器中打开并重新保存（文件 → 打印 → 另存为 PDF），然后重新上传。",
+      "pdfScanned": "{{subject}} 似乎是扫描版或基于图像的 PDF。目前尚不支持 OCR——请上传基于文本的 PDF。",
+      "pdfEncrypted": "{{subject}} 受密码保护。请移除密码后重试。",
+      "pdfUnsupportedFeature": "{{subject}} 使用了 Jan 尚无法解析的 PDF 特性（例如 PostScript 颜色/着色函数）。请尝试重新保存（文件 → 打印 → 另存为 PDF）以将其扁平化，然后重新上传。",
+      "pdfGeneric": "{{subject}} 无法作为 PDF 解析。文件可能已损坏，或使用了不支持的 PDF 特性。",
+      "fileTooLarge": "{{subject}} 过大。{{message}}。",
+      "unsupportedType": "不支持“{{type}}”文件类型。",
+      "ioError": "无法读取 {{subject}}：{{message}}",
+      "parseGeneric": "{{subject}} 无法解析：{{message}}",
+      "fallback": "处理 {{subject}} 失败。"
+    },
+    "fileDeleted": {
+      "title": "文件已删除",
+      "description": "文件已从项目中移除"
+    },
+    "deleteFailed": {
+      "title": "删除失败",
+      "description": "删除文件失败"
+    },
+    "fileAlreadyExists": {
+      "title": "文件已存在",
+      "description": "该文件已附加到此项目"
+    },
+    "unsupportedFileType": {
+      "title": "不支持的文件类型",
+      "description": "文件扩展名 \".{{extension}}\" 不支持用于 Project 引用。"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "附件已禁用",
+      "description": "附件已在设置中禁用"
     }
   },
   "llamacppBusyOnExit": {
@@ -406,5 +515,266 @@
     "forceQuit": "Force quit",
     "forcing": "Force quitting…",
     "shuttingDown": "Shutting down…"
-  }
+  },
+  "htmlArtifact": {
+    "code": "代码",
+    "preview": "预览",
+    "previewStreaming": "生成完成后可用",
+    "unresolvedAssets_one": "有 1 个资源引用无法在预览中加载。相对路径没有可解析的基础 URL。",
+    "unresolvedAssets_other": "有 {{count}} 个资源引用无法在预览中加载。相对路径没有可解析的基础 URL。"
+  },
+  "remote_access": "远程访问",
+  "integrations": "集成",
+  "claude_code": "Claude Code",
+  "web_search": "网页搜索",
+  "browse": "浏览",
+  "moreControls": "更多控制项",
+  "starting": "正在启动...",
+  "activeSuffix": "（活跃）",
+  "hideProvider": "隐藏提供商",
+  "showProvider": "显示提供商",
+  "home": "主页",
+  "cowork": "协作",
+  "newSession": "新会话",
+  "artifacts": "工件",
+  "customize": "自定义",
+  "local": "本地",
+  "selectFolder": "选择文件夹",
+  "selectModel": "请先选择模型",
+  "commands": "命令",
+  "cmdHelp": "列出可用命令",
+  "cmdClear": "清空当前会话",
+  "cmdModels": "切换当前模型",
+  "cmdModelsHint": "输入 /models，然后从列表中选择一个模型",
+  "cmdModelSwitched": "已切换到 {{name}}",
+  "cmdUnknown": "未知命令：{{name}}。请尝试 /help",
+  "cmdBusy": "Agent 运行期间无法执行此操作",
+  "cmdCompact": "将会话的上下文压缩为摘要",
+  "cmdCompacted": "已将 {{before}} 条消息压缩为 {{after}} 条",
+  "cmdNothingToCompact": "暂无可压缩的内容",
+  "cmdCompactFailed": "压缩失败：{{error}}",
+  "cmdPlan": "切换计划模式（只读：Agent 只提出方案而不写入）",
+  "cmdPlanOn": "计划模式已开启：Agent 只读取并提出方案，不进行写入",
+  "cmdPlanOff": "计划模式已关闭：正常执行",
+  "cmdTodo": "打开进度面板",
+  "cmdTasks": "打开后台任务面板",
+  "cmdInit": "研究该项目并编写 skills 和记忆",
+  "cmdInitRunning": "正在初始化该项目",
+  "skills": "技能",
+  "skillsInContext": "本次运行中 Agent 可用的技能",
+  "skillsTitle": "管理技能",
+  "skillsScopeProject": "{{folder}} 的技能",
+  "skillsScopeGlobal": "全局技能，所有会话均可用",
+  "skillsScopeMerged": "{{folder}} 的技能，以及所有会话共享的全局技能",
+  "skillOriginFolder": "文件夹",
+  "skillOriginGlobal": "全局",
+  "skillsEmpty": "还没有技能",
+  "skillsPickOrNew": "选择一个技能进行编辑，或创建一个新技能。",
+  "skillNew": "新建技能",
+  "skillDelete": "删除技能",
+  "skillSave": "保存",
+  "skillSaved": "技能已保存",
+  "skillNameRequired": "技能名称为必填项",
+  "skillNamePlaceholder": "skill-name",
+  "skillContentPlaceholder": "用 Markdown 描述可复用的流程…",
+  "skillHubImport": "从 Hub 导入",
+  "skillHubTitle": "Anthropic 技能中心",
+  "skillHubEmpty": "技能中心未找到技能",
+  "skillImport": "导入",
+  "skillReimport": "重新导入",
+  "skillImported": "已导入 {{name}}",
+  "sessions": "会话",
+  "deleteSession": "删除会话",
+  "deleteSessionTitle": "删除会话？",
+  "deleteSessionBody": "“{{title}}”及其对话记录将被永久删除。此操作无法撤销。",
+  "analyticsConsentDetail": "我们收集匿名数据以了解功能使用情况。您的聊天内容和个人信息绝不会被追踪。您可以随时在“设置 > 隐私”中更改此设置。",
+  "analyticsConsentQuestion": "您愿意帮助改进 Jan 吗？",
+  "searchThreads": "搜索对话…",
+  "toNavigate": "导航",
+  "toSelect": "选择",
+  "toClose": "关闭",
+  "clearRecent": "清除",
+  "dismiss": "忽略",
+  "changes": {
+    "title": "Agent 更改",
+    "empty": "Agent 写入或编辑的文件将显示在这里。",
+    "a11y": "Agent 更改：{{files}} 个文件，新增 {{additions}} 行，删除 {{deletions}} 行"
+  },
+  "modelPanel": {
+    "title": "模型设置",
+    "a11y": "打开模型设置",
+    "contextTooltip": "上下文窗口：{{max}} tokens 中的 {{value}}"
+  },
+  "coworkSlash": {
+    "skillUnavailable": "技能“{{name}}”不可用",
+    "kind": {
+      "skill": "技能",
+      "command": "命令",
+      "model": "模型"
+    }
+  },
+  "multimodal": "多模态",
+  "noAssistant": "无助手",
+  "settingUpJan": "正在启动 Jan…",
+  "registeringExtensions": "正在注册扩展…",
+  "loadingExtensions": "正在加载扩展…（{{done}}/{{total}}）",
+  "continueAiResponse": "继续 AI 回复",
+  "modelControls": {
+    "updateFailed": "无法更新模型设置"
+  },
+  "missingDependenciesDialog": {
+    "title": "缺少系统库",
+    "description": "{{backend}} 已安装，但未能找到某些必需的系统库。它可能会回退到 CPU 运行或无法正常运行。",
+    "installLabel": "要解决此问题，请安装以下内容：",
+    "download": "下载",
+    "additionalLibraries": "其他缺失的库：",
+    "missingLibraries": "缺失的库：",
+    "showRawLibraries": "显示 {{count}} 个缺失库的名称"
+  },
+  "attachmentsIngestion": {
+    "title": "选择附件的导入方式",
+    "description": "选择是直接将这些文件包含在聊天中，还是将它们索引为 embeddings。",
+    "inline": "注入到聊天中",
+    "embeddings": "使用 embeddings"
+  },
+  "attachmentInjectedIndicator": "已注入到聊天中",
+  "attachmentEmbeddedIndicator": "已为 RAG 生成 embeddings",
+  "viewInjectedContent": "查看注入的内容",
+  "injectedContentTitle": "注入的文件内容",
+  "errors": {
+    "fileTooLarge": "文件过大",
+    "fileTooLargeDescription": "{{fileName}} 超过了 {{maxFileSizeMB}}MB 的限制"
+  },
+  "files": {
+    "chunksCount": "{{count}} 个分块",
+    "title": "文件",
+    "empty": "你附加的文件和 agent 创建的文件将显示在这里。",
+    "a11y": "文件：{{count}}",
+    "attachments": "附件",
+    "notImported": "不在工作区中"
+  },
+  "duration": {
+    "seconds": "{{count}}秒",
+    "minutes": "{{count}}分",
+    "hours": "{{count}}小时"
+  },
+  "collapse": "折叠",
+  "expand": "展开",
+  "todoPanelTitle": "进度",
+  "todoPanelEmpty": "暂无待办列表。",
+  "backgroundTasks": "后台任务",
+  "subagentsRunning_one": "{{count}} 个 subagent 正在运行",
+  "subagentsRunning_other": "{{count}} 个 subagent 正在运行",
+  "monitorsRunning_one": "{{count}} 个 monitor 正在运行",
+  "monitorsRunning_other": "{{count}} 个 monitor 正在运行",
+  "backgroundRunning_one": "{{count}} 个后台任务正在运行",
+  "backgroundRunning_other": "{{count}} 个后台任务正在运行",
+  "monitors": "Monitors",
+  "monitorPolling": "轮询中",
+  "monitorMatched": "已匹配",
+  "monitorTimedOut": "已超时",
+  "monitorStopped": "已停止",
+  "monitorEnded": "已结束",
+  "coworkWatching_one": "正在监视 {{count}} 个 monitor…",
+  "coworkWatching_other": "正在监视 {{count}} 个 monitor…",
+  "coworkWaitingBackground": "正在等待后台任务…",
+  "noBackgroundTasks": "暂无后台任务。",
+  "running": "运行中",
+  "queued": "排队中",
+  "waiting": "等待中",
+  "finished": "已完成",
+  "subagentPhase": "阶段 {{phase}}",
+  "subagentWaiting": "等待中",
+  "viewTranscript": "查看记录",
+  "taskWorking": "处理中…",
+  "taskNoOutput": "该 subagent 未产生可见输出。",
+  "subagentToolUses_one": "{{count}} 次工具调用",
+  "subagentToolUses_other": "{{count}} 次工具调用",
+  "artifactGroupCode": "代码",
+  "artifactGroupImage": "图片",
+  "artifactGroupDocument": "文档",
+  "artifactGroupVideo": "视频",
+  "artifactGroupAudio": "音频",
+  "artifactOpenPreview": "打开预览",
+  "artifactOpenExternal": "打开",
+  "artifactMoreActions": "更多操作",
+  "artifactShowInFolder": "在文件夹中显示",
+  "skillsUsedLabel": "使用的技能",
+  "skillsUsed": "使用的技能：{{skills}}",
+  "artifactsAll": "全部",
+  "artifactsEmpty": "还没有产出。Cowork 运行生成的产物会显示在这里。",
+  "artifactsNoMatch": "没有匹配的产物。",
+  "artifactsSearch": "搜索产物",
+  "artifactsShowMore": "显示更多 {{count}} 条",
+  "workspace": {
+    "readsFrom": "工作于",
+    "writable": "读写",
+    "footnote": "Agent 会直接读取和编辑此文件夹。可在 diff 面板中查看更改内容。",
+    "footnoteEmpty": "附加一个文件夹，让 Agent 处理你的项目。它可以读取和编辑其中的文件。",
+    "attach": "附加文件夹",
+    "change": "更换文件夹",
+    "detach": "分离文件夹",
+    "open": "打开",
+    "reveal": "显示",
+    "unavailable": "工作区不可用",
+    "missing": "工作区文件夹 {{folder}} 已不可用。请选择其他文件夹。",
+    "openFailed": "无法打开工作区",
+    "revealFailed": "无法显示工作区",
+    "a11yWithFolder": "项目文件夹 {{folder}}，已附加并授予读写权限。可更换或分离。",
+    "a11yNoFolder": "未附加项目文件夹。请附加一个。"
+  },
+  "coworkEmpty": {
+    "title": "我们要做点什么？",
+    "subtitleSandbox": "给 Jan 一个任务。它会读写文件、运行命令，并自主完成各个步骤。",
+    "subtitleFolder": "给 Jan 一个任务。它会直接在 {{folder}} 中工作，自主读取和编辑文件。",
+    "try": "试试",
+    "sandbox": {
+      "first": "写一个 Python 脚本，按拍摄日期重命名文件",
+      "second": "根据我粘贴的 CSV 构建一个单页仪表板",
+      "third": "根据我描述的项目起草一份 README"
+    },
+    "folder": {
+      "first": "解释 {{folder}} 的整体结构",
+      "second": "找出 {{folder}} 中所有 TODO，并按模块分组",
+      "third": "为我指定的 {{folder}} 中的部分编写测试"
+    }
+  },
+  "sandbox": {
+    "noTerminal": "无终端",
+    "a11y": "运行命令功能已关闭。详情。",
+    "title": "运行命令功能已关闭",
+    "body": "Jan 仅在系统能够隔离命令时才允许 Agent 运行 shell 命令。此处没有可用的沙盒，因此 Agent 可以在其沙盒中读取、写入和编辑文件——但无法运行任何命令。",
+    "fixLinux": "Linux 使用 bubblewrap。请安装后重启 Jan。",
+    "fixMac": "macOS 使用内置沙盒 /usr/bin/sandbox-exec。待其可用后重启 Jan。",
+    "fixWindows": "Windows 使用 AppContainer。请重启 Jan 再试。",
+    "recheck": "重新检查"
+  },
+  "planMode": {
+    "label": "规划",
+    "tooltipOff": "先规划——Agent 只读取和提出建议，不进行写入。",
+    "tooltipOn": "规划中。关闭此项可让 Agent 写入文件。",
+    "onAnnounce": "规划模式已开启",
+    "placeholder": "请求一个计划。Agent 不会更改任何文件。"
+  },
+  "budget": {
+    "stoppedSteps": "已在 {{max}} 步停止。Agent 尚未完成。",
+    "keepGoing": "继续",
+    "stoppedTokens": "已停止——本次会话已达 token 预算上限。",
+    "compact": "压缩",
+    "newSession": "新会话"
+  },
+  "run": {
+    "stopped": "已停止。",
+    "failed": "运行提前中止。",
+    "tryAgain": "重试"
+  },
+  "modelNoTools": "{{model}} 无法调用工具，因此不能作为 Agent 使用。请选择支持工具调用的模型。",
+  "askContinue": "继续",
+  "askNext": "下一个问题",
+  "askPrev": "上一个问题",
+  "askRecommended": "推荐",
+  "askSelectedCount": "已选择 {{count}} 项",
+  "askSomethingElse": "其他问题",
+  "askSomethingElsePlaceholder": "输入你自己的答案",
+  "submit": "提交"
 }

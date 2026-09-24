@@ -31,7 +31,9 @@
     "description": "您确定要删除此模型吗？此操作无法撤销。",
     "success": "模型 {{modelId}} 已被永久删除。",
     "cancel": "取消",
-    "delete": "删除"
+    "delete": "删除",
+    "importedDescription": "从 Jan 中移除此导入的模型？磁盘上的本地文件不会被删除。",
+    "removeFromJan": "从 Jan 中移除"
   },
   "deleteProvider": {
     "title": "删除提供商",
@@ -54,9 +56,69 @@
     "warning": {
       "title": "谨慎操作",
       "description": "修改模型功能可能会影响性能和功能。错误的设置可能导致意外行为或错误。"
-    }
+    },
+    "audio": "音频",
+    "video": "视频"
   },
   "addProvider": "添加提供商",
   "addOpenAIProvider": "添加 OpenAI 提供商",
-  "enterNameForProvider": "输入提供商名称"
+  "enterNameForProvider": "输入提供商名称",
+  "limitedSupport": "此提供商可能未被完全支持。功能（tools、vision、audio）不会自动检测——请手动添加模型并逐个配置其功能。",
+  "mlxExperimental": "MLX 支持尚处于实验阶段。Embeddings 不可用，reasoning 开关尚未接入，部分较新的模型架构可能无法加载。请在 GitHub 上报告问题，以便我们优先处理。",
+  "engineBundled": "推理引擎已内置于 Jan 中，无需单独下载或更新。报告模型加载失败时请附上此版本号。",
+  "engineReleaseNotes": "发行说明",
+  "engineBuild": "Build",
+  "engineCommit": "Commit",
+  "backendInstalled": "已安装",
+  "backendHistoryShow": "显示更新历史",
+  "backendHistoryHide": "隐藏更新历史",
+  "backendHistoryLoading": "正在加载更新历史...",
+  "backendHistoryEmpty": "尚无后端更新记录。",
+  "backendHistoryNone": "无",
+  "backendHistoryUpdated": "已更新",
+  "backendHistoryRolledBack": "已回滚",
+  "backendHistoryRollbackFailed": "回滚失败",
+  "backendHistoryFailed": "失败",
+  "chatModels": "对话模型",
+  "embeddingModels": "Embedding 模型",
+  "embeddingModelsDesc": "用于 RAG 和向量搜索。所选模型将成为生成 embeddings 时的默认模型。",
+  "embeddingModelDefault": "默认",
+  "embeddingModelSetDefault": "设为默认 embedding 模型",
+  "embeddingModelIsDefault": "默认 embedding 模型",
+  "imported": "已导入",
+  "importedTooltip": "从本地文件导入。从 Jan 中移除不会删除磁盘上的文件。",
+  "noModelFoundRemoteDesc": "可用模型将显示在此处。使用上方的刷新按钮从提供商获取模型，或使用 + 按钮手动添加。",
+  "deleteAllModels": {
+    "button": "全部删除",
+    "title": "删除所有已下载的模型？",
+    "description": "这将永久从磁盘删除 {{count}} 个模型。",
+    "sizeLabel": "将释放的磁盘空间：",
+    "calculating": "正在计算…",
+    "warning": "此操作无法撤销。",
+    "importedExcluded": "{{count}} 个导入的模型将被保留（其文件并非由 Jan 下载）。",
+    "confirm": "删除 {{count}} 个模型",
+    "deleting": "正在删除…",
+    "success": "已删除 {{count}} 个模型。",
+    "partialFailure": "有 {{count}} 个模型删除失败。详情请查看控制台。"
+  },
+  "baseUrl": {
+    "title": "Base URL",
+    "azureDescription": "你的 Azure OpenAI 端点。请将 YOUR-RESOURCE-NAME 替换为你的 Azure 资源名称。"
+  },
+  "apiKeys": {
+    "title": "API 密钥",
+    "description": "输入你的 API 密钥。你可以在高级设置中添加备用密钥，如果某个密钥失效，Jan 会自动尝试下一个。",
+    "placeholder": "sk-…\nsk-…",
+    "primaryPlaceholder": "输入主 API 密钥",
+    "keyPlaceholder": "输入 API 密钥",
+    "primaryBadge": "主密钥",
+    "test": "测试密钥",
+    "testing": "正在测试...",
+    "testHint": "使用每个密钥检查 /models 并显示各密钥的状态。",
+    "advanced": "高级",
+    "hideAdvanced": "隐藏高级设置",
+    "oneKeyHint": "可选的备用密钥可在高级设置中配置。",
+    "addKey": "添加密钥",
+    "removeKey": "移除密钥"
+  }
 }
