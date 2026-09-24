@@ -1043,7 +1043,24 @@ async fn handle_agent(cmd: AgentCommands) {
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        std::process::exit(exit_code(&e));
+    }
+}
+
+/// Classify a failed one-shot run for the shell.
+///
+/// Running out of turns with the model still calling tools is not the same
+/// outcome as a crash or a usage error: the run stopped where the caller asked
+/// it to stop, but it has no final answer, so a pipeline that only reads the
+/// exit code would take an unfinished task for a finished one. `--output-format
+/// json` carries the same distinction as `stop_reason: "error"` with this
+/// message, for consumers that never look at the code.
+fn exit_code(error: &str) -> i32 {
+    const TURN_LIMIT: &str = "-turn limit while the model was still calling tools";
+    if error.starts_with("reached the ") && error.ends_with(TURN_LIMIT) {
+        53
+    } else {
+        1
     }
 }
 
@@ -1634,6 +1651,17 @@ mod tests {
                 }
             })
         ));
+    }
+
+    /// Running out of turns while the model is still calling tools is the one
+    /// failure the shell can read as a limit rather than a crash. The message is
+    /// the only marker it has, so the classifier must match that message and not
+    /// some phrase inside a different one.
+    #[test]
+    fn turn_limit_exhaustion_has_its_own_exit_code() {
+        assert_eq!(exit_code("reached the 8-turn limit while the model was still calling tools"), 53);
+        assert_eq!(exit_code("reached the end of the response stream"), 1);
+        assert_eq!(exit_code("upstream returned 500"), 1);
     }
 
     #[test]
