@@ -509,6 +509,11 @@ enum AgentCommands {
         #[arg(long)]
         out: Option<std::path::PathBuf>,
     },
+    /// Serve addressable sessions over JSON-RPC on stdin/stdout
+    Rpc,
+    /// Print the RPC request and event schemas, generated from the types that
+    /// define the envelope
+    RpcSchema,
 }
 
 /// Read/write the user-wide `~/.jan/config.toml` provider store. This is the
@@ -729,7 +734,18 @@ async fn main() {
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
     // `jan mcp serve` is driven by another program, not a person: nobody reads
     // the notice, and an update fetch on every spawn is a cost the peer pays.
-    if !matches!(command, Commands::Update { .. } | Commands::Mcp { .. }) {
+    // `jan cli agent rpc` is the same deal - the peer owns the process, and a
+    // notice on stdout would land inside the protocol channel.
+    if !matches!(
+        command,
+        Commands::Update { .. }
+            | Commands::Mcp { .. }
+            | Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            }
+    ) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -1017,6 +1033,13 @@ async fn handle_agent(cmd: AgentCommands) {
         // No project and no provider: the schema comes from the types alone, so
         // it is the same document on any machine and in any directory.
         AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
+        AgentCommands::Rpc => app_lib::core::cli::rpc::serve().await,
+        // Like `schema`: no project root and no provider are involved, so the
+        // document is the same one on any machine.
+        AgentCommands::RpcSchema => {
+            println!("{}", app_lib::core::cli::rpc_schema::document());
+            Ok(())
+        }
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
@@ -1586,6 +1609,31 @@ mod tests {
             panic!("expected `cli agent schema --out`");
         };
         assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
+    }
+
+    /// `rpc` and `rpc-schema` are the long-lived session transport and its
+    /// generated schema: neither involves a project, a provider, or a flag.
+    #[test]
+    fn rpc_subcommands_parse() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            })
+        ));
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc-schema"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema
+                }
+            })
+        ));
     }
 
     #[test]

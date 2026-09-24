@@ -17,6 +17,10 @@ pub mod model_catalog;
 mod path_refs;
 /// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
 pub mod protocol_schema;
+/// `jan cli agent rpc`: persistent, session-scoped JSON-RPC transport.
+pub mod rpc;
+/// `jan cli agent rpc-schema`: the RPC request and event schemas.
+pub mod rpc_schema;
 pub mod run_report;
 pub mod providers;
 mod secret_input;
