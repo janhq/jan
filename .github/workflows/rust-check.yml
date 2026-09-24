@@ -121,6 +121,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/Cargo.toml \
             --no-default-features --features cli --lib -- --test-threads=1
 
+      # The standalone CLI is not a workspace member. Its binary-level RPC
+      # tests are not run by the app library command above.
+      - name: cargo test (RPC CLI)
+        run: |
+          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
+            --no-default-features --features cli --test agent_rpc
+
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
   # against a document that no longer describes the channel. The unit test in
