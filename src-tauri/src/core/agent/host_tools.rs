@@ -95,6 +95,16 @@ pub(crate) async fn respond(
         .map_err(|_| format!("host tool request '{request_id}' is no longer pending"))
 }
 
+/// Fail one pending call closed. Used for a request raised *after* the client
+/// left: `strand_all` runs once when stdin closes, so a later call would
+/// otherwise wait on a reader that no longer exists.
+pub(crate) async fn strand(registry: &HostToolRegistry, request_id: &str) {
+    let sender = registry.lock().await.remove(request_id);
+    if let Some(sender) = sender {
+        let _ = sender.send(Err(HostToolError::ClientGone));
+    }
+}
+
 /// Fail every pending call closed. Called when the client's stdin closes: a
 /// host that cannot answer must not leave the turn parked on a reply that can
 /// never arrive.
