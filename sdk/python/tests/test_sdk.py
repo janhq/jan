@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -145,6 +146,30 @@ class SdkTest(unittest.TestCase):
             self.assertEqual(result.stop_reason, "completed")
             self.assertEqual(calls, [{"position": "bin"}], "the call ran once the host allowed it")
             self.assertIn("tool_request", seen)
+
+
+    def test_a_steer_lands_in_the_models_next_request(self) -> None:
+        scratch = self.prepare([tool_call("host__camera_observe", {"frame": 1}), prose("the left bench is clear")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[
+                    HostTool(name="camera_observe", capability="read", handler=lambda _args, _call: {"text": "the bench"})
+                ],
+            )
+            turn = session.prompt("look at the bench")
+            for event in turn:
+                if event["type"] == "tool_request":
+                    session.steer("also check the left bench")
+
+            self.assertEqual(turn.result().stop_reason, "completed")
+            # The steer is delivered at the turn's next safe point, which is the
+            # request the runtime builds from the tool result.
+            self.assertIn("also check the left bench", self.provider.bodies[1])
 
 
     def test_two_sessions_never_see_each_others_events(self) -> None:
@@ -329,7 +354,13 @@ class SdkTest(unittest.TestCase):
             # The parked call is withdrawn rather than answered: the runtime
             # would refuse a late answer as not pending.
             self.assertTrue(any(e["type"] == "tool_request_cancelled" for e in events))
+            # The handler is told on its own thread, so the terminal record can
+            # arrive first; wait for the notice instead of racing it.
+            deadline = time.monotonic() + 5
+            while not aborted and time.monotonic() < deadline:
+                time.sleep(0.01)
             self.assertEqual(aborted, [True], "the handler was told to stop")
+            self.assertEqual(answered, [True], "the handler returned after the abort")
             self.assertEqual(turn.dropped, 0)
 
     # -- the channel under a turn -----------------------------------------
