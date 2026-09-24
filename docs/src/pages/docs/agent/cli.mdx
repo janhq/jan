@@ -276,11 +276,11 @@ tool message, in order, in the session transcript; the `tool_result` event carri
 |---|---|
 | OpenAI-compatible (`/chat/completions`, local servers, most gateways) | Tool message carries the text; the images lead the next user turn, each labeled with the call it answers |
 | Anthropic Messages | Inside the call's `tool_result` block, as `image` blocks |
-| Google Gemini 3+ | Nested in the call's `functionResponse.parts` as `inlineData` |
-| Google Gemini 2.x and earlier | Beside the `functionResponse`, in the same turn |
+| Google Gemini | Nested in the call's `functionResponse.parts` as `inlineData` |
 | OpenAI Responses | In the `function_call_output`'s item list, as `input_image` |
 
-Gemini accepts only inline (`data:`) images in a tool result; a remote image URL there is dropped. An
+Gemini accepts only inline (`data:`) images; a remote image URL is dropped. A part that is not an
+image is dropped on every provider rather than passed as a file. An
 image in the transcript is re-sent on every later request of the session, and it is **not counted**
 by the context indicator or auto-compaction (an image's token cost depends on its resolution and
 the provider). A tool that returns a frame every turn should keep images small, or return a

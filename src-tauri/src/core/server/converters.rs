@@ -219,34 +219,6 @@ fn chatgpt_account_id(token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// An image carried by an OpenAI `image_url` content part, in the two forms
-/// every native API distinguishes: inline bytes, or a URL the provider fetches.
-#[derive(Debug, PartialEq)]
-enum ImageSource<'a> {
-    Base64 { mime: &'a str, data: &'a str },
-    Url(&'a str),
-}
-
-/// The images of a chat message `content`, in order. A malformed part is
-/// skipped, the same way [`message_text`] skips any part it cannot read.
-fn message_images(content: &Value) -> Vec<ImageSource<'_>> {
-    let Value::Array(parts) = content else {
-        return Vec::new();
-    };
-    parts
-        .iter()
-        .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("image_url"))
-        .filter_map(|p| p.get("image_url")?.get("url")?.as_str())
-        .filter_map(|url| match url.strip_prefix("data:") {
-            Some(rest) => {
-                let (mime, data) = rest.split_once(";base64,")?;
-                (!mime.is_empty() && !data.is_empty()).then_some(ImageSource::Base64 { mime, data })
-            }
-            None => Some(ImageSource::Url(url)),
-        })
-        .collect()
-}
-
 /// Extract plain text from a chat message `content` (string or content-part array).
 fn message_text(content: &Value) -> String {
     match content {
@@ -258,24 +230,6 @@ fn message_text(content: &Value) -> String {
             .join(""),
         _ => String::new(),
     }
-}
-
-/// A content-part array as Responses input items: the text first, then each
-/// image. Responses takes a data URL and a remote URL in the same field.
-fn responses_parts(content: &Value, images: Vec<ImageSource<'_>>) -> Vec<Value> {
-    let text = message_text(content);
-    let mut items = Vec::with_capacity(images.len() + 1);
-    if !text.is_empty() {
-        items.push(json!({"type": "input_text", "text": text}));
-    }
-    items.extend(images.into_iter().map(|image| {
-        let url = match image {
-            ImageSource::Base64 { mime, data } => format!("data:{mime};base64,{data}"),
-            ImageSource::Url(url) => url.to_string(),
-        };
-        json!({"type": "input_image", "image_url": url})
-    }));
-    items
 }
 
 impl UpstreamConverter for OpenAIResponsesConverter {
@@ -320,19 +274,10 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                     "system" | "developer" => instructions.push(message_text(&content)),
                     "tool" => {
                         // Chat tool result -> Responses function_call_output item.
-                        // An output with images is the item-list form, which
-                        // is where Responses reads a tool's media; a text-only
-                        // one stays a string, as before.
-                        let images = message_images(&content);
-                        let output = if images.is_empty() {
-                            json!(message_text(&content))
-                        } else {
-                            Value::Array(responses_parts(&content, images))
-                        };
                         input_items.push(json!({
                             "type": "function_call_output",
                             "call_id": msg.get("tool_call_id").cloned().unwrap_or(Value::Null),
-                            "output": output,
+                            "output": message_text(&content),
                         }));
                     }
                     "assistant" if msg.get("tool_calls").is_some() => {
@@ -352,15 +297,7 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                             input_items.push(json!({"role": "assistant", "content": text}));
                         }
                     }
-                    _ => {
-                        let images = message_images(&content);
-                        let content = if images.is_empty() {
-                            json!(message_text(&content))
-                        } else {
-                            Value::Array(responses_parts(&content, images))
-                        };
-                        input_items.push(json!({"role": role, "content": content}));
-                    }
+                    _ => input_items.push(json!({"role": role, "content": message_text(&content)})),
                 }
             }
         }
@@ -652,21 +589,6 @@ fn convert_gemini_usage(usage: Option<&Value>) -> Value {
     })
 }
 
-/// Whether the requested model reads media nested in `functionResponse.parts`,
-/// which Gemini added with its 3 series. The name is the only signal the
-/// converter has, so an unrecognized name gets the sibling-part form that
-/// every Gemini model accepts.
-fn gemini_reads_function_response_parts(body: &Value) -> bool {
-    let Some(model) = body.get("model").and_then(|m| m.as_str()) else {
-        return false;
-    };
-    let name = model.rsplit('/').next().unwrap_or(model);
-    name.strip_prefix("gemini-")
-        .and_then(|rest| rest.split(['.', '-']).next())
-        .and_then(|major| major.parse::<u32>().ok())
-        .is_some_and(|major| major >= 3)
-}
-
 impl UpstreamConverter for GoogleGenerateContentConverter {
     fn upstream_path(&self, body: &Value) -> String {
         let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
@@ -742,50 +664,12 @@ impl UpstreamConverter for GoogleGenerateContentConverter {
                             .ok()
                             .filter(|v: &Value| v.is_object())
                             .unwrap_or_else(|| json!({"result": text}));
-                        let mut function_response = json!({"name": name, "response": response});
-                        let mut parts: Vec<Value> = Vec::new();
-                        // `functionResponse.parts` takes inline bytes only, and
-                        // only Gemini 3+ reads it. Earlier models get the image
-                        // as a sibling part of the same turn instead, which is
-                        // the form they accept.
-                        let images: Vec<Value> = message_images(&content)
-                            .into_iter()
-                            .filter_map(|image| match image {
-                                ImageSource::Base64 { mime, data } => {
-                                    Some(json!({"inlineData": {"mimeType": mime, "data": data}}))
-                                }
-                                ImageSource::Url(_) => None,
-                            })
-                            .collect();
-                        let nested = gemini_reads_function_response_parts(body);
-                        if nested && !images.is_empty() {
-                            function_response["parts"] = Value::Array(images.clone());
-                        }
-                        parts.push(json!({"functionResponse": function_response}));
-                        if !nested {
-                            parts.extend(images);
-                        }
-                        contents.push(json!({"role": "user", "parts": parts}));
-                    }
-                    _ => {
-                        let mut parts: Vec<Value> = Vec::new();
-                        let text = message_text(&content);
-                        let images = message_images(&content);
-                        if !text.is_empty() || images.is_empty() {
-                            parts.push(json!({"text": text}));
-                        }
-                        parts.extend(images.into_iter().map(|image| match image {
-                            ImageSource::Base64 { mime, data } => {
-                                json!({"inlineData": {"mimeType": mime, "data": data}})
-                            }
-                            // A URL carries no MIME type; Gemini requires one,
-                            // and JPEG is the common default for photos.
-                            ImageSource::Url(url) => json!({"fileData": {
-                                "mimeType": "image/jpeg", "fileUri": url,
-                            }}),
+                        contents.push(json!({
+                            "role": "user",
+                            "parts": [{"functionResponse": {"name": name, "response": response}}]
                         }));
-                        contents.push(json!({"role": "user", "parts": parts}));
                     }
+                    _ => contents.push(json!({"role": "user", "parts": [{"text": message_text(&content)}]})),
                 }
             }
         }
@@ -1120,26 +1004,6 @@ fn anthropic_cache_tokens(usage: Option<&Value>) -> (Option<i64>, Option<i64>) {
     )
 }
 
-/// A content-part array as Anthropic blocks: the text first, then each image.
-fn anthropic_blocks(content: &Value, images: Vec<ImageSource<'_>>) -> Vec<Value> {
-    let text = message_text(content);
-    let mut blocks = Vec::with_capacity(images.len() + 1);
-    if !text.is_empty() {
-        blocks.push(json!({"type": "text", "text": text}));
-    }
-    blocks.extend(images.into_iter().map(|image| match image {
-        ImageSource::Base64 { mime, data } => json!({
-            "type": "image",
-            "source": {"type": "base64", "media_type": mime, "data": data},
-        }),
-        ImageSource::Url(url) => json!({
-            "type": "image",
-            "source": {"type": "url", "url": url},
-        }),
-    }));
-    blocks
-}
-
 /// Append `blocks` to the last message when it shares `role`, else start a new
 /// one. Anthropic rejects consecutive same-role messages, so tool results and
 /// adjacent turns must be merged.
@@ -1262,34 +1126,21 @@ impl UpstreamConverter for AnthropicMessagesConverter {
                         push_merged(&mut messages, "assistant", blocks);
                     }
                     "tool" => {
-                        // A result with images uses the block-list form of
-                        // `tool_result.content`, which is where Anthropic reads
-                        // a tool's media; a text-only one stays a string.
-                        let images = message_images(&content);
-                        let result = if images.is_empty() {
-                            json!(message_text(&content))
-                        } else {
-                            Value::Array(anthropic_blocks(&content, images))
-                        };
                         push_merged(
                             &mut messages,
                             "user",
                             vec![json!({
                                 "type": "tool_result",
                                 "tool_use_id": msg.get("tool_call_id").cloned().unwrap_or(Value::Null),
-                                "content": result,
+                                "content": message_text(&content),
                             })],
                         );
                     }
-                    _ => {
-                        let images = message_images(&content);
-                        let blocks = if images.is_empty() {
-                            vec![json!({"type": "text", "text": message_text(&content)})]
-                        } else {
-                            anthropic_blocks(&content, images)
-                        };
-                        push_merged(&mut messages, "user", blocks);
-                    }
+                    _ => push_merged(
+                        &mut messages,
+                        "user",
+                        vec![json!({"type": "text", "text": message_text(&content)})],
+                    ),
                 }
             }
         }
@@ -1615,26 +1466,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn message_images_reads_inline_and_remote_images_and_skips_the_rest() {
-        let content = json!([
-            {"type": "text", "text": "a"},
-            {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}},
-            {"type": "image_url", "image_url": {"url": "https://x.test/a.jpg"}},
-            {"type": "image_url", "image_url": {"url": "data:image/png,notbase64"}},
-            {"type": "image_url"},
-            {"type": "input_audio"}
-        ]);
-        assert_eq!(
-            message_images(&content),
-            vec![
-                ImageSource::Base64 { mime: "image/png", data: "AAAA" },
-                ImageSource::Url("https://x.test/a.jpg"),
-            ]
-        );
-        assert!(message_images(&json!("plain")).is_empty());
-    }
-
-    #[test]
     fn parses_a_single_event_in_one_chunk() {
         let mut acc = SseAccumulator::new();
         let events = acc.push("data: {\"a\":1}\n\n");
@@ -1737,43 +1568,6 @@ mod openai_responses_tests {
         assert_eq!(out["temperature"], json!(0.4));
         assert_eq!(out["stream"], json!(true));
         assert_eq!(out["reasoning"], json!({"effort": "high", "summary": "auto"}));
-    }
-
-    /// A camera frame from a tool, and a pasted image from the user, both
-    /// reach Responses in its own item forms; text-only content is unchanged.
-    #[test]
-    fn request_carries_tool_and_user_images() {
-        let body = json!({
-            "model": "gpt-5",
-            "messages": [
-                {"role": "user", "content": [
-                    {"type": "text", "text": "what is this"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,BBBB"}}
-                ]},
-                {"role": "assistant", "content": "", "tool_calls": [
-                    {"id": "call_1", "type": "function", "function": {"name": "cam", "arguments": "{}"}}
-                ]},
-                {"role": "tool", "tool_call_id": "call_1", "content": [
-                    {"type": "text", "text": "front camera"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
-                ]}
-            ]
-        });
-        let input = conv().convert_request(&body)["input"].clone();
-        assert_eq!(
-            input[0]["content"],
-            json!([
-                {"type": "input_text", "text": "what is this"},
-                {"type": "input_image", "image_url": "data:image/png;base64,BBBB"}
-            ])
-        );
-        assert_eq!(
-            input[2]["output"],
-            json!([
-                {"type": "input_text", "text": "front camera"},
-                {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}
-            ])
-        );
     }
 
     #[test]
@@ -2087,73 +1881,6 @@ mod google_generate_content_tests {
         assert_eq!(out["toolConfig"], json!({"functionCallingConfig": {"mode": "ANY"}}));
     }
 
-    fn image_tool_body(model: &str) -> Value {
-        json!({
-            "model": model,
-            "messages": [
-                {"role": "user", "content": [
-                    {"type": "text", "text": "what is this"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,BBBB"}}
-                ]},
-                {"role": "assistant", "content": "", "tool_calls": [
-                    {"id": "c1", "type": "function", "function": {"name": "cam", "arguments": "{}"}}
-                ]},
-                {"role": "tool", "tool_call_id": "c1", "content": [
-                    {"type": "text", "text": "front camera"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
-                ]}
-            ]
-        })
-    }
-
-    #[test]
-    fn a_user_image_becomes_inline_data() {
-        let out = conv().convert_request(&image_tool_body("gemini-2.5-pro"));
-        assert_eq!(
-            out["contents"][0]["parts"],
-            json!([
-                {"text": "what is this"},
-                {"inlineData": {"mimeType": "image/png", "data": "BBBB"}}
-            ])
-        );
-    }
-
-    /// Gemini 3 reads a tool's media nested in its `functionResponse`.
-    #[test]
-    fn a_gemini_3_tool_image_nests_in_the_function_response() {
-        let out = conv().convert_request(&image_tool_body("models/gemini-3-flash-preview"));
-        let parts = out["contents"][2]["parts"].as_array().unwrap();
-        assert_eq!(parts.len(), 1, "{parts:?}");
-        assert_eq!(parts[0]["functionResponse"]["name"], json!("cam"));
-        assert_eq!(parts[0]["functionResponse"]["response"], json!({"result": "front camera"}));
-        assert_eq!(
-            parts[0]["functionResponse"]["parts"],
-            json!([{"inlineData": {"mimeType": "image/png", "data": "AAAA"}}])
-        );
-    }
-
-    /// Earlier models ignore nested parts, so the image rides beside the
-    /// response in the same turn.
-    #[test]
-    fn an_older_gemini_tool_image_is_a_sibling_part() {
-        let out = conv().convert_request(&image_tool_body("gemini-2.5-pro"));
-        let parts = out["contents"][2]["parts"].as_array().unwrap();
-        assert!(parts[0]["functionResponse"].get("parts").is_none(), "{parts:?}");
-        assert_eq!(parts[1], json!({"inlineData": {"mimeType": "image/png", "data": "AAAA"}}));
-    }
-
-    #[test]
-    fn gemini_generation_is_read_from_the_model_name() {
-        let reads = |m: &str| gemini_reads_function_response_parts(&json!({"model": m}));
-        assert!(reads("gemini-3-pro"));
-        assert!(reads("gemini-3.1-flash"));
-        assert!(reads("models/gemini-3.8-flash"));
-        assert!(!reads("gemini-2.5-pro"));
-        assert!(!reads("gemini-1.5-flash"));
-        assert!(!reads("gemma-3-27b"));
-        assert!(!reads("some-alias"));
-    }
-
     #[test]
     fn tool_result_wraps_non_json_content() {
         let body = json!({
@@ -2387,58 +2114,6 @@ mod anthropic_messages_tests {
         assert!(sys[0].get("cache_control").is_none());
         assert_eq!(sys[1]["text"], json!(prompt));
         assert_eq!(sys[1]["cache_control"], json!({"type": "ephemeral"}));
-    }
-
-    /// The reviewer's probe, inverted: a tool's image lands inside its
-    /// `tool_result`, a user image as an `image` block, and the tool and user
-    /// turns still coalesce into one user message.
-    #[test]
-    fn request_carries_tool_and_user_images() {
-        let body = json!({
-            "model": "claude-sonnet-4",
-            "messages": [
-                {"role": "user", "content": "go"},
-                {"role": "assistant", "content": "", "tool_calls": [
-                    {"id": "call_1", "type": "function", "function": {"name": "host__camera", "arguments": "{}"}}
-                ]},
-                {"role": "tool", "tool_call_id": "call_1", "content": [
-                    {"type": "text", "text": "front camera"},
-                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
-                ]},
-                {"role": "user", "content": [
-                    {"type": "text", "text": "what is this"},
-                    {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,BBBB"}}
-                ]}
-            ]
-        });
-        let msgs = conv().convert_request(&body)["messages"].clone();
-        assert_eq!(msgs.as_array().unwrap().len(), 3, "{msgs}");
-        assert_eq!(
-            msgs[2]["content"],
-            json!([
-                {"type": "tool_result", "tool_use_id": "call_1", "content": [
-                    {"type": "text", "text": "front camera"},
-                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}
-                ]},
-                {"type": "text", "text": "what is this"},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "BBBB"}}
-            ])
-        );
-    }
-
-    #[test]
-    fn a_remote_image_is_a_url_source() {
-        let body = json!({
-            "model": "claude-sonnet-4",
-            "messages": [{"role": "user", "content": [
-                {"type": "image_url", "image_url": {"url": "https://x.test/a.jpg"}}
-            ]}]
-        });
-        let msgs = conv().convert_request(&body)["messages"].clone();
-        assert_eq!(
-            msgs[0]["content"],
-            json!([{"type": "image", "source": {"type": "url", "url": "https://x.test/a.jpg"}}])
-        );
     }
 
     #[test]
