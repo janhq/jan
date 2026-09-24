@@ -6,6 +6,8 @@ mod agent_status;
 pub mod auth;
 pub mod brand;
 pub mod browser;
+#[cfg(test)]
+mod contract_conformance;
 pub mod device_auth;
 pub mod journal;
 pub mod login;
