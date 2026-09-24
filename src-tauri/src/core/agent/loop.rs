@@ -336,6 +336,13 @@ struct HttpModelInvoker {
     /// provider the model resolved to, the wire API the body is built for, and
     /// the child run's id when this invoker belongs to one.
     provenance: RequestIdentityOwned,
+    /// The run's own event stream, which provenance rides even when this
+    /// invocation reports its text somewhere else: a side call passes a private
+    /// sink for its own summary or verdict, and a record about a request the run
+    /// made belongs on the run's stream. `None` only where no run stream exists
+    /// to carry it (a `/compact` or `/goal` evaluation started between turns,
+    /// the API-server proxy that discards its events).
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
 }
 
 /// [`crate::core::agent::provenance::RequestIdentity`] as the invoker stores it:
@@ -421,11 +428,18 @@ impl ModelInvoker for HttpModelInvoker {
             }
         }
         // Emitted before the request goes out, so a harness that records
-        // provenance sees the request even when the call then fails.
-        let _ = events.send(crate::core::agent::provenance::of_request(
-            &normalized,
-            self.provenance.as_identity(self.session_id.as_deref()),
-        ));
+        // provenance sees the request even when the call then fails. It goes to
+        // the run's stream rather than to `events`: a side call passes a private
+        // sink for its own summary or verdict text, and dropping the record
+        // there would leave the requests a run actually paid for unreported.
+        let _ = self
+            .provenance_events
+            .as_ref()
+            .unwrap_or(events)
+            .send(crate::core::agent::provenance::of_request(
+                &normalized,
+                self.provenance.as_identity(self.session_id.as_deref()),
+            ));
         if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
                 &self.converter_client,
@@ -3149,6 +3163,7 @@ async fn orchestrate_inner(
         ),
         session_id: args.session_id.clone(),
         provenance,
+        provenance_events: Some(events.clone()),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -3580,6 +3595,10 @@ pub(crate) async fn compact_history(
         ),
         session_id: args.session_id.clone(),
         provenance,
+        // A `/compact` runs between turns: there is no run stream in existence
+        // to carry the record, so this request is reported nowhere rather than
+        // somewhere a client cannot read.
+        provenance_events: None,
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
@@ -3628,6 +3647,8 @@ pub(crate) async fn evaluate_goal(
         ),
         session_id: args.session_id.clone(),
         provenance,
+        // Between turns, like `/compact`: no run stream exists to carry it.
+        provenance_events: None,
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
@@ -4835,6 +4856,99 @@ mod tests {
                 .pop_front()
                 .ok_or_else(|| "mock model exhausted".to_string())
         }
+    }
+
+    /// A side call -- compaction, a `/goal` evaluation -- invokes the model with
+    /// a private sink, because its own streamed text is a summary or a verdict,
+    /// not the answer the user is reading. Its provenance is not private: the
+    /// record describes a request the run made and spent money on, so it rides
+    /// the run's stream, which is the only place a client or a harness sees it.
+    #[tokio::test]
+    async fn a_side_call_reports_provenance_on_the_run_stream() {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut headers = String::new();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    headers.push_str(&line);
+                }
+                let size = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .and_then(|n| n.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let answer = concat!(
+                    "data: {\"id\":\"s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",",
+                    "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"summary\"},\"finish_reason\":null}]}\n\n",
+                    "data: {\"id\":\"s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",",
+                    "\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],",
+                    "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+                    "data: [DONE]\n\n",
+                );
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
+            }
+        });
+
+        let (run, mut run_events) = mpsc::unbounded_channel();
+        let (side, mut side_events) = mpsc::unbounded_channel();
+        let invoker = HttpModelInvoker {
+            client: crate::core::agent::upstream::agent_http_client(),
+            upstream_url: url,
+            api_keys: Vec::new(),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            converter: None,
+            converter_client: converter_http_client(),
+            client_request_id: None,
+            session_id: Some("session-1".to_string()),
+            provenance: RequestIdentityOwned {
+                run_id: None,
+                provider: Some("stub".to_string()),
+                api_type: None,
+                oauth: false,
+            },
+            provenance_events: Some(run),
+        };
+
+        let request =
+            json!({"model":"m","messages":[{"role":"user","content":"summarize this"}]});
+        invoker
+            .invoke(&request, &side)
+            .await
+            .expect("the stub provider answers");
+
+        let reported: Vec<StreamEvent> = std::iter::from_fn(|| run_events.try_recv().ok()).collect();
+        assert!(
+            reported.iter().any(|event| matches!(
+                event,
+                StreamEvent::RequestProvenance { session_id, .. }
+                    if session_id.as_deref() == Some("session-1")
+            )),
+            "the run stream carries the record: {reported:?}"
+        );
+        let private: Vec<StreamEvent> = std::iter::from_fn(|| side_events.try_recv().ok()).collect();
+        assert!(
+            !private
+                .iter()
+                .any(|event| matches!(event, StreamEvent::RequestProvenance { .. })),
+            "the private sink keeps only the side call's own text: {private:?}"
+        );
     }
 
     #[derive(Default)]
