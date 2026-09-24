@@ -291,6 +291,34 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     let _ = std::fs::remove_dir_all(scratch);
 }
 
+/// A client that sends an image sends bytes into a channel with no
+/// backpressure, so the caps are part of the handshake rather than something to
+/// discover by being rejected. The RPC handshake carries the same object `init`
+/// gives a stream-json client; this asserts the field is on the wire, and that
+/// it is that object - compared against the builder, not against a copy of the
+/// numbers, so a cap cannot move in one place only.
+#[test]
+fn the_handshake_advertises_the_content_part_caps() {
+    let scratch = scratch("caps");
+    let home = scratch.join("home");
+    let provider_url = provider(1, 0);
+    configure(&home, &provider_url);
+    let mut rpc = Rpc::open(&home);
+
+    let init = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientInfo":{"name":"test","version":"1"},"capabilities":{}}}));
+    let caps = &init["result"]["input_content_parts"];
+    assert!(!caps.is_null(), "{init}");
+    assert_eq!(
+        caps,
+        &serde_json::to_value(app_lib::core::cli::run_report::InputContentParts::current())
+            .expect("the caps serialize"),
+        "the handshake advertises the caps the parser enforces",
+    );
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
 #[test]
 fn failed_fork_does_not_close_other_sessions() {
     let scratch = scratch("failed-fork");

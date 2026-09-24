@@ -312,7 +312,7 @@ pub(crate) struct Init {
 /// to discover by being rejected. Each is the cap the parser enforces: this is
 /// the same constant, not a copy of it.
 #[derive(serde::Serialize, schemars::JsonSchema)]
-pub(crate) struct InputContentParts {
+pub struct InputContentParts {
     /// The image types an `image_url` part may name, as MIME types.
     mime_types: Vec<&'static str>,
     /// Most decoded bytes one image may carry.
@@ -329,7 +329,10 @@ pub(crate) struct InputContentParts {
 }
 
 impl InputContentParts {
-    pub(crate) fn current() -> Self {
+    /// The caps as the parser enforces them. Public so a client-facing test can
+    /// compare the handshake against this one value rather than against a copy
+    /// of the numbers.
+    pub fn current() -> Self {
         use super::stream_input;
         Self {
             mime_types: super::user_message::IMAGE_MIME_TYPES.to_vec(),
