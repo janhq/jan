@@ -75,8 +75,14 @@ Check the build you run rather than trusting a page: the `init` record says what
 | Follow-ups, permission answers, `abort` | `init.input_kinds` lists `user`, `permission` and `abort` | Yes |
 | [Host tools](/docs/agent/sdk-tools) | `jan cli agent run --help` lists `--host-tools`; `init.input_kinds` lists `tool_result` | No - on `main`, arriving with the next nightly |
 | The generated JSON Schema | `jan cli agent schema` exists | No - on `main`, arriving with the next nightly |
-| Several sessions in one process over JSON-RPC | `jan cli agent --help` lists `rpc` | No - on `main`, arriving with the next nightly. It has no host tools yet |
-| Images in a `user` message | `init.input_content_parts` is not `null` | No. Builds from `main` accept and validate them but **do not forward them to the model yet**: only the text parts reach the provider |
+| Several sessions in one process over JSON-RPC | `jan cli agent --help` lists `rpc` | No - on `main`, arriving with the next nightly. `main` also serves host tools over RPC (`session/start` `tools`, `tool/respond`) |
+| Images in a `user` message | `init.input_content_parts` is not `null` | No - on `main`, arriving with the next nightly. `main` forwards the parts to the provider as written, images included |
 
-Not in any build yet: images in a host tool result, host tools called from subagents, and the
-JavaScript and Python SDK packages. Run `jan update` to move to the newest nightly.
+Not in any build yet: the JavaScript and Python SDK packages. On `main`, two more behaviours arrive
+with the next nightly: an image in a host tool result (it follows the tool message as a user turn,
+since a provider's tool response carries text), and a subagent's host tool call, which reaches you
+like the main run's, attributed by the child's `run_id`. Run `jan update` to move to the newest
+nightly.
+
+Capabilities here were checked on 2026-09-24 against `main` (`cc4927cff`) and the nightly named
+above; a build's own `init` record is the authority.

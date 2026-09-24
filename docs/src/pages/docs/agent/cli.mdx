@@ -221,9 +221,10 @@ per message, and 16 MiB for one input line. Only `image/png`, `image/jpeg`, `ima
 `input_error.line` carries at most the first 4 KiB of it, with `line_truncated: true`: a rejected
 line can be as large as the cap it crossed.
 
-<Callout type="warning">
-Image parts are validated against these caps but **do not reach the model yet**: the request to the
-provider carries only a message's `text` parts.
+<Callout type="info">
+A message's parts travel to the provider as written, images included: a `user` turn keeps its text
+and `image_url` parts in order. Whether a model accepts an image is the model's business, not the
+channel's - a provider without vision answers with its own error.
 </Callout>
 
 `decision` is `allow_once`, `allow_always`, or `deny`, and each `request_id` is answerable once. A

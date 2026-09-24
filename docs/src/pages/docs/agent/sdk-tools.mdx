@@ -247,11 +247,20 @@ own names. Answer with a `tool_result` carrying the same `request_id`:
   </Tabs.Tab>
 </Tabs>
 
-- **Validate the arguments yourself.** `args` is what the model produced. Jan does not check it
-  against your `parameters` schema before sending the request, so a handler that trusts it acts on
-  whatever the model wrote. The examples' handlers check `city` before using it.
-- **`content` is what the model sees**, as a string. There is no separate field for data only your
-  UI shows: anything you put in `content` goes to the model.
+- **Ask for the shape you want, then check anyway.** Before the request is emitted, Jan validates
+  `args` against the `parameters` you declared, and a call that breaks the schema never reaches you:
+  the model is told the mismatch and can try again. The check covers `type`, `properties`,
+  `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `enum`, `const`, `minLength`,
+  `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` and `pattern`; any other
+  keyword is ignored, never failed. A schema is a shape, not a safety property - a handler that
+  moves hardware still checks what it acts on.
+- **`content` is what the model sees.** It is either a string or a content-part array of `text` and
+  `image_url` parts, held to the same caps as a `user` message. The parts' text becomes the run's
+  tool message, and an image follows it as the next user turn - a provider's tool response carries
+  text, so that is where an image can ride. There is no separate field for data only your UI shows:
+  anything you put in `content` goes to the model.
+- **`details` stays yours.** The optional `details` object on a `tool_result` never leaves the
+  client side: it is not in the tool message the model sees.
 - **Report a failure, don't drop the call.** `is_error: true` with the reason in `content` reaches
   the model as the tool's error, and the turn goes on. An unanswered call holds the run.
 - **Each `request_id` is answered once.** A second answer, or an answer to an id that is not
@@ -278,7 +287,7 @@ call after it. Keep stdin open until the `result` arrives.
 
 ## Not in the preview yet
 
-- Images in a tool result: `content` is text.
-- Host tools inside [subagents](/docs/agent/subagents): a subagent is given no host tools.
 - Changing the declared set during a run.
-- Schema validation of `args` by Jan.
+
+A subagent's host tool call reaches you exactly as the main run's does, attributed by the child's
+`run_id` (a main-run request carries none); children cannot dispatch children.
