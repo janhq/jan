@@ -342,6 +342,57 @@ fn rpc_survives_a_client_that_stops_reading() {
     let _ = std::fs::remove_dir_all(scratch);
 }
 
+/// The artifact is what a client generates its calls from, so a method it names
+/// must be a method the dispatcher answers. The list is read from the committed
+/// file rather than written here: a verb added to the document without an arm to
+/// serve it fails this, which is the half of the parity the schema unit test
+/// cannot see (that one compares the document against a reviewed list, not
+/// against the dispatcher).
+///
+/// The responses themselves are not the subject - a bad call is expected - only
+/// that each one is answered rather than `-32601`.
+#[test]
+fn every_documented_method_is_answered() {
+    let scratch = scratch("surface");
+    let home = scratch.join("home");
+    let provider_url = provider(1, 0);
+    configure(&home, &provider_url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+
+    let document: serde_json::Value =
+        serde_json::from_str(include_str!("../../../protocol/rpc-schema.json"))
+            .expect("the committed artifact is JSON");
+    let mut methods: Vec<&str> = document["requests"]
+        .as_object()
+        .expect("the artifact lists its requests")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    methods.sort_unstable();
+    // A vacuity guard: an empty or renamed map would otherwise make the loop
+    // below pass without asking anything.
+    assert!(methods.len() >= 9, "{methods:?}");
+
+    for (index, method) in methods.iter().enumerate() {
+        let id = 100 + index;
+        let reply =
+            rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":{}}));
+        assert_eq!(reply["id"], id, "{method}: {reply}");
+        assert_ne!(
+            reply["error"]["code"], -32601,
+            "{method} is in the artifact but not dispatched: {reply}"
+        );
+        assert!(
+            !reply["result"].is_null() || !reply["error"].is_null(),
+            "{method} was answered with neither: {reply}"
+        );
+    }
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
 /// Closing stdin asks the process to end, but stdin is not stdout: the client
 /// can still read, and the turn that was running when it asked is the one case
 /// where it cannot infer the outcome from anything else on the channel. It gets
