@@ -1817,9 +1817,13 @@ async fn run_phase_plan(
 }
 
 /// The single `<SYSTEM>` ping delivered when a multi-phase plan finishes.
-/// Confined: point the parent at the blackboard, where every phase's answers
-/// live. Unconfined: there is no blackboard, so collect and inline the final
-/// phase's answers (bounded), since they have nowhere else to be read from.
+///
+/// Per child, never per dispatch: the driver knows the names it *started*, and a
+/// name is not an answer. A child that failed, was aborted, or produced nothing
+/// has to read as exactly that, or the one line that tells the model where the
+/// plan's answers are is the one line it cannot trust. Same shape as the TS
+/// port's `planCompletionNotice`: a child whose answer was spilled is pointed at
+/// its file, a failed one carries its error, and a quiet one says so.
 async fn plan_completion_notice(
     bg: &Arc<BackgroundSubagents>,
     final_ids: &[String],
@@ -1831,35 +1835,47 @@ async fn plan_completion_notice(
         total_subagents,
         blackboard_dir,
     } = summary;
-    match blackboard_dir {
-        Some(dir) => format!(
-            "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases. \
-             The final phase produced: {}. Every answer is on the blackboard at {dir} \
-             (blackboard/<name>.md) -- read the files you need.",
-            final_names.join(", ")
-        ),
-        None => {
-            let mut parts = Vec::with_capacity(final_ids.len());
-            for (id, name) in final_ids.iter().zip(final_names) {
-                // Bounded per answer: the notice concatenates the whole final
-                // phase, so an uncapped inline (what `compose_subagent_result`
-                // returns with no path) could blow the parent's context. Matches
-                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
-                let body = match await_subagent(bg, id).await {
-                    Ok(c) => {
-                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
-                        c.text[..cut].to_string()
-                    }
-                    Err(e) => format!("failed: {e}"),
-                };
-                parts.push(format!("### {name}\n\n{body}"));
+    let mut parts = Vec::with_capacity(final_ids.len());
+    for (id, name) in final_ids.iter().zip(final_names) {
+        // Collecting here is also what makes the claim truthful: the answer and
+        // the path it was written to come from the child, not from the list of
+        // names it was dispatched under.
+        let body = match await_subagent(bg, id).await {
+            Ok(Collected { text, .. }) if text.trim().is_empty() => {
+                "produced nothing".to_string()
             }
-            format!(
-                "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} \
-                 phases. Final phase answers:\n\n{}",
-                parts.join("\n\n")
-            )
-        }
+            // The path the child's own task wrote to, so this points at the file
+            // that exists rather than one reconstructed from the name.
+            Ok(Collected {
+                display_path: Some(path),
+                ..
+            }) => format!("see {path}"),
+            // No spill file (an unconfined run has no scratch): the answer has
+            // nowhere to be read from later, so it rides inline, bounded -- the
+            // notice concatenates the whole final phase.
+            Ok(Collected { text, .. }) => {
+                let cut = char_boundary(&text, SUBAGENT_INLINE_MAX_BYTES);
+                text[..cut].to_string()
+            }
+            Err(e) => format!("failed: {e}"),
+        };
+        parts.push(format!("### {name}\n\n{body}"));
+    }
+    let headline = format!(
+        "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases."
+    );
+    match blackboard_dir {
+        // Confined: point the parent at the blackboard, where the answers that
+        // exist live.
+        Some(dir) => format!(
+            "{headline} Final phase:\n\n{}\n\nEvery answer is on the blackboard at {dir} \
+             (blackboard/<name>.md) -- read the files you need.",
+            parts.join("\n\n")
+        ),
+        None => format!(
+            "{headline} Final phase answers:\n\n{}",
+            parts.join("\n\n")
+        ),
     }
 }
 
@@ -3607,6 +3623,71 @@ mod tests {
             .await
             .expect("a parked waiter wakes when the registry is torn down")
             .expect("the waiter task did not panic");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F4: the plan's single line must not present a child that produced nothing
+    /// as an answer. The driver knows the names it *started*; only the children
+    /// know what they produced, and the notice has to ask them.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn the_terminal_notice_reports_what_each_child_produced() {
+        let root = unique_root("phasenotice");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        spawn_dispatch_plan(
+            &bg,
+            bg.generation(),
+            &args,
+            plan,
+            &parent_run(),
+            &tx,
+            Some(&scratch),
+        )
+        .unwrap();
+
+        let mut all = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                all.extend(bg.take_notices());
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        let notice = all.join("\n");
+        // Children fail without a provider, and a failure is not an answer: the
+        // notice names the child and says what became of it, instead of naming it
+        // under a claim of production.
+        assert!(
+            notice.contains("### collector"),
+            "the notice still reports the child: {notice}"
+        );
+        assert!(
+            notice.contains("failed:"),
+            "a child that produced nothing reads as failed: {notice}"
+        );
+        assert!(
+            !notice.contains("blackboard/collector.md"),
+            "a child with no answer is not offered as one: {notice}"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
