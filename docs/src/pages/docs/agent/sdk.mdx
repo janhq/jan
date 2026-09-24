@@ -1,0 +1,51 @@
+---
+title: Agent SDK
+description: Choose a path for embedding Jan Agent and see which SDK guides are not yet available.
+keywords: [Jan, Jan Agent, SDK, JavaScript, Python, embedding, stream-json, RPC]
+---
+
+import { Callout } from 'nextra/components'
+
+# Agent SDK
+
+Want to put Jan Agent inside your own application? Start with the transport you can use today.
+The JavaScript and Python SDK packages are not released, so there is no SDK package to install or
+SDK quickstart to run yet. [The Agent quickstart](/docs/agent/quickstart) is for using Jan from a
+terminal, not for embedding an SDK.
+
+## Choose your path
+
+| You want to | State | Start here |
+| --- | --- | --- |
+| Use Jan interactively or run a one-shot CLI task | Available in the Jan CLI | [Agent quickstart](/docs/agent/quickstart) and [CLI reference](/docs/agent/cli) |
+| Embed the current `stream-json` CLI transport | Shipped; your application owns the Jan process and stdin/stdout | [CLI `run` and `schema` reference](/docs/agent/cli#streaming-json-in-both-directions) and [generated record guide](/docs/agent/protocol) |
+| Embed addressable sessions with RPC | Implemented in [PR #9049](https://github.com/janhq/jan/pull/9049), in review; not released | [CLI `rpc` reference](/docs/agent/cli#rpc) and [generated record guide](/docs/agent/protocol) for evaluating the proposed surface |
+| Build a JavaScript or TypeScript app with the SDK | Planned; package not released ([#367](https://github.com/janhq/jan-internal/issues/367)) | Use `stream-json` now, or wait for the JS/TS SDK quickstart |
+| Build a Python app with the SDK | Planned; package not released ([#367](https://github.com/janhq/jan-internal/issues/367)) | Use `stream-json` now, or wait for the Python SDK quickstart |
+
+<Callout type="warning">
+No JavaScript or Python Jan Agent SDK package is installable yet. The RPC implementation is in
+review, not a released SDK or a substitute for the shipped `stream-json` transport. Host-owned tool
+callbacks are not available yet ([#368](https://github.com/janhq/jan-internal/issues/368)).
+</Callout>
+
+## Guides and recipes on the way
+
+These are planned pages, not links to runnable examples or released APIs:
+
+| Planned page | What it will cover | What it waits for |
+| --- | --- | --- |
+| JavaScript / TypeScript quickstart (`sdk-ts.mdx`) | First embedded turn, streamed outcome, one host tool, close | Released JS/TS SDK and host callbacks |
+| Python quickstart (`sdk-python.mdx`) | Direct Python runtime, first turn, host tool, close without Node | Released Python SDK and host callbacks |
+| Host tools (`sdk-tools.mdx`) | Callback validation, correlated results, permission and active tools | Host callback contract ([#368](https://github.com/janhq/jan-internal/issues/368)) |
+| Images (`sdk-images.mdx`) | Prompt images, image-bearing results and sampled capture | Corresponding runtime and SDK support |
+| Runtime and failures (`sdk-runtime.mdx`) | Process ownership, shutdown, permission and recovery | Released SDK runtime contract |
+| Migration (`sdk-migration.mdx`) | Moving an existing `stream-json` harness to an SDK | Released SDKs and feature parity |
+| Examples (`sdk-examples.mdx`) | Task-based index of checked-in, verified recipes | Runnable released-SDK examples |
+
+For wire shapes you can inspect today, use the [generated protocol records](/docs/agent/protocol).
+This page does not promise SDK install commands, versions, supported platforms or host callbacks
+before the packages and runtime are released. Availability checked on 2026-09-24 against
+[#367](https://github.com/janhq/jan-internal/issues/367),
+[#368](https://github.com/janhq/jan-internal/issues/368) and
+[PR #9049](https://github.com/janhq/jan/pull/9049); recheck at publication.
