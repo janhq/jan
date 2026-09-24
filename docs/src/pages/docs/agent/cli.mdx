@@ -401,13 +401,15 @@ jan cli agent rpc-schema   # generated request/event schemas on stdout
 One client flow:
 
 ```text
-initialize {protocolVersion:1,clientInfo:{name,version}} -> version and serverInfo
+initialize {protocolVersion:1,clientInfo:{name,version}}   -> version, serverInfo, input_content_parts
 initialized                                                -> notification
 session/start {cwd,model?,ephemeral?}                      -> {sessionId}
 turn/start {sessionId,input:"Hello"}                       -> {turnId} immediately
 item/<stream-json tag>                                     -> {sessionId,turnId,event}
 turn/completed                                             -> {sessionId,turnId,stopReason,error?}
 ```
+
+The `initialize` result carries the same `input_content_parts` object `init` does - the MIME types and the image, message and line caps a content-part array is held to - so a client that sends an image learns the limits from the handshake rather than by having a message rejected.
 
 The `item/*` payload contains the existing `StreamEvent` object unchanged. A client can also call `session/list`, `session/resume`, `session/fork`, `session/archive`, `turn/steer`, `turn/interrupt` and `permission/respond {requestId,decision}`. Session ids address this **process**, not another RPC process. `turn/interrupt` closes the turn with one `turn/completed` carrying `stopReason: "interrupted"`, and puts that record on the wire before it answers the request. A client that closes stdin ends the process, and the turn that is still running is closed with `stopReason: "interrupted"` before it exits. An outstanding permission request is never granted - closing the channel is not an approval, and the gate's fallback for a request that is dropped without an answer is denial. Only one turn is active per process; a second `turn/start` returns `-32001` with `data.retryable: true` rather than silently queueing it, and so does a `turn/start` arriving while the output queue has no room left for the terminal record - the turn is refused instead of accepted and then lost. `turn/completed.stopReason` is the turn's outcome (`completed`, `error`, `interrupted`), not the upstream finish reason: that one is the `stop_reason` inside `item/done`. Transport errors (`-32700` malformed JSON, `-32600` invalid request, `-32601` unknown method, `-32602` bad params) differ from an agent failure reported by `turn/completed` with `stopReason: "error"`.
 
