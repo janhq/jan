@@ -11,3 +11,11 @@ export interface FetchedPage {
   content: string
   truncated: boolean
 }
+
+export interface ProxyConfig {
+  url: string
+  username?: string
+  password?: string
+  no_proxy?: string[]
+  ignore_ssl?: boolean
+}
