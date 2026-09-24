@@ -508,7 +508,7 @@
         ]
       },
       {
-        "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).",
+        "description": "A backgrounded subagent's own internal event, tagged with its run so a\nconsumer can attribute it to the right child even when several run\nconcurrently. `event` is a non-terminal child event (Token/Step/ToolCall/\nToolResult/PermissionRequest); the child's terminal Done/Error is never\nwrapped (its result is delivered via `await_subagent`).\n\nNever a `ToolRequest`: a client answers a request by `request_id` on\nstdin, and it is told nothing about this wrapper, so a nested request\nwould be unanswerable. `run_subagent` clears the child's host tool set\nrather than relying on this, which is why the case cannot arise.",
         "type": "object",
         "properties": {
           "run_id": {
@@ -786,6 +786,31 @@
           "capability",
           "prompt_kind",
           "offers_always"
+        ]
+      },
+      {
+        "description": "A host-registered tool was called and the run is waiting for the host to\nexecute it. The client replies with a `tool_result` line carrying this\n`request_id`; until it does, the turn is parked on this one call.\n\n`tool_name` is the name the *host* declared, not the `host__`-prefixed\nname the model calls: the host dispatches on the name it chose and never\nhas to know this layer's prefixing rule.",
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "type": "string"
+          },
+          "tool_name": {
+            "type": "string"
+          },
+          "args": {
+            "description": "The arguments the model produced, already parsed from the call's\nJSON string. Validated against nothing here -- the host owns the\nschema it declared and is the only party that can enforce it."
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_request"
+          }
+        },
+        "required": [
+          "type",
+          "request_id",
+          "tool_name",
+          "args"
         ]
       }
     ],
