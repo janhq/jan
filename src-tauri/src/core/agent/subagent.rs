@@ -645,6 +645,9 @@ struct BackgroundEntry {
     /// which used to be rare and, now that collection is optional, would be the
     /// common case.
     finished: Arc<std::sync::atomic::AtomicBool>,
+    /// The run counters this child holds, released exactly once whether it
+    /// finishes or is aborted. See [`ChildSlot`].
+    slot: Arc<ChildSlot>,
 }
 
 /// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
@@ -916,6 +919,12 @@ impl BackgroundSubagents {
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            // Release the counters here rather than leaving it to the aborted
+            // tasks: a cancelled run must owe nothing the moment its teardown
+            // returns, and a session-owned registry outlives this call. Exactly
+            // once, so the child's own guard (which drops when the runtime
+            // cancels it) cannot double-count -- see `ChildSlot::release`.
+            entry.slot.release(self);
             // A child that ran to completion already emitted its own end event;
             // this is only closing the bracket for one cut off mid-run.
             if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
@@ -968,7 +977,7 @@ impl BackgroundSubagents {
 /// Why a phase barrier returned. Only `Finished` means the next phase may start:
 /// `TornDown` means the run it belongs to is gone and the plan must end without
 /// starting anything else.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PhaseGate {
     Finished,
     TornDown,
@@ -1010,6 +1019,93 @@ impl DispatchScope {
     /// Whether a teardown has happened since this scope was taken.
     fn is_stale(&self) -> bool {
         self.bg.generation() != self.generation
+    }
+}
+
+/// The counters one child holds while it is dispatched, released exactly once.
+///
+/// Both decrements used to live in the child's own task, after the awaited work,
+/// where an aborted task never reached them: every child a teardown cut off
+/// leaked its slot, and a registry that outlives the abort (a session's) then
+/// reported work owed forever -- `wait_for_notice` parks on `running == 0` and
+/// never returns.
+///
+/// So the hold is a value instead of a step: the child's task carries a
+/// [`SlotGuard`] that releases on drop, which happens on completion *and* when a
+/// teardown aborts the task and the runtime drops its future. `released` keeps
+/// that idempotent, because the two paths can race: `abort_all` releases
+/// synchronously so a cancelled run owes nothing the moment its teardown
+/// returns, and the guard that follows then skips what teardown already did.
+struct ChildSlot {
+    /// Set by whoever takes the child off the semaphore waitlist: its own
+    /// admission, or a teardown revoking the queue slot of a child still parked.
+    /// A swap makes that one decision -- one of the two decrements `queued`, the
+    /// other sees `true` and leaves it alone -- because a child can leave the
+    /// waitlist at the same moment a teardown reaches for it.
+    admitted: std::sync::atomic::AtomicBool,
+    /// Set once the child's counters are released, by whichever of its own
+    /// guard or a teardown gets there first.
+    released: std::sync::atomic::AtomicBool,
+}
+
+impl ChildSlot {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            admitted: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    /// The child held a permit from the moment it was dispatched, so it never
+    /// joined the waitlist and there is no queue slot to revoke. Recorded before
+    /// the entry is published, while the registry is still locked, so a teardown
+    /// can never meet a child that has a permit but no record of it.
+    fn admitted_at_dispatch(&self) {
+        self.admitted
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Leave the waitlist: either this admission, or a teardown that reached a
+    /// child still parked. The swap is what keeps `queued` exact when the two
+    /// race -- the child resuming from `acquire_owned` in the same moment
+    /// `abort_all` drains it.
+    fn leave_queue(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if !self.admitted.swap(true, Ordering::SeqCst) {
+            registry.queued.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Release the counters this child holds, once.
+    fn release(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if self.released.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // A child aborted while it was still parked never reached its own
+        // `leave_queue`: the task does that the moment its permit arrives.
+        self.leave_queue(registry);
+        registry.running.fetch_sub(1, Ordering::SeqCst);
+        registry.wake.notify_waiters();
+    }
+}
+
+/// A child task's hold on its [`ChildSlot`]: dropping it releases the counters.
+struct SlotGuard {
+    registry: Arc<BackgroundSubagents>,
+    hold: Arc<ChildSlot>,
+}
+
+impl SlotGuard {
+    /// The child holds its permit now, so it stops counting as queued.
+    fn leave_queue(&self) {
+        self.hold.leave_queue(&self.registry);
+    }
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.hold.release(&self.registry);
     }
 }
 
@@ -1350,8 +1446,22 @@ pub(crate) fn spawn_subagent(
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let finished_task = finished.clone();
     let notice_path = display_path.clone();
+    let slot = ChildSlot::new();
+    let slot_task = slot.clone();
+    // A permit taken here means this child never joined the waitlist: record it
+    // while the registry is still locked, before the entry below is reachable.
+    if admitted.is_ok() {
+        slot.admitted_at_dispatch();
+    }
     registry.running.fetch_add(1, Ordering::SeqCst);
     let handle = tokio::spawn(async move {
+        // Held for the child's whole life, including the wait for a permit, so a
+        // teardown that aborts it here releases its slot exactly as a completion
+        // would. Declared first, so it drops last: after the notice is queued.
+        let _slot = SlotGuard {
+            registry: registry.clone(),
+            hold: slot_task,
+        };
         let permit = match admitted {
             Ok(p) => p,
             Err(_) => {
@@ -1359,7 +1469,7 @@ pub(crate) fn spawn_subagent(
                     .acquire_owned()
                     .await
                     .expect("subagent semaphore is never closed");
-                registry.queued.fetch_sub(1, Ordering::SeqCst);
+                _slot.leave_queue();
                 p
             }
         };
@@ -1386,8 +1496,6 @@ pub(crate) fn spawn_subagent(
                 completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
             );
         }
-        registry.running.fetch_sub(1, Ordering::SeqCst);
-        registry.wake.notify_waiters();
         let _ = tx.send(result);
     });
 
@@ -1401,6 +1509,7 @@ pub(crate) fn spawn_subagent(
             events: entry_events,
             display_path: display_path.clone(),
             finished,
+            slot,
         },
     );
     drop(entries);
@@ -2846,6 +2955,7 @@ mod tests {
             events,
             display_path: None,
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            slot: ChildSlot::new(),
         }
     }
 
@@ -3328,6 +3438,8 @@ mod tests {
             bg.inner.lock().unwrap().is_empty(),
             "a refused dispatch registers nothing"
         );
+        assert_eq!(bg.running.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(bg.queued.load(std::sync::atomic::Ordering::SeqCst), 0);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3373,7 +3485,7 @@ mod tests {
         )
         .await
         .expect("an uncollected finished child satisfies the barrier");
-        assert!(gate == PhaseGate::Finished);
+        assert_eq!(gate, PhaseGate::Finished);
 
         let _ = await_subagent(&bg, &id).await; // fails without a provider; fine
         let gate = tokio::time::timeout(
@@ -3382,7 +3494,119 @@ mod tests {
         )
         .await
         .expect("a collected child satisfies the barrier");
-        assert!(gate == PhaseGate::Finished);
+        assert_eq!(gate, PhaseGate::Finished);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F6: a child the teardown cut off releases the slot it held. Both
+    /// decrements used to sit inside the child's task, past the awaited work an
+    /// abort never returns from, so every aborted child leaked its slot and a
+    /// registry that survives the abort -- a session's -- reported work owed
+    /// forever. (Reproduction from the audit: 20/20 rounds before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abort_all_leaves_nothing_owed() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_owed");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Occupy the only slot, so the first dispatch parks on the semaphore
+        // (queued) rather than being admitted -- both accounting fields in play.
+        let running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        let _r2 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.running.load(Ordering::SeqCst), 2);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 2);
+        // Admit the first, so the abort below has to release a running child and
+        // a parked one.
+        drop(running);
+        tokio::task::yield_now().await;
+        assert!(bg.has_pending_work());
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.running.load(Ordering::SeqCst),
+            0,
+            "an aborted child leaked its slot"
+        );
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "a parked child leaked its queue slot");
+        assert!(
+            !bg.has_pending_work(),
+            "the registry still reports work owed after teardown"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The other way the same counters can go wrong: a child admitted at dispatch
+    /// took a permit, not a place in the waitlist, so a teardown that reaches it
+    /// before its task is ever polled must not revoke a queue slot it never took.
+    /// `queued` is a `usize` -- the spurious decrement wraps it, and every queue
+    /// position reported to the model afterwards is garbage. Deterministic on a
+    /// current-thread runtime, where the spawned task cannot run before the abort
+    /// below. (Found by self-review after the fix above; it passed the whole suite
+    /// as it stood.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_teardown_never_untracks_a_child_that_was_never_queued() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_unqueued");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // A free permit: admitted here and now, never queued.
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0);
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.queued.load(Ordering::SeqCst),
+            0,
+            "a child that was never queued lost a queue slot"
+        );
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The waiter half of the same finding: `wait_for_notice` parks on
+    /// `running == 0 && plans_pending == 0`, so a teardown that leaves counters
+    /// behind parks it for good -- and without a wake it would not even look.
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_parked_waiter_wakes_when_the_run_is_torn_down() {
+        let root = unique_root("abort_wake");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the slot so the child cannot finish on its own: the waiter must
+        // park, deterministically, with exactly one child outstanding.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+
+        let waiter_bg = bg.clone();
+        let waiter = tokio::spawn(async move { waiter_bg.wait_for_notice().await });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !waiter.is_finished(),
+            "the waiter parks while a child is outstanding"
+        );
+
+        bg.abort_all();
+
+        tokio::time::timeout(std::time::Duration::from_secs(10), waiter)
+            .await
+            .expect("a parked waiter wakes when the registry is torn down")
+            .expect("the waiter task did not panic");
         let _ = std::fs::remove_dir_all(&root);
     }
 
