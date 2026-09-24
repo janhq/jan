@@ -63,6 +63,14 @@ struct OutputRow {
     /// adding or dropping a field is a failure until this table moves, because
     /// either one changes what a client reads.
     build_produces: &'static [&'static str],
+    /// The subset of `build_produces` that is on the message only when it
+    /// carries a value (`skip_serializing_if`). Such a field is invisible in a
+    /// sample that leaves it empty and is still on the wire for a client, so
+    /// naming it in `build_produces` alone would be a claim nothing checks. The
+    /// exactness test samples each row twice - once with every field empty, once
+    /// with every field set - and requires the difference between the two to be
+    /// exactly this list, so it cannot drift from the type.
+    optional: &'static [&'static str],
 }
 
 /// What a host sends the session, in the contract's order.
@@ -131,6 +139,7 @@ const SESSION_TO_HOST: &[OutputRow] = &[
             "input_kinds",
             "input_content_parts",
         ],
+        optional: &[],
     },
     OutputRow {
         contract: "tool_request",
@@ -141,6 +150,7 @@ const SESSION_TO_HOST: &[OutputRow] = &[
             ("args", "{}"),
         ],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         contract: "turn_count",
@@ -149,24 +159,28 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         // wants the cap visible *before* it is hit.
         contract_requires: &[("turns", "1"), ("maxTurns", "10")],
         build_produces: &["index", "max"],
+        optional: &[],
     },
     OutputRow {
         contract: "assistant_start",
         here: None,
         contract_requires: &[],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         contract: "text_delta",
         here: Some("token"),
         contract_requires: &[("text", "\"hi\"")],
         build_produces: &["text"],
+        optional: &[],
     },
     OutputRow {
         contract: "assistant_end",
         here: None,
         contract_requires: &[("text", "\"hi\""), ("error", "null")],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         contract: "tool_start",
@@ -175,6 +189,7 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         // separately (`tool_call_args_delta`) and assembles them in `tool_call`.
         contract_requires: &[("name", "\"command\""), ("args", "{}")],
         build_produces: &["id", "name"],
+        optional: &[],
     },
     OutputRow {
         contract: "tool_end",
@@ -187,13 +202,18 @@ const SESSION_TO_HOST: &[OutputRow] = &[
             ("error", "null"),
             ("details", "null"),
         ],
-        build_produces: &["id", "content", "is_error"],
+        build_produces: &["id", "content", "is_error", "diff"],
+        // `diff` is display-only focused-change text, carried only when the tool
+        // produced one, so the empty sample cannot show it - and a client reads
+        // it all the same.
+        optional: &["diff"],
     },
     OutputRow {
         contract: "notice",
         here: Some("notice"),
         contract_requires: &[("text", "\"compacted\"")],
         build_produces: &["text"],
+        optional: &[],
     },
     OutputRow {
         contract: "error",
@@ -202,12 +222,14 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         // splits it into a code and a message.
         contract_requires: &[("text", "\"boom\"")],
         build_produces: &["code", "message"],
+        optional: &[],
     },
     OutputRow {
         contract: "done",
         here: Some("done"),
         contract_requires: &[("stopped", "true")],
         build_produces: &["stop_reason", "usage"],
+        optional: &[],
     },
     OutputRow {
         contract: "model_changed",
@@ -218,18 +240,21 @@ const SESSION_TO_HOST: &[OutputRow] = &[
             ("model", "\"claude-sonnet-4-5\""),
         ],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         contract: "code_enabled",
         here: None,
         contract_requires: &[("success", "true"), ("enabled", "true"), ("tools", "[]")],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         contract: "history_cleared",
         here: None,
         contract_requires: &[("success", "true"), ("tools", "[]"), ("tool_specs", "[]")],
         build_produces: &[],
+        optional: &[],
     },
     OutputRow {
         // Synthesized by the host when stdout closes, so Jan never emits it.
@@ -240,6 +265,7 @@ const SESSION_TO_HOST: &[OutputRow] = &[
         here: None,
         contract_requires: &[],
         build_produces: &[],
+        optional: &[],
     },
 ];
 
@@ -325,9 +351,19 @@ fn every_unimplemented_session_row_is_not_an_event_yet() {
 }
 
 /// Rows the build does emit carry exactly the fields the table says they do.
+///
+/// Two samples per row, because one cannot see a `skip_serializing_if` field: the
+/// empty sample is what a minimal message looks like, the full one carries every
+/// field the row can put on the wire. The full sample's key set is checked against
+/// `build_produces` exactly; the difference between the two samples is checked
+/// against `optional`, so the list is proven rather than trusted - a field named
+/// there but never set in the full sample fails, and a field that is skipped
+/// without being named fails with it. Adding a field to a sampled type is a
+/// compile error in the sample above until the author places it in one of the two
+/// lists, which is the one step no test can do for them.
 #[test]
 fn every_implemented_session_row_carries_exactly_the_fields_claimed() {
-    let sample = |here: &str| -> serde_json::Value {
+    let sample = |here: &str, full: bool| -> serde_json::Value {
         match here {
             "init" => serde_json::to_value(super::run_report::Init::new(
                 "thread-1",
@@ -349,11 +385,15 @@ fn every_implemented_session_row_carries_exactly_the_fields_claimed() {
                 id: "call-1".to_string(),
                 name: "bash".to_string(),
             }),
+            // `diff` is the row's only field that can be left out: `None` drops it
+            // from the wire entirely, so the empty sample cannot show it. `done`'s
+            // `usage` needs no such treatment - `None` serializes as `null`, which
+            // both samples carry.
             "tool_result" => serde_json::to_value(StreamEvent::ToolResult {
                 id: "call-1".to_string(),
                 content: "ok".to_string(),
                 is_error: false,
-                diff: None,
+                diff: full.then(|| "--- a\n+++ b\n".to_string()),
             }),
             "notice" => serde_json::to_value(StreamEvent::Notice {
                 text: "compacted".to_string(),
@@ -370,28 +410,50 @@ fn every_implemented_session_row_carries_exactly_the_fields_claimed() {
         }
         .expect("sample serializes")
     };
-
-    for row in SESSION_TO_HOST.iter().filter(|r| r.here.is_some()) {
-        let here = row.here.expect("filtered");
-        let value = sample(here);
+    let fields_of = |value: &serde_json::Value, tag: &str| -> Vec<String> {
         assert_eq!(
             value.get("type").and_then(|t| t.as_str()),
-            Some(here),
+            Some(tag),
             "the sample must carry the tag the table names"
         );
-        let mut present: Vec<&str> = value
+        let mut present: Vec<String> = value
             .as_object()
             .expect("object")
             .keys()
-            .map(String::as_str)
             .filter(|k| *k != "type")
+            .cloned()
             .collect();
         present.sort_unstable();
-        let mut claimed: Vec<&str> = row.build_produces.to_vec();
-        claimed.sort_unstable();
+        present
+    };
+    let sorted = |fields: &[&str]| -> Vec<String> {
+        let mut out: Vec<String> = fields.iter().map(|f| (*f).to_string()).collect();
+        out.sort_unstable();
+        out
+    };
+
+    for row in SESSION_TO_HOST.iter().filter(|r| r.here.is_some()) {
+        let here = row.here.expect("filtered");
+        let empty = fields_of(&sample(here, false), here);
+        let full = fields_of(&sample(here, true), here);
+
         assert_eq!(
-            present, claimed,
-            "'{}' ({here}) carries a different field set than the table claims",
+            full,
+            sorted(row.build_produces),
+            "'{}' ({here}) can carry a different field set than the table claims",
+            row.contract
+        );
+
+        let conditional: Vec<String> = full
+            .iter()
+            .filter(|field| !empty.contains(field))
+            .cloned()
+            .collect();
+        assert_eq!(
+            conditional,
+            sorted(row.optional),
+            "'{}' ({here}) must list exactly the fields that are absent when empty, \
+             and only those",
             row.contract
         );
     }
