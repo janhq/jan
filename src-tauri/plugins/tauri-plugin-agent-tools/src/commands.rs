@@ -582,6 +582,7 @@ pub async fn start_monitor(
         project_root: root,
         scratch_root: Some(scratch),
         mask_root: Some(PathBuf::from(&data_folder)),
+        hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
         allow_network: allow_network.unwrap_or(false),
@@ -869,6 +870,9 @@ async fn execute_tool_inner(
     );
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
+    // The desktop always sandboxes, and an attached project folder can be the
+    // user's home, which puts the CLI's `~/.jan` inside it.
+    let hidden = workspace::hidden_root(true);
 
     match gate::resolve_decision(
         tool,
@@ -878,6 +882,7 @@ async fn execute_tool_inner(
             scratch: Some(&scratch),
             read_roots: &read_roots,
             write_roots: &write_roots,
+            hidden_root: hidden.as_deref(),
         },
         &ToolPermissions::default(),
         &SessionGrants::default(),
@@ -885,6 +890,9 @@ async fn execute_tool_inner(
         Decision::Allow => {}
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
+        }
+        Decision::HardDeny(gate::DenyReason::Hidden) => {
+            return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the
@@ -968,6 +976,7 @@ async fn execute_tool_inner(
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
         .with_write_roots(&write_roots)
+        .with_hidden_root(hidden.as_deref())
         .with_thread_id(Some(&thread_id))
         .with_screenshot_backend(screenshot_backend);
     if let Some(sp) = skill_project.as_deref() {

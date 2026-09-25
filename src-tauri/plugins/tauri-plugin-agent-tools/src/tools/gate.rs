@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::permissions::ToolPermissions;
 use crate::tools::cmdscan::{normalize, scan_command, CommandScan};
-use crate::tools::sandbox::{escapes_read_roots, escapes_write_roots};
+use crate::tools::sandbox::{
+    command_touches_hidden_root, escapes_read_roots, escapes_write_roots, in_hidden_root,
+};
 use crate::tools::{BuiltinTool, Capability};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -103,12 +105,16 @@ impl SessionGrants {
     }
 }
 
-/// Why a call was refused outright. The reason reaches the model so it can be
-/// told the refusal is a user policy it can ask to have edited in `agent.toml`.
+/// Why a call was refused outright. The reason reaches the model, and the two
+/// cases need different wording: a policy deny is something the user can edit in
+/// `agent.toml`, while a hidden path is structural -- telling the model to check
+/// a deny list would send it reading a file that is itself hidden.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DenyReason {
     /// `[tools] deny` in agent.toml names this tool.
     Policy,
+    /// The call reaches the Jan home (`~/.jan`), hidden from every tool.
+    Hidden,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -130,6 +136,12 @@ pub struct GateContext<'a> {
     /// The subset of `read_roots` the caller marked writable: writes inside one
     /// are ordinary in-project writes rather than escapes.
     pub write_roots: &'a [PathBuf],
+    /// The Jan home (`~/.jan`: `config.toml` with keys and hooks, every
+    /// project's store). Set while the shell is sandboxed; paths and commands
+    /// reaching it are refused outright, wherever it sits relative to the
+    /// project (running in `$HOME` puts it inside). See
+    /// [`crate::tools::sandbox::in_hidden_root`] for the worktree exception.
+    pub hidden_root: Option<&'a Path>,
 }
 
 /// Decide how a built-in tool call should be gated, combining the static
@@ -148,6 +160,24 @@ pub fn resolve_decision(
 ) -> Decision {
     if perms.is_denied(tool.name) {
         return Decision::HardDeny(DenyReason::Policy);
+    }
+    // Ahead of allow rules and session grants, so neither an allowed tool name
+    // nor a routine "allow writes" approval reaches keys, hooks or the agent's
+    // own permissions.
+    if let Some(hidden) = ctx.hidden_root {
+        let hits_path = tool.path_args.iter().any(|key| {
+            args.get(key)
+                .and_then(|v| v.as_str())
+                .is_some_and(|p| in_hidden_root(ctx.project_root, ctx.scratch, hidden, p))
+        });
+        let hits_command = tool.capability == Capability::Exec
+            && args
+                .get("command")
+                .and_then(|v| v.as_str())
+                .is_some_and(|c| command_touches_hidden_root(ctx.project_root, ctx.scratch, hidden, c));
+        if hits_path || hits_command {
+            return Decision::HardDeny(DenyReason::Hidden);
+        }
     }
     if perms.is_allowed(tool.name) {
         return Decision::Allow;
@@ -264,6 +294,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -285,6 +316,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -307,6 +339,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -330,6 +363,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -340,6 +374,94 @@ mod tests {
             "deny in agent.toml must win for web tools"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Regression for the #9065 review: with `$HOME` as the project, the Jan
+    /// home is inside it, and neither default permissions, a session Write
+    /// grant nor an allow-all policy may reach its keys, hooks or the agent's
+    /// own permissions.
+    #[test]
+    fn the_jan_home_is_refused_when_the_project_is_home() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(jan.join("projects/home-1")).unwrap();
+        std::fs::write(jan.join("config.toml"), b"[providers]\n").unwrap();
+        std::fs::write(jan.join("projects/home-1/agent.toml"), b"[tools]\n").unwrap();
+        let ctx = GateContext {
+            project_root: &home,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let mut granted = SessionGrants::default();
+        granted.grant(PromptKind::Write);
+        granted.grant_command("cat ~/.jan/config.toml");
+        let hidden = Decision::HardDeny(DenyReason::Hidden);
+        let cases = [
+            ("read", json!({"path": ".jan/config.toml"})),
+            ("write", json!({"path": ".jan/projects/home-1/agent.toml", "content": ""})),
+            ("edit", json!({"path": ".jan/config.toml"})),
+            ("ls", json!({"path": ".jan"})),
+            ("grep", json!({"pattern": "key", "path": ".jan"})),
+            ("bash", json!({"command": "cat ~/.jan/config.toml"})),
+        ];
+        for perms in [ToolPermissions::default(), ToolPermissions::allow_all()] {
+            for (tool, args) in &cases {
+                let d = resolve_decision(lookup(tool).unwrap(), args, &ctx, &perms, &granted);
+                assert_eq!(d, hidden, "{tool} {args}");
+            }
+        }
+        // The rest of the home is an ordinary project.
+        std::fs::write(home.join("notes.txt"), b"x").unwrap();
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": "notes.txt"}),
+            &ctx,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Allow);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The Jan home is refused from any project, not only when it is inside:
+    /// an escaping read of `~/.jan/config.toml` must not reach a prompt.
+    #[test]
+    fn the_jan_home_is_refused_from_an_ordinary_project() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let ctx = GateContext {
+            project_root: &project,
+            scratch: None,
+            read_roots: &[],
+            write_roots: &[],
+            hidden_root: Some(&jan),
+        };
+        let config = jan.join("config.toml");
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": config.to_str().unwrap()}),
+            &ctx,
+            &ToolPermissions::allow_all(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::HardDeny(DenyReason::Hidden));
+        // Unset (sandbox off) leaves the ordinary escape rules in charge.
+        let open = GateContext { hidden_root: None, ..ctx };
+        let d = resolve_decision(
+            lookup("read").unwrap(),
+            &json!({"path": config.to_str().unwrap()}),
+            &open,
+            &ToolPermissions::default(),
+            &SessionGrants::default(),
+        );
+        assert_eq!(d, Decision::Prompt(PromptKind::ReadEscape));
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[test]
@@ -355,6 +477,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -376,6 +499,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -409,6 +533,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -424,6 +549,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -453,6 +579,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -482,6 +609,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -507,6 +635,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -522,6 +651,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -544,6 +674,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -561,6 +692,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &denied,
             &grants,
@@ -582,6 +714,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -603,6 +736,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -625,6 +759,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -647,6 +782,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -668,6 +804,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -691,6 +828,7 @@ mod tests {
                     scratch: None,
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: None,
                 },
                 &perms,
                 &grants,
@@ -714,6 +852,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -735,6 +874,7 @@ mod tests {
                 scratch: None,
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -762,6 +902,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -776,6 +917,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
+                hidden_root: None,
             },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &grants,
@@ -806,6 +948,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &roots,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -820,6 +963,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &roots,
+                hidden_root: None,
             },
             &perms,
             &grants,
@@ -845,6 +989,7 @@ mod tests {
                 scratch: None,
                 read_roots: &roots,
                 write_roots: &[],
+                hidden_root: None,
             },
             &ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]),
             &SessionGrants::default(),

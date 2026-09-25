@@ -90,6 +90,13 @@ directory, and reaches the network only if allowed. Reads are looser: the CLI ke
 so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
 that), while the desktop masks it entirely.
 
+While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
+even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)
+and each project's `agent.toml`, memory and threads, so no approval can open it: file tools refuse
+the path, `ls`, `find` and `grep` leave it out, and the shell sees an empty directory. The agent
+still reaches memory and skills through its `memory_*` and `skill_*` tools. A git worktree Jan
+created under `~/.jan/worktrees/` stays reachable, because it is the project being worked on.
+
 Whether it is on depends on the surface:
 
 | Surface | Sandbox | Can it be changed? |

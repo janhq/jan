@@ -244,6 +244,75 @@ fn tmp_relative(raw: &str) -> Option<String> {
     Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
+/// True iff `raw` resolves inside `hidden` (the Jan home, `~/.jan`), which holds
+/// `config.toml` with provider keys and hooks plus every project's store. The
+/// memory/skill tools reach the store by name and never come through here.
+///
+/// One exception: a project that itself lives under `hidden` (a Jan worktree in
+/// `~/.jan/worktrees/`) is the agent's working tree, so paths inside it stay
+/// reachable. The home itself as the project grants nothing.
+pub fn in_hidden_root(project_root: &Path, scratch: Option<&Path>, hidden: &Path, raw: &str) -> bool {
+    let Ok(hidden) = canonicalize_lenient(hidden) else {
+        return false;
+    };
+    let Ok(resolved) = canonicalize_lenient(&resolve_path(project_root, scratch, raw)) else {
+        return false;
+    };
+    if !resolved.starts_with(&hidden) {
+        return false;
+    }
+    match project_root.canonicalize() {
+        Ok(root) if root != hidden && root.starts_with(&hidden) => !resolved.starts_with(&root),
+        _ => true,
+    }
+}
+
+/// True iff a shell command names a path inside `hidden` (best-effort token
+/// scan). `~` and `$HOME` are expanded, since `cat ~/.jan/config.toml` is the
+/// obvious spelling. Best-effort is enough only because the OS sandbox masks
+/// the directory too (see [`super::jail::Policy::hide_root`]); this turns a
+/// plain attempt into a clear refusal instead of an empty directory.
+pub fn command_touches_hidden_root(
+    project_root: &Path,
+    scratch: Option<&Path>,
+    hidden: &Path,
+    command: &str,
+) -> bool {
+    let home = hidden.parent().map(|h| h.to_string_lossy().into_owned());
+    command
+        .split(|c: char| c.is_whitespace() || ";|&><()\"'`=".contains(c))
+        .filter(|t| !t.is_empty())
+        .any(|t| {
+            let expanded = match &home {
+                Some(home) => expand_home(t, home),
+                None => t.to_string(),
+            };
+            in_hidden_root(project_root, scratch, hidden, &expanded)
+        })
+}
+
+fn expand_home(token: &str, home: &str) -> String {
+    for prefix in ["${HOME}", "$HOME", "~"] {
+        if let Some(rest) = token.strip_prefix(prefix) {
+            if rest.is_empty() || rest.starts_with('/') {
+                return format!("{home}{rest}");
+            }
+        }
+    }
+    token.to_string()
+}
+
+/// `hidden` spelled under `base`, the way a directory walk rooted at `base`
+/// names its entries, or `None` when the walk cannot reach it. Lets `ls`,
+/// `find` and `grep` skip the Jan home with a prefix test per entry instead of
+/// canonicalizing every file they visit.
+pub fn hidden_under(base: &Path, hidden: &Path) -> Option<PathBuf> {
+    let base_canon = base.canonicalize().ok()?;
+    let hidden_canon = canonicalize_lenient(hidden).ok()?;
+    let rest = hidden_canon.strip_prefix(&base_canon).ok()?;
+    Some(base.join(rest))
+}
+
 /// True when `target` *claims* to be inside a trusted root but resolves outside
 /// every one of them: the fail-closed re-check a handler runs immediately
 /// before its final open, closing the window between the gate's
@@ -717,5 +786,79 @@ mod tests {
         assert!(!symlink_escapes_any_root(&ws, None, &roots, &link));
         let _ = std::fs::remove_dir_all(&repo);
         let _ = std::fs::remove_dir_all(&ws);
+    }
+
+    /// The home-as-project case from the #9065 review: the Jan home sits inside
+    /// the project, and everything under it is hidden, not just config.toml.
+    #[test]
+    fn the_jan_home_is_hidden_when_the_project_contains_it() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(jan.join("projects/p-1/memory")).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        assert!(in_hidden_root(&home, None, &jan, ".jan/config.toml"));
+        assert!(in_hidden_root(&home, None, &jan, "./.jan/../.jan/config.toml"));
+        assert!(in_hidden_root(&home, None, &jan, jan.join("config.toml").to_str().unwrap()));
+        assert!(in_hidden_root(&home, None, &jan, ".jan"));
+        assert!(in_hidden_root(&home, None, &jan, ".jan/projects/p-1/agent.toml"));
+        // Not yet existing files are hidden too, so a write cannot create one.
+        assert!(in_hidden_root(&home, None, &jan, ".jan/hooks.toml"));
+        assert!(!in_hidden_root(&home, None, &jan, "JAN.md"));
+        assert!(!in_hidden_root(&home, None, &jan, ".janitor"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A Jan worktree is the agent's own working tree even though it lives
+    /// under `~/.jan`; the rest of the home stays hidden from it.
+    #[test]
+    fn a_worktree_inside_the_jan_home_keeps_its_own_tree() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        let wt = jan.join("worktrees/repo-1/feature");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        assert!(!in_hidden_root(&wt, None, &jan, "src/main.rs"));
+        assert!(!in_hidden_root(&wt, None, &jan, wt.to_str().unwrap()));
+        assert!(in_hidden_root(&wt, None, &jan, "../../../config.toml"));
+        assert!(in_hidden_root(&wt, None, &jan, jan.join("config.toml").to_str().unwrap()));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn command_scan_expands_home_spellings() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        std::fs::write(jan.join("config.toml"), b"k").unwrap();
+        let project = home.join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        for cmd in [
+            "cat ~/.jan/config.toml",
+            "cat $HOME/.jan/config.toml",
+            "grep key < ${HOME}/.jan/config.toml",
+            "cat ../.jan/config.toml",
+            "F=~/.jan/config.toml",
+        ] {
+            assert!(command_touches_hidden_root(&project, None, &jan, cmd), "{cmd}");
+        }
+        let abs = format!("cat '{}'", jan.join("config.toml").display());
+        assert!(command_touches_hidden_root(&project, None, &jan, &abs));
+        assert!(!command_touches_hidden_root(&project, None, &jan, "cat ~/.bashrc"));
+        assert!(!command_touches_hidden_root(&project, None, &jan, "ls -la src"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn hidden_under_spells_the_home_the_way_a_walk_does() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(&jan).unwrap();
+        assert_eq!(hidden_under(&home, &jan), Some(home.join(".jan")));
+        let dot = home.join(".");
+        assert_eq!(hidden_under(&dot, &jan), Some(dot.join(".jan")));
+        let other = home.join("proj");
+        std::fs::create_dir_all(&other).unwrap();
+        assert_eq!(hidden_under(&other, &jan), None);
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

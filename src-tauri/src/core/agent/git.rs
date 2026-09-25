@@ -102,6 +102,20 @@ pub(crate) fn snapshot_ref(thread_id: &str) -> String {
     format!("refs/jan/agent/snapshots/{thread_id}")
 }
 
+/// True when git tracks any file under `path` (a directory in a work tree).
+/// `false` outside a repo, for an untracked or ignored directory, and when `git`
+/// is not installed -- callers use it to avoid deleting files a team shares.
+pub(crate) fn tracks_any(path: &Path) -> bool {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
+        return false;
+    };
+    let dir = dir.to_string_lossy();
+    let name = name.to_string_lossy();
+    git(&["-C", &dir, "ls-files", "--", &name])
+        .map(|out| !out.is_empty())
+        .unwrap_or(false)
+}
+
 /// The repository top-level for `path`, or `None` when `path` is not inside a
 /// git work tree (workspace-restore is unavailable then; the agent still edits
 /// in place). Also `None` when `git` is not installed.

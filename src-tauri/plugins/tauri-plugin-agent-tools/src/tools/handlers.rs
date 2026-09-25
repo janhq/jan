@@ -14,8 +14,8 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
-    escapes_write_roots, in_scratch, lexical_normalize, resolve_path, scratch_display_path,
-    symlink_escapes_any_root,
+    escapes_write_roots, hidden_under, in_scratch, lexical_normalize, resolve_path,
+    scratch_display_path, symlink_escapes_any_root,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
@@ -209,7 +209,7 @@ async fn execute_text(
         // deliberately do not, which is what keeps an attached folder
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
-        "ls" => ls(args, project_root, scratch, ctx.read_roots).await,
+        "ls" => ls(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         "write" => {
             write(
                 args,
@@ -231,8 +231,8 @@ async fn execute_text(
             .await
         }
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch, ctx.read_roots).await,
-        "grep" => grep(args, project_root, scratch, ctx.read_roots).await,
+        "find" => find(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
+        "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
         "memory_list" => memory_list(ctx.memory_scopes()).await,
@@ -645,6 +645,7 @@ async fn ls(
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    hidden: Option<&Path>,
 ) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
     let limit = arg_u64(args, "limit")
@@ -659,10 +660,16 @@ async fn ls(
         Ok(rd) => rd,
         Err(e) => return format!("ERROR: {e}"),
     };
+    // Omitted, not reported-then-denied: an entry the agent can never open is
+    // only an invitation to try.
+    let skip = hidden.and_then(|h| hidden_under(&target, h));
     let mut names: Vec<String> = Vec::new();
     loop {
         match entries.next_entry().await {
             Ok(Some(entry)) => {
+                if skip.as_deref() == Some(entry.path().as_path()) {
+                    continue;
+                }
                 let mut name = entry.file_name().to_string_lossy().into_owned();
                 if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
                     name.push('/');
@@ -811,6 +818,9 @@ pub(crate) fn confined_shell(
         jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
+    }
+    if let Some(hide) = ctx.hidden_root {
+        policy = policy.with_hide_root(hide);
     }
     if let Some(scratch) = ctx.scratch_root {
         policy = policy.with_scratch_root(scratch);
@@ -1581,6 +1591,7 @@ async fn find(
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    hidden: Option<&Path>,
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
@@ -1591,6 +1602,7 @@ async fn find(
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
+    let skip = hidden.and_then(|h| hidden_under(&base, h));
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1609,6 +1621,7 @@ async fn find(
         for entry in WalkBuilder::new(&base)
             .hidden(false)
             .require_git(false)
+            .filter_entry(move |e| skip.as_deref() != Some(e.path()))
             .build()
             .flatten()
         {
@@ -1638,6 +1651,7 @@ async fn grep(
     root: &Path,
     scratch: Option<&Path>,
     read_roots: &[PathBuf],
+    hidden: Option<&Path>,
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
     let path = arg_str(args, "path").unwrap_or(".").to_string();
@@ -1656,6 +1670,7 @@ async fn grep(
     let scratch_owned = scratch.map(Path::to_path_buf);
     // Owned for the blocking walk closure, which outlives this frame.
     let roots_owned = read_roots.to_vec();
+    let skip = hidden.and_then(|h| hidden_under(&base, h));
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1737,6 +1752,7 @@ async fn grep(
             for entry in WalkBuilder::new(&base)
                 .hidden(false)
                 .require_git(false)
+                .filter_entry(move |e| skip.as_deref() != Some(e.path()))
                 .build()
                 .flatten()
             {
@@ -2754,6 +2770,7 @@ mod tests {
                 scratch: Some(&scratch),
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
@@ -2785,6 +2802,7 @@ mod tests {
                 scratch: Some(&scratch),
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: None,
             },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
@@ -2820,6 +2838,47 @@ mod tests {
         let out = execute_builtin(lookup("ls").unwrap(), &json!({}), &root).await;
         assert!(out.contains("listed.txt"), "unexpected: {out}");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With `$HOME` as the project, a walk of `.` would otherwise read the Jan
+    /// home: the gate only sees the `.` argument, so the walks skip it too.
+    #[tokio::test]
+    async fn walks_skip_the_jan_home_inside_the_project() {
+        let home = unique_root();
+        let jan = home.join(".jan");
+        std::fs::create_dir_all(jan.join("projects/p-1")).unwrap();
+        std::fs::write(jan.join("config.toml"), b"api_key = SECRET_MARKER").unwrap();
+        std::fs::write(jan.join("projects/p-1/agent.toml"), b"SECRET_MARKER").unwrap();
+        std::fs::write(home.join("notes.txt"), b"SECRET_MARKER").unwrap();
+        std::fs::write(home.join(".janitor"), b"SECRET_MARKER").unwrap();
+        let store = crate::workspace::project_store(&home);
+        let ctx = ToolContext::new(&home, &store, &[]).with_hidden_root(Some(&jan));
+        let run = |tool: &'static str, args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(lookup(tool).unwrap(), &args, &ctx).await.0 }
+        };
+        for path in [".", "./"] {
+            let ls = run("ls", json!({"path": path})).await;
+            assert!(ls.contains("notes.txt") && ls.contains(".janitor"), "{ls}");
+            assert!(!ls.lines().any(|l| l == ".jan/"), "{ls}");
+            let find = run("find", json!({"pattern": "**/*", "path": path})).await;
+            assert!(find.contains("notes.txt"), "{find}");
+            assert!(!find.contains("config.toml") && !find.contains("agent.toml"), "{find}");
+            let grep = run("grep", json!({"pattern": "SECRET_MARKER", "path": path})).await;
+            assert!(grep.contains("notes.txt") && grep.contains(".janitor"), "{grep}");
+            assert!(!grep.contains("config.toml") && !grep.contains("agent.toml"), "{grep}");
+        }
+        // Unset (sandbox off), the home is walked like any other directory.
+        let open = ToolContext::new(&home, &store, &[]);
+        let grep = super::execute_builtin(
+            lookup("grep").unwrap(),
+            &json!({"pattern": "SECRET_MARKER"}),
+            &open,
+        )
+        .await
+        .0;
+        assert!(grep.contains("config.toml"), "{grep}");
+        let _ = std::fs::remove_dir_all(&home);
     }
 
     #[tokio::test]

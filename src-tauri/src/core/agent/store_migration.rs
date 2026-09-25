@@ -24,6 +24,10 @@ pub enum Outcome {
     Moved { to: PathBuf, leftover: Vec<String> },
     /// Both the legacy and the new store hold state; nothing was touched.
     Conflict { from: PathBuf, to: PathBuf },
+    /// Git tracks files under the legacy store (a team sharing skills through
+    /// the repo). Moving it would show up as deleted files and take the shared
+    /// copy away from everyone else, so it is left for the user to decide.
+    Tracked { from: PathBuf, to: PathBuf },
     /// `<project>/.jan` exists but is not a project store we recognise (for
     /// instance it is the user's global `~/.jan` because the workspace is the
     /// home directory). Left alone.
@@ -45,6 +49,13 @@ impl Outcome {
             )),
             Outcome::Conflict { from, to } => Some(format!(
                 "found agent state in both {} and {}; using the latter. Merge or delete {} by hand",
+                from.display(),
+                to.display(),
+                from.display()
+            )),
+            Outcome::Tracked { from, to } => Some(format!(
+                "{} is tracked by git, so it was not moved; Jan now reads {}. Copy what you \
+                 need there, then remove {} from the repo",
                 from.display(),
                 to.display(),
                 from.display()
@@ -73,6 +84,12 @@ pub fn migrate_on_launch(project_root: &Path, store: &Path, jan_home: Option<&Pa
     let legacy = legacy_project_store(project_root);
     if !legacy.is_dir() {
         return Outcome::Skipped;
+    }
+    if crate::core::agent::git::tracks_any(&legacy) {
+        return Outcome::Tracked {
+            from: legacy,
+            to: store.to_path_buf(),
+        };
     }
     if has_entries(store) {
         return Outcome::Conflict {
@@ -299,6 +316,40 @@ mod tests {
         let store = dir.path().join("home/projects/p-1");
         assert_eq!(migrate_on_launch(dir.path(), &store, None), Outcome::Skipped);
         assert!(dir.path().join(".jan").is_dir());
+    }
+
+    /// A team that commits `.jan/agent/skills` shares them through the repo;
+    /// moving them would delete tracked files for everyone.
+    #[test]
+    fn a_legacy_store_tracked_by_git_is_not_moved() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = legacy_project(dir.path());
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&project)
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            assert!(ok, "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        let store = dir.path().join("home/projects/p-1");
+        // Untracked, it moves as usual; nothing is lost.
+        let untracked = dir.path().join("untracked");
+        copy_tree(&project, &untracked).unwrap();
+        git(&["add", ".jan/agent/agent.toml"]);
+
+        let out = migrate_on_launch(&project, &store, None);
+        assert!(matches!(out, Outcome::Tracked { .. }), "{out:?}");
+        assert!(project.join(".jan/agent/agent.toml").is_file());
+        assert!(!store.exists());
+        assert!(out.message().unwrap().contains("tracked by git"));
+        assert!(matches!(
+            migrate_on_launch(&untracked, &store, None),
+            Outcome::Moved { .. }
+        ));
     }
 
     #[test]

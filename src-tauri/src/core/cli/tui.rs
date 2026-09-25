@@ -35508,6 +35508,7 @@ mod tests {
             project_root: root.to_path_buf(),
             scratch_root: None,
             mask_root: None,
+            hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             allow_network: false,

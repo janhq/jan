@@ -447,6 +447,10 @@ struct CompositeToolInvoker {
     /// Whether `bash` is confined at all. Resolved once per run by
     /// [`resolve_sandbox`]; always true on the desktop.
     sandbox: bool,
+    /// The Jan home, refused to the general tools and masked from the shell
+    /// while sandboxed (`project::hidden_root`). Kept beside `sandbox` and set
+    /// with it, so the two cannot disagree.
+    hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
@@ -820,6 +824,7 @@ impl CompositeToolInvoker {
         ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
@@ -1503,9 +1508,20 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     )
 }
 
+/// Refusal for a path or command reaching the Jan home. Structural, not a
+/// policy the user edits, so it points at the dedicated tools instead.
+fn hidden_path_msg(name: &str) -> String {
+    format!(
+        "ERROR: tool '{name}' refused: the Jan home (~/.jan) holds the agent's own \
+         configuration and state and is hidden from every tool -- do not try to reach it \
+         another way. Skills and memory are available through the skill_*/memory_* tools."
+    )
+}
+
 fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path) -> String {
     match reason {
         DenyReason::Policy => denied_by_policy_msg(name, project_root),
+        DenyReason::Hidden => hidden_path_msg(name),
     }
 }
 
@@ -2003,6 +2019,7 @@ impl ToolInvoker for CompositeToolInvoker {
                     // read-only or writable root to attach.
                     read_roots: &[],
                     write_roots: &[],
+                    hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
                 &snapshot,
@@ -2028,6 +2045,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
                 let sandbox = self.sandbox;
+                let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
@@ -2045,6 +2063,7 @@ impl ToolInvoker for CompositeToolInvoker {
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
+                        .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -3130,6 +3149,7 @@ async fn orchestrate_inner(
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
+            hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
@@ -7482,6 +7502,7 @@ mod tests {
     ) -> CompositeToolInvoker {
         CompositeToolInvoker {
             sandbox: true,
+            hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
                 tool_to_server: HashMap::new(),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -7554,6 +7575,7 @@ mod tests {
         // plugin-tool wiring, not about a sandbox backend or a prompt that has
         // no one to answer it.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.auto_approve = true;
         invoker.hooks = hooks;
         invoker.plugin_tools = plugin_tools;
@@ -7955,6 +7977,7 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut invoker = build_prompting_invoker(root, tx, PermissionRegistry::default());
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.auto_approve = true;
         invoker.host_tools = tools;
         (invoker, rx)
@@ -9602,6 +9625,7 @@ mod tests {
         invoker.auto_approve = true;
         // Bare shell: this exercises the loop wiring, not the jail.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
 
         let out = invoker
             .invoke(&[monitor_call(
@@ -9662,6 +9686,7 @@ mod tests {
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
         invoker.auto_approve = true;
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.monitors_outlive_run = true;
 
         let out = invoker

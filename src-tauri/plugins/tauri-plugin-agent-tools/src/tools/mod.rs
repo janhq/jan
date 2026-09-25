@@ -102,6 +102,10 @@ pub struct ToolContext<'a> {
     /// where it sits outside the workspace (the desktop). `None` on the CLI,
     /// where the project itself is the workspace.
     pub mask_root: Option<&'a Path>,
+    /// The Jan home, hidden from `ls`/`find`/`grep` walks and the sandboxed
+    /// shell. Set with [`Self::with_hidden_root`] from
+    /// [`crate::workspace::hidden_root`]; the gate refuses direct paths to it.
+    pub hidden_root: Option<&'a Path>,
     /// Expose `$HOME` to the sandboxed shell read-only (the CLI) instead of
     /// hiding it (the desktop). Passed through to the `bash` sandbox policy.
     pub home_readonly: bool,
@@ -202,6 +206,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("allow_network", &self.allow_network)
             .field("confine_writes", &self.confine_writes)
             .field("mask_root", &self.mask_root)
+            .field("hidden_root", &self.hidden_root)
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
             .field("sandbox", &self.sandbox)
@@ -339,6 +344,7 @@ impl<'a> ToolContext<'a> {
             allow_network: false,
             confine_writes: false,
             mask_root: None,
+            hidden_root: None,
             home_readonly: false,
             scratch_root: None,
             sandbox: true,
@@ -483,6 +489,12 @@ impl<'a> ToolContext<'a> {
 
     pub fn with_mask_root(mut self, mask_root: &'a Path) -> Self {
         self.mask_root = Some(mask_root);
+        self
+    }
+
+    /// Hide the Jan home from walks and the shell. See [`Self::hidden_root`].
+    pub fn with_hidden_root(mut self, hidden_root: Option<&'a Path>) -> Self {
+        self.hidden_root = hidden_root;
         self
     }
 

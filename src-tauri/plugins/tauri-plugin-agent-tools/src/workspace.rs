@@ -68,6 +68,19 @@ pub fn jan_home() -> Option<PathBuf> {
     }
 }
 
+/// The directory every surface hides from the general tools and the sandboxed
+/// shell: the Jan home, holding `config.toml` (provider keys, hooks) and every
+/// project's store. Only while `sandbox` is on; an unconfined run is the user
+/// opting out of containment. The memory/skill tools reach the store by name
+/// and are unaffected.
+pub fn hidden_root(sandbox: bool) -> Option<PathBuf> {
+    if sandbox {
+        jan_home()
+    } else {
+        None
+    }
+}
+
 /// `<jan_home>/projects`.
 pub fn projects_dir(jan_home: &Path) -> PathBuf {
     jan_home.join(PROJECTS)

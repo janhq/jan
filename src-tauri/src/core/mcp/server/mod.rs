@@ -122,16 +122,19 @@ impl ServeOptions {
 
 /// The MCP server: Jan's built-in toolset behind a `ServerHandler`.
 ///
-/// Cheap to clone (one `Arc`), which is what the Streamable HTTP transport needs
-/// -- it builds a fresh handler per session from a factory.
+/// Cheap to clone (an `Arc` and one path), which is what the Streamable HTTP
+/// transport needs -- it builds a fresh handler per session from a factory.
 #[derive(Debug, Clone)]
 pub struct JanToolServer {
     opts: Arc<ServeOptions>,
+    /// The Jan home, hidden while `opts.sandbox` is on (`project::hidden_root`).
+    hidden_root: Option<std::path::PathBuf>,
 }
 
 impl JanToolServer {
     pub fn new(opts: ServeOptions) -> Self {
         Self {
+            hidden_root: crate::core::agent::project::hidden_root(opts.sandbox),
             opts: Arc::new(opts),
         }
     }
@@ -191,6 +194,7 @@ impl JanToolServer {
         )
         .with_network(self.opts.allow_network)
         .with_sandbox(self.opts.sandbox)
+        .with_hidden_root(self.hidden_root.as_deref())
         .with_confined_writes(true);
         if let Some(scratch) = self.opts.scratch_root.as_deref() {
             ctx = ctx.with_scratch_root(scratch);
@@ -229,6 +233,7 @@ impl JanToolServer {
                 scratch: self.opts.scratch_root.as_deref(),
                 read_roots: &[],
                 write_roots: &[],
+                hidden_root: self.hidden_root.as_deref(),
             },
             &Default::default(),
             &SessionGrants::default(),
@@ -237,6 +242,15 @@ impl JanToolServer {
             Decision::Allow => {}
             Decision::HardDeny(DenyReason::Policy) => {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
+            }
+            Decision::HardDeny(DenyReason::Hidden) => {
+                return (
+                    format!(
+                        "ERROR: tool '{name}' was refused: the Jan home (~/.jan) is hidden. \
+                         Use the memory_* and skill_* tools instead."
+                    ),
+                    Vec::new(),
+                )
             }
             // An in-project write or a shell command: the opt-in that made the
             // tool servable is the approval, so run it. `is_served` already

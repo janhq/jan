@@ -337,6 +337,17 @@ pub(crate) fn jan_home() -> Option<PathBuf> {
     }
 }
 
+/// The Jan home the general tools and the sandboxed shell may not reach while
+/// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
+/// so tests hide their temp home, not the developer's.
+pub(crate) fn hidden_root(sandbox: bool) -> Option<PathBuf> {
+    if sandbox {
+        jan_home()
+    } else {
+        None
+    }
+}
+
 /// A project's store root, `~/.jan/projects/<slug>`: `agent.toml`, `memory/`,
 /// `skills/`, `subagents/`, `plugins/` and the TUI's threads. The one place the
 /// app resolves it; the project directory itself holds only `JAN.md`.
