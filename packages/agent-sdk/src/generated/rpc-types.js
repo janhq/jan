@@ -33,4 +33,5 @@ export const EVENT_TAGS = Object.freeze([
   "tool_request",
   "tool_request_cancelled",
   "tool_details",
+  "request_provenance",
 ])

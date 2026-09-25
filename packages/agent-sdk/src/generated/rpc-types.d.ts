@@ -51,6 +51,7 @@ export type EventTag =
   | "tool_request"
   | "tool_request_cancelled"
   | "tool_details"
+  | "request_provenance"
 
 export declare const EVENT_TAGS: readonly EventTag[]
 
@@ -100,6 +101,17 @@ export interface PendingSubagent {
 
 /** Who gates host tool calls. `jan` prompts through `permission_request` the way any opaque tool is prompted; `host` means the host's own callback is the gate, so Jan never asks about a host tool. */
 export type PermissionOwner = "jan" | "host"
+
+/** One image in an outbound request, as [`StreamEvent::RequestProvenance`] reports it: identity, not content. */
+export interface ProvenanceImage {
+  /** SHA-256 over the image's decoded bytes. */
+  "sha256": string
+  "mime_type": string
+  /** Decoded length in bytes. */
+  "bytes": number
+  /** The host tool call whose result carried it, when one did. `None` for an image the user attached. */
+  "tool_call_id"?: string | null
+}
 
 export interface Question {
   "id": string
@@ -428,6 +440,29 @@ export interface ToolDetailsEvent {
   "type": "tool_details"
 }
 
+/** What the run is about to send a provider, emitted immediately before each request goes out -- the hook an experiment harness needs to hold two runs comparable (pi's `onPayload` is the shape Robot Studio already records). Every outbound request gets one, including the side calls a turn makes (compaction, a session title) and every child run's own requests; the hashes describe the body Jan built for the adapter, so two runs can be compared field by field. Nothing here is model input or output: it never joins the transcript, and a consumer may render it, store it or ignore it. */
+export interface RequestProvenanceEvent {
+  /** Which run made the request: `None` for the main run, the child's run id for a subagent. */
+  "run_id"?: string | null
+  /** The session the request belongs to, as the run's handshake names it (the correlation id the request carries is derived from it). */
+  "session_id"?: string | null
+  /** The configured provider the model resolved to. */
+  "provider"?: string | null
+  /** The model id the upstream receives, without a `<provider>/` prefix. */
+  "model": string
+  /** The wire API the request is built for (`anthropic`, `google`, `openai-responses`), absent for chat/completions. */
+  "api_type"?: string | null
+  /** SHA-256 of the request body as Jan built it, as canonical JSON: every object's keys sorted, recursively, so re-encoding the same members in another order gives the same digest. It is the value that makes two runs comparable even when a field this record does not itemize has changed. The body hashed is the one Jan built, before the provider adapter appends its transport fields (`stream`, `stream_options`), so it is not byte-for-byte what the provider received: a harness recomputes it by sorting keys and dropping those two fields. */
+  "request_sha256": string
+  /** The canonical body's serialized length. Key order does not change it, so it describes the built body either way. */
+  "body_bytes": number
+  /** SHA-256 of the `tools` array as sent, canonical JSON in the same sense, able to change while the model id does not. */
+  "tools_sha256"?: string | null
+  /** Every image in the body, in order, hashed over its decoded bytes so the host can hash the same frame it captured. */
+  "images"?: ProvenanceImage[]
+  "type": "request_provenance"
+}
+
 /** Every event a session may report, discriminated on `type`. */
 export type StreamEvent =
   | TokenEvent
@@ -457,6 +492,7 @@ export type StreamEvent =
   | ToolRequestEvent
   | ToolRequestCancelledEvent
   | ToolDetailsEvent
+  | RequestProvenanceEvent
 
 /** The event a given tag carries. */
 export interface EventByTag {
@@ -487,4 +523,5 @@ export interface EventByTag {
   "tool_request": ToolRequestEvent
   "tool_request_cancelled": ToolRequestCancelledEvent
   "tool_details": ToolDetailsEvent
+  "request_provenance": RequestProvenanceEvent
 }
