@@ -23,11 +23,10 @@ describe('RenderMarkdown', () => {
     This is line 3`
     render(<RenderMarkdown content={modelResponseWithNewLines} />)
     const markdownContainer = document.querySelector('.markdown')
-    // Line breaks are preserved as newlines in the rendered HTML (not <br> tags)
-    const text = markdownContainer?.textContent || ''
-    expect(text).toContain('This is line 1')
-    expect(text).toContain('This is line 2')
-    expect(text).toContain('This is line 3')
+    expect(markdownContainer?.innerHTML).toContain('<br')
+    const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
+      .length
+    expect(brCount).toBe(2)
   })
 
   it('preserves line breaks in user message (when isUser == true)', () => {
@@ -37,23 +36,35 @@ describe('RenderMarkdown', () => {
     render(<RenderMarkdown content={userMessageWithNewlines} isUser={true} />)
     const markdownContainer = document.querySelector('.markdown')
     expect(markdownContainer).toBeTruthy()
-    // Line breaks are preserved as newlines in the rendered HTML
-    const text = markdownContainer?.textContent || ''
-    expect(text).toContain('User question line 1')
-    expect(text).toContain('User question line 2')
-    expect(text).toContain('User question line 3')
+    expect(markdownContainer?.innerHTML).toContain('<br')
+    const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
+      .length
+    expect(brCount).toBe(2)
   })
 
   it('preserves line breaks with different line ending types', () => {
     const contentWithDifferentLineEndings = 'Line1\nLine2\r\nLine3\rLine4'
     render(<RenderMarkdown content={contentWithDifferentLineEndings} />)
     const markdownContainer = document.querySelector('.markdown')
-    // Line breaks are preserved as newlines in the rendered HTML
-    const text = markdownContainer?.textContent || ''
-    expect(text).toContain('Line1')
-    expect(text).toContain('Line2')
-    expect(text).toContain('Line3')
-    expect(text).toContain('Line4')
+    expect(markdownContainer?.innerHTML).toContain('<br')
+    const brCount = (markdownContainer?.innerHTML.match(/<br\s*\/?>/g) || [])
+      .length
+    expect(brCount).toBe(3)
+  })
+
+  it('renders single newlines as line breaks and blank lines as paragraphs', () => {
+    // Regression case: without remark-breaks, "Item one" and "Item two" fold
+    // into one paragraph while the blank-line separated items still split.
+    const content = 'Item one\nItem two\n\nItem three\n\nItem four'
+    render(<RenderMarkdown content={content} />)
+    const markdownContainer = document.querySelector('.markdown')
+    const paragraphs = markdownContainer?.querySelectorAll('p') ?? []
+    expect(paragraphs.length).toBe(3)
+    expect(paragraphs[0].querySelectorAll('br').length).toBe(1)
+    expect(paragraphs[0].textContent).toContain('Item one')
+    expect(paragraphs[0].textContent).toContain('Item two')
+    expect(paragraphs[1].textContent).toContain('Item three')
+    expect(paragraphs[2].textContent).toContain('Item four')
   })
 
   it('handles empty lines correctly', () => {
