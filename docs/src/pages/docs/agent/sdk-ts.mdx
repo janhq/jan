@@ -1,112 +1,131 @@
 ---
-title: JavaScript Quickstart (Preview)
-description: Run your first embedded Jan Agent task from Node.js, with no dependencies.
-keywords: [Jan, Jan Agent, SDK, JavaScript, TypeScript, Node.js, stream-json, quickstart, embedding]
+title: JavaScript Quickstart
+description: Install the preview SDK, connect a model, and stream your first Jan Agent response from Node.js.
+keywords: [Jan, Jan Agent, SDK, JavaScript, TypeScript, Node.js, quickstart]
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Callout, Steps, Tabs } from 'nextra/components'
 
-# JavaScript Quickstart (Preview)
+# JavaScript Quickstart
 
-Start Jan Agent from a Node.js script, stream its answer, and read the result. You need Node.js 20
-or newer and no packages - only Node's built-in modules.
+**Run a script that asks Jan a question and prints its answer as it arrives.**
+
+You need **Node.js 20+**, **Git**, and access to a model provider. No Jan Desktop, Rust toolchain,
+or TypeScript build step is needed.
 
 <Callout type="warning">
-Preview, `agent-nightly` channel only. There is no JavaScript or TypeScript SDK package yet: this
-page drives the `jan` binary directly. See [Agent SDK](/docs/agent/sdk) for what the preview
-supports.
+The SDK is a preview and is not published to npm yet. Install the source package below, not
+`npm install @janhq/agent-sdk`. The runtime is a separate, prebuilt download.
 </Callout>
 
 <Steps>
 
-### Install Jan Agent and connect a provider
+### Install the SDK and runtime
+
+In a new directory:
 
 ```bash
-curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
-jan login          # or: jan config set --provider anthropic --api-key sk-ant-...
+mkdir jan-js-demo
+cd jan-js-demo
+npm init -y
+git clone --depth 1 https://github.com/janhq/jan.git jan-source
+npm install ./jan-source/packages/agent-sdk
 ```
 
-The [Agent quickstart](/docs/agent/quickstart) covers Windows and other providers. Check that a
-task runs from the terminal before you embed it: `jan cli agent run "say hi"`.
+Only the SDK package is installed. You do not need to install or build the rest of the repository.
 
-### Get the example
+Install the `jan` runtime:
 
-Download
-[`first-turn.mjs`](https://github.com/janhq/jan/blob/main/examples/agent-sdk/js/first-turn.mjs),
-or run it from a checkout of the repository.
-
-### Run it
+<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
+  <Tabs.Tab>
+```bash
+bash jan-source/scripts/install-jan-agent.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
+```
+Follow the installer's PATH instructions before continuing.
+  </Tabs.Tab>
+</Tabs>
 
 ```bash
-node first-turn.mjs "Explain what a mutex is in one sentence."
+jan cli agent rpc --help
 ```
 
-You should see the session and model on stderr, the answer as it streams, then the stop reason:
+If you already have a current Jan runtime, skip its installation.
 
-```text
-[session 964f0e01-a6e3-4185-993c-dae73dbd4c39 on openai/gpt-6-sol]
-A mutex is a lock that lets only one thread or process access a shared resource at a time.
-[stop after 1 turn(s)]
+### Connect a model
+
+Sign in to Tokamak:
+
+```bash
+jan login
 ```
 
-The answer and the model depend on your provider. Set `JAN_BIN` if `jan` is not on your `PATH`,
-and `JAN_MODEL` to pick a model.
+Or [configure your own provider](/docs/agent/quickstart#connect-a-provider). Both the CLI and SDK
+use Jan's provider configuration. If you have already configured Jan, skip this step.
+
+### Save and run the script
+
+Save this complete example as `hello.mjs` in `jan-js-demo`:
+
+```js filename="hello.mjs"
+import { JanRuntime } from '@janhq/agent-sdk'
+
+const runtime = await JanRuntime.start()
+try {
+  const session = await runtime.createSession({ ephemeral: true, builtins: false })
+  const turn = await session.prompt('Explain what a mutex is in one sentence.')
+
+  for await (const event of turn) {
+    if (event.type === 'token') process.stdout.write(event.text)
+  }
+
+  const result = await turn.result()
+  if (result.stopReason === 'error') throw new Error(result.error)
+  console.log(`\nFinished: ${result.stopReason}`)
+} finally {
+  await runtime.close()
+}
+```
+
+```bash
+node hello.mjs
+```
+
+The answer depends on your model. A successful run prints answer text followed by
+`Finished: completed`.
 
 </Steps>
 
-## What the code does
+## What just happened?
 
-It starts one run with `--output-format stream-json` and reads stdout line by line. Every line is
-one JSON record with a `type`:
+- `start()` launched the Jan runtime and checked its protocol version.
+- `createSession()` created a conversation. `ephemeral: true` avoids saving it; `builtins: false`
+  disables built-in and external tool sources, so this first example only answers a question.
+- `prompt()` started a turn. Each `token` event contains another piece of the answer.
+- `result()` returned the final status. `close()` ended the process, even if the script failed.
 
-```js filename="examples/agent-sdk/js/first-turn.mjs"
-const project = mkdtempSync(join(tmpdir(), 'jan-first-turn-'))
-const args = ['cli', 'agent', 'run', '--project', project, '--output-format', 'stream-json']
-if (process.env.JAN_MODEL) args.push('--model', process.env.JAN_MODEL)
-args.push(task)
+Send another prompt on the same `session` to continue the conversation. To select a specific
+configured model, add `model: 'provider/model-id'` to `createSession()`.
 
-const run = spawn(jan, args, { stdio: ['ignore', 'pipe', 'inherit'] })
-const exited = new Promise((resolve) => run.on('close', resolve))
-
-let result = null
-for await (const line of createInterface({ input: run.stdout })) {
-  const record = JSON.parse(line)
-  if (record.type === 'init') {
-    console.error(`[session ${record.session_id} on ${record.model}]`)
-  } else if (record.type === 'token') {
-    process.stdout.write(record.text)
-  } else if (record.type === 'result') {
-    result = record
-  }
-}
-const code = await exited
-```
-
-- **`init`** is the first line of a run that starts: the session id, the model, the tools this run
-  advertises, and what it accepts on stdin. See
-  [the protocol version](/docs/agent/cli#the-protocol-version).
-- **`token`** carries answer text as it streams. Other records - tool calls, tool results,
-  reasoning, usage - arrive in between; a client ignores the types it does not handle.
-- **`result`** is always the last line: the final answer, `stop_reason`, `num_turns`, `usage`,
-  and `is_error` with an `error` object on failure. See [JSON output](/docs/agent/cli#json-output).
-
-`--project` points the run at a fresh temporary directory. The agent's built-in file and shell
-tools are confined to the project, so an example cannot change the directory you ran it from. Point
-it at a real project when you want the agent to work on one.
-
-TypeScript works the same way. To type the records, generate types from the JSON Schema that
-[`jan cli agent schema`](/docs/agent/cli#schema) prints, on a build that has it (see
-[what your build supports](/docs/agent/sdk#what-your-build-supports)).
+TypeScript uses the same API; the installed package includes type declarations.
 
 ## If it fails
 
-| You see | Cause and fix |
+| Problem | What to do |
 | --- | --- |
-| `Error: spawn jan ENOENT` | `jan` is not on `PATH`. Set `JAN_BIN=/path/to/jan` |
-| `run failed: setup_error: no model specified ...` | No provider or model is configured. Run `jan login` or `jan config set`, or set `JAN_MODEL`. A setup failure prints the `result` alone, with no `init` line |
-| `run failed: upstream_error: ...` | The provider refused the request - often a wrong key or a model name the provider does not serve |
+| Cannot find `@janhq/agent-sdk` | Run the local `npm install` above and keep `hello.mjs` in the demo directory. |
+| Cannot start `jan` | Add it to PATH, or pass its absolute path as `JanRuntime.start({ bin: '/path/to/jan' })`. |
+| Unknown `rpc` command or protocol mismatch | Run `jan update`, then retry startup. |
+| No model, authentication error, or provider error | Run `jan login` or fix the provider configuration. A model override must name a model that provider serves. |
 
-## Next
+See [Process & failures](/docs/agent/sdk-runtime) for error handling in an application.
 
-Give the model a function to call in your code: [Host tools](/docs/agent/sdk-tools). To answer
-permission prompts, stop a run or handle exit codes, see [Process & failures](/docs/agent/sdk-runtime).
+## Next: give the agent a function
+
+The first script cannot act on your app. Add a [host tool](/docs/agent/sdk-tools) when you want it
+to read application data or perform an action.

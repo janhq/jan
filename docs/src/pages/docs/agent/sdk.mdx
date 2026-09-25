@@ -1,88 +1,81 @@
 ---
-title: Agent SDK (Preview)
-description: Embed Jan Agent in your own JavaScript or Python application - choose a path, and see what the nightly channel supports today.
-keywords:
-  [
-    Jan,
-    Jan Agent,
-    SDK,
-    embedding,
-    JavaScript,
-    Python,
-    stream-json,
-    host tools,
-    headless,
-  ]
+title: Agent SDK
+description: Add an AI agent to your app. Start with a prompt, then give the agent functions your code can run.
+keywords: [Jan, Jan Agent, SDK, JavaScript, Python, embedding, host tools]
 ---
 
 import { Callout } from 'nextra/components'
 
-# Agent SDK (Preview)
+# Agent SDK
 
-Want Jan Agent inside your own application - a script, a service, a robot controller - instead of
-in a terminal? You start `jan cli agent run` as a child process and talk to it over **`stream-json`**:
-one JSON record per line on stdout, one message per line on stdin. Your code sees every token, tool
-call and permission prompt, and can hand the agent **host tools**: tools your code executes.
+**Send a task from your app. Get a streamed answer. Let the agent call your functions when it needs to act.**
+
+Jan handles the conversation with the model and the loop of choosing a tool, reading its result,
+and deciding what to do next. Your app supplies the task, controls access to its tools, and displays the result.
+
+## Start with one response
+
+Choose the language your app already uses:
+
+- **[JavaScript quickstart](/docs/agent/sdk-ts)** - Node.js 20+, also usable from TypeScript.
+- **[Python quickstart](/docs/agent/sdk-python)** - Python 3.11+, no Node.js required.
+
+Both guides end with a complete script that prints an answer. You do not need to understand the
+wire protocol, manage subprocess pipes, or install Jan Desktop.
 
 <Callout type="warning">
-The Agent SDK is a preview. It ships with Jan Agent in the `agent-nightly` channel, not in stable
-releases - expect nightly-quality builds. There is no SDK package to install yet: the recipes here
-drive the `jan` binary with nothing but Node.js or Python and their standard libraries.
+Preview: the SDK source is available, but the packages are not yet published to npm or PyPI.
+The quickstarts install the client from the Jan repository and use a prebuilt nightly runtime.
+No Rust build is required.
 </Callout>
 
-## Choose your path
-
-| You want to | Start here |
-| --- | --- |
-| Run a first embedded task from Node.js | [JavaScript quickstart](/docs/agent/sdk-ts) |
-| Run a first embedded task from Python | [Python quickstart](/docs/agent/sdk-python) |
-| Let the model call a function in your code | [Host tools](/docs/agent/sdk-tools) |
-| Own the process: permissions, stopping, failures, exit codes | [Process & failures](/docs/agent/sdk-runtime) |
-| Run several sessions in one long-lived process | [CLI reference: `rpc`](/docs/agent/cli#rpc) |
-| Look up a record's fields, or validate against the generated schemas | [Protocol records](/docs/agent/protocol) |
-| Use Jan interactively instead | [Quickstart](/docs/agent/quickstart) |
-
-Every code block these pages attribute to a file is an excerpt of a runnable example in
-[`examples/agent-sdk/`](https://github.com/janhq/jan/tree/main/examples/agent-sdk). CI runs each
-example against `jan` built from the same commit, and fails when a page's excerpt no longer
-matches its source.
-
-## How one run works
+## Three pieces, one app
 
 ```text
-   your app                                   jan cli agent run
-   | spawn --output-format stream-json        |
-   |       --input-format stream-json         |
-   | <------------------------------ init --- |  session, model, tools, caps
-   | <------------- token, tool_call, ... --- |  the run, as it happens
-   | <---------------------- tool_request --- |  the model called your host tool
-   | ---- tool_result ----------------------> |
-   | <---------------- permission_request --- |  only when the run asks (--safe)
-   | ---- permission -----------------------> |
-   | <---------------------------- result --- |  answer, stop reason, usage; the process exits
+Your app + SDK  <->  Jan runtime  <->  Model provider
+      |
+      +-- Your functions: read a sensor, query a database, call an API
 ```
 
-One process runs one task. Follow-up messages on stdin join the same run, and `--resume` continues
-a saved session in a new process.
+| Piece | Its job |
+| --- | --- |
+| **SDK** | The JavaScript or Python library you import. It starts Jan, streams events and calls your tool handlers. |
+| **Runtime** | The separate `jan` executable. It manages conversations and the agent loop. |
+| **Model provider** | The service Jan sends model requests to. Configure a provider or sign in with `jan login`. |
+
+The runtime runs locally, but that does **not** mean inference runs locally. Your configured
+provider receives the prompt and the tool results you return to the model.
+
+## The three objects you use
+
+1. **Runtime** - the Jan process your app owns. Start it once; close it when your app is done.
+2. **Session** - one conversation, with its own history, model and tools.
+3. **Turn** - one prompt and the work it triggers. Stream its events, then read its final status.
+
+A runtime can hold multiple sessions, but runs one active turn at a time. Reuse a session for
+follow-up questions; create a new one for a separate conversation.
+
+## After your first response
+
+| Next goal | Guide |
+| --- | --- |
+| Let the agent call a function in your app | [Host tools](/docs/agent/sdk-tools) |
+| Stop work, close the process, or handle an error | [Process & failures](/docs/agent/sdk-runtime) |
+| Build your own client or inspect the JSON messages | [Protocol records](/docs/agent/protocol) |
+| Use Jan from a terminal instead of code | [Agent quickstart](/docs/agent/quickstart) |
 
 ## What your build supports
 
-Check the build you run rather than trusting a page: the `init` record says what this run accepts.
+The SDK uses `jan cli agent rpc`. Check that your runtime has it:
 
-| Capability | How to tell | Nightly `0.8.4-49` (published 2026-09-22) |
-| --- | --- | --- |
-| Streamed events and a terminal `result` | `init.protocol_version` is `1` | Yes |
-| Follow-ups, permission answers, `abort` | `init.input_kinds` lists `user`, `permission` and `abort` | Yes |
-| [Host tools](/docs/agent/sdk-tools) | `jan cli agent run --help` lists `--host-tools`; `init.input_kinds` lists `tool_result` | No - on `main`, arriving with the next nightly |
-| The generated JSON Schema | `jan cli agent schema` exists | No - on `main`, arriving with the next nightly |
-| Several sessions in one process over JSON-RPC | `jan cli agent --help` lists `rpc` | No - on `main`, arriving with the next nightly. `main` also serves host tools over RPC (`session/start` `tools`, `tool/respond`) |
-| Images in a `user` message | `init.input_content_parts` is not `null` | No - on `main`, arriving with the next nightly. `main` forwards the parts to the provider as written, images included |
+```bash
+jan cli agent rpc --help
+```
 
-Not in any build yet: the JavaScript and Python SDK packages. On `main`, two more behaviours arrive
-with the next nightly: an image in a host tool result (it follows the tool message as a user turn,
-since a provider's tool response carries text), and a subagent's host tool call, which reaches you
-like the main run's, attributed by the child's `run_id`. Run `jan update` to move to the newest
-nightly.
+If the command is missing, update your nightly with `jan update`. The SDK checks protocol
+compatibility when it starts the runtime. A binary built from source must be rebuilt instead.
 
-Capabilities here were checked on 2026-09-24 against `main` (`cc4927cff`) and the nightly named
-above; a build's own `init` record is the authority.
+For download locations and checksums, use the
+[nightly manifest](https://delta.jan.ai/agent-nightly/manifest.json). For negotiated capabilities
+and image limits, read `runtime.capabilities` and `runtime.limits` after SDK startup rather than
+assuming every nightly has the same features.
