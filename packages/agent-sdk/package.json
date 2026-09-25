@@ -31,7 +31,7 @@
   "scripts": {
     "generate": "node scripts/generate.mjs",
     "check-types": "node scripts/generate.mjs --check && tsc -p tsconfig.json",
-    "test": "node --test tests/sdk.test.mjs"
+    "test": "node --test tests/sdk.test.mjs tests/install.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

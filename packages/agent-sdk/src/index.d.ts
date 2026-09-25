@@ -242,3 +242,64 @@ export declare class JanRuntime {
   request<M extends RpcMethod>(method: M, params?: RpcParams<M>, options?: { timeoutMs?: number }): Promise<RpcResponses[M]>
   close(options?: { force?: boolean }): Promise<{ code: number | null; signal: string | null }>
 }
+
+/** Where a runtime could not be installed: no artifact for this platform, a
+ * manifest that does not name what was asked for, a digest that does not match,
+ * or an archive that holds no binary. */
+export declare class JanInstallError extends Error {
+  constructor(
+    message: string,
+    options?: { url?: string; expected?: string; actual?: string; platform?: string },
+  )
+  readonly url?: string
+  readonly expected?: string
+  readonly actual?: string
+  readonly platform?: string
+}
+
+/** An installed runtime and what it was installed from. */
+export interface InstalledRuntime {
+  version: string
+  pubDate: string | null
+  platform: string
+  url: string
+  sha256: string
+  installedAt: string
+  /** Absolute path to the runtime binary, for `JanRuntime.start({ bin })`. */
+  bin: string
+  dir: string
+  root: string
+  /** True when the install was already on disk and nothing was downloaded. */
+  cached: boolean
+}
+
+export interface InstallRuntimeOptions {
+  /** Pin: the manifest must publish exactly this version. */
+  version?: string
+  /** Pin: the manifest's digest for this platform must be exactly this. */
+  sha256?: string
+  /** The channel's manifest. Defaults to `JAN_AGENT_MANIFEST` or the published one. */
+  manifestUrl?: string
+  /** Where runtimes live. Defaults to `JAN_AGENT_HOME` or the per-user cache. */
+  root?: string
+  /** The `fetch` to use, for a caller with its own proxy or instrumentation. */
+  fetch?: typeof globalThis.fetch
+  signal?: AbortSignal
+  /** `total` is 0 when the server sends no `content-length`. */
+  onProgress?: (received: number, total: number) => void
+}
+
+/** The channel the runtime is published on today. */
+export declare const MANIFEST_URL: string
+/** Every platform key the current manifest publishes. */
+export declare const PLATFORM_KEYS: readonly string[]
+/** The manifest key for a Node platform/arch pair; throws for an unsupported one. */
+export declare function platformKey(platform?: string, arch?: string): string
+/** The binary's name inside an installed runtime. */
+export declare function binName(platform?: string): string
+/** Where installed runtimes live: `JAN_AGENT_HOME`, or the per-user cache. */
+export declare function runtimeRoot(env?: Record<string, string | undefined>): string
+/** An already-installed runtime for `version`, or `null`. No network. */
+export declare function findRuntime(options?: { version?: string; root?: string }): Promise<InstalledRuntime | null>
+/** Install the runtime for this platform and return its binary path. */
+export declare function installRuntime(options?: InstallRuntimeOptions): Promise<InstalledRuntime>
