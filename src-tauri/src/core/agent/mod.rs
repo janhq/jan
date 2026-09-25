@@ -48,6 +48,7 @@ pub mod reminder;
 pub mod session;
 pub mod skill_hub;
 pub mod skills;
+pub mod store_migration;
 pub mod subagent;
 pub mod todo;
 pub mod transcript;

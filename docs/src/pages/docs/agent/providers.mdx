@@ -139,9 +139,10 @@ models = ["gpt-4o"]
 # compaction_ratio = 0.6
 ```
 
-<Callout type="warning">
-That file usually gets committed. Prefer leaving `api_key` out of it and keeping the key in
-`~/.jan/config.toml` or the environment.
+<Callout type="info">
+`agent.toml` lives in the project's store under `~/.jan/projects/`, outside the repository, so it is
+never committed. Keeping `api_key` in `~/.jan/config.toml` or the environment still leaves one
+place to rotate it.
 </Callout>
 
 ## Removing one

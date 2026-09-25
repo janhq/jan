@@ -59,6 +59,7 @@ pub struct MonitorCtx {
     pub project_root: PathBuf,
     pub scratch_root: Option<PathBuf>,
     pub mask_root: Option<PathBuf>,
+    pub hidden_root: Option<PathBuf>,
     pub read_roots: Vec<PathBuf>,
     pub write_roots: Vec<PathBuf>,
     pub allow_network: bool,
@@ -72,6 +73,7 @@ impl MonitorCtx {
             project_root: ctx.project_root.to_path_buf(),
             scratch_root: ctx.scratch_root.map(Path::to_path_buf),
             mask_root: ctx.mask_root.map(Path::to_path_buf),
+            hidden_root: ctx.hidden_root.map(Path::to_path_buf),
             read_roots: ctx.read_roots.to_vec(),
             write_roots: ctx.write_roots.to_vec(),
             allow_network: ctx.allow_network,
@@ -89,7 +91,8 @@ impl MonitorCtx {
             .with_home_readonly(self.home_readonly)
             .with_sandbox(self.sandbox)
             .with_read_roots(&self.read_roots)
-            .with_write_roots(&self.write_roots);
+            .with_write_roots(&self.write_roots)
+            .with_hidden_root(self.hidden_root.as_deref());
         if let Some(mask) = &self.mask_root {
             ctx = ctx.with_mask_root(mask);
         }
@@ -589,6 +592,7 @@ mod tests {
             project_root: root.to_path_buf(),
             scratch_root: None,
             mask_root: None,
+            hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             allow_network: false,

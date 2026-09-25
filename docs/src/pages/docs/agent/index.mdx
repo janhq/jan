@@ -117,7 +117,7 @@ Desktop's [local API server](/docs/desktop/api-server), with `jan config set --b
 ## Staying in control
 
 The agent edits files and runs commands without stopping to ask. File paths are checked against the
-project root, and `.jan/agent/` internals and anything in `[tools] deny` are refused outright - but
+project root, and anything in `[tools] deny` is refused outright - but
 shell commands are not sandboxed by default, so one runs with your own access.
 
 Three ways to change that:

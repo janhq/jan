@@ -80,8 +80,8 @@ pub struct ToolResult {
 /// The permanent store root holding `memory/` and `skills/`.
 ///
 /// `project` is an explicit override and is currently always `None`: the desktop
-/// has no project picker yet. Once one lands, a project's own co-located store
-/// (`<project>/.jan/agent`) layers on top of this one; see the memory-scope TODO.
+/// has no project picker yet. Once one lands, a project's own store
+/// (`~/.jan/projects/<slug>`) layers on top of this one; see the memory-scope TODO.
 fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
     match project.map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => workspace::project_store(Path::new(p)),
@@ -582,6 +582,7 @@ pub async fn start_monitor(
         project_root: root,
         scratch_root: Some(scratch),
         mask_root: Some(PathBuf::from(&data_folder)),
+        hidden_root: workspace::hidden_root(true),
         read_roots,
         write_roots,
         allow_network: allow_network.unwrap_or(false),
@@ -869,6 +870,9 @@ async fn execute_tool_inner(
     );
     let tool = lookup(&name)
         .ok_or_else(|| AgentToolsError::from(format!("unknown built-in tool '{name}'")))?;
+    // The desktop always sandboxes, and an attached project folder can be the
+    // user's home, which puts the CLI's `~/.jan` inside it.
+    let hidden = workspace::hidden_root(true);
 
     match gate::resolve_decision(
         tool,
@@ -878,21 +882,17 @@ async fn execute_tool_inner(
             scratch: Some(&scratch),
             read_roots: &read_roots,
             write_roots: &write_roots,
-            hide_jan: true,
+            hidden_root: hidden.as_deref(),
         },
         &ToolPermissions::default(),
         &SessionGrants::default(),
     ) {
         Decision::Allow => {}
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
-            return Err(format!(
-                "tool '{name}' is denied: {} is the agent's own state directory and is hidden",
-                crate::tools::sandbox::JAN_DIR
-            )
-            .into());
-        }
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
+        }
+        Decision::HardDeny(gate::DenyReason::Hidden) => {
+            return Err(format!("tool '{name}' is denied: the Jan home (~/.jan) is hidden").into());
         }
         // An exec prompt asks the user to vouch for a command that could reach
         // anything. Under an enforcing sandbox it cannot: writes stay in the
@@ -976,6 +976,7 @@ async fn execute_tool_inner(
         .with_scratch_root(&scratch)
         .with_read_roots(&read_roots)
         .with_write_roots(&write_roots)
+        .with_hidden_root(hidden.as_deref())
         .with_thread_id(Some(&thread_id))
         .with_screenshot_backend(screenshot_backend);
     if let Some(sp) = skill_project.as_deref() {
@@ -1180,10 +1181,10 @@ mod tests {
     }
 
     #[test]
-    fn explicit_project_uses_its_co_located_store() {
+    fn explicit_project_uses_its_project_store() {
         assert_eq!(
             resolve_store("/data", Some("/repo")),
-            Path::new("/repo/.jan/agent")
+            workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
@@ -1742,35 +1743,6 @@ mod tests {
                 "expected {bad:?} to be rejected by execute_tool"
             );
         }
-        let _ = std::fs::remove_dir_all(&data);
-    }
-
-    #[tokio::test]
-    async fn agent_config_surface_is_hard_denied() {
-        let data = unique_data_folder();
-        let df = data.to_string_lossy().to_string();
-        thread_workspace_path(df.clone(), T1.into()).await.unwrap();
-
-        let err = execute_tool(
-            df.clone(),
-            T1.into(),
-            None,
-            "read".to_string(),
-            json!({"path": ".jan/agent/agent.toml"}),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect_err("agent config must be hard-denied");
-        assert!(
-            err.message.contains("is hidden"),
-            "unexpected: {}",
-            err.message
-        );
         let _ = std::fs::remove_dir_all(&data);
     }
 

@@ -12,7 +12,7 @@
 //!
 //! 1. installed plugins' `hooks/hooks.json` (shipped by a third party)
 //! 2. `~/.jan/config.toml` `[[hooks]]` (this user, every project)
-//! 3. `<project>/.jan/agent/agent.toml` `[[hooks]]` (this project)
+//! 3. `~/.jan/projects/<slug>/agent.toml` `[[hooks]]` (this project)
 //!
 //! A deny is not a precedence question: `run_hooks` stops at the *first* hook
 //! that denies, so any layer can veto a call and no later layer can overturn
@@ -158,7 +158,7 @@ mod tests {
     }
 
     fn write_agent_toml(root: &Path, body: &str) {
-        let dir = root.join(".jan").join("agent");
+        let dir = crate::core::agent::project::store_root(root);
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("agent.toml"), body).unwrap();
     }

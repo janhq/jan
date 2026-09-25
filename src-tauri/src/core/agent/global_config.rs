@@ -13,7 +13,7 @@ use crate::core::state::ProviderConfig;
 
 const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # Applies to every project unless overridden by that project's
-# .jan/agent/agent.toml [provider] section.
+# agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
 #
 # default_model = "my-model"        # used when no --model / agent.toml model is set
 # smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
@@ -47,6 +47,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # On by default
 # claude_code_alias = false             # allow Jan to reuse Claude Code's
 #                                     # keychain login; on by default
+# memory_cross_project = false        # hide other projects' memory from the
+#                                     # agent (the root ~/.jan/MEMORY.md lists
+#                                     # them by default)
 # wave = "👋"                          # sweep this glyph along the working row
 #                                     # instead of the static throbber. Up to
 #                                     # 3 characters ("🍌", "~", "👁️👄👁️").
@@ -114,6 +117,11 @@ struct GlobalConfigToml {
     /// on; set false to keep Jan from reading or refreshing that credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     claude_code_alias: Option<bool>,
+    /// List other projects' memory in the prompt and let the agent read it as
+    /// `project:<slug>`. `None` = the default, on. Off keeps each project's
+    /// memory to itself (user-wide `user:` notes still apply everywhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_cross_project: Option<bool>,
     /// Glyph swept along the working row while a turn runs, in place of the
     /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
     /// throbber. See `wave_glyph` for why those are two different things.
@@ -363,6 +371,18 @@ pub(crate) fn think_tags_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.think_tags)
+        .unwrap_or(true)
+}
+
+/// Whether other projects' memory is listed and readable
+/// (`memory_cross_project` in `~/.jan/config.toml`), defaulting to on.
+/// Unreadable config yields the default, like the other preferences.
+// Test builds pin cross-project memory off (see `project::memory_roots`).
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn memory_cross_project_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.memory_cross_project)
         .unwrap_or(true)
 }
 

@@ -178,20 +178,22 @@ impl Project {
             COUNTER.fetch_add(1, Ordering::SeqCst)
         ));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join(".jan/agent/skills")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/memory")).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::create_dir_all(store.join("skills")).unwrap();
+        std::fs::create_dir_all(store.join("memory")).unwrap();
         std::fs::write(
             root.join("JAN.md"),
             "# Project\n\nPrefix-stability fixture.\n",
         )
         .unwrap();
         std::fs::write(
-            root.join(".jan/agent/skills/example.md"),
+            store.join("skills/example.md"),
             "---\nname: example\ndescription: An example skill\n---\n\nSkill body.\n",
         )
         .unwrap();
         std::fs::write(
-            root.join(".jan/agent/memory/note.md"),
+            store.join("memory/note.md"),
             "A durable fact about the fixture project.\n\nLonger detail.\n",
         )
         .unwrap();

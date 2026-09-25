@@ -349,16 +349,16 @@ pub struct PendingSubagent {
     pub phase: u32,
 }
 
-/// If `path` targets a file in the agent's skill or memory workspace, return the
-/// kind (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
+/// If `path` targets a file in a project's skill or memory store
+/// (`~/.jan/projects/<slug>/{skills,memory}/...`), return the kind
+/// (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
 fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
+    const PROJECTS: &str = ".jan/projects/";
     let norm = path.replace('\\', "/");
-    for (needle, kind) in [
-        (".jan/agent/skills/", "skill"),
-        (".jan/agent/memory/", "memory"),
-    ] {
-        if let Some(idx) = norm.find(needle) {
-            let rest = &norm[idx + needle.len()..];
+    let after = &norm[norm.find(PROJECTS)? + PROJECTS.len()..];
+    let (_slug, inside) = after.split_once('/')?;
+    for (prefix, kind) in [("skills/", "skill"), ("memory/", "memory")] {
+        if let Some(rest) = inside.strip_prefix(prefix) {
             if rest.is_empty() || rest.ends_with('/') {
                 return Some((kind, String::new()));
             }
@@ -838,11 +838,11 @@ pub(crate) mod tests {
     #[test]
     fn describe_labels_fallback_path_ops() {
         assert_eq!(
-            describe_tool_call("read", &json!({"path": ".jan/agent/skills/deploy.md"})),
+            describe_tool_call("read", &json!({"path": "/home/u/.jan/projects/app-1/skills/deploy.md"})),
             "Reading skill: deploy"
         );
         assert_eq!(
-            describe_tool_call("write", &json!({"path": ".jan/agent/memory/decisions.md"})),
+            describe_tool_call("write", &json!({"path": "/home/u/.jan/projects/app-1/memory/decisions.md"})),
             "Updating memory: decisions"
         );
     }

@@ -17,7 +17,7 @@ runs commands later, once a session uses it.
 ## Where they live
 
 ```
-<project>/.jan/agent/plugins/
+~/.jan/projects/<slug>/plugins/
 └── release-tools/
     ├── plugin.toml              # optional TOML metadata
     ├── .claude-plugin/
@@ -127,7 +127,7 @@ metadata is handled honestly:
   [Subagents](/docs/agent/subagents#tool-permissions))
 
 Plugin agents are read-only: `create_subagent` refuses the plugin scope, and a subagent defined in
-`.jan/agent/subagents/` shadows a plugin agent of the same name.
+the project's `subagents/` shadows a plugin agent of the same name.
 
 ## Managing
 

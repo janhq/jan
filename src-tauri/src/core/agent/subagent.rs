@@ -1,8 +1,8 @@
 //! Subagent definitions and their two-scope registry. A subagent is a named,
 //! reusable system prompt + default tool allowlist that the main agent can
 //! dispatch a nested, isolated run against (see `dispatch_subagent`). Definitions
-//! live as `<scope>/.jan/agent/subagents/<name>.toml`, merged from the user scope
-//! (`~/.jan/agent/subagents/`) and the project scope (`<project>/.jan/agent/
+//! live as `<scope>/subagents/<name>.toml`, merged from the user scope
+//! (`~/.jan/agent/subagents/`) and the project scope (`~/.jan/projects/<slug>/
 //! subagents/`); the project scope shadows the user scope by name.
 
 use std::path::{Path, PathBuf};
@@ -18,7 +18,8 @@ use tauri_plugin_agent_tools::tools::spill::{
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
-/// `.jan/agent/` and the desktop's permanent store.
+/// store (`~/.jan/projects/<slug>/`), `~/.jan/agent/` and the desktop's
+/// permanent store.
 const SUBAGENTS: &str = "subagents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,9 +80,9 @@ pub fn user_subagents_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".jan").join("agent").join(SUBAGENTS))
 }
 
-/// `<project_root>/.jan/agent/subagents/`.
+/// `<store_root>/subagents/`, in the project's store (see `project::store_root`).
 pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent").join(SUBAGENTS)
+    crate::core::agent::project::store_root(project_root).join(SUBAGENTS)
 }
 
 /// The desktop's single subagent directory:

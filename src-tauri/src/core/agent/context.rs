@@ -11,7 +11,7 @@
 use std::path::Path;
 
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
-use tauri_plugin_agent_tools::{memory, workspace};
+use tauri_plugin_agent_tools::memory;
 
 /// Default persona used only when no assistant instructions are supplied, so a
 /// bare project run still opens with a role statement instead of "# Working
@@ -226,29 +226,20 @@ Shell: `{shell}`{scratch_line}"
     )
 }
 
-/// A catalog of curated memory notes (names + one-line summaries), injected so
-/// the model can read a note on demand with `memory_read`. None when no note
-/// exists. Mirrors `load_skills`: progressive disclosure, not full bodies.
+/// The memory index (names + one-line summaries), injected so the model can
+/// read a note on demand with `memory_read`: this project's notes, the user's
+/// `user:` notes, and pointers to other projects when cross-project memory is
+/// on. The same content as the generated `MEMORY.md` files, rendered from the
+/// notes. None when there is nothing to show. Progressive disclosure, not
+/// full bodies.
 pub(crate) fn load_memory_catalog(project_root: &Path) -> Option<String> {
-    let entries = memory::catalog(&workspace::project_store(project_root));
-    if entries.is_empty() {
-        return None;
+    let (store, home, cross_project) = crate::core::agent::project::memory_roots(project_root);
+    memory::Scopes {
+        store: &store,
+        home: home.as_deref(),
+        cross_project,
     }
-    let list = entries
-        .iter()
-        .map(|entry| {
-            let (name, description) = (&entry.name, &entry.summary);
-            if description.is_empty() {
-                format!("- `{name}` - no summary")
-            } else {
-                format!("- `{name}` - {description}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Some(format!(
-        "# Available Memories\n\nDurable facts recorded in this project. Read a note's full contents with `memory_read` when it is relevant to the current task.\n\n{list}"
-    ))
+    .prompt_block()
 }
 
 /// Everything the prompt-block composers read.
@@ -391,17 +382,20 @@ mod tests {
 
     fn scratch_project(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        std::env::temp_dir().join(format!("jan_ctx_test_{tag}_{n}"))
+        let root = std::env::temp_dir().join(format!("jan_ctx_test_{tag}_{n}"));
+        let _ = std::fs::remove_dir_all(crate::core::agent::project::store_root(&root));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     fn write_skill(root: &Path, name: &str, body: &str) {
-        let dir = root.join(".jan").join("agent").join("skills");
+        let dir = crate::core::agent::project::store_root(root).join("skills");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
     }
 
     fn write_memory(root: &Path, name: &str, body: &str) {
-        let dir = root.join(".jan").join("agent").join("memory");
+        let dir = crate::core::agent::project::store_root(root).join("memory");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(name), body).unwrap();
     }

@@ -39,6 +39,10 @@ fn options_for(project: &str, flags: &ServeFlags) -> Result<ServeOptions, String
     let root = PathBuf::from(project)
         .canonicalize()
         .map_err(|e| format!("Cannot resolve project '{project}': {e}"))?;
+    // stdout is the MCP channel, so the notice goes to stderr.
+    if let Some(note) = crate::core::agent::project::migrate_legacy_store(&root) {
+        eprintln!("({note})");
+    }
     let settings = crate::core::agent::project::run_settings(&root);
     let mut opts = ServeOptions::new(root);
     opts.enabled_skills = settings.enabled_skills;
@@ -110,7 +114,10 @@ mod tests {
         assert_eq!(opts.served, ServedTools::default());
         assert!(opts.sandbox, "sandbox stays on unless agent.toml says otherwise");
         assert!(!opts.allow_network);
-        assert_eq!(opts.store_root, opts.project_root.join(".jan").join("agent"));
+        assert_eq!(
+            opts.store_root,
+            crate::core::agent::project::store_root(&opts.project_root)
+        );
 
         let opts = options_for(
             &project,
@@ -130,7 +137,7 @@ mod tests {
     #[test]
     fn agent_toml_tool_settings_are_honored() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let agent_dir = dir.path().join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(dir.path());
         std::fs::create_dir_all(&agent_dir).expect("mkdir");
         std::fs::write(
             agent_dir.join("agent.toml"),

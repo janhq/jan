@@ -53,7 +53,7 @@ use crate::core::threads::{
 // ── Thread operations ──────────────────────────────────────────────────────
 
 /// List thread metadata under `<base>/threads/`. `base` is the Jan data folder
-/// (desktop store) or a project's `.jan/agent` dir (TUI store).
+/// (desktop store) or a project's store `~/.jan/projects/<slug>` (TUI store).
 pub fn list_threads_in(base: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
     use std::fs;
 
@@ -379,7 +379,7 @@ pub fn cli_save_thread(
 
 /// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
 /// so it is remembered on the next session (agent.toml wins over the desktop
-/// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
+/// default in the model-resolution order). `agent_dir` is the project's store.
 pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
 }
@@ -850,10 +850,27 @@ fn resolve_cost_ceiling(
 /// working-directory block, so a bare "." must become the real cwd rather than
 /// being sent to the model as-is. Falls back to the raw (possibly relative)
 /// path if canonicalization fails (e.g. the directory doesn't exist yet).
+///
+/// Every CLI entry point resolves its project here, so this is also where a
+/// legacy `<project>/.jan` is moved into the project's store: before anything
+/// reads it, and only when the workspace still has one. The notice is kept for
+/// the surface to show (see [`take_migration_notice`]).
 fn resolve_project_root(project: &str) -> PathBuf {
-    PathBuf::from(project)
+    let root = PathBuf::from(project)
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(project))
+        .unwrap_or_else(|_| PathBuf::from(project));
+    if let Some(note) = crate::core::agent::project::migrate_legacy_store(&root) {
+        log::info!("Agent: {note}");
+        *MIGRATION_NOTICE.lock().unwrap_or_else(|e| e.into_inner()) = Some(note);
+    }
+    root
+}
+
+static MIGRATION_NOTICE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The launch migration's one-line report, handed out once.
+pub(crate) fn take_migration_notice() -> Option<String> {
+    MIGRATION_NOTICE.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
 /// Resolved-config + provider snapshot for `jan cli agent status`.
@@ -1786,6 +1803,9 @@ fn prepare_agent_run(
         resume.as_ref(),
     )?;
     let project_root = resolve_project_root(project);
+    if let Some(note) = take_migration_notice() {
+        eprintln!("({note})");
+    }
     if let Some(note) = session.workspace_note.as_deref() {
         eprintln!("({note})");
     }
@@ -2725,15 +2745,16 @@ pub async fn cli_agent_ui(
         },
         resume.as_ref(),
     )?;
-    // TUI threads persist under the project's .jan/agent dir, separate from the
-    // desktop store, so continuing here never mutates desktop threads.
+    // TUI threads persist in the project's store, separate from the desktop
+    // store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
     tui::run(session, agent_dir, project_root, task, images, resume).await
 }
 
-/// Where the TUI persists a project's threads (`<project>/.jan/agent`).
+/// Where the TUI persists a project's threads: the project's store,
+/// `~/.jan/projects/<slug>` (see `project::store_root`).
 pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
-    project_root.join(".jan").join("agent")
+    crate::core::agent::project::store_root(project_root)
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a

@@ -518,10 +518,13 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
-    /// Where `memory/` and `skills/` live. Co-located with the project here, so
-    /// the on-disk layout is unchanged; the desktop points this at its permanent
-    /// store instead.
+    /// Where `memory/` and `skills/` live: the project's store under
+    /// `~/.jan/projects`. The desktop points this at its permanent store.
     store_root: std::path::PathBuf,
+    /// `~/.jan`, for the `user:` memory scope and other projects' stores.
+    memory_home: Option<std::path::PathBuf>,
+    /// Whether other projects' memory is readable (`memory_cross_project`).
+    cross_project: bool,
     /// `[skills].enabled`, resolved once per run. The toolset owns no config
     /// format, so the whitelist is injected rather than re-read per tool call.
     enabled_skills: Vec<String>,
@@ -535,6 +538,10 @@ struct CompositeToolInvoker {
     /// Whether `bash` is confined at all. Resolved once per run by
     /// [`resolve_sandbox`]; always true on the desktop.
     sandbox: bool,
+    /// The Jan home, refused to the general tools and masked from the shell
+    /// while sandboxed (`project::hidden_root`). Kept beside `sandbox` and set
+    /// with it, so the two cannot disagree.
+    hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
@@ -896,14 +903,19 @@ impl CompositeToolInvoker {
     }
 
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
-        tauri_plugin_agent_tools::tools::ToolContext::new(
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
             &self.store_root,
             &self.enabled_skills,
-        )
-        .with_network(self.allow_network)
+        );
+        let ctx = match self.memory_home.as_deref() {
+            Some(home) => ctx.with_memory_home(home, self.cross_project),
+            None => ctx,
+        };
+        ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
@@ -1587,15 +1599,13 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     )
 }
 
-/// Message for a call that reached the hidden agent state directory. Says the
-/// path does not exist *for the agent* and that retrying is pointless: pointing
-/// at a deny list would send the model reading a file that is hidden too.
+/// Refusal for a path or command reaching the Jan home. Structural, not a
+/// policy the user edits, so it points at the dedicated tools instead.
 fn hidden_path_msg(name: &str) -> String {
     format!(
-        "ERROR: tool '{name}' refused: '{}' is the agent's own state directory and is not part of \
-         the project. It is hidden from every tool -- do not try to reach it another way. Skills \
-         and memory are available through the skill_*/memory_* tools.",
-        tauri_plugin_agent_tools::tools::sandbox::JAN_DIR
+        "ERROR: tool '{name}' refused: the Jan home (~/.jan) holds the agent's own \
+         configuration and state and is hidden from every tool -- do not try to reach it \
+         another way. Skills and memory are available through the skill_*/memory_* tools."
     )
 }
 
@@ -2100,14 +2110,13 @@ impl ToolInvoker for CompositeToolInvoker {
                     // read-only or writable root to attach.
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: self.sandbox,
+                    hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
                 &snapshot,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
-            // still honors HardDeny, so the hidden `.jan` invariant (while the shell
-            // is sandboxed) and explicit agent.toml denies hold.
+            // still honors HardDeny, so explicit agent.toml denies hold.
             let decision = match decision {
                 Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,
@@ -2121,10 +2130,13 @@ impl ToolInvoker for CompositeToolInvoker {
                 // and builds the context inside.
                 let root = self.project_root.clone();
                 let store = self.store_root.clone();
+                let memory_home = self.memory_home.clone();
+                let cross_project = self.cross_project;
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
                 let sandbox = self.sandbox;
+                let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
@@ -2133,10 +2145,16 @@ impl ToolInvoker for CompositeToolInvoker {
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
                 read_futures.push(async move {
-                    let ctx = ToolContext::new(&root, &store, &enabled)
+                    let ctx = ToolContext::new(&root, &store, &enabled);
+                    let ctx = match memory_home.as_deref() {
+                        Some(home) => ctx.with_memory_home(home, cross_project),
+                        None => ctx,
+                    };
+                    let ctx = ctx
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
+                        .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
@@ -3221,13 +3239,18 @@ async fn orchestrate_inner(
         if settings.sandbox {
             tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
         }
+        let (store_root, memory_home, cross_project) =
+            crate::core::agent::project::memory_roots(root);
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
-            store_root: tauri_plugin_agent_tools::workspace::project_store(root),
+            store_root,
+            memory_home,
+            cross_project,
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
+            hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
@@ -3559,7 +3582,7 @@ pub(crate) async fn compact_history(
     // are resolved here.
     if let Some(root) = args.project_root.as_deref() {
         let hooks = crate::core::agent::hooks_config::resolve_hooks(root);
-        let store = tauri_plugin_agent_tools::workspace::project_store(root);
+        let store = crate::core::agent::project::store_root(root);
         let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(root, &store, &[])
             .with_sandbox(effective_sandbox(root))
             .with_hooks(&hooks, false, None);
@@ -5090,7 +5113,7 @@ mod tests {
     #[cfg(feature = "cli")]
     fn agent_toml_narrows_what_reaches_the_cache_line() {
         let root = unique_project_root();
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("agent dir");
         std::fs::write(
             agent_dir.join("agent.toml"),
@@ -5141,7 +5164,7 @@ mod tests {
     #[cfg(feature = "cli")]
     fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
         let root = unique_project_root();
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("agent dir");
         std::fs::write(
             agent_dir.join("agent.toml"),
@@ -7695,12 +7718,15 @@ mod tests {
     ) -> CompositeToolInvoker {
         CompositeToolInvoker {
             sandbox: true,
+            hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
                 tool_to_server: HashMap::new(),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
-            store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
+            store_root: crate::core::agent::project::store_root(&root),
+            memory_home: None,
+            cross_project: false,
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
@@ -7765,6 +7791,7 @@ mod tests {
         // plugin-tool wiring, not about a sandbox backend or a prompt that has
         // no one to answer it.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.auto_approve = true;
         invoker.hooks = hooks;
         invoker.plugin_tools = plugin_tools;
@@ -8166,6 +8193,7 @@ mod tests {
         let (tx, rx) = mpsc::unbounded_channel();
         let mut invoker = build_prompting_invoker(root, tx, PermissionRegistry::default());
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.auto_approve = true;
         invoker.host_tools = tools;
         (invoker, rx)
@@ -8852,7 +8880,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("create agent dir");
 
         let write = |body: &str| {
@@ -9813,6 +9841,7 @@ mod tests {
         invoker.auto_approve = true;
         // Bare shell: this exercises the loop wiring, not the jail.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
 
         let out = invoker
             .invoke(&[monitor_call(
@@ -9873,6 +9902,7 @@ mod tests {
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
         invoker.auto_approve = true;
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.monitors_outlive_run = true;
 
         let out = invoker

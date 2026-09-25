@@ -21,9 +21,9 @@ use serde::Deserialize;
 use tauri_plugin_agent_tools::skills::{DEFAULT_JAN_SKILL, DEFAULT_JAN_SKILL_NAME};
 use tauri_plugin_agent_tools::workspace::workspace_filename;
 
-/// `<project_root>/.jan/agent/skills`.
+/// `<store_root>/skills`, in the project's store (see `project::store_root`).
 pub(crate) fn skills_dir(root: &Path) -> PathBuf {
-    root.join(".jan").join("agent").join("skills")
+    crate::core::agent::project::store_root(root).join("skills")
 }
 
 /// One skill on disk, located by its identity name (folder name or flat stem).
@@ -203,14 +203,14 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
     out
 }
 
-/// All project skills (`.jan/agent/skills`), sorted by name.
+/// All project skills (`<store_root>/skills`), sorted by name.
 pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
     scan_skill_dir(&skills_dir(root))
 }
 
-/// The plugins directory `.jan/agent/plugins`.
+/// The plugins directory `<store_root>/plugins`.
 pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
-    root.join(".jan").join("agent").join("plugins")
+    crate::core::agent::project::store_root(root).join("plugins")
 }
 
 /// Recursively yield every `*.md` file under `dir`, skipping dotfiles and
@@ -930,7 +930,7 @@ mod tests {
         // Unknown or disabled skills are rejected.
         assert!(build_invocation_message(&root, "nope", "").is_err());
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"other\"]\n",
         )
         .unwrap();

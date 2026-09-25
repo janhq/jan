@@ -1916,7 +1916,8 @@ struct App {
     last_esc: Option<Instant>,
     /// User-message index chosen in the rewind picker, carried into the scope step.
     rewind_target: Option<usize>,
-    /// Project `.jan/agent` dir where this TUI's threads are saved/listed.
+    /// The project's store (`~/.jan/projects/<slug>`) where this TUI's threads
+    /// are saved/listed.
     agent_dir: std::path::PathBuf,
     /// OpenAI-shaped conversation history sent with each run.
     history: Vec<serde_json::Value>,
@@ -9454,6 +9455,9 @@ pub async fn run(
         (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
     };
     app.push_session_banner(!seeded);
+    if let Some(note) = super::take_migration_notice() {
+        app.note(&note);
+    }
     if let Some(note) = workspace_note {
         app.note(&note);
     }
@@ -11831,7 +11835,7 @@ impl SlashCatalog {
 
 /// One row of the slash-command popup: a built-in command, an installed
 /// plugin command (`<plugin>/commands/<name>.md`), or an installed project
-/// skill (`.jan/agent/skills/<name>/SKILL.md`) offered by name so `/deploy`
+/// skill (`<store>/skills/<name>/SKILL.md`) offered by name so `/deploy`
 /// behaves like a command the user can tab-complete and run.
 #[derive(Clone)]
 enum SlashMatch {
@@ -12801,7 +12805,7 @@ struct AgentSettingDef {
 /// looking for a knob: they want the setting, not the file it lives in.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SettingScope {
-    /// This project's `.jan/agent/agent.toml`, under `[agent]` unless the key
+    /// This project's `agent.toml` (in its store), under `[agent]` unless the key
     /// names its own section.
     Project,
     /// The user-wide `~/.jan/config.toml`, at the document root.
@@ -14250,7 +14254,7 @@ fn cancel_command(app: &mut App, arg: &str) {
     ));
 }
 
-/// `/plugin` handler: manage plugins installed under `.jan/agent/plugins/`.
+/// `/plugin` handler: manage plugins installed under the project store's `plugins/`.
 ///   - `/plugin` or `/plugin list`   — installed plugins + the skills they ship
 ///   - `/plugin install <spec>`      — git URL (optionally `#ref`) or a name
 ///     from the configured `[plugins] marketplace`
@@ -20368,7 +20372,7 @@ mod tests {
 
     /// App whose project has one installed skill `<name>/SKILL.md` with the
     /// given frontmatter description, so slash-popup and dispatch tests run
-    /// against a real `.jan/agent/skills/` tree. Returns the temp project
+    /// against a real `<store>/skills/` tree. Returns the temp project
     /// root for cleanup.
     fn skill_test_app(name: &str, description: &str) -> (App, std::path::PathBuf) {
         skill_test_app_fm(name, description, "")
@@ -20386,7 +20390,8 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        let agent_dir = root.join(".jan/agent");
+        std::fs::create_dir_all(&root).unwrap();
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(agent_dir.join("skills").join(name)).unwrap();
         std::fs::write(
             agent_dir.join("skills").join(name).join("SKILL.md"),
@@ -35505,6 +35510,7 @@ mod tests {
             project_root: root.to_path_buf(),
             scratch_root: None,
             mask_root: None,
+            hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             allow_network: false,
@@ -36412,7 +36418,8 @@ mod tests {
     #[test]
     fn slash_popup_uses_startup_catalog_after_files_change() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        std::fs::remove_dir_all(root.join(".jan/agent/skills/deploy")).unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::remove_dir_all(store.join("skills/deploy")).unwrap();
         app.input = "/dep".into();
 
         assert_eq!(names(&app), vec!["/deploy".to_string()]);
@@ -36426,7 +36433,7 @@ mod tests {
         // Whitelist a different skill: deploy must vanish from the popup,
         // matching the user-side catalog semantics.
         std::fs::write(
-            root.join(".jan/agent/agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[agent]\n[skills]\nenabled = [\"other\"]\n",
         )
         .unwrap();
@@ -36502,8 +36509,8 @@ mod tests {
 
     /// A plugin with one folder skill under the app's project root.
     fn plugin_skill_in_app(root: &std::path::Path, plugin: &str, name: &str, description: &str) {
-        let dir = root
-            .join(".jan/agent/plugins")
+        let dir = crate::core::agent::project::store_root(root)
+            .join("plugins")
             .join(plugin)
             .join("skills")
             .join(name);
@@ -36517,8 +36524,8 @@ mod tests {
 
     /// A plugin with one command prompt template under the app's project root.
     fn plugin_command_in_app(root: &std::path::Path, plugin: &str, name: &str, content: &str) {
-        let dir = root
-            .join(".jan/agent/plugins")
+        let dir = crate::core::agent::project::store_root(root)
+            .join("plugins")
             .join(plugin)
             .join("commands");
         std::fs::create_dir_all(&dir).unwrap();
@@ -36570,7 +36577,8 @@ mod tests {
         app.input = "/feature".into();
         assert!(names(&app).contains(&"/feature-dev".to_string()));
 
-        std::fs::remove_file(root.join(".jan/agent/plugins/feature-dev/commands/feature-dev.md"))
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::remove_file(store.join("plugins/feature-dev/commands/feature-dev.md"))
             .unwrap();
         app.input = "/fea".into();
         app.reset_slash_hint();

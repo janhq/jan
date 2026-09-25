@@ -89,7 +89,7 @@ pub struct ServeOptions {
     /// The one project root the served tools are confined to.
     pub project_root: PathBuf,
     /// Where `memory/` and `skills/` live; normally
-    /// `workspace::project_store(project_root)`.
+    /// `project::store_root(project_root)`.
     pub store_root: PathBuf,
     /// The `[skills].enabled` whitelist; empty means every skill.
     pub enabled_skills: Vec<String>,
@@ -104,10 +104,10 @@ pub struct ServeOptions {
 }
 
 impl ServeOptions {
-    /// Defaults for a project root: its co-located store, the read-only served
+    /// Defaults for a project root: its store under `~/.jan/projects`, the read-only served
     /// set, sandbox on.
     pub fn new(project_root: PathBuf) -> Self {
-        let store_root = tauri_plugin_agent_tools::workspace::project_store(&project_root);
+        let store_root = crate::core::agent::project::store_root(&project_root);
         Self {
             project_root,
             store_root,
@@ -122,16 +122,21 @@ impl ServeOptions {
 
 /// The MCP server: Jan's built-in toolset behind a `ServerHandler`.
 ///
-/// Cheap to clone (one `Arc`), which is what the Streamable HTTP transport needs
-/// -- it builds a fresh handler per session from a factory.
+/// Cheap to clone (an `Arc` and one path), which is what the Streamable HTTP
+/// transport needs -- it builds a fresh handler per session from a factory.
 #[derive(Debug, Clone)]
 pub struct JanToolServer {
     opts: Arc<ServeOptions>,
+    /// The Jan home, refused to every served tool whether or not `bash` is
+    /// sandboxed: a served client is a program, not a user at the terminal,
+    /// and there is no one here to approve reaching keys or hooks.
+    hidden_root: Option<std::path::PathBuf>,
 }
 
 impl JanToolServer {
     pub fn new(opts: ServeOptions) -> Self {
         Self {
+            hidden_root: crate::core::agent::project::hidden_root(true),
             opts: Arc::new(opts),
         }
     }
@@ -191,6 +196,7 @@ impl JanToolServer {
         )
         .with_network(self.opts.allow_network)
         .with_sandbox(self.opts.sandbox)
+        .with_hidden_root(self.hidden_root.as_deref())
         .with_confined_writes(true);
         if let Some(scratch) = self.opts.scratch_root.as_deref() {
             ctx = ctx.with_scratch_root(scratch);
@@ -229,9 +235,7 @@ impl JanToolServer {
                 scratch: self.opts.scratch_root.as_deref(),
                 read_roots: &[],
                 write_roots: &[],
-                // The agent's own `.jan` state is never reachable as a path;
-                // memory and skills are served through their own tools.
-                hide_jan: true,
+                hidden_root: self.hidden_root.as_deref(),
             },
             &Default::default(),
             &SessionGrants::default(),
@@ -244,8 +248,8 @@ impl JanToolServer {
             Decision::HardDeny(DenyReason::Hidden) => {
                 return (
                     format!(
-                        "ERROR: tool '{name}' was refused: the path is inside the agent's \
-                         hidden .jan state. Use the memory_* and skill_* tools instead."
+                        "ERROR: tool '{name}' was refused: the Jan home (~/.jan) is hidden. \
+                         Use the memory_* and skill_* tools instead."
                     ),
                     Vec::new(),
                 )

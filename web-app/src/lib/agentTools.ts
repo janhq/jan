@@ -265,7 +265,7 @@ export async function executeAgentTool(
    * folder). Off by default, so chat's attachment stays read-only. */
   projectWritable = false,
   /**
-   * A project folder whose co-located skills (`<folder>/.jan/agent/skills`)
+   * A project folder whose project-store skills (`~/.jan/projects/<slug>/skills`)
    * layer on top of the permanent store for `skill_list`/`skill_read`, so an
    * attached folder's skills reach the agent alongside the global ones (#8879).
    * Cowork passes its attached folder; chat leaves it unset, keeping its skills

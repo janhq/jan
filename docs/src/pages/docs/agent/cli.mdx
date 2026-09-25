@@ -31,7 +31,7 @@ jan <COMMAND>
 
 | Flag | Description |
 | --- | --- |
-| `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
+| `--project <PATH>` | Project root; its `agent.toml` lives in `~/.jan/projects/<slug>/`. Defaults to `.` |
 | `--task <TEXT>` | Seed the session with a first message |
 | `--model <ID>` | Model id, overriding `[agent].model` |
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
@@ -62,8 +62,8 @@ jan --worktree                          # work in a dedicated checkout, not your
 
 <Callout type="warning">
 Tool calls are auto-approved by default, and shell commands are **not** sandboxed by default - an
-approved command runs with your own access. The hard denies never lift: `.jan/agent/` internals,
-anything in `[tools] deny`, and everything plan mode blocks. `--safe` adds the interactive approval
+approved command runs with your own access. The hard denies never lift:
+anything in `[tools] deny` and everything plan mode blocks. `--safe` adds the interactive approval
 prompt; `--sandbox` adds OS confinement (bubblewrap, Seatbelt, or AppContainer). See
 [tool permissions](/docs/agent/permissions#the-shell-sandbox).
 </Callout>
@@ -537,7 +537,7 @@ this document and `protocol/schema.json` in one job and fails on a diff.
 ## `jan plugin`
 
 Manage project-local plugins without the interactive console. Plugin commands use
-`.jan/agent/plugins/` under `--project` (default `.`) and print JSON for list, install, and search.
+the `plugins/` folder of the project's store (`~/.jan/projects/<slug>/`) for `--project` (default `.`) and print JSON for list, install, and search.
 
 ```bash
 jan plugin list
@@ -712,7 +712,7 @@ See [MCP](/docs/agent/mcp).
 ## `jan mcp serve`
 
 The other direction: serve Jan's own built-in tools to another MCP client. One project root, fixed
-at startup; a path argument that escapes it is refused, and so is the project's hidden `.jan` state.
+at startup; a path argument that escapes it is refused.
 
 ```bash
 jan mcp serve --project .                   # stdio, for a client that spawns it as a child
