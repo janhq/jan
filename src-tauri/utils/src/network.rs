@@ -101,8 +101,36 @@ pub fn validate_proxy_config(config: &ProxyConfig) -> Result<(), String> {
     Ok(())
 }
 
+/// Reads the `NO_PROXY` / `no_proxy` environment variable and parses it into a
+/// list of comma-separated host patterns (the same format the in-app `no_proxy`
+/// setting uses). Returns an empty list when the variable is unset.
+fn no_proxy_from_env() -> Vec<String> {
+    let mut entries: Vec<String> = Vec::new();
+    // Prefer the uppercase variant, falling back to lowercase. This mirrors how
+    // reqwest and most tooling read the environment on case-sensitive systems.
+    let raw = std::env::var("NO_PROXY")
+        .or_else(|_| std::env::var("no_proxy"))
+        .unwrap_or_default();
+
+    for entry in raw.split(',') {
+        let entry = entry.trim().to_string();
+        if !entry.is_empty() && !entries.contains(&entry) {
+            entries.push(entry);
+        }
+    }
+    entries
+}
+
 /// Checks if URL should bypass proxy based on no_proxy patterns (supports wildcards)
 pub fn should_bypass_proxy(url: &str, no_proxy: &[String]) -> bool {
+    // Merge the app-supplied no_proxy list with the NO_PROXY/no_proxy
+    // environment variables. Without this, Jan ignores a user-configured
+    // `no_proxy` env var and keeps routing matching hosts through the proxy
+    // (Fixes #8565).
+    let mut entries = no_proxy.to_vec();
+    entries.extend(no_proxy_from_env());
+    let no_proxy = entries.as_slice();
+
     if no_proxy.is_empty() {
         return false;
     }
