@@ -20,11 +20,12 @@ here needs Node or a third-party package.
 
 from __future__ import annotations
 
-import errno
 import hashlib
 import json
 import os
 import platform as _platform
+import re
+import tempfile
 import shutil
 import tarfile
 import uuid
@@ -147,6 +148,12 @@ def runtime_root(env: Optional[Dict[str, str]] = None) -> str:
     return str(Path(env.get("XDG_CACHE_HOME") or home / ".cache") / "jan-agent" / "runtimes")
 
 
+def _valid_version(version: object) -> bool:
+    return isinstance(version, str) and re.fullmatch(
+        r"[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?", version
+    ) is not None
+
+
 def _install_dir(root: str, version: str, platform: str) -> Path:
     return Path(root) / version / platform
 
@@ -157,17 +164,28 @@ def find_runtime(version: Optional[str] = None, root: Optional[str] = None) -> O
     No network: a caller who already has one pays nothing to find it, and a
     missing one answers ``None`` rather than raising.
     """
-    if not version:
+    if not _valid_version(version):
         return None
-    root = root or runtime_root()
+    root = str(Path(root or runtime_root()).resolve())
     platform = platform_key()
     directory = _install_dir(root, version, platform)
     try:
         marker = json.loads((directory / "install.json").read_text())
     except (OSError, ValueError):
         return None
+    if (
+        not isinstance(marker, dict)
+        or marker.get("version") != version
+        or marker.get("platform") != platform
+        or not isinstance(marker.get("sha256"), str)
+        or re.fullmatch(r"[a-f0-9]{64}", marker["sha256"]) is None
+        or not isinstance(marker.get("directory"), str)
+        or re.fullmatch(rf"{platform}-[a-f0-9-]{{36}}", marker["directory"]) is None
+    ):
+        return None
+    directory = Path(root) / version / marker["directory"]
     binary = directory / bin_name(platform)
-    if not binary.is_file():
+    if binary.is_symlink() or not binary.is_file():
         # A marker whose binary is gone is not an install: it is the remains of one.
         return None
     return InstalledRuntime(
@@ -201,7 +219,9 @@ def install_runtime(
     download; ``total`` is 0 when the server sends no length.
     """
     manifest_url = manifest_url or os.environ.get("JAN_AGENT_MANIFEST") or MANIFEST_URL
-    root = root or runtime_root()
+    root = str(Path(root or runtime_root()).resolve())
+    if version is not None and not _valid_version(version):
+        raise JanInstallError("version must be a single safe path component")
 
     platform = platform_key()
     if version:
@@ -243,8 +263,11 @@ def install_runtime(
     if existing is not None and existing.sha256 == expected:
         return existing
 
-    stage = Path(root) / published / f".{platform}.part-{os.getpid()}-{uuid.uuid4().hex[:8]}"
-    stage.mkdir(parents=True, exist_ok=True)
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    stage = Path(tempfile.mkdtemp(prefix=f".{platform}.part-", dir=directory.parent))
+    generation = f"{platform}-{uuid.uuid4()}"
+    installed_directory = directory.parent / generation
+    marker_temp = directory / f".{uuid.uuid4()}.json"
     try:
         archive = stage / (Path(urlparse(entry["url"]).path).name or "jan-runtime")
         actual = _download(entry["url"], archive, on_progress, timeout)
@@ -262,7 +285,7 @@ def install_runtime(
 
         name = bin_name(platform)
         binary = stage / name
-        if not binary.is_file():
+        if binary.is_symlink() or not binary.is_file():
             raise JanInstallError(
                 f"the {platform} archive from {entry['url']} holds no {name} at its root",
                 url=entry["url"],
@@ -272,36 +295,29 @@ def install_runtime(
             binary.chmod(0o755)
 
         installed_at = _now()
-        (stage / "install.json").write_text(
-            json.dumps(
-                {
-                    "version": published,
-                    "pubDate": manifest.get("pub_date"),
-                    "platform": platform,
-                    "url": entry["url"],
-                    "sha256": actual,
-                    "bin": name,
-                    "installedAt": installed_at,
-                },
-                indent=2,
-            )
-            + "\n"
-        )
+        marker = json.dumps(
+            {
+                "version": published,
+                "directory": generation,
+                "pubDate": manifest.get("pub_date"),
+                "platform": platform,
+                "url": entry["url"],
+                "sha256": actual,
+                "bin": name,
+                "installedAt": installed_at,
+            },
+            indent=2,
+        ).encode() + b"\n"
 
-        # Renamed into place last, and only now: until this line the install is
-        # invisible to every other process, and a crash anywhere above leaves no
-        # directory that `find_runtime` would trust. A rename that finds a
-        # directory already there is either a concurrent install of the same
-        # artifact or what an older one left behind; both are replaced, but only
-        # after asking.
-        directory.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.rename(stage, directory)
-        except OSError as error:
-            if error.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOTDIR):
-                raise
-            shutil.rmtree(directory, ignore_errors=True)
-            os.rename(stage, directory)
+        # Published generations are never replaced: another process can still
+        # be using the binary or holding its path under a digest pin. Only the
+        # small lookup marker changes atomically; concurrent callers all keep
+        # usable paths, regardless of which marker wins.
+        os.rename(stage, installed_directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        with marker_temp.open("xb") as target:
+            target.write(marker)
+        os.replace(marker_temp, directory / "install.json")
         return InstalledRuntime(
             version=published,
             pub_date=manifest.get("pub_date"),
@@ -309,12 +325,13 @@ def install_runtime(
             url=entry["url"],
             sha256=actual,
             installed_at=installed_at,
-            bin=str(directory / name),
-            dir=str(directory),
+            bin=str(installed_directory / name),
+            dir=str(installed_directory),
             root=str(root),
             cached=False,
         )
     except BaseException:
+        marker_temp.unlink(missing_ok=True)
         shutil.rmtree(stage, ignore_errors=True)
         raise
 
@@ -333,7 +350,7 @@ def _read_manifest(url: str, timeout: float) -> Dict[str, object]:
         manifest = json.loads(body)
     except ValueError as error:
         raise JanInstallError(f"the runtime manifest at {url} is not JSON: {error}", url=url) from error
-    if not manifest.get("version") or not isinstance(manifest.get("platforms"), dict):
+    if not isinstance(manifest, dict) or not _valid_version(manifest.get("version")) or not isinstance(manifest.get("platforms"), dict):
         raise JanInstallError(f"the runtime manifest at {url} names no version and no platforms", url=url)
     return manifest
 
@@ -377,9 +394,6 @@ def _extract(archive: Path, into: Path) -> None:
                 bundle.extractall(into)
             return
         with tarfile.open(archive) as bundle:
-            try:
-                bundle.extractall(into, filter="data")
-            except TypeError:  # pragma: no cover - Python before 3.11.4 has no filter
-                bundle.extractall(into)
-    except (tarfile.TarError, zipfile.BadZipFile, OSError) as error:
+            bundle.extractall(into, filter="data")
+    except (tarfile.TarError, zipfile.BadZipFile, OSError, TypeError) as error:
         raise JanInstallError(f"could not extract {archive.name}: {error}", url=str(archive)) from error

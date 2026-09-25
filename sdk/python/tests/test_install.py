@@ -18,6 +18,8 @@ import tarfile
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -38,7 +40,7 @@ from jan_agent_sdk import (  # noqa: E402
 VERSION = "0.0.0-test"
 
 
-def make_archive(directory: Path, *, member: Optional[str] = None) -> Path:
+def make_archive(directory: Path, *, member: Optional[str] = None, content: str = VERSION) -> Path:
     """A tarball holding a ``jan`` that is executable and does nothing.
 
     The installer only has to put a binary there; whether it runs is the
@@ -48,7 +50,7 @@ def make_archive(directory: Path, *, member: Optional[str] = None) -> Path:
     staged = directory / "staged"
     staged.mkdir(parents=True, exist_ok=True)
     name = bin_name()
-    (staged / name).write_text(f"#!/bin/sh\necho {VERSION}\n")
+    (staged / name).write_text(f"#!/bin/sh\necho {content}\n")
     archive = directory / "jan-runtime.tar.gz"
     with tarfile.open(archive, "w:gz") as bundle:
         bundle.add(staged / name, arcname=member or name)
@@ -215,13 +217,15 @@ class InstallTests(unittest.TestCase):
         # two apart, so this is a re-install rather than a cache hit.
         rebuilt = self.source / "second"
         rebuilt.mkdir(parents=True, exist_ok=True)
-        second = _Channel(make_archive(rebuilt))
+        second = _Channel(make_archive(rebuilt, content="replacement"))
         try:
             again = install_runtime(manifest_url=second.url, root=str(self.root))
             self.assertEqual(again.version, VERSION)
             self.assertFalse(again.cached, "a republished digest is not the install on disk")
             self.assertNotEqual(again.sha256, installed.sha256)
             self.assertEqual(again.sha256, sha256((rebuilt / "jan-runtime.tar.gz").read_bytes()))
+            self.assertEqual(Path(installed.bin).read_text(), f"#!/bin/sh\necho {VERSION}\n")
+            self.assertEqual(Path(again.bin).read_text(), "#!/bin/sh\necho replacement\n")
         finally:
             second.close()
 
@@ -264,6 +268,41 @@ class InstallTests(unittest.TestCase):
         self.assertIsNone(find_runtime(VERSION, str(self.root)))
         self.assertIsNone(find_runtime(None, str(self.root)))
         self.assertIsNone(find_runtime(VERSION, str(self.root / "elsewhere")))
+
+    def test_concurrent_installs_preserve_every_returned_binary(self) -> None:
+        published = _Channel(make_archive(self.source))
+        self.addCleanup(published.close)
+        barrier = threading.Barrier(4)
+
+        def install():
+            barrier.wait(timeout=10)
+            return install_runtime(root=str(self.root), manifest_url=published.url)
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            installs = list(pool.map(lambda _: install(), range(4)))
+        for installed in installs:
+            self.assertEqual(Path(installed.bin).read_text(), f"#!/bin/sh\necho {VERSION}\n")
+
+    def test_relative_root_returns_an_absolute_binary(self) -> None:
+        published = _Channel(make_archive(self.source))
+        self.addCleanup(published.close)
+        installed = install_runtime(root=os.path.relpath(self.root), manifest_url=published.url)
+        self.assertTrue(Path(installed.bin).is_absolute())
+
+    def test_untrusted_version_path_is_refused_before_download(self) -> None:
+        published = _Channel(make_archive(self.source), version="../escaped")
+        self.addCleanup(published.close)
+        with self.assertRaises(JanInstallError):
+            install_runtime(root=str(self.root / "cache"), manifest_url=published.url)
+        self.assertEqual(published.artifacts, 0)
+
+    def test_unsupported_safe_extraction_never_falls_back(self) -> None:
+        published = _Channel(make_archive(self.source))
+        self.addCleanup(published.close)
+        with patch.object(tarfile.TarFile, "extractall", side_effect=TypeError("no filter")) as extract:
+            with self.assertRaises(JanInstallError):
+                install_runtime(root=str(self.root), manifest_url=published.url)
+        self.assertEqual(extract.call_count, 1)
 
     # -- the archive ---------------------------------------------------------
 

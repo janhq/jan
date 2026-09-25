@@ -39,9 +39,17 @@ failed its digest, or that was interrupted mid-extract, is never visible as one:
 `find_runtime()` answers `None` for it. No Node and no third-party package are
 involved.
 
-`version` and `sha256` pin. Both are checked against the manifest, and a
-mismatch is an error rather than a substitution, so a run that has to reproduce
-is never quietly moved to a newer runtime. `manifest_url` names another channel;
+Each successful download gets an immutable generation directory. Only the small
+lookup marker is atomically replaced, so concurrent installs and republished
+versions cannot delete or change a binary path already returned to a caller.
+Old generations remain until the cache is manually removed while no runtimes
+are using it. Relative cache roots are resolved to absolute paths.
+Tar extraction requires Python's safe data filter (Python 3.11.4+); an older
+interpreter is refused rather than falling back to unsafe extraction.
+
+`version` and `sha256` pin. A matching cached install is returned without network
+access; otherwise both are checked against the manifest. A mismatch is an error
+rather than a substitution. `manifest_url` names another channel;
 the default is the nightly one. The macOS artifact is notarized, and getting a
 runtime this way needs no Rust toolchain and no Jan Desktop.
 
