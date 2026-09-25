@@ -42,17 +42,20 @@ impl ContextWindowSource {
     }
 }
 
-/// Strip exactly one configured provider qualifier (`anthropic/...`) when the
-/// first segment is one of Jan's catalog providers. A user-provided model id is
-/// normally the bare id, but `--model anthropic/claude-sonnet-4-6` and the
-/// desktop selection can carry the provider prefix; both must resolve alike.
-fn strip_provider_qualifier(model_id: &str) -> &str {
-    let mut parts = model_id.splitn(2, '/');
-    let first = parts.next().unwrap_or("");
-    match (first, parts.next()) {
-        ("anthropic" | "openai" | "google" | "tokamak" | "jan", Some(rest)) => rest,
-        _ => model_id,
+/// Strip the configured provider qualifiers (`anthropic/...`) in front of a
+/// bare id, as long as each leading segment is one of Jan's catalog providers.
+/// A user-provided model id is normally the bare id, but `--model
+/// anthropic/claude-sonnet-4-6` and the desktop selection can carry the
+/// provider prefix, and a gateway route nests one more
+/// (`tokamak/anthropic/claude-...`); all of them must resolve alike.
+fn strip_provider_qualifier(mut model_id: &str) -> &str {
+    while let Some((first, rest)) = model_id.split_once('/') {
+        match first {
+            "anthropic" | "openai" | "google" | "tokamak" | "jan" => model_id = rest,
+            _ => break,
+        }
     }
+    model_id
 }
 
 /// Look up the catalog window for a bare model id (provider qualifier already
@@ -185,9 +188,14 @@ mod tests {
 
     #[test]
     fn provider_qualifier_does_not_change_resolution() {
+        let bare = resolve_context_window("claude-sonnet-4-6", None, None);
+        assert_eq!(resolve_context_window("anthropic/claude-sonnet-4-6", None, None), bare);
+        // A gateway route nests its upstream's qualifier inside its own.
+        assert_eq!(resolve_context_window("tokamak/anthropic/claude-sonnet-4-6", None, None), bare);
+        // Only known qualifiers are peeled: an unknown one stops the walk.
         assert_eq!(
-            resolve_context_window("anthropic/claude-sonnet-4-6", None, None),
-            resolve_context_window("claude-sonnet-4-6", None, None),
+            resolve_context_window("tokamak/azure/claude-sonnet-4-6", None, None).source,
+            ContextWindowSource::Fallback,
         );
     }
 
