@@ -23,6 +23,11 @@ class EventQueue:
         self._ended = False
         self._failure: Optional[BaseException] = None
 
+    def __len__(self) -> int:
+        """How many events are buffered - pushed and not yet taken."""
+        with self._condition:
+            return len(self._items)
+
     def push(self, item: Any) -> bool:
         """Append ``item``; ``True`` when it had to be buffered.
 

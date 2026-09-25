@@ -19,11 +19,12 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from jan_agent_sdk import PROTOCOL_VERSION, HostTool, JanRpcError, JanRuntime, JanRuntimeError  # noqa: E402
-from tests.harness import Provider, Scratch, holding, prose, tool_call  # noqa: E402
+from tests.harness import Provider, Scratch, holding, prose, streamed, tool_call  # noqa: E402
 
 BIN = os.environ.get("JAN_BIN")
 
@@ -209,6 +210,69 @@ class SdkTest(unittest.TestCase):
             # the terminal record still arrived, which is what a late reader
             # needs most.
             self.assertGreater(turn.dropped, 0)
+
+    def test_a_drained_turn_keeps_every_event(self) -> None:
+        """The cap bounds what is unread, not the turn's total output.
+
+        Twenty bursts of four against a cap of 8: the reader falls a few events
+        behind inside a burst and catches up between them, so nothing is ever
+        further behind than the cap, while some 60 of the 80 events were
+        buffered on the way. Counting the running total instead of the buffer
+        would drop the events past the eighth, to a reader that missed none of
+        them.
+        """
+        tokens = [f"token {index} " for index in range(80)]
+        scratch = self.prepare([streamed(tokens, 0.010, 4)])
+        with scratch.start(max_buffered_events=8) as runtime:
+            session = runtime.create_session(cwd=scratch.project, model="stub-model", ephemeral=True)
+            turn = session.prompt("ramble")
+            seen = [event["text"] for event in turn if event.get("type") == "token"]
+            self.assertEqual(turn.result().stop_reason, "completed")
+            self.assertEqual(turn.dropped, 0, "a reader that keeps up must not lose events")
+            self.assertEqual(len(seen), len(tokens))
+
+    def test_a_listener_by_tag_hears_that_tag(self) -> None:
+        scratch = self.prepare([tool_call("host__camera_observe", {"mode": "rgb"}), prose("a red cup")])
+        with scratch.start() as runtime:
+            session = runtime.create_session(
+                cwd=scratch.project,
+                model="stub-model",
+                ephemeral=True,
+                builtins=False,
+                permissions="host",
+                tools=[
+                    HostTool(
+                        name="camera_observe",
+                        description="Look through the camera.",
+                        parameters={"type": "object", "properties": {"mode": {"type": "string"}}, "required": ["mode"]},
+                        capability="read",
+                        handler=lambda args, call: {"text": "a red cup"},
+                    )
+                ],
+            )
+            calls: List[str] = []
+            texts: List[str] = []
+            prompts: List[Dict[str, Any]] = []
+            every: List[Dict[str, Any]] = []
+            stream: List[Dict[str, Any]] = []
+            session.on("tool_request", lambda event: calls.append(event["tool_name"]))
+            session.on("token", lambda event: texts.append(event["text"]))
+            session.on("permission_request", lambda event: prompts.append(event))
+            session.on("*", every.append)
+            session.on("event", stream.append)
+
+            turn = session.prompt("what is on the desk?")
+            list(turn)
+            self.assertEqual(turn.result().stop_reason, "completed")
+
+            # The host is told the name it declared, not the `host__` name the
+            # model calls, and a read never asks permission.
+            self.assertEqual(calls, ["camera_observe"])
+            self.assertEqual("".join(texts), "a red cup")
+            self.assertEqual(prompts, [], "nothing was gated, so nothing may be reported")
+            # A tag is a second name for an event already reported, not a
+            # second event: `"*"` hears the stream once.
+            self.assertEqual(every, stream)
 
     # -- host tools -------------------------------------------------------
 

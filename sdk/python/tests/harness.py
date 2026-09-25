@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -171,6 +172,57 @@ def prose(text: str) -> str:
             "data: [DONE]\n\n",
         ]
     )
+
+
+def streamed(tokens: Sequence[str], delay: float = 0.010, burst: int = 1) -> Callable[[_Handler], None]:
+    """One token per chunk, in bursts of ``burst`` with a pause between them.
+
+    A turn long enough that its total output passes the buffer cap, bursty
+    enough that a reader falls a few events behind inside a burst and catches up
+    between them: what tells a cap on the *unread* buffer apart from a count of
+    everything the turn ever buffered.
+    """
+
+    def write(handler: _Handler) -> None:
+        for index, text in enumerate(tokens):
+            handler.wfile.write(
+                (
+                    "data: "
+                    + json.dumps(
+                        {
+                            "id": "stub-4",
+                            "object": "chat.completion.chunk",
+                            "created": 1,
+                            "model": "stub-model",
+                            "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}],
+                        }
+                    )
+                    + "\n\n"
+                ).encode("utf-8")
+            )
+            handler.wfile.flush()
+            if delay and (index + 1) % burst == 0:
+                time.sleep(delay)
+        handler.wfile.write(
+            (
+                "data: "
+                + json.dumps(
+                    {
+                        "id": "stub-4",
+                        "object": "chat.completion.chunk",
+                        "created": 1,
+                        "model": "stub-model",
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                        "usage": {"prompt_tokens": 9, "completion_tokens": len(tokens), "total_tokens": 9 + len(tokens)},
+                    }
+                )
+                + "\n\n"
+                + "data: [DONE]\n\n"
+            ).encode("utf-8")
+        )
+        handler.wfile.flush()
+
+    return write
 
 
 def holding(text: str) -> Callable[[_Handler], None]:

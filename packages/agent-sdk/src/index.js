@@ -156,7 +156,6 @@ export class JanTurn {
   #settle;
   #reject;
   #terminal;
-  #buffered = 0;
 
   // The events of this turn, in the order the runtime emitted them.
   [Symbol.asyncIterator]() {
@@ -180,11 +179,13 @@ export class JanTurn {
   // `maxBufferedEvents`, then loses its oldest events - a run that streams
   // tokens into an unread turn must not grow the client without limit.
   _push(event) {
-    if (!this.#queue.push(event)) return
-    this.#buffered += 1
-    if (this.#buffered <= this.session.maxBufferedEvents) return
-    if (this.#queue.dropOldest()) {
-      this.#buffered -= 1
+    this.#queue.push(event)
+    // The cap is on what is still unread, not on the turn's own output: a
+    // reader that keeps up takes events out, so the queue's depth is the
+    // buffer. A running total would start dropping events a reader never
+    // missed the moment the turn had emitted more than the cap in total.
+    while (this.#queue.length > this.session.maxBufferedEvents) {
+      if (!this.#queue.dropOldest()) return
       this.dropped += 1
     }
   }
@@ -225,10 +226,13 @@ export class JanSession {
   #closed = false;
 
   // Every event the session reports, including the ones raised by a subagent,
-  // which arrive wrapped in a `subagent` event. `'*'` hears all of them.
-  ///
-  // `on('tool_request', fn)` observes host tool calls; the call is answered
-  // from the declaration's `handler` either way.
+  // which arrive wrapped in a `subagent` event.
+  //
+  // `kind` is `'event'` for the stream as a whole, `'*'` for everything the
+  // session reports, or an event tag such as `'token'`, `'tool_request'` or
+  // `'permission_request'`: `on('tool_request', fn)` observes host tool calls,
+  // which the declaration's `handler` answers either way. A tag is a second
+  // name for an event already on the stream, so `'*'` hears each event once.
   on(kind, listener) {
     const list = this.#listeners.get(kind) ?? []
     list.push(listener)
@@ -329,6 +333,9 @@ export class JanSession {
   // Called by the runtime on every frame addressed to this session.
   _deliver(tag, { turnId, event }) {
     this.#emit('event', event)
+    // By tag as well, so `on('tool_request')` and `on('permission_request')`
+    // hear what they were told they would.
+    this.#notify(tag, event)
     const turn = this.#turn(turnId, true)
     turn?._push(event)
     if (tag === 'tool_request') this.#answer(event)
@@ -374,9 +381,17 @@ export class JanSession {
     return turn
   }
 
+  // One emission, to the listeners of that kind and to `'*'`, which hears
+  // everything once.
   #emit(kind, event) {
+    this.#notify(kind, event)
+    this.#notify('*', event)
+  }
+
+  // Without the `'*'` fan-out, for a second tag on an event already emitted:
+  // a tag listener hears it, and `'*'` does not hear it twice.
+  #notify(kind, event) {
     for (const listener of this.#listeners.get(kind) ?? []) listener(event)
-    for (const listener of this.#listeners.get('*') ?? []) listener(event)
   }
 
   // A host tool was called. The handler runs without holding the reader: two

@@ -80,7 +80,6 @@ class JanTurn:
         #: A reader that iterates the turn never drops any.
         self.dropped = 0
         self._queue = EventQueue()
-        self._buffered = 0
         self._terminal = threading.Event()
         self._result: Optional[TurnResult] = None
         self._failure: Optional[BaseException] = None
@@ -108,13 +107,14 @@ class JanTurn:
     # -- the session's own calls ------------------------------------------
 
     def _push(self, event: Dict[str, Any]) -> None:
-        if not self._queue.push(event):
-            return
-        self._buffered += 1
-        if self._buffered <= self.session.max_buffered_events:
-            return
-        if self._queue.drop_oldest():
-            self._buffered -= 1
+        self._queue.push(event)
+        # The cap is on what is still unread, not on the turn's own output: a
+        # reader that keeps up takes events out, so the queue's depth is the
+        # buffer. A running total would start dropping events a reader never
+        # missed the moment the turn had emitted more than the cap in total.
+        while len(self._queue) > self.session.max_buffered_events:
+            if not self._queue.drop_oldest():
+                return
             self.dropped += 1
 
     def _finish(self, result: TurnResult) -> None:
@@ -150,12 +150,18 @@ class JanSession:
     # -- the surface ------------------------------------------------------
 
     def on(self, kind: str, listener: Callable[[Dict[str, Any]], None]) -> Callable[[], None]:
-        """Observe every event of the session, or one kind, or ``'*'``.
+        """Observe every event of the session, one event tag, or ``'*'``.
 
-        The listener runs on the reader thread that owns the channel: it must
-        not block, or it holds the client's reader. Tool handlers do not run
-        there - each has its own thread - and a turn being iterated does not
-        either.
+        ``kind`` is ``"event"`` for the stream as a whole, ``"*"`` for
+        everything the session reports, or an event tag such as
+        ``"token"``, ``"tool_request"`` or ``"permission_request"``:
+        ``on("tool_request", fn)`` observes host tool calls, which are
+        answered from the declaration's handler either way.
+
+        The listener runs on the SDK's own dispatch thread, in the order the
+        runtime emitted the events, so it may call back into the runtime -
+        answering a permission request from one is the case that matters -
+        but it shares that thread and must not block for long.
         """
         self._listeners.setdefault(kind, []).append(listener)
 
@@ -238,6 +244,9 @@ class JanSession:
         turn = self._turn(params.get("turnId"), create=True)
         if turn is not None:
             turn._push(event)
+        # By tag as well, so ``on("tool_request")`` and
+        # ``on("permission_request")`` hear what they were told they would.
+        self._notify(tag, event)
         if tag == "tool_request":
             self._answer(event)
         elif tag == "tool_request_cancelled":
@@ -286,9 +295,14 @@ class JanSession:
         return turn
 
     def _emit(self, kind: str, event: Dict[str, Any]) -> None:
+        """One emission, to that kind and to ``"*"``, which hears everything once."""
+        self._notify(kind, event)
+        self._notify("*", event)
+
+    def _notify(self, kind: str, event: Dict[str, Any]) -> None:
+        """Without the ``"*"`` fan-out, for a second tag on an already-emitted
+        event: a tag listener hears it, and ``"*"`` does not hear it twice."""
         for listener in list(self._listeners.get(kind, [])):
-            self.runtime._notify(listener, event)
-        for listener in list(self._listeners.get("*", [])):
             self.runtime._notify(listener, event)
 
     def _answer(self, event: Dict[str, Any]) -> None:

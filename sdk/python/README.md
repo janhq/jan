@@ -41,8 +41,9 @@ with JanRuntime.start() as runtime:
 `prompt()` returns as soon as the turn starts; iterating the turn yields the
 events while it runs, and `result()` blocks for the terminal record. Iterating
 is optional - a host that only calls `result()` still gets it - but an undrained
-turn keeps at most `max_buffered_events` (default 100000) and then drops its
-oldest events, counting them on `turn.dropped`.
+turn keeps at most `max_buffered_events` (default 100000) *unread* events and
+then drops its oldest, counting them on `turn.dropped`. The cap is the buffer,
+not the turn: a reader that keeps up with a turn of any length loses nothing.
 
 ## Host tools
 

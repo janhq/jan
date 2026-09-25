@@ -45,8 +45,10 @@ await runtime.close() // closes stdin, then the process
 `prompt()` returns as soon as the turn starts; the events stream while it runs,
 and `result()` resolves when the runtime closes the turn. Iterating is optional -
 a host that only awaits `result()` still gets the terminal record - but an
-undrained turn keeps at most `maxBufferedEvents` (default 100000) and then drops
-its oldest events, counting them on `turn.dropped`.
+undrained turn keeps at most `maxBufferedEvents` (default 100000) *unread*
+events and then drops its oldest, counting them on `turn.dropped`. The cap is
+the buffer, not the turn: a reader that keeps up with a turn of any length loses
+nothing.
 
 ## Host tools
 

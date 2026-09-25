@@ -90,6 +90,32 @@ const HOLDING = (text) =>
     choices: [{ index: 0, delta: { role: 'assistant', content: text }, finish_reason: null }],
   })}\n\n`
 
+// One token per chunk, paced: a turn long enough that its total output passes
+// the buffer cap while a reader keeps up with it. A cap on the running total
+// would start dropping events this reader never missed.
+const STREAM = (tokens, delayMs, burst = 1) => async (response) => {
+  const chunk = (delta, finish = null, extra = '') =>
+    `data: ${JSON.stringify({
+      id: 'stub-4',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'stub-model',
+      choices: [{ index: 0, delta, finish_reason: finish }],
+      ...extra,
+    })}\n\n`
+  for (const [index, text] of tokens.entries()) {
+    response.write(chunk({ role: 'assistant', content: text }))
+    // `burst` events back to back, then a pause: a reader falls a few events
+    // behind inside a burst and catches up between them, which is what tells a
+    // cap on the buffer apart from a count of everything ever buffered.
+    if (delayMs && (index + 1) % burst === 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  response.end(
+    chunk({}, 'stop', { usage: { prompt_tokens: 9, completion_tokens: tokens.length, total_tokens: 9 + tokens.length } }) +
+      'data: [DONE]\n\n',
+  )
+}
+
 // Serve `replies` in order, one per connection, repeating the last once they
 // run out. Bodies are kept so a test can assert what the model was actually
 // sent - which is where a host tool's answer has to land for a round trip to
@@ -578,6 +604,75 @@ test('a turn nobody drains stays bounded, and still reports its outcome', { skip
   // arrived, which is what a late reader needs most.
   assert.equal(result.stopReason, 'completed')
   assert.ok(turn.dropped > 0, 'the unread turn dropped events instead of growing')
+
+})
+
+test('a turn a reader keeps up with keeps every event, however long it runs', { skip: missingRuntime }, async (t) => {
+  // Twenty bursts of four against a cap of 8: a reader falls a few events
+  // behind inside a burst and catches up between them, so nothing is ever
+  // further behind than the cap -- yet some 60 of the 80 events were buffered
+  // on the way. Counting the turn's output instead of its buffer would drop the
+  // events past the eighth, to a reader that missed none of them.
+  const tokens = Array.from({ length: 80 }, (_, index) => `token ${index} `)
+  const { scratch, runtime } = await connect(t, {
+    replies: [STREAM(tokens, 10, 4)],
+    runtime: { maxBufferedEvents: 8 },
+  })
+  const session = await runtime.createSession({ cwd: scratch.projectPath, model: 'stub-model', ephemeral: true })
+
+  const turn = await session.prompt('ramble')
+  const seen = []
+  for await (const event of turn) if (event.type === 'token') seen.push(event.text)
+  await turn.result()
+
+  assert.equal(turn.dropped, 0, 'a reader that keeps up must not lose events')
+  assert.equal(seen.length, tokens.length)
+
+})
+
+test('a listener by tag hears that tag, not everything', { skip: missingRuntime }, async (t) => {
+  const { scratch, runtime } = await connect(t, {
+    replies: [TOOL_CALL('host__camera_observe', { mode: 'rgb' }), PROSE('a red cup')],
+  })
+  const session = await runtime.createSession({
+    cwd: scratch.projectPath,
+    model: 'stub-model',
+    ephemeral: true,
+    builtins: false,
+    tools: [
+      {
+        name: 'camera_observe',
+        description: 'Look through the camera.',
+        capability: 'read',
+        parameters: { type: 'object', properties: { mode: { type: 'string' } }, required: ['mode'] },
+        handler: () => ({ text: 'a red cup' }),
+      },
+    ],
+  })
+
+  const calls = []
+  const texts = []
+  const prompts = []
+  const every = []
+  const streamed = []
+  session.on('tool_request', (event) => calls.push(event.tool_name))
+  session.on('token', (event) => texts.push(event.text))
+  session.on('permission_request', (event) => prompts.push(event))
+  session.on('*', (event) => every.push(event))
+  session.on('event', (event) => streamed.push(event))
+
+  const turn = await session.prompt('what is on the desk?')
+  for await (const _event of turn);
+  await turn.result()
+
+  // The host is told the name it declared, not the `host__` name the model
+  // calls, and a read never asks permission - so that listener stays silent.
+  assert.deepEqual(calls, ['camera_observe'])
+  assert.equal(texts.join(''), 'a red cup')
+  assert.deepEqual(prompts, [], 'nothing was gated, so nothing may be reported')
+  // A tag is a second name for an event already reported, not a second event:
+  // `'*'` hears the stream once.
+  assert.deepEqual(every, streamed)
 
 })
 

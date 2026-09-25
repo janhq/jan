@@ -206,6 +206,9 @@ export declare class JanSession {
   tools: string[]
   toolSpecs: Record<string, unknown>[]
   readonly maxBufferedEvents: number
+  /** Observe the session's events: `'event'` for the stream, `'*'` for
+   * everything the session reports, or one event tag (`'token'`,
+   * `'tool_request'`, `'permission_request'`, ...). */
   on(kind: EventTag | 'event' | '*', listener: (event: StreamEvent) => void): () => void
   prompt(input: string | unknown[] | { text: string } | { content: unknown[] }): Promise<JanTurn>
   steer(input: string | { text: string }): Promise<null>
