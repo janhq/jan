@@ -562,6 +562,12 @@ pub async fn serve() -> Result<(), String> {
                             // session must not be left pinned to a model that
                             // cannot serve it, which the next turn would report
                             // as a failure of the client's own input.
+                            //
+                            // Servability, not the upstream itself: resolving
+                            // the upstream fetches its credential -- an OAuth
+                            // token, refreshed over the network when expired --
+                            // and an auth failure is not this method's to report
+                            // as `-32602`. The next turn resolves for real.
                             let provider_configs = sessions
                                 .get(&set.session_id)
                                 .expect("checked")
@@ -569,14 +575,14 @@ pub async fn serve() -> Result<(), String> {
                                 .args
                                 .provider_configs
                                 .clone();
-                            match crate::core::agent::upstream::resolve_upstream_for_model(
+                            match crate::core::agent::upstream::unservable_model(
                                 &set.model,
                                 provider_configs,
                             )
                             .await
                             {
-                                Err(message) => error(&id, -32602, &message),
-                                Ok(_) => {
+                                Some(message) => error(&id, -32602, &message),
+                                None => {
                                     let session = sessions.get_mut(&set.session_id).expect("checked");
                                     match rebuild_agent(session, Some(set.model)) {
                                         Ok(agent) => {
