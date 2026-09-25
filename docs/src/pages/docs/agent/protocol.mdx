@@ -25,10 +25,10 @@ CLI run, start with the [Agent quickstart](/docs/agent/quickstart); for an embed
   definitions. Read its `protocol_version`, `envelope`, `requests`, `notifications` and `events`
   sections to navigate the artifact rather than copying field declarations from this page. Print
   it with `jan cli agent rpc-schema`, or write it with
-  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The transport merged in
-  [PR #9049](https://github.com/janhq/jan/pull/9049) and is not in a release yet. See the
-  [CLI `rpc` section](/docs/agent/cli#rpc) for the transport and [RPC host tools](#rpc-host-tools)
-  below for host callbacks.
+  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The implementation and artifact were
+  merged in [PR #9049](https://github.com/janhq/jan/pull/9049) and are on `main`, not yet in a
+  nightly or release. See the [CLI `rpc` section](/docs/agent/cli#rpc) for the transport and
+  [RPC host tools](#rpc-host-tools) below for host callbacks.
 
 Both artifacts are generated and checked for drift against their Rust source by the `protocol
 schema` job in `.github/workflows/rust-check.yml`, which regenerates both and fails the job on a
@@ -46,9 +46,9 @@ publishing or deploying a client.
 
 | | `stream-json` | RPC | ACP |
 | --- | --- | --- | --- |
-| **Release state** | **Shipped** in `main` | **Merged** in `main`, not released | **Planned**, no implementation |
+| **Release state** | **Shipped** in `main` | **On `main`**, not yet in a nightly or release | **Planned**, no implementation |
 | **Record reference** | Generated `protocol/schema.json` | Generated `protocol/rpc-schema.json` | No ACP record artifact or implemented surface |
-| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; `.github/workflows/rust-check.yml:130-176`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) merged, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
+| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; the `protocol schema` job in `.github/workflows/rust-check.yml`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) merged, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
 
 A schema says which records a transport accepts or emits. A surface inventory would say what
 that surface *can* do, but the table above is an evidence-backed release snapshot, not a generated
@@ -59,9 +59,10 @@ what **this RPC session** negotiated (`src-tauri/src/core/cli/rpc.rs:286-297`). 
 `stream-json`'s `init` fields into RPC or treat a negotiated response as universal availability.
 
 <Callout type="warning">
-RPC is not in a shipped CLI or SDK release yet. ACP remains planned. JavaScript and Python SDK
-packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)). Host tools
-exist on both `stream-json` (`--host-tools`) and RPC (below).
+RPC is on `main` but not yet in a nightly or release. ACP remains planned. JavaScript and Python
+SDK packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)). Host tools
+exist on both `stream-json` (`--host-tools`) and RPC (below). See
+[what your build supports](/docs/agent/sdk#what-your-build-supports).
 </Callout>
 
 ## RPC host tools

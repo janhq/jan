@@ -1,0 +1,112 @@
+---
+title: JavaScript Quickstart (Preview)
+description: Run your first embedded Jan Agent task from Node.js, with no dependencies.
+keywords: [Jan, Jan Agent, SDK, JavaScript, TypeScript, Node.js, stream-json, quickstart, embedding]
+---
+
+import { Callout, Steps } from 'nextra/components'
+
+# JavaScript Quickstart (Preview)
+
+Start Jan Agent from a Node.js script, stream its answer, and read the result. You need Node.js 20
+or newer and no packages - only Node's built-in modules.
+
+<Callout type="warning">
+Preview, `agent-nightly` channel only. There is no JavaScript or TypeScript SDK package yet: this
+page drives the `jan` binary directly. See [Agent SDK](/docs/agent/sdk) for what the preview
+supports.
+</Callout>
+
+<Steps>
+
+### Install Jan Agent and connect a provider
+
+```bash
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
+jan login          # or: jan config set --provider anthropic --api-key sk-ant-...
+```
+
+The [Agent quickstart](/docs/agent/quickstart) covers Windows and other providers. Check that a
+task runs from the terminal before you embed it: `jan cli agent run "say hi"`.
+
+### Get the example
+
+Download
+[`first-turn.mjs`](https://github.com/janhq/jan/blob/main/examples/agent-sdk/js/first-turn.mjs),
+or run it from a checkout of the repository.
+
+### Run it
+
+```bash
+node first-turn.mjs "Explain what a mutex is in one sentence."
+```
+
+You should see the session and model on stderr, the answer as it streams, then the stop reason:
+
+```text
+[session 964f0e01-a6e3-4185-993c-dae73dbd4c39 on openai/gpt-6-sol]
+A mutex is a lock that lets only one thread or process access a shared resource at a time.
+[stop after 1 turn(s)]
+```
+
+The answer and the model depend on your provider. Set `JAN_BIN` if `jan` is not on your `PATH`,
+and `JAN_MODEL` to pick a model.
+
+</Steps>
+
+## What the code does
+
+It starts one run with `--output-format stream-json` and reads stdout line by line. Every line is
+one JSON record with a `type`:
+
+```js filename="examples/agent-sdk/js/first-turn.mjs"
+const project = mkdtempSync(join(tmpdir(), 'jan-first-turn-'))
+const args = ['cli', 'agent', 'run', '--project', project, '--output-format', 'stream-json']
+if (process.env.JAN_MODEL) args.push('--model', process.env.JAN_MODEL)
+args.push(task)
+
+const run = spawn(jan, args, { stdio: ['ignore', 'pipe', 'inherit'] })
+const exited = new Promise((resolve) => run.on('close', resolve))
+
+let result = null
+for await (const line of createInterface({ input: run.stdout })) {
+  const record = JSON.parse(line)
+  if (record.type === 'init') {
+    console.error(`[session ${record.session_id} on ${record.model}]`)
+  } else if (record.type === 'token') {
+    process.stdout.write(record.text)
+  } else if (record.type === 'result') {
+    result = record
+  }
+}
+const code = await exited
+```
+
+- **`init`** is the first line of a run that starts: the session id, the model, the tools this run
+  advertises, and what it accepts on stdin. See
+  [the protocol version](/docs/agent/cli#the-protocol-version).
+- **`token`** carries answer text as it streams. Other records - tool calls, tool results,
+  reasoning, usage - arrive in between; a client ignores the types it does not handle.
+- **`result`** is always the last line: the final answer, `stop_reason`, `num_turns`, `usage`,
+  and `is_error` with an `error` object on failure. See [JSON output](/docs/agent/cli#json-output).
+
+`--project` points the run at a fresh temporary directory. The agent's built-in file and shell
+tools are confined to the project, so an example cannot change the directory you ran it from. Point
+it at a real project when you want the agent to work on one.
+
+TypeScript works the same way. To type the records, generate types from the JSON Schema that
+[`jan cli agent schema`](/docs/agent/cli#schema) prints, on a build that has it (see
+[what your build supports](/docs/agent/sdk#what-your-build-supports)).
+
+## If it fails
+
+| You see | Cause and fix |
+| --- | --- |
+| `Error: spawn jan ENOENT` | `jan` is not on `PATH`. Set `JAN_BIN=/path/to/jan` |
+| `run failed: setup_error: no model specified ...` | No provider or model is configured. Run `jan login` or `jan config set`, or set `JAN_MODEL`. A setup failure prints the `result` alone, with no `init` line |
+| `run failed: upstream_error: ...` | The provider refused the request - often a wrong key or a model name the provider does not serve |
+
+## Next
+
+Give the model a function to call in your code: [Host tools](/docs/agent/sdk-tools). To answer
+permission prompts, stop a run or handle exit codes, see [Process & failures](/docs/agent/sdk-runtime).

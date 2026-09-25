@@ -214,13 +214,18 @@ thing that can answer a permission request and it needs to be reading them.
 A follow-up joins the run at the next turn boundary. A `user` message carries either `text` or
 `content`, not both. `content` is the OpenAI content-part array: `text` parts and `image_url` parts
 whose `url` is a base64 `data:` URL. The run shares no filesystem with a client, so a path would
-only work for a client on the same machine. The parts reach the provider exactly as written -- they
-are not re-encoded -- and `init.input_content_parts` publishes the caps before a client sends
-anything: at most 5 MiB decoded per image, 10 MiB across a message's images, 8 images per message,
-and 16 MiB for one input line. Only `image/png`, `image/jpeg`, `image/gif` and `image/webp` are
-accepted. A line over the cap is rejected without being parsed, and `input_error.line` carries at
-most the first 4 KiB of it, with `line_truncated: true`: a rejected line can be as large as the cap
-it crossed.
+only work for a client on the same machine. `init.input_content_parts` publishes the caps before a
+client sends anything: at most 5 MiB decoded per image, 10 MiB across a message's images, 8 images
+per message, and 16 MiB for one input line. Only `image/png`, `image/jpeg`, `image/gif` and
+`image/webp` are accepted. A line over the cap is rejected without being parsed, and
+`input_error.line` carries at most the first 4 KiB of it, with `line_truncated: true`: a rejected
+line can be as large as the cap it crossed.
+
+<Callout type="info">
+A message's parts travel to the provider as written, images included: a `user` turn keeps its text
+and `image_url` parts in order. Whether a model accepts an image is the model's business, not the
+channel's - a provider without vision answers with its own error.
+</Callout>
 
 `decision` is `allow_once`, `allow_always`, or `deny`, and each `request_id` is answerable once. A
 line that parses as none of these is reported as an `input_error` record and skipped, so one bad
@@ -263,6 +268,13 @@ call that breaks the schema never reaches you; the model is told
 and can try again. The check covers `type`, `properties`, `required`, `additionalProperties`,
 `items`, `minItems`, `maxItems`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`,
 `exclusiveMinimum`, `exclusiveMaximum` and `pattern`; any other keyword is ignored, never failed.
+
+A host tool is gated exactly as an MCP tool is: auto-approved in a default run like every other
+call, prompted under `--safe` (its `permission_request` carries `prompt_kind: "mcp"`, the class for
+any opaque third-party capability, naming the qualified `host__<name>`), withheld entirely in
+read-only plan mode, and subject to the same deny list. The `init` handshake echoes the schemas
+actually advertised in `tool_specs`, so a tool you declared but that is missing there was withheld
+by policy and will never be called.
 
 `content` is required even for a failure -- set `is_error: true` and put the reason in `content`,
 which reaches the model as the tool's error. It is either a string or a content-part array of

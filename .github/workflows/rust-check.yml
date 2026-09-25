@@ -128,6 +128,14 @@ jobs:
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --test agent_rpc
 
+      # The Agent SDK cookbook's runnable source, run with the runner's own
+      # node and python3 against the jan binary this commit builds, plus the
+      # check that every docs excerpt still matches the file it quotes.
+      - name: cargo test (Agent SDK examples)
+        run: |
+          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
+            --no-default-features --features cli --test sdk_examples
+
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
   # against a document that no longer describes the channel. The unit test in
