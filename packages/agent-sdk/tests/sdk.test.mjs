@@ -518,19 +518,30 @@ test("a steer lands in the model's next request", { skip: missingRuntime }, asyn
   const { provider, scratch, runtime } = await connect(t, {
     replies: [TOOL_CALL('host__camera_observe', { frame: 1 }), PROSE('the left bench is clear')],
   })
+  // The steer has to be in before the tool's answer goes back: that answer ends
+  // the window in which the runtime still sees the turn as steerable. The
+  // handler runs inside that window, so the steer cannot lose a race the way a
+  // listener on a dispatch thread can.
   const session = await runtime.createSession({
     cwd: scratch.projectPath,
     model: 'stub-model',
     ephemeral: true,
     builtins: false,
     permissions: 'host',
-    tools: [{ name: 'camera_observe', capability: 'read', handler: () => ({ text: 'the bench' }) }],
+    tools: [
+      {
+        name: 'camera_observe',
+        capability: 'read',
+        handler: async () => {
+          await session.steer('also check the left bench')
+          return { text: 'the bench' }
+        },
+      },
+    ],
   })
 
   const turn = await session.prompt('look at the bench')
-  for await (const event of turn) {
-    if (event.type === 'tool_request') await session.steer('also check the left bench')
-  }
+  for await (const _event of turn);
 
   const result = await turn.result()
   assert.equal(result.stopReason, 'completed')

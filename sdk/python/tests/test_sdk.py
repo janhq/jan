@@ -150,6 +150,15 @@ class SdkTest(unittest.TestCase):
 
 
     def test_a_steer_lands_in_the_models_next_request(self) -> None:
+        # The steer has to be in before the tool's answer goes back: that answer
+        # ends the window in which the runtime still sees the turn as
+        # steerable. The handler runs inside that window; a listener does not,
+        # because the SDK dispatches listeners asynchronously - a steer from one
+        # races the answer, which is how this test used to fail on a slow runner.
+        def observe(_args, _call):
+            session.steer("also check the left bench")
+            return {"text": "the bench"}
+
         scratch = self.prepare([tool_call("host__camera_observe", {"frame": 1}), prose("the left bench is clear")])
         with scratch.start() as runtime:
             session = runtime.create_session(
@@ -158,15 +167,11 @@ class SdkTest(unittest.TestCase):
                 ephemeral=True,
                 builtins=False,
                 permissions="host",
-                tools=[
-                    HostTool(name="camera_observe", capability="read", handler=lambda _args, _call: {"text": "the bench"})
-                ],
+                tools=[HostTool(name="camera_observe", capability="read", handler=observe)],
             )
             turn = session.prompt("look at the bench")
-            for event in turn:
-                if event["type"] == "tool_request":
-                    session.steer("also check the left bench")
-
+            events = list(turn)
+            self.assertTrue(events, "the turn streamed")
             self.assertEqual(turn.result().stop_reason, "completed")
             # The steer is delivered at the turn's next safe point, which is the
             # request the runtime builds from the tool result.
