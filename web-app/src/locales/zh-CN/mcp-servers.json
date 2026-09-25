@@ -68,6 +68,34 @@
     "selectRouterModelPlaceholder": "选择路由模型…",
     "routerModelSearchPlaceholder": "搜索模型…",
     "routerModelEmptyList": "没有可用的轻量模型。请添加更小的模型，或在「模型」中配置 API 密钥。",
-    "routerModelEmptySearch": "没有与「{{query}}」匹配的结果。"
+    "routerModelEmptySearch": "没有与「{{query}}」匹配的结果。",
+    "maxToolOutputChars": "工具输出最大字符数",
+    "maxToolOutputCharsDesc": "对话中保留的最长工具结果。超出此限制的内容将被截断并标记为已截断，以防止单个过大的结果耗尽模型的上下文。设为 0 可完整保留结果。"
+  },
+  "auth": {
+    "label": "认证：",
+    "state": {
+      "notApplicable": "无需认证",
+      "staticHeader": "Authorization 请求头",
+      "authenticated": "已认证",
+      "expired": "已过期",
+      "staleResource": "针对其他 URL 签发",
+      "unauthenticated": "未认证"
+    },
+    "expiresIn": "{{duration}} 后过期",
+    "authenticate": "登录",
+    "reauthenticate": "重新认证",
+    "clear": "清除认证",
+    "waiting": "正在等待浏览器...",
+    "openSignInPage": "打开登录页面",
+    "needsAuth": "{{serverName}} 需要认证",
+    "needsAuthHint": "登录此服务器以进行连接。",
+    "authorized": "已登录 {{serverName}}",
+    "authorizeFailed": "{{serverName}} 登录失败",
+    "cleared": "已清除 {{serverName}} 的存储凭据",
+    "nothingToClear": "{{serverName}} 没有存储的凭据",
+    "clearFailed": "无法清除 {{serverName}} 的凭据",
+    "renew": "续期会话",
+    "expiredAgo": "{{duration}} 前已过期"
   }
 }

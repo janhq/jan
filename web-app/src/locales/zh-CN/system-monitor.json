@@ -24,5 +24,7 @@
   "active": "活动",
   "performance": "性能",
   "resources": "资源",
-  "refresh": "刷新"
+  "refresh": "刷新",
+  "gpus": "GPU",
+  "vram": "显存"
 }
