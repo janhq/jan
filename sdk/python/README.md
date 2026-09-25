@@ -17,10 +17,55 @@ process serving many addressable sessions.
 pip install jan-agent-sdk
 ```
 
-The runtime binary is separate: `jan` must be on `PATH`, or named by
-`$JAN_BIN` (the `bin` argument overrides both). A package that ships the runtime
-is the distribution half of the same protocol; until then, build it with
-`make agent` in the Jan repository.
+The runtime binary is separate, and there are three ways to have one: on `PATH`,
+named by `$JAN_BIN` (the `bin` argument overrides both), or installed by this
+package from the channel Jan publishes. That channel is a manifest naming, per
+platform, the artifact and its SHA-256, so an install is reproducible rather
+than whatever the URL serves today:
+
+```python
+from jan_agent_sdk import JanRuntime, install_runtime
+
+runtime_bin = install_runtime()            # downloaded once, then cached
+with JanRuntime.start(bin=runtime_bin.bin) as runtime:
+    ...
+```
+
+`install_runtime()` maps this platform to its artifact (`darwin-universal`,
+`linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`), verifies
+the published digest before extracting anything, and only then renames the
+install into `JAN_AGENT_HOME` or the per-user cache directory. An install that
+failed its digest, or that was interrupted mid-extract, is never visible as one:
+`find_runtime()` answers `None` for it. No Node and no third-party package are
+involved.
+
+Each successful download gets an immutable generation directory. Only the small
+lookup marker is atomically replaced, so concurrent installs and republished
+versions cannot delete or change a binary path already returned to a caller.
+Old generations remain until the cache is manually removed while no runtimes
+are using it. Relative cache roots are resolved to absolute paths.
+Tar extraction requires Python's safe data filter (Python 3.11.4+); an older
+interpreter is refused rather than falling back to unsafe extraction.
+
+`version` and `sha256` pin. A matching cached install is returned without network
+access; otherwise both are checked against the manifest. A mismatch is an error
+rather than a substitution. `manifest_url` names another channel;
+the default is the nightly one. The macOS artifact is notarized, and getting a
+runtime this way needs no Rust toolchain and no Jan Desktop.
+
+```python
+pinned = install_runtime(version="0.8.4-50")   # must be what the manifest publishes
+found = find_runtime("0.8.4-50")               # reads the cache, no network
+```
+
+The nightly channel also publishes a shell installer, which is what the
+[jan.ai SDK pages](https://jan.ai/docs/agent/sdk) use:
+
+```bash
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
+```
+
+To build your own instead, `make agent` in the Jan repository.
 
 ## Quickstart
 

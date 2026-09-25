@@ -56,6 +56,7 @@ EVENT_TAGS: tuple[str, ...] = (
     "tool_request",
     "tool_request_cancelled",
     "tool_details",
+    "request_provenance",
 )
 
 RpcMethod = Literal[
@@ -104,6 +105,7 @@ EventTag = Literal[
     "tool_request",
     "tool_request_cancelled",
     "tool_details",
+    "request_provenance",
 ]
 
 # -------------------------------------------------------------------------
@@ -146,6 +148,16 @@ class PendingSubagent(TypedDict):
 
 # Who gates host tool calls. `jan` prompts through `permission_request` the way any opaque tool is prompted; `host` means the host's own callback is the gate, so Jan never asks about a host tool.
 PermissionOwner = Literal["jan", "host"]
+
+# One image in an outbound request, as [`StreamEvent::RequestProvenance`] reports it: identity, not content.
+class ProvenanceImage(TypedDict):
+    # SHA-256 over the image's decoded bytes.
+    sha256: str
+    mime_type: str
+    # Decoded length in bytes.
+    bytes: int
+    # The host tool call whose result carried it, when one did. `None` for an image the user attached.
+    tool_call_id: NotRequired[Union[str, None]]
 
 class Question(TypedDict):
     id: str
@@ -457,6 +469,29 @@ class ToolDetailsEvent(TypedDict):
     details: Any
     type: Literal["tool_details"]
 
+class RequestProvenanceEvent(TypedDict):
+    """`item/request_provenance`"""
+
+    # Which run made the request: `None` for the main run, the child's run id for a subagent.
+    run_id: NotRequired[Union[str, None]]
+    # The session the request belongs to, as the run's handshake names it (the correlation id the request carries is derived from it).
+    session_id: NotRequired[Union[str, None]]
+    # The configured provider the model resolved to.
+    provider: NotRequired[Union[str, None]]
+    # The model id the upstream receives, without a `<provider>/` prefix.
+    model: str
+    # The wire API the request is built for (`anthropic`, `google`, `openai-responses`), absent for chat/completions.
+    api_type: NotRequired[Union[str, None]]
+    # SHA-256 of the request body as Jan built it, as canonical JSON: every object's keys sorted, recursively, so re-encoding the same members in another order gives the same digest. It is the value that makes two runs comparable even when a field this record does not itemize has changed. The body hashed is the one Jan built, before the provider adapter appends its transport fields (`stream`, `stream_options`), so it is not byte-for-byte what the provider received: a harness recomputes it by sorting keys and dropping those two fields.
+    request_sha256: str
+    # The canonical body's serialized length. Key order does not change it, so it describes the built body either way.
+    body_bytes: int
+    # SHA-256 of the `tools` array as sent, canonical JSON in the same sense, able to change while the model id does not.
+    tools_sha256: NotRequired[Union[str, None]]
+    # Every image in the body, in order, hashed over its decoded bytes so the host can hash the same frame it captured.
+    images: NotRequired[list[ProvenanceImage]]
+    type: Literal["request_provenance"]
+
 #: Every event a session may report, discriminated on ``type``.
 StreamEvent = Union[
     TokenEvent,
@@ -486,4 +521,5 @@ StreamEvent = Union[
     ToolRequestEvent,
     ToolRequestCancelledEvent,
     ToolDetailsEvent,
+    RequestProvenanceEvent,
 ]

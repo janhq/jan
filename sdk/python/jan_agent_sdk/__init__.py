@@ -18,6 +18,17 @@ See ``README.md`` for host tools, images and process ownership.
 
 from ._generated import EVENT_TAGS, PROTOCOL_VERSION
 from .errors import JanRpcError, JanRuntimeError
+from .install import (
+    MANIFEST_URL,
+    PLATFORM_KEYS,
+    InstalledRuntime,
+    JanInstallError,
+    bin_name,
+    find_runtime,
+    install_runtime,
+    platform_key,
+    runtime_root,
+)
 from .runtime import CLIENT_NAME, CLIENT_VERSION, JanRuntime
 from .session import HostTool, HostToolCall, JanSession, JanTurn, TurnResult
 
@@ -27,9 +38,13 @@ __all__ = [
     "CLIENT_NAME",
     "CLIENT_VERSION",
     "EVENT_TAGS",
+    "MANIFEST_URL",
+    "PLATFORM_KEYS",
     "PROTOCOL_VERSION",
     "HostTool",
     "HostToolCall",
+    "InstalledRuntime",
+    "JanInstallError",
     "JanRpcError",
     "JanRuntime",
     "JanRuntimeError",
@@ -37,4 +52,9 @@ __all__ = [
     "JanTurn",
     "TurnResult",
     "__version__",
+    "bin_name",
+    "find_runtime",
+    "install_runtime",
+    "platform_key",
+    "runtime_root",
 ]

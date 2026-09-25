@@ -20,6 +20,20 @@ import { createInterface } from 'node:readline'
 
 import { EVENT_TAGS, PROTOCOL_VERSION } from './generated/rpc-types.js'
 
+// Fetching the runtime this client spawns is its own concern - the manifest, the
+// digest, the platform table - so it lives in its own module and is re-exported
+// here as the package's one entry point.
+export {
+  JanInstallError,
+  MANIFEST_URL,
+  PLATFORM_KEYS,
+  binName,
+  findRuntime,
+  installRuntime,
+  platformKey,
+  runtimeRoot,
+} from './install.js'
+
 const require = createRequire(import.meta.url)
 const { version: SDK_VERSION } = require('../package.json')
 
