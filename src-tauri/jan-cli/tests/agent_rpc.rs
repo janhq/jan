@@ -974,3 +974,74 @@ fn model_set_refuses_a_model_no_provider_serves() {
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);
 }
+
+/// Every request the provider has seen that carries recalled project memory.
+fn recalled(seen: &std::sync::Mutex<Vec<serde_json::Value>>) -> usize {
+    let requests = seen.lock().unwrap();
+    requests
+        .iter()
+        .filter(|request| request.to_string().contains("# Project Memory"))
+        .count()
+}
+
+fn start_with(rpc: &mut Rpc, id: u64, cwd: &Path, ephemeral: bool) -> String {
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session/start","params":{
+        "cwd":cwd,"model":"stub-model","ephemeral":ephemeral
+    }}));
+    started["result"]["sessionId"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{started}"))
+        .to_owned()
+}
+
+fn complete_turn(rpc: &mut Rpc, id: u64, session_id: &str) {
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"turn/start","params":{"sessionId":session_id,"input":"where is the arm"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+    let done = rpc
+        .read_until(|record| record["method"] == "turn/completed")
+        .expect("the turn completes");
+    assert_eq!(done["params"]["stopReason"], "completed", "{done}");
+}
+
+/// `ephemeral` means nothing outlives the session, and project memory is part
+/// of that: one episode's answer ("the arm reached bin") must not be recalled
+/// into a later episode's prompt, even though they share a project. The saved
+/// control proves the recall is observable in this setup at all.
+#[test]
+fn an_ephemeral_session_neither_indexes_nor_recalls_project_memory() {
+    let scratch = scratch("ephemeral-memory");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+
+    let saved = scratch.join("project");
+    let first = start_with(&mut rpc, 3, &saved, false);
+    complete_turn(&mut rpc, 4, &first);
+    let second = start_with(&mut rpc, 5, &saved, false);
+    complete_turn(&mut rpc, 6, &second);
+    assert_eq!(recalled(&seen), 1, "a saved session recalls the earlier answer");
+
+    let isolated = scratch.join("isolated");
+    std::fs::create_dir_all(&isolated).unwrap();
+    let episode = start_with(&mut rpc, 7, &isolated, true);
+    complete_turn(&mut rpc, 8, &episode);
+    // A model switch and a fork rebuild the agent; both keep the setting.
+    let set = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":9,"method":"session/model/set","params":{"sessionId":episode,"model":"stub-model"}}));
+    assert_eq!(set["result"]["model"], "stub-model", "{set}");
+    complete_turn(&mut rpc, 10, &episode);
+    let fork = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":11,"method":"session/fork","params":{"sessionId":episode}}));
+    let fork = fork["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{fork}")).to_owned();
+    complete_turn(&mut rpc, 12, &fork);
+    let next = start_with(&mut rpc, 13, &isolated, true);
+    complete_turn(&mut rpc, 14, &next);
+    assert_eq!(
+        recalled(&seen),
+        1,
+        "no ephemeral turn is sent an earlier episode's answer"
+    );
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}

@@ -1,11 +1,11 @@
 //! Conformance suite for the host-tool / embedded-session contract
 //! (jan-internal#368).
 //!
-//! That issue defines the contract the Jan Agent SDKs are written against: two
+//! That issue defines the contract the Jan ADKs are written against: two
 //! message tables, a requirement per row with the consumer code that proves it,
 //! and an acceptance test that already runs it (Robot Studio swaps a worker and
 //! keeps every test). Step 1 of its order of work is this suite, written before
-//! the SDK exists because it is the acceptance test the later steps have to
+//! the ADK exists because it is the acceptance test the later steps have to
 //! satisfy.
 //!
 //! Two rules shape it:
@@ -535,7 +535,7 @@ fn every_implemented_session_row_declares_what_it_produces() {
 }
 
 /// The `ready` row is the one a client blocks on, so its gap is named here
-/// rather than discovered by whoever ports the first SDK.
+/// rather than discovered by whoever ports the first ADK.
 ///
 /// The count in the name moves with the gap: `tool_specs` landed on the
 /// handshake, so what `ready` still waits for is `provider` and `models`.

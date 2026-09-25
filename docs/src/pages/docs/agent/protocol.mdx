@@ -8,7 +8,7 @@ import { Callout } from 'nextra/components'
 
 # Protocol Records
 
-**You do not need this page for the SDK quickstarts.** The SDK handles the messages for you.
+**You do not need this page for the ADK quickstarts.** The ADK handles the messages for you.
 Use this reference when building your own client, debugging the channel, or generating types.
 
 ## Choose the transport first
@@ -20,11 +20,11 @@ Use this reference when building your own client, debugging the channel, or gene
 | First exchange | `initialize` request, then `initialized` notification | The runtime emits `init` when setup succeeds |
 | During work | JSON-RPC requests and notifications such as `item/token` | Records with a `type`, such as `token` |
 | End of work | `turn/completed`; the process stays available | `result`, then process exit |
-| Best for | SDKs and long-lived applications | Direct CLI automation |
+| Best for | ADKs and long-lived applications | Direct CLI automation |
 
 These are different envelopes. Do not send a stream-json `abort` record to RPC, or parse an RPC
 notification as a bare stream-json event. For normal application code, use the
-[JavaScript](/docs/agent/sdk-ts) or [Python](/docs/agent/sdk-python) SDK.
+[JavaScript](/docs/agent/adk-ts) or [Python](/docs/agent/adk-python) ADK.
 
 ## Read the generated records
 
@@ -50,7 +50,7 @@ Use RPC's `initialize` response for its negotiated protocol and capabilities. Fo
 use that run's `init` record. These are not interchangeable capability inventories.
 
 <Callout type="info">
-The current SDKs use RPC. If your binary has no `rpc` command, update the nightly runtime.
+The current ADKs use RPC. If your binary has no `rpc` command, update the nightly runtime.
 ACP is a separate, planned integration, not another name for either protocol.
 </Callout>
 
@@ -152,23 +152,23 @@ accepts ids it does not list (a gateway, a proxy) is used as asked rather than o
 model id that no provider lists is refused as above.
 
 Every mutating method is answered. A client that gets no answer, for example because the process
-died, should treat the session as gone and close it. This fail-closed handling belongs to the SDK
+died, should treat the session as gone and close it. This fail-closed handling belongs to the ADK
 or client, not the wire protocol.
 
 ## Direct stream-json examples
 
-Prefer the SDK unless you need to own the pipes yourself. The runnable examples in
-[`examples/agent-sdk`](https://github.com/janhq/jan/tree/main/examples/agent-sdk) show that
+Prefer the ADK unless you need to own the pipes yourself. The runnable examples in
+[`examples/adk`](https://github.com/janhq/jan/tree/main/examples/adk) show that
 lower-level alternative. CI runs all four against a real runtime and checks these excerpts
-against their source. They are not the RPC SDK examples above.
+against their source. They are not the RPC ADK examples above.
 
 <details>
-<summary>Read a streamed answer without the SDK</summary>
+<summary>Read a streamed answer without the ADK</summary>
 
 The complete scripts handle startup and cleanup. Their reading loops distinguish answer text
 from the terminal result:
 
-```js filename="examples/agent-sdk/js/first-turn.mjs"
+```js filename="examples/adk/js/first-turn.mjs"
 for await (const line of createInterface({ input: run.stdout })) {
   const record = JSON.parse(line)
   if (record.type === 'init') {
@@ -181,7 +181,7 @@ for await (const line of createInterface({ input: run.stdout })) {
 }
 ```
 
-```python filename="examples/agent-sdk/python/first_turn.py"
+```python filename="examples/adk/python/first_turn.py"
     for line in run.stdout:
         record = json.loads(line)
         if record["type"] == "init":
@@ -195,13 +195,13 @@ for await (const line of createInterface({ input: run.stdout })) {
 </details>
 
 <details>
-<summary>Answer a host tool call without the SDK</summary>
+<summary>Answer a host tool call without the ADK</summary>
 
 The complete scripts declare a weather fixture and handle permissions. These dispatch blocks
 show the extra work a direct client owns: looking up a handler, reporting errors and matching
-the request id. The SDK performs that dispatch for you.
+the request id. The ADK performs that dispatch for you.
 
-```js filename="examples/agent-sdk/js/host-tool.mjs"
+```js filename="examples/adk/js/host-tool.mjs"
     case 'tool_request': {
       // `tool_name` is the name declared above, without `host__`.
       let content
@@ -221,7 +221,7 @@ the request id. The SDK performs that dispatch for you.
     }
 ```
 
-```python filename="examples/agent-sdk/python/host_tool.py"
+```python filename="examples/adk/python/host_tool.py"
             elif kind == "tool_request":
                 # `tool_name` is the name declared above, without `host__`.
                 handler = HANDLERS.get(record["tool_name"])

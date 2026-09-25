@@ -2717,9 +2717,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@janhq/agent-sdk@workspace:packages/agent-sdk":
+"@janhq/adk@workspace:packages/adk":
   version: 0.0.0-use.local
-  resolution: "@janhq/agent-sdk@workspace:packages/agent-sdk"
+  resolution: "@janhq/adk@workspace:packages/adk"
   dependencies:
     "@types/node": "npm:^22.10.0"
     typescript: "npm:^5.6.2"

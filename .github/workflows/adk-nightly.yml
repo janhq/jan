@@ -1,0 +1,140 @@
+name: Jan ADK Nightly
+
+on:
+  workflow_run:
+    workflows: ['Jan Agent CLI - Nightly Build']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/adk-nightly.yml'
+      - 'scripts/adk-nightly/**'
+      - 'packages/adk/**'
+      - 'adk/python/**'
+      - 'protocol/rpc-schema.json'
+
+permissions:
+  contents: read
+
+# Only one publisher can advance latest. PR checks do not cancel a release.
+concurrency:
+  group: adk-nightly-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    outputs:
+      build: ${{ steps.metadata.outputs.build }}
+      publish: ${{ steps.metadata.outputs.publish }}
+      ref: ${{ steps.metadata.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate generated ADK types
+        working-directory: packages/adk
+        run: |
+          npm install --workspaces=false --ignore-scripts
+          npm run check-types --workspaces=false
+      - name: Install wheel builder
+        run: python -m pip install build==1.2.2.post1
+      - name: Identify immutable build
+        id: metadata
+        env:
+          SOURCE_REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
+          TRUSTED: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository) }}
+        run: |
+          echo "ref=$SOURCE_REVISION" >> "$GITHUB_OUTPUT"
+          echo "build=$SOURCE_REVISION-$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "publish=$TRUSTED" >> "$GITHUB_OUTPUT"
+      - name: Package both ADKs and snapshot runtime
+        env:
+          SOURCE_REVISION: ${{ steps.metadata.outputs.ref }}
+        run: >-
+          python scripts/adk-nightly/package.py --output adk-dist
+          --sha "$SOURCE_REVISION" --build "$GITHUB_RUN_ID.$GITHUB_RUN_ATTEMPT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adk-nightly
+          path: adk-dist/
+          if-no-files-found: error
+      - name: Stage immutable public artifacts
+        if: steps.metadata.outputs.publish == 'true'
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          BUILD: ${{ steps.metadata.outputs.build }}
+        run: >-
+          aws s3 cp adk-dist/ "s3://$BUCKET/adk-nightly/$BUILD/" --recursive
+          --cache-control 'public,max-age=31536000,immutable'
+
+  smoke:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04-arm, macos-15, macos-15-intel, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.package.outputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v4
+        if: needs.package.outputs.publish != 'true'
+        with:
+          name: adk-nightly
+          path: adk-dist
+      - name: Smoke public downloads against pinned runtime
+        if: needs.package.outputs.publish == 'true'
+        env:
+          BUILD: ${{ needs.package.outputs.build }}
+        run: python scripts/adk-nightly/smoke.py "https://delta.jan.ai/adk-nightly/$BUILD/manifest.json"
+        shell: bash
+      # The same shell as the publish smoke: on Windows, Git Bash puts GNU tar
+      # ahead of System32 on PATH, and a PR must see what publication will.
+      - name: Smoke PR artifacts without publication credentials
+        if: needs.package.outputs.publish != 'true'
+        run: python scripts/adk-nightly/smoke.py adk-dist/manifest.json --artifacts adk-dist
+        shell: bash
+
+  promote:
+    needs: [package, smoke]
+    if: needs.package.outputs.publish == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: adk-nightly
+          path: adk-dist
+      # All versioned assets are already public and tested. A single object PUT
+      # switches each discovery document from one complete build to another.
+      - name: Advance validated nightly discovery
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+        run: |
+          aws s3 cp adk-dist/manifest.json "s3://$BUCKET/adk-nightly/manifest.json" --content-type application/json --cache-control no-cache
+          aws s3 cp adk-dist/index.html "s3://$BUCKET/adk-nightly/index.html" --content-type text/html --cache-control no-cache

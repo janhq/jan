@@ -1,5 +1,6 @@
 //! Session-scoped JSON-RPC over LF-delimited stdio. Stdout contains only protocol records.
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
@@ -269,16 +270,47 @@ fn output_lines(mut rx: mpsc::Receiver<Value>) -> std::thread::JoinHandle<()> {
     })
 }
 
+/// Everything the engine already emitted, in order. Waits for room rather than
+/// failing on a full queue: the queue is drained by the dispatcher, whose own
+/// bounded writer queue is what ends a turn for a client that stopped reading.
 async fn forward_events(
     source: &mut mpsc::UnboundedReceiver<StreamEvent>,
     events: &mpsc::Sender<TurnMessage>,
 ) -> Result<(), String> {
     while let Some(event) = source.recv().await {
         events
-            .try_send(TurnMessage::Event(event))
-            .map_err(|_| "RPC event queue overloaded or closed".to_owned())?;
+            .send(TurnMessage::Event(event))
+            .await
+            .map_err(|_| "RPC event queue closed".to_owned())?;
     }
     Ok(())
+}
+
+/// Run `engine` while relaying the events it emits into `rx`, in order.
+///
+/// A burst larger than `events` is a model streaming fast, not a client that
+/// stopped reading, so a full queue waits for the dispatcher rather than ending
+/// the turn; the engine is not polled meanwhile. The dispatcher's bounded writer
+/// queue is what ends a turn nobody is reading.
+async fn pump_turn(
+    engine: impl Future<Output = Result<Value, String>>,
+    rx: &mut mpsc::UnboundedReceiver<StreamEvent>,
+    events: &mpsc::Sender<TurnMessage>,
+) -> Result<Value, String> {
+    tokio::pin!(engine);
+    loop {
+        tokio::select! {
+            run = &mut engine => return run,
+            event = rx.recv() => match event {
+                Some(event) => {
+                    if events.send(TurnMessage::Event(event)).await.is_err() {
+                        return Err("RPC event queue closed".to_owned());
+                    }
+                }
+                None => return Err("RPC event stream closed".to_owned()),
+            },
+        }
+    }
 }
 
 fn start_turn(
@@ -311,28 +343,14 @@ fn start_turn(
     });
     let runner = tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut result = {
-            let engine = run_orchestration_steered(&tx, &body, &args, Some(&steering_tx));
-            tokio::pin!(engine);
-            loop {
-                tokio::select! {
-                    run = &mut engine => break run,
-                    event = rx.recv() => {
-                        match event {
-                            Some(event) => {
-                                if events.try_send(TurnMessage::Event(event)).is_err() {
-                                    break Err("RPC event queue overloaded or closed".to_owned());
-                                }
-                            }
-                            None => break Err("RPC event stream closed".to_owned()),
-                        }
-                    }
-                }
-            }
-        };
-        // The run is complete, so stop producing events and drain only what
-        // the engine already emitted. A full bounded queue is an overload,
-        // not permission to buffer the remaining deltas without a bound.
+        let mut result = pump_turn(
+            run_orchestration_steered(&tx, &body, &args, Some(&steering_tx)),
+            &mut rx,
+            &events,
+        )
+        .await;
+        // The run is complete, so stop producing events and deliver what the
+        // engine already emitted.
         drop(tx);
         if let Err(message) = forward_events(&mut rx, &events).await {
             result = Err(message);
@@ -375,6 +393,7 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
     agent.args.session_id = Some(source.id.clone());
     agent.args.host_tools = source.agent.args.host_tools.clone();
     agent.args.host_owns_gate = source.agent.args.host_owns_gate;
+    agent.args.project_memory = source.agent.args.project_memory;
     Ok(agent)
 }
 
@@ -522,6 +541,9 @@ pub async fn serve() -> Result<(), String> {
                                     Ok(mut agent) => {
                                         agent.args.host_tools = host_tools;
                                         agent.args.host_owns_gate = start.permissions == PermissionOwner::Host;
+                                        // "Not saved" covers project memory too: an ephemeral
+                                        // session's answers must not reach a later session.
+                                        agent.args.project_memory = !start.ephemeral;
                                         let sid = uuid::Uuid::new_v4().to_string();
                                         // The run reports the session by the id this client holds, not
                                         // by the private one the agent was built with: provenance and the
@@ -831,19 +853,52 @@ mod tests {
     use super::*;
     use crate::core::cli::stream_input::{MAX_IMAGES, MAX_IMAGE_BYTES};
 
-    #[tokio::test]
-    async fn event_forwarder_stops_receiving_when_its_bounded_queue_is_full() {
-        let (upstream, mut source) = mpsc::unbounded_channel();
-        let (downstream, _blocked) = mpsc::channel(1);
-        downstream
-            .send(TurnMessage::Event(StreamEvent::Parked))
-            .await
-            .unwrap();
-        let forward = tokio::spawn(async move { forward_events(&mut source, &downstream).await });
+    /// What the runner does: pump while the engine runs, then drain the rest.
+    async fn relay(
+        burst: usize,
+        events: mpsc::Sender<TurnMessage>,
+    ) -> Result<Value, String> {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // Bursts of 50 with a yield between them: some are relayed while the
+        // engine is still running, the last is drained after it returns.
+        let engine = async {
+            for i in 0..burst {
+                tx.send(StreamEvent::Token { text: i.to_string() }).unwrap();
+                if i % 50 == 49 {
+                    tokio::task::yield_now().await;
+                }
+            }
+            Ok(json!("done"))
+        };
+        let result = pump_turn(engine, &mut rx, &events).await;
+        drop(tx);
+        forward_events(&mut rx, &events).await?;
+        result
+    }
 
-        upstream.send(StreamEvent::Parked).unwrap();
-        assert!(forward.await.unwrap().unwrap_err().contains("overloaded"));
-        assert!(upstream.send(StreamEvent::Parked).is_err(), "events should stop at the bounded boundary");
+    #[tokio::test]
+    async fn a_burst_larger_than_the_turn_queue_reaches_a_slow_reader_in_order() {
+        let (events, mut receiver) = mpsc::channel(4);
+        let reader = tokio::spawn(async move {
+            let mut seen = Vec::new();
+            while let Some(message) = receiver.recv().await {
+                if let TurnMessage::Event(StreamEvent::Token { text }) = message {
+                    seen.push(text);
+                }
+                tokio::task::yield_now().await;
+            }
+            seen
+        });
+        assert_eq!(relay(200, events).await.unwrap(), json!("done"));
+        let expected: Vec<String> = (0..200).map(|i| i.to_string()).collect();
+        assert_eq!(reader.await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn a_dispatcher_that_dropped_the_turn_ends_it() {
+        let (events, receiver) = mpsc::channel(1);
+        drop(receiver);
+        assert!(relay(3, events).await.unwrap_err().contains("closed"));
     }
 
     fn image(decoded: usize) -> Value {
