@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process'
 import { readdirSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, relative, isAbsolute } from 'node:path'
 import test from 'node:test'
 
 import {
@@ -29,11 +29,11 @@ const VERSION = '0.0.0-test'
 
 // A tarball holding a `jan` that is executable and does nothing. The installer
 // only has to put a binary there; whether it runs is the runtime's business.
-async function makeArchive(dir) {
+async function makeArchive(dir, content = VERSION) {
   const staged = join(dir, 'staged')
   await mkdir(staged, { recursive: true })
   const name = binName()
-  await writeFile(join(staged, name), `#!/bin/sh\necho ${VERSION}\n`)
+  await writeFile(join(staged, name), `#!/bin/sh\necho ${content}\n`)
   const archive = join(dir, 'jan-runtime.tar.gz')
   execFileSync('tar', ['-czf', archive, '-C', staged, name])
   return archive
@@ -156,13 +156,7 @@ test('a digest that does not match is an error, and leaves nothing behind', asyn
       },
     )
     assert.equal(await findRuntime({ version: VERSION, root }), null)
-    // No staging directory survives: a listing of the version directory, if it
-    // exists at all, holds no platform directory.
-    const versions = await readFile(join(root, VERSION, platformKey()), 'utf8').then(
-      () => 'present',
-      () => 'absent',
-    )
-    assert.equal(versions, 'absent')
+    assert.deepEqual(readdirSync(join(root, VERSION)), [], 'no staged or published install survives')
   } finally {
     await published.close()
     await rm(root, { recursive: true, force: true })
@@ -229,13 +223,15 @@ test('a channel that republishes a version under a new digest installs again', a
     // apart, so this is a re-install rather than a cache hit.
     const rebuilt = join(source, 'second')
     await mkdir(rebuilt, { recursive: true })
-    const second = await channel({ archive: await makeArchive(rebuilt) })
+    const second = await channel({ archive: await makeArchive(rebuilt, 'replacement') })
     try {
       const again = await installRuntime({ manifestUrl: second.url, root })
       assert.equal(again.version, VERSION)
       assert.equal(again.cached, false, 'a republished digest is not the install on disk')
       assert.notEqual(again.sha256, installed.sha256)
       assert.equal(again.sha256, sha256(await readFile(join(rebuilt, 'jan-runtime.tar.gz'))))
+      assert.equal(await readFile(installed.bin, 'utf8'), `#!/bin/sh\necho ${VERSION}\n`)
+      assert.equal(await readFile(again.bin, 'utf8'), '#!/bin/sh\necho replacement\n')
     } finally {
       await second.close()
     }
@@ -288,4 +284,38 @@ test('the runtime root follows JAN_AGENT_HOME, and a marker without a binary is 
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('concurrent installs use isolated staging even within one clock tick', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'jan-concurrent-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const published = await channel({ archive: await makeArchive(root) })
+  t.after(published.close)
+  t.mock.method(Date, 'now', () => 123)
+  const installs = await Promise.all(Array.from({ length: 4 }, () =>
+    installRuntime({ root, manifestUrl: published.url })))
+  for (const installed of installs) {
+    assert.equal(await readFile(installed.bin, 'utf8'), `#!/bin/sh\necho ${VERSION}\n`)
+  }
+  const found = await findRuntime({ root, version: VERSION })
+  assert.equal(await readFile(found.bin, 'utf8'), `#!/bin/sh\necho ${VERSION}\n`)
+})
+
+test('relative cache roots return runnable absolute binary paths', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'jan-relative-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const published = await channel({ archive: await makeArchive(root) })
+  t.after(published.close)
+  const installed = await installRuntime({ root: relative(process.cwd(), root), manifestUrl: published.url })
+  assert.equal(isAbsolute(installed.bin), true)
+  assert.equal(await readFile(installed.bin, 'utf8'), `#!/bin/sh\necho ${VERSION}\n`)
+})
+
+test('untrusted version paths are refused before downloading', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'jan-version-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const published = await channel({ archive: await makeArchive(root), version: '../escaped' })
+  t.after(published.close)
+  await assert.rejects(installRuntime({ root: join(root, 'cache'), manifestUrl: published.url }), JanInstallError)
+  assert.equal(published.artifacts(), 0)
 })

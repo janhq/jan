@@ -37,9 +37,15 @@ install into `JAN_AGENT_HOME` or the per-user cache directory. An install that
 failed its digest, or that was interrupted mid-extract, is never visible as one:
 `findRuntime()` answers `null` for it.
 
-`version` and `sha256` pin. Both are checked against the manifest, and a
-mismatch is an error rather than a substitution, so a run that has to reproduce
-is never quietly moved to a newer runtime. `manifestUrl` names another channel;
+Each successful download gets an immutable generation directory. Only the small
+lookup marker is atomically replaced, so concurrent installs and republished
+versions cannot delete or change a binary path already returned to a caller.
+Old generations remain until the cache is manually removed while no runtimes
+are using it. Relative cache roots are resolved to absolute paths.
+
+`version` and `sha256` pin. A matching cached install is returned without network
+access; otherwise both are checked against the manifest. A mismatch is an error
+rather than a substitution. `manifestUrl` names another channel;
 the default is the nightly one. The macOS artifact is notarized, and getting a
 runtime this way needs no Rust toolchain and no Jan Desktop.
 

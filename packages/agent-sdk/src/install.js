@@ -18,9 +18,9 @@
 // an interrupted or corrupt install never leaves something that looks usable.
 
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, lstat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { Readable } from 'node:stream'
@@ -88,6 +88,10 @@ export function binName(platform = platformKey()) {
   return platform.startsWith('windows-') ? 'jan.exe' : 'jan'
 }
 
+function validVersion(version) {
+  return typeof version === 'string' && /^[A-Za-z0-9](?:[A-Za-z0-9._+-]*[A-Za-z0-9_+-])?$/.test(version)
+}
+
 function installDir(root, version, platform) {
   return join(root, version, platform)
 }
@@ -96,7 +100,8 @@ function installDir(root, version, platform) {
 // No network: a caller who already has one pays nothing to find it, and a
 // missing one answers `null` rather than throwing.
 export async function findRuntime({ version, root = runtimeRoot() } = {}) {
-  if (!version) return null
+  if (!validVersion(version)) return null
+  root = resolve(root)
   const platform = platformKey()
   const dir = installDir(root, version, platform)
   let marker
@@ -105,14 +110,19 @@ export async function findRuntime({ version, root = runtimeRoot() } = {}) {
   } catch {
     return null
   }
-  const bin = join(dir, binName(platform))
+  if (!marker || marker.version !== version || marker.platform !== platform ||
+      typeof marker.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(marker.sha256) ||
+      typeof marker.directory !== 'string' ||
+      !new RegExp(`^${platform}-[a-f0-9-]{36}$`).test(marker.directory)) return null
+  const installedDir = join(root, version, marker.directory)
+  const bin = join(installedDir, binName(platform))
   try {
-    await stat(bin)
+    if (!(await lstat(bin)).isFile()) return null
   } catch {
     // A marker whose binary is gone is not an install: it is the remains of one.
     return null
   }
-  return { ...marker, bin, dir, root, cached: true }
+  return { ...marker, bin, dir: installedDir, root, cached: true }
 }
 
 // Install the runtime for this platform and return the path to its binary.
@@ -126,12 +136,16 @@ export async function installRuntime(options = {}) {
     version,
     sha256,
     manifestUrl = process.env.JAN_AGENT_MANIFEST ?? MANIFEST_URL,
-    root = runtimeRoot(),
+    root: requestedRoot = runtimeRoot(),
     fetch: fetchImpl = globalThis.fetch,
     signal,
     onProgress,
   } = options
 
+  const root = resolve(requestedRoot)
+  if (version !== undefined && !validVersion(version)) {
+    throw new JanInstallError('version must be a single safe path component')
+  }
   const platform = platformKey()
   if (version) {
     const hit = await findRuntime({ version, root })
@@ -168,8 +182,11 @@ export async function installRuntime(options = {}) {
   const existing = await findRuntime({ version: manifest.version, root })
   if (existing && existing.sha256 === entry.sha256) return existing
 
-  const stage = join(root, manifest.version, `.${platform}.part-${process.pid}-${Date.now().toString(36)}`)
-  await mkdir(stage, { recursive: true })
+  await mkdir(dirname(dir), { recursive: true })
+  const stage = await mkdtemp(join(dirname(dir), `.${platform}.part-`))
+  const directory = `${platform}-${randomUUID()}`
+  const installedDir = join(dirname(dir), directory)
+  const markerTemp = join(dir, `.${randomUUID()}.json`)
   try {
     const archive = join(stage, basename(new URL(entry.url).pathname) || 'jan-runtime')
     const actual = await download(entry.url, archive, { fetchImpl, onProgress, signal })
@@ -185,7 +202,7 @@ export async function installRuntime(options = {}) {
     const name = binName(platform)
     const bin = join(stage, name)
     try {
-      await stat(bin)
+      if (!(await lstat(bin)).isFile()) throw new Error('not a regular file')
     } catch {
       throw new JanInstallError(
         `the ${platform} archive from ${entry.url} holds no ${name} at its root`,
@@ -195,36 +212,25 @@ export async function installRuntime(options = {}) {
     if (process.platform !== 'win32') await chmod(bin, 0o755)
 
     const installedAt = new Date().toISOString()
-    await writeFile(
-      join(stage, 'install.json'),
-      `${JSON.stringify(
-        {
-          version: manifest.version,
-          pubDate: manifest.pub_date ?? null,
-          platform,
-          url: entry.url,
-          sha256: actual,
-          bin: name,
-          installedAt,
-        },
-        null,
-        2,
-      )}\n`,
-    )
+    const marker = `${JSON.stringify({
+      version: manifest.version,
+      directory,
+      pubDate: manifest.pub_date ?? null,
+      platform,
+      url: entry.url,
+      sha256: actual,
+      bin: name,
+      installedAt,
+    }, null, 2)}\n`
 
-    // Renamed into place last, and only now: until this line the install is
-    // invisible to every other process, and a crash anywhere above leaves no
-    // directory that `findRuntime` would trust. A rename that finds a directory
-    // already there is either a concurrent install of the same artifact or what
-    // an older one left behind; both are replaced, but only after asking.
-    await mkdir(dirname(dir), { recursive: true })
-    try {
-      await rename(stage, dir)
-    } catch (error) {
-      if (error.code !== 'ENOTEMPTY' && error.code !== 'EEXIST' && error.code !== 'ENOTDIR') throw error
-      await rm(dir, { recursive: true, force: true })
-      await rename(stage, dir)
-    }
+    // Never replace a published binary: another process may be using it, or
+    // holding its path under a digest pin. Publish an immutable generation,
+    // then atomically switch the small cache marker. Concurrent publishers
+    // each retain a valid binary; the last marker wins for future lookups.
+    await rename(stage, installedDir)
+    await mkdir(dir, { recursive: true })
+    await writeFile(markerTemp, marker, { flag: 'wx' })
+    await rename(markerTemp, join(dir, 'install.json'))
     return {
       version: manifest.version,
       pubDate: manifest.pub_date ?? null,
@@ -232,12 +238,13 @@ export async function installRuntime(options = {}) {
       url: entry.url,
       sha256: actual,
       installedAt,
-      bin: join(dir, name),
-      dir,
+      bin: join(installedDir, name),
+      dir: installedDir,
       root,
       cached: false,
     }
   } catch (error) {
+    await rm(markerTemp, { force: true })
     await rm(stage, { recursive: true, force: true })
     throw error
   }
@@ -259,7 +266,7 @@ async function readManifest(url, fetchImpl, signal) {
   } catch (error) {
     throw new JanInstallError(`the runtime manifest at ${url} is not JSON: ${error.message}`, { url })
   }
-  if (!manifest?.version || typeof manifest.platforms !== 'object' || manifest.platforms === null) {
+  if (!validVersion(manifest?.version) || typeof manifest.platforms !== 'object' || manifest.platforms === null) {
     throw new JanInstallError(`the runtime manifest at ${url} names no version and no platforms`, { url })
   }
   return manifest
@@ -322,7 +329,11 @@ async function run(command, args, archive, action) {
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk) => {
-      stdout = (stdout + chunk).slice(-1 << 20)
+      stdout += chunk
+      if (stdout.length > 1 << 20) {
+        child.kill()
+        reject(new JanInstallError(`archive listing exceeds 1 MiB: ${archive}`, { url: archive }))
+      }
     })
     child.stderr.on('data', (chunk) => {
       stderr = (stderr + chunk).slice(-2048)
@@ -335,7 +346,7 @@ async function run(command, args, archive, action) {
         ),
       )
     })
-    child.once('exit', (code) => {
+    child.once('close', (code) => {
       if (code === 0) resolve_(stdout)
       else reject(new JanInstallError(`could not ${action} ${basename(archive)}: tar exited ${code}${stderr ? `: ${stderr.trim()}` : ''}`, { url: archive }))
     })
