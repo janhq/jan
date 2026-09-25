@@ -302,6 +302,10 @@ async function download(url, target, { fetchImpl, onProgress, signal }) {
 // system `tar` reads both (GNU tar on Linux, bsdtar on macOS and on the Windows
 // that ships with it), which is one code path and no dependency.
 //
+// On Windows that means the one in System32, named by path: under Git Bash or
+// MSYS the `tar` on PATH is GNU tar, which reads the `C:` of an absolute path as
+// a remote host and cannot open a zip at all.
+//
 // Members are listed and checked before anything is extracted: an archive whose
 // entries would land outside the staging directory is refused, not followed.
 // Current `tar` implementations refuse those members themselves (GNU tar strips
@@ -309,9 +313,13 @@ async function download(url, target, { fetchImpl, onProgress, signal }) {
 // in one place rather than left to whichever `tar` is on PATH - a digest proves
 // the artifact is the one published, which is a promise about the channel and
 // not about the archive's layout.
+const TAR = process.platform === 'win32'
+  ? join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe')
+  : 'tar'
+
 async function extract(archive, into) {
-  const listing = await run('tar', ['-tf', archive], archive, 'read')
-  for (const name of listing.split('\n').filter((line) => line.length > 0)) {
+  const listing = await run(TAR, ['-tf', archive], archive, 'read')
+  for (const name of listing.split(/\r?\n/).filter((line) => line.length > 0)) {
     const resolved = resolve(into, name)
     if (resolved !== into && !resolved.startsWith(into + sep)) {
       throw new JanInstallError(
@@ -320,7 +328,7 @@ async function extract(archive, into) {
       )
     }
   }
-  await run('tar', ['-xf', archive, '-C', into], archive, 'extract')
+  await run(TAR, ['-xf', archive, '-C', into], archive, 'extract')
 }
 
 async function run(command, args, archive, action) {
@@ -341,7 +349,7 @@ async function run(command, args, archive, action) {
     child.once('error', (error) => {
       reject(
         new JanInstallError(
-          `could not ${action} ${basename(archive)}: ${error.message} (a \`tar\` on PATH is required to install a runtime)`,
+          `could not ${action} ${basename(archive)}: ${error.message} (${TAR} is required to install a runtime)`,
           { url: archive },
         ),
       )
