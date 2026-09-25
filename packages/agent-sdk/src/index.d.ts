@@ -119,7 +119,7 @@ export interface ContentPartLimits {
 export interface CreateSessionOptions {
   cwd?: string
   model?: string
-  /** Keep nothing on disk: no thread, no media files, no project memory. */
+  /** Keep nothing on disk: no thread, no media files, and no answers indexed for later recall. */
   ephemeral?: boolean
   /** `false` advertises only the host tools, no built-ins or MCP. */
   builtins?: boolean
