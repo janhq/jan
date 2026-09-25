@@ -634,7 +634,9 @@ enum Credentials {
     /// Fetch it, refreshing an account token that has expired.
     Fetch,
     /// Resolve the upstream without it, for a caller that only needs to know
-    /// whether the model is servable.
+    /// whether the model is servable. The `cli` build is where such a caller
+    /// exists: the desktop has no validation-only entry point.
+    #[cfg(feature = "cli")]
     Skip,
 }
 
@@ -645,6 +647,10 @@ async fn upstream_for(
     #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
     #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Result<(String, Vec<String>), String> {
+    // Every desktop path resolves the credential, so the switch is only read by
+    // the `cli` branch below.
+    #[cfg(not(feature = "cli"))]
+    let _ = credentials;
     let destination_path = "/chat/completions";
 
     let pc = provider_configs.lock().await;
@@ -2666,13 +2672,10 @@ mod tests {
     #[cfg(feature = "cli")]
     #[tokio::test]
     async fn servability_is_decided_without_the_credential() {
-        let _guard = crate::core::server::provider_secrets::SECRET_STORE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        let dir = tempfile::tempdir().unwrap();
-        let previous = std::env::var("JAN_DATA_FOLDER").ok();
-        std::env::set_var("JAN_DATA_FOLDER", dir.path());
-        crate::core::server::provider_secrets::force_file_secrets();
+        // The env redirect lives in the helper, which holds the store lock in a
+        // struct field: a bare guard bound here would be held across the awaits
+        // below, which clippy refuses and which the lock is not for.
+        let _secrets = TempSecretStore::new();
         // Unreadable on purpose: fetching it fails inside the store, before any
         // network call, which is what keeps this test offline.
         crate::core::server::provider_secrets::store_secret_record("auth:anthropic", "{ not json")
@@ -2705,11 +2708,6 @@ mod tests {
             unservable_model("claude-sonnet-99", Arc::new(Mutex::new(HashMap::new()))).await,
             Some("No upstream session found for model 'claude-sonnet-99'".to_string())
         );
-
-        match previous {
-            Some(value) => std::env::set_var("JAN_DATA_FOLDER", value),
-            None => std::env::remove_var("JAN_DATA_FOLDER"),
-        }
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and
