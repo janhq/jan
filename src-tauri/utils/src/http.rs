@@ -15,6 +15,11 @@ pub fn is_cors_header(header_name: &str) -> bool {
     header_lower.starts_with("access-control-")
 }
 
+/// Strips a leading scheme (e.g. "app://", "http://") from a host/origin value.
+fn strip_scheme(value: &str) -> &str {
+    value.split("://").nth(1).unwrap_or(value)
+}
+
 /// Validates if host is in trusted hosts list
 pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     if trusted_hosts.iter().any(|hosts| hosts.contains(&"*".to_string())) {
@@ -59,6 +64,9 @@ pub fn is_valid_host(host: &str, trusted_hosts: &[Vec<String>]) -> bool {
     }
 
     trusted_hosts.iter().flatten().any(|valid| {
+        // Users may list a scheme-qualified origin (e.g. "app://obsidian.md")
+        // in Trusted Hosts. Normalize both sides so the bare host matches.
+        let valid = strip_scheme(valid);
         let host_lower = host.to_lowercase();
         let valid_lower = valid.to_lowercase();
 
