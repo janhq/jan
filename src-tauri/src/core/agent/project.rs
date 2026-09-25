@@ -1,4 +1,5 @@
-//! `agent.toml` project config parsing and `.jan/agent/` scaffolding.
+//! `agent.toml` project config parsing and store scaffolding
+//! (`~/.jan/projects/<slug>/`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -56,7 +57,7 @@ pub(crate) struct PromptSection {
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
-/// `.jan/agent/plugins/`; this section only carries configuration.
+/// `<store_root>/plugins/`; this section only carries configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct PluginsSection {
     /// URL of a JSON marketplace index (`[{ name, description, repo, ref? }]`).
@@ -321,9 +322,73 @@ inject = "always"
 # default = "tail"
 "#;
 
-/// Path to `<project_root>/.jan/agent/agent.toml`.
+/// `~/.jan`, where every project's store lives. Test builds use a per-process
+/// temp directory so no test reads or writes the developer's real `~/.jan`;
+/// the plugin's own `cfg(test)` override is not active when this crate
+/// compiles it as a dependency.
+pub(crate) fn jan_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        Some(std::env::temp_dir().join(format!("jan-app-test-home-{}", std::process::id())))
+    }
+    #[cfg(not(test))]
+    {
+        tauri_plugin_agent_tools::workspace::jan_home()
+    }
+}
+
+/// A project's store root, `~/.jan/projects/<slug>`: `agent.toml`, `memory/`,
+/// `skills/`, `subagents/`, `plugins/` and the TUI's threads. The one place the
+/// app resolves it; the project directory itself holds only `JAN.md`.
+pub(crate) fn store_root(project_root: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_store_at(jan_home().as_deref(), project_root)
+}
+
+/// Move a legacy `<project>/.jan/agent` into [`store_root`] when the workspace
+/// still has a `.jan` directory. Called once per launch, before anything reads
+/// the store; returns a line for the surface to show, if any.
+///
+/// Once per project per process: later calls are free and return `None`, so
+/// every entry point can call it without re-reporting.
+pub(crate) fn migrate_legacy_store(project_root: &Path) -> Option<String> {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    {
+        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if !seen.get_or_insert_with(HashSet::new).insert(project_root.to_path_buf()) {
+            return None;
+        }
+    }
+    let home = jan_home()?;
+    let store = store_root(project_root);
+    let outcome =
+        crate::core::agent::store_migration::migrate_on_launch(project_root, &store, Some(&home));
+    if matches!(outcome, crate::core::agent::store_migration::Outcome::Moved { .. }) {
+        // A migrated store has notes but no indexes yet, and the root index
+        // should point at it straight away.
+        let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&store, project_root);
+        tauri_plugin_agent_tools::memory::write_index(&store);
+        let (_, _, cross_project) = memory_roots(project_root);
+        tauri_plugin_agent_tools::memory::write_root_index(&home, cross_project);
+    }
+    outcome.message()
+}
+
+/// The memory a run in `project_root` reaches, as owned paths: the project's
+/// store, and `~/.jan` for the user scope and other projects. Tests get no
+/// cross-project listing, so one test's notes never reach another's prompt.
+pub(crate) fn memory_roots(project_root: &Path) -> (PathBuf, Option<PathBuf>, bool) {
+    #[cfg(test)]
+    let cross = false;
+    #[cfg(not(test))]
+    let cross = crate::core::agent::global_config::memory_cross_project_enabled();
+    (store_root(project_root), jan_home(), cross)
+}
+
+/// Path to `<store_root>/agent.toml`.
 pub(crate) fn agent_toml_path(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent").join("agent.toml")
+    store_root(project_root).join("agent.toml")
 }
 
 /// Load + parse agent.toml. Err if missing or malformed (path included in message).
@@ -419,8 +484,8 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     )
 }
 
-/// Ensure a usable `.jan/agent/{agent.toml, skills/, memory/}` exists under
-/// `project_root`, creating only the pieces that don't already exist.
+/// Ensure a usable `{agent.toml, skills/, memory/}` exists in the project's
+/// store (see [`store_root`]), creating only the pieces that don't already exist.
 /// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
 /// on both the CLI and desktop agent-run paths (there is no explicit init step).
 ///
@@ -434,7 +499,13 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
             project_root.display()
         ));
     }
-    let agent_dir = project_root.join(".jan").join("agent");
+    // Before scaffolding, or an empty new store would turn the move into a
+    // conflict. A no-op after the first call for this project; the CLI already
+    // ran it (and reported it) when it resolved the project.
+    if let Some(note) = migrate_legacy_store(project_root) {
+        log::info!("Agent: {note}");
+    }
+    let agent_dir = store_root(project_root);
     std::fs::create_dir_all(agent_dir.join("skills"))
         .map_err(|e| format!("Failed to create skills dir: {e}"))?;
     std::fs::create_dir_all(agent_dir.join("memory"))
@@ -445,6 +516,8 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
     }
+    // Best-effort: only the memory index's project pointers read it.
+    let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&agent_dir, project_root);
 
     Ok(agent_dir)
 }
@@ -547,19 +620,20 @@ mod tests {
         root
     }
 
-    /// `ensure_project` scaffolds `.jan/agent/{skills,memory}` by hand, while the
-    /// toolset resolves those same directories through `workspace::project_store`.
-    /// Nothing but this test ties the two together, and if they ever drift a
-    /// user's existing skills and memories simply stop being found.
+    /// `ensure_project` scaffolds `{skills,memory}` in the store, while the
+    /// toolset reads those same directories through the store root it is
+    /// handed. If the two ever drift a user's skills and memories stop being
+    /// found. The store must also never land inside the project.
     #[test]
     fn scaffolded_dirs_match_the_toolset_store_layout() {
         use tauri_plugin_agent_tools::workspace;
 
         let root = unique_root("store_layout");
-        ensure_project(&root).expect("scaffold project");
+        let store = ensure_project(&root).expect("scaffold project");
 
-        let store = workspace::project_store(&root);
-        assert_eq!(store, root.join(".jan").join("agent"));
+        assert_eq!(store, store_root(&root));
+        assert!(!store.starts_with(&root), "the store must live outside the project");
+        assert!(!root.join(".jan").exists(), "nothing is written into the project");
         assert!(
             tauri_plugin_agent_tools::skills::skills_dir(&store).is_dir(),
             "skills dir the toolset reads is not the one ensure_project created"
@@ -573,7 +647,7 @@ mod tests {
     }
 
     fn write_agent_toml(root: &Path, body: &str) {
-        let dir = root.join(".jan").join("agent");
+        let dir = crate::core::agent::project::store_root(root);
         std::fs::create_dir_all(&dir).expect("create agent dir");
         std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
     }
@@ -632,7 +706,7 @@ mod tests {
 
     /// The instructions file lives at the project root as `JAN.md` and is the
     /// user's (or `/init`'s) to create -- the scaffold must not plant an empty
-    /// one under `.jan/agent/`, which nothing reads.
+    /// one in the store, which nothing reads.
     #[test]
     fn ensure_does_not_scaffold_an_instructions_file() {
         let root = unique_root("no_instructions");

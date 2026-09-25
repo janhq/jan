@@ -14,8 +14,8 @@ use crate::skills;
 use crate::tools::jail;
 use crate::tools::proc;
 use crate::tools::sandbox::{
-    escapes_write_roots, in_scratch, is_hidden_jan_path, lexical_normalize, resolve_path,
-    scratch_display_path, symlink_escapes_any_root,
+    escapes_write_roots, in_scratch, lexical_normalize, resolve_path, scratch_display_path,
+    symlink_escapes_any_root,
 };
 use crate::tools::{BuiltinTool, ImageContentPart, ScreenshotBackend, ToolContext};
 
@@ -209,7 +209,7 @@ async fn execute_text(
         // deliberately do not, which is what keeps an attached folder
         // readable and unwritable.
         "read" => read(args, project_root, scratch, ctx.read_roots).await.0,
-        "ls" => ls(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
+        "ls" => ls(args, project_root, scratch, ctx.read_roots).await,
         "write" => {
             write(
                 args,
@@ -231,13 +231,13 @@ async fn execute_text(
             .await
         }
         "bash" => bash(args, ctx).await,
-        "find" => find(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
-        "grep" => grep(args, project_root, scratch, ctx.sandbox, ctx.read_roots).await,
+        "find" => find(args, project_root, scratch, ctx.read_roots).await,
+        "grep" => grep(args, project_root, scratch, ctx.read_roots).await,
         // Memory and skills live in the store root, not the sandbox: they must
         // outlive the conversation the filesystem tools are scoped to.
-        "memory_list" => memory_list(ctx.store_root).await,
-        "memory_read" => memory_read(args, ctx.store_root).await,
-        "memory_write" => memory_write(args, ctx.store_root).await,
+        "memory_list" => memory_list(ctx.memory_scopes()).await,
+        "memory_read" => memory_read(args, ctx.memory_scopes()).await,
+        "memory_write" => memory_write(args, ctx.memory_scopes()).await,
         // Skills go through the skills module so the tool honors the folder form
         // (`<name>/SKILL.md`) and frontmatter, matching what the UI writes.
         "skill_list" => skill_list(ctx),
@@ -527,28 +527,28 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 
 /// The memory tools delegate to `crate::memory` so the built-ins and the
 /// management commands share one implementation.
-async fn memory_list(store: &Path) -> String {
-    memory::list(store).await.join("\n")
+async fn memory_list(scopes: memory::Scopes<'_>) -> String {
+    scopes.list().await.join("\n")
 }
 
-async fn memory_read(args: &serde_json::Value, store: &Path) -> String {
+async fn memory_read(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
     };
-    match memory::read(store, name).await {
+    match scopes.read(name).await {
         Ok(content) => content,
         Err(e) => e,
     }
 }
 
-async fn memory_write(args: &serde_json::Value, store: &Path) -> String {
+async fn memory_write(args: &serde_json::Value, scopes: memory::Scopes<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
     };
     let Some(content) = arg_str(args, "content") else {
         return "ERROR: missing required argument 'content'".to_string();
     };
-    match memory::write(store, name, content).await {
+    match scopes.write(name, content).await {
         Ok(file) => format!("Wrote {} bytes to memory/{file}", content.len()),
         Err(e) => e,
     }
@@ -644,7 +644,6 @@ async fn ls(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    hide_jan: bool,
     read_roots: &[PathBuf],
 ) -> String {
     let path = arg_str(args, "path").unwrap_or(".");
@@ -664,12 +663,6 @@ async fn ls(
     loop {
         match entries.next_entry().await {
             Ok(Some(entry)) => {
-                // Hidden state is omitted, not reported-then-denied: an entry the
-                // agent can never open is only an invitation to try. Skipped when
-                // not hiding, so an unconfined CLI run sees its own `.jan`.
-                if hide_jan && is_hidden_jan_path(root, &entry.path().to_string_lossy()) {
-                    continue;
-                }
                 let mut name = entry.file_name().to_string_lossy().into_owned();
                 if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
                     name.push('/');
@@ -816,13 +809,6 @@ pub(crate) fn confined_shell(
     let root = ctx.project_root;
     let mut policy =
         jail::Policy::new(root, ctx.allow_network).with_home_readonly(ctx.home_readonly);
-    // While the shell is sandboxed, hide the project's own `.jan` state directory
-    // from it (see [`Policy::with_hide_root`]). When the shell runs unconfined the
-    // hide is both pointless (there is no OS mount to layer it on) and wrong
-    // (the agent should see its own state), so it is only applied when sandboxed.
-    if ctx.sandbox {
-        policy = policy.with_hide_root(&root.join(crate::tools::sandbox::JAN_DIR));
-    }
     if let Some(mask) = ctx.mask_root {
         policy = policy.with_mask_root(mask);
     }
@@ -1594,7 +1580,6 @@ async fn find(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    hide_jan: bool,
     read_roots: &[PathBuf],
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
@@ -1606,7 +1591,6 @@ async fn find(
     if symlink_escapes_any_root(root, scratch, read_roots, &base) {
         return format!("ERROR: refused to search through a symlink out of the workspace: {path}");
     }
-    let root_owned = root.to_path_buf();
 
     let Some(pattern) = pattern else {
         return "ERROR: missing required argument 'pattern'".to_string();
@@ -1631,9 +1615,6 @@ async fn find(
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(true) {
                 continue;
             }
-            if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
-                continue;
-            }
             let rel = rel_to(&base, entry.path());
             if pat.matches_with(&rel, opts) {
                 matches.push(rel);
@@ -1656,7 +1637,6 @@ async fn grep(
     args: &serde_json::Value,
     root: &Path,
     scratch: Option<&Path>,
-    hide_jan: bool,
     read_roots: &[PathBuf],
 ) -> String {
     let pattern = arg_str(args, "pattern").map(String::from);
@@ -1780,9 +1760,6 @@ async fn grep(
                 {
                     continue;
                 }
-                if hide_jan && is_hidden_jan_path(&root_owned, &entry.path().to_string_lossy()) {
-                    continue;
-                }
                 if !search_file(entry.path(), &base) {
                     break;
                 }
@@ -1824,10 +1801,9 @@ mod tests {
     // the skill whitelist, stay readable. Tests that do care build a
     // `ToolContext` and call `super::*` directly.
     //
-    // They co-locate the store inside the root (`<root>/.jan/agent`), the layout
-    // a project uses, so the memory/skill tests keep asserting against paths
-    // relative to their one temp dir. The desktop's split roots are covered in
-    // `workspace` and `commands`.
+    // They use the project's store (`workspace::project_store`, under a test
+    // temp home), the layout the CLI uses. The desktop's split roots are
+    // covered in `workspace` and `commands`.
     async fn execute_builtin(tool: &BuiltinTool, args: &serde_json::Value, root: &Path) -> String {
         let store = crate::workspace::project_store(root);
         super::execute_builtin(tool, args, &ToolContext::new(root, &store, &[]))
@@ -2778,7 +2754,6 @@ mod tests {
                 scratch: Some(&scratch),
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
             },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
@@ -2810,7 +2785,6 @@ mod tests {
                 scratch: Some(&scratch),
                 read_roots: &[],
                 write_roots: &[],
-                hide_jan: true,
             },
             &crate::permissions::ToolPermissions::default(),
             &crate::tools::gate::SessionGrants::default(),
@@ -2848,45 +2822,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// Hidden means absent from the listing, not present-but-unopenable: an
-    /// entry the agent can never read is only an invitation to try.
-    #[tokio::test]
-    async fn ls_omits_the_hidden_jan_dir() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join("src.rs"), b"x").unwrap();
-        std::fs::write(root.join("JAN.md"), b"x").unwrap();
-        let out = execute_builtin(lookup("ls").unwrap(), &json!({}), &root).await;
-        assert!(out.contains("src.rs"), "unexpected: {out}");
-        assert!(out.contains("JAN.md"), "unexpected: {out}");
-        assert!(
-            !out.contains(".jan/"),
-            "must not list the agent state dir: {out}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    /// When the shell is unconfined (CLI with --no-sandbox) the `.jan` directory
-    /// is ordinary project state and is listed, not hidden.
-    #[tokio::test]
-    async fn ls_lists_the_jan_dir_when_unconfined() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
-        std::fs::write(root.join("src.rs"), b"x").unwrap();
-        let store = crate::workspace::project_store(&root);
-        let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
-        let out = super::execute_builtin(lookup("ls").unwrap(), &json!({}), &ctx)
-            .await
-            .0;
-        assert!(out.contains("src.rs"), "unexpected: {out}");
-        assert!(
-            out.contains(".jan/"),
-            "must list .jan when unconfined: {out}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
     #[tokio::test]
     async fn find_glob_respects_gitignore() {
         let root = unique_root();
@@ -2905,73 +2840,6 @@ mod tests {
         assert!(
             !out.contains("skip/b.txt"),
             "should exclude gitignored skip: {out}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[tokio::test]
-    async fn find_does_not_leak_the_hidden_jan_tree() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
-        std::fs::write(root.join(".jan/agent/threads/t1/thread.json"), b"{}").unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"[tools]\n").unwrap();
-        // Directly under `.jan`, outside `agent/`: hidden by the same rule.
-        std::fs::write(root.join(".jan/stray.txt"), b"x").unwrap();
-        std::fs::write(root.join("JAN.md"), b"instructions").unwrap();
-        std::fs::write(root.join("README.md"), b"x").unwrap();
-        let out =
-            execute_builtin(lookup("find").unwrap(), &json!({"pattern": "**/*"}), &root).await;
-        assert!(
-            out.contains("README.md"),
-            "should include project file: {out}"
-        );
-        assert!(
-            out.contains("JAN.md"),
-            "the root instructions file is an ordinary project file: {out}"
-        );
-        assert!(
-            !out.contains("thread.json"),
-            "must not leak thread storage: {out}"
-        );
-        assert!(
-            !out.contains("agent.toml"),
-            "must not leak agent config: {out}"
-        );
-        assert!(
-            !out.contains("stray.txt"),
-            "the whole .jan dir is hidden, not just agent/: {out}"
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[tokio::test]
-    async fn grep_does_not_leak_hidden_jan_contents() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
-        std::fs::write(
-            root.join(".jan/agent/threads/t1/messages.jsonl"),
-            b"SECRET_MARKER thread content",
-        )
-        .unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"SECRET_MARKER config").unwrap();
-        std::fs::write(root.join("README.md"), b"SECRET_MARKER readme").unwrap();
-        let out = execute_builtin(
-            lookup("grep").unwrap(),
-            &json!({"pattern": "SECRET_MARKER"}),
-            &root,
-        )
-        .await;
-        assert!(
-            out.contains("README.md"),
-            "should match project file: {out}"
-        );
-        assert!(
-            !out.contains("messages.jsonl"),
-            "must not grep thread storage: {out}"
-        );
-        assert!(
-            !out.contains("agent.toml"),
-            "must not grep agent config: {out}"
         );
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3601,7 +3469,8 @@ mod tests {
         assert!(w.starts_with("Wrote"), "unexpected: {w}");
         // Landed at the canonical workspace path.
         assert_eq!(
-            std::fs::read_to_string(root.join(".jan/agent/memory/drift.md")).unwrap(),
+            std::fs::read_to_string(crate::workspace::project_store(&root).join("memory/drift.md"))
+                .unwrap(),
             "553 behind"
         );
 
@@ -3629,7 +3498,9 @@ mod tests {
         .await;
         assert!(w.contains("deploy"), "unexpected: {w}");
         // New skills are written as the folder form `<name>/SKILL.md`.
-        assert!(root.join(".jan/agent/skills/deploy/SKILL.md").exists());
+        assert!(crate::workspace::project_store(&root)
+            .join("skills/deploy/SKILL.md")
+            .exists());
 
         // skill_read returns the body on demand (progressive disclosure).
         let r = execute_builtin(

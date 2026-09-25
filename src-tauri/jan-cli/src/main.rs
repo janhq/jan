@@ -57,7 +57,7 @@ to opt out of both.",
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Project root containing .jan/agent/agent.toml (bare TUI only)
+    /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/) (bare TUI only)
     #[arg(long, default_value = ".")]
     project: String,
     /// Optional first message to seed the chat with (bare TUI only)
@@ -142,7 +142,7 @@ impl SandboxArgs {
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
-/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
+/// Threads are per-project (`~/.jan/projects/<slug>/threads`), so resuming from a
 /// different working directory simply finds nothing there.
 #[derive(Args)]
 struct ResumeArgs {
@@ -443,7 +443,7 @@ impl ProviderArgs {
 enum AgentCommands {
     /// Run the agent loop to completion, or to a --max-turns cap
     Run {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -492,7 +492,7 @@ enum AgentCommands {
     },
     /// Run a single turn (debugging)
     Step {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -510,7 +510,7 @@ enum AgentCommands {
     },
     /// Print resolved project config and available providers as JSON
     Status {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         #[command(flatten)]

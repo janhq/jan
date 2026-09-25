@@ -2,9 +2,9 @@
 //!
 //! **Store root** -- holds `memory/` and `skills/`. Long-term: memories and
 //! skills outlive any single conversation, so on the desktop this is a permanent
-//! directory in the Jan data folder. A project (dev's layout, and the CLI agent)
-//! co-locates its store at `<project>/.jan/agent` instead; both are just a store
-//! root to everything downstream.
+//! directory in the Jan data folder. A project (the CLI agent) keeps its store
+//! at `~/.jan/projects/<slug>` instead; both are just a store root to
+//! everything downstream.
 //!
 //! **Project root** -- the sandbox the filesystem tools (read/ls/find/grep, and
 //! later write/edit/bash) are confined to. On the desktop this is ephemeral and
@@ -36,12 +36,161 @@ pub fn store_dir(store_root: &Path, kind: &str) -> PathBuf {
     store_root.join(kind)
 }
 
-/// A project's co-located store root: `<project_root>/.jan/agent`.
+/// Where projects' stores live under a Jan home: `<jan_home>/projects`.
+const PROJECTS: &str = "projects";
+
+/// The directory a project stored its state in before it moved out of the
+/// project: `<project_root>/.jan`. Only the launch migration reads it.
+pub const LEGACY_DIR: &str = ".jan";
+
+/// `~/.jan`, the user-wide agent home, or `None` when the home directory is
+/// unset or degenerate (a `/` home would put every project's state at the
+/// filesystem root).
 ///
-/// This is dev's per-project layout and what the CLI agent uses, where memory
-/// and skills live inside the project being worked on.
+/// Test builds of this crate resolve a per-process temp directory instead, so
+/// no test writes into the developer's real `~/.jan`.
+pub fn jan_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        Some(std::env::temp_dir().join(format!("jan-test-home-{}", std::process::id())))
+    }
+    #[cfg(not(test))]
+    {
+        #[cfg(windows)]
+        let raw = std::env::var_os("USERPROFILE");
+        #[cfg(not(windows))]
+        let raw = std::env::var_os("HOME");
+        let home = PathBuf::from(raw?);
+        if home.parent().is_none() || home.as_os_str().is_empty() {
+            return None;
+        }
+        Some(home.join(".jan"))
+    }
+}
+
+/// `<jan_home>/projects`.
+pub fn projects_dir(jan_home: &Path) -> PathBuf {
+    jan_home.join(PROJECTS)
+}
+
+/// FNV-1a of the path's bytes, 8 hex digits. `DefaultHasher` is explicitly not
+/// stable across Rust releases, and a project must find its store (and a
+/// session its worktree) again after a toolchain upgrade.
+fn path_hash(path: &Path) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path.to_string_lossy().as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")[..8].to_string()
+}
+
+/// Directory name for a path: its own name plus a hash of the whole path, so
+/// two checkouts of the same project never share a directory.
+pub fn path_slug(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| !n.is_empty())
+        .unwrap_or("repo");
+    format!("{name}-{}", path_hash(path))
+}
+
+/// The path a project's store is keyed on: the project root, canonicalized,
+/// with a linked git worktree mapped back onto its main checkout.
+///
+/// Without the mapping, a session running in `~/.jan/worktrees/<slug>/<id>`
+/// would get a fresh, empty store and lose the project's memory, skills and
+/// config. A subdirectory of a worktree maps to the same subdirectory of the
+/// main checkout. Read straight from the `.git` file rather than by running
+/// `git`, because this runs on every store lookup.
+pub fn project_key(project_root: &Path) -> PathBuf {
+    let root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+    for top in root.ancestors() {
+        let dot_git = top.join(".git");
+        if dot_git.is_dir() {
+            return root;
+        }
+        if !dot_git.is_file() {
+            continue;
+        }
+        // A linked worktree's `.git` is `gitdir: <main>/.git/worktrees/<name>`.
+        let main = std::fs::read_to_string(&dot_git).ok().and_then(|raw| {
+            let gitdir = PathBuf::from(raw.trim().strip_prefix("gitdir:")?.trim());
+            let gitdir = if gitdir.is_absolute() { gitdir } else { top.join(gitdir) };
+            let worktrees = gitdir.parent()?;
+            if worktrees.file_name()? != "worktrees" {
+                return None;
+            }
+            let common = worktrees.parent()?;
+            if common.file_name()? != ".git" {
+                return None;
+            }
+            common.parent().map(Path::to_path_buf)
+        });
+        return match (main, root.strip_prefix(top)) {
+            (Some(main), Ok(rel)) if rel.as_os_str().is_empty() => main,
+            (Some(main), Ok(rel)) => main.join(rel),
+            _ => root,
+        };
+    }
+    root
+}
+
+/// A project's store root under a given Jan home:
+/// `<jan_home>/projects/<slug>`.
+pub fn project_store_in(jan_home: &Path, project_root: &Path) -> PathBuf {
+    projects_dir(jan_home).join(path_slug(&project_key(project_root)))
+}
+
+/// A project's store root: `~/.jan/projects/<slug>`, holding `agent.toml`,
+/// `memory/`, `skills/`, `subagents/`, `plugins/` and threads.
+///
+/// Kept outside the project so the agent's own state never sits in the tree
+/// its tools work on (nothing to hide, nothing to gitignore). With no usable
+/// home directory it falls back to the legacy in-project location so the agent
+/// still works.
 pub fn project_store(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent")
+    project_store_at(jan_home().as_deref(), project_root)
+}
+
+/// [`project_store`] against an explicit Jan home, for callers that resolve the
+/// home themselves (the app substitutes a temp home in its tests).
+pub fn project_store_at(jan_home: Option<&Path>, project_root: &Path) -> PathBuf {
+    match jan_home {
+        Some(home) => project_store_in(home, project_root),
+        None => legacy_project_store(project_root),
+    }
+}
+
+/// Records which directory a store belongs to, since the slug alone only names
+/// it. Read by the root memory index and by anything listing projects.
+const PROJECT_META: &str = "project.json";
+
+/// Record `project_root` in `<store>/project.json`. Rewritten only when it
+/// changed, so a launch does not touch the file every time.
+pub fn write_project_meta(store: &Path, project_root: &Path) -> std::io::Result<()> {
+    let path = project_root.to_string_lossy().into_owned();
+    if project_meta(store).as_deref() == Some(path.as_str()) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(store)?;
+    let body = serde_json::json!({ "path": path });
+    std::fs::write(store.join(PROJECT_META), format!("{body:#}\n"))
+}
+
+/// The project directory a store recorded, if any.
+pub fn project_meta(store: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(store.join(PROJECT_META)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    value.get("path")?.as_str().map(str::to_string)
+}
+
+/// Where a project kept its store before the move: `<project_root>/.jan/agent`.
+pub fn legacy_project_store(project_root: &Path) -> PathBuf {
+    project_root.join(LEGACY_DIR).join("agent")
 }
 
 /// The desktop's permanent store root: `<jan_data_folder>/agent-workspace`.
@@ -483,13 +632,39 @@ mod tests {
         );
     }
 
-    /// dev's layout: a project keeps its store inside itself.
+    /// A project's store lives under the Jan home, never inside the project.
     #[test]
-    fn project_store_is_under_jan_agent() {
-        assert_eq!(
-            store_dir(&project_store(Path::new("/p")), "memory"),
-            Path::new("/p/.jan/agent/memory")
-        );
+    fn project_store_is_under_jan_home_projects() {
+        let home = Path::new("/home/u/.jan");
+        let store = project_store_in(home, Path::new("/nonexistent/src/jan"));
+        assert_eq!(store, Path::new("/home/u/.jan/projects/jan-f1654549"));
+        assert!(!project_store(Path::new("/p")).starts_with("/p"));
+    }
+
+    /// The slug is persisted as a directory name, so it is a wire value: pin it
+    /// rather than letting a refactor quietly orphan every existing store.
+    #[test]
+    fn the_slug_hash_is_pinned() {
+        assert_eq!(path_slug(Path::new("/home/u/src/jan")), "jan-582afba2");
+    }
+
+    /// A session in a linked worktree must share its main checkout's store.
+    #[test]
+    fn a_linked_worktree_keys_on_its_main_checkout() {
+        let base = unique_data_folder();
+        let main = base.join("main");
+        std::fs::create_dir_all(main.join(".git").join("worktrees").join("w1")).unwrap();
+        std::fs::create_dir_all(main.join("sub")).unwrap();
+        let wt = base.join("wt");
+        std::fs::create_dir_all(wt.join("sub")).unwrap();
+        let gitdir = main.canonicalize().unwrap().join(".git/worktrees/w1");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", gitdir.display())).unwrap();
+
+        let main_key = project_key(&main);
+        assert_eq!(project_key(&wt), main_key);
+        assert_eq!(project_key(&wt.join("sub")), project_key(&main.join("sub")));
+        assert_ne!(project_key(&main.join("sub")), main_key);
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// The whole point of the split: a thread sandbox is a sibling of the store,

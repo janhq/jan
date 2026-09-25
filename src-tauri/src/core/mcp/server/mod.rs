@@ -89,7 +89,7 @@ pub struct ServeOptions {
     /// The one project root the served tools are confined to.
     pub project_root: PathBuf,
     /// Where `memory/` and `skills/` live; normally
-    /// `workspace::project_store(project_root)`.
+    /// `project::store_root(project_root)`.
     pub store_root: PathBuf,
     /// The `[skills].enabled` whitelist; empty means every skill.
     pub enabled_skills: Vec<String>,
@@ -104,10 +104,10 @@ pub struct ServeOptions {
 }
 
 impl ServeOptions {
-    /// Defaults for a project root: its co-located store, the read-only served
+    /// Defaults for a project root: its store under `~/.jan/projects`, the read-only served
     /// set, sandbox on.
     pub fn new(project_root: PathBuf) -> Self {
-        let store_root = tauri_plugin_agent_tools::workspace::project_store(&project_root);
+        let store_root = crate::core::agent::project::store_root(&project_root);
         Self {
             project_root,
             store_root,
@@ -229,9 +229,6 @@ impl JanToolServer {
                 scratch: self.opts.scratch_root.as_deref(),
                 read_roots: &[],
                 write_roots: &[],
-                // The agent's own `.jan` state is never reachable as a path;
-                // memory and skills are served through their own tools.
-                hide_jan: true,
             },
             &Default::default(),
             &SessionGrants::default(),
@@ -240,15 +237,6 @@ impl JanToolServer {
             Decision::Allow => {}
             Decision::HardDeny(DenyReason::Policy) => {
                 return (format!("ERROR: tool '{name}' is denied by policy"), Vec::new())
-            }
-            Decision::HardDeny(DenyReason::Hidden) => {
-                return (
-                    format!(
-                        "ERROR: tool '{name}' was refused: the path is inside the agent's \
-                         hidden .jan state. Use the memory_* and skill_* tools instead."
-                    ),
-                    Vec::new(),
-                )
             }
             // An in-project write or a shell command: the opt-in that made the
             // tool servable is the approval, so run it. `is_served` already

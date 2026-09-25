@@ -53,7 +53,7 @@ above.
 
 ## Project policy
 
-`.jan/agent/agent.toml` sets what a project exposes:
+The project's `agent.toml` (in `~/.jan/projects/<slug>/`) sets what a project exposes:
 
 ```toml
 [tools]
@@ -118,7 +118,7 @@ jan --no-sandbox                 # this session only, overriding a setting below
 ```
 
 ```toml
-# .jan/agent/agent.toml - for everyone who checks this project out
+# ~/.jan/projects/<slug>/agent.toml - every session in this project
 [tools]
 sandbox = true
 ```
@@ -152,7 +152,7 @@ rely on (a proxy setting, `git` config, a toolchain home) will not see it.
 Two keys widen it, without giving up the default:
 
 ```toml
-# .jan/agent/agent.toml (per project) or ~/.jan/config.toml (all projects)
+# ~/.jan/projects/<slug>/agent.toml (per project) or ~/.jan/config.toml (all projects)
 [tools]
 # Host variables the shell may inherit. Exact names or a "*" wildcard.
 env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
@@ -178,7 +178,7 @@ command has whatever network access you do. The two surfaces default differently
 | Surface | How to set network access | Default |
 | --- | --- | --- |
 | Desktop chat agent | The chat-screen tools toggle (`agent_tools`). Per session, in the UI | Off |
-| `jan cli` code-screen agent | `[tools].allow_network` in `.jan/agent/agent.toml` | On |
+| `jan cli` code-screen agent | `[tools].allow_network` in the project's `agent.toml` | On |
 
 The split is deliberate. The desktop chat agent is ephemeral, so it stays offline unless you opt in.
 The CLI is a coding agent in your own project, where one that cannot `curl`, `git fetch`, or install
@@ -202,7 +202,7 @@ Approval prompts are opt-in: by default every call above is auto-approved. Start
 `jan --safe` to be asked instead. See [run modes](/docs/agent/run-modes).
 
 <Callout type="info">
-Auto-approval only removes the prompt. The `.jan/agent/` restriction, the path checks, and
-`[tools] deny` all still apply, as does the shell sandbox where it is on - but on the CLI it is off
-by default, so auto-approved shell commands run with your own access unless you turn it on.
+Auto-approval only removes the prompt. The path checks and `[tools] deny` all still apply, as does
+the shell sandbox where it is on - but on the CLI it is off by default, so auto-approved shell
+commands run with your own access unless you turn it on.
 </Callout>

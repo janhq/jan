@@ -80,8 +80,8 @@ pub struct ToolResult {
 /// The permanent store root holding `memory/` and `skills/`.
 ///
 /// `project` is an explicit override and is currently always `None`: the desktop
-/// has no project picker yet. Once one lands, a project's own co-located store
-/// (`<project>/.jan/agent`) layers on top of this one; see the memory-scope TODO.
+/// has no project picker yet. Once one lands, a project's own store
+/// (`~/.jan/projects/<slug>`) layers on top of this one; see the memory-scope TODO.
 fn resolve_store(data_folder: &str, project: Option<&str>) -> PathBuf {
     match project.map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => workspace::project_store(Path::new(p)),
@@ -878,19 +878,11 @@ async fn execute_tool_inner(
             scratch: Some(&scratch),
             read_roots: &read_roots,
             write_roots: &write_roots,
-            hide_jan: true,
         },
         &ToolPermissions::default(),
         &SessionGrants::default(),
     ) {
         Decision::Allow => {}
-        Decision::HardDeny(gate::DenyReason::Hidden) => {
-            return Err(format!(
-                "tool '{name}' is denied: {} is the agent's own state directory and is hidden",
-                crate::tools::sandbox::JAN_DIR
-            )
-            .into());
-        }
         Decision::HardDeny(gate::DenyReason::Policy) => {
             return Err(format!("tool '{name}' is denied by policy").into());
         }
@@ -1180,10 +1172,10 @@ mod tests {
     }
 
     #[test]
-    fn explicit_project_uses_its_co_located_store() {
+    fn explicit_project_uses_its_project_store() {
         assert_eq!(
             resolve_store("/data", Some("/repo")),
-            Path::new("/repo/.jan/agent")
+            workspace::project_store(Path::new("/repo"))
         );
         // Blank is treated as absent, not as the filesystem root.
         assert_eq!(
@@ -1742,35 +1734,6 @@ mod tests {
                 "expected {bad:?} to be rejected by execute_tool"
             );
         }
-        let _ = std::fs::remove_dir_all(&data);
-    }
-
-    #[tokio::test]
-    async fn agent_config_surface_is_hard_denied() {
-        let data = unique_data_folder();
-        let df = data.to_string_lossy().to_string();
-        thread_workspace_path(df.clone(), T1.into()).await.unwrap();
-
-        let err = execute_tool(
-            df.clone(),
-            T1.into(),
-            None,
-            "read".to_string(),
-            json!({"path": ".jan/agent/agent.toml"}),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .expect_err("agent config must be hard-denied");
-        assert!(
-            err.message.contains("is hidden"),
-            "unexpected: {}",
-            err.message
-        );
         let _ = std::fs::remove_dir_all(&data);
     }
 

@@ -17,7 +17,7 @@ task calls for it, so a large library of skills doesn't crowd the context window
 ## Where they live
 
 ```
-<project>/.jan/agent/skills/
+~/.jan/projects/<slug>/skills/
 ├── release/
 │   └── SKILL.md          # folder form, can bundle scripts alongside
 └── add-migration.md      # flat form
@@ -96,15 +96,15 @@ the `nightly` channel only - the same project files, through the same directory.
 in one shows up in the other.
 </Callout>
 
-## Skills, AGENT.md, and memory
+## Skills, JAN.md, and memory
 
 Three places that shape behaviour, easily confused:
 
 | | Scope | Loaded |
 | --- | --- | --- |
-| [`AGENT.md`](/docs/agent/project-config#agentmd) | Rules for everything the agent does here | Always |
+| [`JAN.md`](/docs/agent/project-config#janmd) | Rules for everything the agent does here | Always |
 | Skills | A specific procedure | On demand, when relevant |
 | [Memory](/docs/agent/memory) | Facts the agent learned | Recalled as needed |
 
-Rule of thumb: if it applies to every task, it belongs in `AGENT.md`. If it applies to one kind of
+Rule of thumb: if it applies to every task, it belongs in `JAN.md`. If it applies to one kind of
 task, make it a skill.

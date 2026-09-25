@@ -1,26 +1,34 @@
 ---
 title: Project Config
-description: AGENT.md and agent.toml - per-project instructions, model, budget, and tool policy.
-keywords: [Jan, Jan Agent, agent.toml, AGENT.md, project config, instructions, budget]
+description: JAN.md and agent.toml - per-project instructions, model, budget, and tool policy.
+keywords: [Jan, Jan Agent, agent.toml, JAN.md, project config, instructions, budget]
 ---
 
 import { Callout } from 'nextra/components'
 
 # Project Config
 
-Each project gets a `.jan/agent/` directory holding how the agent should behave there.
+Each project gets a store under `~/.jan/projects/` holding how the agent should behave there. The
+project directory itself holds only `JAN.md`.
 
 ```
 your-project/
-└── .jan/
-    └── agent/
-        ├── agent.toml     # model, budget, tool policy
-        ├── AGENT.md       # instructions for the agent
-        ├── threads/       # saved sessions
-        ├── skills/        # reusable procedures
-        ├── memory/        # durable facts
-        └── subagents/     # reusable subagent definitions
+`-- JAN.md                 # instructions for the agent
+
+~/.jan/projects/<name>-<hash>/
+|-- project.json           # which directory this store belongs to
+|-- agent.toml             # model, budget, tool policy
+|-- threads/               # saved sessions
+|-- skills/                # reusable procedures
+|-- MEMORY.md              # generated index of memory/
+|-- memory/                # durable facts
+|-- plugins/               # installed plugins
+`-- subagents/             # reusable subagent definitions
 ```
+
+The store name (the `<slug>` in these docs) is the project directory's name plus a short hash of
+its full path. A linked git
+worktree maps to its main checkout, so both share one store.
 
 It's created on first use. To scaffold it up front without starting a session:
 
@@ -29,11 +37,19 @@ jan cli agent status --project .
 ```
 
 <Callout type="tip">
-Commit `agent.toml`, `AGENT.md`, `skills/`, and `subagents/` so the whole team gets the same agent.
-Add `threads/` to `.gitignore` - those are personal transcripts.
+Commit `JAN.md` so the whole team gets the same instructions. It is the only file Jan keeps in the
+project; everything in the store is per user and stays out of your repository.
 </Callout>
 
-## AGENT.md
+## Where state lives / migration
+
+Older versions kept this state inside the project, in `<project>/.jan/agent/`. When Jan starts in a
+workspace that still has one, it moves `.jan/agent` into the project's store automatically and says
+so. It never merges: if the store already has content, the old folder is left alone with a warning,
+for you to merge or delete by hand. Any other files in `.jan/` are left in place and listed. A
+workspace that is your home directory is skipped, since its `.jan` is the user-wide `~/.jan`.
+
+## JAN.md
 
 Plain markdown, injected into the system prompt on every run. The highest-leverage file here.
 
@@ -51,7 +67,8 @@ This is a Rust workspace. `cargo test` must pass before you call anything done.
 Write it as rules, not prose. Things that are true every time belong here; a procedure for one kind
 of task belongs in a [skill](/docs/agent/skills).
 
-Point at a different file with `instructions_file` if you already keep conventions somewhere else.
+Jan reads `JAN.md` from the project root and each of its ancestors; the nearest file wins. Write one
+by hand or with `/init`.
 
 ## agent.toml
 
@@ -66,7 +83,6 @@ Point at a different file with `instructions_file` if you already keep conventio
 # show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
 # send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
 # worktree = true         # give each session its own git checkout instead of editing this one
-instructions_file = "AGENT.md"
 
 # [provider]
 # name = "openai"
@@ -110,7 +126,6 @@ inject = "always"
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
 | `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
 | `worktree` | `false` | Run each session in its own git worktree under `~/.jan/worktrees`, on a `jan/agent/` branch, instead of editing this checkout. Overridden by `--worktree` / `--no-worktree`. See [Sessions](/docs/agent/sessions) |
-| `instructions_file` | `AGENT.md` | Markdown injected into the system prompt |
 
 ### `[provider]`
 
@@ -140,8 +155,8 @@ ceiling was crossed, and carries on, tool calls included. For a hard bound on an
 ### `[tools]`
 
 See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
-[shell confinement](/docs/agent/permissions#the-shell-sandbox) for everyone who checks it out; it is
-off by default on the CLI.
+[shell confinement](/docs/agent/permissions#the-shell-sandbox) for every session in it; it is off
+by default on the CLI.
 
 | Key | Default | Description |
 | --- | --- | --- |

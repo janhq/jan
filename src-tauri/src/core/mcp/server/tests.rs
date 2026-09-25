@@ -226,19 +226,6 @@ async fn escaping_write_path_is_refused_even_when_write_is_served() {
 }
 
 #[tokio::test]
-async fn hidden_jan_state_is_refused() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    std::fs::create_dir_all(dir.path().join(".jan/agent")).expect("mkdir");
-    std::fs::write(dir.path().join(".jan/agent/agent.toml"), "x = 1").expect("write fixture");
-    let server = JanToolServer::new(options(dir.path()));
-    let (content, _) = server
-        .dispatch("read", &serde_json::json!({ "path": ".jan/agent/agent.toml" }))
-        .await;
-    assert!(content.starts_with("ERROR"), "{content}");
-    assert!(content.contains("hidden .jan state"), "{content}");
-}
-
-#[tokio::test]
 async fn in_project_write_runs_once_opted_in() {
     let dir = tempfile::tempdir().expect("tempdir");
     let mut opts = options(dir.path());

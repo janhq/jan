@@ -58,6 +58,11 @@ fn provider(tokens: usize, token_bytes: usize) -> String {
 }
 
 /// A scratch directory of our own, so the two tests never share a `~/.jan`.
+/// The project's store as the binary resolves it under the test's `HOME`.
+fn store(home: &Path, project: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_store_in(&home.join(".jan"), project)
+}
+
 fn scratch(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("jan-rpc-{name}-{}", std::process::id()));
     std::fs::create_dir_all(dir.join("home")).unwrap();
@@ -243,8 +248,8 @@ fn rpc_serves_a_session_lifecycle_after_the_handshake() {
     assert_eq!(terminal["params"]["stopReason"], "completed");
     assert!(saw_text, "the real provider's streamed token reaches RPC");
     assert!(
-        project
-            .join(".jan/agent/threads")
+        store(&home, &project)
+            .join("threads")
             .join(&session_id)
             .exists(),
         "completed non-ephemeral turn persists under its RPC session id"
@@ -328,7 +333,7 @@ fn failed_fork_does_not_close_other_sessions() {
     rpc.handshake();
     let project = scratch.join("project");
     let session_id = rpc.start_session(&project);
-    std::fs::write(project.join(".jan/agent/agent.toml"), "[agent\n").unwrap();
+    std::fs::write(store(&home, &project).join("agent.toml"), "[agent\n").unwrap();
 
     let failure = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"session/fork","params":{"sessionId":session_id}}));
     assert_eq!(failure["id"], 4);

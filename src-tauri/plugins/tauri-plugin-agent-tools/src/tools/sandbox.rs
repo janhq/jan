@@ -244,46 +244,6 @@ fn tmp_relative(raw: &str) -> Option<String> {
     Some(raw.strip_prefix("/tmp/")?.to_string())
 }
 
-/// The agent's own state directory inside a project. Hidden wholesale rather
-/// than per-subdirectory: it holds `agent.toml`, the skills/memory workspaces
-/// (reachable only through the dedicated skill_*/memory_* tools), and the thread
-/// store with the conversation's own transcripts. None of it is project source,
-/// so a listing that shows it is noise at best and a self-referential read at
-/// worst -- and anything added under it later is hidden by construction.
-pub const JAN_DIR: &str = ".jan";
-
-/// True iff `raw` resolves inside `<project_root>/.jan`. Hidden paths are not
-/// merely denied: `ls`/`find`/`grep` omit them from their output, so the agent
-/// never sees the directory exists. The project instructions file is
-/// `<project_root>/JAN.md`, an ordinary project file, and is unaffected.
-pub fn is_hidden_jan_path(project_root: &Path, raw: &str) -> bool {
-    let Ok(root) = project_root.canonicalize() else {
-        return false;
-    };
-    let abs = if Path::new(raw).is_absolute() {
-        PathBuf::from(raw)
-    } else {
-        root.join(raw)
-    };
-    let Ok(resolved) = canonicalize_lenient(&abs) else {
-        return false;
-    };
-    resolved.starts_with(root.join(JAN_DIR))
-}
-
-/// True iff a shell command references a hidden path (best-effort token scan).
-/// Splits on whitespace and shell metacharacters and checks each token so
-/// `cat .jan/agent/agent.toml` and its quoted/redirected variants are caught.
-/// Best-effort is enough only because the OS sandbox masks the directory too
-/// (see [`super::jail::Policy::hide_root`]); this check exists to turn an
-/// evasion-free attempt into a clear error instead of an empty directory.
-pub fn command_touches_hidden_jan_path(project_root: &Path, command: &str) -> bool {
-    command
-        .split(|c: char| c.is_whitespace() || ";|&><()\"'`".contains(c))
-        .filter(|t| !t.is_empty())
-        .any(|t| is_hidden_jan_path(project_root, t))
-}
-
 /// True when `target` *claims* to be inside a trusted root but resolves outside
 /// every one of them: the fail-closed re-check a handler runs immediately
 /// before its final open, closing the window between the gate's
@@ -459,63 +419,6 @@ mod tests {
         let root = unique_root();
         std::fs::create_dir_all(root.join("sub")).unwrap();
         assert_eq!(escapes_project(&root, None, "sub/newfile.txt"), Ok(false));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn hidden_path_covers_the_whole_jan_dir() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent/skills")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/memory")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/threads/t1")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"x").unwrap();
-        // Config, the agent dir listing, unknown config files.
-        assert!(is_hidden_jan_path(&root, ".jan/agent/agent.toml"));
-        assert!(is_hidden_jan_path(&root, "./.jan/agent/agent.toml"));
-        assert!(is_hidden_jan_path(
-            &root,
-            root.join(".jan/agent/agent.toml").to_str().unwrap()
-        ));
-        assert!(is_hidden_jan_path(&root, ".jan/agent"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/secrets.env"));
-        // skills/ and memory/ are reachable only via the dedicated tools, so they
-        // are hidden from the general filesystem tools too.
-        assert!(is_hidden_jan_path(&root, ".jan/agent/skills/deploy.md"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/memory/notes.md"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/AGENT.md"));
-        // The whole `.jan` dir is hidden, not just `agent/`: the thread store
-        // holds the running conversation's own transcripts, and future state
-        // added beside it is covered without another carve-out.
-        assert!(is_hidden_jan_path(&root, ".jan"));
-        assert!(is_hidden_jan_path(&root, ".jan/agent/threads/t1"));
-        // Ordinary project files, including the instructions file, are untouched.
-        assert!(!is_hidden_jan_path(&root, "JAN.md"));
-        assert!(!is_hidden_jan_path(&root, "src/main.rs"));
-        // A sibling whose name merely starts with `.jan` is not inside it.
-        assert!(!is_hidden_jan_path(&root, ".janitor"));
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn command_scan_flags_hidden_paths() {
-        let root = unique_root();
-        std::fs::create_dir_all(root.join(".jan/agent")).unwrap();
-        std::fs::write(root.join(".jan/agent/agent.toml"), b"x").unwrap();
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "cat .jan/agent/agent.toml"
-        ));
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "grep foo < .jan/agent/agent.toml"
-        ));
-        assert!(command_touches_hidden_jan_path(
-            &root,
-            "cat .jan/agent/AGENT.md"
-        ));
-        assert!(command_touches_hidden_jan_path(&root, "ls -la .jan"));
-        assert!(!command_touches_hidden_jan_path(&root, "cat JAN.md"));
-        assert!(!command_touches_hidden_jan_path(&root, "ls -la src"));
         let _ = std::fs::remove_dir_all(&root);
     }
 
