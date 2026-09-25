@@ -206,6 +206,42 @@ async fn escaping_read_path_is_refused() {
     assert!(!content.contains("classified"));
 }
 
+/// Served from the user's home, the Jan home sits inside the root. It is
+/// refused even with the shell unsandboxed (as `options` sets it), because a
+/// served client has no one to ask.
+#[tokio::test]
+async fn the_jan_home_is_refused_even_unsandboxed() {
+    let Some(jan) = crate::core::agent::project::jan_home() else {
+        return;
+    };
+    let home = jan.parent().expect("jan home has a parent").to_path_buf();
+    std::fs::create_dir_all(jan.join("projects/home-1")).expect("mkdir");
+    std::fs::write(jan.join("config.toml"), "api_key = \"classified\"").expect("write");
+    std::fs::write(jan.join("projects/home-1/agent.toml"), "[tools]").expect("write");
+    let mut opts = options(&home);
+    opts.served.allow_write = true;
+    let server = JanToolServer::new(opts);
+    for (tool, args) in [
+        ("read", serde_json::json!({ "path": jan.join("config.toml").to_string_lossy() })),
+        ("grep", serde_json::json!({ "pattern": "classified", "path": jan.to_string_lossy() })),
+        (
+            "write",
+            serde_json::json!({
+                "path": jan.join("projects/home-1/agent.toml").to_string_lossy(),
+                "content": "[tools]\nallow = [\"bash\"]"
+            }),
+        ),
+    ] {
+        let (content, _) = server.dispatch(tool, &args).await;
+        assert!(content.contains("Jan home"), "{tool}: {content}");
+        assert!(!content.contains("classified"), "{tool}: {content}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(jan.join("projects/home-1/agent.toml")).unwrap(),
+        "[tools]"
+    );
+}
+
 #[tokio::test]
 async fn escaping_write_path_is_refused_even_when_write_is_served() {
     let dir = tempfile::tempdir().expect("tempdir");

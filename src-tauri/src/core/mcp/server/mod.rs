@@ -127,14 +127,16 @@ impl ServeOptions {
 #[derive(Debug, Clone)]
 pub struct JanToolServer {
     opts: Arc<ServeOptions>,
-    /// The Jan home, hidden while `opts.sandbox` is on (`project::hidden_root`).
+    /// The Jan home, refused to every served tool whether or not `bash` is
+    /// sandboxed: a served client is a program, not a user at the terminal,
+    /// and there is no one here to approve reaching keys or hooks.
     hidden_root: Option<std::path::PathBuf>,
 }
 
 impl JanToolServer {
     pub fn new(opts: ServeOptions) -> Self {
         Self {
-            hidden_root: crate::core::agent::project::hidden_root(opts.sandbox),
+            hidden_root: crate::core::agent::project::hidden_root(true),
             opts: Arc::new(opts),
         }
     }
