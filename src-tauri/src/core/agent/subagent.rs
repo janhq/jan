@@ -944,6 +944,42 @@ impl BackgroundSubagents {
         self.wake.notify_waiters();
     }
 
+    /// Abort one registered child by `run_id`, the way [`Self::abort_all`] aborts
+    /// all of them: the task is cancelled, the counters it held are released, and
+    /// its `SubagentStart` bracket is closed so consumers never see one left open.
+    /// Any ping it had queued is dropped -- nobody is waiting for that child now.
+    ///
+    /// Used when a plan dies after starting some of its children: they were
+    /// dispatched silent (`notify_on_finish = false`), so leaving them behind
+    /// means they run on unowned, spending tokens for a plan that already
+    /// failed, and nothing ever names them. A session-owned registry never tears
+    /// them down at all, and a run-scoped one only does so when the whole run
+    /// ends, which is not the same moment. Returns whether the child was still
+    /// registered.
+    pub(crate) fn abort_child(&self, run_id: &str) -> bool {
+        use crate::core::agent::events::StreamEvent;
+        let Some(entry) = self.inner.lock().unwrap().remove(run_id) else {
+            return false;
+        };
+        entry.abort.abort();
+        // Exactly once, whether the child finished or is cut off here: see
+        // `ChildSlot::release`.
+        entry.slot.release(self);
+        // A child that already finished emitted its own end event.
+        if !entry.finished.load(Ordering::SeqCst) {
+            let _ = entry.events.send(StreamEvent::SubagentEnd {
+                run_id: entry.run_id,
+                name: entry.name,
+                error: None,
+            });
+        }
+        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
+        // A waiter parked on this id would otherwise stay parked on a child that
+        // will never finish again.
+        self.wake.notify_waiters();
+        true
+    }
+
     /// The run ids of children still registered, i.e. dispatched and not yet
     /// finished or aborted. A session-owned registry is the authority on which
     /// live panels survive a run end: what the run streamed says only what it
@@ -1684,6 +1720,16 @@ pub(crate) fn spawn_dispatch_plan(
         match spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi) {
             Ok(d) => first_ids.push(d.run_id),
             Err(e) => {
+                // The plan resolves and prices every child up front so an `Err`
+                // here is meant to fail the dispatch atomically, before any child
+                // starts. Once one has, that promise needs keeping: the children
+                // this loop already registered are silent and owned by nobody
+                // (`end_plan` only releases the plan hold), so abort them before
+                // the error leaves -- and only then release the hold, so the plan
+                // owes nothing the moment it reports its failure.
+                for run_id in &first_ids {
+                    bg.abort_child(run_id);
+                }
                 if multi {
                     bg.end_plan();
                 }
@@ -3842,6 +3888,64 @@ mod tests {
             bg.inner.lock().unwrap().is_empty(),
             "abort_all drains queued dispatches too"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F3: a first-phase spawn failure aborts the children that phase already
+    /// started. They were dispatched silent, so anything left behind runs on
+    /// unowned, spending tokens for a plan that already failed, and only a
+    /// whole-run teardown would ever name them -- a session-owned registry never
+    /// does. `abort_child` is what that error path calls per started child.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn aborting_one_started_child_leaves_nothing_owed() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("abort_one");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the only slot, so the child parks on the semaphore: registered
+        // and owed, but never running -- nothing can finish it out from under
+        // the assertions below.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let scope = DispatchScope {
+            bg: bg.clone(),
+            generation: bg.generation(),
+        };
+        // Silent, exactly how a multi-phase plan's first phase dispatches.
+        let d = spawn_subagent(
+            &scope,
+            &args,
+            req("reviewer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .expect("the child registers");
+
+        assert_eq!(bg.running.load(Ordering::SeqCst), 1, "the child is owed");
+        assert!(bg.abort_child(&d.run_id), "the child was still registered");
+        assert!(!bg.abort_child(&d.run_id), "a second abort is a no-op");
+
+        assert!(bg.live_run_ids().is_empty(), "nothing is live afterwards");
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0, "counters released");
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "queue slot released");
+        assert!(bg.take_notices().is_empty(), "a silent child queues no ping");
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "the registry no longer holds it"
+        );
+        let ended = std::iter::from_fn(|| events_rx.try_recv().ok()).any(|ev| {
+            matches!(
+                ev,
+                StreamEvent::SubagentEnd { ref run_id, .. } if *run_id == d.run_id
+            )
+        });
+        assert!(ended, "the aborted child's start bracket is closed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
