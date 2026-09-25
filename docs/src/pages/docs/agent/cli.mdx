@@ -241,9 +241,9 @@ record is identity, not content:
 | `run_id` | The run that made the request. Absent for the main run, set to the subagent's own id for a child's turns |
 | `session_id` | The session the request belongs to, as the `init` record names it. The correlation id the request itself carries is derived from it |
 | `provider`, `model`, `api_type` | The configured provider the model resolved to, the bare model id the upstream receives, and the wire API the body is built for (`anthropic`, `google`, `openai-responses`; absent when the body is chat/completions) |
-| `request_sha256` | SHA-256 of the request body as Jan built it, as canonical JSON (object keys sorted): the whole request's identity, so two runs are comparable even when something this record does not itemize changed |
-| `body_bytes` | The built body's serialized length, measured before the provider adapter serializes it its own way |
-| `tools_sha256` | SHA-256 of the `tools` array exactly as sent. Absent when the request carries no non-empty tool list. The tool array can change while the model id does not, which is why it is hashed separately from the body |
+| `request_sha256` | SHA-256 of the request body as Jan built it, as canonical JSON: every object's keys sorted, recursively, so re-encoding the same members in another order gives the same digest. The whole request's identity, so two runs are comparable even when something this record does not itemize changed |
+| `body_bytes` | The canonical body's serialized length, measured before the provider adapter serializes it its own way. Key order does not change it, so it describes the built body either way |
+| `tools_sha256` | SHA-256 of the `tools` array as sent, canonical JSON in the same sense. Absent when the request carries no non-empty tool list. The tool array can change while the model id does not, which is why it is hashed separately from the body |
 | `images` | One entry per image in the body, in order. Absent when there are none |
 
 `images` hashes each image over its **decoded** bytes, so a host can hash the same frame it captured
@@ -253,14 +253,21 @@ attached).
 
 Emitted for subagent turns as well as the main run's, and for the side calls a run makes (a
 compaction summary, a `/goal` evaluation inside a turn), since those are real requests with real
-spend. A record rides the stream of the run that made the request, so it also reaches RPC clients as
-`item/request_provenance`. A request made with no run in flight -- the TUI's `/compact`, a `/goal`
-evaluation between turns -- has no run stream to ride and is not reported.
+spend. A record rides the stream of the run that made the request.
+
+On the RPC surface a record travels with the run it belongs to: `item/request_provenance` for a
+request the main run made, and for a child's request the `request_provenance` record nested in
+`item/subagent` (`{run_id, name, event}`), because a child's own events are wrapped rather than
+raised at the top level - `run_id` names the child on either surface. A request made with no run in
+flight -- the TUI's `/compact`, a `/goal` evaluation between turns -- has no run stream to ride and
+is not reported.
 
 The record deliberately carries no prompt, completion, header, or credential -- `request_sha256` is
 how the two sides agree they are talking about the same request. The digest covers the body Jan
-built, before the provider's adapter serializes it into that provider's own shape, so it is stable
-for a given run and comparable across runs against the same provider. Two runs on different wire
+built, before the provider's adapter serializes it into that provider's own shape and appends the
+transport fields it owns (`stream`, `stream_options`), so it is stable for a given run and
+comparable across runs against the same provider -- and a harness that records what the provider
+received can recompute it by sorting keys and dropping those two fields. Two runs on different wire
 APIs differ by construction: the tool array each provider is sent is not the same shape.
 
 #### Host tools
