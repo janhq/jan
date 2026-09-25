@@ -1271,21 +1271,26 @@ pub(crate) struct AgentSession {
     /// Fast model for the `smol` role (goal evaluation). Falls back to `model`.
     pub smol_model: String,
     pub limits: SessionLimits,
+    /// Whether this session requests Codex's priority service tier when the
+    /// resolved transport is OpenAI Responses with OAuth.
+    pub fast_mode: bool,
     /// Whether the TUI expands `<think>` reasoning blocks (default false).
     pub show_reasoning: bool,
     /// Whether the TUI streams reasoning into the live tail while it folds
     /// (`stream_reasoning` in `~/.jan/config.toml`, default true). Independent
     /// of `show_reasoning`, which unfolds it for good.
     pub stream_reasoning: bool,
-    /// Whether to resend a prior assistant turn's reasoning to the model
-    /// (default true). False drops `reasoning_content` from outgoing assistant
-    /// messages; the display journal still keeps reasoning for a resume.
+    /// Whether to resend a prior assistant turn's `reasoning_content` to the
+    /// model (default true). False drops `reasoning_content` from outgoing
+    /// assistant messages; the display journal still keeps reasoning for a
+    /// resume.
     pub send_reasoning: bool,
     /// Shared MCP connection map (same Arc held by `args`), so the TUI can
     /// connect/disconnect servers live via `/mcp` and later turns pick them up.
     pub mcp_servers: crate::core::state::SharedMcpServers,
-    /// Background connect of `active` MCP servers, awaited before the first turn.
-    /// `None` when no server is active. Resolves to the connected server names.
+    /// Background connect of `active` MCP servers, awaited before the first
+    /// turn. `None` when no server is active. Resolves to the connected server
+    /// names.
     pub mcp_task: Option<tokio::task::JoinHandle<mcp::ConnectOutcome>>,
     /// The git worktree this session's tools work in, when it has one. `None`
     /// is the default: the agent edits the project directory itself.
@@ -1304,6 +1309,7 @@ fn request_body(
     model: &str,
     limits: &SessionLimits,
     send_reasoning: bool,
+    fast_mode: bool,
     messages: serde_json::Value,
 ) -> serde_json::Value {
     let mut body = serde_json::json!({
@@ -1335,6 +1341,12 @@ fn request_body(
             "cache_write_usd": ceiling.rates.cache_write_usd,
         });
     }
+    // Internal orchestration hint. The loop consumes this before any wire
+    // conversion, so providers never receive the internal field itself: the
+    // Codex fast mode becomes the Responses service tier there.
+    if fast_mode {
+        body["fast_mode"] = serde_json::json!(true);
+    }
     // Reasoning resend policy: the request-level flag the loop reads to
     // decide whether prior assistant `reasoning_content` goes back out.
     body["send_reasoning"] = serde_json::json!(send_reasoning);
@@ -1344,7 +1356,13 @@ fn request_body(
 impl AgentSession {
     /// Build a streaming request body for the given conversation history.
     pub(crate) fn body(&self, messages: serde_json::Value) -> serde_json::Value {
-        request_body(&self.model, &self.limits, self.send_reasoning, messages)
+        request_body(
+            &self.model,
+            &self.limits,
+            self.send_reasoning,
+            self.fast_mode,
+            messages,
+        )
     }
 }
 
@@ -1719,6 +1737,7 @@ fn prepare_agent_session(
             max_turns: flags.max_turns,
             cost_ceiling,
         },
+        fast_mode: cfg.agent.fast_mode.unwrap_or(false),
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
         send_reasoning: cfg.agent.send_reasoning.unwrap_or(true),
@@ -4416,7 +4435,7 @@ mod tests {
     fn run_limits_reach_the_request_body() {
         let messages = serde_json::json!([]);
 
-        let unset = request_body("m", &limits_with(None, 128_000), true, messages.clone());
+        let unset = request_body("m", &limits_with(None, 128_000), true, false, messages.clone());
         assert!(
             unset.get("max_turns").is_none(),
             "an unset cap must not write the field at all: {unset}"
@@ -4424,15 +4443,15 @@ mod tests {
         assert_eq!(unset["max_session_tokens"], 128_000);
 
         // What `agent step` pins, and what `--max-turns 5` pins, by the same route.
-        let stepped = request_body("m", &limits_with(Some(1), 128_000), true, messages.clone());
+        let stepped = request_body("m", &limits_with(Some(1), 128_000), true, false, messages.clone());
         assert_eq!(stepped["max_turns"], 1);
-        let capped = request_body("m", &limits_with(Some(5), 20_000), true, messages.clone());
+        let capped = request_body("m", &limits_with(Some(5), 20_000), true, false, messages.clone());
         assert_eq!(capped["max_turns"], 5);
         assert_eq!(capped["max_session_tokens"], 20_000);
 
         // An explicit 0 is the engine's "unbounded" encoding and must survive as
         // itself rather than being dropped back to the absent case.
-        let zero = request_body("m", &limits_with(Some(0), 0), true, messages);
+        let zero = request_body("m", &limits_with(Some(0), 0), true, false, messages);
         assert_eq!(zero["max_turns"], 0);
         assert_eq!(zero["max_session_tokens"], 0);
     }
