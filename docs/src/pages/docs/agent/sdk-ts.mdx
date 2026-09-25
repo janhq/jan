@@ -10,36 +10,47 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 
 **Run a script that asks Jan a question and prints its answer as it arrives.**
 
-You need **Node.js 20+**, **Git**, and access to a model provider. No Jan Desktop, Rust toolchain,
-or TypeScript build step is needed.
+You need **Node.js 20+** and access to a model provider. No Git checkout, Jan Desktop, Rust
+toolchain or TypeScript build step is needed.
 
 <Callout type="warning">
-The SDK is a preview and is not published to npm yet. Install the source package below, not
-`npm install @janhq/agent-sdk`. The runtime is a separate, prebuilt download.
+The SDK is a preview and is not published to npm yet: `npm install @janhq/agent-sdk` does not work.
+Install the nightly package below instead. The runtime is a separate, prebuilt download.
 </Callout>
 
 <Steps>
 
 ### Install the SDK and runtime
 
-In a new directory:
+In a new directory, install the latest nightly SDK package:
 
+<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
+  <Tabs.Tab>
 ```bash
-mkdir jan-js-demo
-cd jan-js-demo
+mkdir jan-js-demo && cd jan-js-demo
 npm init -y
-git clone --depth 1 https://github.com/janhq/jan.git jan-source
-npm install ./jan-source/packages/agent-sdk
+npm install "$(node -e "fetch('https://delta.jan.ai/sdk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")"
 ```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+mkdir jan-js-demo; cd jan-js-demo
+npm init -y
+npm install (node -e "fetch('https://delta.jan.ai/sdk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")
+```
+  </Tabs.Tab>
+</Tabs>
 
-Only the SDK package is installed. You do not need to install or build the rest of the repository.
+The command looks up the current build and installs its versioned package URL, so
+`package.json` pins that exact build. The [download page](https://delta.jan.ai/sdk-nightly/index.html)
+shows the same command with the URL written out.
 
 Install the `jan` runtime:
 
 <Tabs items={['macOS / Linux', 'Windows PowerShell']}>
   <Tabs.Tab>
 ```bash
-bash jan-source/scripts/install-jan-agent.sh
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
   </Tabs.Tab>
@@ -118,7 +129,8 @@ TypeScript uses the same API; the installed package includes type declarations.
 
 | Problem | What to do |
 | --- | --- |
-| Cannot find `@janhq/agent-sdk` | Run the local `npm install` above and keep `hello.mjs` in the demo directory. |
+| Cannot find `@janhq/agent-sdk` | Run the `npm install` command above in `jan-js-demo`, and keep `hello.mjs` there. |
+| The package download fails | No nightly is available right now. Use the [source install](/docs/agent/sdk-nightly#source-install-fallback). |
 | Cannot start `jan` | Add it to PATH, or pass its absolute path as `JanRuntime.start({ bin: '/path/to/jan' })`. |
 | Unknown `rpc` command or protocol mismatch | Run `jan update`, then retry startup. |
 | No model, authentication error, or provider error | Run `jan login` or fix the provider configuration. A model override must name a model that provider serves. |

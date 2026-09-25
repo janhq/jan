@@ -7,36 +7,72 @@ import { Callout, Tabs } from 'nextra/components'
 
 # Nightly SDK Installation
 
-**Install a packaged SDK preview, then explicitly install its matching runtime.**
+**Install a packaged SDK preview, then its runtime.**
 The SDK is your language client; the `jan` runtime is the separate executable
-that runs the agent. Neither needs Jan Desktop or a Rust compiler.
+that runs the agent. Neither needs Jan Desktop, a Git checkout or a Rust compiler.
 
 <Callout type="warning">
-Nightly artifacts become available after the first successful **Agent SDK Nightly**
-workflow run. If the download page returns 404, no nightly has been published yet;
-use the source-install fallback below. These are previews, not npm/PyPI releases.
+These are previews, not npm/PyPI releases. If a download below fails (HTTP 403 or 404), that
+build is not available; use the [source-install fallback](#source-install-fallback).
 </Callout>
 
 ## Install the SDK
 
-Open the [nightly download page](https://delta.jan.ai/sdk-nightly/index.html).
-Copy the **versioned installation command** for your language into a new project:
+Each command looks up the latest validated build and installs its versioned package URL, so
+your dependency file pins that exact build.
 
-- **JavaScript:** Node.js 20+ and npm. The command installs a `.tgz` URL directly.
-- **Python:** Python 3.11+ in a virtual environment. The command installs a wheel
-  URL directly, with its SHA-256 fragment. Node is not required.
+<Tabs items={['JavaScript', 'Python']}>
+<Tabs.Tab>
 
-No GitHub login or repository clone is needed. Save the page's **versioned
-manifest** link alongside your dependency lockfile. It identifies the package
-versions, source revision, digests, protocol version and compatible runtime.
-Use the versioned link for repeatable installs, not the moving latest manifest.
+Node.js 20+ and npm:
 
-## Start the matching runtime
+```bash
+npm install "$(node -e "fetch('https://delta.jan.ai/sdk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")"
+```
 
-Download that build's versioned manifest as `sdk-nightly.json` in your project.
-These snippets use the existing SDK runtime installer; package installation itself
-does not download or launch a runtime. Configure your provider as described in the
-[Agent quickstart](/docs/agent/quickstart) before asking the agent to do work.
+In PowerShell, replace `"$(...)"` with `(...)`.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Python 3.11+, in a virtual environment. Node is not required:
+
+```bash
+python -m pip install "$(python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/sdk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")"
+```
+
+In PowerShell, replace `"$(...)"` with `(...)`. The `#sha256=` fragment makes pip check the
+wheel against the digest the build published.
+
+</Tabs.Tab>
+</Tabs>
+
+Prefer to copy a fixed URL? The [download page](https://delta.jan.ai/sdk-nightly/index.html)
+shows the same commands with the current build's URLs written out.
+
+For repeatable installs, save that build's **versioned manifest**
+(`https://delta.jan.ai/sdk-nightly/<build>/manifest.json`, linked from the download page)
+alongside your lockfile. It identifies the package versions, source revision, digests, protocol
+version and compatible runtime. Use it rather than the moving latest manifest.
+
+## Install the runtime
+
+For a first run, the hosted installer puts the latest nightly `jan` on your PATH, which also gives
+you `jan login`:
+
+```bash
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash    # macOS / Linux
+irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex            # Windows PowerShell
+```
+
+`JanRuntime.start()` finds `jan` on PATH, or the binary named by `JAN_BIN`.
+
+### Pin the runtime your SDK build was tested with
+
+Each SDK build records the runtime it was smoke-tested against. To install exactly that one,
+download the build's versioned manifest as `sdk-nightly.json` and pass its runtime pin to the SDK
+installer, which downloads, verifies and caches the binary. Configure your provider as described
+in the [Agent quickstart](/docs/agent/quickstart) before asking the agent to do work.
 
 <Tabs items={['JavaScript', 'Python']}>
 <Tabs.Tab>

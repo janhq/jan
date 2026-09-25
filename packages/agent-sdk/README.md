@@ -13,15 +13,18 @@ process serving many addressable sessions.
 
 ## Install
 
-For a preview without npm publication, use the versioned `npm install` command
-on the [nightly SDK download page](https://delta.jan.ai/sdk-nightly/index.html).
-That page becomes available after the first successful **Agent SDK Nightly**
-workflow run. It links a prebuilt tarball; no repository clone is required.
+It is a preview and not on npm yet. Install the latest nightly build; no
+repository clone is required:
 
-Keep the build's linked manifest to pin its matching runtime with
+```bash
+npm install "$(node -e "fetch('https://delta.jan.ai/sdk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")"
+```
+
+The URL is versioned, so `package.json` pins that exact build. That build's
+manifest also pins its matching runtime:
 `installRuntime({ manifestUrl: manifest.runtime.manifestUrl, version: manifest.runtime.version })`.
-See [nightly installation](https://jan.ai/docs/agent/sdk-nightly) for complete
-commands and the source-install fallback before the first nightly is published.
+See [nightly installation](https://jan.ai/docs/agent/sdk-nightly) for PowerShell
+and the source-install fallback.
 
 The runtime binary is separate, and there are three ways to have one: on `PATH`,
 named by `process.env.JAN_BIN` (the `bin` option overrides both), or installed by

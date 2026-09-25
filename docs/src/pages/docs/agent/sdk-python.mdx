@@ -10,53 +10,49 @@ import { Callout, Steps, Tabs } from 'nextra/components'
 
 **Run a script that asks Jan a question and prints its answer as it arrives.**
 
-You need **Python 3.11+**, **Git**, and access to a model provider. No Node.js, Jan Desktop or Rust
-toolchain is needed. Python talks directly to the Jan runtime.
+You need **Python 3.11+** and access to a model provider. No Git checkout, Node.js, Jan Desktop or
+Rust toolchain is needed. Python talks directly to the Jan runtime.
 
 <Callout type="warning">
-The SDK is a preview and is not published to PyPI yet. Install the source package below, not
-`pip install jan-agent-sdk`. The runtime is a separate, prebuilt download.
+The SDK is a preview and is not published to PyPI yet: `pip install jan-agent-sdk` does not work.
+Install the nightly wheel below instead. The runtime is a separate, prebuilt download.
 </Callout>
 
 <Steps>
 
 ### Install the SDK and runtime
 
-Create a demo directory and an isolated Python environment:
-
-```bash
-mkdir jan-python-demo
-cd jan-python-demo
-```
+Create a demo directory and an isolated Python environment, then install the latest nightly wheel:
 
 <Tabs items={['macOS / Linux', 'Windows PowerShell']}>
   <Tabs.Tab>
 ```bash
+mkdir jan-python-demo && cd jan-python-demo
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install "$(python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/sdk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")"
 ```
   </Tabs.Tab>
   <Tabs.Tab>
 ```powershell
+mkdir jan-python-demo; cd jan-python-demo
 py -3 -m venv .venv
 .venv\Scripts\Activate.ps1
+python -m pip install (python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/sdk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")
 ```
   </Tabs.Tab>
 </Tabs>
 
-```bash
-git clone --depth 1 https://github.com/janhq/jan.git jan-source
-python -m pip install ./jan-source/sdk/python
-```
-
-Only the SDK package is installed. You do not need to install or build the rest of the repository.
+The command looks up the current build and installs its versioned wheel, checked against the
+SHA-256 the build published. The [download page](https://delta.jan.ai/sdk-nightly/index.html) shows
+the same command with the URL written out.
 
 Install the `jan` runtime:
 
 <Tabs items={['macOS / Linux', 'Windows PowerShell']}>
   <Tabs.Tab>
 ```bash
-bash jan-source/scripts/install-jan-agent.sh
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 ```
   </Tabs.Tab>
@@ -134,7 +130,8 @@ blocking SDK work in a worker thread rather than on your event loop.
 
 | Problem | What to do |
 | --- | --- |
-| `ModuleNotFoundError: jan_agent_sdk` | Activate the demo's virtual environment and run the local `pip install` above with that Python. |
+| `ModuleNotFoundError: jan_agent_sdk` | Activate the demo's virtual environment and run the `pip install` command above with that Python. |
+| The wheel download fails | No nightly is available right now. Use the [source install](/docs/agent/sdk-nightly#source-install-fallback). |
 | Cannot start `jan` | Add it to PATH, or pass its absolute path as `JanRuntime.start(bin="/path/to/jan")`. |
 | Unknown `rpc` command or protocol mismatch | Run `jan update`, then retry startup. |
 | No model, authentication error, or provider error | Run `jan login` or fix the provider configuration. A model override must name a model that provider serves. |
