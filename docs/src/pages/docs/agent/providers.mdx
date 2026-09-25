@@ -95,6 +95,18 @@ jan login
 
 Or `/login` from inside the console. The key is saved to `~/.jan/config.toml`.
 
+## Y-API
+
+An OpenAI-compatible gateway that fronts several vendors behind one endpoint, so the model id carries
+the vendor: `deepseek/deepseek-v4-flash`, `z-ai/glm-5.3`. Signing in avoids managing a key yourself:
+
+```bash
+jan login
+```
+
+Or `/login` from inside the console. Sign-in validates the key against `GET /v1/models` and persists
+what it lists, so the picker fills in immediately. The key is saved to `~/.jan/config.toml`.
+
 ## Where settings come from
 
 Four sources, each beating the ones above it:
