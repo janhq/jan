@@ -1,0 +1,81 @@
+---
+title: Jan ADK
+description: Add an AI agent to your app. Start with a prompt, then give the agent functions your code can run.
+keywords: [Jan, Jan Agent, ADK, JavaScript, Python, embedding, host tools]
+---
+
+import { Callout } from 'nextra/components'
+
+# Jan ADK
+
+**Send a task from your app. Get a streamed answer. Let the agent call your functions when it needs to act.**
+
+Jan handles the conversation with the model and the loop of choosing a tool, reading its result,
+and deciding what to do next. Your app supplies the task, controls access to its tools, and displays the result.
+
+## Start with one response
+
+Choose the language your app already uses:
+
+- **[JavaScript quickstart](/docs/agent/adk-ts)** - Node.js 20+, also usable from TypeScript.
+- **[Python quickstart](/docs/agent/adk-python)** - Python 3.11+, no Node.js required.
+
+Both guides end with a complete script that prints an answer. You do not need to understand the
+wire protocol, manage subprocess pipes, or install Jan Desktop.
+
+<Callout type="warning">
+Preview: the packages are not yet published to npm or PyPI. The quickstarts install a
+[nightly ADK build](/docs/agent/adk-nightly) and a prebuilt nightly runtime with one command each.
+No Git checkout or Rust build is required.
+</Callout>
+
+## Three pieces, one app
+
+```text
+Your app + ADK  <->  Jan runtime  <->  Model provider
+      |
+      +-- Your functions: read a sensor, query a database, call an API
+```
+
+| Piece | Its job |
+| --- | --- |
+| **ADK** | The JavaScript or Python library you import. It starts Jan, streams events and calls your tool handlers. |
+| **Runtime** | The separate `jan` executable. It manages conversations and the agent loop. |
+| **Model provider** | The service Jan sends model requests to. Configure a provider or sign in with `jan login`. |
+
+The runtime runs locally, but that does **not** mean inference runs locally. Your configured
+provider receives the prompt and the tool results you return to the model.
+
+## The three objects you use
+
+1. **Runtime** - the Jan process your app owns. Start it once; close it when your app is done.
+2. **Session** - one conversation, with its own history, model and tools.
+3. **Turn** - one prompt and the work it triggers. Stream its events, then read its final status.
+
+A runtime can hold multiple sessions, but runs one active turn at a time. Reuse a session for
+follow-up questions; create a new one for a separate conversation.
+
+## After your first response
+
+| Next goal | Guide |
+| --- | --- |
+| Let the agent call a function in your app | [Host tools](/docs/agent/adk-tools) |
+| Stop work, close the process, or handle an error | [Process & failures](/docs/agent/adk-runtime) |
+| Build your own client or inspect the JSON messages | [Protocol records](/docs/agent/protocol) |
+| Use Jan from a terminal instead of code | [Agent quickstart](/docs/agent/quickstart) |
+
+## What your build supports
+
+The ADK uses `jan cli agent rpc`. Check that your runtime has it:
+
+```bash
+jan cli agent rpc --help
+```
+
+If the command is missing, update your nightly with `jan update`. The ADK checks protocol
+compatibility when it starts the runtime. A binary built from source must be rebuilt instead.
+
+For download locations and checksums, use the
+[nightly manifest](https://delta.jan.ai/agent-nightly/manifest.json). For negotiated capabilities
+and image limits, read `runtime.capabilities` and `runtime.limits` after ADK startup rather than
+assuming every nightly has the same features.

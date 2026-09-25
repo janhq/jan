@@ -128,13 +128,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --test agent_rpc
 
-      # The Agent SDK cookbook's runnable source, run with the runner's own
+      # The ADK cookbook's runnable source, run with the runner's own
       # node and python3 against the jan binary this commit builds, plus the
       # check that every docs excerpt still matches the file it quotes.
-      - name: cargo test (Agent SDK examples)
+      - name: cargo test (ADK examples)
         run: |
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
-            --no-default-features --features cli --test sdk_examples
+            --no-default-features --features cli --test adk_examples
 
   # The deliverable of the schema work is this guard, not the file: a protocol
   # shape that changes without regenerating leaves every consumer validating
@@ -234,13 +234,13 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
 
-  # The SDKs are clients of the same channel the CLI tests drive, so they are
+  # The ADKs are clients of the same channel the CLI tests drive, so they are
   # built and run here rather than in the linter workflow: the subject is a real
   # runtime binary, and a client that only agreed with itself would pass. The
   # committed wire types are checked against protocol/rpc-schema.json in the
   # same job, since that document is what generates them.
-  sdk:
-    name: agent SDKs
+  adk:
+    name: ADKs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -250,21 +250,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: sdk
+          key: adk
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20.x'
 
-      # The runtime the SDKs drive, built the way a user builds it.
+      # The runtime the ADKs drive, built the way a user builds it.
       - name: Build the jan runtime
         run: |
           cargo build --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --bin jan
           echo "JAN_BIN=$PWD/src-tauri/jan-cli/target/debug/jan" >> "$GITHUB_ENV"
 
-      # For the SDK's own type-check. The suite itself needs no dependency: the
+      # For the ADK's own type-check. The suite itself needs no dependency: the
       # package has none, and `node --test` is in the runtime.
       - name: Install the workspace
         run: |
@@ -272,15 +272,15 @@ jobs:
           corepack prepare yarn@4.5.3 --activate
           yarn install --immutable
 
-      - name: Type-check the JavaScript SDK
-        run: yarn workspace @janhq/agent-sdk check-types
+      - name: Type-check the JavaScript ADK
+        run: yarn workspace @janhq/adk check-types
 
-      - name: JavaScript SDK suite
-        run: yarn workspace @janhq/agent-sdk test
+      - name: JavaScript ADK suite
+        run: yarn workspace @janhq/adk test
 
       # The Python client reaches the runtime without Node, so it runs with a
       # PATH that has no node on it: the claim is checked, not stated.
-      - name: Python SDK suite
+      - name: Python ADK suite
         run: |
           env -i PATH="$(dirname "$JAN_BIN"):/usr/bin:/bin" HOME="$HOME" \
-            JAN_BIN="$JAN_BIN" python3 -m unittest discover -s sdk/python/tests -t sdk/python
+            JAN_BIN="$JAN_BIN" python3 -m unittest discover -s adk/python/tests -t adk/python
