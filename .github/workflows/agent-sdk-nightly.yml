@@ -110,9 +110,12 @@ jobs:
           BUILD: ${{ needs.package.outputs.build }}
         run: python scripts/sdk-nightly/smoke.py "https://delta.jan.ai/sdk-nightly/$BUILD/manifest.json"
         shell: bash
+      # The same shell as the publish smoke: on Windows, Git Bash puts GNU tar
+      # ahead of System32 on PATH, and a PR must see what publication will.
       - name: Smoke PR artifacts without publication credentials
         if: needs.package.outputs.publish != 'true'
         run: python scripts/sdk-nightly/smoke.py sdk-dist/manifest.json --artifacts sdk-dist
+        shell: bash
 
   promote:
     needs: [package, smoke]
