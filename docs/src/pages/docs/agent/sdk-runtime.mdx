@@ -18,7 +18,9 @@ conversations, a Stop button, tool approval, or recovery from a failure.
 - Start one runtime for your app's work, rather than one process per message.
 - Reuse a session to keep conversation history. Create another session for a separate conversation.
 - Wait for a turn to finish before starting another. One runtime runs one active turn at a time.
-- Use `ephemeral: true` / `ephemeral=True` when the conversation should not be saved.
+- Use `ephemeral: true` / `ephemeral=True` when the conversation should not be saved. An
+  ephemeral session also neither reads nor writes project memory, so one session's answers never
+  reach a later session in the same `cwd`.
 
 Always arrange cleanup, including on errors. In JavaScript, put `await runtime.close()` in a
 `finally` block. In Python, use `with JanRuntime.start() as runtime:`. The
