@@ -299,13 +299,22 @@ pub enum StreamEvent {
         /// `openai-responses`), absent for chat/completions.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         api_type: Option<String>,
-        /// SHA-256 of the request body as Jan built it, canonical JSON -- the
-        /// value that makes two runs comparable even when a field this record
-        /// does not itemize has changed.
+        /// SHA-256 of the request body as Jan built it, as canonical JSON:
+        /// every object's keys sorted, recursively, so re-encoding the same
+        /// members in another order gives the same digest. It is the value that
+        /// makes two runs comparable even when a field this record does not
+        /// itemize has changed.
+        ///
+        /// The body hashed is the one Jan built, before the provider adapter
+        /// appends its transport fields (`stream`, `stream_options`), so it is
+        /// not byte-for-byte what the provider received: a harness recomputes it
+        /// by sorting keys and dropping those two fields.
         request_sha256: String,
+        /// The canonical body's serialized length. Key order does not change it,
+        /// so it describes the built body either way.
         body_bytes: u64,
-        /// SHA-256 of the `tools` array as sent, able to change while the model
-        /// id does not.
+        /// SHA-256 of the `tools` array as sent, canonical JSON in the same
+        /// sense, able to change while the model id does not.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tools_sha256: Option<String>,
         /// Every image in the body, in order, hashed over its decoded bytes so

@@ -7,11 +7,17 @@
 //! child, which is the shape Robot Studio already records from pi's
 //! `onPayload`.
 //!
-//! The hashes describe the body Jan built for the adapter (canonical JSON of the
-//! request body, before an adapter's own serialization), so they are stable for
-//! a given run and comparable across runs of the same provider. Two runs on
-//! different wire APIs differ by construction: the tool array each provider
-//! receives is not the same shape.
+//! The hashes describe the body Jan built for the adapter: canonical JSON, every
+//! object's keys sorted recursively, so two bodies carrying the same members in
+//! a different order hash alike. They are therefore stable for a given run and
+//! comparable across runs of the same provider.
+//!
+//! What is hashed is the body *before* the adapter adds its own transport
+//! fields (`stream`, `stream_options`), so it is not byte-for-byte what the
+//! provider received: a harness that re-sorts the body it saw and drops those
+//! two fields arrives at the same digest, which is what "recomputable" means
+//! here. Two runs on different wire APIs differ by construction: the tool array
+//! each provider receives is not the same shape.
 
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
@@ -36,7 +42,7 @@ pub(crate) struct RequestIdentity<'a> {
 
 /// The [`StreamEvent::RequestProvenance`] for one outbound request body.
 pub(crate) fn of_request(body: &Value, identity: RequestIdentity<'_>) -> StreamEvent {
-    let bytes = serde_json::to_vec(body).unwrap_or_default();
+    let bytes = canonical_bytes(body);
     StreamEvent::RequestProvenance {
         run_id: identity.run_id.map(str::to_string),
         session_id: identity.session_id.map(str::to_string),
@@ -52,8 +58,7 @@ pub(crate) fn of_request(body: &Value, identity: RequestIdentity<'_>) -> StreamE
         tools_sha256: body
             .get("tools")
             .filter(|tools| tools.as_array().is_some_and(|t| !t.is_empty()))
-            .and_then(|tools| serde_json::to_vec(tools).ok())
-            .map(|tools| sha256_hex(&tools)),
+            .map(|tools| sha256_hex(&canonical_bytes(tools))),
         images: images_of(body),
     }
 }
@@ -115,6 +120,34 @@ fn data_url_parts(url: &str) -> Option<(&str, &str)> {
     Some((mime, payload))
 }
 
+/// `value` as canonical JSON: every object's keys sorted, recursively.
+///
+/// The digest has to be one value per body, not one per key order: a body this
+/// process assembles and a harness's re-encoding of the same members have to
+/// agree. Sorting is the whole of the normalization -- numbers and strings are
+/// carried as serde_json writes them, which is deterministic for a value built
+/// once here.
+pub(crate) fn canonical_bytes(value: &Value) -> Vec<u8> {
+    serde_json::to_vec(&sorted(value)).unwrap_or_default()
+}
+
+fn sorted(value: &Value) -> Value {
+    match value {
+        Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+        Value::Object(map) => {
+            let mut entries: Vec<(&String, &Value)> = map.iter().collect();
+            entries.sort_by(|left, right| left.0.cmp(right.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key.clone(), sorted(value)))
+                    .collect(),
+            )
+        }
+        other => other.clone(),
+    }
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
@@ -145,11 +178,34 @@ mod tests {
         let (first, bytes, tools, _) = record(&body);
         let (second, ..) = record(&body);
         assert_eq!(first, second);
-        assert_eq!(bytes as usize, serde_json::to_vec(&body).unwrap().len());
+        assert_eq!(bytes as usize, canonical_bytes(&body).len());
         assert!(tools.is_none(), "no tools array means no tools hash");
 
         let changed = json!({"model": "m", "messages": [{"role": "user", "content": "hello"}]});
         assert_ne!(record(&changed).0, first, "a changed body changes the hash");
+    }
+
+    #[test]
+    fn a_different_key_order_is_the_same_request() {
+        // The same members, assembled in another order -- nested, and in the
+        // tools array too. A harness re-encoding the body it saw must land on
+        // the digest this process reported.
+        let assembled = json!({
+            "model": "m",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": {"name": "read", "parameters": {"type": "object"}}}],
+        });
+        let re_encoded = json!({
+            "tools": [{"function": {"parameters": {"type": "object"}, "name": "read"}, "type": "function"}],
+            "messages": [{"content": "hi", "role": "user"}],
+            "model": "m",
+        });
+
+        let (hash, bytes, tools, _) = record(&assembled);
+        let (other_hash, other_bytes, other_tools, _) = record(&re_encoded);
+        assert_eq!(hash, other_hash, "key order is not part of the identity");
+        assert_eq!(bytes, other_bytes, "and neither is the serialized length");
+        assert_eq!(tools, other_tools);
     }
 
     #[test]
@@ -200,8 +256,8 @@ mod tests {
         let hash = record(&body).2.expect("tools hash");
         assert_eq!(
             hash,
-            sha256_hex(&serde_json::to_vec(&tools).unwrap()),
-            "the hash is over the array as sent"
+            sha256_hex(&canonical_bytes(&tools)),
+            "the hash is over the array as sent, canonical"
         );
         assert_eq!(
             record(&json!({"model": "m", "messages": [], "tools": []})).2,

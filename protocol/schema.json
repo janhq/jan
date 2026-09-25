@@ -716,16 +716,17 @@
               ]
             },
             "request_sha256": {
-              "description": "SHA-256 of the request body as Jan built it, canonical JSON -- the\nvalue that makes two runs comparable even when a field this record\ndoes not itemize has changed.",
+              "description": "SHA-256 of the request body as Jan built it, as canonical JSON:\nevery object's keys sorted, recursively, so re-encoding the same\nmembers in another order gives the same digest. It is the value that\nmakes two runs comparable even when a field this record does not\nitemize has changed.\n\nThe body hashed is the one Jan built, before the provider adapter\nappends its transport fields (`stream`, `stream_options`), so it is\nnot byte-for-byte what the provider received: a harness recomputes it\nby sorting keys and dropping those two fields.",
               "type": "string"
             },
             "body_bytes": {
+              "description": "The canonical body's serialized length. Key order does not change it,\nso it describes the built body either way.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0
             },
             "tools_sha256": {
-              "description": "SHA-256 of the `tools` array as sent, able to change while the model\nid does not.",
+              "description": "SHA-256 of the `tools` array as sent, canonical JSON in the same\nsense, able to change while the model id does not.",
               "type": [
                 "string",
                 "null"
