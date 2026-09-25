@@ -27,6 +27,7 @@
   "mcp": "MCP",
   "embedding-separator": { "title": "Embedding", "type": "separator" },
   "sdk": "Agent SDK",
+  "sdk-nightly": "Nightly SDK Installation",
   "sdk-ts": "JavaScript Quickstart",
   "sdk-python": "Python Quickstart",
   "sdk-tools": "Host Tools",

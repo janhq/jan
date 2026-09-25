@@ -13,9 +13,15 @@ process serving many addressable sessions.
 
 ## Install
 
-```bash
-npm install @janhq/agent-sdk
-```
+For a preview without npm publication, use the versioned `npm install` command
+on the [nightly SDK download page](https://delta.jan.ai/sdk-nightly/index.html).
+That page becomes available after the first successful **Agent SDK Nightly**
+workflow run. It links a prebuilt tarball; no repository clone is required.
+
+Keep the build's linked manifest to pin its matching runtime with
+`installRuntime({ manifestUrl: manifest.runtime.manifestUrl, version: manifest.runtime.version })`.
+See [nightly installation](https://jan.ai/docs/agent/sdk-nightly) for complete
+commands and the source-install fallback before the first nightly is published.
 
 The runtime binary is separate, and there are three ways to have one: on `PATH`,
 named by `process.env.JAN_BIN` (the `bin` option overrides both), or installed by

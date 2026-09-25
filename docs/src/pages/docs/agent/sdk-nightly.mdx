@@ -1,0 +1,149 @@
+---
+title: Nightly SDK Installation
+description: Install prebuilt JavaScript and Python SDK previews without npm or PyPI publication, a repository clone, or a Rust build.
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Nightly SDK Installation
+
+**Install a packaged SDK preview, then explicitly install its matching runtime.**
+The SDK is your language client; the `jan` runtime is the separate executable
+that runs the agent. Neither needs Jan Desktop or a Rust compiler.
+
+<Callout type="warning">
+Nightly artifacts become available after the first successful **Agent SDK Nightly**
+workflow run. If the download page returns 404, no nightly has been published yet;
+use the source-install fallback below. These are previews, not npm/PyPI releases.
+</Callout>
+
+## Install the SDK
+
+Open the [nightly download page](https://delta.jan.ai/sdk-nightly/index.html).
+Copy the **versioned installation command** for your language into a new project:
+
+- **JavaScript:** Node.js 20+ and npm. The command installs a `.tgz` URL directly.
+- **Python:** Python 3.11+ in a virtual environment. The command installs a wheel
+  URL directly, with its SHA-256 fragment. Node is not required.
+
+No GitHub login or repository clone is needed. Save the page's **versioned
+manifest** link alongside your dependency lockfile. It identifies the package
+versions, source revision, digests, protocol version and compatible runtime.
+Use the versioned link for repeatable installs, not the moving latest manifest.
+
+## Start the matching runtime
+
+Download that build's versioned manifest as `sdk-nightly.json` in your project.
+These snippets use the existing SDK runtime installer; package installation itself
+does not download or launch a runtime. Configure your provider as described in the
+[Agent quickstart](/docs/agent/quickstart) before asking the agent to do work.
+
+<Tabs items={['JavaScript', 'Python']}>
+<Tabs.Tab>
+
+Save as `runtime.mjs`, then run `node runtime.mjs`:
+
+```js
+import { readFile } from 'node:fs/promises'
+import { JanRuntime, installRuntime } from '@janhq/agent-sdk'
+
+const manifest = JSON.parse(await readFile('sdk-nightly.json', 'utf8'))
+const installed = await installRuntime({
+  manifestUrl: manifest.runtime.manifestUrl,
+  version: manifest.runtime.version,
+})
+const runtime = await JanRuntime.start({ bin: installed.bin })
+try {
+  console.log(runtime.serverInfo)
+} finally {
+  await runtime.close()
+}
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Save as `runtime.py`, then run `python runtime.py`:
+
+```python
+import json
+from pathlib import Path
+from jan_agent_sdk import JanRuntime, install_runtime
+
+manifest = json.loads(Path('sdk-nightly.json').read_text())
+installed = install_runtime(
+    manifest_url=manifest['runtime']['manifestUrl'],
+    version=manifest['runtime']['version'],
+)
+with JanRuntime.start(bin=installed.bin) as runtime:
+    print(runtime.server_info)
+```
+
+</Tabs.Tab>
+</Tabs>
+
+Expect the runtime's reported name and version, followed by a clean exit. A runtime's
+reported version can differ from its nightly artifact version; the manifest pins the
+artifact, while the SDK checks the wire protocol before starting work.
+
+An already provisioned compatible runtime can be passed directly as `bin`, or selected
+with `JAN_BIN`. For an offline launch, skip `installRuntime` / `install_runtime` and
+pass that existing binary. Do not silently substitute another build if a pinned
+artifact has gone missing.
+
+## Supported nightly platforms
+
+The publication gate exercises Linux x64 and ARM64, macOS Intel and Apple Silicon,
+and Windows x64. Windows ARM64 is not claimed by this SDK nightly matrix, even when
+the runtime channel offers an ARM64 binary.
+
+Each job installs the packaged SDKs into clean environments, downloads the pinned
+runtime, streams a turn, executes a host callback, checks that its answer reaches a
+loopback provider, and verifies runtime shutdown. Python runs without Node on `PATH`.
+This is a real-runtime packaging check, not evidence of a live model-provider run.
+
+## Versions, integrity and failures
+
+- The latest [manifest](https://delta.jan.ai/sdk-nightly/manifest.json) and download
+  page each point to one complete, validated build. An unsuccessful build or smoke
+  run does not promote either pointer.
+- Versioned directories include the source revision and CI run/attempt. The workflow
+  does not overwrite or automatically delete them. Keep a local copy if you require
+  availability independent of the download service's storage policy.
+- The manifest records SHA-256 digests for both packages and the runtime manifest.
+  The Python install link includes the wheel digest; compare the downloaded JS
+  tarball with the manifest digest if independently verifying it. npm's lockfile
+  also records the installed tarball's integrity.
+- A 404 on a saved artifact URL means that build is unavailable. Choose another
+  build explicitly; the installer does not replace your pin with latest.
+- A digest or protocol mismatch is a failure before work starts. Do not retry a
+  potentially executed host action just because the runtime disconnected.
+
+## Source-install fallback
+
+Until a nightly is published, clone Jan once and install only your language package:
+
+```bash
+git clone --depth 1 https://github.com/janhq/jan.git jan-source
+```
+
+For JavaScript, run `npm install ./jan-source/packages/agent-sdk` in your project.
+For Python, run `python -m pip install ./jan-source/sdk/python` in a virtual environment.
+This fallback needs Git and a source checkout; it still needs no Jan Desktop or Rust
+build. Install the runtime explicitly with the SDK installer as described in the
+package README.
+
+## Publishing and recovery
+
+Maintainers can run **Agent SDK Nightly** manually from `main`; it also runs after a
+successful **Jan Agent CLI - Nightly Build**. It snapshots the current published
+runtime manifest, rather than assuming an SDK package version is a runtime version.
+
+The workflow packages both clients, uploads immutable versioned assets, runs the
+platform smoke matrix against the public downloads, then advances discovery. PRs
+and manual runs on other branches validate artifacts without publishing credentials.
+If smoke fails, inspect that run; the previous nightly remains selected. A rerun
+creates a new run-attempt identity. To restore an older known-good build, restore its
+complete discovery documents; never replace files inside its versioned directory.
+
+This workflow does not publish to npm or PyPI. Registry releases are a separate path.

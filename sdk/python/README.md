@@ -13,9 +13,15 @@ process serving many addressable sessions.
 
 ## Install
 
-```bash
-pip install jan-agent-sdk
-```
+For a preview without PyPI publication, use the versioned `python -m pip install`
+command on the [nightly SDK download page](https://delta.jan.ai/sdk-nightly/index.html).
+That page becomes available after the first successful **Agent SDK Nightly**
+workflow run. It links a prebuilt wheel; no repository clone or Node is required.
+
+Keep the build's linked manifest to pin its matching runtime with
+`install_runtime(manifest_url=manifest["runtime"]["manifestUrl"], version=manifest["runtime"]["version"])`.
+See [nightly installation](https://jan.ai/docs/agent/sdk-nightly) for complete
+commands and the source-install fallback before the first nightly is published.
 
 The runtime binary is separate, and there are three ways to have one: on `PATH`,
 named by `$JAN_BIN` (the `bin` argument overrides both), or installed by this
