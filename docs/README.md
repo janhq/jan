@@ -31,7 +31,7 @@ Refer to the [Contributing Guide](https://github.com/janhq/jan/blob/main/CONTRIB
 ### Pre-requisites and Installation
 
 - [Node.js](https://nodejs.org/en/) (version 20.0.0 or higher)
-- [yarn](https://yarnpkg.com/) (version 4.x; the repo pins 4.5.3 via corepack)
+- [yarn](https://yarnpkg.com/) (version 4.x; the repo pins 4.10.3 via corepack)
 
 #### Installation
 

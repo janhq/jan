@@ -103,7 +103,7 @@ Jan 致力于通过易于使用的产品，将开源 AI 的精华呈现给大众
 ### 前置要求 (Prerequisites)
 
 - Node.js ≥ 20.0.0
-- Yarn ≥ 4.5.3
+- Yarn ≥ 4.10.0
 - Make ≥ 3.81
 - Rust (用于 Tauri 构建)
 - (仅限 macOS Apple Silicon) MetalToolchain 命令：`xcodebuild -downloadComponent MetalToolchain`
