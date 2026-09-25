@@ -904,6 +904,15 @@ mod tests {
 
     use super::*;
 
+    /// Run a `git` command for a test fixture with a fixed identity, so commits
+    /// succeed on a bare CI runner that has no `user.name`/`user.email` set.
+    fn fixture_git(args: &[&str]) -> Result<String, String> {
+        let mut with_identity: Vec<&str> =
+            vec!["-c", "user.name=Jan Test", "-c", "user.email=test@jan.ai"];
+        with_identity.extend_from_slice(args);
+        git(&with_identity)
+    }
+
     /// A local git repo fixture containing a plugin payload.
     fn make_repo(tag: &str, with_manifest: bool) -> PathBuf {
         let repo =
@@ -922,9 +931,9 @@ mod tests {
             )
             .unwrap();
         }
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&[
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&[
             "-C",
             repo.to_str().unwrap(),
             "commit",
@@ -1095,8 +1104,8 @@ mod tests {
         let repo = std::env::temp_dir().join(format!("jan_plugin_empty_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).unwrap();
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&[
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&[
             "-C",
             repo.to_str().unwrap(),
             "commit",
@@ -1204,9 +1213,9 @@ mod tests {
             )
             .unwrap();
         }
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&[
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&[
             "-C",
             repo.to_str().unwrap(),
             "commit",
@@ -1249,9 +1258,9 @@ mod tests {
             "name = \"only\"\ndescription = \"only\"\n",
         )
         .unwrap();
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&[
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&[
             "-C",
             repo.to_str().unwrap(),
             "commit",
@@ -1298,9 +1307,9 @@ mod tests {
             .join(".claude-plugin");
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join("plugin.json"), "{\"name\":\"gamma\"}").unwrap();
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&[
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&[
             "-C",
             repo.to_str().unwrap(),
             "commit",
@@ -1348,9 +1357,9 @@ mod tests {
             "name = \"only\"\ndescription = \"only\"\n",
         )
         .unwrap();
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "commit", "-m", "nested singleton"]).unwrap();
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "commit", "-m", "nested singleton"]).unwrap();
 
         let root = unique_root("nestedsingleton1");
         let p = install(&root, &format!("file://{}", repo.display()))
@@ -1500,9 +1509,9 @@ mod tests {
             )
             .unwrap();
         }
-        git(&["init", repo.to_str().unwrap()]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
-        git(&["-C", repo.to_str().unwrap(), "commit", "-m", "collection"]).unwrap();
+        fixture_git(&["init", repo.to_str().unwrap()]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        fixture_git(&["-C", repo.to_str().unwrap(), "commit", "-m", "collection"]).unwrap();
         repo
     }
 
