@@ -1,293 +1,156 @@
 ---
-title: Host Tools (Preview)
-description: Let Jan Agent call functions your own code executes - declare them, approve them, answer them, and handle the failures.
-keywords: [Jan, Jan Agent, SDK, host tools, tool calling, function calling, stream-json, embedding]
+title: Host Tools
+description: Give the agent a function in your app. Declare what it does, run the callback, and return a result.
+keywords: [Jan, Jan Agent, SDK, host tools, function calling, JavaScript, Python]
 ---
 
-import { Callout, Tabs } from 'nextra/components'
+import { Tabs } from 'nextra/components'
 
-# Host Tools (Preview)
+# Host Tools
 
-A host tool is a function the model calls and **your code** runs: a device only your process can
-reach, your application's own state, an API behind your credentials. You declare the tools when you
-start the run; each call arrives on stdout as a `tool_request`, and you answer it on stdin with a
-`tool_result`.
+**A host tool is a function in your app that the agent can ask to run.**
 
-<Callout type="warning">
-Host tools need a build whose `jan cli agent run --help` lists `--host-tools`. The `agent-nightly`
-build published on 2026-09-22 (`jan --version` prints `0.8.4-49`) predates them; run `jan update`
-once a newer nightly is out. On an older build the run fails with
-`error: unexpected argument '--host-tools' found` and exit code `2`.
-</Callout>
-
-## Run the example
-
-Each example declares one tool, `get_weather`, starts the run with `--safe` so that your code
-approves every side effect, and answers the call when the model makes it.
-
-<Tabs items={['JavaScript', 'Python']}>
-  <Tabs.Tab>
-```bash
-node host-tool.mjs "What's the weather in Hanoi?"
-```
-
-Source: [`examples/agent-sdk/js/host-tool.mjs`](https://github.com/janhq/jan/blob/main/examples/agent-sdk/js/host-tool.mjs)
-  </Tabs.Tab>
-  <Tabs.Tab>
-```bash
-python3 host_tool.py "What's the weather in Hanoi?"
-```
-
-Source: [`examples/agent-sdk/python/host_tool.py`](https://github.com/janhq/jan/blob/main/examples/agent-sdk/python/host_tool.py)
-  </Tabs.Tab>
-</Tabs>
-
-The call and its result are printed to stderr, then the answer that used them:
+The model chooses a tool and supplies arguments. The SDK calls your handler. Your handler's result
+goes back to the model, which can use it to answer or choose another action.
 
 ```text
-[get_weather({"city":"Hanoi"}) -> {"city":"Hanoi","forecast":"sunny","celsius":21}]
-It’s sunny in Hanoi and 21°C.
+Model asks for get_time -> your handler reads the clock -> model receives the time
 ```
 
-On the wire, one call is this sequence (other records omitted):
+First complete the [JavaScript](/docs/agent/sdk-ts) or [Python](/docs/agent/sdk-python) quickstart.
+These examples use the same installed SDK and provider configuration.
 
-```text
-stdout  {"type":"init", ..., "tool_specs":[{"type":"function","function":{"name":"host__get_weather", ...}}]}
-stdout  {"type":"permission_request","request_id":"perm-1","tool_name":"host__get_weather","prompt_kind":"mcp", ...}
-stdin   {"type":"permission","request_id":"perm-1","decision":"allow_once"}
-stdout  {"type":"permission_decision","request_id":"perm-1","decision":"allow_once"}
-stdout  {"type":"tool_request","request_id":"host-1","tool_name":"get_weather","args":{"city":"Hanoi"}}
-stdin   {"type":"tool_result","request_id":"host-1","content":"{\"city\":\"Hanoi\",...}","is_error":false}
-stdout  {"type":"result","is_error":false,"stop_reason":"stop", ...}
-```
+## Add one real function
 
-## 1. Declare the tools
-
-Write the declarations to a JSON file and pass it with `--host-tools`, together with
-`--output-format stream-json --input-format stream-json` - only your code can answer a call, so it
-must be reading the stream and writing to stdin.
+This tool reads your machine's clock. It needs no API key of its own and changes no application state.
+Save the example in your quickstart directory and run it with `node clock.mjs` or `python clock.py`.
 
 <Tabs items={['JavaScript', 'Python']}>
   <Tabs.Tab>
-```js filename="examples/agent-sdk/js/host-tool.mjs"
-const tools = [
-  {
-    name: 'get_weather',
-    description: 'Current weather for a city.',
-    parameters: {
-      type: 'object',
-      properties: { city: { type: 'string' } },
-      required: ['city'],
-      additionalProperties: false,
-    },
-  },
-]
+```js filename="clock.mjs"
+import { JanRuntime } from '@janhq/agent-sdk'
+
+const runtime = await JanRuntime.start()
+try {
+  const session = await runtime.createSession({
+    ephemeral: true,
+    builtins: false,
+    tools: [{
+      name: 'get_time',
+      description: 'Read the current UTC time from this machine.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      capability: 'read',
+      handler: () => new Date().toISOString(),
+    }],
+  })
+
+  const turn = await session.prompt('Use get_time and tell me the current UTC time.')
+  for await (const event of turn) {
+    if (event.type === 'token') process.stdout.write(event.text)
+  }
+  const result = await turn.result()
+  if (result.stopReason === 'error') throw new Error(result.error)
+  console.log(`\nFinished: ${result.stopReason}`)
+} finally {
+  await runtime.close()
+}
 ```
   </Tabs.Tab>
   <Tabs.Tab>
-```python filename="examples/agent-sdk/python/host_tool.py"
-TOOLS = [
-    {
-        "name": "get_weather",
-        "description": "Current weather for a city.",
-        "parameters": {
-            "type": "object",
-            "properties": {"city": {"type": "string"}},
-            "required": ["city"],
-            "additionalProperties": False,
-        },
-    }
-]
+```python filename="clock.py"
+from datetime import datetime, timezone
+from jan_agent_sdk import HostTool, JanRuntime
+
+
+def get_time(args, call):
+    return datetime.now(timezone.utc).isoformat()
+
+
+with JanRuntime.start() as runtime:
+    session = runtime.create_session(
+        ephemeral=True,
+        builtins=False,
+        tools=[HostTool(
+            name="get_time",
+            description="Read the current UTC time from this machine.",
+            parameters={"type": "object", "properties": {}, "additionalProperties": False},
+            capability="read",
+            handler=get_time,
+        )],
+    )
+
+    turn = session.prompt("Use get_time and tell me the current UTC time.")
+    for event in turn:
+        if event["type"] == "token":
+            print(event["text"], end="", flush=True)
+    result = turn.result()
+    if result.stop_reason == "error":
+        raise RuntimeError(result.error)
+    print(f"\nFinished: {result.stop_reason}")
 ```
   </Tabs.Tab>
 </Tabs>
 
-The model sees each tool as `host__<name>`, so it can never shadow one of Jan's own tools. The
-whole file is checked before the run starts, and one bad entry fails the run:
+The model receives the tool description and argument schema, **not your handler's source code**.
+It asks to call the tool; the SDK runs the handler in your process. No manual JSON messages are needed.
 
-| Rule | Refused with |
+## What a tool needs
+
+| Field | Purpose |
 | --- | --- |
-| Names are ASCII letters, digits, `_` and `-`, without `__` | `host tool name 'has space' must be ASCII letters, digits, '_' or '-' and cannot contain '__'` |
-| `host__<name>` is at most 64 characters; at most 128 tools per run | `... is too long` / `... more than the 128 a run accepts` |
-| A name is not one of Jan's own tools (`bash`, `read`, `ask`, `todo`, ...) | `host tool name 'bash' is reserved by a built-in tool` |
-| Each name is declared once | `host tool name 'a' is declared twice` |
-| Only `name`, `description` and `parameters`; `parameters` is a JSON object | The unknown key, or the tool whose `parameters` is not an object |
+| `name` | A short identifier, such as `get_time`. Jan advertises it as `host__get_time` to avoid collisions. |
+| `description` | Tell the model when to use the tool and what it returns. |
+| `parameters` | A JSON Schema for the arguments. Jan validates supported constraints before calling you. |
+| `capability` | Use `read` for observation, or `actuator` for actions with side effects. |
+| `handler` | Your function, receiving the arguments and call context. |
 
-A refused file ends the run before it starts: stdout carries only the `result`, with
-`error.code: "setup_error"` and the reason in `error.message`, and `jan` exits with `1`.
+Use simple names containing letters, digits, `_` or `-`; avoid `__`, reserved built-in names and
+duplicates. Keep names at most 58 characters so the `host__` prefix fits the wire limit.
 
-`parameters` is passed to the provider **verbatim**. Jan checks that it is an object, not that it
-is a schema the provider accepts: OpenAI, for one, refuses a tool whose schema is not
-`"type": "object"`, and that surfaces as an `upstream_error` on the first request. Leave
-`parameters` out for a tool that takes no arguments.
+A schema checks shape, not authorization or physical safety. Your handler must still check
+whether the requested action is allowed. For hardware or shared state, serialize operations in
+your own application when necessary; callbacks can overlap, including calls from delegated children.
 
-## 2. Check what the run advertised
+## Return only what the model should see
 
-The `init` record lists the schemas the run actually advertises in `tool_specs`. A tool you
-declared that is missing there was withheld by policy - read-only plan mode, or the deny list in
-your [tool permissions](/docs/agent/permissions) - and will never be called:
+A handler can return a string, as above, or an object:
 
-<Tabs items={['JavaScript', 'Python']}>
-  <Tabs.Tab>
-```js filename="examples/agent-sdk/js/host-tool.mjs"
-    case 'init': {
-      // A declared tool missing here was withheld by policy (deny list, plan
-      // mode) and will never be called.
-      const advertised = new Set((record.tool_specs ?? []).map((spec) => spec.function.name))
-      const missing = tools.map((t) => `host__${t.name}`).filter((name) => !advertised.has(name))
-      if (missing.length) console.error(`withheld by policy: ${missing.join(', ')}`)
-      break
-    }
-```
-  </Tabs.Tab>
-  <Tabs.Tab>
-```python filename="examples/agent-sdk/python/host_tool.py"
-            if kind == "init":
-                # A declared tool missing here was withheld by policy (deny
-                # list, plan mode) and will never be called.
-                advertised = {spec["function"]["name"] for spec in record.get("tool_specs", [])}
-                missing = {f"host__{t['name']}" for t in TOOLS} - advertised
-                if missing:
-                    print(f"withheld by policy: {sorted(missing)}", file=sys.stderr)
-```
-  </Tabs.Tab>
-</Tabs>
+| Field | Goes to the model? | Example use |
+| --- | --- | --- |
+| `text` | Yes | A database query result or sensor reading |
+| `images` | Yes | An array of file paths, data URLs or image objects |
+| `details` | No | Host-only metadata for your UI |
+| `error` or `isError` | Yes, as a failed tool result | Explain why the action failed |
 
-The set is fixed for the run: there is no message to add, remove or change a host tool once it has
-started.
+Throwing an exception also produces a failed tool result. The agent can respond to that failure;
+it does not automatically mean the whole turn failed.
 
-## 3. Decide who approves the call
+For image tools, use a vision-capable model and check `runtime.limits`. See
+[tool result images](/docs/agent/cli#tool-result-images) for provider-specific placement.
 
-A host tool is gated like an [MCP tool](/docs/agent/mcp). In a default headless run every tool call
-is auto-approved, host tools included. Start the run with `--safe` and the run asks first: a
-`permission_request` whose `prompt_kind` is `"mcp"` and whose `tool_name` is the `host__` name.
-Under `--safe` the same prompt comes for writes and shell commands, so the examples approve their
-own tool and refuse everything else:
+## Decide who approves actions
 
-<Tabs items={['JavaScript', 'Python']}>
-  <Tabs.Tab>
-```js filename="examples/agent-sdk/js/host-tool.mjs"
-    case 'permission_request':
-      // Under `--safe` a host tool is prompted like an MCP tool, and so are
-      // writes and shell commands. Approve ours; refuse the rest.
-      send({
-        type: 'permission',
-        request_id: record.request_id,
-        decision: record.tool_name.startsWith('host__') ? 'allow_once' : 'deny',
-      })
-      break
-```
-  </Tabs.Tab>
-  <Tabs.Tab>
-```python filename="examples/agent-sdk/python/host_tool.py"
-            elif kind == "permission_request":
-                # Under `--safe` a host tool is prompted like an MCP tool, and
-                # so are writes and shell commands. Approve ours; refuse the rest.
-                ours = record["tool_name"].startswith("host__")
-                send({
-                    "type": "permission",
-                    "request_id": record["request_id"],
-                    "decision": "allow_once" if ours else "deny",
-                })
-```
-  </Tabs.Tab>
-</Tabs>
+A `read` tool such as the clock is not prompted. For an `actuator`:
 
-`allow_always` stops the run asking about that tool for the rest of the run. A denied call reaches
-the model as a failed tool call (`ERROR: tool 'host__get_weather' denied by user`), and the model
-carries on without it. More on answering prompts in
-[Process & failures](/docs/agent/sdk-runtime#answer-permission-prompts).
+- **Jan owns approval by default.** Your app must handle `permission_request` events and answer
+  them. Otherwise the turn waits. See [permission prompts](/docs/agent/sdk-runtime#answer-permission-prompts).
+- **Your app can own approval** with `permissions: 'host'` in JavaScript or `permissions="host"`
+  in Python. Jan will not ask for approval of host tools; your handler must enforce the policy.
 
-## 4. Answer the call
+`builtins: false` / `builtins=False` keeps this example limited to your declared tools. It is not
+an operating-system sandbox for your callback: that function still has your process's access.
 
-`tool_request.tool_name` is the name **you declared**, without `host__`, so you dispatch on your
-own names. Answer with a `tool_result` carrying the same `request_id`:
+## Change tools or stop a callback
 
-<Tabs items={['JavaScript', 'Python']}>
-  <Tabs.Tab>
-```js filename="examples/agent-sdk/js/host-tool.mjs"
-    case 'tool_request': {
-      // `tool_name` is the name declared above, without `host__`.
-      let content
-      let isError = false
-      try {
-        const handler = handlers[record.tool_name]
-        if (!handler) throw new Error(`no handler for ${record.tool_name}`)
-        content = JSON.stringify(handler(record.args))
-      } catch (error) {
-        // The model sees this as the tool's error.
-        content = `${error.name}: ${error.message}`
-        isError = true
-      }
-      console.error(`\n[${record.tool_name}(${JSON.stringify(record.args)}) -> ${content}]`)
-      send({ type: 'tool_result', request_id: record.request_id, content, is_error: isError })
-      break
-    }
-```
-  </Tabs.Tab>
-  <Tabs.Tab>
-```python filename="examples/agent-sdk/python/host_tool.py"
-            elif kind == "tool_request":
-                # `tool_name` is the name declared above, without `host__`.
-                handler = HANDLERS.get(record["tool_name"])
-                try:
-                    if handler is None:
-                        raise KeyError(f"no handler for {record['tool_name']}")
-                    content, is_error = json.dumps(handler(record["args"])), False
-                except Exception as error:  # the model sees this as the tool's error
-                    content, is_error = f"{type(error).__name__}: {error}", True
-                print(f"\n[{record['tool_name']}({json.dumps(record['args'])}) -> {content}]", file=sys.stderr)
-                send({
-                    "type": "tool_result",
-                    "request_id": record["request_id"],
-                    "content": content,
-                    "is_error": is_error,
-                })
-```
-  </Tabs.Tab>
-</Tabs>
+Between turns, use `session.setTools(...)` / `session.set_tools(...)` to replace the host tool set.
+The session's `tools` and `toolSpecs` / `tool_specs` report what Jan actually advertises.
 
-- **Ask for the shape you want, then check anyway.** Before the request is emitted, Jan validates
-  `args` against the `parameters` you declared, and a call that breaks the schema never reaches you:
-  the model is told the mismatch and can try again. The check covers `type`, `properties`,
-  `required`, `additionalProperties`, `items`, `minItems`, `maxItems`, `enum`, `const`, `minLength`,
-  `maxLength`, `minimum`, `maximum`, `exclusiveMinimum`, `exclusiveMaximum` and `pattern`; any other
-  keyword is ignored, never failed. A schema is a shape, not a safety property - a handler that
-  moves hardware still checks what it acts on.
-- **`content` is what the model sees.** It is either a string or a content-part array of `text` and
-  `image_url` parts, held to the same caps as a `user` message. The parts' text becomes the run's
-  tool message, and an image follows it as the next user turn - a provider's tool response carries
-  text, so that is where an image can ride. There is no separate field for data only your UI shows:
-  anything you put in `content` goes to the model.
-- **`details` stays yours.** The optional `details` object on a `tool_result` never leaves the
-  client side: it is not in the tool message the model sees.
-- **Report a failure, don't drop the call.** `is_error: true` with the reason in `content` reaches
-  the model as the tool's error, and the turn goes on. An unanswered call holds the run.
-- **Each `request_id` is answered once.** A second answer, or an answer to an id that is not
-  pending, is reported as an `input_error` record (`no host tool request 'host-99' is pending`) and
-  ignored; the run continues.
-- **Calls come one at a time**, in the order the model made them: the run waits for your
-  `tool_result` before it sends the next `tool_request`, so a stateful device never sees two calls
-  overlap.
+When a request is cancelled, JavaScript receives an aborted `call.signal`; Python receives a set
+`call.aborted` threading event. Make long-running handlers cooperate with cancellation. An action
+that has already happened is not undone.
 
-Closing stdin while a call is pending fails that call - the model receives
-`ERROR: host tool 'get_weather' was not answered: the client is gone` - and fails every host tool
-call after it. Keep stdin open until the `result` arrives.
+## Next
 
-## If it fails
-
-| You see | Cause and fix |
-| --- | --- |
-| `error: unexpected argument '--host-tools' found`, exit `2` | The build predates host tools. `jan update` |
-| `setup_error` naming the `--host-tools` file | The declaration file broke a rule above, or could not be read |
-| `upstream_error` on the first request, naming `host__<name>` | The provider refused the tool's `parameters` schema |
-| `withheld by policy: ...` | Plan mode or the deny list removed the tool from this run |
-| The model never calls the tool | Name and describe it for the task, or ask for it in the prompt |
-| `input_error` after a `tool_result` | The `request_id` was already answered, or never issued |
-
-## Not in the preview yet
-
-- Changing the declared set during a run.
-
-A subagent's host tool call reaches you exactly as the main run's does, attributed by the child's
-`run_id` (a main-run request carries none); children cannot dispatch children.
+[Process & failures](/docs/agent/sdk-runtime) covers stopping turns, permissions, shutdown and
+retries. [Protocol records](/docs/agent/protocol#rpc-host-tools) is the lower-level reference if
+you are implementing your own client.

@@ -1,77 +1,69 @@
 ---
-title: Agent Protocol Records
-description: Read the generated stream-json and RPC records and check each surface's availability.
-keywords: [Jan, Jan Agent, protocol, stream-json, RPC, ACP, JSON Schema, reference]
+title: Protocol Records
+description: The wire reference for custom Jan clients. Choose RPC or stream-json, then use the generated schemas for record shapes.
+keywords: [Jan, Jan Agent, protocol, stream-json, RPC, JSON Schema, reference]
 ---
 
 import { Callout } from 'nextra/components'
 
-# Agent Protocol Records
+# Protocol Records
 
-Building a client against Jan's wire protocol? Use the generated artifacts for record shapes,
-then check the surface's release state before treating a method or event as available. For a first
-CLI run, start with the [Agent quickstart](/docs/agent/quickstart); for an embedding path, see
-[Agent SDK](/docs/agent/sdk).
+**You do not need this page for the SDK quickstarts.** The SDK handles the messages for you.
+Use this reference when building your own client, debugging the channel, or generating types.
+
+## Choose the transport first
+
+| | RPC | stream-json |
+| --- | --- | --- |
+| Start command | `jan cli agent rpc` | `jan cli agent run --output-format stream-json --input-format stream-json` |
+| Process lifetime | One process, multiple sessions, one active turn at a time | One process per run |
+| First exchange | `initialize` request, then `initialized` notification | The runtime emits `init` when setup succeeds |
+| During work | JSON-RPC requests and notifications such as `item/token` | Records with a `type`, such as `token` |
+| End of work | `turn/completed`; the process stays available | `result`, then process exit |
+| Best for | SDKs and long-lived applications | Direct CLI automation |
+
+These are different envelopes. Do not send a stream-json `abort` record to RPC, or parse an RPC
+notification as a bare stream-json event. For normal application code, use the
+[JavaScript](/docs/agent/sdk-ts) or [Python](/docs/agent/sdk-python) SDK.
 
 ## Read the generated records
 
-- **`stream-json`:** [`protocol/schema.json`](https://github.com/janhq/jan/blob/08f88a4aca8ac77ec444c454635b5bbd633f0f15/protocol/schema.json) is generated from the Rust types for the input and
-  output records of `jan cli agent run --output-format stream-json`. Read its root `input` and
-  `output` schemas and follow references into `$defs` for individual record definitions. The
-  `x-protocol-version` keyword identifies the contract version. Print the same generated document
-  with `jan cli agent schema`, or write it with `jan cli agent schema --out protocol/schema.json`.
-  The [CLI `schema` section](/docs/agent/cli#schema) explains the transport.
-- **RPC:** [`protocol/rpc-schema.json`](https://github.com/janhq/jan/blob/bbe3f3e3649cb67ee94dfbd9a689594c62837e84/protocol/rpc-schema.json) is generated from the RPC envelope and typed request and event
-  definitions. Read its `protocol_version`, `envelope`, `requests`, `notifications` and `events`
-  sections to navigate the artifact rather than copying field declarations from this page. Print
-  it with `jan cli agent rpc-schema`, or write it with
-  `jan cli agent rpc-schema --out protocol/rpc-schema.json`. The implementation and artifact were
-  merged in [PR #9049](https://github.com/janhq/jan/pull/9049) and are on `main`, not yet in a
-  nightly or release. See the [CLI `rpc` section](/docs/agent/cli#rpc) for the transport and
-  [RPC host tools](#rpc-host-tools) below for host callbacks.
+Generate the schema from the **same binary your client will run**:
 
-Both artifacts are generated and checked for drift against their Rust source by the `protocol
-schema` job in `.github/workflows/rust-check.yml`, which regenerates both and fails the job on a
-diff of either. `protocol/schema.json` describes **only `stream-json`**; it
-is not an RPC or ACP schema. `protocol/rpc-schema.json` describes RPC records, not an ACP adapter
-or a published SDK. Neither artifact is a per-surface capability inventory, and there is no
-checked-in generated availability inventory. Do not infer release or runtime support from a
-record appearing in a schema.
+```bash
+jan cli agent rpc-schema --out rpc-schema.json
+jan cli agent schema --out stream-schema.json
+```
 
-## Surface availability
+| Artifact | What to read |
+| --- | --- |
+| [`protocol/rpc-schema.json`](https://github.com/janhq/jan/blob/main/protocol/rpc-schema.json) | `protocol_version`, `envelope`, `requests`, `notifications` and `events` |
+| [`protocol/schema.json`](https://github.com/janhq/jan/blob/main/protocol/schema.json) | Root `input` and `output` schemas, `$defs`, and `x-protocol-version` |
 
-Checked on **2026-09-24**. This table records the known availability of each surface, not the
-negotiated capabilities of a particular session. Recheck release and feature availability before
-publishing or deploying a client.
+Both are generated from Rust types and checked for drift in CI. The repository links describe
+`main`; your installed binary can be older. RPC's schema covers requests and events, not every
+response shape. The method tables below document the host-tool responses.
 
-| | `stream-json` | RPC | ACP |
-| --- | --- | --- | --- |
-| **Release state** | **Shipped** in `main` | **On `main`**, not yet in a nightly or release | **Planned**, no implementation |
-| **Record reference** | Generated `protocol/schema.json` | Generated `protocol/rpc-schema.json` | No ACP record artifact or implemented surface |
-| **Evidence** | `src-tauri/src/core/cli/protocol_schema.rs:73-84,103-124`; the `protocol schema` job in `.github/workflows/rust-check.yml`; [PR #9023](https://github.com/janhq/jan/pull/9023) merged | `src-tauri/src/core/cli/rpc.rs:258-297`; `src-tauri/src/core/cli/rpc_schema.rs:87-106`; [PR #9049](https://github.com/janhq/jan/pull/9049) merged, [#360](https://github.com/janhq/jan-internal/issues/360) open | [#347](https://github.com/janhq/jan-internal/issues/347) open; no ACP subcommand in `src-tauri/jan-cli/src/main.rs:443-521` |
+## Check runtime support
 
-A schema says which records a transport accepts or emits. A surface inventory would say what
-that surface *can* do, but the table above is an evidence-backed release snapshot, not a generated
-inventory and not a list of supported verbs. The `init` record for `stream-json` reports what
-**this run** accepts (see `src-tauri/src/core/cli/mod.rs:2106-2121` and
-[CLI protocol version](/docs/agent/cli#the-protocol-version)). RPC's `initialize` response reports
-what **this RPC session** negotiated (`src-tauri/src/core/cli/rpc.rs:286-297`). Do not copy
-`stream-json`'s `init` fields into RPC or treat a negotiated response as universal availability.
+Use RPC's `initialize` response for its negotiated protocol and capabilities. For stream-json,
+use that run's `init` record. These are not interchangeable capability inventories.
 
-<Callout type="warning">
-RPC is on `main` but not yet in a nightly or release. ACP remains planned. JavaScript and Python
-SDK packages are not released ([#367](https://github.com/janhq/jan-internal/issues/367)). Host tools
-exist on both `stream-json` (`--host-tools`) and RPC (below). See
-[what your build supports](/docs/agent/sdk#what-your-build-supports).
+<Callout type="info">
+The current SDKs use RPC. If your binary has no `rpc` command, update the nightly runtime.
+ACP is a separate, planned integration, not another name for either protocol.
 </Callout>
+
+See the [RPC command reference](/docs/agent/cli#rpc) for startup and session methods, and
+[CLI protocol version](/docs/agent/cli#the-protocol-version) for the stream-json contract.
 
 ## RPC stream events
 
 A turn's events reach the client as notifications named `item/<tag>`, where `<tag>` is the event's
 own `type` on the `stream-json` surface: one naming rule for both, and no second list to keep in
 sync. `protocol/rpc-schema.json` publishes the resulting notification names in its `events`
-section, generated from the same Rust enum that produces them (`src-tauri/src/core/cli/rpc.rs:736`),
-so a record can be looked up there rather than inferred from this page.
+section, generated from the same Rust enum that produces them. Look up the record there rather
+than maintaining a second event list in your client.
 
 A `request_provenance` event therefore arrives as `item/request_provenance`, carrying the identity
 of each outbound provider request (run, session, provider, model, wire API, body and tool-array
@@ -162,3 +154,90 @@ model id that no provider lists is refused as above.
 Every mutating method is answered. A client that gets no answer, for example because the process
 died, should treat the session as gone and close it. This fail-closed handling belongs to the SDK
 or client, not the wire protocol.
+
+## Direct stream-json examples
+
+Prefer the SDK unless you need to own the pipes yourself. The runnable examples in
+[`examples/agent-sdk`](https://github.com/janhq/jan/tree/main/examples/agent-sdk) show that
+lower-level alternative. CI runs all four against a real runtime and checks these excerpts
+against their source. They are not the RPC SDK examples above.
+
+<details>
+<summary>Read a streamed answer without the SDK</summary>
+
+The complete scripts handle startup and cleanup. Their reading loops distinguish answer text
+from the terminal result:
+
+```js filename="examples/agent-sdk/js/first-turn.mjs"
+for await (const line of createInterface({ input: run.stdout })) {
+  const record = JSON.parse(line)
+  if (record.type === 'init') {
+    console.error(`[session ${record.session_id} on ${record.model}]`)
+  } else if (record.type === 'token') {
+    process.stdout.write(record.text)
+  } else if (record.type === 'result') {
+    result = record
+  }
+}
+```
+
+```python filename="examples/agent-sdk/python/first_turn.py"
+    for line in run.stdout:
+        record = json.loads(line)
+        if record["type"] == "init":
+            print(f"[session {record['session_id']} on {record['model']}]", file=sys.stderr)
+        elif record["type"] == "token":
+            print(record["text"], end="", flush=True)
+        elif record["type"] == "result":
+            result = record
+```
+
+</details>
+
+<details>
+<summary>Answer a host tool call without the SDK</summary>
+
+The complete scripts declare a weather fixture and handle permissions. These dispatch blocks
+show the extra work a direct client owns: looking up a handler, reporting errors and matching
+the request id. The SDK performs that dispatch for you.
+
+```js filename="examples/agent-sdk/js/host-tool.mjs"
+    case 'tool_request': {
+      // `tool_name` is the name declared above, without `host__`.
+      let content
+      let isError = false
+      try {
+        const handler = handlers[record.tool_name]
+        if (!handler) throw new Error(`no handler for ${record.tool_name}`)
+        content = JSON.stringify(handler(record.args))
+      } catch (error) {
+        // The model sees this as the tool's error.
+        content = `${error.name}: ${error.message}`
+        isError = true
+      }
+      console.error(`\n[${record.tool_name}(${JSON.stringify(record.args)}) -> ${content}]`)
+      send({ type: 'tool_result', request_id: record.request_id, content, is_error: isError })
+      break
+    }
+```
+
+```python filename="examples/agent-sdk/python/host_tool.py"
+            elif kind == "tool_request":
+                # `tool_name` is the name declared above, without `host__`.
+                handler = HANDLERS.get(record["tool_name"])
+                try:
+                    if handler is None:
+                        raise KeyError(f"no handler for {record['tool_name']}")
+                    content, is_error = json.dumps(handler(record["args"])), False
+                except Exception as error:  # the model sees this as the tool's error
+                    content, is_error = f"{type(error).__name__}: {error}", True
+                print(f"\n[{record['tool_name']}({json.dumps(record['args'])}) -> {content}]", file=sys.stderr)
+                send({
+                    "type": "tool_result",
+                    "request_id": record["request_id"],
+                    "content": content,
+                    "is_error": is_error,
+                })
+```
+
+</details>

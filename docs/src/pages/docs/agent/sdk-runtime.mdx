@@ -1,110 +1,148 @@
 ---
-title: Process & Failures (Preview)
-description: Own the jan process from an embedding app - lifecycle, permission prompts, stopping a run, exit codes, and which failures are safe to retry.
-keywords: [Jan, Jan Agent, SDK, stream-json, process, permissions, abort, exit codes, errors, retry]
+title: Process & Failures
+description: "Keep control of an embedded Jan runtime: close it, interrupt work, answer permissions, and handle failures without repeating side effects."
+keywords: [Jan, Jan Agent, SDK, process, permissions, errors, cancellation]
 ---
 
-import { Callout, Tabs } from 'nextra/components'
+import { Tabs } from 'nextra/components'
 
-# Process & Failures (Preview)
+# Process & Failures
 
-Your code owns the `jan` process: it starts it, answers it, and must see it end. This page covers
-the lifecycle of one run, the prompts your code answers, how to stop a run, and what each failure
-looks like - including which ones are safe to retry.
+**Your app owns the Jan process. Close it when you are done, and check how each turn ended.**
 
-<Callout type="warning">
-Preview, `agent-nightly` channel only; see [Agent SDK](/docs/agent/sdk) for what your build
-supports. The shapes named here are defined in the [CLI reference](/docs/agent/cli#streaming-json-in-both-directions).
-</Callout>
+The quickstarts already do both. This page explains what to change when your app needs multiple
+conversations, a Stop button, tool approval, or recovery from a failure.
 
-## One task, one process
+## Keep the runtime, reuse the session
 
-Start one `jan cli agent run` per task. It prints `init`, does the work, prints `result`, and
-exits. Everything your code parses is on **stdout**; stderr carries human-readable logs and
-warnings, so pass it through or log it, but don't parse it.
+- Start one runtime for your app's work, rather than one process per message.
+- Reuse a session to keep conversation history. Create another session for a separate conversation.
+- Wait for a turn to finish before starting another. One runtime runs one active turn at a time.
+- Use `ephemeral: true` / `ephemeral=True` when the conversation should not be saved.
 
-- **A run belongs to the process that started it.** Separate clients start separate processes;
-  nothing attaches to a run from outside, and a session id does not either.
-- **Follow-ups join the running task.** A `user` message on stdin joins at the next turn boundary.
-  Once the `result` is out, the run is over.
-- **Continue later in a new process** with `--resume=<id>`, using the `session_id` from `init`.
-- **Close and reap.** Close stdin once the `result` has arrived, then wait for the process to exit,
-  so it never outlives your code. Both examples end this way:
+Always arrange cleanup, including on errors. In JavaScript, put `await runtime.close()` in a
+`finally` block. In Python, use `with JanRuntime.start() as runtime:`. The
+[JavaScript](/docs/agent/sdk-ts) and [Python](/docs/agent/sdk-python) quickstarts show both patterns.
+
+The SDK closes the channel and reaps its child process, escalating when the process does not exit.
+It does not attach to an existing process just because you know a session id.
+
+## Stop a turn, not the whole app
+
+Call `await session.interrupt()` in JavaScript or `session.interrupt()` in Python, for example
+from your application's Stop action. Keep consuming the turn and read its result:
+
+| Final status | Meaning |
+| --- | --- |
+| `completed` | The agent finished normally. |
+| `interrupted` | Work was stopped. Earlier tool side effects remain. |
+| `error` | The turn failed. Read the result's `error` message. |
+
+These are **RPC SDK** statuses: JavaScript uses `result.stopReason`; Python uses
+`result.stop_reason`. They are not the `stream-json` CLI's exit codes or `stop_reason` values.
+
+Closing the runtime ends all work owned by that process. Use forced close only when necessary:
+`await runtime.close({ force: true })` or `runtime.close(force=True)`.
+A handler that has already changed an external system cannot be rolled back by killing Jan.
+
+## Answer permission prompts
+
+If you leave `permissions` at its default, `jan`, a host actuator waits for your app's approval.
+Handle that event while consuming the turn. The example below **denies** requests until you add
+your own approval UI or policy:
 
 <Tabs items={['JavaScript', 'Python']}>
   <Tabs.Tab>
-```js filename="examples/agent-sdk/js/host-tool.mjs"
-run.stdin.end()
-const code = await exited
-rmSync(scratch, { recursive: true, force: true })
+```js
+for await (const event of turn) {
+  if (event.type === 'permission_request') {
+    await session.respondPermission(event.request_id, 'deny')
+  } else if (event.type === 'token') {
+    process.stdout.write(event.text)
+  }
+}
 ```
   </Tabs.Tab>
   <Tabs.Tab>
-```python filename="examples/agent-sdk/python/host_tool.py"
-        run.stdin.close()
-        run.wait()
+```python
+for event in turn:
+    if event["type"] == "permission_request":
+        session.respond_permission(event["request_id"], "deny")
+    elif event["type"] == "token":
+        print(event["text"], end="", flush=True)
 ```
   </Tabs.Tab>
 </Tabs>
 
-`--project` confines the agent's built-in file and shell tools to one directory; the examples use a
-fresh temporary directory, so a recipe cannot touch the directory you run it from.
+Answer with `allow_once`, `allow_always` where offered, or `deny`. Denying a tool call lets the
+model continue without that action. A `read` tool is not prompted.
 
-## Answer permission prompts
+If your application already gates every host action, set `permissions` to `host` instead. That
+removes Jan's approval step for host tools; it does not provide a replacement safety policy.
 
-A default headless run auto-approves every tool call, which is what an unattended script wants.
-Start it with `--safe` and your code decides instead: writes, shell commands, MCP tools and
-[host tools](/docs/agent/sdk-tools) each arrive as a `permission_request` first.
+## Handle the right kind of failure
 
-```text
-stdout  {"type":"permission_request","request_id":"perm-1","tool_name":"host__get_weather","capability":"run","path":null,"prompt_kind":"mcp","offers_always":true}
-stdin   {"type":"permission","request_id":"perm-1","decision":"allow_once"}
-stdout  {"type":"permission_decision","request_id":"perm-1","decision":"allow_once"}
-```
-
-- `decision` is `allow_once`, `allow_always` (when `offers_always` is `true`) or `deny`.
-- A denied call reaches the model as a failed tool call, and the run goes on.
-- Each `request_id` is answered once.
-- The run waits for your answer. Closing stdin denies every prompt still pending and every prompt
-  after it, and the run then finishes on its own.
-
-The [host tools example](/docs/agent/sdk-tools#3-decide-who-approves-the-call) approves its own
-tool and refuses everything else.
-
-## Stop a run
-
-- **Ask it to stop:** write `{"type":"abort"}`. The run ends with `stop_reason: "aborted"`,
-  `is_error: false`, and exit code `0`. Tool calls that already ran are not undone.
-- **Bound it up front:** `--max-turns`, `--max-session-tokens` and `--max-budget-usd` - see
-  [`run`](/docs/agent/cli#run).
-- **Kill the process** only as a last resort: there is no `result`, so the outcome of the task is
-  unknown.
-
-## Exit codes
-
-| Code | Meaning |
-| --- | --- |
-| `0` | The run finished: a normal stop, `aborted`, or `budget_exceeded` |
-| `1` | The run failed. The `result` has `is_error: true` and an `error` object |
-| `2` | The command line was rejected - an unknown flag, for example. Nothing is printed on stdout |
-| `53` | `--max-turns` ran out while the model was still calling tools. The `result` has `is_error: true`; there is no final answer |
-
-## Failures and retries
-
-A retry starts the task again in a new process. It is safe only if nothing with a side effect ran:
-every tool call the stream showed before the failure - a `tool_request` your code answered, a write
-or a shell command the run made - really happened, and runs again on a retry. Check the stream
-before retrying; never re-run a host side effect blindly.
-
-| Condition | What you see | Retry |
+| Failure | How it appears | What your app should do |
 | --- | --- | --- |
-| `jan` not found | `Error: spawn jan ENOENT` (Node.js), `FileNotFoundError` (Python) | Safe once fixed - nothing ran |
-| Flag unknown to this build | `error: unexpected argument ...` on stderr, exit `2` | Safe after `jan update` - nothing ran |
-| No model configured, or a bad `--host-tools` file | `result` alone, no `init`, `error.code: "setup_error"`, exit `1` | Safe once fixed - nothing ran |
-| Provider refused or failed | An `error` record, then `result` with `error.code: "upstream_error"`, exit `1` | Only if the stream showed no tool calls |
-| Conversation too long for the model | `error.code: "context_overflow"`, exit `1` | Only if the stream showed no tool calls; shorten the task or start a new session |
-| Turn cap reached | `error.message: "reached the N-turn limit while the model was still calling tools"`, exit `53` | Not as is: the tool calls it made already ran. Raise `--max-turns` or narrow the task |
-| Any other failure | `error.code` is the raw code, exit `1` | Check the stream first |
-| Your tool failed | Your `tool_result` with `is_error: true` - the model sees it and goes on | Not needed |
-| A line on stdin was invalid | An `input_error` record; the line is skipped and the run goes on | Fix the client |
-| The process crashed or was killed | stdout ends without a `result` | Outcome unknown: reconcile your own side effects first |
+| Runtime cannot be installed | `JanInstallError` | Check the manifest, platform and checksum error. Do not bypass verification. |
+| Runtime cannot start, crashes, or speaks another protocol | `JanRuntimeError` | Close it, fix the binary/configuration issue, and start a new runtime. |
+| An RPC operation is refused | `JanRpcError` | Read its code and message. A busy-session error is retryable after the active turn ends. |
+| Provider authentication, model or request failure | Turn result with `error` status | Show the message. Fix the provider or model configuration before trying again. |
+| Your tool handler fails | Failed tool result sent to the model | Let the agent handle that result; do not assume the whole turn failed. |
+
+A completed stream is not proof of success: inspect the terminal result, as the quickstarts do.
+Do not discard `JanRuntimeError` diagnostics; stderr can explain why startup or the process failed.
+
+### Retry only after checking side effects
+
+A retry can run your tools again. After any failure or disconnect, first reconcile writes,
+payments, device movements or other external actions that might already have happened. A missing
+answer does not prove an action never ran.
+
+## Download a runtime from code
+
+For deployments that do not put `jan` on PATH, the SDK can install the nightly runtime itself:
+
+<Tabs items={['JavaScript', 'Python']}>
+  <Tabs.Tab>
+```js
+import { installRuntime, JanRuntime } from '@janhq/agent-sdk'
+
+const installed = await installRuntime()
+const runtime = await JanRuntime.start({ bin: installed.bin })
+try {
+  console.log(runtime.serverInfo)
+} finally {
+  await runtime.close()
+}
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```python
+from jan_agent_sdk import install_runtime, JanRuntime
+
+installed = install_runtime()
+with JanRuntime.start(bin=installed.bin) as runtime:
+    print(runtime.server_info)
+```
+  </Tabs.Tab>
+</Tabs>
+
+Installation downloads a prebuilt executable, verifies its published SHA-256, and caches it.
+It does not configure a model provider. Use the binary's `login` or `config set` command for that.
+`JAN_AGENT_HOME` selects the cache root. Previously returned binary paths remain valid across
+concurrent installs; remove old cache generations only when no runtime is using them.
+
+For reproducible deployments, pass both `version` and `sha256` from the
+[nightly manifest](https://delta.jan.ai/agent-nightly/manifest.json) to the installer. They must
+match that manifest when a download is needed; an arbitrary historical version is not a download
+service. A matching pinned cache entry can be reused without network access.
+
+## Working directly with the CLI?
+
+The SDK uses a long-lived `jan cli agent rpc` process. A direct
+`jan cli agent run --output-format stream-json` integration is different: one run ends with a
+`result` record and a process exit. Do not mix its messages or status names with RPC.
+
+Use [Protocol records](/docs/agent/protocol) and the [CLI reference](/docs/agent/cli#run)
+for that lower-level path.

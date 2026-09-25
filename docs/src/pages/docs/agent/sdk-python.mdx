@@ -1,105 +1,147 @@
 ---
-title: Python Quickstart (Preview)
-description: Run your first embedded Jan Agent task from Python, using only the standard library.
-keywords: [Jan, Jan Agent, SDK, Python, subprocess, stream-json, quickstart, embedding]
+title: Python Quickstart
+description: Install the preview SDK, connect a model, and stream your first Jan Agent response from Python.
+keywords: [Jan, Jan Agent, SDK, Python, quickstart, embedding]
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Callout, Steps, Tabs } from 'nextra/components'
 
-# Python Quickstart (Preview)
+# Python Quickstart
 
-Start Jan Agent from a Python script, stream its answer, and read the result. You need Python 3.9
-or newer and no packages - only the standard library.
+**Run a script that asks Jan a question and prints its answer as it arrives.**
+
+You need **Python 3.11+**, **Git**, and access to a model provider. No Node.js, Jan Desktop or Rust
+toolchain is needed. Python talks directly to the Jan runtime.
 
 <Callout type="warning">
-Preview, `agent-nightly` channel only. There is no Python SDK package yet: this page drives the
-`jan` binary directly. See [Agent SDK](/docs/agent/sdk) for what the preview supports.
+The SDK is a preview and is not published to PyPI yet. Install the source package below, not
+`pip install jan-agent-sdk`. The runtime is a separate, prebuilt download.
 </Callout>
 
 <Steps>
 
-### Install Jan Agent and connect a provider
+### Install the SDK and runtime
+
+Create a demo directory and an isolated Python environment:
 
 ```bash
-curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
-jan login          # or: jan config set --provider anthropic --api-key sk-ant-...
+mkdir jan-python-demo
+cd jan-python-demo
 ```
 
-The [Agent quickstart](/docs/agent/quickstart) covers Windows and other providers. Check that a
-task runs from the terminal before you embed it: `jan cli agent run "say hi"`.
-
-### Get the example
-
-Download
-[`first_turn.py`](https://github.com/janhq/jan/blob/main/examples/agent-sdk/python/first_turn.py),
-or run it from a checkout of the repository.
-
-### Run it
+<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
+  <Tabs.Tab>
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+py -3 -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+  </Tabs.Tab>
+</Tabs>
 
 ```bash
-python3 first_turn.py "Explain what a mutex is in one sentence."
+git clone --depth 1 https://github.com/janhq/jan.git jan-source
+python -m pip install ./jan-source/sdk/python
 ```
 
-You should see the session and model on stderr, the answer as it streams, then the stop reason:
+Only the SDK package is installed. You do not need to install or build the rest of the repository.
 
-```text
-[session 46ae2e36-3ac4-425b-92a3-2eb1cb280787 on openai/gpt-6-sol]
-A mutex is a lock that ensures only one thread or process at a time can access a shared resource.
-[stop after 1 turn(s)]
+Install the `jan` runtime:
+
+<Tabs items={['macOS / Linux', 'Windows PowerShell']}>
+  <Tabs.Tab>
+```bash
+bash jan-source/scripts/install-jan-agent.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```powershell
+irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
+```
+Follow the installer's PATH instructions before continuing.
+  </Tabs.Tab>
+</Tabs>
+
+```bash
+jan cli agent rpc --help
 ```
 
-The answer and the model depend on your provider.
+If you already have a current Jan runtime, skip its installation.
 
-Set `JAN_BIN` if `jan` is not on your `PATH`, and `JAN_MODEL` to pick a model.
+### Connect a model
+
+Sign in to Tokamak:
+
+```bash
+jan login
+```
+
+Or [configure your own provider](/docs/agent/quickstart#connect-a-provider). Both the CLI and SDK
+use Jan's provider configuration. If you have already configured Jan, skip this step.
+
+### Save and run the script
+
+Save this complete example as `hello.py` in `jan-python-demo`:
+
+```python filename="hello.py"
+from jan_agent_sdk import JanRuntime
+
+with JanRuntime.start() as runtime:
+    session = runtime.create_session(ephemeral=True, builtins=False)
+    turn = session.prompt("Explain what a mutex is in one sentence.")
+
+    for event in turn:
+        if event["type"] == "token":
+            print(event["text"], end="", flush=True)
+
+    result = turn.result()
+    if result.stop_reason == "error":
+        raise RuntimeError(result.error)
+    print(f"\nFinished: {result.stop_reason}")
+```
+
+```bash
+python hello.py
+```
+
+The answer depends on your model. A successful run prints answer text followed by
+`Finished: completed`.
 
 </Steps>
 
-## What the code does
+## What just happened?
 
-It starts one run with `--output-format stream-json` and reads stdout line by line. Every line is
-one JSON record with a `type`:
+- `start()` launched the Jan runtime and checked its protocol version.
+- `create_session()` created a conversation. `ephemeral=True` avoids saving it; `builtins=False`
+  disables built-in and external tool sources, so this first example only answers a question.
+- `prompt()` started a turn. Each `token` event contains another piece of the answer.
+- `result()` returned the final status. Leaving the `with` block closed the runtime, including
+  when an exception occurred.
 
-```python filename="examples/agent-sdk/python/first_turn.py"
-with tempfile.TemporaryDirectory() as project:
-    cmd = [JAN, "cli", "agent", "run", "--project", project, "--output-format", "stream-json"]
-    if os.environ.get("JAN_MODEL"):
-        cmd += ["--model", os.environ["JAN_MODEL"]]
-    cmd.append(task)
+Send another prompt on the same `session` to continue the conversation. To select a specific
+configured model, add `model="provider/model-id"` to `create_session()`.
 
-    run = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
-    result = None
-    for line in run.stdout:
-        record = json.loads(line)
-        if record["type"] == "init":
-            print(f"[session {record['session_id']} on {record['model']}]", file=sys.stderr)
-        elif record["type"] == "token":
-            print(record["text"], end="", flush=True)
-        elif record["type"] == "result":
-            result = record
-    run.wait()
-```
-
-- **`init`** is the first line of a run that starts: the session id, the model, the tools this run
-  advertises, and what it accepts on stdin. See
-  [the protocol version](/docs/agent/cli#the-protocol-version).
-- **`token`** carries answer text as it streams. Other records - tool calls, tool results,
-  reasoning, usage - arrive in between; a client ignores the types it does not handle.
-- **`result`** is always the last line: the final answer, `stop_reason`, `num_turns`, `usage`,
-  and `is_error` with an `error` object on failure. See [JSON output](/docs/agent/cli#json-output).
-
-`--project` points the run at a fresh temporary directory. The agent's built-in file and shell
-tools are confined to the project, so an example cannot change the directory you ran it from. Point
-it at a real project when you want the agent to work on one.
+The Python API is synchronous: iterating a turn waits for events. In an async application, run
+blocking SDK work in a worker thread rather than on your event loop.
 
 ## If it fails
 
-| You see | Cause and fix |
+| Problem | What to do |
 | --- | --- |
-| `FileNotFoundError: ... 'jan'` | `jan` is not on `PATH`. Set `JAN_BIN=/path/to/jan` |
-| `run failed: setup_error: no model specified ...` | No provider or model is configured. Run `jan login` or `jan config set`, or set `JAN_MODEL`. A setup failure prints the `result` alone, with no `init` line |
-| `run failed: upstream_error: ...` | The provider refused the request - often a wrong key or a model name the provider does not serve |
+| `ModuleNotFoundError: jan_agent_sdk` | Activate the demo's virtual environment and run the local `pip install` above with that Python. |
+| Cannot start `jan` | Add it to PATH, or pass its absolute path as `JanRuntime.start(bin="/path/to/jan")`. |
+| Unknown `rpc` command or protocol mismatch | Run `jan update`, then retry startup. |
+| No model, authentication error, or provider error | Run `jan login` or fix the provider configuration. A model override must name a model that provider serves. |
 
-## Next
+See [Process & failures](/docs/agent/sdk-runtime) for error handling in an application.
 
-Give the model a function to call in your code: [Host tools](/docs/agent/sdk-tools). To answer
-permission prompts, stop a run or handle exit codes, see [Process & failures](/docs/agent/sdk-runtime).
+## Next: give the agent a function
+
+The first script cannot act on your app. Add a [host tool](/docs/agent/sdk-tools) when you want it
+to read application data or perform an action.
