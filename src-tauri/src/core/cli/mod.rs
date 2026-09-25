@@ -1175,6 +1175,7 @@ fn build_cli_orchestration_args(
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        project_memory: true,
         subagents_enabled: true,
         max_parallel_subagents,
         auto_approve,

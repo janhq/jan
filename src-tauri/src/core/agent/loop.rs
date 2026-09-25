@@ -100,6 +100,11 @@ pub(crate) struct OrchestrationArgs {
     /// shared project-context and tool-use prompt assembled for normal runs.
     /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
+    /// Whether the run recalls project memory into its prompt and indexes its
+    /// final answer into it. `false` for an ephemeral RPC session, whose
+    /// answers must neither outlive it nor reach a later session in the same
+    /// project. Child runs skip memory regardless (see above).
+    pub project_memory: bool,
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
     pub subagents_enabled: bool,
@@ -2338,6 +2343,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        project_memory: true,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
@@ -2900,6 +2906,7 @@ async fn orchestrate_inner(
         ask_requests,
         todo_registry,
         system_prompt_override,
+        project_memory,
         subagents_enabled,
         max_parallel_subagents,
         auto_approve,
@@ -2989,7 +2996,8 @@ async fn orchestrate_inner(
     }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory.
-    if system_prompt_override.is_none() {
+    let use_memory = *project_memory && system_prompt_override.is_none();
+    if use_memory {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
@@ -3192,10 +3200,6 @@ async fn orchestrate_inner(
     let max_session_tokens = body_session_budget(json_body);
     let cost_ceiling = body_cost_ceiling(json_body);
     let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
-
-    // Top-level runs index their final assistant answer into project memory;
-    // isolated child (subagent) runs skip it to keep history independent.
-    let index_memory = system_prompt_override.is_none();
 
     if let Some(root) = project_root {
         // Background subagents are scoped to this run unless the session owns
@@ -3401,7 +3405,9 @@ async fn orchestrate_inner(
                 },
             )
             .await;
-        if index_memory {
+        // The same gate as the recall: an ephemeral session or a child run
+        // leaves no answer behind for a later session to recall.
+        if use_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
                     m.get("content")

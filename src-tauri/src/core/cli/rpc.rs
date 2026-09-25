@@ -393,6 +393,7 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
     agent.args.session_id = Some(source.id.clone());
     agent.args.host_tools = source.agent.args.host_tools.clone();
     agent.args.host_owns_gate = source.agent.args.host_owns_gate;
+    agent.args.project_memory = source.agent.args.project_memory;
     Ok(agent)
 }
 
@@ -540,6 +541,9 @@ pub async fn serve() -> Result<(), String> {
                                     Ok(mut agent) => {
                                         agent.args.host_tools = host_tools;
                                         agent.args.host_owns_gate = start.permissions == PermissionOwner::Host;
+                                        // "Not saved" covers project memory too: an ephemeral
+                                        // session's answers must not reach a later session.
+                                        agent.args.project_memory = !start.ephemeral;
                                         let sid = uuid::Uuid::new_v4().to_string();
                                         // The run reports the session by the id this client holds, not
                                         // by the private one the agent was built with: provenance and the
