@@ -1104,6 +1104,78 @@
           "id",
           "details"
         ]
+      },
+      {
+        "description": "What the run is about to send a provider, emitted immediately before\neach request goes out -- the hook an experiment harness needs to hold two\nruns comparable (pi's `onPayload` is the shape Robot Studio already\nrecords).\n\nEvery outbound request gets one, including the side calls a turn makes\n(compaction, a session title) and every child run's own requests; the\nhashes describe the body Jan built for the adapter, so two runs can be\ncompared field by field. Nothing here is model input or output: it never\njoins the transcript, and a consumer may render it, store it or ignore\nit.",
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "description": "Which run made the request: `None` for the main run, the child's\nrun id for a subagent.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_id": {
+            "description": "The session the request belongs to, as the run's handshake names it\n(the correlation id the request carries is derived from it).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "The configured provider the model resolved to.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "description": "The model id the upstream receives, without a `<provider>/` prefix.",
+            "type": "string"
+          },
+          "api_type": {
+            "description": "The wire API the request is built for (`anthropic`, `google`,\n`openai-responses`), absent for chat/completions.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "request_sha256": {
+            "description": "SHA-256 of the request body as Jan built it, as canonical JSON:\nevery object's keys sorted, recursively, so re-encoding the same\nmembers in another order gives the same digest. It is the value that\nmakes two runs comparable even when a field this record does not\nitemize has changed.\n\nThe body hashed is the one Jan built, before the provider adapter\nappends its transport fields (`stream`, `stream_options`), so it is\nnot byte-for-byte what the provider received: a harness recomputes it\nby sorting keys and dropping those two fields.",
+            "type": "string"
+          },
+          "body_bytes": {
+            "description": "The canonical body's serialized length. Key order does not change it,\nso it describes the built body either way.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "tools_sha256": {
+            "description": "SHA-256 of the `tools` array as sent, canonical JSON in the same\nsense, able to change while the model id does not.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "images": {
+            "description": "Every image in the body, in order, hashed over its decoded bytes so\nthe host can hash the same frame it captured.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ProvenanceImage"
+            }
+          },
+          "type": {
+            "type": "string",
+            "const": "request_provenance"
+          }
+        },
+        "required": [
+          "type",
+          "model",
+          "request_sha256",
+          "body_bytes"
+        ]
       }
     ],
     "$defs": {
@@ -1320,6 +1392,37 @@
             "minimum": 0
           }
         }
+      },
+      "ProvenanceImage": {
+        "description": "One image in an outbound request, as [`StreamEvent::RequestProvenance`]\nreports it: identity, not content.",
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "description": "SHA-256 over the image's decoded bytes.",
+            "type": "string"
+          },
+          "mime_type": {
+            "type": "string"
+          },
+          "bytes": {
+            "description": "Decoded length in bytes.",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "tool_call_id": {
+            "description": "The host tool call whose result carried it, when one did. `None` for an\nimage the user attached.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "sha256",
+          "mime_type",
+          "bytes"
+        ]
       }
     }
   }

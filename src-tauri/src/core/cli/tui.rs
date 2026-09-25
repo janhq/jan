@@ -5551,7 +5551,8 @@ impl App {
             // cannot receive this.
             StreamEvent::ToolRequest { .. }
             | StreamEvent::ToolRequestCancelled { .. }
-            | StreamEvent::ToolDetails { .. } => {}
+            | StreamEvent::ToolDetails { .. }
+            | StreamEvent::RequestProvenance { .. } => {}
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
@@ -25245,6 +25246,7 @@ mod tests {
         provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig>,
     ) -> std::sync::Arc<super::OrchestrationArgs> {
         std::sync::Arc::new(super::OrchestrationArgs {
+            run_id: None,
             client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
             mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(

@@ -65,6 +65,25 @@ exist on both `stream-json` (`--host-tools`) and RPC (below). See
 [what your build supports](/docs/agent/sdk#what-your-build-supports).
 </Callout>
 
+## RPC stream events
+
+A turn's events reach the client as notifications named `item/<tag>`, where `<tag>` is the event's
+own `type` on the `stream-json` surface: one naming rule for both, and no second list to keep in
+sync. `protocol/rpc-schema.json` publishes the resulting notification names in its `events`
+section, generated from the same Rust enum that produces them (`src-tauri/src/core/cli/rpc.rs:736`),
+so a record can be looked up there rather than inferred from this page.
+
+A `request_provenance` event therefore arrives as `item/request_provenance`, carrying the identity
+of each outbound provider request (run, session, provider, model, wire API, body and tool-array
+hashes, image hashes) and none of its content. A subagent's request is reported on its child's
+stream, so its record arrives nested in `item/subagent` (`{run_id, name, event}`) rather than at the
+top level. See [Request provenance](/docs/agent/cli#request-provenance) for the record's fields.
+
+A turn whose provider request fails ends with `item/error` (`{type: "error", code, message}`, the
+provider's own words where it gave any) and then `turn/completed` with `stopReason: "error"` and the
+same message. A client must read that as the turn's outcome: the assistant text is whatever arrived
+before the failure, which is usually nothing, and no further records follow.
+
 ## RPC host tools
 
 A host declares tools on `session/start`; the model calls them, Jan sends the call to the host,
@@ -126,7 +145,7 @@ turn's `turn/completed`. When stdin closes, pending requests are cancelled the s
 | --- | --- | --- |
 | `session/tools/get` | `{sessionId}` | `{tools, toolSpecs}` |
 | `session/tools/set` | `{sessionId, tools}` | `{tools, toolSpecs}`. Replaces the host set; refusals are `invalid_tools`. |
-| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins` and `permissions` are kept. |
+| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins` and `permissions` are kept. A model no configured provider can serve fails here with `-32602` rather than being substituted at the next turn; the check is servability, so it does not fetch (or refresh) the credential the model's provider needs - the next turn resolves that, and reports a credential failure as its own. |
 | `session/reset` | `{sessionId}` | `{tools, toolSpecs}`. History is cleared; model and tools are kept. |
 
 These four methods are refused while that session's turn is running: `-32001` with
@@ -135,6 +154,10 @@ and `session/archive` of a busy session, and a second `turn/start`, keep their p
 `-32001`.) An unknown `sessionId` is `-32602`. `session/fork` copies the host
 tools, `builtins` and `permissions`, but pending requests are never shared between sessions.
 `session/list` entries include `hostTools`, the number of declared host tools.
+
+`provider/model` is explicit selection: the provider is taken from the name, so a provider that
+accepts ids it does not list (a gateway, a proxy) is used as asked rather than overridden. A bare
+model id that no provider lists is refused as above.
 
 Every mutating method is answered. A client that gets no answer, for example because the process
 died, should treat the session as gone and close it. This fail-closed handling belongs to the SDK

@@ -1171,6 +1171,8 @@ fn build_cli_orchestration_args(
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
         session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // The top-level run is not a child: no dispatch gave it an id.
+        run_id: None,
         // Run-owned here, so a headless run parks on its watchers: nobody is
         // there to talk to meanwhile. The TUI installs its session set itself.
         monitors: None,
@@ -2028,6 +2030,11 @@ async fn run_agent_loop(
         .thread_id
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    // The run's own id becomes the session id, so the one a client is handed,
+    // the one its requests are correlated under, and the one a provenance
+    // record names are the same id: three spellings of a session would only
+    // ever be a way to lose the thread between them.
+    args.session_id = Some(session_id.clone());
 
     // The handshake, before anything else can reach stdout. Printed here rather
     // than from the printer task for exactly that reason: nothing has been
@@ -2752,6 +2759,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             eprint!("\x1b[2m{delta}\x1b[0m");
             let _ = std::io::stderr().flush();
         }
+        // Provenance is machine-facing: it is an identity record for an
+        // experiment harness, not something to draw. The stream-json writer
+        // serializes the event itself, so nothing is lost by not printing it.
+        StreamEvent::RequestProvenance { .. } => {}
         // Reasoning is progress, not answer: dimmed on stderr so piping stdout
         // yields only the real completion.
         StreamEvent::Reasoning { text } => {

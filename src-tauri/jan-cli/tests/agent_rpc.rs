@@ -885,3 +885,87 @@ fn interrupting_withdraws_pending_host_requests() {
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);
 }
+
+/// The provenance a client receives names the session that client holds, and
+/// goes on naming it after the session is rebuilt for a model change. A record
+/// naming some internal id, or a new one after `session/model/set`, cannot be
+/// joined to the turn it belongs to, which is the whole use of the field.
+#[test]
+fn provenance_names_the_session_the_client_holds() {
+    let scratch = scratch("provenance-session");
+    let home = scratch.join("home");
+    let (url, _seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let session_id = rpc.start_session(&project);
+
+    let provenance = |rpc: &mut Rpc, id: u64| {
+        let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"turn/start","params":{"sessionId":session_id,"input":"hi"}}));
+        assert!(turn["result"]["turnId"].is_string(), "{turn}");
+        let record = rpc
+            .read_until(|frame| frame["method"] == "item/request_provenance")
+            .expect("the turn's request is reported");
+        rpc.read_until(|frame| frame["method"] == "turn/completed")
+            .expect("the turn completes");
+        record["params"]["event"]["session_id"].clone()
+    };
+
+    assert_eq!(provenance(&mut rpc, 4), serde_json::json!(session_id));
+
+    // Rebuilding the agent for a model change must not rename the session: the
+    // client's id is the session's, not the agent's.
+    let set = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"session/model/set","params":{"sessionId":session_id,"model":"stub-model"}}));
+    assert_eq!(set["result"]["model"], "stub-model", "{set}");
+    assert_eq!(provenance(&mut rpc, 6), serde_json::json!(session_id));
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// A session's provider and model are pinned when it starts: a model the
+/// configuration cannot resolve is refused at `session/model/set` instead of
+/// being accepted and only failing the next turn, and the session keeps serving
+/// the model it already had. Adopting some other reachable model, or failing a
+/// turn the client had every reason to believe was valid, is what this refuses.
+#[test]
+fn model_set_refuses_a_model_no_provider_serves() {
+    let scratch = scratch("model-pin");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let session_id = rpc.start_session(&project);
+
+    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"session/model/set","params":{"sessionId":session_id,"model":"no-such-model"}}));
+    assert_eq!(refused["error"]["code"], -32602, "{refused}");
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("no-such-model"),
+        "the refusal names the model: {refused}"
+    );
+    assert!(refused["result"].is_null(), "a refusal carries no model: {refused}");
+
+    // The session is still on the model it started with: the turn goes out with
+    // `stub-model` in the body, to the provider that serves it.
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"turn/start","params":{"sessionId":session_id,"input":"hi"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+    rpc.read_until(|record| record["method"] == "turn/completed")
+        .expect("the turn completes");
+    let requests = seen.lock().unwrap().clone();
+    assert!(!requests.is_empty(), "the provider saw the turn");
+    for request in &requests {
+        assert_eq!(
+            request["model"], "stub-model",
+            "no substitution: the session stays on the model it was given: {request}"
+        );
+    }
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
