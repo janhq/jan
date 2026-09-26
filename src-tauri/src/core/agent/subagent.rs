@@ -1350,6 +1350,8 @@ async fn run_subagent(
 
     let body = child_body(&resolved, &description, &parent);
 
+    log::info!("subagent: start name={name} run_id={run_id}");
+
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
         name: name.clone(),
@@ -1375,13 +1377,23 @@ async fn run_subagent(
         }
     });
 
+    let started = std::time::Instant::now();
     let result = run_orchestration_streamed(&child_tx, &body, &child_args).await;
     drop(child_tx);
     let _ = forwarder.await;
 
+    // `run_id` repeats on the end line: several subagents run in parallel, so
+    // without it the start and end lines cannot be paired up in the log.
+    let elapsed = started.elapsed().as_millis();
     let outcome = match result {
-        Ok(completion) => Ok(final_assistant_text(&completion)),
-        Err(message) => Err(SubagentError::Upstream(message)),
+        Ok(completion) => {
+            log::info!("subagent: end run_id={run_id} outcome=ok elapsed={elapsed}ms");
+            Ok(final_assistant_text(&completion))
+        }
+        Err(message) => {
+            log::info!("subagent: end run_id={run_id} outcome=error elapsed={elapsed}ms");
+            Err(SubagentError::Upstream(message))
+        }
     };
     let _ = events.send(StreamEvent::SubagentEnd {
         run_id,

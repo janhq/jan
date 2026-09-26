@@ -1,0 +1,469 @@
+//! Persistent structured log file beside the stderr logger.
+//!
+//! `env_logger` is a single-sink, single-level logger, so it cannot write the
+//! same records to stderr at one verbosity and to a file at another. This
+//! module replaces it with a [`DualLogger`] that keeps `env_logger`'s exact
+//! stderr behavior (style, module paths, `RUST_LOG` filtering) and additionally
+//! appends every `info`-and-above record to a rotating plain-ASCII file under
+//! the Jan data folder. The file default is more verbose than the `warn`
+//! stderr default so a froze or misbehaving agent run leaves a trail on disk
+//! without the user ever having to pass `-v`.
+
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Mutex;
+
+use log::{LevelFilter, Log, Metadata, Record};
+
+/// What the file always captures, on top of the `warn` stderr default.
+const FILE_LEVEL: LevelFilter = LevelFilter::Info;
+/// Rotate once the active segment crosses this size.
+const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
+/// Backup segments kept beside the active file (`jan.log.1` .. `jan.log.N`).
+/// `doctor` reads the same bound when it tails across rotated segments.
+pub(crate) const KEEP_SEGMENTS: u32 = 3;
+const LOG_FILE: &str = "jan.log";
+
+/// Whether the stderr sink is allowed to write. The TUI owns the terminal once
+/// it enters the alternate screen, so a stray `warn` from a dependency would
+/// paint over the frame; it mutes stderr for the duration. This gate replaces
+/// the older `log::set_max_level(Off)` approach, which silenced the facade
+/// globally and so muted the file sink too -- exactly the interactive session
+/// a bug report needs a trail for.
+static STDERR_ENABLED: AtomicBool = AtomicBool::new(true);
+
+/// Mute or unmute the stderr sink without touching the file sink. Returns the
+/// previous value so a caller can restore it.
+pub fn set_stderr_enabled(on: bool) -> bool {
+    STDERR_ENABLED.swap(on, Ordering::Relaxed)
+}
+
+/// The segment path for a 1-based backup number; `0` means the active file.
+fn segment_path(base: &Path, k: u32) -> PathBuf {
+    if k == 0 {
+        base.to_path_buf()
+    } else {
+        base.with_file_name(format!("{LOG_FILE}.{k}"))
+    }
+}
+
+/// Append-only handle to the active log file with size-based rotation.
+struct FileLog {
+    path: PathBuf,
+    file: Mutex<File>,
+    len: AtomicU64,
+}
+
+impl FileLog {
+    /// Open the active file for appending. Returns `None` (degrading to
+    /// stderr-only) when the log cannot be opened -- a diagnostics trail is
+    /// worth having but never worth aborting the run over.
+    fn new(path: PathBuf) -> Option<Self> {
+        std::fs::create_dir_all(path.parent()?).ok()?;
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .ok()?;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        Some(FileLog {
+            path,
+            file: Mutex::new(file),
+            len: AtomicU64::new(len),
+        })
+    }
+
+    fn write(&self, record: &Record) {
+        let line = format_line(record);
+        let mut f = match self.file.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        if f.write_all(line.as_bytes()).is_err() {
+            return;
+        }
+        let new_len = self.len.fetch_add(line.len() as u64, Ordering::Relaxed)
+            + line.len() as u64;
+        if new_len >= MAX_LOG_BYTES {
+            // Drop the guard (so the handle can be rotated on Windows too)
+            // before shifting the segments and reopening a fresh active file.
+            drop(f);
+            self.rotate();
+            if let Ok(nf) = OpenOptions::new().create(true).append(true).open(&self.path) {
+                if let Ok(mut g) = self.file.lock() {
+                    *g = nf;
+                }
+            }
+        }
+    }
+
+    /// Shift `jan.log{,.1,.2}` down one slot and start a fresh active file.
+    ///
+    /// `len` counts only what this process wrote plus the size it saw at open,
+    /// so several `jan` processes sharing a data folder each reach the threshold
+    /// on their own. Re-stat the path first: if the active file is already small
+    /// another process just rotated it, and shifting again would discard a live
+    /// segment (only [`KEEP_SEGMENTS`] are kept). Resync the counter instead.
+    fn rotate(&self) {
+        if let Ok(actual) = fs::metadata(&self.path).map(|m| m.len()) {
+            if actual < MAX_LOG_BYTES {
+                self.len.store(actual, Ordering::Relaxed);
+                return;
+            }
+        }
+        for k in (2..=KEEP_SEGMENTS).rev() {
+            let _ = fs::rename(segment_path(&self.path, k - 1), segment_path(&self.path, k));
+        }
+        let _ = fs::rename(&self.path, segment_path(&self.path, 1));
+        self.len.store(0, Ordering::Relaxed);
+    }
+
+    fn flush(&self) {
+        if let Ok(mut f) = self.file.lock() {
+            let _ = f.flush();
+        }
+    }
+}
+
+/// One line per record, plain ASCII, timestamped. Never colored; the file is
+/// meant to be read in an editor, piped, or bundled, not rendered live.
+///
+/// The message is scrubbed on the way in. This file persists across runs and
+/// ships inside `jan bug-report`, while the text reaching it is not all ours:
+/// an upstream error can echo the request's `Authorization` header back, and a
+/// user can paste a key into a prompt. Scrubbing here -- rather than at each
+/// `log::` call -- means a breadcrumb added later cannot reintroduce the leak,
+/// and it leaves the stderr sink untouched, so the terminal still shows the
+/// operator the full text.
+fn format_line(record: &Record) -> String {
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S%.3f");
+    let message = record.args().to_string();
+    format!(
+        "{ts} {:<5} [{}] {}\n",
+        record.level().as_str(),
+        record.target(),
+        crate::core::cli::secrets::SHARED.scrub(&message)
+    )
+}
+
+/// Routes every record to stderr through `env_logger` (unchanged behavior)
+/// and, in parallel, to the rotating ASCII file. `enabled`/`log` consult the
+/// per-sink paths so the file sees `info` even when stderr is only `warn`.
+struct DualLogger {
+    stderr: env_logger::Logger,
+    file: Option<FileLog>,
+}
+
+impl Log for DualLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        // Either sink wants the record: stderr's own module/level filter (which
+        // may reach debug/trace via RUST_LOG) when it is not muted, or the file
+        // when the record is at or under the file ceiling.
+        (STDERR_ENABLED.load(Ordering::Relaxed) && self.stderr.enabled(metadata))
+            || (self.file.is_some() && metadata.level() <= FILE_LEVEL)
+    }
+
+    fn log(&self, record: &Record) {
+        // The file only captures records at or under FILE_LEVEL (info), even
+        // when stderr goes deeper via RUST_LOG=debug/trace. It is deliberately
+        // not gated on STDERR_ENABLED: a muted terminal must still leave a
+        // trail, which is the whole point of the file sink.
+        if let Some(f) = &self.file {
+            if record.level() <= FILE_LEVEL {
+                f.write(record);
+            }
+        }
+        // stderr keeps env_logger's exact behavior, including debug/trace when
+        // RUST_LOG asks for them (env_logger filters internally), except while
+        // the TUI owns the terminal.
+        if STDERR_ENABLED.load(Ordering::Relaxed) {
+            self.stderr.log(record);
+        }
+    }
+
+    fn flush(&self) {
+        self.stderr.flush();
+        if let Some(f) = &self.file {
+            f.flush();
+        }
+    }
+}
+/// Install the dual logger as the process-wide `log` backend. `verbose`
+/// mirrors the old `-v/--verbose` flag: it raises the stderr threshold to
+/// `info`; the file always captures `info` regardless. `data_folder` is where
+/// `logs/jan.log` lives (resolved via `JAN_DATA_FOLDER` for testability).
+pub fn init(data_folder: PathBuf, verbose: bool) {
+    let default = if verbose { "info" } else { "warn" };
+    let stderr = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(default))
+        .build();
+    let file = FileLog::new(data_folder.join("logs").join(LOG_FILE));
+    // The global gate must admit whatever the deepest sink wants, and no more:
+    // it is the cheap static check `log::debug!` does before building a record,
+    // so leaving it at `Trace` would make every dependency's debug/trace record
+    // pay a dynamic `enabled()` call to then be dropped. stderr can be raised
+    // to debug/trace via RUST_LOG, the file self-limits to FILE_LEVEL, and each
+    // sink still filters independently below the gate.
+    let ceiling = stderr.filter().max(FILE_LEVEL);
+    let _ = log::set_boxed_logger(Box::new(DualLogger { stderr, file }));
+    log::set_max_level(ceiling);
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `STDERR_ENABLED` is process-global, so a test that toggles it would
+    /// otherwise race any sibling test reading `enabled()` in parallel.
+    static STDERR_GATE: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn file_log_writes_info_records_with_timestamp() {
+        let dir = std::env::temp_dir().join(format!("jan_file_log_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        let log = FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log");
+        // Built and consumed in one statement: a `format_args!` with runtime
+        // arguments borrows temporaries that a `let` binding would drop first.
+        log.write(
+            &Record::builder()
+                .args(format_args!("hello {} {}", 1, 2))
+                .level(log::Level::Info)
+                .target(module_path!())
+                .build(),
+        );
+        log.flush();
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(content.contains("hello 1 2"), "content: {content}");
+        assert!(content.contains("INFO"), "level label: {content}");
+        assert!(content.starts_with("20"), "timestamp leads: {content}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The regression this sink's scrub exists for. A provider echoed the
+    /// request's `Authorization` header inside its error body; the agent logged
+    /// that error as a breadcrumb, and the raw key landed in `jan.log` -- a file
+    /// that persists across runs and ships inside `jan bug-report`.
+    ///
+    /// Asserted at the sink, not at the call site: scrubbing here is what makes
+    /// a breadcrumb added later safe by construction.
+    #[test]
+    fn file_log_scrubs_a_credential_out_of_a_record() {
+        let dir = std::env::temp_dir().join(format!("jan_file_log_secret_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        let log = FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log");
+        let secret = "sk-live-11112222333344445555";
+        log.write(
+            &Record::builder()
+                .args(format_args!(
+                    "agent: run finished outcome=error -- Body: \
+                     {{\"message\":\"authorization: Bearer {secret}\"}}"
+                ))
+                .level(log::Level::Info)
+                .target(module_path!())
+                .build(),
+        );
+        log.flush();
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(!content.contains(secret), "credential reached the file: {content}");
+        assert!(content.contains("<redacted>"), "redaction is marked: {content}");
+        assert!(
+            content.contains("outcome=error"),
+            "the breadcrumb still says what happened: {content}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Several `jan` processes share one data folder, and each tracks the log's
+    /// length on its own. When one rotates, the others still believe the active
+    /// file is full, so they rotate a file that is already fresh -- and since
+    /// only `KEEP_SEGMENTS` are kept, a burst of processes would shift real
+    /// history off the end. Rotation must notice and resync instead.
+    #[test]
+    fn rotate_resyncs_instead_of_shifting_an_already_rotated_file() {
+        let dir = std::env::temp_dir().join(format!("jan_rot_race_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("logs")).unwrap();
+        let path = dir.join("logs").join(LOG_FILE);
+
+        // Stand in for a peer's rotation: `.1` holds the retained history and
+        // the active file is small again.
+        fs::write(segment_path(&path, 1), "rotated-by-a-peer\n").unwrap();
+        fs::write(&path, "fresh\n").unwrap();
+
+        let log = FileLog::new(path.clone()).expect("opens log");
+        // This process still thinks the active file is full.
+        log.len.store(MAX_LOG_BYTES, Ordering::Relaxed);
+        log.rotate();
+
+        assert_eq!(
+            fs::read_to_string(segment_path(&path, 1)).unwrap(),
+            "rotated-by-a-peer\n",
+            "the peer's segment must survive"
+        );
+        assert!(
+            !segment_path(&path, 2).exists(),
+            "no redundant shift happened"
+        );
+        assert_eq!(
+            log.len.load(Ordering::Relaxed),
+            "fresh\n".len() as u64,
+            "counter resynced to the real file size"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    fn metadata(level: log::Level) -> log::Metadata<'static> {
+        log::Metadata::builder().level(level).target(module_path!()).build()
+    }
+
+    #[test]
+    fn dual_logger_delegates_stderr_verbosity_but_caps_file_at_info() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("jan_dual_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+
+        // stderr at trace (the deepest RUST_LOG can ask for) must still report
+        // debug/trace as enabled: there is no global info ceiling anymore.
+        let deep_stderr = env_logger::Builder::new()
+            .filter_level(LevelFilter::Trace)
+            .build();
+        let dual = DualLogger {
+            stderr: deep_stderr,
+            file: Some(FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log")),
+        };
+        assert!(
+            dual.enabled(&metadata(log::Level::Debug)),
+            "debug must reach stderr even though the file caps at info"
+        );
+        assert!(
+            dual.enabled(&metadata(log::Level::Trace)),
+            "trace must reach stderr even though the file caps at info"
+        );
+
+        // Info reaches the file; debug/trace must never be written to it.
+        // (literal format_args! produce 'static records we can borrow freely)
+        let info = log::Record::builder()
+            .args(format_args!("info line"))
+            .level(log::Level::Info)
+            .target(module_path!())
+            .build();
+        let debug = log::Record::builder()
+            .args(format_args!("debug line"))
+            .level(log::Level::Debug)
+            .target(module_path!())
+            .build();
+        let trace = log::Record::builder()
+            .args(format_args!("trace line"))
+            .level(log::Level::Trace)
+            .target(module_path!())
+            .build();
+        dual.log(&info);
+        dual.log(&debug);
+        dual.log(&trace);
+        dual.flush();
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(content.contains("info line"), "info written to file: {content}");
+        assert!(!content.contains("debug line"), "debug leaked to file: {content}");
+        assert!(!content.contains("trace line"), "trace leaked to file: {content}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dual_logger_file_does_not_broaden_a_warn_stderr() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("jan_dual_warn_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+
+        // stderr at warn (the default). The file still wants info, but a debug
+        // record must NOT be reported enabled just because a file exists.
+        let warn_stderr = env_logger::Builder::new()
+            .filter_level(LevelFilter::Warn)
+            .build();
+        let dual = DualLogger {
+            stderr: warn_stderr,
+            file: Some(FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log")),
+        };
+        assert!(
+            dual.enabled(&metadata(log::Level::Info)),
+            "info enabled for the file even when stderr is warn"
+        );
+        assert!(
+            !dual.enabled(&metadata(log::Level::Debug)),
+            "debug must not be enabled when stderr is warn and file caps at info"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn muting_stderr_keeps_the_file_sink_writing() {
+        let _gate = STDERR_GATE.lock().unwrap_or_else(|e| e.into_inner());
+        // The TUI mutes stderr for the whole interactive session because it owns
+        // the terminal. The file must keep recording anyway: a session that
+        // hangs is exactly what `jan bug-report` needs a trail for. Muting via
+        // `log::set_max_level(Off)` instead would silence the facade globally
+        // and lose this.
+        let dir = std::env::temp_dir().join(format!("jan_mute_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+
+        let dual = DualLogger {
+            stderr: env_logger::Builder::new().filter_level(LevelFilter::Warn).build(),
+            file: Some(FileLog::new(dir.join("logs").join(LOG_FILE)).expect("opens log")),
+        };
+
+        let prev = set_stderr_enabled(false);
+        assert!(
+            dual.enabled(&metadata(log::Level::Info)),
+            "info must stay enabled for the file while stderr is muted"
+        );
+        let record = log::Record::builder()
+            .args(format_args!("muted but recorded"))
+            .level(log::Level::Info)
+            .target(module_path!())
+            .build();
+        dual.log(&record);
+        dual.flush();
+        set_stderr_enabled(prev);
+
+        let content = fs::read_to_string(dir.join("logs").join(LOG_FILE)).unwrap();
+        assert!(
+            content.contains("muted but recorded"),
+            "file lost records while stderr was muted: {content}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn init_gates_at_the_deepest_sink_not_wider() {
+        let dir = std::env::temp_dir().join(format!("jan_init_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("logs")).unwrap();
+        init(dir.clone(), false);
+        // With stderr at its `warn` default, the file's `info` need sets the
+        // gate: high enough that info+ records reach the file, low enough that
+        // dependency debug/trace stays compiled out at the call site.
+        assert_eq!(
+            log::max_level(),
+            FILE_LEVEL,
+            "gate must sit at the deepest sink's level, got {:?}",
+            log::max_level()
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
+

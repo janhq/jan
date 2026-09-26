@@ -2398,15 +2398,34 @@ pub(crate) async fn run_orchestration_steered(
     args: &OrchestrationArgs,
     steering: Option<&mpsc::UnboundedSender<SteeringRequest>>,
 ) -> Result<serde_json::Value, String> {
+    let started = std::time::Instant::now();
+    // Paired with `agent: run started`: a start line with no `run finished`
+    // after it means the run never came back, which is what a hang looks like
+    // in the log. The elapsed time distinguishes a hang from a slow provider.
     let result = orchestrate_inner(events, json_body, args, steering).await;
     match &result {
         Ok(completion) => {
+            log::info!(
+                "agent: run finished outcome=ok stop={} elapsed={}ms",
+                stop_reason_of(completion),
+                started.elapsed().as_millis()
+            );
             let _ = events.send(StreamEvent::Done {
                 stop_reason: stop_reason_of(completion),
                 usage: Usage::from_completion(completion),
             });
         }
         Err(message) => {
+            // The message wraps the provider's response body, which is
+            // unbounded and sometimes echoes the request's `Authorization`
+            // header back. This breadcrumb persists to `jan.log` and ships in
+            // `jan bug-report`, so it must be bounded before it lands on disk.
+            // The event below still carries the full text to the user's screen.
+            log::info!(
+                "agent: run finished outcome=error elapsed={}ms -- {}",
+                started.elapsed().as_millis(),
+                crate::core::agent::upstream::log_brief(message)
+            );
             let _ = events.send(StreamEvent::Error {
                 code: "error".to_string(),
                 message: message.clone(),
@@ -3169,6 +3188,10 @@ async fn orchestrate_inner(
     )
     .await?;
 
+    log::info!(
+        "agent: run started model={model_id} upstream={}",
+        crate::core::agent::upstream::log_safe_upstream_url(&upstream_url)
+    );
     let max_turns = body_turn_cap(json_body);
 
     let provenance = request_identity(&model_id, provider_configs, run_id.as_deref()).await;
@@ -4279,7 +4302,13 @@ async fn run_turn_cycle(
                     }
                     Ok(None) => {}
                     Err(error) => {
-                        log::warn!("agent: budget exhausted but compaction failed: {error}");
+                        // Compaction runs a summarizer turn upstream, so this
+                        // error can wrap a provider body -- bound it, since the
+                        // file log ships in `jan bug-report`.
+                        log::warn!(
+                            "agent: budget exhausted but compaction failed: {}",
+                            crate::core::agent::upstream::log_brief(&error)
+                        );
                     }
                 }
             }
@@ -4444,6 +4473,23 @@ async fn run_turn_cycle(
                 ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
+        // Tool-dispatch breadcrumb: the turn, how many calls, and the names,
+        // so a retry or a call that blocks the render loop is visible in the
+        // log afterwards. Names only -- args are redacted by the TUI render.
+        let tool_names: Vec<&str> = executable
+            .iter()
+            .filter_map(|tc| {
+                tc.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|v| v.as_str())
+            })
+            .collect();
+        log::info!(
+            "agent: turn {} dispatching {} tool call(s): {}",
+            turn + 1,
+            executable.len(),
+            tool_names.join(", ")
+        );
         let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
             Vec::new()
         } else {
