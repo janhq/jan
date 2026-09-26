@@ -50,6 +50,16 @@ const YOU_COM_CLIENT_INFO: &str = concat!(
 const YOU_COM_SEARCH_URL: &str = "https://ydc-index.io/v1/search";
 const YOU_COM_CONTENTS_URL: &str = "https://ydc-index.io/v1/contents";
 
+const SERPLY_SEARCH_URL: &str = "https://api.serply.io/v1/search";
+// Identifies the calling application to Serply. Sent only on requests to Serply.
+const SERPLY_USER_AGENT: &str = concat!(
+    "jan-websearch/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/janhq/jan)"
+);
+// Serply returns at most one results page (10 rows) per request.
+const SERPLY_MAX_COUNT: u32 = 10;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SearchResult {
     pub title: String,
@@ -88,6 +98,7 @@ pub fn create_provider(
         Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
         Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
         Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
+        Some("serply") => Ok(Box::new(SerplyProvider::new(api_key)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -798,6 +809,90 @@ fn normalize_youcom_contents(body: &Value, requested_url: &str) -> Result<Fetche
     })
 }
 
+/// Serply backend (key-only). Queries Google results through the `/v1/search`
+/// REST endpoint, authenticated with an `X-Api-Key` header. Serply has no
+/// content-extraction endpoint, so `fetch` does a plain HTTP GET of the URL,
+/// the same as [`SearxngProvider`].
+pub struct SerplyProvider {
+    api_key: String,
+    client: reqwest::Client,
+}
+
+impl SerplyProvider {
+    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+        Ok(Self {
+            api_key: require_key("Serply", api_key)?,
+            client: build_http_client("Serply")?,
+        })
+    }
+
+    fn search_request(&self, query: &str, count: u32) -> reqwest::RequestBuilder {
+        let num = count.min(SERPLY_MAX_COUNT).to_string();
+        self.client
+            .get(SERPLY_SEARCH_URL)
+            .query(&[("q", query), ("num", num.as_str())])
+            .header("X-Api-Key", &self.api_key)
+            .header("user-agent", SERPLY_USER_AGENT)
+    }
+}
+
+#[async_trait]
+impl SearchProvider for SerplyProvider {
+    async fn search(&self, query: &str, count: u32) -> Result<Vec<SearchResult>, String> {
+        let resp = self
+            .search_request(query, count)
+            .send()
+            .await
+            .map_err(|e| format!("Serply request failed: {e}"))?;
+        let status = resp.status();
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| format!("Serply: failed to read response body: {e}"))?;
+        if !status.is_success() {
+            return Err(format!(
+                "Serply failed with HTTP {}: {}",
+                status.as_u16(),
+                text.chars().take(400).collect::<String>()
+            ));
+        }
+        let parsed: Value = serde_json::from_str(&text)
+            .map_err(|e| format!("Serply: invalid JSON response: {e}"))?;
+        Ok(normalize_serply_search(&parsed, count))
+    }
+
+    async fn fetch(&self, url: &str) -> Result<FetchedPage, String> {
+        fetch_url_direct(&self.client, url, "Serply").await
+    }
+}
+
+/// `num` is an upper bound, and a results page can hold a row or two more than
+/// asked for, so the list is trimmed to `count` here.
+fn normalize_serply_search(body: &Value, count: u32) -> Vec<SearchResult> {
+    let Some(results) = body.get("results").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    results
+        .iter()
+        .take(count as usize)
+        .map(|r| {
+            let title = r.get("title").and_then(|v| v.as_str()).unwrap_or("");
+            let url = r.get("link").and_then(|v| v.as_str()).unwrap_or("");
+            let snippet = r
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|t| clip_chars(t, 500))
+                .unwrap_or_default();
+            SearchResult {
+                title: title.to_string(),
+                url: url.to_string(),
+                snippet,
+                published_at: None,
+            }
+        })
+        .collect()
+}
+
 /// SearXNG backend (self-hosted, key-less). Queries a user-supplied instance's
 /// JSON search API. SearXNG has no content-extraction endpoint, so `fetch` does
 /// a plain HTTP GET of the URL and returns the bounded raw response body.
@@ -1319,6 +1414,66 @@ mod tests {
     fn create_provider_youcom_works_with_and_without_key() {
         assert!(create_provider(Some("you"), None, None).is_ok());
         assert!(create_provider(Some("you"), Some("ydc-key".into()), None).is_ok());
+    }
+
+    #[test]
+    fn create_provider_serply_requires_key() {
+        match create_provider(Some("serply"), None, None) {
+            Ok(_) => panic!("expected Serply to require a key"),
+            Err(e) => assert!(e.contains("Serply")),
+        }
+        assert!(create_provider(Some("serply"), Some("serply-key".into()), None).is_ok());
+    }
+
+    #[test]
+    fn serply_search_request_shape() {
+        let req = SerplyProvider::new(Some("serply-key".into()))
+            .unwrap()
+            .search_request("rust async", 20)
+            .build()
+            .unwrap();
+        assert_eq!(req.method(), reqwest::Method::GET);
+        assert_eq!(
+            req.url().as_str(),
+            "https://api.serply.io/v1/search?q=rust+async&num=10"
+        );
+        assert_eq!(req.headers().get("x-api-key").unwrap(), "serply-key");
+        assert!(req
+            .headers()
+            .get("user-agent")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("jan-websearch/"));
+    }
+
+    #[test]
+    fn normalize_serply_search_maps_and_caps() {
+        let body = json!({
+            "results": [
+                {
+                    "title": "Example",
+                    "link": "https://example.com",
+                    "description": "A short excerpt.",
+                    "position": 1,
+                    "result_type": "organic"
+                },
+                { "title": "Second", "link": "https://example.org", "description": "Body." },
+                { "title": "Third", "link": "https://example.net", "description": "More." }
+            ]
+        });
+        let results = normalize_serply_search(&body, 2);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].title, "Example");
+        assert_eq!(results[0].url, "https://example.com");
+        assert_eq!(results[0].snippet, "A short excerpt.");
+        assert!(results[0].published_at.is_none());
+    }
+
+    #[test]
+    fn normalize_serply_search_empty_is_empty() {
+        assert!(normalize_serply_search(&json!({}), 5).is_empty());
+        assert!(normalize_serply_search(&json!({ "results": [] }), 5).is_empty());
     }
 
     #[test]
