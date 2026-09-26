@@ -18,6 +18,7 @@
 //! output size so tool results can't blow up the model's context.
 
 use async_trait::async_trait;
+use jan_utils::network::{create_proxy_from_config, should_bypass_proxy, ProxyConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -77,17 +78,19 @@ pub trait SearchProvider: Send + Sync {
 
 /// Build the backend for `provider` (case-insensitive; empty/absent selects the
 /// default). `api_key` is used by keyed backends; `endpoint` by self-hosted ones
-/// (e.g. a SearXNG instance URL).
+/// (e.g. a SearXNG instance URL). `proxy`, when set, is applied to the
+/// backend's outbound requests the same way it is for model downloads.
 pub fn create_provider(
     provider: Option<&str>,
     api_key: Option<String>,
     endpoint: Option<String>,
+    proxy: Option<&ProxyConfig>,
 ) -> Result<Box<dyn SearchProvider>, String> {
     match provider.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
-        None | Some("") | Some("exa") => Ok(Box::new(ExaProvider::new(api_key)?)),
-        Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key)?)),
-        Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint)?)),
-        Some("you") => Ok(Box::new(YouComProvider::new(api_key)?)),
+        None | Some("") | Some("exa") => Ok(Box::new(ExaProvider::new(api_key, proxy)?)),
+        Some("tavily") => Ok(Box::new(TavilyProvider::new(api_key, proxy)?)),
+        Some("searxng") => Ok(Box::new(SearxngProvider::new(endpoint, proxy)?)),
+        Some("you") => Ok(Box::new(YouComProvider::new(api_key, proxy)?)),
         Some(other) => Err(format!("Unknown web search provider '{other}'")),
     }
 }
@@ -96,9 +99,23 @@ fn require_key(provider: &str, api_key: Option<String>) -> Result<String, String
     normalize_key(api_key).ok_or_else(|| format!("{provider} requires an API key"))
 }
 
-fn build_http_client(provider: &str) -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
+/// `target_url` is a representative endpoint for this backend, used only to
+/// check `proxy.no_proxy` bypass patterns (all endpoints of a given backend
+/// share the same host).
+fn build_http_client(
+    provider: &str,
+    target_url: &str,
+    proxy: Option<&ProxyConfig>,
+) -> Result<reqwest::Client, String> {
+    let mut builder =
+        reqwest::Client::builder().timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS));
+    if let Some(config) = proxy {
+        let no_proxy = config.no_proxy.as_deref().unwrap_or(&[]);
+        if !should_bypass_proxy(target_url, no_proxy) {
+            builder = builder.proxy(create_proxy_from_config(config)?);
+        }
+    }
+    builder
         .build()
         .map_err(|e| format!("failed to build HTTP client for {provider}: {e}"))
 }
@@ -129,15 +146,16 @@ pub struct ExaProvider {
 }
 
 impl ExaProvider {
-    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+    pub fn new(api_key: Option<String>, proxy: Option<&ProxyConfig>) -> Result<Self, String> {
         let mode = match normalize_key(api_key) {
             Some(key) => ExaMode::Rest(key),
             None => ExaMode::Hosted,
         };
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(REQUEST_TIMEOUT_SECS))
-            .build()
-            .map_err(|e| format!("failed to build HTTP client for Exa: {e}"))?;
+        let target_url = match &mode {
+            ExaMode::Hosted => EXA_HOSTED_URL,
+            ExaMode::Rest(_) => EXA_REST_SEARCH_URL,
+        };
+        let client = build_http_client("Exa", target_url, proxy)?;
         Ok(Self { mode, client })
     }
 
@@ -485,10 +503,10 @@ pub struct TavilyProvider {
 }
 
 impl TavilyProvider {
-    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+    pub fn new(api_key: Option<String>, proxy: Option<&ProxyConfig>) -> Result<Self, String> {
         Ok(Self {
             api_key: require_key("Tavily", api_key)?,
-            client: build_http_client("Tavily")?,
+            client: build_http_client("Tavily", TAVILY_SEARCH_URL, proxy)?,
         })
     }
 
@@ -627,14 +645,18 @@ pub struct YouComProvider {
 }
 
 impl YouComProvider {
-    pub fn new(api_key: Option<String>) -> Result<Self, String> {
+    pub fn new(api_key: Option<String>, proxy: Option<&ProxyConfig>) -> Result<Self, String> {
         let mode = match normalize_key(api_key) {
             Some(key) => YouComMode::Rest(key),
             None => YouComMode::Hosted,
         };
+        let target_url = match &mode {
+            YouComMode::Hosted => YOU_COM_HOSTED_URL,
+            YouComMode::Rest(_) => YOU_COM_SEARCH_URL,
+        };
         Ok(Self {
             mode,
-            client: build_http_client("You.com")?,
+            client: build_http_client("You.com", target_url, proxy)?,
         })
     }
 
@@ -807,7 +829,7 @@ pub struct SearxngProvider {
 }
 
 impl SearxngProvider {
-    pub fn new(endpoint: Option<String>) -> Result<Self, String> {
+    pub fn new(endpoint: Option<String>, proxy: Option<&ProxyConfig>) -> Result<Self, String> {
         let base = endpoint
             .map(|e| e.trim().trim_end_matches('/').to_string())
             .filter(|e| !e.is_empty())
@@ -817,9 +839,10 @@ impl SearxngProvider {
                 "SearXNG instance URL must be an http(s) URL, got: {base}"
             ));
         }
+        let client = build_http_client("SearXNG", &base, proxy)?;
         Ok(Self {
             base_url: base,
-            client: build_http_client("SearXNG")?,
+            client,
         })
     }
 }
@@ -969,32 +992,89 @@ mod tests {
         assert_eq!(clamp_count(Some(1000)), SEARCH_MAX_COUNT);
     }
 
+    fn bad_proxy(no_proxy: Option<Vec<String>>) -> ProxyConfig {
+        // An invalid URL, so a client built with this only succeeds if the
+        // proxy was never actually threaded through to the builder (e.g.
+        // because the target host was in `no_proxy`).
+        ProxyConfig {
+            url: "not a url".into(),
+            username: None,
+            password: None,
+            no_proxy,
+            ignore_ssl: None,
+        }
+    }
+
+    #[test]
+    fn build_http_client_applies_a_given_proxy() {
+        let err = build_http_client("Test", "https://example.com", Some(&bad_proxy(None)))
+            .unwrap_err();
+        assert!(err.contains("Invalid proxy URL"), "{err}");
+    }
+
+    #[test]
+    fn build_http_client_skips_a_bypassed_host() {
+        let proxy = bad_proxy(Some(vec!["example.com".into()]));
+        assert!(build_http_client("Test", "https://example.com/path", Some(&proxy)).is_ok());
+    }
+
+    #[test]
+    fn build_http_client_ignores_proxy_when_none_given() {
+        assert!(build_http_client("Test", "https://example.com", None).is_ok());
+    }
+
+    // Regression test for the bug report: Jan's configured proxy was never
+    // reaching any web-search backend. Each provider constructor must thread
+    // its `proxy` argument into the client it builds; a bad proxy config
+    // failing with "Invalid proxy URL" (rather than succeeding, or failing
+    // for some other reason) is proof it was actually applied.
+    #[test]
+    fn every_provider_applies_a_given_proxy() {
+        match ExaProvider::new(None, Some(&bad_proxy(None))) {
+            Ok(_) => panic!("Exa: expected a bad proxy config to be rejected"),
+            Err(e) => assert!(e.contains("Invalid proxy URL"), "Exa: {e}"),
+        }
+        match TavilyProvider::new(Some("tvly-abc".into()), Some(&bad_proxy(None))) {
+            Ok(_) => panic!("Tavily: expected a bad proxy config to be rejected"),
+            Err(e) => assert!(e.contains("Invalid proxy URL"), "Tavily: {e}"),
+        }
+        match YouComProvider::new(None, Some(&bad_proxy(None))) {
+            Ok(_) => panic!("You.com: expected a bad proxy config to be rejected"),
+            Err(e) => assert!(e.contains("Invalid proxy URL"), "You.com: {e}"),
+        }
+        match SearxngProvider::new(Some("https://searx.example/".into()), Some(&bad_proxy(None)))
+        {
+            Ok(_) => panic!("SearXNG: expected a bad proxy config to be rejected"),
+            Err(e) => assert!(e.contains("Invalid proxy URL"), "SearXNG: {e}"),
+        }
+    }
+
     #[test]
     fn empty_key_selects_hosted() {
-        let p = ExaProvider::new(None).unwrap();
+        let p = ExaProvider::new(None, None).unwrap();
         assert_eq!(p.mode, ExaMode::Hosted);
-        let p = ExaProvider::new(Some("  ".into())).unwrap();
+        let p = ExaProvider::new(Some("  ".into()), None).unwrap();
         assert_eq!(p.mode, ExaMode::Hosted);
-        let p = ExaProvider::new(Some("YOUR_EXA_API_KEY_HERE".into())).unwrap();
+        let p = ExaProvider::new(Some("YOUR_EXA_API_KEY_HERE".into()), None).unwrap();
         assert_eq!(p.mode, ExaMode::Hosted);
     }
 
     #[test]
     fn real_key_selects_rest() {
-        let p = ExaProvider::new(Some("abc123".into())).unwrap();
+        let p = ExaProvider::new(Some("abc123".into()), None).unwrap();
         assert_eq!(p.mode, ExaMode::Rest("abc123".into()));
     }
 
     #[test]
     fn create_provider_defaults_to_exa() {
-        assert!(create_provider(None, None, None).is_ok());
-        assert!(create_provider(Some(""), None, None).is_ok());
-        assert!(create_provider(Some("Exa"), None, None).is_ok());
+        assert!(create_provider(None, None, None, None).is_ok());
+        assert!(create_provider(Some(""), None, None, None).is_ok());
+        assert!(create_provider(Some("Exa"), None, None, None).is_ok());
     }
 
     #[test]
     fn create_provider_rejects_unknown() {
-        match create_provider(Some("brave"), None, None) {
+        match create_provider(Some("brave"), None, None, None) {
             Ok(_) => panic!("expected unknown provider to error"),
             Err(e) => assert!(e.contains("brave")),
         }
@@ -1002,26 +1082,30 @@ mod tests {
 
     #[test]
     fn create_provider_tavily_requires_key() {
-        match create_provider(Some("tavily"), None, None) {
+        match create_provider(Some("tavily"), None, None, None) {
             Ok(_) => panic!("expected Tavily to require a key"),
             Err(e) => assert!(e.contains("Tavily")),
         }
-        assert!(create_provider(Some("tavily"), Some("tvly-abc".into()), None).is_ok());
+        assert!(create_provider(Some("tavily"), Some("tvly-abc".into()), None, None).is_ok());
     }
 
     #[test]
     fn create_provider_searxng_requires_valid_url() {
-        match create_provider(Some("searxng"), None, None) {
+        match create_provider(Some("searxng"), None, None, None) {
             Ok(_) => panic!("expected SearXNG to require an instance URL"),
             Err(e) => assert!(e.contains("SearXNG")),
         }
-        match create_provider(Some("searxng"), None, Some("example.com".into())) {
+        match create_provider(Some("searxng"), None, Some("example.com".into()), None) {
             Ok(_) => panic!("expected SearXNG to reject a scheme-less URL"),
             Err(e) => assert!(e.contains("http")),
         }
-        assert!(
-            create_provider(Some("searxng"), None, Some("https://searx.example/".into())).is_ok()
-        );
+        assert!(create_provider(
+            Some("searxng"),
+            None,
+            Some("https://searx.example/".into()),
+            None
+        )
+        .is_ok());
     }
 
     #[test]
@@ -1284,7 +1368,7 @@ mod tests {
         // rejects with HTTP 415 ("Content-Type must be application/json").
         let body = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call" });
         let req = with_youcom_headers(
-            YouComProvider::new(None)
+            YouComProvider::new(None, None)
                 .unwrap()
                 .client
                 .post(YOU_COM_HOSTED_URL)
@@ -1304,21 +1388,26 @@ mod tests {
 
     #[test]
     fn youcom_key_selects_transport() {
-        assert_eq!(YouComProvider::new(None).unwrap().mode, YouComMode::Hosted);
         assert_eq!(
-            YouComProvider::new(Some("   ".into())).unwrap().mode,
+            YouComProvider::new(None, None).unwrap().mode,
             YouComMode::Hosted
         );
         assert_eq!(
-            YouComProvider::new(Some("ydc-key".into())).unwrap().mode,
+            YouComProvider::new(Some("   ".into()), None).unwrap().mode,
+            YouComMode::Hosted
+        );
+        assert_eq!(
+            YouComProvider::new(Some("ydc-key".into()), None)
+                .unwrap()
+                .mode,
             YouComMode::Rest("ydc-key".into())
         );
     }
 
     #[test]
     fn create_provider_youcom_works_with_and_without_key() {
-        assert!(create_provider(Some("you"), None, None).is_ok());
-        assert!(create_provider(Some("you"), Some("ydc-key".into()), None).is_ok());
+        assert!(create_provider(Some("you"), None, None, None).is_ok());
+        assert!(create_provider(Some("you"), Some("ydc-key".into()), None, None).is_ok());
     }
 
     #[test]

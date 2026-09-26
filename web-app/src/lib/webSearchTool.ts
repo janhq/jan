@@ -1,5 +1,10 @@
-import { webSearch, webFetch } from '@janhq/tauri-plugin-websearch-api'
+import {
+  webSearch,
+  webFetch,
+  ProxyConfig,
+} from '@janhq/tauri-plugin-websearch-api'
 import { useWebSearchConfig } from '@/hooks/useWebSearchConfig'
+import { useProxyConfig } from '@/hooks/useProxyConfig'
 
 export const WEB_TOOL_NAMES = new Set(['web_search', 'web_fetch'])
 
@@ -29,6 +34,34 @@ export const WEB_FETCH_INPUT_SCHEMA = {
   required: ['url'],
 } as const
 
+/**
+ * Build a `ProxyConfig` from the user's saved proxy settings, or undefined
+ * when the proxy is disabled or has no URL configured.
+ */
+function currentProxyConfig(): ProxyConfig | undefined {
+  const {
+    proxyEnabled,
+    proxyUrl,
+    proxyUsername,
+    proxyPassword,
+    proxyIgnoreSSL,
+    noProxy,
+  } = useProxyConfig.getState()
+  if (!proxyEnabled || !proxyUrl) return undefined
+  return {
+    url: proxyUrl,
+    username: proxyUsername || undefined,
+    password: proxyPassword || undefined,
+    no_proxy: noProxy
+      ? noProxy
+          .split(',')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      : undefined,
+    ignore_ssl: proxyIgnoreSSL || undefined,
+  }
+}
+
 function faviconFor(url: string): string | undefined {
   try {
     const host = new URL(url).hostname
@@ -52,11 +85,19 @@ export async function executeWebTool(
   const { apiKeys, endpoints, searchProvider } = useWebSearchConfig.getState()
   const apiKey = apiKeys[searchProvider] || undefined
   const endpoint = endpoints[searchProvider] || undefined
+  const proxy = currentProxyConfig()
   try {
     if (toolName === 'web_search') {
       const query = typeof input?.query === 'string' ? input.query : ''
       const count = typeof input?.count === 'number' ? input.count : undefined
-      const results = await webSearch(query, count, apiKey, searchProvider, endpoint)
+      const results = await webSearch(
+        query,
+        count,
+        apiKey,
+        searchProvider,
+        endpoint,
+        proxy
+      )
       return {
         content: {
           kind: 'web',
@@ -73,7 +114,7 @@ export async function executeWebTool(
     }
     if (toolName === 'web_fetch') {
       const url = typeof input?.url === 'string' ? input.url : ''
-      const page = await webFetch(url, apiKey, searchProvider, endpoint)
+      const page = await webFetch(url, apiKey, searchProvider, endpoint, proxy)
       const text = `Title: ${page.title}\nURL: ${page.url}\n\n${page.content}${
         page.truncated ? '\n\n[content truncated]' : ''
       }`
