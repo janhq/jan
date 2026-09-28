@@ -125,6 +125,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useElementWidth } from '@/hooks/useElementWidth'
+import { AssistantsMenu } from '@/components/AssistantsMenu'
+import AttachmentPreviewDialog from '@/components/AttachmentPreviewDialog'
 
 type ChatInputProps = {
   className?: string
@@ -499,6 +501,8 @@ const ChatInput = memo(function ChatInput({
   >(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
+  const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
+  const [selectedAttachmentToPreview, setSelectedAttachmentToPreview] = useState<Attachment | null>(null)
   const activeModels = useAppState(useShallow((state) => state.activeModels))
   // Check if selected model is currently loaded/active
   const isModelActive = selectedModel?.id ? activeModels.includes(selectedModel.id) : false
@@ -2103,9 +2107,11 @@ const ChatInput = memo(function ChatInput({
                             <TooltipTrigger asChild>
                               <div
                                 className={cn(
-                                  'relative border rounded-xl size-14 overflow-hidden',
-                                  'flex items-center justify-center'
+                                  'relative border rounded-xl overflow-hidden',
+                                  'flex items-center justify-center cursor-pointer',
+                                  isImage ? 'size-14' : 'min-w-[100px] max-w-[200px] h-14'
                                 )}
+                                onClick={() => setSelectedAttachmentToPreview(att)}
                               >
                                 {isImage && att.dataUrl ? (
                                   <img
@@ -2127,13 +2133,20 @@ const ChatInput = memo(function ChatInput({
                                     <IconVideo size={20} />
                                   </div>
                                 ) : (
-                                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                                    <IconPaperclip size={18} />
-                                    {ext && (
-                                      <span className="text-[10px] leading-none mt-0.5 uppercase opacity-70">
-                                        .{ext}
-                                      </span>
-                                    )}
+                                  <div className="flex items-center gap-2 px-2 text-muted-foreground">
+                                    <IconPaperclip size={16} className="shrink-0" />
+                                    <div className="flex flex-col min-w-0">
+                                      {ext && (
+                                        <span className="text-[10px] truncate opacity-70" title={att.name}>
+                                          {att.name}
+                                        </span>
+                                      )}
+                                      {att.lineCount && (
+                                        <span className="text-[9px] opacity-50">
+                                          {att.lineCount.toLocaleString()} lines
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -3023,6 +3036,22 @@ const ChatInput = memo(function ChatInput({
         onOpenChange={setExtensionDialogOpen}
         state={extensionDialogState}
         onCancel={handleExtensionDialogCancel}
+      />
+
+      {/* Vision Model Download Prompt */}
+      <PromptVisionModel
+        open={showVisionModelPrompt}
+        onClose={() => setShowVisionModelPrompt(false)}
+        onDownloadComplete={handleVisionModelDownloadComplete}
+      />
+
+      {/* Attachment preview dialog */}
+      <AttachmentPreviewDialog
+        attachment={selectedAttachmentToPreview}
+        open={!!selectedAttachmentToPreview}
+        onOpenChange={(open) =>
+          open ? null : setSelectedAttachmentToPreview(null)
+        }
       />
     </div>
   )
