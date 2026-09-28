@@ -28,7 +28,7 @@ const Blog = () => {
   return (
     <div className="nextra-wrap-container">
       <div className="mt-14 text-center">
-        <h1 className="text-6xl !fqont-normal leading-tight lg:leading-tight mt-2 font-serif">
+        <h1 className="text-6xl !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
           Blog
         </h1>
         <div className="text-black/60 dark:text-white/60">

@@ -13,7 +13,7 @@ use crate::core::state::ProviderConfig;
 
 const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # Applies to every project unless overridden by that project's
-# .jan/agent/agent.toml [provider] section.
+# agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
 #
 # default_model = "my-model"        # used when no --model / agent.toml model is set
 # smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
@@ -47,6 +47,9 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # On by default
 # claude_code_alias = false             # allow Jan to reuse Claude Code's
 #                                     # keychain login; on by default
+# memory_cross_project = false        # hide other projects' memory from the
+#                                     # agent (the root ~/.jan/MEMORY.md lists
+#                                     # them by default)
 # wave = "👋"                          # sweep this glyph along the working row
 #                                     # instead of the static throbber. Up to
 #                                     # 3 characters ("🍌", "~", "👁️👄👁️").
@@ -114,6 +117,11 @@ struct GlobalConfigToml {
     /// on; set false to keep Jan from reading or refreshing that credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     claude_code_alias: Option<bool>,
+    /// List other projects' memory in the prompt and let the agent read it as
+    /// `project:<slug>`. `None` = the default, on. Off keeps each project's
+    /// memory to itself (user-wide `user:` notes still apply everywhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_cross_project: Option<bool>,
     /// Glyph swept along the working row while a turn runs, in place of the
     /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
     /// throbber. See `wave_glyph` for why those are two different things.
@@ -366,6 +374,18 @@ pub(crate) fn think_tags_enabled() -> bool {
         .unwrap_or(true)
 }
 
+/// Whether other projects' memory is listed and readable
+/// (`memory_cross_project` in `~/.jan/config.toml`), defaulting to on.
+/// Unreadable config yields the default, like the other preferences.
+// Test builds pin cross-project memory off (see `project::memory_roots`).
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn memory_cross_project_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.memory_cross_project)
+        .unwrap_or(true)
+}
+
 /// Whether the TUI streams reasoning into its live tail while folding is on
 /// (`stream_reasoning` in `~/.jan/config.toml`), defaulting to on. `false` keeps
 /// a folded block off screen entirely, leaving the header badge to stand for it.
@@ -593,6 +613,58 @@ pub(crate) fn set_default_model_if_unset(model: &str) -> Result<bool, String> {
     config.default_model = Some(model.to_string());
     write_raw(&config)?;
     Ok(true)
+}
+
+/// Why `default_model` was (re)pointed, so a caller can tell the user which of
+/// the two happened -- adopting a default is routine, replacing one the user
+/// chose needs saying out loud.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DefaultModelChange {
+    /// There was no default; `model` was adopted.
+    Adopted,
+    /// The previous default is no longer offered by any provider, so it was
+    /// replaced by `model`.
+    Repointed,
+}
+
+/// Point `default_model` at `model` when there is no default, **or** when the
+/// current default is not offered by any configured provider. Returns what
+/// changed, or `None` when the existing default was left alone.
+///
+/// The second case is the one [`set_default_model_if_unset`] cannot handle. A
+/// sign-in replaces a provider's roster wholesale, so a re-login after the
+/// upstream retires a model leaves `default_model` pointing at something no
+/// provider serves. That is not an "explicit choice" worth protecting any more:
+/// it is a fossil, and every run fails on it with a 404 (or, for a cost
+/// ceiling, is refused as unpriceable) with nothing connecting the failure to
+/// the sign-in that caused it.
+///
+/// A default some *other* provider still offers is left alone -- this provider's
+/// roster says nothing about models it never served.
+pub(crate) fn adopt_default_model(model: &str) -> Result<Option<DefaultModelChange>, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Ok(None);
+    }
+    let mut config = load_raw()?;
+    let current = config
+        .default_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let change = match current {
+        None => DefaultModelChange::Adopted,
+        // Already fine, and re-pointing an offered default would overwrite a
+        // deliberate choice on every sign-in.
+        Some(current) if config.providers.values().any(|p| p.models.contains(&current)) => {
+            return Ok(None)
+        }
+        Some(_) => DefaultModelChange::Repointed,
+    };
+    config.default_model = Some(model.to_string());
+    write_raw(&config)?;
+    Ok(Some(change))
 }
 
 /// Server-assigned metadata for a provider's stored key, when a v5 device-flow
@@ -1296,6 +1368,48 @@ models = ["gpt-4o"]
             assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
             assert!(!set_default_model_if_unset("m2").expect("set again"));
             assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+        });
+    }
+
+    /// `adopt_default_model` is the sign-in half that `set_default_model_if_unset`
+    /// cannot do: it distinguishes "the user chose this" from "this is a fossil
+    /// no configured provider serves any more".
+    #[test]
+    fn adopting_a_default_replaces_only_one_no_provider_offers() {
+        with_temp_home(|_| {
+            let offer = |models: &[&str]| {
+                set_provider(
+                    "tokamak",
+                    ProviderUpdate {
+                        models: Some(models.iter().map(|m| (*m).to_string()).collect()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            };
+
+            // Nothing chosen yet: adopted.
+            offer(&["m1", "m2"]);
+            assert_eq!(
+                adopt_default_model("m1").expect("adopt"),
+                Some(DefaultModelChange::Adopted)
+            );
+
+            // Still offered, so it is a live choice and must survive.
+            assert_eq!(adopt_default_model("m2").expect("leave"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+
+            // Retired upstream: now it is a fossil, and re-pointing is reported.
+            offer(&["m2", "m3"]);
+            assert_eq!(
+                adopt_default_model("m2").expect("repoint"),
+                Some(DefaultModelChange::Repointed)
+            );
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
+
+            // A blank candidate is never written: it would read as configured.
+            assert_eq!(adopt_default_model("   ").expect("blank"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
         });
     }
 

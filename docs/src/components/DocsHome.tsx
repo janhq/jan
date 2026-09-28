@@ -1,8 +1,18 @@
 /* eslint-disable @next/next/no-img-element */
-import { Computer, BrainCircuit, Search, Rocket, Bot, Share2 } from 'lucide-react'
+import { Computer, Search, Rocket, Bot, type LucideIcon } from 'lucide-react'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
 
-const SECTIONS = [
+type Section = {
+  icon: LucideIcon
+  title: string
+  description: string
+  tags: string
+  href: string
+  external?: boolean
+  chip: string
+}
+
+const SECTIONS: Section[] = [
   {
     icon: Computer,
     title: 'Jan Desktop',
@@ -21,34 +31,25 @@ const SECTIONS = [
     href: '/docs/agent',
     chip: 'bg-[#FDE68A]/60 text-[#92400E]',
   },
-  {
-    icon: BrainCircuit,
-    title: 'Tokamak',
-    description:
-      'Self-hosted router, fusion model, and governance/audit. Jan agents connect here for model switching.',
-    tags: 'Install · Connect an agent',
-    href: 'https://tokamak.sh/docs/',
-    external: true,
-    chip: 'bg-[#C6E09E]/50 text-[#3F6212]',
-  },
 ]
 
-const COMMON_PATHS = [
+type CommonPath = {
+  icon: LucideIcon
+  title: string
+  href: string
+  external?: boolean
+}
+
+const COMMON_PATHS: CommonPath[] = [
   { icon: Rocket, title: 'Desktop Quickstart', href: '/docs/desktop/quickstart' },
   { icon: Bot, title: 'Jan Agent Quickstart', href: '/docs/agent/quickstart' },
-  {
-    icon: Share2,
-    title: 'Tokamak install',
-    href: 'https://tokamak.sh/docs/self-hosting/installation',
-    external: true,
-  },
 ]
 
 const DocsHome = () => {
   return (
     <div className="nextra-wrap-container py-16 lg:py-24">
       <div className="text-center max-w-2xl mx-auto px-4">
-        <h1 className="flex items-center justify-center gap-3 lg:gap-4 text-5xl lg:text-6xl !font-normal leading-none font-serif">
+        <h1 className="flex items-center justify-center gap-3 lg:gap-4 text-5xl lg:text-6xl !font-semibold leading-none font-serif">
           <img
             src={LogoJanSVG.src}
             alt=""
@@ -57,7 +58,7 @@ const DocsHome = () => {
           Jan Docs
         </h1>
         <p className="text-lg mt-5 leading-relaxed text-black/60 dark:text-white/60">
-          References for Jan Desktop, Jan Agent, and Tokamak.
+          References for Jan Desktop and Jan Agent.
         </p>
 
         <button
@@ -72,7 +73,7 @@ const DocsHome = () => {
         </button>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-5 mt-16 lg:mt-20 max-w-4xl mx-auto px-4">
+      <div className="grid md:grid-cols-2 gap-5 mt-16 lg:mt-20 max-w-3xl mx-auto px-4">
         {SECTIONS.map((section) => (
           <a
             key={section.title}
@@ -109,7 +110,7 @@ const DocsHome = () => {
         <h2 className="text-xs font-semibold text-black/40 dark:text-white/40 uppercase tracking-widest">
           Common paths
         </h2>
-        <div className="grid sm:grid-cols-3 gap-4 mt-5">
+        <div className="grid sm:grid-cols-2 gap-4 mt-5">
           {COMMON_PATHS.map((path) => (
             <a
               key={path.href}

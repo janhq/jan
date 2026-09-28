@@ -1,8 +1,8 @@
 //! Subagent definitions and their two-scope registry. A subagent is a named,
 //! reusable system prompt + default tool allowlist that the main agent can
 //! dispatch a nested, isolated run against (see `dispatch_subagent`). Definitions
-//! live as `<scope>/.jan/agent/subagents/<name>.toml`, merged from the user scope
-//! (`~/.jan/agent/subagents/`) and the project scope (`<project>/.jan/agent/
+//! live as `<scope>/subagents/<name>.toml`, merged from the user scope
+//! (`~/.jan/agent/subagents/`) and the project scope (`~/.jan/projects/<slug>/
 //! subagents/`); the project scope shadows the user scope by name.
 
 use std::path::{Path, PathBuf};
@@ -18,7 +18,8 @@ use tauri_plugin_agent_tools::tools::spill::{
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
-/// `.jan/agent/` and the desktop's permanent store.
+/// store (`~/.jan/projects/<slug>/`), `~/.jan/agent/` and the desktop's
+/// permanent store.
 const SUBAGENTS: &str = "subagents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,9 +80,9 @@ pub fn user_subagents_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".jan").join("agent").join(SUBAGENTS))
 }
 
-/// `<project_root>/.jan/agent/subagents/`.
+/// `<store_root>/subagents/`, in the project's store (see `project::store_root`).
 pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent").join(SUBAGENTS)
+    crate::core::agent::project::store_root(project_root).join(SUBAGENTS)
 }
 
 /// The desktop's single subagent directory:
@@ -495,6 +496,95 @@ pub fn intersect_allowed_tools(
     }
 }
 
+/// Hold a resolved child tool set to the parent's `ceiling`.
+///
+/// With no ceiling the resolved set stands. Under one, a child that asked for
+/// nothing inherits the ceiling itself (the parent's whole set, never Jan's
+/// whole set), and a child that asked for tools keeps those the ceiling
+/// contains. A requested name matches either exactly or as the bare name a host
+/// declared, since that is the name the host's prompt and the model use for
+/// it: `robot_arm_move` resolves to `host__robot_arm_move`. A dispatch has
+/// already qualified its names in [`resolve_dispatch`]; doing it again here is
+/// a no-op on wire names and keeps this function correct on its own.
+///
+/// Fails closed on a list that keeps nothing -- the child would otherwise run
+/// with no tools, the silent "skill tools only" child -- naming what the parent
+/// may hand out so the model can retry. The forced skill tools a child is
+/// normally given are dropped here unless the ceiling holds them.
+fn capped_tools(
+    resolved: Option<Vec<String>>,
+    parent: &ParentRun,
+    child: &str,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Result<Option<Vec<String>>, SubagentError> {
+    let resolved = resolved.map(|tools| qualify_host_names(tools, &parent.known_tools, parent_args));
+    let Some(ceiling) = parent.tool_ceiling.as_deref() else {
+        return Ok(resolved);
+    };
+    let Some(requested) = resolved else {
+        return Ok(Some(ceiling.to_vec()));
+    };
+    let mut kept: Vec<String> = Vec::new();
+    for tool in &requested {
+        if ceiling.contains(tool) && !kept.contains(tool) {
+            kept.push(tool.clone());
+        }
+    }
+    if kept.is_empty() {
+        return Err(SubagentError::PermissionDenied(format!(
+            "none of the tools asked for subagent '{child}' ({}) is available to it; this \
+             session can give a subagent: {}. Omit allowed_tools to give it all of them.",
+            requested.join(", "),
+            ceiling.join(", ")
+        )));
+    }
+    Ok(Some(kept))
+}
+
+/// Rewrite each tool a host declared from the name it declared (`observe`,
+/// `arm.move`) to the wire name the child is offered it under. Looked up in the
+/// declarations rather than prefixed: a dotted name maps to a hashed wire name
+/// only the declaration still knows. Every other name passes through.
+///
+/// A name that is already a wire name -- one of the parent's `known` tools, or
+/// a host tool's qualified name -- is kept as is. The bare-name lookup is only
+/// the fallback, so a host that declared `host__observe` or an MCP or plugin
+/// tool's name cannot redirect a child that asked for that exact tool.
+#[cfg(feature = "cli")]
+fn qualify_host_names(
+    tools: Vec<String>,
+    known: &[String],
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    let host_tools = parent_args.host_tools.all();
+    let mut out: Vec<String> = Vec::with_capacity(tools.len());
+    for tool in tools {
+        let is_wire = known.contains(&tool) || parent_args.host_tools.is_host_tool(&tool);
+        let wire = if is_wire {
+            tool
+        } else {
+            host_tools
+                .iter()
+                .find(|host| host.name == tool)
+                .map_or(tool, |host| host.qualified_name.clone())
+        };
+        if !out.contains(&wire) {
+            out.push(wire);
+        }
+    }
+    out
+}
+
+/// No host tools outside the headless build, so there is nothing to rewrite.
+#[cfg(not(feature = "cli"))]
+fn qualify_host_names(
+    tools: Vec<String>,
+    _known: &[String],
+    _parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    tools
+}
+
 /// One subagent within a phased dispatch. When `name` matches a saved definition
 /// that definition's role and tools are used (and `allowed_tools` further narrows
 /// it); otherwise the subagent runs as a focused general-purpose agent defined by
@@ -534,17 +624,24 @@ struct ResolvedDispatch {
 
 /// Resolve a dispatch request against the registry and parent permissions,
 /// without running anything. Errors on an unknown name or a permission conflict.
+///
+/// `qualify` maps each tool name to the wire name it stands for before any
+/// comparison, so a definition listing `host__observe` and a call asking for
+/// the host's bare `observe` agree on the same tool.
 fn resolve_dispatch(
     registry: &SubagentRegistry,
     req: &SubagentRequest,
     parent: &ToolPermissions,
+    qualify: impl Fn(Vec<String>) -> Vec<String>,
 ) -> Result<ResolvedDispatch, SubagentError> {
+    let requested = req.allowed_tools.clone().map(&qualify);
     match registry.get(&req.name).cloned() {
-        Some(definition) => {
+        Some(mut definition) => {
+            definition.allowed_tools = definition.allowed_tools.map(&qualify);
             // Registered definition: the call-site allowlist further narrows it.
             let allowed_tools = intersect_allowed_tools(
                 definition.allowed_tools.as_deref(),
-                req.allowed_tools.as_deref(),
+                requested.as_deref(),
                 parent,
             )?;
             Ok(ResolvedDispatch {
@@ -560,7 +657,7 @@ fn resolve_dispatch(
                 name: req.name.clone(),
                 description: req.description.clone(),
                 system_prompt: ephemeral_subagent_prompt(&req.name),
-                allowed_tools: req.allowed_tools.clone(),
+                allowed_tools: requested,
                 model: None,
                 scope: SubagentScope::Project,
             };
@@ -645,6 +742,9 @@ struct BackgroundEntry {
     /// which used to be rare and, now that collection is optional, would be the
     /// common case.
     finished: Arc<std::sync::atomic::AtomicBool>,
+    /// The run counters this child holds, released exactly once whether it
+    /// finishes or is aborted. See [`ChildSlot`].
+    slot: Arc<ChildSlot>,
 }
 
 /// A finished child the parent has not been told about yet: the `<SYSTEM>` ping
@@ -693,6 +793,25 @@ pub(crate) struct BackgroundSubagents {
     /// whole life, so the parent stays parked across the gap where one phase has
     /// finished (`running == 0`) but the driver has not yet spawned the next.
     plans_pending: std::sync::atomic::AtomicUsize,
+    /// How many times this registry has been torn down. A session-owned registry
+    /// is reused by the runs after the one it was created for, so cancellation
+    /// cannot be a sticky flag on it: a plan driver and a dispatch both need to
+    /// know whether a teardown happened *after they started*, not whether one
+    /// ever happened at all. Both capture this value when they begin and stop
+    /// when it has moved.
+    generation: std::sync::atomic::AtomicU64,
+    /// Where a child's events go when the registry outlives any one run.
+    ///
+    /// A child dispatched by run N but still working after it ends would
+    /// otherwise stream `ToolCall`/`SubagentEnd` into run N's channel, which
+    /// its consumer stopped reading the moment the run finished: the panel
+    /// freezes and the closing bracket is lost. So a session installs one
+    /// durable channel here and every child reports into that instead. `None`
+    /// for a run-owned registry, where the dispatching run's sender is correct
+    /// precisely because no child outlives it.
+    session_events: std::sync::Mutex<
+        Option<tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>>,
+    >,
 }
 
 /// Default cap on concurrently *running* subagents per parent run when
@@ -718,7 +837,35 @@ impl BackgroundSubagents {
             wake: Arc::new(tokio::sync::Notify::new()),
             running: std::sync::atomic::AtomicUsize::new(0),
             plans_pending: std::sync::atomic::AtomicUsize::new(0),
+            generation: std::sync::atomic::AtomicU64::new(0),
+            session_events: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Install the durable channel a session's children report into. Called
+    /// once at session start; see [`Self::session_events`].
+    ///
+    /// Only a session owns a registry that outlives its runs, and only the TUI
+    /// has one, so this does not exist in the desktop build.
+    #[cfg(feature = "cli")]
+    pub(crate) fn install_session_events(
+        &self,
+        tx: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) {
+        *self.session_events.lock().unwrap() = Some(tx);
+    }
+
+    /// The channel a child dispatched now should report into: the session's
+    /// durable one when this registry outlives runs, else the dispatching run's.
+    fn child_events(
+        &self,
+        run_events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
+    ) -> tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent> {
+        self.session_events
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| run_events.clone())
     }
 
     /// Mark a multi-phase plan as driving, keeping the parent parked until the
@@ -752,6 +899,22 @@ impl BackgroundSubagents {
             || self.plans_pending.load(std::sync::atomic::Ordering::SeqCst) > 0
     }
 
+    /// Whether a ping is queued and not yet taken. Unlike
+    /// [`Self::has_pending_work`] this says nothing about children still
+    /// running: a set that outlives its run consults it to decide whether the
+    /// model has something to react to *now*, since a child finishing later
+    /// starts a turn of its own rather than holding this one open.
+    pub(crate) fn has_queued_notices(&self) -> bool {
+        !self.notices.lock().unwrap().is_empty()
+    }
+
+    /// The registry's teardown generation -- see [`Self::generation`]. A caller
+    /// that will outlive the run it belongs to (a plan driver, a dispatch taken
+    /// now and resolved later) captures this and compares it later.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// Park until a ping is available, or until nothing is left to wait for.
     ///
     /// The waiter is registered *before* the state is re-read (`enable`), so a
@@ -776,29 +939,51 @@ impl BackgroundSubagents {
         }
     }
 
-    /// Park until every `run_id` in `ids` has finished (or is gone from the
-    /// registry -- collected or aborted). The phase-plan driver's barrier between
-    /// one phase and the next. Mirrors [`wait_for_notice`]'s wake discipline:
-    /// the waiter is registered (`enable`) before the flags are re-read, so a
-    /// child finishing in the window is not missed.
-    async fn await_phase(&self, ids: &[String]) {
+    /// Park until every `run_id` in `ids` has finished, or until the run that
+    /// dispatched them was torn down (`generation` no longer matches the plan's).
+    /// The phase-plan driver's barrier between one phase and the next. Mirrors
+    /// [`wait_for_notice`]'s wake discipline: the waiter is registered (`enable`)
+    /// before the flags are re-read, so a child finishing in the window is not
+    /// missed.
+    ///
+    /// An id is done when its child *finished* -- collected or not, the entry
+    /// stays either way. Absence is not completion: a child is in the registry
+    /// before it can run (`spawn_subagent` registers it in the same critical
+    /// section that admits it), so the only way an id the driver was handed can
+    /// be missing is teardown, and that is the other exit. The barrier cannot
+    /// open on it, because a phase that never finished has nothing on the
+    /// blackboard for the next one to read.
+    ///
+    /// The two exits are different facts and the driver must not conflate them:
+    /// `Finished` means the phase completed and the next one may start,
+    /// `TornDown` means the run is gone and no phase may start at all.
+    async fn await_phase(&self, ids: &[String], generation: u64) -> PhaseGate {
         use std::sync::atomic::Ordering;
         loop {
             let waiter = self.wake.notified();
             tokio::pin!(waiter);
             waiter.as_mut().enable();
-            let all_done = {
+            // Both reads happen under the lock `abort_all` drains under, so a
+            // teardown either has published its generation already (seen here)
+            // or is still waiting for this lock -- in which case the ids cannot
+            // be missing from the map yet.
+            let gate = {
                 let guard = self.inner.lock().unwrap();
-                ids.iter().all(|id| {
-                    guard
-                        .get(id)
-                        .is_none_or(|e| e.finished.load(Ordering::SeqCst))
-                })
+                if self.generation.load(Ordering::SeqCst) != generation {
+                    Some(PhaseGate::TornDown)
+                } else if ids
+                    .iter()
+                    .all(|id| guard.get(id).is_some_and(|e| e.finished.load(Ordering::SeqCst)))
+                {
+                    Some(PhaseGate::Finished)
+                } else {
+                    None
+                }
             };
-            if all_done {
-                return;
+            match gate {
+                Some(done) => return done,
+                None => waiter.await,
             }
-            waiter.await;
         }
     }
 
@@ -821,9 +1006,22 @@ impl BackgroundSubagents {
     /// emit), so consumers never see an unbracketed `SubagentStart`.
     pub(crate) fn abort_all(&self) {
         use crate::core::agent::events::StreamEvent;
+        // Record the teardown before draining. Tearing down is the one event a
+        // detached plan driver and an in-flight dispatch cannot otherwise see,
+        // so it is published first: a dispatch registering under the lock below
+        // reads the new value and refuses, and one that read the old value has
+        // already inserted and is found by the drain beneath it.
+        self.generation
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let mut guard = self.inner.lock().unwrap();
         for (_, entry) in guard.drain() {
             entry.abort.abort();
+            // Release the counters here rather than leaving it to the aborted
+            // tasks: a cancelled run must owe nothing the moment its teardown
+            // returns, and a session-owned registry outlives this call. Exactly
+            // once, so the child's own guard (which drops when the runtime
+            // cancels it) cannot double-count -- see `ChildSlot::release`.
+            entry.slot.release(self);
             // A child that ran to completion already emitted its own end event;
             // this is only closing the bracket for one cut off mid-run.
             if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
@@ -836,6 +1034,62 @@ impl BackgroundSubagents {
             });
         }
         self.notices.lock().unwrap().clear();
+        // Everything a parked waiter re-reads just changed, and `notify_waiters`
+        // only reaches waiters already registered: without this a driver whose
+        // children were just aborted would stay parked on ids that will never
+        // finish again.
+        self.wake.notify_waiters();
+    }
+
+    /// Abort one registered child by `run_id`, the way [`Self::abort_all`] aborts
+    /// all of them: the task is cancelled, the counters it held are released, and
+    /// its `SubagentStart` bracket is closed so consumers never see one left open.
+    /// Any ping it had queued is dropped -- nobody is waiting for that child now.
+    ///
+    /// Used when a plan dies after starting some of its children: they were
+    /// dispatched silent (`notify_on_finish = false`), so leaving them behind
+    /// means they run on unowned, spending tokens for a plan that already
+    /// failed, and nothing ever names them. A session-owned registry never tears
+    /// them down at all, and a run-scoped one only does so when the whole run
+    /// ends, which is not the same moment. Returns whether the child was still
+    /// registered.
+    pub(crate) fn abort_child(&self, run_id: &str) -> bool {
+        use crate::core::agent::events::StreamEvent;
+        let Some(entry) = self.inner.lock().unwrap().remove(run_id) else {
+            return false;
+        };
+        entry.abort.abort();
+        // Exactly once, whether the child finished or is cut off here: see
+        // `ChildSlot::release`.
+        entry.slot.release(self);
+        // A child that already finished emitted its own end event.
+        if !entry.finished.load(Ordering::SeqCst) {
+            let _ = entry.events.send(StreamEvent::SubagentEnd {
+                run_id: entry.run_id,
+                name: entry.name,
+                error: None,
+            });
+        }
+        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
+        // A waiter parked on this id would otherwise stay parked on a child that
+        // will never finish again.
+        self.wake.notify_waiters();
+        true
+    }
+
+    /// The run ids of children still registered, i.e. dispatched and not yet
+    /// finished or aborted. A session-owned registry is the authority on which
+    /// live panels survive a run end: what the run streamed says only what it
+    /// last saw, not what is still running.
+    #[cfg(feature = "cli")]
+    pub(crate) fn live_run_ids(&self) -> std::collections::HashSet<String> {
+        self.inner
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|entry| !entry.finished.load(std::sync::atomic::Ordering::SeqCst))
+            .map(|entry| entry.run_id.clone())
+            .collect()
     }
 
     /// Wait for every still-registered child to finish on its own, rather than
@@ -850,6 +1104,141 @@ impl BackgroundSubagents {
         for rx in receivers {
             let _ = rx.await;
         }
+    }
+}
+
+/// Why a phase barrier returned. Only `Finished` means the next phase may start:
+/// `TornDown` means the run it belongs to is gone and the plan must end without
+/// starting anything else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PhaseGate {
+    Finished,
+    TornDown,
+}
+
+impl PhaseGate {
+    fn torn_down(self) -> bool {
+        self == PhaseGate::TornDown
+    }
+}
+
+impl BackgroundSubagents {
+    /// A dispatch scope for a caller that will outlive the dispatch it takes
+    /// now. Production callers hold one from run start ([`DispatchScope`] is
+    /// built from the run's own generation); the CLI's tests take one on the
+    /// spot, which is the only config whose tests dispatch at all.
+    #[cfg(all(test, feature = "cli"))]
+    pub(crate) fn scope(self: &Arc<Self>) -> DispatchScope {
+        DispatchScope {
+            bg: self.clone(),
+            generation: self.generation(),
+        }
+    }
+}
+
+/// What a dispatch registers into: the registry, plus the generation it belongs
+/// to (see [`BackgroundSubagents::generation`]). A child is admitted only while
+/// that generation is still current, so a dispatch that resolves after the run
+/// it belongs to was torn down -- a tool call already in flight, a plan driver
+/// still walking its phases -- starts nothing instead of fathering a child no
+/// teardown will ever reach.
+#[derive(Clone)]
+pub(crate) struct DispatchScope {
+    pub(crate) bg: Arc<BackgroundSubagents>,
+    generation: u64,
+}
+
+impl DispatchScope {
+    /// Whether a teardown has happened since this scope was taken.
+    fn is_stale(&self) -> bool {
+        self.bg.generation() != self.generation
+    }
+}
+
+/// The counters one child holds while it is dispatched, released exactly once.
+///
+/// Both decrements used to live in the child's own task, after the awaited work,
+/// where an aborted task never reached them: every child a teardown cut off
+/// leaked its slot, and a registry that outlives the abort (a session's) then
+/// reported work owed forever -- `wait_for_notice` parks on `running == 0` and
+/// never returns.
+///
+/// So the hold is a value instead of a step: the child's task carries a
+/// [`SlotGuard`] that releases on drop, which happens on completion *and* when a
+/// teardown aborts the task and the runtime drops its future. `released` keeps
+/// that idempotent, because the two paths can race: `abort_all` releases
+/// synchronously so a cancelled run owes nothing the moment its teardown
+/// returns, and the guard that follows then skips what teardown already did.
+struct ChildSlot {
+    /// Set by whoever takes the child off the semaphore waitlist: its own
+    /// admission, or a teardown revoking the queue slot of a child still parked.
+    /// A swap makes that one decision -- one of the two decrements `queued`, the
+    /// other sees `true` and leaves it alone -- because a child can leave the
+    /// waitlist at the same moment a teardown reaches for it.
+    admitted: std::sync::atomic::AtomicBool,
+    /// Set once the child's counters are released, by whichever of its own
+    /// guard or a teardown gets there first.
+    released: std::sync::atomic::AtomicBool,
+}
+
+impl ChildSlot {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            admitted: std::sync::atomic::AtomicBool::new(false),
+            released: std::sync::atomic::AtomicBool::new(false),
+        })
+    }
+
+    /// The child held a permit from the moment it was dispatched, so it never
+    /// joined the waitlist and there is no queue slot to revoke. Recorded before
+    /// the entry is published, while the registry is still locked, so a teardown
+    /// can never meet a child that has a permit but no record of it.
+    fn admitted_at_dispatch(&self) {
+        self.admitted
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Leave the waitlist: either this admission, or a teardown that reached a
+    /// child still parked. The swap is what keeps `queued` exact when the two
+    /// race -- the child resuming from `acquire_owned` in the same moment
+    /// `abort_all` drains it.
+    fn leave_queue(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if !self.admitted.swap(true, Ordering::SeqCst) {
+            registry.queued.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Release the counters this child holds, once.
+    fn release(&self, registry: &BackgroundSubagents) {
+        use std::sync::atomic::Ordering;
+        if self.released.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        // A child aborted while it was still parked never reached its own
+        // `leave_queue`: the task does that the moment its permit arrives.
+        self.leave_queue(registry);
+        registry.running.fetch_sub(1, Ordering::SeqCst);
+        registry.wake.notify_waiters();
+    }
+}
+
+/// A child task's hold on its [`ChildSlot`]: dropping it releases the counters.
+struct SlotGuard {
+    registry: Arc<BackgroundSubagents>,
+    hold: Arc<ChildSlot>,
+}
+
+impl SlotGuard {
+    /// The child holds its permit now, so it stops counting as queued.
+    fn leave_queue(&self) {
+        self.hold.leave_queue(&self.registry);
+    }
+}
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.hold.release(&self.registry);
     }
 }
 
@@ -871,19 +1260,135 @@ pub(crate) struct ParentRun {
     pub(crate) model: String,
     pub(crate) budget_remaining: Option<u64>,
     pub(crate) send_reasoning: bool,
+    /// The parent's remaining money ceiling, or `None` when it meters none.
+    ///
+    /// Every child gets the *whole* remainder rather than a share of it, which
+    /// means N children may each spend it: the ceiling bounds any one lineage,
+    /// not the fan-out. Splitting it N ways is worse -- the split would have to
+    /// be chosen before anyone knows which child does the work, and starving a
+    /// child of budget mid-task fails the run the user asked for. The parent's
+    /// own ceiling still stops the run once those charges land on it.
+    pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
+    /// The parent's own per-request allowlist, or `None` when it runs with no
+    /// allowlist. A child can never be offered more than its parent was: a
+    /// host-only RPC session sets one so its delegates cannot reach the shell,
+    /// files or web the session itself was never given. The forced skill
+    /// tools are no exception here, since they are Jan's and the session
+    /// excluded Jan's tools.
+    pub(crate) tool_ceiling: Option<Vec<String>>,
+    /// Every non-host tool name the parent could reach: all MCP and plugin
+    /// tools before plan mode, an allowlist or a deny rule filtered them, plus
+    /// what it was offered. A child asking for one of these by its exact name
+    /// means that tool, never a host tool declared under the same bare name --
+    /// even when the parent's filter then keeps the child from getting it.
+    pub(crate) known_tools: Vec<String>,
 }
 
-/// Build the child request body shared by every subagent run.
+/// The model a dispatch will actually be billed for: the definition's own when
+/// it names one, else the dispatching run's. Resolved in one place because the
+/// request body and the ceiling priced against it must not disagree.
+fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
+    resolved
+        .definition
+        .model
+        .clone()
+        .unwrap_or_else(|| parent.model.clone())
+}
+
+/// The context window `model` resolves to, the way the CLI resolves a run's
+/// (provider listing first, then the catalog). `None` for a model neither
+/// knows: the 128K fallback is a guess, and the parent's window is a better
+/// one than that for a child the catalog cannot place.
+#[cfg(feature = "cli")]
+fn model_window(
+    model: &str,
+    provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    use crate::core::cli::model_capabilities::{
+        reported_window, resolve_context_window, ContextWindowSource,
+    };
+    let provider = crate::core::agent::upstream::pick_provider_for_model(model, provider_configs);
+    let resolved =
+        resolve_context_window(model, None, reported_window(provider.as_deref(), model));
+    (resolved.source != ContextWindowSource::Fallback).then_some(resolved.tokens)
+}
+
+/// No model catalog outside the `cli` build, so no window can be sized here;
+/// a child keeps the budget it inherited.
+#[cfg(not(feature = "cli"))]
+fn model_window(
+    _model: &str,
+    _provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    None
+}
+
+/// The per-token rates a model is published at, or `None` when it cannot be
+/// priced at all.
+///
+/// The lookup names no provider: a child's serving provider is not resolved on
+/// this path, and the catalog's provider-less `get` answers only on an
+/// unambiguous hit -- two providers quoting one id at different prices is a
+/// `None`, which is the correct direction here (a refusal, not a guess).
+#[cfg(feature = "cli")]
+fn published_rates(model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    crate::core::cli::model_catalog::load()
+        .get(None, model)
+        .and_then(|info| info.rates())
+}
+
+/// No model catalog outside the `cli` build, so nothing here can be priced.
+/// Metered runs only ever start on the CLI path, so this is the unreachable
+/// case -- and answering `None` refuses rather than invents a rate.
+#[cfg(not(feature = "cli"))]
+fn published_rates(_model: &str) -> Option<crate::core::agent::session::TokenRates> {
+    None
+}
+
+/// The money ceiling a child actually runs under: the parent's limit, priced
+/// against the model the child will be billed for.
+///
+/// A definition may name its own model, and the parent's rates are the *parent*
+/// model's. Forwarding them unchanged bills the child at a price nobody quoted:
+/// a pricier child is undercounted -- against the user, not in their favour --
+/// and a child with no published price would run on invented rates, the exact
+/// thing `resolve_cost_ceiling` refuses for the parent. So when the models
+/// differ the child's own rates are looked up, and a dispatch that cannot be
+/// priced is refused rather than metered wrongly.
+///
+/// The limit itself is inherited whole (see [`ParentRun::cost_remaining`]);
+/// only the rates are re-resolved.
+fn child_cost_ceiling(
+    model: &str,
+    parent: &ParentRun,
+) -> Result<Option<crate::core::agent::session::CostCeiling>, SubagentError> {
+    let Some(ceiling) = parent.cost_remaining else {
+        return Ok(None);
+    };
+    if model == parent.model {
+        return Ok(Some(ceiling));
+    }
+    let rates = published_rates(model).ok_or_else(|| {
+        SubagentError::Upstream(format!(
+            "cannot dispatch a subagent on {model} under a ${:.4} ceiling: this model has no \
+             published price, and metering it at {}'s rates would charge the run against a \
+             price nobody quoted. Drop the definition's own model so the child runs on the \
+             run's, or remove the limit.",
+            ceiling.max_usd, parent.model
+        ))
+    })?;
+    Ok(Some(crate::core::agent::session::CostCeiling { rates, ..ceiling }))
+}
+
+/// Build the child request body shared by every subagent run. `parent` is the
+/// inheritance the child runs under, which the dispatch path has already
+/// re-priced for the child's own model (see [`child_cost_ceiling`]).
 fn child_body(
     resolved: &ResolvedDispatch,
     description: &str,
     parent: &ParentRun,
 ) -> serde_json::Value {
-    let model = resolved
-        .definition
-        .model
-        .clone()
-        .unwrap_or_else(|| parent.model.clone());
+    let model = child_model(resolved, parent);
     let mut body = serde_json::Map::new();
     body.insert("model".to_string(), serde_json::json!(model));
     body.insert(
@@ -898,6 +1403,26 @@ fn child_body(
     }
     if let Some(remaining) = parent.budget_remaining {
         body.insert("max_session_tokens".to_string(), serde_json::json!(remaining));
+    }
+    // A child dispatched by a capped run is capped too: subagents are where a
+    // run's spend multiplies, so a ceiling the children did not inherit would
+    // be one the parent could spend around by fanning out. The rates here are
+    // the ones `child_cost_ceiling` resolved for `model` above, so the limit
+    // and the price it is metered at describe the same model.
+    if let Some(ceiling) = parent.cost_remaining {
+        body.insert(
+            "max_budget_usd".to_string(),
+            serde_json::json!(ceiling.max_usd),
+        );
+        body.insert(
+            "token_rates".to_string(),
+            serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            }),
+        );
     }
     // A child's own tool-call turns carry `reasoning_content`, so the parent's
     // opt-out has to travel with the dispatch or a strict provider still sees
@@ -925,6 +1450,10 @@ async fn run_subagent(
     let name = resolved.definition.name.clone();
     let mut child_args = parent_args;
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
+    // The host wrote its prompt for the conversation it drives, not for a
+    // delegate with a task of its own; left in place it would also replace the
+    // definition's prompt set just above.
+    child_args.host_system_prompt = None;
     child_args.subagents_enabled = false;
     // A subagent's own interactive question (if any) belongs to its parent's
     // conversation, not a client waiting on this child's ask_requests -- and
@@ -936,8 +1465,40 @@ async fn run_subagent(
     // A child's monitors are its own and die with it; nothing would pick up a
     // match left in the session set once the child has returned.
     child_args.monitors = None;
+    // Likewise its backgrounded shells: a child's run is the only thing that
+    // could deliver their output, so they stay run-owned and it parks on them
+    // rather than handing the session a command nobody is reading for.
+    child_args.bg_shells = None;
+    // A child cannot dispatch subagents at all (`subagents_enabled = false`
+    // above), so it has no registry to share; clearing this keeps it from
+    // inheriting the parent session's by accident.
+    child_args.subagent_bg = None;
+    // Host tools are the client's to execute, and a client answers only a
+    // `tool_request` it can see at the top level. A child's own events reach
+    // stdout wrapped in `Subagent { .. }`, a shape no client may answer, so the
+    // child keeps the parent's tool set, gate and -- crucially -- the *same*
+    // request registry, but emits its requests on the parent's sender instead,
+    // unwrapped and attributed by `run_id`. `events` is the root channel here
+    // (children cannot nest), so the printer's strand guard and the stdin
+    // reader see a child's request exactly as they see the main run's.
+    #[cfg(feature = "cli")]
+    {
+        child_args.host_tool_route = Some((events.clone(), run_id.clone()));
+    }
+    // Every build gets the child's own id, not just the headless one: a
+    // provenance record has to name the run that made the request.
+    child_args.run_id = Some(run_id.clone());
 
     let body = child_body(&resolved, &description, &parent);
+    // The parent's compaction budget describes the parent's model. A child on
+    // another model compacts against its own window, or a 200K child of a 1M
+    // parent would only compact after the provider rejected it.
+    if let Some(budget) = child_args.compaction {
+        let pc = child_args.provider_configs.lock().await;
+        let model = child_model(&resolved, &parent);
+        child_args.compaction =
+            Some(budget.for_model(&model, &parent.model, |m| model_window(m, &pc)));
+    }
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -1004,7 +1565,7 @@ async fn run_subagent(
 /// suppresses only the `<SYSTEM>` ping; the child still fills its blackboard
 /// file, decrements the running count, and wakes the phase driver's barrier.
 pub(crate) fn spawn_subagent(
-    bg: &Arc<BackgroundSubagents>,
+    scope: &DispatchScope,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     req: SubagentRequest,
     parent: &ParentRun,
@@ -1015,6 +1576,7 @@ pub(crate) fn spawn_subagent(
     use crate::core::agent::events::StreamEvent;
     use std::sync::atomic::Ordering;
 
+    let bg = &scope.bg;
     if !parent_args.subagents_enabled {
         return Err(SubagentError::PermissionDenied(
             "subagents cannot dispatch nested subagents".to_string(),
@@ -1025,7 +1587,26 @@ pub(crate) fn spawn_subagent(
         .as_ref()
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let registry = SubagentRegistry::load(project_root);
-    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions, |tools| {
+        qualify_host_names(tools, &parent.known_tools, parent_args)
+    })?;
+    // Re-priced before anything is spawned: a child whose own model cannot be
+    // metered under this ceiling fails the dispatch here rather than running on
+    // the parent's prices.
+    let parent = &ParentRun {
+        cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
+        ..parent.clone()
+    };
+
+    let resolved = ResolvedDispatch {
+        allowed_tools: capped_tools(
+            resolved.allowed_tools,
+            parent,
+            &req.name,
+            parent_args,
+        )?,
+        ..resolved
+    };
 
     let name = resolved.definition.name.clone();
     let run_id = next_subagent_run_id(&name);
@@ -1034,6 +1615,16 @@ pub(crate) fn spawn_subagent(
         reserve_blackboard_result(s, &name).map(|path| (scratch_display_path(Some(s), &path), path))
     });
     let display_path = result_file.as_ref().map(|(display, _)| display.clone());
+
+    // Admission and registration are one critical section: a teardown either
+    // finds the entry below and aborts that child, or has already published its
+    // generation and this dispatch is refused here. Holding the lock across
+    // `tokio::spawn` is safe -- nothing a starting child does touches `inner`;
+    // a child reports its progress through `notices`.
+    let mut entries = bg.inner.lock().unwrap();
+    if scope.is_stale() {
+        return Err(SubagentError::Cancelled);
+    }
 
     // Try to grab a permit at dispatch time. On success the child is admitted
     // immediately; on exhaustion it joins the semaphore waitlist (FIFO) and is
@@ -1057,8 +1648,10 @@ pub(crate) fn spawn_subagent(
     }
 
     let parent_args = parent_args.clone();
-    let task_events = events.clone();
-    let entry_events = events.clone();
+    // A session-owned registry routes the child to its durable channel, so a
+    // child outliving this run keeps reporting somewhere that is still read.
+    let task_events = bg.child_events(events);
+    let entry_events = bg.child_events(events);
     let inherited = parent.clone();
     let description = req.description.clone();
     let run_id_task = run_id.clone();
@@ -1067,8 +1660,22 @@ pub(crate) fn spawn_subagent(
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let finished_task = finished.clone();
     let notice_path = display_path.clone();
+    let slot = ChildSlot::new();
+    let slot_task = slot.clone();
+    // A permit taken here means this child never joined the waitlist: record it
+    // while the registry is still locked, before the entry below is reachable.
+    if admitted.is_ok() {
+        slot.admitted_at_dispatch();
+    }
     registry.running.fetch_add(1, Ordering::SeqCst);
     let handle = tokio::spawn(async move {
+        // Held for the child's whole life, including the wait for a permit, so a
+        // teardown that aborts it here releases its slot exactly as a completion
+        // would. Declared first, so it drops last: after the notice is queued.
+        let _slot = SlotGuard {
+            registry: registry.clone(),
+            hold: slot_task,
+        };
         let permit = match admitted {
             Ok(p) => p,
             Err(_) => {
@@ -1076,7 +1683,7 @@ pub(crate) fn spawn_subagent(
                     .acquire_owned()
                     .await
                     .expect("subagent semaphore is never closed");
-                registry.queued.fetch_sub(1, Ordering::SeqCst);
+                _slot.leave_queue();
                 p
             }
         };
@@ -1103,12 +1710,10 @@ pub(crate) fn spawn_subagent(
                 completion_notice(&name_task, &run_id_task, notice_path.as_deref(), &result),
             );
         }
-        registry.running.fetch_sub(1, Ordering::SeqCst);
-        registry.wake.notify_waiters();
         let _ = tx.send(result);
     });
 
-    bg.inner.lock().unwrap().insert(
+    entries.insert(
         run_id.clone(),
         BackgroundEntry {
             result: Some(rx),
@@ -1118,8 +1723,10 @@ pub(crate) fn spawn_subagent(
             events: entry_events,
             display_path: display_path.clone(),
             finished,
+            slot,
         },
     );
+    drop(entries);
     Ok(Dispatched { run_id })
 }
 
@@ -1207,6 +1814,7 @@ fn inject_inputs(task: &str, inputs: &[(String, String)]) -> String {
 /// so a bad subagent fails the dispatch atomically, before any child starts.
 pub(crate) fn spawn_dispatch_plan(
     bg: &Arc<BackgroundSubagents>,
+    generation: u64,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
     plan: DispatchPlan,
     parent: &ParentRun,
@@ -1229,7 +1837,19 @@ pub(crate) fn spawn_dispatch_plan(
     let registry = SubagentRegistry::load(project_root);
     for phase in &plan.phases {
         for req in &phase.subagents {
-            resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions, |tools| {
+                qualify_host_names(tools, &parent.known_tools, parent_args)
+            })?;
+            capped_tools(
+                resolved.allowed_tools.clone(),
+                parent,
+                &req.name,
+                parent_args,
+            )?;
+            // Priced up front for the same reason the permission check is: a
+            // later phase naming an unpriceable model must fail the whole plan
+            // now, not after the earlier phases have already been billed.
+            child_cost_ceiling(&child_model(&resolved, parent), parent)?;
         }
     }
 
@@ -1259,6 +1879,10 @@ pub(crate) fn spawn_dispatch_plan(
         bg.begin_plan();
     }
 
+    let scope = DispatchScope {
+        bg: bg.clone(),
+        generation,
+    };
     let mut phases = plan.phases.into_iter();
     let first = phases.next().expect("non-empty checked above");
     let mut first_names = Vec::with_capacity(first.subagents.len());
@@ -1267,9 +1891,19 @@ pub(crate) fn spawn_dispatch_plan(
     // a multi-phase plan keeps every child silent and rings once when it ends.
     for req in first.subagents {
         first_names.push(req.name.clone());
-        match spawn_subagent(bg, parent_args, req, parent, events, scratch, !multi) {
+        match spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi) {
             Ok(d) => first_ids.push(d.run_id),
             Err(e) => {
+                // The plan resolves and prices every child up front so an `Err`
+                // here is meant to fail the dispatch atomically, before any child
+                // starts. Once one has, that promise needs keeping: the children
+                // this loop already registered are silent and owned by nobody
+                // (`end_plan` only releases the plan hold), so abort them before
+                // the error leaves -- and only then release the hold, so the plan
+                // owes nothing the moment it reports its failure.
+                for run_id in &first_ids {
+                    bg.abort_child(run_id);
+                }
                 if multi {
                     bg.end_plan();
                 }
@@ -1280,7 +1914,7 @@ pub(crate) fn spawn_dispatch_plan(
 
     if multi {
         let remaining: Vec<Phase> = phases.collect();
-        let driver_bg = bg.clone();
+        let driver_scope = scope.clone();
         let driver_args = parent_args.clone();
         let driver_parent = parent.clone();
         let driver_events = events.clone();
@@ -1289,7 +1923,7 @@ pub(crate) fn spawn_dispatch_plan(
         let driver_dir = blackboard_dir.clone();
         tokio::spawn(async move {
             run_phase_plan(
-                driver_bg,
+                driver_scope,
                 driver_args,
                 driver_parent,
                 driver_events,
@@ -1333,7 +1967,7 @@ struct PlanSummary {
 /// should wake the parent rather than be swallowed until the terminal ping.
 #[allow(clippy::too_many_arguments)]
 async fn run_phase_plan(
-    bg: Arc<BackgroundSubagents>,
+    scope: DispatchScope,
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
     parent: ParentRun,
     events: tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
@@ -1343,8 +1977,23 @@ async fn run_phase_plan(
     phases: Vec<Phase>,
     summary: PlanSummary,
 ) {
+    let generation = scope.generation;
     for phase in phases {
-        bg.await_phase(&prev_ids).await;
+        // A torn-down run stops the plan where it stands, and releases its hold
+        // on the park. This is a detached task: the run that spawned it can be
+        // gone (`AbortOnDrop` fired) while it waits, and without this check it
+        // would read the barrier's "the children I was waiting on are gone" as
+        // "phase done" and start the phases still ahead of it as children
+        // nobody owns.
+        if scope
+            .bg
+            .await_phase(&prev_ids, generation)
+            .await
+            .torn_down()
+        {
+            scope.bg.end_plan();
+            return;
+        }
         let inputs = read_blackboard(scratch.as_deref(), &prev_names);
         let mut ids = Vec::with_capacity(phase.subagents.len());
         let mut names = Vec::with_capacity(phase.subagents.len());
@@ -1354,13 +2003,26 @@ async fn run_phase_plan(
             // aligned: a child that never started has no blackboard file for the
             // next phase to read and no answer for the terminal notice to report.
             let name = req.name.clone();
-            match spawn_subagent(&bg, &parent_args, req, &parent, &events, scratch.as_deref(), false)
-            {
+            match spawn_subagent(
+                &scope,
+                &parent_args,
+                req,
+                &parent,
+                &events,
+                scratch.as_deref(),
+                false,
+            ) {
                 Ok(d) => {
                     ids.push(d.run_id);
                     names.push(name);
                 }
-                Err(e) => bg.push_notice(
+                // The run was torn down between the barrier and this dispatch:
+                // the rest of the phase is dead work and the plan rings nothing.
+                Err(SubagentError::Cancelled) => {
+                    scope.bg.end_plan();
+                    return;
+                }
+                Err(e) => scope.bg.push_notice(
                     "plan",
                     format!("A subagent in the next phase could not start: {e}"),
                 ),
@@ -1369,18 +2031,31 @@ async fn run_phase_plan(
         prev_ids = ids;
         prev_names = names;
     }
-    // Ring the doorbell once, only after the last phase's last child is done.
-    bg.await_phase(&prev_ids).await;
-    let notice = plan_completion_notice(&bg, &prev_ids, &prev_names, &summary).await;
-    bg.push_notice("plan", notice);
+    // Ring the doorbell once, only after the last phase's last child is done --
+    // and never for a plan whose run was torn down while that last phase ran.
+    if scope
+        .bg
+        .await_phase(&prev_ids, generation)
+        .await
+        .torn_down()
+    {
+        scope.bg.end_plan();
+        return;
+    }
+    let notice = plan_completion_notice(&scope.bg, &prev_ids, &prev_names, &summary).await;
+    scope.bg.push_notice("plan", notice);
     // Release the plan hold now that the terminal ping is queued.
-    bg.end_plan();
+    scope.bg.end_plan();
 }
 
 /// The single `<SYSTEM>` ping delivered when a multi-phase plan finishes.
-/// Confined: point the parent at the blackboard, where every phase's answers
-/// live. Unconfined: there is no blackboard, so collect and inline the final
-/// phase's answers (bounded), since they have nowhere else to be read from.
+///
+/// Per child, never per dispatch: the driver knows the names it *started*, and a
+/// name is not an answer. A child that failed, was aborted, or produced nothing
+/// has to read as exactly that, or the one line that tells the model where the
+/// plan's answers are is the one line it cannot trust. Same shape as the TS
+/// port's `planCompletionNotice`: a child whose answer was spilled is pointed at
+/// its file, a failed one carries its error, and a quiet one says so.
 async fn plan_completion_notice(
     bg: &Arc<BackgroundSubagents>,
     final_ids: &[String],
@@ -1392,35 +2067,47 @@ async fn plan_completion_notice(
         total_subagents,
         blackboard_dir,
     } = summary;
-    match blackboard_dir {
-        Some(dir) => format!(
-            "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases. \
-             The final phase produced: {}. Every answer is on the blackboard at {dir} \
-             (blackboard/<name>.md) -- read the files you need.",
-            final_names.join(", ")
-        ),
-        None => {
-            let mut parts = Vec::with_capacity(final_ids.len());
-            for (id, name) in final_ids.iter().zip(final_names) {
-                // Bounded per answer: the notice concatenates the whole final
-                // phase, so an uncapped inline (what `compose_subagent_result`
-                // returns with no path) could blow the parent's context. Matches
-                // the TS port's `slice(0, SUBAGENT_INLINE_MAX)`.
-                let body = match await_subagent(bg, id).await {
-                    Ok(c) => {
-                        let cut = char_boundary(&c.text, SUBAGENT_INLINE_MAX_BYTES);
-                        c.text[..cut].to_string()
-                    }
-                    Err(e) => format!("failed: {e}"),
-                };
-                parts.push(format!("### {name}\n\n{body}"));
+    let mut parts = Vec::with_capacity(final_ids.len());
+    for (id, name) in final_ids.iter().zip(final_names) {
+        // Collecting here is also what makes the claim truthful: the answer and
+        // the path it was written to come from the child, not from the list of
+        // names it was dispatched under.
+        let body = match await_subagent(bg, id).await {
+            Ok(Collected { text, .. }) if text.trim().is_empty() => {
+                "produced nothing".to_string()
             }
-            format!(
-                "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} \
-                 phases. Final phase answers:\n\n{}",
-                parts.join("\n\n")
-            )
-        }
+            // The path the child's own task wrote to, so this points at the file
+            // that exists rather than one reconstructed from the name.
+            Ok(Collected {
+                display_path: Some(path),
+                ..
+            }) => format!("see {path}"),
+            // No spill file (an unconfined run has no scratch): the answer has
+            // nowhere to be read from later, so it rides inline, bounded -- the
+            // notice concatenates the whole final phase.
+            Ok(Collected { text, .. }) => {
+                let cut = char_boundary(&text, SUBAGENT_INLINE_MAX_BYTES);
+                text[..cut].to_string()
+            }
+            Err(e) => format!("failed: {e}"),
+        };
+        parts.push(format!("### {name}\n\n{body}"));
+    }
+    let headline = format!(
+        "Subagent plan finished: {total_subagents} subagent(s) across {phase_count} phases."
+    );
+    match blackboard_dir {
+        // Confined: point the parent at the blackboard, where the answers that
+        // exist live.
+        Some(dir) => format!(
+            "{headline} Final phase:\n\n{}\n\nEvery answer is on the blackboard at {dir} \
+             (blackboard/<name>.md) -- read the files you need.",
+            parts.join("\n\n")
+        ),
+        None => format!(
+            "{headline} Final phase answers:\n\n{}",
+            parts.join("\n\n")
+        ),
     }
 }
 
@@ -1483,10 +2170,12 @@ pub(crate) async fn await_subagent(
     };
     // Keep the entry (and its abort handle) in the registry while awaiting, so a
     // parent cancellation mid-await can still reach this child via `abort_all`.
-    // Taking `result` above already makes a second await error out. Remove the
-    // now-spent entry once the await resolves (a no-op if teardown drained it).
+    // Taking `result` above already makes a second await error out, and the
+    // entry *stays* after this returns (a no-op if teardown drained it): a
+    // child that is gone from the registry then means exactly one thing -- it
+    // was torn down -- which is what lets the phase barrier tell "finished and
+    // collected" from "never was", instead of reading both as done.
     let outcome = rx.await.unwrap_or(Err(SubagentError::Cancelled));
-    bg.inner.lock().unwrap().remove(run_id);
     // Collected explicitly, so the queued ping for this run is redundant.
     bg.drop_notice(run_id);
     outcome.map(|text| Collected { text, display_path })
@@ -1495,11 +2184,22 @@ pub(crate) async fn await_subagent(
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
 /// of the built-in fs/exec gate and the MCP fallback.
 pub fn is_subagent_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "dispatch_subagent" | "await_subagent" | "create_subagent" | "list_subagents"
-    )
+    SUBAGENT_TOOLS.contains(&name)
 }
+
+/// Every subagent tool name, the one list [`is_subagent_tool`] and
+/// [`DELEGATE_ONLY_TOOLS`] are drawn from.
+const SUBAGENT_TOOLS: [&str; 4] = [
+    "dispatch_subagent",
+    "await_subagent",
+    "create_subagent",
+    "list_subagents",
+];
+
+/// The subagent tools a session limited to its host's tools is offered when it
+/// may delegate: dispatching and listing, not `create_subagent`, which writes a
+/// definition into the project, nor `await_subagent`, which is never advertised.
+pub const DELEGATE_ONLY_TOOLS: [&str; 2] = [SUBAGENT_TOOLS[0], SUBAGENT_TOOLS[3]];
 
 /// One-line "name [scope]: description" per definition; shadowed user-scope
 /// entries are listed alongside their project-scope shadows.
@@ -1789,6 +2489,43 @@ mod tests {
     use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// A child on another model compacts against its own window, not the
+    /// parent's: a 200K child of a 1M parent would otherwise sail past its
+    /// window. Same model, or a configured window, keeps the parent's budget.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_on_another_model_compacts_against_its_own_window() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let parent = crate::core::agent::compaction::CompactionBudget {
+                context_window: 1_000_000,
+                ratio: 0.7,
+                reserve_tokens: None,
+                window_pinned: false,
+            };
+            let pc = std::collections::HashMap::new();
+            let window = |m: &str| model_window(m, &pc);
+            let child = parent.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(child.context_window, 200_000);
+            assert_eq!(child.ratio, 0.7, "the project's ratio carries over");
+
+            let same = parent.for_model("claude-sonnet-4-6", "claude-sonnet-4-6", window);
+            assert_eq!(same.context_window, 1_000_000);
+
+            let pinned = crate::core::agent::compaction::CompactionBudget {
+                window_pinned: true,
+                ..parent
+            };
+            let kept = pinned.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(kept.context_window, 1_000_000, "a configured window holds");
+
+            let unknown = parent.for_model("some-unlisted-model", "claude-sonnet-4-6", window);
+            assert_eq!(
+                unknown.context_window, 1_000_000,
+                "an unknown child model keeps the parent's window, not the 128K guess"
+            );
+        });
+    }
 
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -2175,7 +2912,105 @@ mod tests {
             model: "m".to_string(),
             budget_remaining: None,
             send_reasoning: true,
+            cost_remaining: None,
+            tool_ceiling: None,
+            known_tools: Vec::new(),
         }
+    }
+
+    /// `resolve_dispatch` with no host-name qualification, for tests whose
+    /// tools are all built-ins.
+    fn resolve_dispatch_plain(
+        reg: &SubagentRegistry,
+        req: &SubagentRequest,
+        p: &ToolPermissions,
+    ) -> Result<ResolvedDispatch, SubagentError> {
+        resolve_dispatch(reg, req, p, |t| t)
+    }
+
+    /// A capped parent's children are capped too. Subagents are where a run's
+    /// spend multiplies, so a ceiling that stopped at the parent would be one
+    /// any run could spend around by dispatching.
+    #[test]
+    fn child_body_inherits_the_parents_cost_ceiling() {
+        let reg = registry_with("reviewer", None);
+        let p = ToolPermissions::allow_all();
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
+
+        let uncapped = child_body(&resolved, "task", &parent_run());
+        assert!(
+            uncapped.get("max_budget_usd").is_none(),
+            "an unmetered parent must not invent a ceiling: {uncapped}"
+        );
+        assert!(uncapped.get("token_rates").is_none());
+
+        let capped = child_body(
+            &resolved,
+            "task",
+            &ParentRun {
+                cost_remaining: Some(crate::core::agent::session::CostCeiling {
+                    rates: crate::core::agent::session::TokenRates {
+                        prompt_usd: 1e-6,
+                        completion_usd: 2e-6,
+                        cache_read_usd: None,
+                        cache_write_usd: None,
+                    },
+                    max_usd: 0.25,
+                }),
+                ..parent_run()
+            },
+        );
+        assert_eq!(capped["max_budget_usd"], serde_json::json!(0.25));
+        // The rates travel with the limit: a child that inherited the ceiling
+        // but not the prices could not meter itself against it.
+        assert_eq!(capped["token_rates"]["prompt_usd"], serde_json::json!(1e-6));
+        assert_eq!(
+            capped["token_rates"]["completion_usd"],
+            serde_json::json!(2e-6)
+        );
+    }
+
+    /// A definition naming its own model must not be metered at the parent's
+    /// prices. The parent's ceiling is the parent *model's* rates, so carrying
+    /// them onto a differently-priced child bills the run against a price
+    /// nobody quoted -- and undercounts a pricier child, i.e. against the user.
+    /// A child that cannot be priced is refused, the same answer
+    /// `resolve_cost_ceiling` gives for an unpriced parent.
+    #[test]
+    fn a_child_on_its_own_model_is_not_billed_at_the_parents_rates() {
+        let ceiling = crate::core::agent::session::CostCeiling {
+            rates: crate::core::agent::session::TokenRates {
+                prompt_usd: 1e-6,
+                completion_usd: 2e-6,
+                cache_read_usd: None,
+                cache_write_usd: None,
+            },
+            max_usd: 0.25,
+        };
+        let parent = ParentRun {
+            cost_remaining: Some(ceiling),
+            ..parent_run()
+        };
+
+        // Same model: the parent's own rates are the right ones, inherited whole.
+        assert_eq!(
+            child_cost_ceiling(&parent.model, &parent).expect("same model prices"),
+            Some(ceiling)
+        );
+
+        // A different model with no published price is refused rather than run
+        // on the parent's rates. The name cannot appear in any real catalog.
+        let refused = child_cost_ceiling("no-such-model-jan-test", &parent)
+            .expect_err("an unpriceable child under a ceiling must be refused");
+        let message = refused.to_string();
+        assert!(message.contains("no-such-model-jan-test"), "{message}");
+        assert!(message.contains("no published price"), "{message}");
+
+        // An unmetered parent is unchanged: nothing to price, nothing to refuse.
+        assert_eq!(
+            child_cost_ceiling("no-such-model-jan-test", &parent_run()).expect("unmetered"),
+            None
+        );
     }
 
     /// `[agent].send_reasoning = false` has to reach the child body: a child
@@ -2186,7 +3021,7 @@ mod tests {
     fn child_body_forwards_the_parents_send_reasoning_opt_out() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
         let on = child_body(&resolved, "task", &parent_run());
         assert!(
             on.get("send_reasoning").is_none(),
@@ -2214,7 +3049,7 @@ mod tests {
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
         };
-        let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
+        let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.name, "one-off");
         assert!(resolved.definition.system_prompt.contains("one-off"));
         assert_eq!(
@@ -2304,7 +3139,7 @@ mod tests {
         );
         let p = ToolPermissions::allow_all();
         let resolved =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
         assert_eq!(
             resolved.allowed_tools,
             Some(vec![
@@ -2316,12 +3151,27 @@ mod tests {
         assert_eq!(resolved.definition.system_prompt, "sp");
     }
 
+    /// A saved definition written against wire names and a call using the
+    /// host's bare name mean the same tool: names are qualified before the
+    /// definition's list narrows the call's, not after.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_bare_host_name_matches_a_definition_listing_its_wire_name() {
+        let reg = registry_with("reviewer", Some(vec!["host__observe".to_string()]));
+        let args = host_parent();
+        let qualify = |tools| qualify_host_names(tools, &[], &args);
+        let request = req("reviewer", Some(vec!["observe".to_string()]));
+        let resolved = resolve_dispatch(&reg, &request, &ToolPermissions::allow_all(), qualify)
+            .expect("observe is the definition's host__observe");
+        assert_eq!(resolved.allowed_tools.unwrap()[0], "host__observe");
+    }
+
     #[test]
     fn resolve_rejects_tool_outside_definition() {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 
@@ -2428,6 +3278,7 @@ mod tests {
             events,
             display_path: None,
             finished: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            slot: ChildSlot::new(),
         }
     }
 
@@ -2568,6 +3419,119 @@ mod tests {
 
     // ── max-parallel admission (semaphore queue) ───────────────────────────
 
+    /// A parent whose host declared `observe` and the dotted `arm.move`.
+    #[cfg(feature = "cli")]
+    fn host_parent() -> crate::core::agent::r#loop::OrchestrationArgs {
+        let root = unique_root("capped-tools");
+        let mut args = max_par_args(&root);
+        args.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "arm.move"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        args
+    }
+
+    #[cfg(feature = "cli")]
+    fn names(tools: &[&str]) -> Vec<String> {
+        tools.iter().map(|t| (*t).to_string()).collect()
+    }
+
+    /// A dispatching run with `ceiling` and `known` tools, the rest defaulted.
+    #[cfg(feature = "cli")]
+    fn run_with(ceiling: Option<&[&str]>, known: &[&str]) -> ParentRun {
+        ParentRun {
+            tool_ceiling: ceiling.map(names),
+            known_tools: names(known),
+            ..parent_run()
+        }
+    }
+
+    /// The model names a host tool the way the host's prompt does. Under no
+    /// ceiling (a session with built-ins) that name used to reach the child's
+    /// allowlist unchanged, match nothing, and leave it only the skill tools.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_declared_host_name_resolves_to_its_wire_name() {
+        let args = host_parent();
+        let arm = args.host_tools.all()[1].qualified_name.clone();
+        assert_ne!(arm, "host__arm.move", "a dotted name is mapped");
+        let out = capped_tools(
+            Some(names(&["observe", "arm.move", "host__observe", "skill_read"])),
+            &run_with(None, &[]),
+            "probe",
+            &args,
+        )
+        .unwrap();
+        assert_eq!(out, Some(vec!["host__observe".to_string(), arm, "skill_read".to_string()]));
+    }
+
+    /// A name the parent knows keeps its meaning, even when a host also
+    /// declared that string as a bare name: `host__observe` stays the tool the
+    /// host called `observe` (not the one it called `host__observe`), and a
+    /// host tool called `search` does not take over the MCP tool `search` --
+    /// even under a ceiling that filtered `search` out, where the child is
+    /// then refused it rather than handed the host's.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn an_exact_wire_name_wins_over_a_colliding_bare_name() {
+        let root = unique_root("capped-tools-collide");
+        let mut args = max_par_args(&root);
+        args.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "host__observe", "search"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        // `search` is an MCP tool, on the wire under its bare name.
+        let known = ["search"];
+        let out = capped_tools(
+            Some(names(&["host__observe", "search", "observe"])),
+            &run_with(None, &known),
+            "probe",
+            &args,
+        )
+        .unwrap();
+        assert_eq!(out, Some(names(&["host__observe", "search"])));
+
+        // The parent's filter dropped `search` (plan mode, an allowlist, a
+        // deny rule): the host's `search` still does not stand in for it.
+        let ceiling = ["host__observe", "host__host__observe", "host__search"];
+        let err = capped_tools(Some(names(&["search"])), &run_with(Some(&ceiling), &known), "probe", &args)
+            .unwrap_err();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)), "{err}");
+    }
+
+    /// Under a ceiling a child is never offered more than its parent: no
+    /// allowlist inherits the ceiling, not Jan's whole set, and a list is
+    /// narrowed to it, forced skill tools included.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_is_held_to_the_parents_ceiling() {
+        let args = host_parent();
+        let ceiling = ["dispatch_subagent", "host__observe"];
+        let run = run_with(Some(&ceiling), &[]);
+        assert_eq!(capped_tools(None, &run, "probe", &args).unwrap(), Some(names(&ceiling)));
+        assert_eq!(
+            capped_tools(Some(names(&["observe", "bash", "skill_list"])), &run, "probe", &args).unwrap(),
+            Some(names(&["host__observe"]))
+        );
+    }
+
+    /// A list that keeps nothing fails the dispatch, naming what the parent
+    /// may hand out, instead of starting a child with no tools at all.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_list_the_ceiling_keeps_nothing_of_is_refused() {
+        let args = host_parent();
+        let run = run_with(Some(&["host__observe"]), &[]);
+        let err = capped_tools(Some(names(&["bash"])), &run, "probe", &args).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)), "{message}");
+        assert!(message.contains("host__observe") && message.contains("probe"), "{message}");
+    }
+
     /// Minimal run args for queue tests: empty providers (so dispatched
     /// children fail fast instead of hanging), a real project root holding the
     /// subagent def, subagents enabled, cap 1.
@@ -2580,6 +3544,7 @@ mod tests {
         use std::sync::Arc;
         use tauri_plugin_agent_tools::permissions::ToolPermissions;
         OrchestrationArgs {
+            run_id: None,
             client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: Arc::new(tokio::sync::Mutex::new(
                 HashMap::<String, ProviderConfig>::new(),
@@ -2590,13 +3555,21 @@ mod tests {
             permissions: ToolPermissions::allow_all(),
             project_root: Some(root.to_path_buf()),
             permission_requests: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
+            host_owns_gate: false,
+            host_tool_route: None,
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
+            host_system_prompt: None,
+            project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 1,
             auto_approve: false,
             monitors: None,
+            bg_shells: None,
+            subagent_bg: None,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             session_id: None,
             sandbox: None,
@@ -2612,7 +3585,7 @@ mod tests {
         args: &crate::core::agent::r#loop::OrchestrationArgs,
         events: &tokio::sync::mpsc::UnboundedSender<crate::core::agent::events::StreamEvent>,
     ) -> String {
-        spawn_subagent(bg, args, req("reviewer", None), &parent_run(), events, None, true)
+        spawn_subagent(&bg.scope(), args, req("reviewer", None), &parent_run(), events, None, true)
             .unwrap()
             .run_id
     }
@@ -2766,7 +3739,8 @@ mod tests {
                 },
             ],
         };
-        let d = spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+        let d = spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .unwrap();
         assert_eq!(d.phase_count, 2);
         assert_eq!(d.total_subagents, 3);
         assert!(bg.has_pending_work(), "a multi-phase plan holds the run open");
@@ -2812,6 +3786,338 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// F1: a plan whose run is cancelled starts no further phase. `abort_all` is
+    /// what `AbortOnDrop` calls when the run's future is dropped, and the driver
+    /// is a detached task that survives that -- so it has to be told, not merely
+    /// orphaned. (Reproduction from the audit: 10/10 rounds before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_cancelled_run_starts_no_further_phase() {
+        use crate::core::agent::events::StreamEvent;
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("phasecancel");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        let d = spawn_dispatch_plan(
+            &bg,
+            bg.generation(),
+            &args,
+            plan,
+            &parent_run(),
+            &tx,
+            Some(&scratch),
+        )
+        .unwrap();
+        // Phase 1 started; the driver owns the remaining phase.
+        assert_eq!(d.first_phase_names, vec!["alpha".to_string()]);
+        assert_eq!(bg.plans_pending.load(Ordering::SeqCst), 1);
+
+        bg.abort_all(); // what the run's teardown does when it is cancelled
+
+        // The driver must both stop and release the park the run is held by.
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while bg.plans_pending.load(Ordering::SeqCst) > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("a cancelled plan releases its hold on the run");
+
+        let mut started = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let StreamEvent::SubagentStart { name, .. }
+            | StreamEvent::SubagentQueued { name, .. } = ev
+            {
+                started.push(name);
+            }
+        }
+        assert!(
+            !started.iter().any(|n| n == "collector"),
+            "a cancelled plan started another phase: {started:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dispatch that resolves after the run it belongs to was torn down starts
+    /// nothing: the scope it holds is stale. This is the window between a tool
+    /// call being decided and its child being admitted, and the only way a child
+    /// could be born that no teardown would ever reach.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_dispatch_after_teardown_is_refused() {
+        let root = unique_root("late_spawn");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Taken while the run was alive, as the tool loop's scope is.
+        let scope = bg.scope();
+
+        bg.abort_all();
+
+        let dispatched =
+            spawn_subagent(&scope, &args, req("late", None), &parent_run(), &tx, None, true);
+        assert!(
+            matches!(dispatched, Err(SubagentError::Cancelled)),
+            "a dispatch after teardown must be refused, not started"
+        );
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "a refused dispatch registers nothing"
+        );
+        assert_eq!(bg.running.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(bg.queued.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F2: absence is not completion. A child is registered before it can run,
+    /// so an id the driver was handed can only be missing because the registry
+    /// was torn down -- and a phase that never finished has nothing on the
+    /// blackboard for the next phase to read. (Reproduction from the audit: the
+    /// barrier returned immediately before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn an_absent_child_never_satisfies_the_barrier() {
+        let bg = Arc::new(BackgroundSubagents::new(2));
+        let waited = tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            bg.await_phase(&["never-registered".to_string()], bg.generation()),
+        )
+        .await;
+        assert!(
+            waited.is_err(),
+            "the barrier opened for a child that was never registered"
+        );
+    }
+
+    /// The other half of the same rule: an id that *has* finished satisfies the
+    /// barrier whether or not the parent collected it. The entry survives
+    /// collection precisely so the two absences stay distinguishable -- a
+    /// barrier that waited for a collected child would park the plan forever.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_collected_child_satisfies_the_barrier() {
+        let root = unique_root("barrier_collected");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let id = dispatch_reviewer(&bg, &args, &tx);
+        // Wait for it to finish without collecting it, then collect it: the
+        // entry stays either way, and both states are "done" to the barrier.
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("an uncollected finished child satisfies the barrier");
+        assert_eq!(gate, PhaseGate::Finished);
+
+        let _ = await_subagent(&bg, &id).await; // fails without a provider; fine
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            bg.await_phase(std::slice::from_ref(&id), bg.generation()),
+        )
+        .await
+        .expect("a collected child satisfies the barrier");
+        assert_eq!(gate, PhaseGate::Finished);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F6: a child the teardown cut off releases the slot it held. Both
+    /// decrements used to sit inside the child's task, past the awaited work an
+    /// abort never returns from, so every aborted child leaked its slot and a
+    /// registry that survives the abort -- a session's -- reported work owed
+    /// forever. (Reproduction from the audit: 20/20 rounds before the fix.)
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abort_all_leaves_nothing_owed() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_owed");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Occupy the only slot, so the first dispatch parks on the semaphore
+        // (queued) rather than being admitted -- both accounting fields in play.
+        let running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        let _r2 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.running.load(Ordering::SeqCst), 2);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 2);
+        // Admit the first, so the abort below has to release a running child and
+        // a parked one.
+        drop(running);
+        tokio::task::yield_now().await;
+        assert!(bg.has_pending_work());
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.running.load(Ordering::SeqCst),
+            0,
+            "an aborted child leaked its slot"
+        );
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "a parked child leaked its queue slot");
+        assert!(
+            !bg.has_pending_work(),
+            "the registry still reports work owed after teardown"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The other way the same counters can go wrong: a child admitted at dispatch
+    /// took a permit, not a place in the waitlist, so a teardown that reaches it
+    /// before its task is ever polled must not revoke a queue slot it never took.
+    /// `queued` is a `usize` -- the spurious decrement wraps it, and every queue
+    /// position reported to the model afterwards is garbage. Deterministic on a
+    /// current-thread runtime, where the spawned task cannot run before the abort
+    /// below. (Found by self-review after the fix above; it passed the whole suite
+    /// as it stood.)
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_teardown_never_untracks_a_child_that_was_never_queued() {
+        use std::sync::atomic::Ordering;
+
+        let root = unique_root("abort_unqueued");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // A free permit: admitted here and now, never queued.
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0);
+
+        bg.abort_all();
+
+        assert_eq!(
+            bg.queued.load(Ordering::SeqCst),
+            0,
+            "a child that was never queued lost a queue slot"
+        );
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The waiter half of the same finding: `wait_for_notice` parks on
+    /// `running == 0 && plans_pending == 0`, so a teardown that leaves counters
+    /// behind parks it for good -- and without a wake it would not even look.
+    #[cfg(feature = "cli")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_parked_waiter_wakes_when_the_run_is_torn_down() {
+        let root = unique_root("abort_wake");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the slot so the child cannot finish on its own: the waiter must
+        // park, deterministically, with exactly one child outstanding.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let _r1 = dispatch_reviewer(&bg, &args, &tx);
+
+        let waiter_bg = bg.clone();
+        let waiter = tokio::spawn(async move { waiter_bg.wait_for_notice().await });
+        for _ in 0..10 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !waiter.is_finished(),
+            "the waiter parks while a child is outstanding"
+        );
+
+        bg.abort_all();
+
+        tokio::time::timeout(std::time::Duration::from_secs(10), waiter)
+            .await
+            .expect("a parked waiter wakes when the registry is torn down")
+            .expect("the waiter task did not panic");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F4: the plan's single line must not present a child that produced nothing
+    /// as an answer. The driver knows the names it *started*; only the children
+    /// know what they produced, and the notice has to ask them.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn the_terminal_notice_reports_what_each_child_produced() {
+        let root = unique_root("phasenotice");
+        let scratch = root.join("scratch");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(4));
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let plan = DispatchPlan {
+            phases: vec![
+                Phase {
+                    number: 0,
+                    subagents: vec![req("alpha", None)],
+                },
+                Phase {
+                    number: 1,
+                    subagents: vec![req("collector", None)],
+                },
+            ],
+        };
+        spawn_dispatch_plan(
+            &bg,
+            bg.generation(),
+            &args,
+            plan,
+            &parent_run(),
+            &tx,
+            Some(&scratch),
+        )
+        .unwrap();
+
+        let mut all = Vec::new();
+        tokio::time::timeout(std::time::Duration::from_secs(20), async {
+            while bg.has_pending_work() {
+                bg.wait_for_notice().await;
+                all.extend(bg.take_notices());
+            }
+        })
+        .await
+        .expect("the whole plan drains and releases the run");
+
+        let notice = all.join("\n");
+        // Children fail without a provider, and a failure is not an answer: the
+        // notice names the child and says what became of it, instead of naming it
+        // under a claim of production.
+        assert!(
+            notice.contains("### collector"),
+            "the notice still reports the child: {notice}"
+        );
+        assert!(
+            notice.contains("failed:"),
+            "a child that produced nothing reads as failed: {notice}"
+        );
+        assert!(
+            !notice.contains("blackboard/collector.md"),
+            "a child with no answer is not offered as one: {notice}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The doorbell contract: a multi-phase plan wakes the parent exactly once,
     /// after the last phase's last child finishes -- not per intermediate child.
     #[cfg(feature = "cli")]
@@ -2836,7 +4142,8 @@ mod tests {
                 },
             ],
         };
-        spawn_dispatch_plan(&bg, &args, plan, &parent_run(), &tx, Some(&scratch)).unwrap();
+        spawn_dispatch_plan(&bg, bg.generation(), &args, plan, &parent_run(), &tx, Some(&scratch))
+            .unwrap();
 
         let mut all = Vec::new();
         tokio::time::timeout(std::time::Duration::from_secs(20), async {
@@ -2946,6 +4253,64 @@ mod tests {
             bg.inner.lock().unwrap().is_empty(),
             "abort_all drains queued dispatches too"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F3: a first-phase spawn failure aborts the children that phase already
+    /// started. They were dispatched silent, so anything left behind runs on
+    /// unowned, spending tokens for a plan that already failed, and only a
+    /// whole-run teardown would ever name them -- a session-owned registry never
+    /// does. `abort_child` is what that error path calls per started child.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn aborting_one_started_child_leaves_nothing_owed() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("abort_one");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the only slot, so the child parks on the semaphore: registered
+        // and owed, but never running -- nothing can finish it out from under
+        // the assertions below.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let scope = DispatchScope {
+            bg: bg.clone(),
+            generation: bg.generation(),
+        };
+        // Silent, exactly how a multi-phase plan's first phase dispatches.
+        let d = spawn_subagent(
+            &scope,
+            &args,
+            req("reviewer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .expect("the child registers");
+
+        assert_eq!(bg.running.load(Ordering::SeqCst), 1, "the child is owed");
+        assert!(bg.abort_child(&d.run_id), "the child was still registered");
+        assert!(!bg.abort_child(&d.run_id), "a second abort is a no-op");
+
+        assert!(bg.live_run_ids().is_empty(), "nothing is live afterwards");
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0, "counters released");
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "queue slot released");
+        assert!(bg.take_notices().is_empty(), "a silent child queues no ping");
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "the registry no longer holds it"
+        );
+        let ended = std::iter::from_fn(|| events_rx.try_recv().ok()).any(|ev| {
+            matches!(
+                ev,
+                StreamEvent::SubagentEnd { ref run_id, .. } if *run_id == d.run_id
+            )
+        });
+        assert!(ended, "the aborted child's start bracket is closed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -3142,6 +4507,28 @@ mod tests {
         assert_eq!(def.scope, SubagentScope::Project);
         assert_eq!(def.system_prompt, "You are code-explorer.");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child's events reach stdout wrapped in `Subagent { .. }`, and the
+    /// forwarder is a *negative* match: anything not explicitly held back is
+    /// forwarded, so a nested `ToolRequest` would be handed to a client that is
+    /// told nothing about the wrapper and could not answer it. Nothing here
+    /// filters that shape, which is exactly why a child's host calls never
+    /// enter its own channel: `run_subagent` routes them to the root sender
+    /// (`host_tool_route`), unwrapped.
+    #[test]
+    fn a_nested_tool_request_would_reach_the_parent_unfiltered() {
+        use crate::core::agent::events::StreamEvent;
+        assert!(
+            forward_to_parent(&StreamEvent::ToolRequest {
+                request_id: "host-1".to_string(),
+                tool_name: "robot_arm_move".to_string(),
+                args: serde_json::json!({}),
+                run_id: None,
+            }),
+            "the forwarder does not hold back a nested tool_request, so a child's \
+             request must be routed around it"
+        );
     }
 
     #[test]

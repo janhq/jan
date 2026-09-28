@@ -9,12 +9,12 @@ use tokio::sync::{oneshot, Mutex};
 const OTHER_LABEL: &str = "Other (type your own)";
 static NEXT_ASK_ID: AtomicU64 = AtomicU64::new(1);
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub struct AskRequest {
     pub(crate) questions: Vec<Question>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub(crate) struct Question {
     pub id: String,
     pub question: String,
@@ -25,7 +25,7 @@ pub(crate) struct Question {
     pub recommended: Option<usize>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, schemars::JsonSchema)]
 pub(crate) struct OptionItem {
     pub label: String,
     #[serde(default)]

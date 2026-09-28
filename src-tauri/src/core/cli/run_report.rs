@@ -13,9 +13,12 @@
 //! consumer matches on are the snake_case variant names: `token`, `reasoning`,
 //! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
-//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
-//! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`. Four tags are minted by
+//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `compaction`,
+//! `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
+//! `todo_update`, `turn_usage`, `done`, `error`, `permission_request`,
+//! `tool_request`, `tool_request_cancelled`, `tool_details`,
+//! `request_provenance`. Four tags are
+//! minted by
 //! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
 //! `input_error`. `init` is the handshake a client reads before any other record
 //! (see [`Init`]); `permission_decision` reports how this CLI answered a gated
@@ -72,9 +75,12 @@ pub(crate) fn ndjson_line<T: serde::Serialize>(value: &T) -> Option<String> {
 /// How the CLI answered a [`StreamEvent::PermissionRequest`]. The loop does not
 /// emit this: the decision is made here, and without it a piped consumer sees
 /// the request and never learns that the run was denied.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct PermissionDecisionRecord<'a> {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "permission_decision"))]
     kind: &'static str,
     request_id: &'a str,
     decision: &'static str,
@@ -112,6 +118,10 @@ pub(crate) struct RunReport {
     /// never read -- is the alarm this counter exists to raise.
     cached_tokens: Option<u64>,
     cache_write_tokens: Option<u64>,
+    /// Provider execution ids seen this run, in request order. Each is a handle
+    /// to one billing record; the `usage` above is only an estimate of the same
+    /// requests.
+    execution_ids: Vec<String>,
 }
 
 impl RunReport {
@@ -138,8 +148,17 @@ impl RunReport {
             // Reasoning is display-only: it must not enter the piped/plain-text
             // report answer, which is reserved for the final completion.
             StreamEvent::Reasoning { .. } => {}
-StreamEvent::TurnUsage { usage } => {
+StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
                 self.usage.add(usage);
+                // Recorded so a scripted run can look up what the provider
+                // actually charged for each request it made, rather than only
+                // the local estimate this report already carries.
+                if let Some(id) = execution_id {
+                    self.execution_ids.push(id.clone());
+                }
                 accumulate(&mut self.cached_tokens, usage.cached_tokens);
                 accumulate(&mut self.cache_write_tokens, usage.cache_write_tokens);
             }
@@ -202,6 +221,8 @@ StreamEvent::TurnUsage { usage } => {
                 estimated_cost_usd: self
                     .usage
                     .cost_usd(super::model_catalog::load().get(provider, model)),
+                execution_ids: (!self.execution_ids.is_empty())
+                    .then(|| self.execution_ids.clone()),
             },
         }
     }
@@ -229,9 +250,12 @@ StreamEvent::TurnUsage { usage } => {
 ///   ones and unknown tags rather than failing;
 /// - a tag is never renamed and never removed within v1;
 /// - behaviour beyond v1 is asserted against `protocol_version`, not assumed.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct Init {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "init"))]
     kind: &'static str,
     /// [`PROTOCOL_VERSION`](crate::core::agent::events::PROTOCOL_VERSION) at
     /// the time of the run, so a client can refuse a channel it cannot read
@@ -258,10 +282,69 @@ pub(crate) struct Init {
     /// provider caches on, so a set that reorders between runs is a cache miss
     /// (see the tool-ordering note in `upstream.rs`).
     tools: Vec<String>,
+    /// The full schemas of the host tools this run advertises. A host compares
+    /// these against what it declared, which is the only way to know its
+    /// constraints survived rather than trusting that they did; the names in
+    /// `tools` alone cannot answer that.
+    ///
+    /// This is the advertised subset, not everything declared: a deny list, an
+    /// allowlist or Plan mode can withhold a host tool, and its absence here is
+    /// how a host learns that happened. Omitted entirely when the run
+    /// advertises no host tools, so an ordinary run's handshake is unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    tool_specs: Vec<serde_json::Value>,
     /// What `--input-format stream-json` accepts from this client, as message
     /// `type` tags. Empty when the run does not read stdin at all, which is
     /// the honest answer for a read-only stream: nothing can be sent back.
     input_kinds: Vec<&'static str>,
+    /// The content-part form of the `user` message, when this run accepts it:
+    /// the caps a client must stay inside and the image types it may send.
+    /// `null` when the run reads no stdin -- there is no channel to describe --
+    /// which is also why this is additively separate from `input_kinds`: a
+    /// client that reads only the kinds still learns `user`, and one that
+    /// negotiates the caps gets them from the same record.
+    input_content_parts: Option<InputContentParts>,
+}
+
+/// The caps on a content-part array -- a `user` message's, and a `tool_result`'s,
+/// which is held to the same limits -- as `init` advertises them.
+///
+/// A client that sends an image is sending bytes into a channel with no
+/// backpressure, so the limits are part of the handshake rather than something
+/// to discover by being rejected. Each is the cap the parser enforces: this is
+/// the same constant, not a copy of it.
+#[derive(serde::Serialize, schemars::JsonSchema)]
+pub struct InputContentParts {
+    /// The image types an `image_url` part may name, as MIME types.
+    mime_types: Vec<&'static str>,
+    /// Most decoded bytes one image may carry.
+    max_image_bytes: usize,
+    /// Most decoded bytes across the images of one message.
+    max_message_image_bytes: usize,
+    /// Most images one message may carry.
+    max_images: usize,
+    /// Most bytes one input line may occupy. Applies to every kind, not just
+    /// `user`: the cap is the reader's, before anything is parsed.
+    max_line_bytes: usize,
+    /// Most bytes of a rejected line `input_error` echoes back.
+    max_echo_bytes: usize,
+}
+
+impl InputContentParts {
+    /// The caps as the parser enforces them. Public so a client-facing test can
+    /// compare the handshake against this one value rather than against a copy
+    /// of the numbers.
+    pub fn current() -> Self {
+        use super::stream_input;
+        Self {
+            mime_types: super::user_message::IMAGE_MIME_TYPES.to_vec(),
+            max_image_bytes: stream_input::MAX_IMAGE_BYTES,
+            max_message_image_bytes: stream_input::MAX_MESSAGE_IMAGE_BYTES,
+            max_images: stream_input::MAX_IMAGES,
+            max_line_bytes: stream_input::MAX_LINE_BYTES,
+            max_echo_bytes: stream_input::MAX_ECHO_BYTES,
+        }
+    }
 }
 
 impl Init {
@@ -270,7 +353,9 @@ impl Init {
         model: &str,
         cwd: Option<String>,
         tools: Vec<String>,
+        tool_specs: Vec<serde_json::Value>,
         input_kinds: Vec<&'static str>,
+        input_content_parts: Option<InputContentParts>,
     ) -> Self {
         Self {
             kind: "init",
@@ -279,7 +364,9 @@ impl Init {
             model: model.to_string(),
             cwd,
             tools,
+            tool_specs,
             input_kinds,
+            input_content_parts,
         }
     }
 }
@@ -287,9 +374,12 @@ impl Init {
 /// The envelope itself. A struct rather than a `json!` literal so the fields
 /// serialize in declaration order: `serde_json`'s map is sorted, which would
 /// print this contract alphabetically and bury `result` in the middle.
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 pub(crate) struct RunResult {
+    /// The record's tag. A consumer switches on it, so the schema states the
+    /// value rather than leaving it an open string.
     #[serde(rename = "type")]
+    #[schemars(extend("const" = "result"))]
     kind: &'static str,
     /// The same contract version `init` carries, so a `--output-format json`
     /// caller -- which never sees an init record -- can still pin what it is
@@ -309,13 +399,13 @@ pub(crate) struct RunResult {
     usage: ReportUsage,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 struct RunError {
     code: String,
     message: String,
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, schemars::JsonSchema)]
 struct ReportUsage {
     prompt_tokens: u64,
     completion_tokens: u64,
@@ -326,6 +416,13 @@ struct ReportUsage {
     cache_write_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     estimated_cost_usd: Option<f64>,
+    /// Provider execution ids for the requests this run made, when the upstream
+    /// returned them. `jan usage generation <id>` turns one into the recorded
+    /// charge -- the authoritative counterpart to `estimated_cost_usd`. Omitted
+    /// rather than empty when none were reported, so its absence is never read
+    /// as "no requests were made".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    execution_ids: Option<Vec<String>>,
 }
 
 /// Fold one request's optional cache total into the run's. An absent field adds
@@ -473,8 +570,16 @@ mod tests {
             documented_tags_after(&doc, "the CLI rather than by the loop: ");
 
         let minted = [
-            serde_json::to_value(Init::new("id", "m", Some("/tmp".to_string()), Vec::new(), Vec::new()))
-                .unwrap(),
+            serde_json::to_value(Init::new(
+                "id",
+                "m",
+                Some("/tmp".to_string()),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+            ))
+            .unwrap(),
             serde_json::to_value(RunReport::default().finish(None, None, "m", 1, None)).unwrap(),
             serde_json::to_value(PermissionDecisionRecord::new(
                 "req",
@@ -536,7 +641,9 @@ mod tests {
             "stub-model",
             Some("/tmp/project".to_string()),
             vec!["read".to_string(), "write".to_string()],
+            Vec::new(),
             vec!["user", "abort", "permission"],
+            Some(InputContentParts::current()),
         ))
         .unwrap();
         assert_eq!(
@@ -549,8 +656,50 @@ mod tests {
                 "cwd": "/tmp/project",
                 "tools": ["read", "write"],
                 "input_kinds": ["user", "abort", "permission"],
+                // The caps a client stays inside, as the wire carries them.
+                // Pinned as literals in both places a client reads them from:
+                // here the record, and in the CLI's own suite the handshake as
+                // it actually reaches stdout.
+                "input_content_parts": {
+                    "mime_types": ["image/png", "image/jpeg", "image/gif", "image/webp"],
+                    "max_image_bytes": 5_242_880,
+                    "max_message_image_bytes": 10_485_760,
+                    "max_images": 8,
+                    "max_line_bytes": 16_777_216,
+                    "max_echo_bytes": 4_096,
+                },
             })
         );
+    }
+
+    /// R5: a host compares the schemas it gets back against the ones it sent,
+    /// so they travel in the handshake verbatim -- constraints a normalizer
+    /// would strip included.
+    #[test]
+    fn init_echoes_the_host_tool_schemas_it_installed() {
+        let spec = serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "host__observe",
+                "description": "look",
+                "parameters": {
+                    "type": "object",
+                    "properties": { "n": { "type": "array", "minItems": 2 } },
+                    "additionalProperties": false
+                }
+            }
+        });
+        let out = serde_json::to_value(Init::new(
+            "id",
+            "m",
+            Some("/tmp".to_string()),
+            vec!["host__observe".to_string()],
+            vec![spec.clone()],
+            vec!["user", "tool_result"],
+            None,
+        ))
+        .unwrap();
+        assert_eq!(out["tool_specs"], serde_json::json!([spec]));
     }
 
     /// A run that does not read stdin accepts nothing, and the record says so
@@ -564,10 +713,15 @@ mod tests {
             Some("/tmp".to_string()),
             Vec::new(),
             Vec::new(),
+            Vec::new(),
+            None,
         ))
         .unwrap();
         assert_eq!(out["input_kinds"], serde_json::json!([]));
         assert_eq!(out["input_kinds"].as_array().unwrap().len(), 0);
+        // And no caps to describe: there is no channel for them to bound, so a
+        // client reads `null` rather than a limit that applies to nothing.
+        assert!(out["input_content_parts"].is_null(), "{out}");
     }
 
     /// A run given no project root reports none. The alternative -- a path
@@ -575,9 +729,21 @@ mod tests {
     /// to?" with a directory nothing is confined to.
     #[test]
     fn init_without_a_project_root_reports_cwd_absent() {
-        let out =
-            serde_json::to_value(Init::new("id", "m", None, Vec::new(), Vec::new())).unwrap();
+        let out = serde_json::to_value(Init::new(
+            "id",
+            "m",
+            None,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        ))
+        .unwrap();
         assert!(out["cwd"].is_null(), "{out}");
+        assert!(
+            out.get("tool_specs").is_none(),
+            "a run with no host tools leaves the handshake as it was: {out}"
+        );
     }
 
     /// The envelope carries the same version, so a `--output-format json`
@@ -618,6 +784,7 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(9011, 655),
+                execution_id: None,
             },
             token("done"),
             StreamEvent::Done {
@@ -656,6 +823,7 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(8123, 0),
+                execution_id: None,
             },
             token("I started reviewing auth.rs and"),
             StreamEvent::Error {
@@ -713,7 +881,7 @@ mod tests {
             }
             value(report.finish(None, None, "m", 1, Some("done")))
         };
-        let turn = |usage| StreamEvent::TurnUsage { usage };
+        let turn = |usage| StreamEvent::TurnUsage { usage, execution_id: None };
 
         let silent = envelope(vec![turn(usage(1_000, 10))]);
         assert!(silent["usage"]["cached_tokens"].is_null(), "{silent}");
@@ -752,9 +920,11 @@ mod tests {
             StreamEvent::Step { index: 1, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(100, 10),
+                execution_id: None,
             },
             child(StreamEvent::TurnUsage {
                 usage: usage(50, 5),
+                execution_id: None,
             }),
             // A child's own turns and prose belong to the child, not this run.
             child(StreamEvent::Step { index: 9, max: 0 }),
@@ -762,6 +932,7 @@ mod tests {
             StreamEvent::Step { index: 2, max: 0 },
             StreamEvent::TurnUsage {
                 usage: usage(200, 20),
+                execution_id: None,
             },
         ] {
             report.observe(&ev);
@@ -797,6 +968,7 @@ mod tests {
             let mut report = RunReport::default();
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000_000, 100_000),
+                execution_id: None,
             });
             let out = value(report.finish(None, None, "priced-model", 1, Some("done")));
             assert_eq!(out["usage"]["estimated_cost_usd"], 2.0);
@@ -804,6 +976,7 @@ mod tests {
             let mut report = RunReport::default();
             report.observe(&StreamEvent::TurnUsage {
                 usage: usage(1_000, 100),
+                execution_id: None,
             });
             let out = value(report.finish(None, None, "unknown-model", 1, Some("done")));
             assert!(

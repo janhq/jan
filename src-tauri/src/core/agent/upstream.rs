@@ -588,6 +588,69 @@ pub(crate) async fn resolve_upstream_for_model(
     #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
     #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Result<(String, Vec<String>), String> {
+    upstream_for(
+        model_id,
+        provider_configs,
+        Credentials::Fetch,
+        #[cfg(not(feature = "cli"))]
+        llama_state,
+        #[cfg(not(feature = "cli"))]
+        mlx_sessions,
+    )
+    .await
+}
+
+/// Why no upstream can serve `model_id`, or `None` when one can.
+///
+/// The servability half of [`resolve_upstream_for_model`], resolved without a
+/// credential. Fetching one can mean an OAuth token refreshed over the network
+/// for a registered account, and an auth failure is no statement about whether
+/// a model's name is servable: a caller that only has to validate the name asks
+/// this, and the request that follows resolves for real and reports a
+/// credential failure as its own.
+#[cfg(feature = "cli")]
+pub(crate) async fn unservable_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<String> {
+    upstream_for(
+        model_id,
+        provider_configs,
+        Credentials::Skip,
+        #[cfg(not(feature = "cli"))]
+        llama_state,
+        #[cfg(not(feature = "cli"))]
+        mlx_sessions,
+    )
+    .await
+    .err()
+}
+
+/// Whether resolving an upstream fetches the credential the request will carry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Credentials {
+    /// Fetch it, refreshing an account token that has expired.
+    Fetch,
+    /// Resolve the upstream without it, for a caller that only needs to know
+    /// whether the model is servable. The `cli` build is where such a caller
+    /// exists: the desktop has no validation-only entry point.
+    #[cfg(feature = "cli")]
+    Skip,
+}
+
+async fn upstream_for(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    credentials: Credentials,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<(String, Vec<String>), String> {
+    // Every desktop path resolves the credential, so the switch is only read by
+    // the `cli` branch below.
+    #[cfg(not(feature = "cli"))]
+    let _ = credentials;
     let destination_path = "/chat/completions";
 
     let pc = provider_configs.lock().await;
@@ -611,22 +674,25 @@ pub(crate) async fn resolve_upstream_for_model(
                 // concern; the desktop resolves credentials through its own
                 // proxy path and falls back to the bearer key chain here.
                 #[cfg(feature = "cli")]
-                let (api_url, api_keys) = {
-                    let account_token =
-                        crate::core::cli::auth::account::access_token(&provider_cfg.provider)
-                            .await?;
-                    let api_url = if provider_cfg.provider == "openai"
-                        && account_token.is_some()
-                        && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
-                    {
-                        "https://chatgpt.com/backend-api".to_string()
-                    } else {
-                        api_url
-                    };
-                    let api_keys = account_token
-                        .map(|token| vec![token])
-                        .unwrap_or_else(|| provider_cfg.bearer_key_chain());
-                    (api_url, api_keys)
+                let (api_url, api_keys) = match credentials {
+                    Credentials::Fetch => {
+                        let account_token =
+                            crate::core::cli::auth::account::access_token(&provider_cfg.provider)
+                                .await?;
+                        let api_url = if provider_cfg.provider == "openai"
+                            && account_token.is_some()
+                            && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
+                        {
+                            "https://chatgpt.com/backend-api".to_string()
+                        } else {
+                            api_url
+                        };
+                        let api_keys = account_token
+                            .map(|token| vec![token])
+                            .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                        (api_url, api_keys)
+                    }
+                    Credentials::Skip => (api_url, provider_cfg.bearer_key_chain()),
                 };
                 #[cfg(not(feature = "cli"))]
                 let api_keys = provider_cfg.bearer_key_chain();
@@ -1342,6 +1408,7 @@ pub(crate) async fn stream_openai_chat_completions(
     api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
+    client_request_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     super::genai_bridge::stream_chat_completions(
         client,
@@ -1350,6 +1417,7 @@ pub(crate) async fn stream_openai_chat_completions(
         api_type,
         body,
         events,
+        client_request_id,
     )
     .await
 }
@@ -1365,6 +1433,11 @@ pub(crate) async fn stream_openai_chat_completions(
 /// `upstream_url` is the resolved base + "/chat/completions" (see
 /// [`resolve_upstream_for_model`]); the base is recovered by stripping that
 /// suffix and the native path appended in its place.
+///
+/// `client_request_id` is sent as the correlation header so this request can be
+/// found in the provider's usage records later (see
+/// [`crate::core::agent::correlation`]). This path also owns the HTTP response,
+/// so unlike the genai path it can read the execution id straight back off it.
 pub(crate) async fn stream_converted_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -1372,6 +1445,7 @@ pub(crate) async fn stream_converted_chat_completions(
     converter: &dyn UpstreamConverter,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
+    client_request_id: Option<&str>,
 ) -> Result<serde_json::Value, String> {
     // Base is upstream_url minus the trailing "/chat/completions". Recover it
     // the same way the proxy does when it swaps the destination path.
@@ -1417,6 +1491,15 @@ pub(crate) async fn stream_converted_chat_completions(
         for (name, value) in converter.extra_headers() {
             req = req.header(name, value);
         }
+        // Correlation id, so this request is findable in the provider's usage
+        // records. Harmless to a provider that does not use it: an unknown
+        // request header is ignored.
+        if let Some(id) = client_request_id {
+            req = req.header(
+                crate::core::agent::correlation::CLIENT_REQUEST_ID_HEADER,
+                id,
+            );
+        }
 
         let resp = req
             .body(native_body.to_string())
@@ -1450,15 +1533,30 @@ pub(crate) async fn stream_converted_chat_completions(
             .map(|ct| ct.contains("event-stream"))
             .unwrap_or(true);
 
-        if is_sse {
-            return consume_converted_sse(resp, converter, events).await;
-        }
+        // The execution id, read here because this is the last point at which
+        // the response headers exist: both branches below consume the body.
+        // This is the direct billing handle, and the only path that can get one
+        // -- the genai path discards headers on a successful stream.
+        let execution_id = resp
+            .headers()
+            .get(crate::core::agent::correlation::EXECUTION_ID_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
 
-        let bytes = resp
-            .bytes()
-            .await
-            .map_err(|e| format!("Upstream body read failed: {e}"))?;
-        return decode_converted_response(&bytes, converter);
+        let mut completion = if is_sse {
+            consume_converted_sse(resp, converter, events).await?
+        } else {
+            let bytes = resp
+                .bytes()
+                .await
+                .map_err(|e| format!("Upstream body read failed: {e}"))?;
+            decode_converted_response(&bytes, converter)?
+        };
+        if let Some(id) = execution_id {
+            crate::core::agent::correlation::attach_execution_id(&mut completion, &id);
+        }
+        return Ok(completion);
     }
 
     Err(last_err)
@@ -2344,6 +2442,7 @@ mod tests {
             None,
             &json!({ "model": "m", "messages": [] }),
             &tx,
+            None,
         )
         .await
         .expect("the retry carries the turn");
@@ -2403,6 +2502,7 @@ mod tests {
                 "max_tokens": 128,
             }),
             &tx,
+            None,
         )
         .await
         .expect("request");
@@ -2418,6 +2518,128 @@ mod tests {
         assert_eq!(body["store"], false);
         assert_eq!(body["include"], json!(["reasoning.encrypted_content"]));
         assert!(body.get("max_output_tokens").is_none());
+    }
+
+    /// The correlation id has to actually reach the wire, and the execution id
+    /// has to come back off the response headers before the body is consumed.
+    /// Both are invisible when broken -- the request still succeeds and only a
+    /// later billing lookup comes back empty -- so this asserts the bytes.
+    #[tokio::test]
+    async fn the_converted_path_sends_the_correlation_id_and_captures_the_execution_id() {
+        use base64::Engine as _;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut bytes = vec![0u8; 16 * 1024];
+            let read = socket.read(&mut bytes).await.expect("read");
+            bytes.truncate(read);
+            let response = "event: response.completed\n\
+                data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+            let wire = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nX-Tokamak-Execution-Id: exec-abc\r\n\r\n{response}",
+                response.len()
+            );
+            socket.write_all(wire.as_bytes()).await.expect("response");
+            String::from_utf8(bytes).expect("request is utf-8")
+        });
+
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-123"}}"#);
+        let token = format!("header.{payload}.signature");
+        let converter =
+            crate::core::server::converters::converter_for(Some("openai-responses"), true)
+                .expect("converter");
+        let (tx, _rx) = sink();
+        let completion = stream_converted_chat_completions(
+            &Client::new(),
+            &format!("http://{addr}/chat/completions"),
+            &[token],
+            converter.as_ref(),
+            &json!({
+                "model": "gpt-5.6-terra",
+                "messages": [{"role": "user", "content": "hi"}],
+            }),
+            &tx,
+            Some("jan-session-7"),
+        )
+        .await
+        .expect("request");
+
+        let request = server.await.expect("server task");
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("\r\nx-client-request-id: jan-session-7\r\n"),
+            "the correlation id must reach the wire: {request}"
+        );
+        assert_eq!(
+            crate::core::agent::correlation::execution_id_of(&completion),
+            Some("exec-abc".to_string()),
+            "the execution id must be read off the response headers"
+        );
+    }
+
+    /// No session means no correlation id, and the header must then be absent
+    /// rather than sent empty -- an empty value would correlate every run that
+    /// had no session.
+    #[tokio::test]
+    async fn no_correlation_id_means_no_header() {
+        use base64::Engine as _;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut bytes = vec![0u8; 16 * 1024];
+            let read = socket.read(&mut bytes).await.expect("read");
+            bytes.truncate(read);
+            let response = "event: response.completed\n\
+                data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n";
+            let wire = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response}",
+                response.len()
+            );
+            socket.write_all(wire.as_bytes()).await.expect("response");
+            String::from_utf8(bytes).expect("request is utf-8")
+        });
+
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"https://api.openai.com/auth":{"chatgpt_account_id":"a"}}"#);
+        let converter =
+            crate::core::server::converters::converter_for(Some("openai-responses"), true)
+                .expect("converter");
+        let (tx, _rx) = sink();
+        let completion = stream_converted_chat_completions(
+            &Client::new(),
+            &format!("http://{addr}/chat/completions"),
+            &[format!("header.{payload}.signature")],
+            converter.as_ref(),
+            &json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]}),
+            &tx,
+            None,
+        )
+        .await
+        .expect("request");
+
+        let request = server.await.expect("server task");
+        assert!(
+            !request.to_ascii_lowercase().contains("x-client-request-id"),
+            "{request}"
+        );
+        // A response with no execution-id header attaches none, rather than an
+        // empty string that would produce a guaranteed not-found lookup.
+        assert_eq!(
+            crate::core::agent::correlation::execution_id_of(&completion),
+            None
+        );
     }
 
     /// A proxy in the environment breaks Jan and nothing else, and never shows up
@@ -2442,6 +2664,50 @@ mod tests {
             Some(v) => std::env::set_var("HTTPS_PROXY", v),
             None => std::env::remove_var("HTTPS_PROXY"),
         }
+    }
+
+    /// Whether a model is servable is decided without fetching a credential: a
+    /// stored record nothing can read fails the request's own resolution, and
+    /// must not decide this.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn servability_is_decided_without_the_credential() {
+        // The env redirect lives in the helper, which holds the store lock in a
+        // struct field: a bare guard bound here would be held across the awaits
+        // below, which clippy refuses and which the lock is not for.
+        let _secrets = TempSecretStore::new();
+        // Unreadable on purpose: fetching it fails inside the store, before any
+        // network call, which is what keeps this test offline.
+        crate::core::server::provider_secrets::store_secret_record("auth:anthropic", "{ not json")
+            .unwrap();
+
+        let configs = Arc::new(Mutex::new(HashMap::from([(
+            "anthropic".to_string(),
+            ProviderConfig {
+                provider: "anthropic".into(),
+                base_url: Some("https://api.anthropic.com/v1".into()),
+                models: vec!["claude-sonnet-5".into()],
+                ..Default::default()
+            },
+        )])));
+
+        // Servable: the name is served by a reachable provider, and nothing
+        // about the credential took part in saying so.
+        assert_eq!(
+            unservable_model("claude-sonnet-5", Arc::clone(&configs)).await,
+            None
+        );
+        // The request's own resolution does fetch it, and fails on it: the
+        // failure the validation above must not turn into "invalid model".
+        let failure = resolve_upstream_for_model("claude-sonnet-5", configs)
+            .await
+            .expect_err("the credential is unreadable");
+        assert!(failure.contains("unreadable"), "{failure}");
+        // A name no provider serves is still refused, credential or not.
+        assert_eq!(
+            unservable_model("claude-sonnet-99", Arc::new(Mutex::new(HashMap::new()))).await,
+            Some("No upstream session found for model 'claude-sonnet-99'".to_string())
+        );
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and

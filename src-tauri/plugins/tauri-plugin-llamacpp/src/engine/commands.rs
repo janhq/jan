@@ -47,6 +47,11 @@ fn generate_worker_key() -> String {
 /// packaging puts it, alongside the ggml backend modules the worker loads by
 /// scanning its own directory), then beside the app executable for a
 /// `cargo run` build.
+///
+/// A miss names every path that was tried. The file is shipped in the bundle,
+/// so its absence always means the install is damaged rather than that the user
+/// has something to configure, and which directory came up empty is the only
+/// thing that distinguishes the ways that happens.
 fn resolve_worker_exe<R: tauri::Runtime>(
     app_handle: &tauri::AppHandle<R>,
 ) -> Result<PathBuf, String> {
@@ -61,19 +66,62 @@ fn resolve_worker_exe<R: tauri::Runtime>(
         ));
     }
 
+    let mut tried: Vec<PathBuf> = Vec::new();
+
     if let Ok(dir) = app_handle.path().resource_dir() {
         let bundled = dir.join("resources/bin").join(worker::worker_file_name());
         if bundled.is_file() {
             return Ok(bundled);
         }
+        tried.push(bundled);
     }
 
-    worker::sidecar_path().ok_or_else(|| {
-        format!(
-            "{} was not found in the app resources or next to the executable",
-            worker::worker_file_name()
-        )
-    })
+    if let Some(sidecar) = worker::sidecar_candidate() {
+        if sidecar.is_file() {
+            return Ok(sidecar);
+        }
+        tried.push(sidecar);
+    }
+
+    Err(worker_missing_message(&tried))
+}
+
+/// Builds the "worker is missing" error from the paths that were tried.
+///
+/// Split out so it can be tested: the caller needs an `AppHandle` to resolve
+/// the bundle directory, but which paths were checked is the whole content of
+/// the message.
+fn worker_missing_message(tried: &[PathBuf]) -> String {
+    let checked = if tried.is_empty() {
+        "no candidate path could be resolved".to_string()
+    } else {
+        tried
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    // A `.old` beside a missing worker is the fingerprint of an interrupted
+    // Windows upgrade: the installer frees the file by renaming it before the
+    // first write, so that copy is left behind when the install does not go
+    // ahead. Worth naming, because the fix is to run the installer again
+    // rather than anything the app can do.
+    let interrupted = tried.iter().any(|p| {
+        let mut old = p.clone().into_os_string();
+        old.push(".old");
+        PathBuf::from(old).exists()
+    });
+    let hint = if interrupted {
+        " A .old copy is present, which means an interrupted install left it renamed; re-run the installer."
+    } else {
+        " The install looks incomplete; re-run the installer."
+    };
+
+    format!(
+        "{} was not found in the app resources or next to the executable (checked: {checked}).{hint}",
+        worker::worker_file_name()
+    )
 }
 
 /// Forwards a worker fault to the frontend, which turns it into the OOM or
@@ -541,6 +589,40 @@ mod tests {
             .expect("a missing override must be rejected, not ignored");
         assert!(err.contains("not a file"), "got {err}");
         std::env::remove_var("JAN_LLAMA_WORKER_BIN");
+    }
+
+    // The bundle ships the worker, so this error only ever means a damaged
+    // install. It was reported from the field with nothing but the file name,
+    // which is not enough to tell a wrong resource dir from a file the
+    // installer removed, so the paths have to be in the message.
+    #[test]
+    fn a_missing_worker_names_every_path_it_looked_at() {
+        let tried = [
+            PathBuf::from("/opt/jan/resources/bin").join(worker::worker_file_name()),
+            PathBuf::from("/opt/jan").join(worker::worker_file_name()),
+        ];
+        let msg = worker_missing_message(&tried);
+        assert!(msg.contains("/opt/jan/resources/bin"), "got {msg}");
+        assert!(msg.contains("re-run the installer"), "got {msg}");
+    }
+
+    // The abort path of the Windows installer renames the worker aside before
+    // it writes anything, so a leftover `.old` names the actual cause and a
+    // fix the user can act on.
+    #[test]
+    fn a_leftover_old_copy_is_called_out_as_an_interrupted_install() {
+        let dir = std::env::temp_dir().join(format!("jan-worker-old-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let worker_path = dir.join(worker::worker_file_name());
+
+        let without = worker_missing_message(std::slice::from_ref(&worker_path));
+        assert!(!without.contains(".old copy"), "got {without}");
+
+        std::fs::write(dir.join(format!("{}.old", worker::worker_file_name())), b"x").unwrap();
+        let with = worker_missing_message(&[worker_path]);
+        assert!(with.contains("interrupted install"), "got {with}");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     // A thread deleted with no model loaded is the common case, so the erase

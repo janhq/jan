@@ -1,5 +1,5 @@
 //! Plugin install/removal and marketplace search. A plugin is a directory
-//! `.jan/agent/plugins/<name>/` cloned from a git repository, so installing
+//! `~/.jan/projects/<slug>/plugins/<name>/` cloned from a git repository, so installing
 //! from GitHub (or any git host) is just `git clone`. No lockfile or registry
 //! file: an installed plugin is a directory, removed by deleting it. Installing
 //! never executes plugin code — a plugin carries skills (instructions) plus an

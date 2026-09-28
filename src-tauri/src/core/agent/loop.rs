@@ -16,7 +16,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::context::ComposedPrompt;
-use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::events::{CompactionPhase, CompactionReason, StreamEvent, Usage};
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
@@ -71,6 +71,25 @@ pub(crate) struct OrchestrationArgs {
     pub permissions: tauri_plugin_agent_tools::permissions::ToolPermissions,
     pub project_root: Option<std::path::PathBuf>,
     pub permission_requests: PermissionRegistry,
+    /// Tools a host process registered for this run, and the registry their
+    /// calls are answered through. Only a client on the headless stdio channel
+    /// can execute one, so these exist only in that build.
+    #[cfg(feature = "cli")]
+    pub host_tools: crate::core::agent::host_tools::HostToolSet,
+    #[cfg(feature = "cli")]
+    pub host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
+    /// The host's own callback is the permission gate for its tools: Jan never
+    /// emits a `permission_request` for a host tool, whatever its capability.
+    /// Built-ins are unaffected. Inherited by children with the tool set.
+    #[cfg(feature = "cli")]
+    pub host_owns_gate: bool,
+    /// Where this run's `tool_request`s go when it is not the run the client
+    /// reads: the root events sender and this run's id. A subagent's own
+    /// events reach stdout wrapped in `Subagent { .. }`, a shape no client may
+    /// answer, so its requests bypass that channel and are emitted unwrapped,
+    /// attributed by `run_id`. `None` for the main run.
+    #[cfg(feature = "cli")]
+    pub host_tool_route: Option<(mpsc::UnboundedSender<StreamEvent>, String)>,
     /// Present only when a client can render and answer structured questions.
     pub ask_requests: Option<crate::core::agent::interaction::AskRegistry>,
     /// Session's canonical todo list. Present for the top-level run only;
@@ -81,6 +100,18 @@ pub(crate) struct OrchestrationArgs {
     /// shared project-context and tool-use prompt assembled for normal runs.
     /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
+    /// A host's whole system prompt (RPC `session/start` `systemPrompt`), sent
+    /// verbatim in place of the composed one: no identity, guides, environment,
+    /// date, git state, plan/todo guidance or project memory. A host that owns
+    /// the prompt owns all of it; Jan's guides would describe tools a host-only
+    /// session does not have. Never inherited by a child, which runs on its
+    /// definition's prompt.
+    pub host_system_prompt: Option<String>,
+    /// Whether the run recalls project memory into its prompt and indexes its
+    /// final answer into it. `false` for an ephemeral RPC session, whose
+    /// answers must neither outlive it nor reach a later session in the same
+    /// project. Child runs skip memory regardless (see above).
+    pub project_memory: bool,
     /// Whether this run may dispatch subagents. `false` for child runs, which
     /// caps recursion depth at one (a subagent cannot spawn grandchildren).
     pub subagents_enabled: bool,
@@ -105,6 +136,11 @@ pub(crate) struct OrchestrationArgs {
     /// code paths with no session (server proxy runs) keeps the default
     /// throwaway per-command tmpfs.
     pub session_id: Option<String>,
+    /// This run's own id when it is a child run: `None` for the main run, the
+    /// id the dispatch gave it (the same one that tags its events and its host
+    /// tool requests) for a subagent. Provenance records carry it so a harness
+    /// can attribute a request to the run that made it.
+    pub run_id: Option<String>,
     /// Per-invocation override for `bash` confinement (the CLI's `--sandbox`).
     /// `None` falls through to `[tools].sandbox`, then the user's global
     /// `sandbox`, then the surface default -- see [`resolve_sandbox`]. Inherited
@@ -117,6 +153,20 @@ pub(crate) struct OrchestrationArgs {
     /// child) scopes monitors to the run, which then parks on them. Never
     /// inherited by a child run, which gets its own per-run set.
     pub monitors: Option<std::sync::Arc<tauri_plugin_agent_tools::tools::monitor::MonitorSet>>,
+    /// A backgrounded-shell registry owned by the session rather than by this
+    /// run. When set, a command still running does not park the run: the
+    /// model's turn ends and the owner starts a new turn when the command
+    /// finishes. `None` (a headless run, a child) scopes shells to the run,
+    /// which then parks on them. Never inherited by a child run.
+    pub bg_shells: Option<std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>>,
+    /// A background-subagent registry owned by the session rather than by this
+    /// run, on the same terms as `monitors` and `bg_shells`: a child still
+    /// running does not park the run, and its completion starts a turn of its
+    /// own. A session set is also exempt from the run-scoped `AbortOnDrop`
+    /// teardown -- the owner decides when children die (the TUI kills them on
+    /// cancel and on session reset). Never inherited by a child run, which
+    /// cannot dispatch grandchildren anyway.
+    pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -147,6 +197,12 @@ pub(crate) struct ToolOutcome {
     pub content: String,
     pub diff: Option<String>,
     pub images: Vec<tauri_plugin_agent_tools::tools::ImageContentPart>,
+    /// Content parts a host tool returned. When set they *are* the tool
+    /// message, verbatim and in order; `content` is then only the text summary
+    /// for hooks and the `tool_result` event.
+    pub parts: Option<Vec<serde_json::Value>>,
+    /// Host/UI-only data, emitted as `tool_details` and never sent to the model.
+    pub details: Option<serde_json::Value>,
 }
 
 impl ToolOutcome {
@@ -156,8 +212,46 @@ impl ToolOutcome {
             content,
             diff: None,
             images: Vec::new(),
+            parts: None,
+            details: None,
         }
     }
+}
+
+/// What a host tool call produced: the text summary, the content parts that
+/// replace it on the wire when the host sent any, and the display-only details.
+#[cfg(feature = "cli")]
+type HostCallResult = (String, Option<Vec<serde_json::Value>>, Option<serde_json::Value>);
+
+/// The gate class of one host tool call, from its declared capability and
+/// whether the host owns the gate.
+// Off the headless build there are no host tools, so only `Opaque` is built.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostGate {
+    /// Declared `read`: never prompted, allowed in Plan mode, concurrent.
+    Read,
+    /// The host's callback is the gate: never prompted here, sequential.
+    Host,
+    /// Declared `actuator`: prompted even under `auto_approve`, sequential.
+    Actuator,
+    /// Undeclared: prompted unless `auto_approve`, sequential.
+    Opaque,
+}
+
+/// Mark a failed host result's content parts the way a failed text result is
+/// marked, so the model can tell an error from an answer: the first text part
+/// gains the `ERROR: ` prefix, or one is put in front when there is none.
+#[cfg(feature = "cli")]
+fn mark_parts_as_error(mut parts: Vec<serde_json::Value>) -> Vec<serde_json::Value> {
+    let first_text = parts
+        .iter_mut()
+        .find(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"));
+    match first_text.and_then(|p| p.get_mut("text")) {
+        Some(serde_json::Value::String(text)) => text.insert_str(0, "ERROR: "),
+        _ => parts.insert(0, serde_json::json!({ "type": "text", "text": "ERROR" })),
+    }
+    parts
 }
 
 /// One background ping. `text` is what reaches the model as a `<SYSTEM>`
@@ -241,6 +335,84 @@ struct HttpModelInvoker {
     /// Native provider converters still use reqwest 0.12 while the default
     /// agent path uses genai's reqwest 0.13 client.
     converter_client: reqwest::Client,
+    /// Correlation id sent with every request this invoker makes, so the run's
+    /// executions are findable in the provider's usage records afterwards. See
+    /// [`crate::core::agent::correlation`]. `None` when the run has no session
+    /// to correlate.
+    client_request_id: Option<String>,
+    /// The session this invoker belongs to, as the handshake reports it. The
+    /// correlation id above is derived from it, so provenance names the id a
+    /// client already holds rather than the derivation it has never seen.
+    session_id: Option<String>,
+    /// Identity for the provenance record emitted before each request: the
+    /// provider the model resolved to, the wire API the body is built for, and
+    /// the child run's id when this invoker belongs to one.
+    provenance: RequestIdentityOwned,
+    /// The run's own event stream, which provenance rides even when this
+    /// invocation reports its text somewhere else: a side call passes a private
+    /// sink for its own summary or verdict, and a record about a request the run
+    /// made belongs on the run's stream. `None` only where no run stream exists
+    /// to carry it (a `/compact` or `/goal` evaluation started between turns,
+    /// the API-server proxy that discards its events).
+    provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
+}
+
+/// [`crate::core::agent::provenance::RequestIdentity`] as the invoker stores it:
+/// the identity fields outlive the resolution that produced them.
+#[derive(Debug, Default, Clone)]
+struct RequestIdentityOwned {
+    run_id: Option<String>,
+    provider: Option<String>,
+    api_type: Option<String>,
+    /// Whether the provider's credential is an OAuth account token, which the
+    /// converter it is built from needs (Anthropic's beta header). Carried here
+    /// because one lookup answers both, and two lookups could disagree.
+    oauth: bool,
+}
+
+impl RequestIdentityOwned {
+    fn as_identity<'a>(
+        &'a self,
+        session_id: Option<&'a str>,
+    ) -> crate::core::agent::provenance::RequestIdentity<'a> {
+        crate::core::agent::provenance::RequestIdentity {
+            run_id: self.run_id.as_deref(),
+            session_id,
+            provider: self.provider.as_deref(),
+            api_type: self.api_type.as_deref(),
+        }
+    }
+}
+
+/// The identity a request is reported under: which provider the model maps to,
+/// which wire API the body is built for, and the run making it. Resolved once
+/// per invoker rather than per request, and shared by the invokers that make
+/// side calls (compaction, /goal evaluations) so their provenance records name
+/// the run the same way the turn's does.
+///
+/// This is the same model-to-provider lookup the request itself resolves
+/// through, and it needs neither a URL nor a credential: the record names the
+/// provider, it does not authenticate to it.
+async fn request_identity(
+    model_id: &str,
+    provider_configs: &Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    run_id: Option<&str>,
+) -> RequestIdentityOwned {
+    let (api_type, oauth) =
+        match resolve_api_type_for_model(model_id, provider_configs.clone()).await {
+            Some((api_type, oauth)) => (Some(api_type), oauth),
+            None => (None, false),
+        };
+    let provider = {
+        let configs = provider_configs.lock().await;
+        crate::core::agent::upstream::pick_provider_for_model(model_id, &configs)
+    };
+    RequestIdentityOwned {
+        run_id: run_id.map(str::to_string),
+        provider,
+        api_type,
+        oauth,
+    }
 }
 
 fn converter_http_client() -> reqwest::Client {
@@ -267,6 +439,19 @@ impl ModelInvoker for HttpModelInvoker {
                 normalized["model"] = serde_json::json!(bare);
             }
         }
+        // Emitted before the request goes out, so a harness that records
+        // provenance sees the request even when the call then fails. It goes to
+        // the run's stream rather than to `events`: a side call passes a private
+        // sink for its own summary or verdict text, and dropping the record
+        // there would leave the requests a run actually paid for unreported.
+        let _ = self
+            .provenance_events
+            .as_ref()
+            .unwrap_or(events)
+            .send(crate::core::agent::provenance::of_request(
+                &normalized,
+                self.provenance.as_identity(self.session_id.as_deref()),
+            ));
         if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
                 &self.converter_client,
@@ -275,6 +460,7 @@ impl ModelInvoker for HttpModelInvoker {
                 converter.as_ref(),
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         } else {
@@ -286,6 +472,7 @@ impl ModelInvoker for HttpModelInvoker {
                 None,
                 &normalized,
                 events,
+                self.client_request_id.as_deref(),
             )
             .await
         }
@@ -322,12 +509,27 @@ struct SubagentContext {
     parent_args: OrchestrationArgs,
     model_id: String,
     max_session_tokens: Option<u64>,
+    /// The run's money ceiling, forwarded to every child (see
+    /// [`crate::core::agent::subagent::ParentRun::cost_remaining`]).
+    cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
     /// The parent's `send_reasoning`, forwarded to every child body: a child
     /// resends the reasoning of its own tool-call turns, so an opt-out that
     /// stopped at the parent would still break a strict provider.
     send_reasoning: bool,
+    /// The parent's per-request allowlist, the ceiling every child's tool set
+    /// is held to (see
+    /// [`crate::core::agent::subagent::ParentRun::tool_ceiling`]).
+    tool_ceiling: Option<Vec<String>>,
+    /// Every non-host tool name this run could reach (see
+    /// [`crate::core::agent::subagent::ParentRun::known_tools`]).
+    known_tools: Vec<String>,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    /// The registry's teardown generation when this run started. A dispatch may
+    /// only admit a child while it is still current, so a tool call that
+    /// resolves after the run was cancelled starts nothing (see
+    /// [`crate::core::agent::subagent::BackgroundSubagents::generation`]).
+    bg_generation: u64,
 }
 
 /// Dispatches built-in tool calls to native handlers (gated by `resolve_decision`)
@@ -335,10 +537,13 @@ struct SubagentContext {
 struct CompositeToolInvoker {
     mcp: McpToolInvoker,
     project_root: std::path::PathBuf,
-    /// Where `memory/` and `skills/` live. Co-located with the project here, so
-    /// the on-disk layout is unchanged; the desktop points this at its permanent
-    /// store instead.
+    /// Where `memory/` and `skills/` live: the project's store under
+    /// `~/.jan/projects`. The desktop points this at its permanent store.
     store_root: std::path::PathBuf,
+    /// `~/.jan`, for the `user:` memory scope and other projects' stores.
+    memory_home: Option<std::path::PathBuf>,
+    /// Whether other projects' memory is readable (`memory_cross_project`).
+    cross_project: bool,
     /// `[skills].enabled`, resolved once per run. The toolset owns no config
     /// format, so the whitelist is injected rather than re-read per tool call.
     enabled_skills: Vec<String>,
@@ -352,6 +557,10 @@ struct CompositeToolInvoker {
     /// Whether `bash` is confined at all. Resolved once per run by
     /// [`resolve_sandbox`]; always true on the desktop.
     sandbox: bool,
+    /// The Jan home, refused to the general tools and masked from the shell
+    /// while sandboxed (`project::hidden_root`). Kept beside `sandbox` and set
+    /// with it, so the two cannot disagree.
+    hidden_root: Option<std::path::PathBuf>,
     /// Session-scoped scratch directory the shell and the filesystem tools share
     /// (see `workspace::scratch_dir`), so `bash` scratch files persist across
     /// calls for the whole run. Created at run start and wiped at run end.
@@ -388,11 +597,42 @@ struct CompositeToolInvoker {
     /// `execute_builtin`: they are not built-ins, and like MCP tools their
     /// capability is unknowable, so they are prompted and hidden in Plan mode.
     plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet,
+    /// Tools a host process declared for this run, and the registry their calls
+    /// are answered through. Unlike every other tool here, these do not execute
+    /// in this process at all: the call goes out as a `tool_request` and the
+    /// host sends the result back. Empty on every surface but a duplex headless
+    /// run, since nothing else has a peer that could answer.
+    #[cfg(feature = "cli")]
+    host_tools: crate::core::agent::host_tools::HostToolSet,
+    #[cfg(feature = "cli")]
+    host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
+    /// See [`OrchestrationArgs::host_owns_gate`].
+    #[cfg(feature = "cli")]
+    host_owns_gate: bool,
+    /// See [`OrchestrationArgs::host_tool_route`].
+    #[cfg(feature = "cli")]
+    host_tool_route: Option<(mpsc::UnboundedSender<StreamEvent>, String)>,
     /// `context` answers and failure notices raised by hooks during this run,
     /// drained into `<SYSTEM>` reminders alongside the monitor's. `Arc` because
     /// the tool-event hooks fire inside the toolset and report through a sink
     /// that outlives the call (see [`CompositeToolInvoker::hook_sink`]).
     hook_notices_queue: std::sync::Arc<std::sync::Mutex<Vec<BackgroundNotice>>>,
+    /// Backgrounded `bash` commands this run is still owed a result from, and
+    /// the pings for those that have finished. `Arc` because the doorbell is
+    /// rung from the detached task inside the toolset, which outlives the call
+    /// (see [`CompositeToolInvoker::shell_done_sink`]). Parking on it is
+    /// bounded like a monitor, but by the registry rather than the command: a
+    /// backgrounded shell may never end, so one past its park budget is
+    /// abandoned with a notice telling the model where to collect it later.
+    bg_shells: std::sync::Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// Whether `bg_shells` outlives this run. A session-owned registry never
+    /// parks the run on a command that has not finished: the owner delivers a
+    /// later completion as a fresh turn, so the user can keep talking meanwhile.
+    bg_shells_outlive_run: bool,
+    /// Whether the subagent registry in `subagents` outlives this run, on the
+    /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
+    /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
+    subagent_bg_outlive_run: bool,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -656,15 +896,55 @@ impl CompositeToolInvoker {
         }
     }
 
+    /// Whether the backgrounded shells owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`]: a queued
+    /// ping always, plus a command still running when the registry dies with
+    /// the run (nothing else could deliver its output).
+    fn shells_owed(&self) -> bool {
+        if self.bg_shells_outlive_run {
+            self.bg_shells.has_queued_notices()
+        } else {
+            self.bg_shells.has_pending_work()
+        }
+    }
+
+    /// Whether the background subagents owe the model something the run must
+    /// stay alive for, on the same terms as [`Self::monitors_owed`].
+    fn subagents_owed(&self) -> bool {
+        let Some(ctx) = self.subagents.as_ref() else {
+            return false;
+        };
+        if self.subagent_bg_outlive_run {
+            ctx.bg.has_queued_notices()
+        } else {
+            ctx.bg.has_pending_work()
+        }
+    }
+
     fn tool_context(&self) -> tauri_plugin_agent_tools::tools::ToolContext<'_> {
-        tauri_plugin_agent_tools::tools::ToolContext::new(
+        let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(
             &self.project_root,
             &self.store_root,
             &self.enabled_skills,
-        )
-        .with_network(self.allow_network)
+        );
+        let ctx = match self.memory_home.as_deref() {
+            Some(home) => ctx.with_memory_home(home, self.cross_project),
+            None => ctx,
+        };
+        // The model's skill tools resolve through the same layering as the
+        // system-prompt catalog (project, plugin, user, built-in), and
+        // `skill_write` `scope:"user"` lands in `~/.jan/skills` (the same
+        // `~/.jan` as the user memory scope).
+        let ctx = ctx
+            .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                &self.project_root,
+                &self.enabled_skills,
+            ))
+            .with_skill_user_root(self.memory_home.as_deref());
+        ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
+        .with_hidden_root(self.hidden_root.as_deref())
         .with_scratch_root(&self.scratch_root)
         .with_env_passthrough(&self.env_passthrough)
         .with_env_set(&self.env_set)
@@ -672,6 +952,24 @@ impl CompositeToolInvoker {
             &self.hooks,
             self.run_mode == crate::core::agent::plan::RunMode::Plan,
             Some(self.hook_sink()),
+        )
+        .with_shell_done_sink(self.shell_done_sink())
+    }
+
+    /// Where a backgrounded `bash` command reports when it finally ends: the
+    /// run's shell registry, drained into a `<SYSTEM>` reminder at the top of
+    /// the next turn the way a finished subagent is.
+    fn shell_done_sink(&self) -> tauri_plugin_agent_tools::tools::ShellDoneSink {
+        // Shared rather than borrowed because the sink outlives the call that
+        // created it, the way the hook and output sinks do.
+        let shells = self.bg_shells.clone();
+        std::sync::Arc::new(
+            move |event: tauri_plugin_agent_tools::tools::ShellEvent| match event {
+                tauri_plugin_agent_tools::tools::ShellEvent::Backgrounded(handoff) => {
+                    shells.start(handoff)
+                }
+                tauri_plugin_agent_tools::tools::ShellEvent::Finished(done) => shells.finish(done),
+            },
         )
     }
 
@@ -763,8 +1061,165 @@ impl CompositeToolInvoker {
         outcome.denied
     }
 
+    /// Whether `name` is a tool the client executes. Always `false` where there
+    /// is no client: the desktop build has no peer that could answer one.
+    fn is_host_tool(&self, name: &str) -> bool {
+        #[cfg(feature = "cli")]
+        {
+            self.host_tools.is_host_tool(name)
+        }
+        #[cfg(not(feature = "cli"))]
+        {
+            let _ = name;
+            false
+        }
+    }
+
+    /// How the gate treats a call to host tool `name`. Off the headless build
+    /// there are no host tools, so the answer is never consulted there.
+    fn host_gate(&self, name: &str) -> HostGate {
+        #[cfg(feature = "cli")]
+        {
+            use crate::core::agent::host_tools::HostCapability;
+            let capability = self.host_tools.get(name).and_then(|t| t.capability);
+            match capability {
+                // Plan mode and concurrency follow the capability even when
+                // the host owns the gate; only the prompt is the host's.
+                Some(HostCapability::Read) => HostGate::Read,
+                _ if self.host_owns_gate => HostGate::Host,
+                Some(HostCapability::Actuator) => HostGate::Actuator,
+                None => HostGate::Opaque,
+            }
+        }
+        #[cfg(not(feature = "cli"))]
+        {
+            let _ = name;
+            HostGate::Opaque
+        }
+    }
+
+    /// Ask the user about a host tool call, honoring a thread-scoped "allow
+    /// always" the user already gave for it.
+    async fn approve_host_tool(&self, name: &str) -> bool {
+        if self.grants.lock().unwrap().covers_mcp(name) {
+            return true;
+        }
+        match self.prompt_mcp_permission(name).await {
+            PermissionDecision::AllowOnce => true,
+            PermissionDecision::AllowAlways => {
+                self.grants.lock().unwrap().grant_mcp(name);
+                true
+            }
+            PermissionDecision::Deny => false,
+        }
+    }
+
+    /// Hand a host tool call to the client and wait for its answer.
+    ///
+    /// The returned text is what the model sees, in every outcome, unless the
+    /// host answered with content parts: a host that fails, or one that goes
+    /// away mid-call, still produces a tool message. An unanswered call would
+    /// otherwise leave the conversation with an assistant turn whose call is
+    /// never resolved, which is not a state the run can be resumed from.
+    #[cfg(feature = "cli")]
+    async fn call_host_tool(&self, name: &str, args: &serde_json::Value) -> HostCallResult {
+        let Some(tool) = self.host_tools.get(name) else {
+            return (format!("ERROR: host tool '{name}' is not registered"), None, None);
+        };
+        // The same hook bracket the plugin path fires, for the same reason: a
+        // host tool is still a tool call, and a PreToolUse policy that could
+        // not see it would have a hole exactly where a third party's code runs.
+        let payload = tauri_plugin_agent_tools::tools::hooks::HookPayload {
+            tool_name: Some(name.to_string()),
+            tool_input: Some(args.clone()),
+            ..Default::default()
+        };
+        if let Some(reason) = self
+            .fire_hooks(
+                tauri_plugin_agent_tools::tools::hooks::HookEvent::PreToolUse,
+                payload.clone(),
+            )
+            .await
+        {
+            return (hook_denied_msg(name, &reason), None, None);
+        }
+        // After the hook, so a policy sees every attempted call, and before
+        // the request exists, so the host -- possibly driving hardware --
+        // never receives arguments its own schema forbids.
+        if let Err(why) = tool.validate(args) {
+            return (
+                format!(
+                    "ERROR: arguments for host tool '{}' do not match its schema: {why}",
+                    tool.name
+                ),
+                None,
+                None,
+            );
+        }
+        let (request_id, receiver) =
+            crate::core::agent::host_tools::register(&self.host_tool_requests).await;
+        // The host declared `observe` and dispatches on `observe`; the `host__`
+        // prefix is this layer's business, not the host's. A child's request
+        // goes to the root channel unwrapped, so the client answers it exactly
+        // as it answers the main run's.
+        let (sink, run_id) = match &self.host_tool_route {
+            Some((sender, run_id)) => (sender, Some(run_id.clone())),
+            None => (&self.events, None),
+        };
+        let _ = sink.send(StreamEvent::ToolRequest {
+            request_id: request_id.clone(),
+            tool_name: tool.name.clone(),
+            args: args.clone(),
+            run_id,
+        });
+        let (content, parts, details) = match receiver.await {
+            Ok(Ok(result)) => {
+                if result.is_error {
+                    let parts = result.parts.map(mark_parts_as_error);
+                    (format!("ERROR: {}", result.content), parts, result.details)
+                } else {
+                    (result.content, result.parts, result.details)
+                }
+            }
+            Ok(Err(crate::core::agent::host_tools::HostToolError::Cancelled)) => {
+                self.host_tool_requests.lock().await.remove(&request_id);
+                (
+                    format!("ERROR: host tool '{}' was cancelled before it answered", tool.name),
+                    None,
+                    None,
+                )
+            }
+            // Stranded by a closed pipe, or the sender dropped with the run.
+            Ok(Err(crate::core::agent::host_tools::HostToolError::ClientGone)) | Err(_) => {
+                self.host_tool_requests.lock().await.remove(&request_id);
+                (
+                    format!("ERROR: host tool '{}' was not answered: the client is gone", tool.name),
+                    None,
+                    None,
+                )
+            }
+        };
+        self.fire_hooks(
+            tauri_plugin_agent_tools::tools::hooks::HookEvent::PostToolUse,
+            tauri_plugin_agent_tools::tools::hooks::HookPayload {
+                tool_result: Some(content.clone()),
+                ..payload
+            },
+        )
+        .await;
+        (content, parts, details)
+    }
+
     /// Prompt the user to approve an MCP tool call, mirroring the built-in gate.
     /// A dropped responder (client gone / run cancelled) resolves to Deny.
+    ///
+    /// Plugin and host tools are prompted through here too: `prompt_kind` is
+    /// `"mcp"` for all three because it names the *class* a consumer renders --
+    /// an opaque third-party capability -- not which subsystem runs the call.
+    /// The `tool_name` is the qualified one the model called (`host__move`),
+    /// which is what a user needs to see; note that the matching `tool_request`
+    /// carries the host's bare name (`move`) instead, since the host dispatches
+    /// on the name it declared.
     async fn prompt_mcp_permission(&self, tool_name: &str) -> PermissionDecision {
         let request_id = next_permission_id();
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -844,12 +1299,16 @@ impl CompositeToolInvoker {
                 };
                 match spawn_dispatch_plan(
                     &ctx.bg,
+                    ctx.bg_generation,
                     &ctx.parent_args,
                     plan,
                     &crate::core::agent::subagent::ParentRun {
                         model: ctx.model_id.clone(),
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
+                        cost_remaining: ctx.cost_ceiling,
+                        tool_ceiling: ctx.tool_ceiling.clone(),
+                        known_tools: ctx.known_tools.clone(),
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -1171,15 +1630,13 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     )
 }
 
-/// Message for a call that reached the hidden agent state directory. Says the
-/// path does not exist *for the agent* and that retrying is pointless: pointing
-/// at a deny list would send the model reading a file that is hidden too.
+/// Refusal for a path or command reaching the Jan home. Structural, not a
+/// policy the user edits, so it points at the dedicated tools instead.
 fn hidden_path_msg(name: &str) -> String {
     format!(
-        "ERROR: tool '{name}' refused: '{}' is the agent's own state directory and is not part of \
-         the project. It is hidden from every tool -- do not try to reach it another way. Skills \
-         and memory are available through the skill_*/memory_* tools.",
-        tauri_plugin_agent_tools::tools::sandbox::JAN_DIR
+        "ERROR: tool '{name}' refused: the Jan home (~/.jan) holds the agent's own \
+         configuration and state and is hidden from every tool -- do not try to reach it \
+         another way. Skills and memory are available through the skill_*/memory_* tools."
     )
 }
 
@@ -1237,17 +1694,35 @@ impl ToolInvoker for CompositeToolInvoker {
         out.extend(std::mem::take(
             &mut *self.hook_notices_queue.lock().unwrap(),
         ));
+        // A backgrounded shell that finished rides the same channel. It carries
+        // a headline, like a monitor match and unlike a subagent: no other row
+        // reports that the command ended.
+        out.extend(
+            self.bg_shells
+                .take_notices()
+                .into_iter()
+                .map(|n| BackgroundNotice {
+                    headline: Some(n.headline),
+                    text: n.text,
+                }),
+        );
         out
     }
 
     fn background_pending(&self) -> bool {
-        self.subagents
-            .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work())
+        self.subagents_owed()
             || self.monitors_owed()
             // A queued hook answer is owed to the model the same way a monitor
             // match is: the turn that would end must deliver it first.
             || !self.hook_notices_queue.lock().unwrap().is_empty()
+            // Likewise a backgrounded command: ending the run here would drop
+            // the output of a build the model is still waiting on. Bounded
+            // too, though the bound is the park's rather than the command's --
+            // a shell has no deadline of its own, so `BackgroundShells`
+            // abandons one past its budget with a notice saying so. A
+            // session-owned registry never parks on a command still running:
+            // its owner starts a turn when the output lands.
+            || self.shells_owed()
     }
 
     fn monitor_snapshot(&self) -> Vec<tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot> {
@@ -1267,24 +1742,32 @@ impl ToolInvoker for CompositeToolInvoker {
         // Each wait returns on a notice OR when its own side has nothing left,
         // so an exhausted side must not be selected over: it would win
         // instantly every time and starve the side actually being waited on.
-        // The re-check between iterations is what `run_turn_cycle` does anyway.
-        // A session-owned set is still selected while a subagent is awaited: a
-        // match landing then should wake the park like a finished child does.
-        let sub_pending = self
+        // Hence only the pending sides are collected here. The re-check between
+        // iterations is what `run_turn_cycle` does anyway, and a session-owned
+        // monitor set is still selected while a subagent is awaited: a match
+        // landing then should wake the park like a finished child does.
+        //
+        // A list of futures rather than a match over every combination of
+        // (subagent, monitor, shell): with three sources the arms would be
+        // eight, and a fourth would double them again. `select_all` keeps the
+        // same guarantee with one rule.
+        let mut waits: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> =
+            Vec::new();
+        if let Some(ctx) = self
             .subagents
             .as_ref()
-            .is_some_and(|ctx| ctx.bg.has_pending_work());
-        let mon_pending = self.monitors.has_pending_work();
-        match (self.subagents.as_ref(), sub_pending, mon_pending) {
-            (Some(ctx), true, true) => {
-                tokio::select! {
-                    _ = ctx.bg.wait_for_notice() => {}
-                    _ = self.monitors.wait_for_notice() => {}
-                }
-            }
-            (Some(ctx), true, false) => ctx.bg.wait_for_notice().await,
-            (_, _, true) => self.monitors.wait_for_notice().await,
-            _ => {}
+            .filter(|ctx| ctx.bg.has_pending_work())
+        {
+            waits.push(Box::pin(ctx.bg.wait_for_notice()));
+        }
+        if self.monitors.has_pending_work() {
+            waits.push(Box::pin(self.monitors.wait_for_notice()));
+        }
+        if self.bg_shells.has_pending_work() {
+            waits.push(Box::pin(self.bg_shells.wait_for_notice()));
+        }
+        if !waits.is_empty() {
+            let _ = futures::future::select_all(waits).await;
         }
     }
 
@@ -1304,6 +1787,10 @@ impl ToolInvoker for CompositeToolInvoker {
         // that prompts, writes, execs, or dispatches stays sequential so
         // permission prompts don't interleave and writes can't race.
         let mut read_futures = Vec::new();
+        // Host tools declared `read`: auto-allowed like the built-in reads and
+        // run concurrently with each other once the gating pass is over.
+        #[cfg(feature = "cli")]
+        let mut host_read_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         for tc in tool_calls {
             let name = tc
                 .get("function")
@@ -1390,6 +1877,80 @@ impl ToolInvoker for CompositeToolInvoker {
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 let content = self.handle_monitor_tool(&args).await;
                 out.push(ToolOutcome::plain(id, content));
+                continue;
+            }
+            // Host tools execute in the client, not here. The call leaves the
+            // process instead of running in it, and the host's declared
+            // capability decides the gate (see `host_gate`). `is_host_tool` is
+            // constant `false` off the headless build, which has no client.
+            if self.is_host_tool(name) {
+                let id = tc
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let gate = self.host_gate(name);
+                if self.run_mode == crate::core::agent::plan::RunMode::Plan
+                    && gate != HostGate::Read
+                {
+                    out.push(ToolOutcome::plain(id, plan_mode_read_only_msg(name)));
+                    continue;
+                }
+                if self.permissions.is_denied(name) {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        denied_by_policy_msg(name, &self.project_root),
+                    ));
+                    continue;
+                }
+                let args: serde_json::Value = tc
+                    .get("function")
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| serde_json::from_str(s).ok())
+                    .unwrap_or(serde_json::Value::Object(Default::default()));
+                // A read is deferred and joined with the other auto-allowed
+                // reads below, so two camera frames do not wait on each other.
+                // `self` is borrowed by the future, which is why these are
+                // collected here and only driven after this loop is done.
+                #[cfg(feature = "cli")]
+                if gate == HostGate::Read {
+                    host_read_calls.push((id, name.to_string(), args));
+                    continue;
+                }
+                let approved = match gate {
+                    HostGate::Read | HostGate::Host => true,
+                    // An actuator is prompted even under `auto_approve`: that
+                    // is the whole point of declaring one. A session grant
+                    // still covers it, since the user said so explicitly.
+                    HostGate::Actuator => self.approve_host_tool(name).await,
+                    HostGate::Opaque => {
+                        self.auto_approve || self.approve_host_tool(name).await
+                    }
+                };
+                if !approved {
+                    out.push(ToolOutcome::plain(
+                        id,
+                        format!("ERROR: tool '{name}' denied by user"),
+                    ));
+                    continue;
+                }
+                #[cfg(feature = "cli")]
+                {
+                    let (content, parts, details) = self.call_host_tool(name, &args).await;
+                    out.push(ToolOutcome {
+                        parts,
+                        details,
+                        ..ToolOutcome::plain(id, content)
+                    });
+                }
+                // Unreachable off the headless build, where `is_host_tool` is
+                // constant `false`.
+                #[cfg(not(feature = "cli"))]
+                {
+                    let _ = &args;
+                    out.push(ToolOutcome::plain(id, String::new()));
+                }
                 continue;
             }
             // Plugin-declared tools are dispatched ahead of the MCP fallback:
@@ -1580,14 +2141,13 @@ impl ToolInvoker for CompositeToolInvoker {
                     // read-only or writable root to attach.
                     read_roots: &[],
                     write_roots: &[],
-                    hide_jan: self.sandbox,
+                    hidden_root: self.hidden_root.as_deref(),
                 },
                 &self.permissions,
                 &snapshot,
             );
             // Auto-approval suppresses every prompt (sandbox escape, write, exec) but
-            // still honors HardDeny, so the hidden `.jan` invariant (while the shell
-            // is sandboxed) and explicit agent.toml denies hold.
+            // still honors HardDeny, so explicit agent.toml denies hold.
             let decision = match decision {
                 Decision::Prompt(_) if self.auto_approve => Decision::Allow,
                 other => other,
@@ -1601,10 +2161,13 @@ impl ToolInvoker for CompositeToolInvoker {
                 // and builds the context inside.
                 let root = self.project_root.clone();
                 let store = self.store_root.clone();
+                let memory_home = self.memory_home.clone();
+                let cross_project = self.cross_project;
                 let enabled = self.enabled_skills.clone();
                 let allow_network = self.allow_network;
                 let allow_home_read = self.allow_home_read;
                 let sandbox = self.sandbox;
+                let hidden = self.hidden_root.clone();
                 let scratch = self.scratch_root.clone();
                 // Hooks come along: a read is still a tool call, and a
                 // PreToolUse policy that stopped applying to whatever happened
@@ -1613,18 +2176,27 @@ impl ToolInvoker for CompositeToolInvoker {
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
                 read_futures.push(async move {
-                    let ctx = ToolContext::new(&root, &store, &enabled)
+                    let ctx = ToolContext::new(&root, &store, &enabled);
+                    let ctx = match memory_home.as_deref() {
+                        Some(home) => ctx.with_memory_home(home, cross_project),
+                        None => ctx,
+                    };
+                    let ctx = ctx
+                        .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                            &root, &enabled,
+                        ))
+                        .with_skill_user_root(memory_home.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
+                        .with_hidden_root(hidden.as_deref())
                         .with_scratch_root(&scratch)
                         .with_hooks(&hooks, planning, Some(hook_sink));
                     let (text, diff, images) = execute_builtin_with_diff(tool, &args, &ctx).await;
                     ToolOutcome {
-                        id,
-                        content: text,
                         diff,
                         images: images.unwrap_or_default(),
+                        ..ToolOutcome::plain(id, text)
                     }
                 });
                 continue;
@@ -1718,14 +2290,25 @@ impl ToolInvoker for CompositeToolInvoker {
                 }
             };
             out.push(ToolOutcome {
-                id,
-                content: text,
                 diff,
                 images: images.unwrap_or_default(),
+                ..ToolOutcome::plain(id, text)
             });
         }
         if !read_futures.is_empty() {
             out.extend(futures::future::join_all(read_futures).await);
+        }
+        #[cfg(feature = "cli")]
+        if !host_read_calls.is_empty() {
+            let calls = host_read_calls.iter().map(|(id, name, args)| async move {
+                let (content, parts, details) = self.call_host_tool(name, args).await;
+                ToolOutcome {
+                    parts,
+                    details,
+                    ..ToolOutcome::plain(id.clone(), content)
+                }
+            });
+            out.extend(futures::future::join_all(calls).await);
         }
         if !mcp_calls.is_empty() {
             let results = self.mcp.invoke(&mcp_calls).await?;
@@ -1790,13 +2373,21 @@ pub(crate) async fn run_server_side_openai_orchestration(
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        host_system_prompt: None,
+        project_memory: true,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
         auto_approve: false,
         run_mode: crate::core::agent::plan::RunMode::Normal,
         session_id: None,
+        // The top-level run is not a child: no dispatch gave it an id.
+        run_id: None,
         sandbox: None,
         monitors: None,
+        // Run-owned: the proxy has no conversation to deliver a later ping
+        // into, so background work must be settled before the run returns.
+        bg_shells: None,
+        subagent_bg: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -1869,6 +2460,14 @@ pub(crate) async fn run_orchestration_streamed(
 
 /// Restrict the collected MCP tools to `allowed` (by tool name), pruning both
 /// the OpenAI tool array and the tool->server routing map in lockstep.
+/// The function names in an OpenAI `tools` array.
+fn tool_names(tools: &[serde_json::Value]) -> Vec<String> {
+    tools
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
+        .collect()
+}
+
 fn apply_tool_allowlist(
     openai_tools: &mut Vec<serde_json::Value>,
     tool_to_server: &mut HashMap<String, String>,
@@ -1923,6 +2522,7 @@ fn advertise_local_tools(
     max_parallel_subagents: u32,
     ask_enabled: bool,
     todo_enabled: bool,
+    #[cfg(feature = "cli")] host_tools: &crate::core::agent::host_tools::HostToolSet,
 ) {
     let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
     if project_root.is_some() {
@@ -2025,6 +2625,54 @@ fn advertise_local_tools(
     if todo_enabled && allowed_names.is_none_or(|allowed| allowed.contains("todo")) {
         openai_tools.push(crate::core::agent::todo::todo_tool_schema());
     }
+    // Host tools run in the client, not here, so they need no project root --
+    // like `ask` and `todo` they are advertised independent of that gate. An
+    // undeclared or actuator tool shares the plugin/MCP treatment and is
+    // withheld in read-only Plan mode; one the host declared `read` stays.
+    // Every one honors the deny list.
+    #[cfg(feature = "cli")]
+    {
+        for tool in host_tools.all() {
+            let is_read =
+                tool.capability == Some(crate::core::agent::host_tools::HostCapability::Read);
+            if planning && !is_read {
+                continue;
+            }
+            if permissions.is_denied(&tool.qualified_name) {
+                continue;
+            }
+            if let Some(allow) = allowed_names {
+                if !allow.contains(&tool.qualified_name) {
+                    continue;
+                }
+            }
+            openai_tools.push(tool.schema());
+        }
+    }
+}
+
+/// The last completion of a run stopped by its money ceiling, rewritten into a
+/// terminal answer.
+///
+/// Two things have to change. The `finish_reason` becomes `budget_exceeded`, so
+/// a caller can tell a run that ran out of money from one the model chose to
+/// end -- the difference between "here is your answer" and "here is as far as
+/// your budget got". And any `tool_calls` are dropped: this completion is
+/// returned *instead of* executing them, so leaving them on the message would
+/// hand the caller an assistant turn whose calls are never answered, which is
+/// an invalid conversation to resume from.
+fn halted_over_budget(mut completion: serde_json::Value) -> serde_json::Value {
+    if let Some(choice) = completion
+        .get_mut("choices")
+        .and_then(|c| c.as_array_mut())
+        .and_then(|choices| choices.first_mut())
+    {
+        if let Some(message) = choice.get_mut("message").and_then(|m| m.as_object_mut()) {
+            message.remove("tool_calls");
+        }
+        choice["finish_reason"] = serde_json::json!("budget_exceeded");
+    }
+    completion
 }
 
 fn stop_reason_of(completion: &serde_json::Value) -> String {
@@ -2164,6 +2812,7 @@ pub(crate) async fn context_advertised_tools(
     max_parallel_subagents: u32,
     ask_enabled: bool,
     todo_enabled: bool,
+    host_tools: &crate::core::agent::host_tools::HostToolSet,
 ) -> Vec<serde_json::Value> {
     let (mut tools, mut tool_to_server) =
         crate::core::agent::upstream::collect_mcp_openai_tools(mcp_servers, mcp_settings)
@@ -2184,6 +2833,7 @@ pub(crate) async fn context_advertised_tools(
         max_parallel_subagents,
         ask_enabled,
         todo_enabled,
+        host_tools,
     );
     tools
 }
@@ -2246,6 +2896,31 @@ async fn todo_prompt_addendum(
     has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
+/// The per-turn guidance block for this run, if any. Plan mode's is kept even
+/// under a host prompt: a TUI `/resume` of a host-prompted thread can run in
+/// Plan mode, and without the warning the model only learns of it from
+/// refusals. It sits in the tail, so the host's cached prefix is unaffected.
+/// Todo guidance is Jan's own prose and is withheld like every other block.
+async fn turn_addendum(
+    run_mode: crate::core::agent::plan::RunMode,
+    jan_owns_prompt: bool,
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<(Composer, &'static str)> {
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        return Some((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum(),
+        ));
+    }
+    if !jan_owns_prompt {
+        return None;
+    }
+    todo_prompt_addendum(eager_todo_plan, todo_registry)
+        .await
+        .map(|addendum| (Composer::TodoAddendum, addendum))
+}
+
 /// True when this turn should be forced to stage a plan: a `/goal` run whose
 /// list is still empty. Forcing is deliberately limited to goal mode -- an
 /// unattended loop needs a plan to work against, while an ordinary turn is the
@@ -2284,15 +2959,28 @@ async fn orchestrate_inner(
         permissions,
         project_root,
         permission_requests,
+        #[cfg(feature = "cli")]
+        host_tools,
+        #[cfg(feature = "cli")]
+        host_tool_requests,
+        #[cfg(feature = "cli")]
+        host_owns_gate,
+        #[cfg(feature = "cli")]
+        host_tool_route,
         ask_requests,
         todo_registry,
         system_prompt_override,
+        host_system_prompt,
+        project_memory,
         subagents_enabled,
         max_parallel_subagents,
         auto_approve,
         run_mode,
         session_id,
+        run_id,
         monitors: session_monitors,
+        bg_shells: session_bg_shells,
+        subagent_bg: session_subagent_bg,
         sandbox,
         compaction,
     } = args;
@@ -2346,34 +3034,48 @@ async fn orchestrate_inner(
         .as_ref()
         .map(|s| s.prompt.clone())
         .unwrap_or_default();
-    let stable_system = build_run_system_prompt(
-        assistant_instructions.as_deref(),
-        system_prompt_override.as_deref(),
-        project_root.as_deref(),
-        session_id.as_deref(),
-        *subagents_enabled,
-        settings.as_ref().is_some_and(|s| s.sandbox),
-        &prompt_policy,
-    )?;
+    // A host prompt replaces the composition outright: nothing Jan writes is
+    // placed around it, above the cache line or below the history.
+    let stable_system = match host_system_prompt.as_deref() {
+        Some(prompt) => Some(ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        }),
+        None => build_run_system_prompt(
+            assistant_instructions.as_deref(),
+            system_prompt_override.as_deref(),
+            project_root.as_deref(),
+            session_id.as_deref(),
+            *subagents_enabled,
+            settings.as_ref().is_some_and(|s| s.sandbox),
+            &prompt_policy,
+        )?,
+    };
+    let jan_owns_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    volatile_parts.push((
-        Composer::Date,
-        format!(
-            "Today's date is {}.",
-            chrono::Local::now().format("%Y-%m-%d")
-        ),
-    ));
+    if jan_owns_prompt {
+        volatile_parts.push((
+            Composer::Date,
+            format!(
+                "Today's date is {}.",
+                chrono::Local::now().format("%Y-%m-%d")
+            ),
+        ));
+    }
     // Which checkout the work applies to. Per-turn rather than part of the
     // environment block above, because anything that switches branch -- the
     // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref() {
+    if let Some(root) = project_root.as_deref().filter(|_| jan_owns_prompt) {
         volatile_parts.push((Composer::GitState, git_state_block(root)));
     }
     // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory.
-    if system_prompt_override.is_none() {
+    // is indexed. Child runs keep their isolated history and skip memory. A
+    // host-prompted run still indexes its answers but is never sent recall:
+    // that is a block Jan would write into a prompt the host owns.
+    let use_memory = *project_memory && system_prompt_override.is_none();
+    if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
@@ -2396,13 +3098,10 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    if run_mode == crate::core::agent::plan::RunMode::Plan {
-        volatile_parts.push((
-            Composer::PlanAddendum,
-            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
-        ));
-    } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
+    if let Some((composer, addendum)) =
+        turn_addendum(run_mode, jan_owns_prompt, eager_todo_plan, todo_registry).await
+    {
+        volatile_parts.push((composer, addendum.to_string()));
     }
 
     // One tail message, built from every block the policy kept below the cache
@@ -2490,6 +3189,10 @@ async fn orchestrate_inner(
 
     let (mut openai_tools, mut tool_to_server) =
         collect_mcp_openai_tools(mcp_servers, mcp_settings).await?;
+    // Taken before plan mode, the allowlist and deny rules filter the list: a
+    // child naming a tool the parent withholds must still be read as that
+    // tool, never as a host tool that shares its bare name.
+    let mut known_tools = tool_names(&openai_tools);
 
     // Optional per-run allowlist: when `allowed_tools` is present, expose only
     // those MCP tools (an empty array means no tools). Absent = all tools.
@@ -2531,6 +3234,8 @@ async fn orchestrate_inner(
         *max_parallel_subagents,
         ask_requests.is_some(),
         todo_registry.is_some(),
+        #[cfg(feature = "cli")]
+        host_tools,
     );
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -2545,15 +3250,25 @@ async fn orchestrate_inner(
 
     let max_turns = body_turn_cap(json_body);
 
+    let provenance = request_identity(&model_id, provider_configs, run_id.as_deref()).await;
+    let converter = provenance
+        .api_type
+        .as_deref()
+        .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
+
     let http_model = HttpModelInvoker {
         client: client.clone(),
         upstream_url,
         api_keys: session_api_keys,
         provider_configs: provider_configs.clone(),
-        converter: resolve_api_type_for_model(&model_id, provider_configs.clone())
-            .await
-            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter,
         converter_client: converter_http_client(),
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
+        session_id: args.session_id.clone(),
+        provenance,
+        provenance_events: Some(events.clone()),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -2562,25 +3277,53 @@ async fn orchestrate_inner(
     };
 
     let max_session_tokens = body_session_budget(json_body);
-    let mut budget = SessionBudget::new(max_session_tokens);
-
-    // Top-level runs index their final assistant answer into project memory;
-    // isolated child (subagent) runs skip it to keep history independent.
-    let index_memory = system_prompt_override.is_none();
+    let cost_ceiling = body_cost_ceiling(json_body);
+    let mut budget = SessionBudget::new(max_session_tokens).with_cost_ceiling(cost_ceiling);
 
     if let Some(root) = project_root {
-        // Background subagents are scoped to this run: `_bg_guard` aborts any
-        // still-running child when `orchestrate_inner` returns or is cancelled.
-        // The cap (`max_parallel_subagents`) is snapshotted here, at run start.
-        let bg = std::sync::Arc::new(
-            crate::core::agent::subagent::BackgroundSubagents::new(*max_parallel_subagents),
-        );
-        let _bg_guard = crate::core::agent::subagent::AbortOnDrop(bg.clone());
+        // Background subagents are scoped to this run unless the session owns
+        // them: `_bg_guard` aborts any still-running child when
+        // `orchestrate_inner` returns or is cancelled. The cap
+        // (`max_parallel_subagents`) is snapshotted here, at run start.
+        let bg = session_subagent_bg.clone().unwrap_or_else(|| {
+            std::sync::Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+                *max_parallel_subagents,
+            ))
+        });
+        // A session set outlives the run by design, so the run-scoped teardown
+        // must not arm for it: the owner decides when its children die (the
+        // TUI aborts them on cancel and on session reset). Arming it here would
+        // kill on the first turn's return exactly the children this change
+        // exists to keep running.
+        let _bg_guard = session_subagent_bg
+            .is_none()
+            .then(|| crate::core::agent::subagent::AbortOnDrop(bg.clone()));
         let subagents = args.subagents_enabled.then(|| SubagentContext {
             parent_args: args.clone(),
             model_id: model_id.clone(),
             max_session_tokens,
+            cost_ceiling,
             send_reasoning: body_send_reasoning(json_body),
+            tool_ceiling: allowed_names.as_ref().map(|names| {
+                let mut names: Vec<String> = names.iter().cloned().collect();
+                names.sort_unstable();
+                names
+            }),
+            known_tools: {
+                known_tools.extend(tool_names(&openai_tools));
+                if let Some(root) = project_root.as_deref() {
+                    known_tools.extend(
+                        crate::core::agent::hooks_config::resolve_plugin_tools(root)
+                            .all()
+                            .iter()
+                            .map(|tool| tool.qualified_name.clone()),
+                    );
+                }
+                known_tools.sort_unstable();
+                known_tools.dedup();
+                std::mem::take(&mut known_tools)
+            },
+            bg_generation: bg.generation(),
             bg: bg.clone(),
         });
         // Resolved once above, where the system prompt also needed it.
@@ -2598,13 +3341,18 @@ async fn orchestrate_inner(
         if settings.sandbox {
             tauri_plugin_agent_tools::workspace::ensure_scratch_dir_path(&scratch_root).await?;
         }
+        let (store_root, memory_home, cross_project) =
+            crate::core::agent::project::memory_roots(root);
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
-            store_root: tauri_plugin_agent_tools::workspace::project_store(root),
+            store_root,
+            memory_home,
+            cross_project,
             enabled_skills: settings.enabled_skills,
             allow_network: settings.allow_network,
             allow_home_read: settings.allow_home_read,
             sandbox: settings.sandbox,
+            hidden_root: crate::core::agent::project::hidden_root(settings.sandbox),
             scratch_root: scratch_root.clone(),
             env_passthrough: settings.env_passthrough,
             env_set: settings.env_set,
@@ -2620,6 +3368,8 @@ async fn orchestrate_inner(
             subagents,
             monitors: session_monitors.clone().unwrap_or_default(),
             monitors_outlive_run: session_monitors.is_some(),
+            bg_shells_outlive_run: session_bg_shells.is_some(),
+            subagent_bg_outlive_run: session_subagent_bg.is_some(),
             auto_approve: *auto_approve,
             run_mode,
             // Resolved once per run, like every other config-derived field: a
@@ -2627,7 +3377,16 @@ async fn orchestrate_inner(
             // flight is judged by.
             hooks: crate::core::agent::hooks_config::resolve_hooks(root),
             plugin_tools: crate::core::agent::hooks_config::resolve_plugin_tools(root),
+            #[cfg(feature = "cli")]
+            host_tools: host_tools.clone(),
+            #[cfg(feature = "cli")]
+            host_tool_requests: host_tool_requests.clone(),
+            #[cfg(feature = "cli")]
+            host_owns_gate: *host_owns_gate,
+            #[cfg(feature = "cli")]
+            host_tool_route: host_tool_route.clone(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: session_bg_shells.clone().unwrap_or_default(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -2722,8 +3481,11 @@ async fn orchestrate_inner(
         .await;
         // On a clean exit, wait for any subagents the model dispatched but never
         // explicitly awaited, so their in-flight work isn't aborted and lost by
-        // `_bg_guard`. On an error, teardown still aborts them.
-        if result.is_ok() {
+        // `_bg_guard`. On an error, teardown still aborts them. A session-owned
+        // set is skipped: nothing is about to abort those children, and waiting
+        // here would hold the run open for precisely the work the session set
+        // exists to outlive it.
+        if result.is_ok() && session_subagent_bg.is_none() {
             bg.join_all().await;
         }
         // Fired on failure too: a SessionEnd hook that only ran on the happy
@@ -2741,7 +3503,10 @@ async fn orchestrate_inner(
                 },
             )
             .await;
-        if index_memory {
+        // The recall's gate minus the prompt-ownership half: an ephemeral
+        // session or a child run leaves no answer behind for a later session
+        // to recall, while a host-prompted run does.
+        if use_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
                     m.get("content")
@@ -2922,7 +3687,7 @@ pub(crate) async fn compact_history(
     // are resolved here.
     if let Some(root) = args.project_root.as_deref() {
         let hooks = crate::core::agent::hooks_config::resolve_hooks(root);
-        let store = tauri_plugin_agent_tools::workspace::project_store(root);
+        let store = crate::core::agent::project::store_root(root);
         let ctx = tauri_plugin_agent_tools::tools::ToolContext::new(root, &store, &[])
             .with_sandbox(effective_sandbox(root))
             .with_hooks(&hooks, false, None);
@@ -2937,15 +3702,31 @@ pub(crate) async fn compact_history(
         args.mlx_sessions.clone(),
     )
     .await?;
+    let provenance =
+        request_identity(model_id, &args.provider_configs, args.run_id.as_deref()).await;
+    let converter = provenance
+        .api_type
+        .as_deref()
+        .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
     let model = HttpModelInvoker {
         client: args.client.clone(),
         upstream_url,
         api_keys,
         provider_configs: args.provider_configs.clone(),
-        converter: resolve_api_type_for_model(model_id, args.provider_configs.clone())
-            .await
-            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter,
         converter_client: converter_http_client(),
+        // A compaction call is billed to the same session as the turn that
+        // triggered it, so it carries the same correlation id: leaving it out
+        // would make the session's recorded spend smaller than the bill.
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
+        session_id: args.session_id.clone(),
+        provenance,
+        // A `/compact` runs between turns: there is no run stream in existence
+        // to carry the record, so this request is reported nowhere rather than
+        // somewhere a client cannot read.
+        provenance_events: None,
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
@@ -2971,15 +3752,31 @@ pub(crate) async fn evaluate_goal(
         args.mlx_sessions.clone(),
     )
     .await?;
+    let provenance = request_identity(
+        smol_model_id,
+        &args.provider_configs,
+        args.run_id.as_deref(),
+    )
+    .await;
+    let converter = provenance
+        .api_type
+        .as_deref()
+        .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
     let model = HttpModelInvoker {
         client: args.client.clone(),
         upstream_url,
         api_keys,
         provider_configs: args.provider_configs.clone(),
-        converter: resolve_api_type_for_model(smol_model_id, args.provider_configs.clone())
-            .await
-            .and_then(|(api_type, oauth)| converter_for(Some(&api_type), oauth)),
+        converter,
         converter_client: converter_http_client(),
+        // Same session, same bill (see `compact_history`).
+        client_request_id: crate::core::agent::correlation::session_request_id(
+            args.session_id.as_deref(),
+        ),
+        session_id: args.session_id.clone(),
+        provenance,
+        // Between turns, like `/compact`: no run stream exists to carry it.
+        provenance_events: None,
     };
     crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
 }
@@ -3031,6 +3828,35 @@ fn body_session_budget(json_body: &serde_json::Value) -> Option<u64> {
         .get("max_session_tokens")
         .and_then(|v| v.as_u64())
         .filter(|v| *v > 0)
+}
+
+/// Money ceiling for a request body: `max_budget_usd` plus the `token_rates` to
+/// charge against. Both are required, because a limit with no prices cannot be
+/// enforced and prices with no limit meter nothing -- either alone is a
+/// configuration the caller got wrong, and silently running uncapped is the
+/// one outcome a cost ceiling must never produce. The CLI refuses that case up
+/// front (`resolve_cost_ceiling`); here it simply does not meter.
+///
+/// `0` is not special-cased: a `0` ceiling stops the run at the first billed
+/// request, which is what asking to spend nothing means.
+fn body_cost_ceiling(
+    json_body: &serde_json::Value,
+) -> Option<crate::core::agent::session::CostCeiling> {
+    let max_usd = json_body
+        .get("max_budget_usd")
+        .and_then(|v| v.as_f64())
+        .filter(|v| v.is_finite() && *v >= 0.0)?;
+    let rates = json_body.get("token_rates")?;
+    let rate = |key: &str| rates.get(key).and_then(|v| v.as_f64()).filter(|v| *v >= 0.0);
+    Some(crate::core::agent::session::CostCeiling {
+        rates: crate::core::agent::session::TokenRates {
+            prompt_usd: rate("prompt_usd")?,
+            completion_usd: rate("completion_usd")?,
+            cache_read_usd: rate("cache_read_usd"),
+            cache_write_usd: rate("cache_write_usd"),
+        },
+        max_usd,
+    })
 }
 
 async fn receive_steering(
@@ -3123,19 +3949,50 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// The original span stays in the record - only the projection omits it - so a
 /// later turn, a different provider, or a changed `keep_recent` can still
 /// rebuild from it.
+///
+/// The summarizer's request is billed like any other, so its usage is folded
+/// into `budget` here. A turn can compact several times (the preflight plus the
+/// overflow retries), and spend the budget never saw would make `/usage` and
+/// the money ceiling agree with each other while both undercounted.
+///
+/// Every in-run compaction goes through here, so this is where it is reported:
+/// `Compaction { Started }` before the summarizer call and `Finished` or
+/// `Failed` after it. A plan with nothing to drop sends nothing, since no
+/// summarizer call was made.
 async fn compact(
     transcript: &mut Transcript,
     keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
+    budget: &mut SessionBudget,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    reason: CompactionReason,
 ) -> Result<Option<usize>, String> {
     let Some(plan) = transcript.compaction_plan(keep_recent) else {
         return Ok(None);
     };
     let summarized = plan.summarize.len();
-    let summary =
-        crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+    let report = |phase, messages| {
+        let _ = events.send(StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        });
+    };
+    report(CompactionPhase::Started, None);
+    let (summary, usage) =
+        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
+            .await
+        {
+            Ok(done) => done,
+            Err(error) => {
+                report(CompactionPhase::Failed, None);
+                return Err(error);
+            }
+        };
+    budget.record_side_request(&usage);
     transcript.record_compaction(summary, plan.covers);
+    report(CompactionPhase::Finished, Some(summarized));
     Ok(Some(summarized))
 }
 
@@ -3187,8 +4044,44 @@ async fn run_turn_cycle(
     let mut closeout_nudged = false;
     // The monitor set last published as `StreamEvent::Monitors`.
     let mut shown_monitors = Vec::new();
+    // The last completion this cycle received, so a run stopped by its money
+    // ceiling returns the work it actually did rather than an error with no
+    // answer in it. `None` only before the first request.
+    let mut last_completion: Option<serde_json::Value> = None;
 
     while unlimited || turn < max_turns {
+        // The money ceiling is enforced here, at the one point every path that
+        // would start another request passes through -- the `continue`s below
+        // (truncated response, closeout nudge, steering, tool results) each
+        // lead back to a paid request, so checking at any one of them would
+        // leave the others uncapped.
+        //
+        // A ceiling stops the run; it does not fail it. The turns already taken
+        // are real work the user is being billed for, so the answer is returned
+        // with `finish_reason: "budget_exceeded"` rather than discarded into an
+        // error with no result.
+        if budget.over_cost_ceiling() {
+            if let Some(completion) = last_completion.take() {
+                let spent = budget.spent_usd().unwrap_or(0.0);
+                let max = budget.max_usd().unwrap_or(0.0);
+                log::info!("agent: stopping the run, spent ${spent:.4} of a ${max:.4} ceiling");
+                // Recorded so a resumed thread shows why it stopped mid-task,
+                // rather than looking like the model chose to stop. A system
+                // note, not an assistant turn: the model never wrote it.
+                transcript.record_message(serde_json::json!({
+                    "role": "system",
+                    "content": format!(
+                        "[cost ceiling reached] This run stopped after spending about \
+                         ${spent:.4} against its ${max:.4} ceiling. The task may be \
+                         unfinished; raising --max-budget-usd and resuming continues it."
+                    ),
+                }));
+                let _ = events.send(StreamEvent::MessagesUpdated {
+                    messages: client_history(&transcript, send_reasoning),
+                });
+                return Ok(halted_over_budget(completion));
+            }
+        }
         for message in receive_steering(
             steering,
             project(&transcript, volatile_system.as_deref(), send_reasoning),
@@ -3259,15 +4152,20 @@ async fn run_turn_cycle(
                 // nothing safe left to drop, and retrying here would spin.
                 if !preflighted {
                     preflighted = true;
-                    if let Some(budget) = compaction {
+                    // Named apart from the run's `budget` (money and tokens
+                    // spent), which the compaction below is itself charged to.
+                    if let Some(window) = compaction {
                         let estimate =
                             crate::core::agent::compaction::estimate_request_tokens(&request_value);
-                        if estimate > budget.trigger_tokens() {
+                        if estimate > window.trigger_tokens() {
                             if let Some(dropped) = compact(
                                 &mut transcript,
                                 crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                                 model_id,
                                 model,
+                                budget,
+                                events,
+                                CompactionReason::Preflight,
                             )
                             .await?
                             {
@@ -3275,8 +4173,8 @@ async fn run_turn_cycle(
                                     "agent: prompt estimated at {estimate} tokens against a {} \
                                      token trigger on a {} token window, compacted {dropped} \
                                      messages into a summary before dispatch",
-                                    budget.trigger_tokens(),
-                                    budget.context_window
+                                    window.trigger_tokens(),
+                                    window.context_window
                                 );
                                 // Published for the same reason the overflow
                                 // path below publishes: a client holding the
@@ -3284,16 +4182,9 @@ async fn run_turn_cycle(
                                 let _ = events.send(StreamEvent::MessagesUpdated {
                                     messages: client_history(&transcript, send_reasoning),
                                 });
-                                // The one legitimate cache break in a session,
-                                // and the only way the user can tell it apart
-                                // from a stall: say it happened, and why.
-                                let _ = events.send(StreamEvent::Notice {
-                                    text: format!(
-                                        "compacted {dropped} messages into a summary before sending \
-                                         ({estimate} tokens against a {} token budget)",
-                                        budget.trigger_tokens()
-                                    ),
-                                });
+                                // Announced by `compact` itself, which is
+                                // how the user tells this cache break apart
+                                // from a stall.
                                 continue;
                             }
                         }
@@ -3314,7 +4205,16 @@ async fn run_turn_cycle(
                             .await;
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
-                        let dropped = compact(&mut transcript, keep_recent, model_id, model)
+                        let dropped =
+                            compact(
+                                &mut transcript,
+                                keep_recent,
+                                model_id,
+                                model,
+                                budget,
+                                events,
+                                CompactionReason::ContextOverflow,
+                            )
                             .await?
                             .ok_or(e)?;
                         log::info!(
@@ -3370,11 +4270,15 @@ async fn run_turn_cycle(
             transcript.record_prompt_tail(text);
         }
 
+        last_completion = Some(completion.clone());
         let turn_usage = Usage::from_completion(&completion);
         // Publish before the tool calls run: the numbers describe the request
         // that just landed, and a long tool phase shouldn't sit on them.
         if let Some(usage) = turn_usage.clone() {
-            let _ = events.send(StreamEvent::TurnUsage { usage });
+            let _ = events.send(StreamEvent::TurnUsage {
+                usage,
+                execution_id: crate::core::agent::correlation::execution_id_of(&completion),
+            });
         }
         budget.record(&turn_usage);
 
@@ -3489,6 +4393,9 @@ async fn run_turn_cycle(
                     crate::core::agent::compaction::DEFAULT_KEEP_RECENT,
                     model_id,
                     model,
+                    budget,
+                    events,
+                    CompactionReason::SessionBudget,
                 )
                 .await
                 {
@@ -3700,6 +4607,8 @@ async fn run_turn_cycle(
                 content,
                 diff,
                 images,
+                parts,
+                details,
             } = outcome;
             // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
             // convention is reserved for hard tool failures the model must
@@ -3720,11 +4629,23 @@ async fn run_turn_cycle(
                 is_error,
                 diff: diff.clone(),
             });
+            // Display-only, and after the result so a consumer can attach it
+            // to a row it has already drawn. Never reaches the transcript.
+            if let Some(details) = details {
+                let _ = events.send(StreamEvent::ToolDetails {
+                    id: id.clone(),
+                    details,
+                });
+            }
             // A `read` of an image carries OpenAI `image_url` content parts; the
             // tool message is then a content-part array (text note first, the
             // image parts after) so a vision model sees the image. Other results
-            // stay plain text, preserving the standard tool protocol.
-            let wire_content = if images.is_empty() {
+            // stay plain text, preserving the standard tool protocol. A host
+            // that answered with content parts chose the message itself, so
+            // its parts go out verbatim.
+            let wire_content = if let Some(parts) = parts {
+                serde_json::Value::Array(parts)
+            } else if images.is_empty() {
                 serde_json::Value::String(content.clone())
             } else {
                 let mut parts = vec![serde_json::json!({
@@ -4094,6 +5015,99 @@ mod tests {
         }
     }
 
+    /// A side call -- compaction, a `/goal` evaluation -- invokes the model with
+    /// a private sink, because its own streamed text is a summary or a verdict,
+    /// not the answer the user is reading. Its provenance is not private: the
+    /// record describes a request the run made and spent money on, so it rides
+    /// the run's stream, which is the only place a client or a harness sees it.
+    #[tokio::test]
+    async fn a_side_call_reports_provenance_on_the_run_stream() {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                let Ok(mut stream) = connection else { break };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut headers = String::new();
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                        break;
+                    }
+                    headers.push_str(&line);
+                }
+                let size = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .and_then(|n| n.trim().parse::<usize>().ok())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0; size];
+                let _ = reader.read_exact(&mut body);
+                let answer = concat!(
+                    "data: {\"id\":\"s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",",
+                    "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"summary\"},\"finish_reason\":null}]}\n\n",
+                    "data: {\"id\":\"s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",",
+                    "\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],",
+                    "\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1,\"total_tokens\":2}}\n\n",
+                    "data: [DONE]\n\n",
+                );
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
+            }
+        });
+
+        let (run, mut run_events) = mpsc::unbounded_channel();
+        let (side, mut side_events) = mpsc::unbounded_channel();
+        let invoker = HttpModelInvoker {
+            client: crate::core::agent::upstream::agent_http_client(),
+            upstream_url: url,
+            api_keys: Vec::new(),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            converter: None,
+            converter_client: converter_http_client(),
+            client_request_id: None,
+            session_id: Some("session-1".to_string()),
+            provenance: RequestIdentityOwned {
+                run_id: None,
+                provider: Some("stub".to_string()),
+                api_type: None,
+                oauth: false,
+            },
+            provenance_events: Some(run),
+        };
+
+        let request =
+            json!({"model":"m","messages":[{"role":"user","content":"summarize this"}]});
+        invoker
+            .invoke(&request, &side)
+            .await
+            .expect("the stub provider answers");
+
+        let reported: Vec<StreamEvent> = std::iter::from_fn(|| run_events.try_recv().ok()).collect();
+        assert!(
+            reported.iter().any(|event| matches!(
+                event,
+                StreamEvent::RequestProvenance { session_id, .. }
+                    if session_id.as_deref() == Some("session-1")
+            )),
+            "the run stream carries the record: {reported:?}"
+        );
+        let private: Vec<StreamEvent> = std::iter::from_fn(|| side_events.try_recv().ok()).collect();
+        assert!(
+            !private
+                .iter()
+                .any(|event| matches!(event, StreamEvent::RequestProvenance { .. })),
+            "the private sink keeps only the side call's own text: {private:?}"
+        );
+    }
+
     #[derive(Default)]
     struct MockTool {
         calls: StdMutex<Vec<Vec<serde_json::Value>>>,
@@ -4158,6 +5172,30 @@ mod tests {
         // No registry means the `todo` tool is never advertised, so forcing it
         // would name a tool the request does not carry.
         assert!(!should_force_goal_todo_plan(true, &None).await);
+    }
+
+    #[tokio::test]
+    async fn plan_guidance_reaches_a_host_prompted_turn_but_todo_guidance_does_not() {
+        use crate::core::agent::plan::RunMode;
+        let staged = Some(staged_todo_registry());
+        for jan_owns_prompt in [true, false] {
+            assert_eq!(
+                turn_addendum(RunMode::Plan, jan_owns_prompt, false, &staged).await,
+                Some((
+                    Composer::PlanAddendum,
+                    crate::core::agent::plan::plan_mode_prompt_addendum()
+                )),
+                "jan_owns_prompt={jan_owns_prompt}"
+            );
+        }
+        assert_eq!(
+            turn_addendum(RunMode::Normal, true, false, &staged).await,
+            Some((
+                Composer::TodoAddendum,
+                crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM
+            ))
+        );
+        assert_eq!(turn_addendum(RunMode::Normal, false, false, &staged).await, None);
     }
 
     #[tokio::test]
@@ -4233,7 +5271,7 @@ mod tests {
     #[cfg(feature = "cli")]
     fn agent_toml_narrows_what_reaches_the_cache_line() {
         let root = unique_project_root();
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("agent dir");
         std::fs::write(
             agent_dir.join("agent.toml"),
@@ -4284,7 +5322,7 @@ mod tests {
     #[cfg(feature = "cli")]
     fn agent_toml_that_allows_a_varying_composer_fails_the_run() {
         let root = unique_project_root();
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("agent dir");
         std::fs::write(
             agent_dir.join("agent.toml"),
@@ -4607,6 +5645,7 @@ mod tests {
                 context_window: 1_000,
                 ratio: 0.5,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -4641,15 +5680,21 @@ mod tests {
         }
 
         drop(tx);
-        let mut notices = Vec::new();
+        let mut phases = Vec::new();
         while let Some(ev) = rx.recv().await {
-            if let StreamEvent::Notice { text } = ev {
-                notices.push(text);
+            if let StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::Preflight,
+                ..
+            } = ev
+            {
+                phases.push(phase);
             }
         }
-        assert!(
-            notices.iter().any(|n| n.contains("before sending")),
-            "a prefix break the user did not ask for has to be announced: {notices:?}"
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "a prefix break the user did not ask for has to be announced"
         );
     }
 
@@ -4684,6 +5729,7 @@ mod tests {
                 context_window: 128_000,
                 ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -4723,13 +5769,14 @@ mod tests {
                             .unwrap_or("")
                             .to_string();
                         ToolOutcome {
-                            id,
-                            content: "Read image pic.png (image/png, 10 bytes)".to_string(),
-                            diff: None,
                             images: vec![tauri_plugin_agent_tools::tools::ImageContentPart {
                                 data_url: "data:image/png;base64,QUJD".to_string(),
                                 name: "pic.png".to_string(),
                             }],
+                            ..ToolOutcome::plain(
+                                id,
+                                "Read image pic.png (image/png, 10 bytes)".to_string(),
+                            )
                         }
                     })
                     .collect())
@@ -4774,6 +5821,99 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert_eq!(content[1]["image_url"]["url"], "data:image/png;base64,QUJD");
         assert_eq!(content[1]["image_url"]["detail"], "auto");
+    }
+
+    /// A host tool that answered with content parts chose the tool message
+    /// itself: the parts go out verbatim and in order. Its details are for the
+    /// host's display only, so they arrive as a `tool_details` event right
+    /// after the result and never appear in what the model is sent.
+    #[tokio::test]
+    async fn host_parts_are_the_tool_message_and_details_stay_off_the_wire() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let model = MockModel::new(vec![
+            tool_call_completion(),
+            json!({ "choices": [{ "message": { "content": "final answer" }, "finish_reason": "stop" }] }),
+        ]);
+        struct PartsTool;
+        #[async_trait]
+        impl ToolInvoker for PartsTool {
+            async fn invoke(
+                &self,
+                tool_calls: &[serde_json::Value],
+            ) -> Result<Vec<ToolOutcome>, String> {
+                Ok(tool_calls
+                    .iter()
+                    .map(|tc| ToolOutcome {
+                        parts: Some(vec![
+                            json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }),
+                            json!({ "type": "text", "text": "after the image" }),
+                        ]),
+                        details: Some(json!({ "secret_pose": [1, 2, 3] })),
+                        ..ToolOutcome::plain(
+                            tc["id"].as_str().unwrap_or("").to_string(),
+                            "after the image".to_string(),
+                        )
+                    })
+                    .collect())
+            }
+        }
+        let mut budget = SessionBudget::new(None);
+        run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "hi" })]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &PartsTool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = model.requests.lock().unwrap();
+        let tool_msg = requests[1]["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "tool")
+            .cloned()
+            .expect("a tool message");
+        assert_eq!(
+            tool_msg["content"],
+            json!([
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } },
+                { "type": "text", "text": "after the image" },
+            ])
+        );
+        assert!(
+            !requests[1].to_string().contains("secret_pose"),
+            "details must never reach the model"
+        );
+
+        let mut seen = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                StreamEvent::ToolResult { id, content, .. } => seen.push(format!("result {id} {content}")),
+                StreamEvent::ToolDetails { id, details } => seen.push(format!("details {id} {details}")),
+                _ => {}
+            }
+        }
+        assert_eq!(
+            seen,
+            [
+                "result call_1 after the image".to_string(),
+                r#"details call_1 {"secret_pose":[1,2,3]}"#.to_string(),
+            ]
+        );
     }
 
     /// The reported incident, end to end: mid-run, the model emits a tool
@@ -5772,6 +6912,142 @@ mod tests {
         })
     }
 
+    /// A run stopped by its money ceiling returns the work it already did,
+    /// rather than failing. The turns taken are real work the user is billed
+    /// for, so discarding them into an error would charge for an answer it then
+    /// threw away -- and the caller could not tell "out of budget" from "the
+    /// provider broke".
+    #[tokio::test]
+    async fn the_cost_ceiling_stops_the_run_and_keeps_the_answer() {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        // One request whose usage alone blows a $0.01 ceiling, then a second
+        // the loop must never make.
+        let mut expensive = bash_call_completion();
+        expensive["usage"] = json!({
+            "prompt_tokens": 1_000_000,
+            "completion_tokens": 0,
+            "total_tokens": 1_000_000,
+        });
+        let model = MockModel::new(vec![expensive, final_answer("never reached")]);
+        let tool = FixedTool {
+            content: "ok".to_string(),
+        };
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                rates: crate::core::agent::session::TokenRates {
+                    // $1 per million prompt tokens, so one request costs $1.
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.01,
+            },
+        ));
+
+        let result = run_turn_cycle(
+            &tx,
+            &json!({}),
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({ "role": "user", "content": "go" })]),
+            None,
+            true,
+            0,
+            &mut budget,
+            &model,
+            &tool,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("a ceiling stops the run, it does not fail it");
+
+        assert_eq!(
+            model.requests.lock().unwrap().len(),
+            1,
+            "the second request is the one the ceiling exists to prevent"
+        );
+        assert_eq!(
+            result["choices"][0]["finish_reason"],
+            json!("budget_exceeded"),
+            "a caller must be able to tell this from a model that chose to stop: {result}"
+        );
+        // The returned completion asked for a tool call that will never be
+        // answered, so leaving it on the message would hand the caller an
+        // invalid conversation to resume from.
+        assert!(
+            result["choices"][0]["message"].get("tool_calls").is_none(),
+            "unanswered tool calls must not survive on the final message: {result}"
+        );
+    }
+
+    /// A compaction is a paid request and has to reach the run's budget. It is
+    /// not the metered dispatch, so nothing else charges it: a turn can make up
+    /// to five of them (the preflight plus `MAX_COMPACTION_ATTEMPTS` overflow
+    /// retries), and spend the budget never saw would leave `/usage` and the
+    /// money ceiling agreeing with each other while both undercounted.
+    #[tokio::test]
+    async fn compacting_charges_the_summarizer_to_the_run() {
+        // A history long enough to have a span worth summarizing.
+        let mut transcript = Transcript::default();
+        for i in 0..12 {
+            transcript.record_message(json!({ "role": "user", "content": format!("turn {i}") }));
+            transcript
+                .record_message(json!({ "role": "assistant", "content": format!("ack {i}") }));
+        }
+
+        let mut summary = final_answer("the story so far");
+        summary["usage"] = json!({
+            "prompt_tokens": 500_000,
+            "completion_tokens": 1_000,
+            "total_tokens": 501_000,
+        });
+        let model = MockModel::new(vec![summary]);
+
+        let mut budget = SessionBudget::new(None).with_cost_ceiling(Some(
+            crate::core::agent::session::CostCeiling {
+                // $1 per million either way: this summarizer call costs $0.501.
+                rates: crate::core::agent::session::TokenRates {
+                    prompt_usd: 1e-6,
+                    completion_usd: 1e-6,
+                    cache_read_usd: None,
+                    cache_write_usd: None,
+                },
+                max_usd: 0.25,
+            },
+        ));
+        assert!(!budget.over_cost_ceiling(), "nothing spent yet");
+
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let dropped = compact(
+            &mut transcript,
+            4,
+            "m",
+            &model,
+            &mut budget,
+            &tx,
+            CompactionReason::Preflight,
+        )
+            .await
+            .expect("the summarizer answered")
+            .expect("a long history has a span to compact");
+        assert!(dropped > 0);
+
+        let spent = budget.spent_usd().expect("metered");
+        assert!(
+            (spent - 0.501).abs() < 1e-9,
+            "the summarizer's own request is billed: {spent}"
+        );
+        assert!(
+            budget.over_cost_ceiling(),
+            "a compaction can exhaust the ceiling on its own"
+        );
+    }
+
     async fn bash_result_is_error_flag(content: &str) -> bool {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
@@ -5828,7 +7104,9 @@ mod tests {
     async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let done = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
@@ -5939,7 +7217,9 @@ mod tests {
         let mut over_budget = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let summary = json!({
             "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
         });
@@ -5976,14 +7256,34 @@ mod tests {
             "one turn, plus the summarizer call compaction makes"
         );
 
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        // The user is told: the TUI runs with logging off, so without an event
+        // this compaction is invisible.
+        let phases: Vec<CompactionPhase> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::SessionBudget,
+                    ..
+                } => Some(*phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "the budget compaction is announced, start and end"
+        );
         // The published history is the compacted one: shorter, and carrying the
         // summary in place of the dropped middle.
-        let published = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
+        let published = events
+            .into_iter()
+            .rev()
+            .find_map(|ev| match ev {
                 StreamEvent::MessagesUpdated { messages } => Some(messages),
                 _ => None,
             })
-            .last()
             .expect("a MessagesUpdated is published");
         assert!(
             published.len() < original_len,
@@ -6075,7 +7375,7 @@ mod tests {
 
     #[tokio::test]
     async fn turn_cycle_compacts_and_retries_on_context_overflow() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         // 1) main request overflows, 2) summarizer succeeds, 3) retry succeeds.
         let overflow = Err(format!(
             "[{}] Upstream returned HTTP 400: context_length_exceeded",
@@ -6123,6 +7423,17 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(|ev| matches!(
+                ev,
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Finished,
+                    reason: CompactionReason::ContextOverflow,
+                    messages: Some(_),
+                }
+            )),
+            "the overflow compaction is announced"
+        );
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
@@ -6366,15 +7677,23 @@ mod tests {
         );
         drop(tx);
         let mut published = false;
+        let mut failed = false;
         while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::MessagesUpdated { .. } = ev {
-                published = true;
+            match ev {
+                StreamEvent::MessagesUpdated { .. } => published = true,
+                // The throbber a `Started` put up has to come down again.
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Failed,
+                    ..
+                } => failed = true,
+                _ => {}
             }
         }
         assert!(
             !published,
             "no fabricated compacted history may be published"
         );
+        assert!(failed, "a summarizer failure ends the compaction as Failed");
     }
 
     #[tokio::test]
@@ -6475,6 +7794,86 @@ mod tests {
         );
     }
 
+    /// The wire boundary where a run becomes metered, or silently does not.
+    /// The CLI refuses an unpriceable ceiling up front, but this function is
+    /// what the loop actually believes, and it is reached by three callers
+    /// (the plain CLI, the TUI, and a subagent dispatch). A body that carries
+    /// a limit but no rates, or rates but no limit, is a caller bug -- and
+    /// running uncapped is the one outcome a cost ceiling must never produce
+    /// silently, so the pairing is asserted here rather than assumed.
+    #[test]
+    fn a_cost_ceiling_needs_both_a_limit_and_the_rates_to_meter_it() {
+        let rates = json!({ "prompt_usd": 1e-6, "completion_usd": 10e-6 });
+
+        assert!(body_cost_ceiling(&json!({})).is_none(), "nothing asked for");
+        assert!(
+            body_cost_ceiling(&json!({ "max_budget_usd": 2.0 })).is_none(),
+            "a limit with no prices cannot be enforced"
+        );
+        assert!(
+            body_cost_ceiling(&json!({ "token_rates": rates })).is_none(),
+            "prices with no limit meter nothing"
+        );
+        // Rates that are present but incomplete are not a ceiling either: the
+        // two required legs of the formula have no sane default, and guessing
+        // one would meter against a price the user was never shown.
+        assert!(
+            body_cost_ceiling(&json!({
+                "max_budget_usd": 2.0,
+                "token_rates": { "prompt_usd": 1e-6 },
+            }))
+            .is_none(),
+            "a half-specified rate sheet is not a rate sheet"
+        );
+
+        let ceiling = body_cost_ceiling(&json!({
+            "max_budget_usd": 2.5,
+            "token_rates": {
+                "prompt_usd": 1e-6,
+                "completion_usd": 10e-6,
+                "cache_read_usd": 0.1e-6,
+                "cache_write_usd": 1.25e-6,
+            },
+        }))
+        .expect("a limit and its rates together are a ceiling");
+        assert_eq!(ceiling.max_usd, 2.5);
+        assert_eq!(ceiling.rates.prompt_usd, 1e-6);
+        assert_eq!(ceiling.rates.cache_read_usd, Some(0.1e-6));
+
+        // Cache rates are genuinely optional -- a provider may publish none --
+        // and their absence bills the cached share at the prompt rate rather
+        // than voiding the ceiling.
+        let no_cache = body_cost_ceiling(&json!({
+            "max_budget_usd": 1.0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("cache rates are optional");
+        assert_eq!(no_cache.rates.cache_read_usd, None);
+
+        // `0` is a real ceiling (stop at the first billed request), not a
+        // synonym for unbounded the way `max_session_tokens: 0` is. The two
+        // limits sit side by side in the same body, so this must not drift.
+        let zero = body_cost_ceiling(&json!({
+            "max_budget_usd": 0,
+            "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+        }))
+        .expect("zero is a ceiling, not an absence");
+        assert_eq!(zero.max_usd, 0.0);
+
+        // Nonsense amounts do not meter. A negative or non-finite ceiling is
+        // never satisfiable, and treating it as `0` would stop every run.
+        for bad in [json!(-1.0), json!("2.00"), json!(null)] {
+            assert!(
+                body_cost_ceiling(&json!({
+                    "max_budget_usd": bad,
+                    "token_rates": { "prompt_usd": 1e-6, "completion_usd": 10e-6 },
+                }))
+                .is_none(),
+                "{bad} is not an amount"
+            );
+        }
+    }
+
     #[test]
     fn stop_reason_reads_first_choice() {
         let completion = json!({ "choices": [{ "finish_reason": "tool_calls" }] });
@@ -6537,12 +7936,15 @@ mod tests {
     ) -> CompositeToolInvoker {
         CompositeToolInvoker {
             sandbox: true,
+            hidden_root: crate::core::agent::project::hidden_root(true),
             mcp: McpToolInvoker {
                 tool_to_server: HashMap::new(),
                 mcp_servers: Arc::new(Mutex::new(HashMap::new())),
                 mcp_settings: Arc::new(Mutex::new(McpSettings::default())),
             },
-            store_root: tauri_plugin_agent_tools::workspace::project_store(&root),
+            store_root: crate::core::agent::project::store_root(&root),
+            memory_home: None,
+            cross_project: false,
             enabled_skills: Vec::new(),
             allow_network: DEFAULT_ALLOW_NETWORK,
             allow_home_read: DEFAULT_ALLOW_HOME_READ,
@@ -6562,11 +7964,24 @@ mod tests {
                 tauri_plugin_agent_tools::tools::monitor::MonitorSet::new(),
             ),
             monitors_outlive_run: false,
+            bg_shells_outlive_run: false,
+            subagent_bg_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
             hooks: tauri_plugin_agent_tools::tools::hooks::HookSet::new(),
             plugin_tools: tauri_plugin_agent_tools::tools::plugin_tools::PluginToolSet::new(),
+            #[cfg(feature = "cli")]
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            #[cfg(feature = "cli")]
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
+            #[cfg(feature = "cli")]
+            host_owns_gate: false,
+            #[cfg(feature = "cli")]
+            host_tool_route: None,
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bg_shells: std::sync::Arc::new(
+                crate::core::agent::bg_shell::BackgroundShells::default(),
+            ),
         }
     }
 
@@ -6594,6 +8009,7 @@ mod tests {
         // plugin-tool wiring, not about a sandbox backend or a prompt that has
         // no one to answer it.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.auto_approve = true;
         invoker.hooks = hooks;
         invoker.plugin_tools = plugin_tools;
@@ -6649,6 +8065,47 @@ mod tests {
             command: command.to_string(),
             timeout_secs: None,
         }
+    }
+
+    /// janhq/jan-internal#394: the CLI's `skill_list`/`skill_read` resolve
+    /// through the same layering as the prompt catalog, so a plugin skill the
+    /// prompt advertises is readable (it used to read only `<store>/skills`),
+    /// on both the concurrent read path and the serial one.
+    #[tokio::test]
+    async fn the_cli_skill_tools_read_plugin_skills() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_plugin_skill_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = crate::core::agent::skills::plugins_dir(&root).join("rel/skills/prepare");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\ndescription: prep\n---\nplugin body\n")
+            .unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        let call = |id: &str, name: &str, args: &str| {
+            json!({"id": id, "type": "function", "function": {"name": name, "arguments": args}})
+        };
+        let out = invoker
+            .invoke(&[
+                call("l", "skill_list", "{}"),
+                call("r", "skill_read", r#"{"name":"rel:prepare"}"#),
+            ])
+            .await
+            .unwrap();
+        assert!(out[0].content.contains("rel:prepare — prep"), "{}", out[0].content);
+        assert_eq!(out[1].content, "plugin body");
+        // Through the non-concurrent context too (the one writes use).
+        let (text, _) = tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+            tauri_plugin_agent_tools::tools::lookup("skill_read").unwrap(),
+            &json!({"name": "prepare"}),
+            &invoker.tool_context(),
+        )
+        .await;
+        assert_eq!(text, "plugin body");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The acceptance requirement that a hook denial is indistinguishable from
@@ -6947,6 +8404,652 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A stub host: answers the run's `tool_request` the way a client on stdin
+    /// would, and reports what it was asked. Spawned before the call because
+    /// the dispatch parks until it replies.
+    #[cfg(feature = "cli")]
+    fn stub_host(
+        registry: crate::core::agent::host_tools::HostToolRegistry,
+        mut events: mpsc::UnboundedReceiver<StreamEvent>,
+        reply: Result<crate::core::agent::host_tools::HostToolResult, ()>,
+    ) -> tokio::task::JoinHandle<(String, serde_json::Value)> {
+        tokio::spawn(async move {
+            while let Some(ev) = events.recv().await {
+                if let StreamEvent::ToolRequest {
+                    request_id,
+                    tool_name,
+                    args,
+                    ..
+                } = ev
+                {
+                    match reply {
+                        Ok(result) => {
+                            crate::core::agent::host_tools::respond(
+                                &registry,
+                                &request_id,
+                                Ok(result),
+                            )
+                            .await
+                            .expect("the run is waiting on this id");
+                        }
+                        // The host went away mid-call.
+                        Err(()) => {
+                            crate::core::agent::host_tools::strand_all(&registry).await;
+                        }
+                    }
+                    return (tool_name, args);
+                }
+            }
+            panic!("the run never emitted a tool_request");
+        })
+    }
+
+    #[cfg(feature = "cli")]
+    fn host_invoker(
+        root: std::path::PathBuf,
+        tools: crate::core::agent::host_tools::HostToolSet,
+    ) -> (CompositeToolInvoker, mpsc::UnboundedReceiver<StreamEvent>) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut invoker = build_prompting_invoker(root, tx, PermissionRegistry::default());
+        invoker.sandbox = false;
+        invoker.hidden_root = None;
+        invoker.auto_approve = true;
+        invoker.host_tools = tools;
+        (invoker, rx)
+    }
+
+    #[cfg(feature = "cli")]
+    fn host_tool_set(names: &[&str]) -> crate::core::agent::host_tools::HostToolSet {
+        crate::core::agent::host_tools::HostToolSet::declare(
+            names
+                .iter()
+                .map(|n| crate::core::agent::host_tools::HostToolDecl {
+                    name: n.to_string(),
+                    description: String::new(),
+                    parameters: None,
+                    capability: None,
+                    unknown: Default::default(),
+                })
+                .collect(),
+        )
+        .expect("the test names are valid")
+    }
+
+    /// A host tool set whose entries each declare a capability.
+    #[cfg(feature = "cli")]
+    fn host_tool_set_with(
+        tools: &[(&str, Option<crate::core::agent::host_tools::HostCapability>)],
+    ) -> crate::core::agent::host_tools::HostToolSet {
+        crate::core::agent::host_tools::HostToolSet::declare(
+            tools
+                .iter()
+                .map(|(n, capability)| crate::core::agent::host_tools::HostToolDecl {
+                    name: n.to_string(),
+                    description: String::new(),
+                    parameters: None,
+                    capability: *capability,
+                    unknown: Default::default(),
+                })
+                .collect(),
+        )
+        .expect("the test names are valid")
+    }
+
+    #[cfg(feature = "cli")]
+    fn host_ok(content: &str) -> crate::core::agent::host_tools::HostToolResult {
+        crate::core::agent::host_tools::HostToolResult {
+            content: content.to_string(),
+            parts: None,
+            details: None,
+            is_error: false,
+        }
+    }
+
+    /// Answers every `tool_request` with `content` and every permission
+    /// prompt with `decision`, recording what it saw: the request tool names
+    /// and the prompted tool names. Ends when the invoker's sender drops.
+    #[cfg(feature = "cli")]
+    fn answering_host(
+        invoker: &CompositeToolInvoker,
+        mut events: mpsc::UnboundedReceiver<StreamEvent>,
+        decision: PermissionDecision,
+    ) -> tokio::task::JoinHandle<(Vec<String>, Vec<String>)> {
+        let registry = invoker.host_tool_requests.clone();
+        let permissions = invoker.permission_requests.clone();
+        tokio::spawn(async move {
+            let mut asked = Vec::new();
+            let mut prompted = Vec::new();
+            while let Some(ev) = events.recv().await {
+                match ev {
+                    StreamEvent::ToolRequest {
+                        request_id,
+                        tool_name,
+                        ..
+                    } => {
+                        crate::core::agent::host_tools::respond(
+                            &registry,
+                            &request_id,
+                            Ok(host_ok("done")),
+                        )
+                        .await
+                        .expect("pending");
+                        asked.push(tool_name);
+                    }
+                    StreamEvent::PermissionRequest {
+                        request_id,
+                        tool_name,
+                        ..
+                    } => {
+                        if let Some(tx) = permissions.lock().await.remove(&request_id) {
+                            let _ = tx.send(decision);
+                        }
+                        prompted.push(tool_name);
+                    }
+                    _ => {}
+                }
+            }
+            (asked, prompted)
+        })
+    }
+
+    /// A `read` host tool is the sensor case: no prompt even with
+    /// `auto_approve` off, and two calls in one batch are in flight together.
+    /// The stub host answers only once it holds *both* requests, so a
+    /// sequential dispatch would deadlock here (bounded by the timeout).
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn read_host_tools_run_concurrently_without_a_prompt() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolread");
+        let (mut invoker, mut events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("camera", Some(HostCapability::Read))]),
+        );
+        invoker.auto_approve = false;
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            let mut pending = Vec::new();
+            while let Some(ev) = events.recv().await {
+                match ev {
+                    StreamEvent::ToolRequest { request_id, .. } => pending.push(request_id),
+                    StreamEvent::PermissionRequest { tool_name, .. } => {
+                        panic!("a read host tool was prompted: {tool_name}")
+                    }
+                    _ => {}
+                }
+                if pending.len() == 2 {
+                    for (i, id) in pending.iter().enumerate() {
+                        crate::core::agent::host_tools::respond(
+                            &registry,
+                            id,
+                            Ok(host_ok(&format!("frame {i}"))),
+                        )
+                        .await
+                        .expect("pending");
+                    }
+                    return pending;
+                }
+            }
+            panic!("only {} requests arrived", pending.len());
+        });
+
+        let mut first = hooked_tool_call("host__camera", "{}");
+        first["id"] = json!("c1");
+        let mut second = hooked_tool_call("host__camera", "{}");
+        second["id"] = json!("c2");
+        let out = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            invoker.invoke(&[first, second]),
+        )
+        .await
+        .expect("both reads were in flight together")
+        .unwrap();
+        let pending = host.await.expect("the stub host ran");
+        assert_eq!(pending.len(), 2);
+        let mut ids: Vec<&str> = out.iter().map(|o| o.id.as_str()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["c1", "c2"]);
+        assert!(out.iter().all(|o| o.content.starts_with("frame ")));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Plan mode is read-only, and a host tool declared `read` is exactly that,
+    /// so it stays both advertised and callable; the others are withheld.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_read_host_tool_is_available_in_plan_mode() {
+        use crate::core::agent::host_tools::HostCapability;
+        let set = host_tool_set_with(&[
+            ("camera", Some(HostCapability::Read)),
+            ("arm", Some(HostCapability::Actuator)),
+            ("opaque", None),
+        ]);
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            None,
+            &ToolPermissions::allow_all(),
+            None,
+            crate::core::agent::plan::RunMode::Plan,
+            false,
+            1,
+            false,
+            false,
+            &set,
+        );
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t["function"]["name"].as_str())
+            .collect();
+        assert_eq!(names, ["host__camera"]);
+
+        let root = hooks_root("hosttoolreadplan");
+        let (mut invoker, events) = host_invoker(root.clone(), set);
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__camera", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__arm", "{}")])
+            .await
+            .unwrap();
+        assert!(out[0].content.contains("plan_mode_read_only"), "{}", out[0].content);
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["camera"]);
+        assert!(prompted.is_empty(), "{prompted:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Declaring an actuator is how a host opts a tool out of `auto_approve`:
+    /// the user is asked every time, and a denial never reaches the host.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn an_actuator_host_tool_is_prompted_even_under_auto_approve() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolactuator");
+        let (invoker, events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("arm", Some(HostCapability::Actuator)), ("opaque", None)]),
+        );
+        assert!(invoker.auto_approve);
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__arm", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "ERROR: tool 'host__arm' denied by user");
+        // The undeclared tool keeps today's behaviour: auto-approved.
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__opaque", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert_eq!(prompted, ["host__arm"]);
+        assert_eq!(asked, ["opaque"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// With the host owning the gate its callback is the only prompt: Jan
+    /// raises no `permission_request` for any host tool class, even with
+    /// `auto_approve` off.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_host_that_owns_the_gate_is_never_prompted_for() {
+        use crate::core::agent::host_tools::HostCapability;
+        let root = hooks_root("hosttoolhostgate");
+        let (mut invoker, events) = host_invoker(
+            root.clone(),
+            host_tool_set_with(&[("arm", Some(HostCapability::Actuator)), ("opaque", None)]),
+        );
+        invoker.auto_approve = false;
+        invoker.host_owns_gate = true;
+        let host = answering_host(&invoker, events, PermissionDecision::Deny);
+        let out = invoker
+            .invoke(&[
+                hooked_tool_call("host__arm", "{}"),
+                hooked_tool_call("host__opaque", "{}"),
+            ])
+            .await
+            .unwrap();
+        assert!(out.iter().all(|o| o.content == "done"));
+        drop(invoker);
+        let (asked, prompted) = host.await.expect("the stub host ran");
+        assert!(prompted.is_empty(), "{prompted:?}");
+        assert_eq!(asked, ["arm", "opaque"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A child's host call goes out on the root sender, unwrapped, with its
+    /// run id; nothing reaches the child's own channel, which the forwarder
+    /// would wrap into a shape no client may answer.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_routed_host_call_is_emitted_unwrapped_with_its_run_id() {
+        let root = hooks_root("hosttoolroute");
+        let (mut invoker, mut own_events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let (route_tx, mut route_rx) = mpsc::unbounded_channel();
+        invoker.host_tool_route = Some((route_tx, "sub-7".to_string()));
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            match route_rx.recv().await {
+                Some(StreamEvent::ToolRequest {
+                    request_id,
+                    tool_name,
+                    run_id,
+                    ..
+                }) => {
+                    crate::core::agent::host_tools::respond(&registry, &request_id, Ok(host_ok("seen")))
+                        .await
+                        .expect("pending in the shared registry");
+                    (tool_name, run_id)
+                }
+                other => panic!("expected a tool_request, got {other:?}"),
+            }
+        });
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__observe", "{}")])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "seen");
+        assert_eq!(
+            host.await.expect("the stub host ran"),
+            ("observe".to_string(), Some("sub-7".to_string()))
+        );
+        while let Ok(ev) = own_events.try_recv() {
+            assert!(
+                !matches!(ev, StreamEvent::ToolRequest { .. }),
+                "the request must not enter the child's own channel"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A withdrawn request still settles the call, and the model is told it
+    /// was cancelled rather than that the host vanished.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_cancelled_host_call_tells_the_model_so() {
+        let root = hooks_root("hosttoolcancel");
+        let (invoker, mut events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let registry = invoker.host_tool_requests.clone();
+        let host = tokio::spawn(async move {
+            while let Some(ev) = events.recv().await {
+                if let StreamEvent::ToolRequest { request_id, .. } = ev {
+                    let released = crate::core::agent::host_tools::cancel_all(&registry).await;
+                    assert_eq!(released, vec![request_id]);
+                    return;
+                }
+            }
+        });
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__observe", "{}")])
+            .await
+            .unwrap();
+        host.await.expect("the stub host ran");
+        assert_eq!(
+            out[0].content,
+            "ERROR: host tool 'observe' was cancelled before it answered"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The host's schema is enforced before the host is asked: a call with too
+    /// few joints goes back to the model as an error naming the path, and the
+    /// host never sees a `tool_request` for it.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn arguments_that_break_the_host_schema_never_reach_the_host() {
+        let root = hooks_root("hosttoolvalidate");
+        let set = crate::core::agent::host_tools::HostToolSet::declare(vec![
+            crate::core::agent::host_tools::HostToolDecl {
+                name: "move_arm".to_string(),
+                description: String::new(),
+                parameters: Some(json!({
+                    "type": "object",
+                    "properties": {
+                        "joints": { "type": "array", "items": { "type": "number" }, "minItems": 6 }
+                    },
+                    "required": ["joints"]
+                })),
+                capability: None,
+                unknown: Default::default(),
+            },
+        ])
+        .expect("declares");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(
+            out[0].content,
+            "ERROR: arguments for host tool 'move_arm' do not match its schema: \
+             /joints: expected at least 6 items, got 3"
+        );
+        // A valid call still goes through, so the refusal above was the schema.
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__move_arm", r#"{"joints":[1,2,3,4,5,6]}"#)])
+            .await
+            .unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["move_arm"], "only the valid call reached the host");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A dotted host name is advertised under its mapped wire name, and the
+    /// host is asked under the name it declared.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_mapped_host_name_is_requested_under_its_original_name() {
+        let root = hooks_root("hosttoolmapped");
+        let set = host_tool_set(&["yam.move_ee_ik"]);
+        let wire = set.all()[0].qualified_name.clone();
+        assert!(wire.starts_with("host__yam_move_ee_ik_"), "{wire}");
+        let (invoker, events) = host_invoker(root.clone(), set);
+        let host = answering_host(&invoker, events, PermissionDecision::AllowOnce);
+        let out = invoker.invoke(&[hooked_tool_call(&wire, "{}")]).await.unwrap();
+        assert_eq!(out[0].content, "done");
+        drop(invoker);
+        let (asked, _) = host.await.expect("the stub host ran");
+        assert_eq!(asked, ["yam.move_ee_ik"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Parts and details a host answers with survive dispatch onto the
+    /// outcome; a failed result's parts carry the error marker too.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn host_parts_and_details_reach_the_outcome() {
+        let root = hooks_root("hosttoolparts");
+        let (invoker, events) = host_invoker(root.clone(), host_tool_set(&["camera"]));
+        let parts = vec![
+            json!({ "type": "text", "text": "front camera" }),
+            json!({ "type": "image_url", "image_url": { "url": "data:image/png;base64,QUJD" } }),
+        ];
+        let host = stub_host(
+            invoker.host_tool_requests.clone(),
+            events,
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "front camera".to_string(),
+                parts: Some(parts.clone()),
+                details: Some(json!({ "exposure": 12 })),
+                is_error: false,
+            }),
+        );
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__camera", "{}")])
+            .await
+            .unwrap();
+        host.await.expect("the stub host ran");
+        assert_eq!(out[0].content, "front camera");
+        assert_eq!(out[0].parts.as_deref(), Some(parts.as_slice()));
+        assert_eq!(out[0].details, Some(json!({ "exposure": 12 })));
+
+        assert_eq!(
+            mark_parts_as_error(parts.clone())[0],
+            json!({ "type": "text", "text": "ERROR: front camera" })
+        );
+        assert_eq!(
+            mark_parts_as_error(vec![parts[1].clone()])[0],
+            json!({ "type": "text", "text": "ERROR" })
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// R1 end to end: the call leaves as a `tool_request` carrying the host's
+    /// own name, and the host's answer comes back as the tool message content.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_host_tool_call_round_trips_through_the_client() {
+        let root = hooks_root("hosttoolroundtrip");
+        let (invoker, events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let host = stub_host(
+            invoker.host_tool_requests.clone(),
+            events,
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "two cameras, both clear".to_string(),
+                parts: None,
+                details: None,
+                is_error: false,
+            }),
+        );
+
+        let out = invoker
+            .invoke(&[hooked_tool_call(
+                "host__observe",
+                r#"{"camera":"front"}"#,
+            )])
+            .await
+            .unwrap();
+
+        let (asked_name, asked_args) = host.await.expect("the stub host ran");
+        // The host declared `observe` and is asked for `observe`: the `host__`
+        // prefix is this layer's business and never reaches the host.
+        assert_eq!(asked_name, "observe");
+        assert_eq!(asked_args, json!({ "camera": "front" }));
+        assert_eq!(out[0].content, "two cameras, both clear");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A host tool that failed is still an answer: the model is told, and the
+    /// turn continues rather than ending on it.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_failed_host_tool_result_reaches_the_model_as_an_error() {
+        let root = hooks_root("hosttoolerror");
+        let (invoker, events) = host_invoker(root.clone(), host_tool_set(&["command"]));
+        let host = stub_host(
+            invoker.host_tool_requests.clone(),
+            events,
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "arm is estopped".to_string(),
+                parts: None,
+                details: None,
+                is_error: true,
+            }),
+        );
+
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__command", "{}")])
+            .await
+            .unwrap();
+
+        host.await.expect("the stub host ran");
+        assert_eq!(out[0].content, "ERROR: arm is estopped");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The wedge: a host that dies mid-call must settle the turn, not park it.
+    /// An unanswered call would leave an assistant turn whose call is never
+    /// resolved, which is not a conversation the run can be resumed from.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_host_that_leaves_mid_call_settles_the_turn() {
+        let root = hooks_root("hosttoolgone");
+        let (invoker, events) = host_invoker(root.clone(), host_tool_set(&["observe"]));
+        let host = stub_host(invoker.host_tool_requests.clone(), events, Err(()));
+
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__observe", "{}")])
+            .await
+            .unwrap();
+
+        host.await.expect("the stub host ran");
+        assert!(
+            out[0].content.contains("was not answered"),
+            "{}",
+            out[0].content
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Host tools carry an opaque capability, so they get the plugin/MCP
+    /// treatment: withheld entirely in read-only Plan mode, and never dispatched
+    /// to the host at all.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_host_tool_is_withheld_in_plan_mode() {
+        let root = hooks_root("hosttoolplan");
+        let (mut invoker, mut events) = host_invoker(root.clone(), host_tool_set(&["command"]));
+        invoker.run_mode = crate::core::agent::plan::RunMode::Plan;
+
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__command", "{}")])
+            .await
+            .unwrap();
+
+        assert!(
+            out[0].content.contains("plan_mode_read_only"),
+            "{}",
+            out[0].content
+        );
+        assert!(
+            !matches!(events.try_recv(), Ok(StreamEvent::ToolRequest { .. })),
+            "a withheld tool must not reach the host"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The hook bracket covers host tools for the same reason it covers plugin
+    /// tools: a PreToolUse policy that could not see them would have a hole
+    /// exactly where a third party's code runs.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_hook_can_deny_a_host_tool() {
+        let root = hooks_root("hosttooldeny");
+        let (mut invoker, mut events) = host_invoker(root.clone(), host_tool_set(&["command"]));
+        invoker.hooks = hook_set(vec![hook_entry(
+            "PreToolUse",
+            Some("host__*"),
+            r#"echo '{"decision":"deny","reason":"actuators are off"}'"#,
+        )]);
+
+        let out = invoker
+            .invoke(&[hooked_tool_call("host__command", "{}")])
+            .await
+            .unwrap();
+
+        assert!(
+            out[0].content.contains("actuators are off"),
+            "{}",
+            out[0].content
+        );
+        assert!(
+            !matches!(events.try_recv(), Ok(StreamEvent::ToolRequest { .. })),
+            "a hook-denied tool must not reach the host"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// The three session-lifecycle events go through `fire_hooks` rather than
     /// the toolset's `execute_builtin` bracket, so they are pinned here: each
     /// fires, each receives its payload, and each is still live in Plan mode
@@ -7036,7 +9139,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let agent_dir = root.join(".jan").join("agent");
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(&agent_dir).expect("create agent dir");
 
         let write = |body: &str| {
@@ -7997,6 +10100,7 @@ mod tests {
         invoker.auto_approve = true;
         // Bare shell: this exercises the loop wiring, not the jail.
         invoker.sandbox = false;
+        invoker.hidden_root = None;
 
         let out = invoker
             .invoke(&[monitor_call(
@@ -8057,6 +10161,7 @@ mod tests {
         let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
         invoker.auto_approve = true;
         invoker.sandbox = false;
+        invoker.hidden_root = None;
         invoker.monitors_outlive_run = true;
 
         let out = invoker
@@ -8092,6 +10197,77 @@ mod tests {
         assert_eq!(notices.len(), 1);
         assert!(notices[0].text.contains("READY on port 1337"));
         assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The shell counterpart of
+    /// `a_session_owned_monitor_does_not_park_the_run_until_it_fires`: a
+    /// command still running must not hold the run open when the session owns
+    /// the registry, so the model's turn can end and the user can type into an
+    /// idle agent. A queued completion is still owed, since it has to reach
+    /// the model somewhere.
+    #[tokio::test]
+    async fn a_session_owned_background_shell_does_not_park_the_run_until_it_finishes() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let mut invoker = build_prompting_invoker(root.clone(), tx, registry);
+        invoker.bg_shells_outlive_run = true;
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: Some("/tmp/out.log".to_string()),
+        });
+        assert!(
+            !invoker.background_pending(),
+            "a command still running must not park a session-owned run"
+        );
+
+        invoker.bg_shells.finish(ShellDone {
+            id: 1,
+            command: "sleep 600".to_string(),
+            elapsed_secs: 1,
+            output_path: Some("/tmp/out.log".to_string()),
+            failed: false,
+        });
+        assert!(
+            invoker.background_pending(),
+            "a queued completion is owed to the model"
+        );
+        let notices = invoker.background_notices();
+        assert_eq!(notices.len(), 1);
+        assert!(notices[0].headline.is_some(), "a shell reports its own end");
+        assert!(!invoker.background_pending(), "taken, so nothing is owed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A run-owned registry keeps the old contract: nothing else could deliver
+    /// the output, so the run parks until the command reports back. This is
+    /// the headless and child-run path.
+    #[tokio::test]
+    async fn a_run_owned_background_shell_still_parks_the_run() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let root = unique_project_root();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let invoker = build_prompting_invoker(root.clone(), tx, registry);
+        assert!(!invoker.bg_shells_outlive_run, "run-owned by default");
+
+        invoker.bg_shells.start(ShellBackgrounded {
+            id: 1,
+            command: "sleep 600".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        assert!(
+            invoker.background_pending(),
+            "nothing else could deliver this output, so the run waits"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

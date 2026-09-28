@@ -20,7 +20,7 @@ export type { SkillMeta }
  *
  * - `store`   -- the desktop's permanent store in the Jan data folder, managed
  *                from Settings. Reached through the plugin's guest-js.
- * - `project` -- a project's co-located `<folder>/.jan/agent`, managed from the
+ * - `project` -- the folder's project store `~/.jan/projects/<slug>`, managed from the
  *                code screen.
  *
  * The project scope deliberately keeps using the core `agent_skill_*` commands

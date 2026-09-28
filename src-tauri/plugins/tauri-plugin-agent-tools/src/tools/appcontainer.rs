@@ -31,6 +31,7 @@
 //! has a single writable root and a binary network switch, which AppContainer
 //! expresses directly.
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 /// Marks a re-exec of this binary as the confined-spawn helper. Must be the
@@ -183,6 +184,97 @@ fn parse_request<I: IntoIterator<Item = String>>(argv: I) -> Option<Request> {
         program,
         args: it.collect(),
     })
+}
+
+/// UTF-16 view of an `OsStr`. Windows holds environment names and values as
+/// UTF-16 already, so the block is exact there; on other hosts this exists for
+/// the tests and loses lone surrogates, which cannot reach `CreateProcessW`
+/// anyway.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn env_wide(s: &OsStr) -> Vec<u16> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        s.encode_wide().collect()
+    }
+    #[cfg(not(windows))]
+    {
+        s.to_string_lossy().encode_utf16().collect()
+    }
+}
+
+/// The environment block handed to `CreateProcessW` for the container child:
+/// `name=value` entries in UTF-16, sorted by name and terminated by a second
+/// NUL, which is the layout Windows requires.
+///
+/// Built from the helper's own environment rather than inherited. `proc.rs`
+/// already reduced that environment to `SANDBOX_ENV_ALLOW` before the helper was
+/// spawned, so passing it on is what carries the tool's policy into the
+/// container; asking Windows to reconstruct it by inheritance (`lpEnvironment`
+/// NULL, which is what this used to do) is the step that failed with
+/// `ERROR_ENVVAR_NOT_FOUND` (203) on the machine in the report - before the
+/// shell ran at all, which is why the old message's advice about where the shell
+/// lives could not explain it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn environment_block<I>(vars: I) -> Vec<u16>
+where
+    I: IntoIterator<Item = (OsString, OsString)>,
+{
+    let mut entries: Vec<(String, Vec<u16>)> = vars
+        .into_iter()
+        .filter_map(|(name, value)| {
+            let (name_wide, value_wide) = (env_wide(&name), env_wide(&value));
+            // An interior NUL would be read as the end of this entry and the
+            // rest of the value as the next one: the block would be malformed
+            // rather than merely incomplete, so drop the entry.
+            if name_wide.is_empty() || name_wide.contains(&0) || value_wide.contains(&0) {
+                return None;
+            }
+            let mut entry = name_wide;
+            entry.push(u16::from(b'='));
+            entry.extend(value_wide);
+            entry.push(0);
+            // Windows compares variable names without regard to case.
+            Some((name.to_string_lossy().to_ascii_uppercase(), entry))
+        })
+        .collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut block: Vec<u16> = entries.into_iter().flat_map(|(_, entry)| entry).collect();
+    block.push(0);
+    block
+}
+
+/// The message for a confined spawn that never started. The advice is keyed to
+/// the error: `ERROR_ACCESS_DENIED` is the one case where a shell installed
+/// under the user profile is the likely cause, and every other failure used to
+/// be told the same thing - which sent the report that prompted this to
+/// reinstall Git for Windows system-wide on a machine that already had it.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
+    /// `ERROR_ACCESS_DENIED`.
+    const DENIED: i32 = 5;
+    /// `ERROR_ENVVAR_NOT_FOUND`: raised while the child's environment is being
+    /// established, so it says nothing about the shell's location.
+    const ENVVAR_NOT_FOUND: i32 = 203;
+    match error.raw_os_error() {
+        Some(DENIED) => format!(
+            "could not start {} inside the sandbox: {error}. A shell installed \
+             under your user profile is unreadable to the sandbox; install \
+             Git for Windows system-wide instead.",
+            program.display()
+        ),
+        Some(ENVVAR_NOT_FOUND) => format!(
+            "could not start {} inside the sandbox: {error}. The sandbox could \
+             not build an environment for the shell, which is a bug in Jan \
+             rather than a problem with the shell's location; please report it \
+             with the app logs.",
+            program.display()
+        ),
+        _ => format!(
+            "could not start {} inside the sandbox: {error}",
+            program.display()
+        ),
+    }
 }
 
 /// True when this host can build an AppContainer at all. On Windows this only
@@ -580,6 +672,10 @@ mod win {
 
         let mut line = wide(OsStr::new(&command_line(&req.program, &req.args)));
         let cwd = wide(req.workspace.as_os_str());
+        // The helper's own environment, which `proc.rs` reduced to
+        // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
+        // than left to inheritance: see `environment_block`.
+        let env = super::environment_block(std::env::vars_os());
         let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
         let spawned = unsafe {
             CreateProcessW(
@@ -589,24 +685,22 @@ mod win {
                 std::ptr::null(),
                 1,
                 EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-                std::ptr::null(),
+                env.as_ptr() as *const c_void,
                 cwd.as_ptr(),
                 &startup.StartupInfo,
                 &mut process,
             )
         };
+        // Read before the attribute list is torn down: that call ends with a
+        // Win32 call that can set the last error, and the message has to name
+        // the failure that actually stopped the spawn.
+        let spawn_error = (spawned == 0).then(std::io::Error::last_os_error);
         unsafe { DeleteProcThreadAttributeList(attributes) };
-        if spawned == 0 {
-            // Easily the most likely failure: the shell lives somewhere the
-            // container cannot read, such as a per-user Git install under
-            // AppData, which grants nothing to application packages.
-            return Err(format!(
-                "could not start {} inside the sandbox: {}. A shell installed \
-                 under your user profile is unreadable to the sandbox; install \
-                 Git for Windows system-wide instead.",
-                req.program.display(),
-                last_error()
-            ));
+        if let Some(error) = spawn_error {
+            // `spawn_failure` words the advice by the error: a per-user shell
+            // install is the likely cause only when the container was refused
+            // read access to it.
+            return Err(super::spawn_failure(&req.program, &error));
         }
 
         let code = wait_for(process.hProcess);
@@ -774,6 +868,102 @@ mod tests {
         assert_eq!(
             line,
             r#""C:\Program Files\Git\bin\bash.exe" -c "ls -la && echo \"done\"""#
+        );
+    }
+
+    /// The block's entries, with the terminating NULs removed.
+    fn entries(block: &[u16]) -> Vec<String> {
+        let text = String::from_utf16(block).expect("utf-16");
+        text.trim_end_matches('\0')
+            .split('\0')
+            .map(str::to_string)
+            .collect()
+    }
+
+    fn var(name: &str, value: &str) -> (OsString, OsString) {
+        (OsString::from(name), OsString::from(value))
+    }
+
+    #[test]
+    fn the_environment_block_is_sorted_and_double_nul_terminated() {
+        let block = environment_block(vec![
+            var("SystemRoot", r"C:\Windows"),
+            var("PATH", r"C:\Windows\System32"),
+            // Windows keeps the per-drive current directories as `=C:` entries
+            // and expects them first; `=` sorts before every letter.
+            var("=C:", r"C:\work"),
+        ]);
+        assert_eq!(
+            entries(&block),
+            vec![
+                r"=C:=C:\work".to_string(),
+                r"PATH=C:\Windows\System32".to_string(),
+                r"SystemRoot=C:\Windows".to_string(),
+            ]
+        );
+        assert_eq!(&block[block.len() - 2..], &[0, 0]);
+    }
+
+    #[test]
+    fn the_environment_block_sorts_names_without_regard_to_case() {
+        // `Path` and `PATHEXT` are the pair that tells the two orderings apart:
+        // by bytes, `PATHEXT` comes first (`A` < `a`), while Windows compares
+        // names without regard to case, where `PATH` is the shorter prefix and
+        // therefore first. Windows requires the block sorted its way.
+        let block = environment_block(vec![
+            var("windir", r"C:\Windows"),
+            var("Path", r"C:\a"),
+            var("PATHEXT", ".COM;.EXE"),
+            var("ProgramFiles", r"C:\Program Files"),
+        ]);
+        assert_eq!(
+            entries(&block),
+            vec![
+                r"Path=C:\a".to_string(),
+                r"PATHEXT=.COM;.EXE".to_string(),
+                r"ProgramFiles=C:\Program Files".to_string(),
+                r"windir=C:\Windows".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_environment_block_drops_entries_that_would_truncate_it() {
+        // A NUL inside a name or value would be read as the end of the entry and
+        // the remainder as the next one, so the block would be malformed.
+        let block = environment_block(vec![
+            var("PATH", r"C:\Windows"),
+            var("bad\0name", "value"),
+            var("badvalue", "one\0two"),
+            var("", "nameless"),
+        ]);
+        assert_eq!(entries(&block), vec![r"PATH=C:\Windows".to_string()]);
+    }
+
+    #[test]
+    fn the_environment_block_is_never_empty() {
+        // A block with no entries is still a terminator, never a null pointer.
+        assert_eq!(environment_block(Vec::new()), vec![0]);
+    }
+
+    #[test]
+    fn spawn_failure_only_blames_the_shell_location_when_access_was_denied() {
+        let shell = Path::new(r"C:\Program Files\Git\bin\bash.exe");
+        let denied = spawn_failure(shell, &std::io::Error::from_raw_os_error(5));
+        assert!(denied.contains("system-wide"), "{denied}");
+
+        // 203 is raised while the child's environment is being built, so the
+        // advice that made the report reinstall an already system-wide Git must
+        // not appear.
+        let env_missing = spawn_failure(shell, &std::io::Error::from_raw_os_error(203));
+        assert!(!env_missing.contains("system-wide"), "{env_missing}");
+        assert!(env_missing.contains("bug in Jan"), "{env_missing}");
+
+        let other = spawn_failure(shell, &std::io::Error::from_raw_os_error(2));
+        assert!(!other.contains("system-wide"), "{other}");
+        assert!(
+            other.contains(r"C:\Program Files\Git\bin\bash.exe"),
+            "{other}"
         );
     }
 }

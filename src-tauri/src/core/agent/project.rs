@@ -1,4 +1,5 @@
-//! `agent.toml` project config parsing and `.jan/agent/` scaffolding.
+//! `agent.toml` project config parsing and store scaffolding
+//! (`~/.jan/projects/<slug>/`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -56,7 +57,7 @@ pub(crate) struct PromptSection {
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
-/// `.jan/agent/plugins/`; this section only carries configuration.
+/// `<store_root>/plugins/`; this section only carries configuration.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct PluginsSection {
     /// URL of a JSON marketplace index (`[{ name, description, repo, ref? }]`).
@@ -107,18 +108,32 @@ pub(crate) struct ProviderSection {
 pub(crate) struct SkillsSection {
     #[serde(default)]
     pub enabled: Vec<String>,
+    /// Retired `inject = "always" | "relevance"`: it was scaffolded and
+    /// documented but never read, so it is no longer part of the config.
+    /// Still accepted (any value) so an older agent.toml keeps parsing; its
+    /// presence only earns a one-time log warning.
+    #[serde(default)]
+    pub inject: Option<toml::Value>,
 }
 
 /// `[budget]` — the only cap on how long a run may go. The agent takes as many
 /// turns as the task needs; `max_tokens` bounds the run's *marginal* token
 /// spend (see `SessionBudget`: replayed context is not recharged each turn).
-/// Unset applies `DEFAULT_MAX_SESSION_TOKENS`; an explicit `0` disables the
+/// Unset applies the model's context window, or `DEFAULT_MAX_SESSION_TOKENS`
+/// when that is unknown; an explicit `0` disables the
 /// ceiling, leaving cancellation as the only guard.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Default, Deserialize)]
 pub(crate) struct BudgetSection {
     #[serde(default)]
     pub max_tokens: Option<u64>,
+    /// USD a run may spend before it stops. Unlike `max_tokens` this is a hard
+    /// bound. It is priced from the provider's published rates, so a model with
+    /// no published price cannot be capped at all and a run that asks for one is
+    /// refused rather than run uncapped -- including a subagent whose definition
+    /// names a model of its own (see `child_cost_ceiling`).
+    #[serde(default)]
+    pub max_usd: Option<f64>,
 }
 
 /// `[agent]` — resolves the model and per-run knobs for CLI agent runs.
@@ -247,11 +262,16 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # base_url = "https://api.openai.com/v1"
 # models = ["gpt-4o"]
 
-# The run's only cap: new token spend across all turns (replayed context is not
-# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
-# 0 disables the cap so the agent runs until the task is done or cancelled.
+# New token spend across all turns (replayed context is not recharged each
+# turn). Advisory: crossing it compacts and files a note, it does not stop the
+# run. Defaults to the model's context window when unset (128000 if the window
+# is unknown); 0 disables the cap.
 [budget]
 # max_tokens = 128000
+# USD this run may spend before it stops -- unlike max_tokens, a hard bound.
+# Priced from the provider's published rates, so a model with no published
+# price is refused rather than run uncapped. Overridden by --max-budget-usd.
+# max_usd = 5.00
 
 [tools]
 # read-only | deny | allow. read-only (default) exposes MCP tools and built-in
@@ -289,8 +309,6 @@ allow_write = []
 
 [skills]
 enabled = []
-# always | relevance
-inject = "always"
 
 # Where each contributor to the system prompt may sit, deny-wins like [tools].
 # Above the cache line ("prefix") a contributor must be constant for the whole
@@ -310,9 +328,84 @@ inject = "always"
 # default = "tail"
 "#;
 
-/// Path to `<project_root>/.jan/agent/agent.toml`.
+/// `~/.jan`, where every project's store lives. Test builds use a per-process
+/// temp directory so no test reads or writes the developer's real `~/.jan`;
+/// the plugin's own `cfg(test)` override is not active when this crate
+/// compiles it as a dependency.
+pub(crate) fn jan_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        Some(std::env::temp_dir().join(format!("jan-app-test-home-{}", std::process::id())))
+    }
+    #[cfg(not(test))]
+    {
+        tauri_plugin_agent_tools::workspace::jan_home()
+    }
+}
+
+/// The Jan home the general tools and the sandboxed shell may not reach while
+/// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
+/// so tests hide their temp home, not the developer's.
+pub(crate) fn hidden_root(sandbox: bool) -> Option<PathBuf> {
+    if sandbox {
+        jan_home()
+    } else {
+        None
+    }
+}
+
+/// A project's store root, `~/.jan/projects/<slug>`: `agent.toml`, `memory/`,
+/// `skills/`, `subagents/`, `plugins/` and the TUI's threads. The one place the
+/// app resolves it; the project directory itself holds only `JAN.md`.
+pub(crate) fn store_root(project_root: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_store_at(jan_home().as_deref(), project_root)
+}
+
+/// Move a legacy `<project>/.jan/agent` into [`store_root`] when the workspace
+/// still has a `.jan` directory. Called once per launch, before anything reads
+/// the store; returns a line for the surface to show, if any.
+///
+/// Once per project per process: later calls are free and return `None`, so
+/// every entry point can call it without re-reporting.
+pub(crate) fn migrate_legacy_store(project_root: &Path) -> Option<String> {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    {
+        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if !seen.get_or_insert_with(HashSet::new).insert(project_root.to_path_buf()) {
+            return None;
+        }
+    }
+    let home = jan_home()?;
+    let store = store_root(project_root);
+    let outcome =
+        crate::core::agent::store_migration::migrate_on_launch(project_root, &store, Some(&home));
+    if matches!(outcome, crate::core::agent::store_migration::Outcome::Moved { .. }) {
+        // A migrated store has notes but no indexes yet, and the root index
+        // should point at it straight away.
+        let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&store, project_root);
+        tauri_plugin_agent_tools::memory::write_index(&store);
+        let (_, _, cross_project) = memory_roots(project_root);
+        tauri_plugin_agent_tools::memory::write_root_index(&home, cross_project);
+    }
+    outcome.message()
+}
+
+/// The memory a run in `project_root` reaches, as owned paths: the project's
+/// store, and `~/.jan` for the user scope and other projects. Tests get no
+/// cross-project listing, so one test's notes never reach another's prompt.
+pub(crate) fn memory_roots(project_root: &Path) -> (PathBuf, Option<PathBuf>, bool) {
+    #[cfg(test)]
+    let cross = false;
+    #[cfg(not(test))]
+    let cross = crate::core::agent::global_config::memory_cross_project_enabled();
+    (store_root(project_root), jan_home(), cross)
+}
+
+/// Path to `<store_root>/agent.toml`.
 pub(crate) fn agent_toml_path(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent").join("agent.toml")
+    store_root(project_root).join("agent.toml")
 }
 
 /// Load + parse agent.toml. Err if missing or malformed (path included in message).
@@ -362,6 +455,9 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     let Ok(cfg) = load_agent_config(project_root) else {
         return RunSettings::default();
     };
+    if cfg.skills.inject.is_some() {
+        warn_retired_inject();
+    }
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
@@ -373,6 +469,16 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
+}
+
+/// Log once per process that `[skills].inject` is ignored.
+fn warn_retired_inject() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        log::warn!(
+            "agent.toml: [skills].inject is no longer used and is ignored; every enabled skill's name and description is listed in the prompt. Remove the key to silence this warning."
+        );
+    });
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
@@ -408,8 +514,8 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
     )
 }
 
-/// Ensure a usable `.jan/agent/{agent.toml, skills/, memory/}` exists under
-/// `project_root`, creating only the pieces that don't already exist.
+/// Ensure a usable `{agent.toml, skills/, memory/}` exists in the project's
+/// store (see [`store_root`]), creating only the pieces that don't already exist.
 /// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
 /// on both the CLI and desktop agent-run paths (there is no explicit init step).
 ///
@@ -423,7 +529,13 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
             project_root.display()
         ));
     }
-    let agent_dir = project_root.join(".jan").join("agent");
+    // Before scaffolding, or an empty new store would turn the move into a
+    // conflict. A no-op after the first call for this project; the CLI already
+    // ran it (and reported it) when it resolved the project.
+    if let Some(note) = migrate_legacy_store(project_root) {
+        log::info!("Agent: {note}");
+    }
+    let agent_dir = store_root(project_root);
     std::fs::create_dir_all(agent_dir.join("skills"))
         .map_err(|e| format!("Failed to create skills dir: {e}"))?;
     std::fs::create_dir_all(agent_dir.join("memory"))
@@ -434,6 +546,8 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
     }
+    // Best-effort: only the memory index's project pointers read it.
+    let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&agent_dir, project_root);
 
     Ok(agent_dir)
 }
@@ -536,19 +650,20 @@ mod tests {
         root
     }
 
-    /// `ensure_project` scaffolds `.jan/agent/{skills,memory}` by hand, while the
-    /// toolset resolves those same directories through `workspace::project_store`.
-    /// Nothing but this test ties the two together, and if they ever drift a
-    /// user's existing skills and memories simply stop being found.
+    /// `ensure_project` scaffolds `{skills,memory}` in the store, while the
+    /// toolset reads those same directories through the store root it is
+    /// handed. If the two ever drift a user's skills and memories stop being
+    /// found. The store must also never land inside the project.
     #[test]
     fn scaffolded_dirs_match_the_toolset_store_layout() {
         use tauri_plugin_agent_tools::workspace;
 
         let root = unique_root("store_layout");
-        ensure_project(&root).expect("scaffold project");
+        let store = ensure_project(&root).expect("scaffold project");
 
-        let store = workspace::project_store(&root);
-        assert_eq!(store, root.join(".jan").join("agent"));
+        assert_eq!(store, store_root(&root));
+        assert!(!store.starts_with(&root), "the store must live outside the project");
+        assert!(!root.join(".jan").exists(), "nothing is written into the project");
         assert!(
             tauri_plugin_agent_tools::skills::skills_dir(&store).is_dir(),
             "skills dir the toolset reads is not the one ensure_project created"
@@ -562,7 +677,7 @@ mod tests {
     }
 
     fn write_agent_toml(root: &Path, body: &str) {
-        let dir = root.join(".jan").join("agent");
+        let dir = crate::core::agent::project::store_root(root);
         std::fs::create_dir_all(&dir).expect("create agent dir");
         std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
     }
@@ -597,6 +712,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&bare);
     }
 
+    /// `[skills].inject` was scaffolded but never read (janhq/jan-internal#394);
+    /// it is gone from the template, and an agent.toml that still has it keeps
+    /// parsing with the whitelist intact.
+    #[test]
+    fn retired_skills_inject_is_dropped_from_the_template_but_still_parses() {
+        assert!(!AGENT_TOML_TEMPLATE.contains("inject ="));
+        for value in ["\"always\"", "\"relevance\"", "true"] {
+            let cfg: AgentToml =
+                toml::from_str(&format!("[skills]\nenabled = [\"a\"]\ninject = {value}\n"))
+                    .expect("a legacy inject key still parses");
+            assert_eq!(cfg.skills.enabled, vec!["a".to_string()]);
+            assert!(cfg.skills.inject.is_some());
+        }
+    }
+
     /// The scaffold documents the key, so it has to stay parseable as written.
     #[test]
     fn scaffold_template_parses_with_allow_network_documented() {
@@ -621,7 +751,7 @@ mod tests {
 
     /// The instructions file lives at the project root as `JAN.md` and is the
     /// user's (or `/init`'s) to create -- the scaffold must not plant an empty
-    /// one under `.jan/agent/`, which nothing reads.
+    /// one in the store, which nothing reads.
     #[test]
     fn ensure_does_not_scaffold_an_instructions_file() {
         let root = unique_root("no_instructions");
