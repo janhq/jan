@@ -496,6 +496,82 @@ pub fn intersect_allowed_tools(
     }
 }
 
+/// Hold a resolved child tool set to the parent's `ceiling`.
+///
+/// With no ceiling the resolved set stands. Under one, a child that asked for
+/// nothing inherits the ceiling itself (the parent's whole set, never Jan's
+/// whole set), and a child that asked for tools keeps those the ceiling
+/// contains. A requested name matches either exactly or as the bare name a host
+/// declared, since that is the name the host's prompt and the model use for
+/// it: `robot_arm_move` resolves to `host__robot_arm_move`.
+///
+/// Fails closed on a list that keeps nothing -- the child would otherwise run
+/// with no tools, the silent "skill tools only" child -- naming what the parent
+/// may hand out so the model can retry. The forced skill tools a child is
+/// normally given are dropped here unless the ceiling holds them.
+fn capped_tools(
+    resolved: Option<Vec<String>>,
+    ceiling: Option<&[String]>,
+    child: &str,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Result<Option<Vec<String>>, SubagentError> {
+    let resolved = resolved.map(|tools| qualify_host_names(tools, parent_args));
+    let Some(ceiling) = ceiling else {
+        return Ok(resolved);
+    };
+    let Some(requested) = resolved else {
+        return Ok(Some(ceiling.to_vec()));
+    };
+    let mut kept: Vec<String> = Vec::new();
+    for tool in &requested {
+        if ceiling.contains(tool) && !kept.contains(tool) {
+            kept.push(tool.clone());
+        }
+    }
+    if kept.is_empty() {
+        return Err(SubagentError::PermissionDenied(format!(
+            "none of the tools asked for subagent '{child}' ({}) is available to it; this \
+             session can give a subagent: {}. Omit allowed_tools to give it all of them.",
+            requested.join(", "),
+            ceiling.join(", ")
+        )));
+    }
+    Ok(Some(kept))
+}
+
+/// Rewrite each tool a host declared from the name it declared (`observe`,
+/// `arm.move`) to the wire name the child is offered it under. Looked up in the
+/// declarations rather than prefixed: a dotted name maps to a hashed wire name
+/// only the declaration still knows. Every other name passes through.
+#[cfg(feature = "cli")]
+fn qualify_host_names(
+    tools: Vec<String>,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::with_capacity(tools.len());
+    for tool in tools {
+        let wire = parent_args
+            .host_tools
+            .all()
+            .iter()
+            .find(|host| host.name == tool)
+            .map_or(tool, |host| host.qualified_name.clone());
+        if !out.contains(&wire) {
+            out.push(wire);
+        }
+    }
+    out
+}
+
+/// No host tools outside the headless build, so there is nothing to rewrite.
+#[cfg(not(feature = "cli"))]
+fn qualify_host_names(
+    tools: Vec<String>,
+    _parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    tools
+}
+
 /// One subagent within a phased dispatch. When `name` matches a saved definition
 /// that definition's role and tools are used (and `allowed_tools` further narrows
 /// it); otherwise the subagent runs as a focused general-purpose agent defined by
@@ -1173,6 +1249,13 @@ pub(crate) struct ParentRun {
     /// child of budget mid-task fails the run the user asked for. The parent's
     /// own ceiling still stops the run once those charges land on it.
     pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
+    /// The parent's own per-request allowlist, or `None` when it runs with no
+    /// allowlist. A child can never be offered more than its parent was: a
+    /// host-only RPC session sets one so its delegates cannot reach the shell,
+    /// files or web the session itself was never given. The forced skill
+    /// tools are no exception here, since they are Jan's and the session
+    /// excluded Jan's tools.
+    pub(crate) tool_ceiling: Option<Vec<String>>,
 }
 
 /// The model a dispatch will actually be billed for: the definition's own when
@@ -1313,6 +1396,10 @@ async fn run_subagent(
     let name = resolved.definition.name.clone();
     let mut child_args = parent_args;
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
+    // The host wrote its prompt for the conversation it drives, not for a
+    // delegate with a task of its own; left in place it would also replace the
+    // definition's prompt set just above.
+    child_args.host_system_prompt = None;
     child_args.subagents_enabled = false;
     // A subagent's own interactive question (if any) belongs to its parent's
     // conversation, not a client waiting on this child's ask_requests -- and
@@ -1444,6 +1531,16 @@ pub(crate) fn spawn_subagent(
     let parent = &ParentRun {
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
+    };
+
+    let resolved = ResolvedDispatch {
+        allowed_tools: capped_tools(
+            resolved.allowed_tools,
+            parent.tool_ceiling.as_deref(),
+            &req.name,
+            parent_args,
+        )?,
+        ..resolved
     };
 
     let name = resolved.definition.name.clone();
@@ -1676,6 +1773,12 @@ pub(crate) fn spawn_dispatch_plan(
     for phase in &plan.phases {
         for req in &phase.subagents {
             let resolved = resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            capped_tools(
+                resolved.allowed_tools.clone(),
+                parent.tool_ceiling.as_deref(),
+                &req.name,
+                parent_args,
+            )?;
             // Priced up front for the same reason the permission check is: a
             // later phase naming an unpriceable model must fail the whole plan
             // now, not after the earlier phases have already been billed.
@@ -2695,6 +2798,7 @@ mod tests {
             budget_remaining: None,
             send_reasoning: true,
             cost_remaining: None,
+            tool_ceiling: None,
         }
     }
 
@@ -3174,6 +3278,76 @@ mod tests {
 
     // ── max-parallel admission (semaphore queue) ───────────────────────────
 
+    /// A parent whose host declared `observe` and the dotted `arm.move`.
+    #[cfg(feature = "cli")]
+    fn host_parent() -> crate::core::agent::r#loop::OrchestrationArgs {
+        let root = unique_root("capped-tools");
+        let mut args = max_par_args(&root);
+        args.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "arm.move"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        args
+    }
+
+    #[cfg(feature = "cli")]
+    fn names(tools: &[&str]) -> Vec<String> {
+        tools.iter().map(|t| (*t).to_string()).collect()
+    }
+
+    /// The model names a host tool the way the host's prompt does. Under no
+    /// ceiling (a session with built-ins) that name used to reach the child's
+    /// allowlist unchanged, match nothing, and leave it only the skill tools.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_declared_host_name_resolves_to_its_wire_name() {
+        let parent = host_parent();
+        let arm = parent.host_tools.all()[1].qualified_name.clone();
+        assert_ne!(arm, "host__arm.move", "a dotted name is mapped");
+        let out = capped_tools(
+            Some(names(&["observe", "arm.move", "host__observe", "skill_read"])),
+            None,
+            "probe",
+            &parent,
+        )
+        .unwrap();
+        assert_eq!(out, Some(vec!["host__observe".to_string(), arm, "skill_read".to_string()]));
+    }
+
+    /// Under a ceiling a child is never offered more than its parent: no
+    /// allowlist inherits the ceiling, not Jan's whole set, and a list is
+    /// narrowed to it, forced skill tools included.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_is_held_to_the_parents_ceiling() {
+        let parent = host_parent();
+        let ceiling = names(&["dispatch_subagent", "host__observe"]);
+        assert_eq!(
+            capped_tools(None, Some(&ceiling), "probe", &parent).unwrap(),
+            Some(ceiling.clone())
+        );
+        assert_eq!(
+            capped_tools(Some(names(&["observe", "bash", "skill_list"])), Some(&ceiling), "probe", &parent)
+                .unwrap(),
+            Some(names(&["host__observe"]))
+        );
+    }
+
+    /// A list that keeps nothing fails the dispatch, naming what the parent
+    /// may hand out, instead of starting a child with no tools at all.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_list_the_ceiling_keeps_nothing_of_is_refused() {
+        let parent = host_parent();
+        let ceiling = names(&["host__observe"]);
+        let err = capped_tools(Some(names(&["bash"])), Some(&ceiling), "probe", &parent).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)), "{message}");
+        assert!(message.contains("host__observe") && message.contains("probe"), "{message}");
+    }
+
     /// Minimal run args for queue tests: empty providers (so dispatched
     /// children fail fast instead of hanging), a real project root holding the
     /// subagent def, subagents enabled, cap 1.
@@ -3204,6 +3378,7 @@ mod tests {
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
+            host_system_prompt: None,
             project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 1,

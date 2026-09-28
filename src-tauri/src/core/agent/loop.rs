@@ -100,6 +100,13 @@ pub(crate) struct OrchestrationArgs {
     /// shared project-context and tool-use prompt assembled for normal runs.
     /// Child turns remain excluded from project memory recall/indexing.
     pub system_prompt_override: Option<String>,
+    /// A host's whole system prompt (RPC `session/start` `systemPrompt`), sent
+    /// verbatim in place of the composed one: no identity, guides, environment,
+    /// date, git state, plan/todo guidance or project memory. A host that owns
+    /// the prompt owns all of it; Jan's guides would describe tools a host-only
+    /// session does not have. Never inherited by a child, which runs on its
+    /// definition's prompt.
+    pub host_system_prompt: Option<String>,
     /// Whether the run recalls project memory into its prompt and indexes its
     /// final answer into it. `false` for an ephemeral RPC session, whose
     /// answers must neither outlive it nor reach a later session in the same
@@ -509,6 +516,10 @@ struct SubagentContext {
     /// resends the reasoning of its own tool-call turns, so an opt-out that
     /// stopped at the parent would still break a strict provider.
     send_reasoning: bool,
+    /// The parent's per-request allowlist, the ceiling every child's tool set
+    /// is held to (see
+    /// [`crate::core::agent::subagent::ParentRun::tool_ceiling`]).
+    tool_ceiling: Option<Vec<String>>,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
     /// The registry's teardown generation when this run started. A dispatch may
@@ -1283,6 +1294,7 @@ impl CompositeToolInvoker {
                         budget_remaining: ctx.max_session_tokens,
                         send_reasoning: ctx.send_reasoning,
                         cost_remaining: ctx.cost_ceiling,
+                        tool_ceiling: ctx.tool_ceiling.clone(),
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -2343,6 +2355,7 @@ pub(crate) async fn run_server_side_openai_orchestration(
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        host_system_prompt: None,
         project_memory: true,
         subagents_enabled: false,
         max_parallel_subagents: crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
@@ -2906,6 +2919,7 @@ async fn orchestrate_inner(
         ask_requests,
         todo_registry,
         system_prompt_override,
+        host_system_prompt,
         project_memory,
         subagents_enabled,
         max_parallel_subagents,
@@ -2969,34 +2983,46 @@ async fn orchestrate_inner(
         .as_ref()
         .map(|s| s.prompt.clone())
         .unwrap_or_default();
-    let stable_system = build_run_system_prompt(
-        assistant_instructions.as_deref(),
-        system_prompt_override.as_deref(),
-        project_root.as_deref(),
-        session_id.as_deref(),
-        *subagents_enabled,
-        settings.as_ref().is_some_and(|s| s.sandbox),
-        &prompt_policy,
-    )?;
+    // A host prompt replaces the composition outright: nothing Jan writes is
+    // placed around it, above the cache line or below the history.
+    let stable_system = match host_system_prompt.as_deref() {
+        Some(prompt) => Some(ComposedPrompt {
+            prefix: prompt.to_string(),
+            tail: Vec::new(),
+        }),
+        None => build_run_system_prompt(
+            assistant_instructions.as_deref(),
+            system_prompt_override.as_deref(),
+            project_root.as_deref(),
+            session_id.as_deref(),
+            *subagents_enabled,
+            settings.as_ref().is_some_and(|s| s.sandbox),
+            &prompt_policy,
+        )?,
+    };
+    let jan_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    volatile_parts.push((
-        Composer::Date,
-        format!(
-            "Today's date is {}.",
-            chrono::Local::now().format("%Y-%m-%d")
-        ),
-    ));
+    if jan_prompt {
+        volatile_parts.push((
+            Composer::Date,
+            format!(
+                "Today's date is {}.",
+                chrono::Local::now().format("%Y-%m-%d")
+            ),
+        ));
+    }
     // Which checkout the work applies to. Per-turn rather than part of the
     // environment block above, because anything that switches branch -- the
     // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref() {
+    if let Some(root) = project_root.as_deref().filter(|_| jan_prompt) {
         volatile_parts.push((Composer::GitState, git_state_block(root)));
     }
     // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory.
-    let use_memory = *project_memory && system_prompt_override.is_none();
+    // is indexed. Child runs keep their isolated history and skip memory, and
+    // so does a host-prompted run: recall is a block Jan would write into it.
+    let use_memory = *project_memory && system_prompt_override.is_none() && jan_prompt;
     if use_memory {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
@@ -3020,13 +3046,17 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    if run_mode == crate::core::agent::plan::RunMode::Plan {
-        volatile_parts.push((
-            Composer::PlanAddendum,
-            crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
-        ));
-    } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-        volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
+    // Under a host prompt Plan mode is still enforced by the gate; only its
+    // prose is withheld, like every other block Jan writes.
+    if jan_prompt {
+        if run_mode == crate::core::agent::plan::RunMode::Plan {
+            volatile_parts.push((
+                Composer::PlanAddendum,
+                crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
+            ));
+        } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
+            volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
+        }
     }
 
     // One tail message, built from every block the policy kept below the cache
@@ -3225,6 +3255,11 @@ async fn orchestrate_inner(
             max_session_tokens,
             cost_ceiling,
             send_reasoning: body_send_reasoning(json_body),
+            tool_ceiling: allowed_names.as_ref().map(|names| {
+                let mut names: Vec<String> = names.iter().cloned().collect();
+                names.sort_unstable();
+                names
+            }),
             bg_generation: bg.generation(),
             bg: bg.clone(),
         });

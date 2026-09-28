@@ -617,11 +617,13 @@ export class JanRuntime {
   // Start a session. `tools` are host tools this session may call: each
   // declares what it does (`capability: 'read'` for a sensor, `'actuator'` for
   // something that moves) and carries the `handler` that runs it here.
-  async createSession({ cwd, model, ephemeral, builtins, permissions = 'jan', tools = [] } = {}) {
+  async createSession({ cwd, model, ephemeral, builtins, subagents, systemPrompt, permissions = 'jan', tools = [] } = {}) {
     const params = { cwd: cwd ?? this.cwd ?? process.cwd() }
     if (model !== undefined) params.model = model
     if (ephemeral !== undefined) params.ephemeral = ephemeral
     if (builtins !== undefined) params.builtins = builtins
+    if (subagents !== undefined) params.subagents = subagents
+    if (systemPrompt !== undefined) params.systemPrompt = systemPrompt
     if (permissions !== 'jan') params.permissions = permissions
     if (tools.length) params.tools = tools.map(toDeclaration)
     const view = await this.request('session/start', params)

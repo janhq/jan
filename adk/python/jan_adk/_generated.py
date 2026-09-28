@@ -216,6 +216,10 @@ class SessionStartParams(TypedDict):
     tools: NotRequired[list[HostToolDeclSchema]]
     # `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo`, subagent or monitor tools.
     builtins: NotRequired[bool]
+    # Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins.
+    subagents: NotRequired[Union[bool, None]]
+    # The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or project memory. Children keep their own prompts.
+    systemPrompt: NotRequired[Union[str, None]]
     permissions: NotRequired[PermissionOwner]
 
 class SessionIdParams(TypedDict):

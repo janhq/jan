@@ -25273,6 +25273,7 @@ mod tests {
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
+            host_system_prompt: None,
             project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 4,
