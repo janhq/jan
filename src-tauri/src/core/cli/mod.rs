@@ -767,7 +767,7 @@ use tokio::sync::{mpsc, Mutex};
 /// Advisory, not a bound: crossing it compacts the history and records a note,
 /// then the run carries on (see `body_session_budget`). `--max-turns` and
 /// cancellation are what actually stop a runaway loop.
-const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
+pub(crate) const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Where the session token ceiling in effect came from, so `agent status` can
 /// say which source won.
@@ -1265,6 +1265,9 @@ pub(crate) struct SessionLimits {
     /// Advisory: crossing it triggers compaction and a recorded note, it does
     /// not end the run. `max_turns` is the hard bound.
     pub max_session_tokens: u64,
+    /// Whether `--max-session-tokens` set `max_session_tokens`. A flag outranks
+    /// `[budget].max_tokens`, so `/reload config` must leave a pinned value alone.
+    pub max_session_tokens_pinned: bool,
     /// `--max-turns`: hard cap on agentic turns for this run, and the only
     /// setting that terminates one. `None` omits the field from the request
     /// body, which the engine reads as unbounded; `0` means unbounded too (see
@@ -1736,6 +1739,7 @@ fn prepare_agent_session(
                 flags.max_session_tokens,
                 cfg.budget.max_tokens,
             ),
+            max_session_tokens_pinned: flags.max_session_tokens.is_some(),
             max_turns: flags.max_turns,
             cost_ceiling,
         },
@@ -4436,6 +4440,7 @@ mod tests {
             compaction_reserve_tokens: None,
             max_tokens: None,
             max_session_tokens,
+            max_session_tokens_pinned: false,
             max_turns,
             cost_ceiling: None,
         }
