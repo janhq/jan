@@ -12194,6 +12194,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/skills",
+        hint: "",
+        description: "List skills with their scope (project, plugin, user, built-in) and shadowing",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/reload",
         hint: "[config|plugin|skills|system-prompt]",
         description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
@@ -12436,6 +12442,7 @@ async fn run_command(
         "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "reload" => reload_command(app, arg),
+        "skills" => skills_command(app),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -14505,12 +14512,58 @@ fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec
                 key: name.clone(),
                 label: name,
                 state: format!(
-                    "{} [user:{} model:{}]",
-                    m.description, m.user_invocable, m.model_invocable
+                    "{} [{} user:{} model:{}]",
+                    m.description,
+                    m.scope.label(),
+                    m.user_invocable,
+                    m.model_invocable
                 ),
             }
         })
         .collect()
+}
+
+/// `/skills`: every skill Jan can see from this project, with its scope and
+/// invocation sides, and each one hidden by a same-named higher-precedence
+/// skill marked with what shadows it. Precedence: project > user > built-in;
+/// plugin skills are qualified `<plugin>:<name>` and never collide.
+fn skills_command(app: &mut App) {
+    let enabled = crate::core::agent::project::enabled_skills(&app.project_root);
+    let rows = crate::core::agent::skills::report(&app.project_root, &enabled);
+    let user_dir = crate::core::agent::skills::user_skills_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_else(|| "(no home directory)".to_string());
+    let active = rows.iter().filter(|r| r.shadowed_by.is_none()).count();
+    app.note(&format!(
+        "◈ skills · {active} active · precedence project > user > built-in · user scope {user_dir}"
+    ));
+    for row in &rows {
+        let mut flags = Vec::new();
+        if !row.user_invocable {
+            flags.push("model-only".to_string());
+        }
+        if !row.model_invocable {
+            flags.push("user-only".to_string());
+        }
+        if !row.enabled {
+            flags.push("disabled".to_string());
+        }
+        if let Some(by) = row.shadowed_by {
+            flags.push(format!("shadowed by {}", by.label()));
+        }
+        let flags = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", flags.join(", "))
+        };
+        app.system_detail_text(&format!(
+            "{:<9} {}{} · {}",
+            row.scope.label(),
+            row.name,
+            flags,
+            row.description
+        ));
+    }
 }
 
 /// Display lines for what a reload changed, one list per kind of change.
@@ -14586,7 +14639,7 @@ fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
     }
     if skills {
         let after = reload_skill_entries(&app.slash_catalog.all_skills);
-        app.note("◈ reload · skills · re-scanned project and plugin skills");
+        app.note("◈ reload · skills · re-scanned project, plugin, and user skills");
         report_reload_diff(app, diff_reload_entries(&skills_before, &after));
     }
 }
@@ -37220,6 +37273,50 @@ mod tests {
             !app.slash_catalog.skills.iter().any(|m| m.name == "audit"),
             "removed skill must drop from the catalog"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// janhq/jan-internal#394: `/skills` lists every scope, and a user skill
+    /// hidden by a same-named project skill is shown as shadowed; the popup
+    /// catalog offers user skills and `/reload skills` picks up new ones.
+    #[tokio::test]
+    async fn skills_command_lists_scopes_and_marks_shadowing() {
+        let (mut app, root) = skill_test_app("tui394-deploy", "Project deploy.");
+        let user = crate::core::agent::skills::user_skills_dir().unwrap();
+        for (name, desc) in [("tui394-deploy", "User deploy."), ("tui394-review", "User review.")] {
+            std::fs::create_dir_all(user.join(name)).unwrap();
+            std::fs::write(
+                user.join(name).join("SKILL.md"),
+                format!("---\ndescription: {desc}\n---\n\nBody.\n"),
+            )
+            .unwrap();
+        }
+        run_command(&mut app, "skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("precedence project > user > built-in"), "{out}");
+        assert!(out.contains("project   tui394-deploy · Project deploy."), "{out}");
+        assert!(
+            out.contains("user      tui394-deploy (shadowed by project) · User deploy."),
+            "{out}"
+        );
+        assert!(out.contains("user      tui394-review · User review."), "{out}");
+        assert!(out.contains("built-in  jan"), "{out}");
+
+        // The popup offers the user skill once `/reload skills` rescans.
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("+ tui394-review"));
+        assert!(app.slash_catalog.skills.iter().any(|m| m.name == "tui394-review"));
+        app.input = "/skill:tui394-r".into();
+        assert!(
+            app.slash_matches()
+                .iter()
+                .any(|m| m.name() == "/skill:tui394-review"),
+            "popup offers the user skill"
+        );
+
+        for name in ["tui394-deploy", "tui394-review"] {
+            let _ = std::fs::remove_dir_all(user.join(name));
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

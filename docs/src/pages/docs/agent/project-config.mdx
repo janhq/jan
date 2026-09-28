@@ -19,12 +19,15 @@ your-project/
 |-- project.json           # which directory this store belongs to
 |-- agent.toml             # model, budget, tool policy
 |-- threads/               # saved sessions
-|-- skills/                # reusable procedures
+|-- skills/                # reusable procedures (project scope)
 |-- MEMORY.md              # generated index of memory/
 |-- memory/                # durable facts
 |-- plugins/               # installed plugins
 `-- subagents/             # reusable subagent definitions
 ```
+
+User-wide skills live beside the projects in `~/.jan/skills/`, and a same-named project skill
+shadows them. See [Skills](/docs/agent/skills#where-they-live).
 
 The store name (the `<slug>` in these docs) is the project directory's name plus a short hash of
 its full path. A linked git
