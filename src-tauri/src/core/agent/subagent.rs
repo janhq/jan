@@ -1296,21 +1296,21 @@ fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
 }
 
 /// The context window `model` resolves to, the way the CLI resolves a run's
-/// (provider listing first, then the catalog).
+/// (provider listing first, then the catalog). `None` for a model neither
+/// knows: the 128K fallback is a guess, and the parent's window is a better
+/// one than that for a child the catalog cannot place.
 #[cfg(feature = "cli")]
 fn model_window(
     model: &str,
     provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
 ) -> Option<u64> {
+    use crate::core::cli::model_capabilities::{
+        reported_window, resolve_context_window, ContextWindowSource,
+    };
     let provider = crate::core::agent::upstream::pick_provider_for_model(model, provider_configs);
-    Some(
-        crate::core::cli::model_capabilities::resolve_context_window(
-            model,
-            None,
-            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), model),
-        )
-        .tokens,
-    )
+    let resolved =
+        resolve_context_window(model, None, reported_window(provider.as_deref(), model));
+    (resolved.source != ContextWindowSource::Fallback).then_some(resolved.tokens)
 }
 
 /// No model catalog outside the `cli` build, so no window can be sized here;
@@ -2518,6 +2518,12 @@ mod tests {
             };
             let kept = pinned.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
             assert_eq!(kept.context_window, 1_000_000, "a configured window holds");
+
+            let unknown = parent.for_model("some-unlisted-model", "claude-sonnet-4-6", window);
+            assert_eq!(
+                unknown.context_window, 1_000_000,
+                "an unknown child model keeps the parent's window, not the 128K guess"
+            );
         });
     }
 

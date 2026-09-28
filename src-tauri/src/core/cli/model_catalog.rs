@@ -258,6 +258,8 @@ pub fn parse_listing(value: &serde_json::Value) -> BTreeMap<String, ModelInfo> {
     let entries = value
         .get("data")
         .and_then(|d| d.as_array())
+        // Gemini's native Models API: `{"models": [{"name": "models/<id>"}]}`.
+        .or_else(|| value.get("models").and_then(|m| m.as_array()))
         .or_else(|| value.as_array());
     let Some(entries) = entries else {
         return BTreeMap::new();
@@ -268,6 +270,14 @@ pub fn parse_listing(value: &serde_json::Value) -> BTreeMap<String, ModelInfo> {
             let id = entry
                 .get("id")
                 .and_then(|id| id.as_str())
+                .or_else(|| {
+                    // Requests name the bare id, so the `models/` resource
+                    // prefix is dropped to key the entry the way it is looked up.
+                    entry
+                        .get("name")
+                        .and_then(|n| n.as_str())
+                        .map(|n| n.strip_prefix("models/").unwrap_or(n))
+                })
                 .map(str::trim)
                 .filter(|id| !id.is_empty())?;
             let info = model_info(entry);
@@ -292,6 +302,8 @@ fn model_info(entry: &serde_json::Value) -> ModelInfo {
             .or_else(|| entry.get("context_window"))
             // Anthropic's own Models API.
             .or_else(|| entry.get("max_input_tokens"))
+            // Gemini's.
+            .or_else(|| entry.get("inputTokenLimit"))
             .and_then(number)
             .map(|v| v as u64),
         max_output_tokens: entry
@@ -374,6 +386,21 @@ mod tests {
             {"id": "claude-opus-5", "type": "model", "max_input_tokens": 1000000, "max_tokens": 128000},
         ]}));
         assert_eq!(parsed["claude-opus-5"].context_length, Some(1_000_000));
+    }
+
+    /// Gemini's Models API lists `models/<id>` names with `inputTokenLimit`;
+    /// the entry is keyed by the bare id a request names.
+    #[test]
+    fn gemini_input_token_limit_is_read_as_the_window() {
+        let parsed = parse_listing(&json!({"models": [
+            {"name": "models/gemini-2.5-pro", "inputTokenLimit": 1048576, "outputTokenLimit": 65536},
+        ]}));
+        assert_eq!(parsed["gemini-2.5-pro"].context_length, Some(1_048_576));
+
+        let compat = parse_listing(&json!({"data": [
+            {"id": "gemini-2.5-flash", "inputTokenLimit": 1048576},
+        ]}));
+        assert_eq!(compat["gemini-2.5-flash"].context_length, Some(1_048_576));
     }
 
     /// Numbers and numeric strings are both accepted, and a nonsense price is
