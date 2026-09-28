@@ -3872,20 +3872,33 @@ impl App {
         self.slash_matches_cache.replace(None);
     }
 
+    /// Whether a docked prompt owns the keyboard and the space above the input,
+    /// so the slash popup must not open: a pending permission request (drawn
+    /// first, and its Up/Down/Enter/Esc answer it) or a pending `ask`.
+    fn slash_popup_blocked(&self) -> bool {
+        !self.pending_queue.is_empty() || !self.ask_queue.is_empty()
+    }
+
     fn refresh_slash_catalog(&mut self) {
         self.slash_catalog = SlashCatalog::load(&self.project_root);
         self.slash_matches_cache.replace(None);
     }
 
     /// Slash commands and installed project skills whose name prefixes the
-    /// current buffer, or empty when the popup should not show: not idle,
-    /// buffer isn't a bare `/name` token (no whitespace yet), the popup was
-    /// Esc-dismissed, or nothing matches. Skills honor the `[skills].enabled`
+    /// current buffer, or empty when the popup should not show: a permission
+    /// prompt or `ask` owns the keys and the dock, the buffer isn't a bare
+    /// `/name` token (no whitespace yet), the popup was Esc-dismissed, or
+    /// nothing matches.
+    ///
+    /// Shown while a run is live as well as idle (janhq/jan-internal#395): Enter
+    /// runs a typed `/command` in any state, so hiding the popup mid-run only
+    /// hid what could be run. Esc on the open popup dismisses it; only the next
+    /// Esc, with the popup gone, cancels the run. Skills honor the `[skills].enabled`
     /// whitelist and the `user-invocable` frontmatter flag: the popup offers
     /// exactly what the human may fire, which is a subset of what the model
     /// sees via `skill_list`.
     fn slash_matches(&self) -> Vec<SlashMatch> {
-        if !self.accepts_input()
+        if self.slash_popup_blocked()
             || self.slash_dismissed
             || !self.input.starts_with('/')
             || self.input.chars().any(char::is_whitespace)
@@ -11607,8 +11620,11 @@ async fn handle_key(
         return;
     }
 
-    // Slash-command hint popup: while typing a `/command` name (idle, no space
-    // yet) with at least one match, it owns Up/Down/Tab/Esc and Enter-to-accept.
+    // Slash-command hint popup: while typing a `/command` name (no space yet)
+    // with at least one match, it owns Up/Down/Tab/Esc and Enter-to-accept --
+    // idle or mid-run. It sits ahead of the Esc-cancels-the-run arm below, so
+    // during a run the first Esc closes the popup and only a second one
+    // cancels. Ctrl-C is handled above and still cancels at once.
     // Enter on a fully-typed command falls through to run it; typed chars fall
     // through to normal editing (which re-filters the popup live).
     if !app.slash_matches().is_empty() {
@@ -36780,12 +36796,51 @@ mod tests {
         assert!(app.slash_matches().is_empty());
     }
 
+    /// janhq/jan-internal#395: Enter runs a `/command` mid-run, so the popup
+    /// that discovers and completes one shows mid-run too, and filters live.
     #[test]
-    fn slash_hidden_while_running() {
+    fn slash_shown_while_running() {
         let mut app = test_app();
-        app.input = "/".into();
         app.status = super::Status::Running;
+        app.input = "/".into();
+        let all = app.slash_matches().len();
+        assert!(all > 1, "the full list while running");
+        app.input = "/co".into();
+        let filtered = names(&app);
+        assert!(!filtered.is_empty() && filtered.len() < all, "{filtered:?}");
+        assert!(filtered.iter().any(|n| n == "/compact"), "{filtered:?}");
+        app.status = super::Status::Parked;
+        assert!(!app.slash_matches().is_empty(), "a parked run shows it too");
+    }
+
+    /// The permission dialog owns the keys and the dock the popup would use.
+    #[test]
+    fn slash_hidden_while_a_permission_prompt_is_pending() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.input = "/".into();
+        app.pending_queue.push_back(pending(false));
         assert!(app.slash_matches().is_empty());
+        app.pending_queue.clear();
+        assert!(!app.slash_matches().is_empty());
+    }
+
+    /// With the popup open mid-run, Esc closes it and leaves the run alone; the
+    /// next Esc, with nothing left to close, is what cancels.
+    #[tokio::test]
+    async fn esc_closes_the_slash_popup_before_cancelling_a_run() {
+        let mut app = test_app();
+        app.submit_user("work".into());
+        app.want_start = false;
+        app.status = super::Status::Running;
+        type_key_chars(&mut app, "/co").await;
+        assert!(!app.slash_matches().is_empty(), "the popup must be open");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.slash_matches().is_empty(), "Esc closes the popup");
+        assert_eq!(app.status, super::Status::Running, "and does not cancel");
+        assert_eq!(app.input, "/co", "the typed command stays");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_ne!(app.status, super::Status::Running, "the second Esc cancels");
     }
 
     #[test]

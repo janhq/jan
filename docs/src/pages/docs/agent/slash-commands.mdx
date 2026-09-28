@@ -9,6 +9,9 @@ import { Callout } from 'nextra/components'
 # Slash Commands
 
 Type `/` in the input to filter the list as you type. <kbd>Enter</kbd> runs the highlighted command.
+The list also opens while the agent is working. There, <kbd>Esc</kbd> closes the list first, and
+only a second <kbd>Esc</kbd> cancels the run. The list stays closed while a permission prompt is
+waiting for your answer.
 
 The filter is fuzzy: it matches the tail of a command or skill name, a subsequence of it, or a close
 typo, so you rarely need to type a name exactly. `/rse` finds `/resume`, and typing `/simplifyer`
