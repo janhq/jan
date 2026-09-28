@@ -503,7 +503,9 @@ pub fn intersect_allowed_tools(
 /// whole set), and a child that asked for tools keeps those the ceiling
 /// contains. A requested name matches either exactly or as the bare name a host
 /// declared, since that is the name the host's prompt and the model use for
-/// it: `robot_arm_move` resolves to `host__robot_arm_move`.
+/// it: `robot_arm_move` resolves to `host__robot_arm_move`. A dispatch has
+/// already qualified its names in [`resolve_dispatch`]; doing it again here is
+/// a no-op on wire names and keeps this function correct on its own.
 ///
 /// Fails closed on a list that keeps nothing -- the child would otherwise run
 /// with no tools, the silent "skill tools only" child -- naming what the parent
@@ -622,17 +624,24 @@ struct ResolvedDispatch {
 
 /// Resolve a dispatch request against the registry and parent permissions,
 /// without running anything. Errors on an unknown name or a permission conflict.
+///
+/// `qualify` maps each tool name to the wire name it stands for before any
+/// comparison, so a definition listing `host__observe` and a call asking for
+/// the host's bare `observe` agree on the same tool.
 fn resolve_dispatch(
     registry: &SubagentRegistry,
     req: &SubagentRequest,
     parent: &ToolPermissions,
+    qualify: impl Fn(Vec<String>) -> Vec<String>,
 ) -> Result<ResolvedDispatch, SubagentError> {
+    let requested = req.allowed_tools.clone().map(&qualify);
     match registry.get(&req.name).cloned() {
-        Some(definition) => {
+        Some(mut definition) => {
+            definition.allowed_tools = definition.allowed_tools.map(&qualify);
             // Registered definition: the call-site allowlist further narrows it.
             let allowed_tools = intersect_allowed_tools(
                 definition.allowed_tools.as_deref(),
-                req.allowed_tools.as_deref(),
+                requested.as_deref(),
                 parent,
             )?;
             Ok(ResolvedDispatch {
@@ -648,7 +657,7 @@ fn resolve_dispatch(
                 name: req.name.clone(),
                 description: req.description.clone(),
                 system_prompt: ephemeral_subagent_prompt(&req.name),
-                allowed_tools: req.allowed_tools.clone(),
+                allowed_tools: requested,
                 model: None,
                 scope: SubagentScope::Project,
             };
@@ -1541,7 +1550,9 @@ pub(crate) fn spawn_subagent(
         .as_ref()
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let registry = SubagentRegistry::load(project_root);
-    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions, |tools| {
+        qualify_host_names(tools, &parent.known_tools, parent_args)
+    })?;
     // Re-priced before anything is spawned: a child whose own model cannot be
     // metered under this ceiling fails the dispatch here rather than running on
     // the parent's prices.
@@ -1789,7 +1800,9 @@ pub(crate) fn spawn_dispatch_plan(
     let registry = SubagentRegistry::load(project_root);
     for phase in &plan.phases {
         for req in &phase.subagents {
-            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions, |tools| {
+                qualify_host_names(tools, &parent.known_tools, parent_args)
+            })?;
             capped_tools(
                 resolved.allowed_tools.clone(),
                 parent,
@@ -2134,11 +2147,22 @@ pub(crate) async fn await_subagent(
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
 /// of the built-in fs/exec gate and the MCP fallback.
 pub fn is_subagent_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "dispatch_subagent" | "await_subagent" | "create_subagent" | "list_subagents"
-    )
+    SUBAGENT_TOOLS.contains(&name)
 }
+
+/// Every subagent tool name, the one list [`is_subagent_tool`] and
+/// [`DELEGATE_ONLY_TOOLS`] are drawn from.
+const SUBAGENT_TOOLS: [&str; 4] = [
+    "dispatch_subagent",
+    "await_subagent",
+    "create_subagent",
+    "list_subagents",
+];
+
+/// The subagent tools a session limited to its host's tools is offered when it
+/// may delegate: dispatching and listing, not `create_subagent`, which writes a
+/// definition into the project, nor `await_subagent`, which is never advertised.
+pub const DELEGATE_ONLY_TOOLS: [&str; 2] = [SUBAGENT_TOOLS[0], SUBAGENT_TOOLS[3]];
 
 /// One-line "name [scope]: description" per definition; shadowed user-scope
 /// entries are listed alongside their project-scope shadows.
@@ -2820,6 +2844,16 @@ mod tests {
         }
     }
 
+    /// `resolve_dispatch` with no host-name qualification, for tests whose
+    /// tools are all built-ins.
+    fn resolve_dispatch_plain(
+        reg: &SubagentRegistry,
+        req: &SubagentRequest,
+        p: &ToolPermissions,
+    ) -> Result<ResolvedDispatch, SubagentError> {
+        resolve_dispatch(reg, req, p, |t| t)
+    }
+
     /// A capped parent's children are capped too. Subagents are where a run's
     /// spend multiplies, so a ceiling that stopped at the parent would be one
     /// any run could spend around by dispatching.
@@ -2827,7 +2861,7 @@ mod tests {
     fn child_body_inherits_the_parents_cost_ceiling() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
 
         let uncapped = child_body(&resolved, "task", &parent_run());
         assert!(
@@ -2913,7 +2947,7 @@ mod tests {
     fn child_body_forwards_the_parents_send_reasoning_opt_out() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
         let on = child_body(&resolved, "task", &parent_run());
         assert!(
             on.get("send_reasoning").is_none(),
@@ -2941,7 +2975,7 @@ mod tests {
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
         };
-        let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
+        let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.name, "one-off");
         assert!(resolved.definition.system_prompt.contains("one-off"));
         assert_eq!(
@@ -3031,7 +3065,7 @@ mod tests {
         );
         let p = ToolPermissions::allow_all();
         let resolved =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
         assert_eq!(
             resolved.allowed_tools,
             Some(vec![
@@ -3043,12 +3077,27 @@ mod tests {
         assert_eq!(resolved.definition.system_prompt, "sp");
     }
 
+    /// A saved definition written against wire names and a call using the
+    /// host's bare name mean the same tool: names are qualified before the
+    /// definition's list narrows the call's, not after.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_bare_host_name_matches_a_definition_listing_its_wire_name() {
+        let reg = registry_with("reviewer", Some(vec!["host__observe".to_string()]));
+        let args = host_parent();
+        let qualify = |tools| qualify_host_names(tools, &[], &args);
+        let request = req("reviewer", Some(vec!["observe".to_string()]));
+        let resolved = resolve_dispatch(&reg, &request, &ToolPermissions::allow_all(), qualify)
+            .expect("observe is the definition's host__observe");
+        assert_eq!(resolved.allowed_tools.unwrap()[0], "host__observe");
+    }
+
     #[test]
     fn resolve_rejects_tool_outside_definition() {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 

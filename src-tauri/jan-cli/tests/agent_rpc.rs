@@ -1260,6 +1260,21 @@ fn a_host_system_prompt_is_sent_verbatim_and_kept() {
             assert!(!wire.contains(jan_text), "{jan_text:?} leaked into {body}");
         }
     }
+    // Prefix stability on the host path, measured on the real requests: the
+    // second turn's body extends the first byte for byte (same tools, same
+    // system message, same history), so a provider's prompt cache holds. Jan
+    // puts no per-turn tail on a host prompt, so nothing -- not even the date
+    // -- can move bytes the host owns.
+    let bytes = |body: &serde_json::Value, key: &str| serde_json::to_string(&body[key]).unwrap();
+    assert_eq!(bytes(&requests[0], "tools"), bytes(&requests[1], "tools"));
+    let first = requests[0]["messages"].as_array().unwrap();
+    let second = requests[1]["messages"].as_array().unwrap();
+    assert!(second.len() > first.len(), "{second:?}");
+    assert_eq!(
+        serde_json::to_string(first).unwrap(),
+        serde_json::to_string(&second[..first.len()]).unwrap(),
+        "the second turn rewrote bytes the first had sent"
+    );
     drop(requests);
 
     rpc.close();
@@ -1327,6 +1342,49 @@ fn a_child_keeps_the_parents_tool_over_a_host_tool_of_the_same_name() {
         );
     }
     drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// A host-prompted session still leaves its answers for later recall -- only
+/// the recall block itself, which Jan would write into the host's prompt, is
+/// withheld. The later Jan-prompted session in the same project proves the
+/// answer was indexed; the host-prompted turns prove nothing was recalled
+/// into them.
+#[test]
+fn a_host_prompted_session_indexes_memory_but_is_never_sent_recall() {
+    let scratch = scratch("host-prompt-memory");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+
+    let host_session = |rpc: &mut Rpc, id: u64| {
+        let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session/start","params":{
+            "cwd":project,"model":"stub-model","systemPrompt":"You drive the arm."
+        }}));
+        started["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{started}")).to_owned()
+    };
+    let first = host_session(&mut rpc, 3);
+    complete_turn(&mut rpc, 4, &first);
+    let second = host_session(&mut rpc, 5);
+    complete_turn(&mut rpc, 6, &second);
+    assert_eq!(recalled(&seen), 0, "no host-prompted turn is sent recall");
+    // The saved thread keeps the prompt it was written under, so reopening it
+    // (the TUI's `/resume`) does not fall back to Jan's.
+    let thread = std::fs::read_to_string(
+        store(&home, &project).join("threads").join(&first).join("thread.json"),
+    )
+    .expect("the host-prompted session was saved");
+    let thread: serde_json::Value = serde_json::from_str(&thread).unwrap();
+    assert_eq!(thread["metadata"]["system_prompt"], "You drive the arm.", "{thread}");
+
+    let jan = start_with(&mut rpc, 7, &project, false);
+    complete_turn(&mut rpc, 8, &jan);
+    assert_eq!(recalled(&seen), 1, "the host-prompted answers were indexed");
 
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);

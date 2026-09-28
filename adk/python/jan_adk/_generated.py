@@ -218,7 +218,7 @@ class SessionStartParams(TypedDict):
     builtins: NotRequired[bool]
     # Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins.
     subagents: NotRequired[Union[bool, None]]
-    # The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or project memory, and the session neither recalls nor indexes project memory. Jan may still append runtime notices to the conversation. Children keep their own prompts.
+    # The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or recalled project memory. Its answers are still indexed for later sessions unless it is `ephemeral`. Jan may still append runtime notices to the conversation. Children keep their own prompts.
     systemPrompt: NotRequired[Union[str, None]]
     permissions: NotRequired[PermissionOwner]
 

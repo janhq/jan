@@ -2882,6 +2882,31 @@ async fn todo_prompt_addendum(
     has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
+/// The per-turn guidance block for this run, if any. Plan mode's is kept even
+/// under a host prompt: a TUI `/resume` of a host-prompted thread can run in
+/// Plan mode, and without the warning the model only learns of it from
+/// refusals. It sits in the tail, so the host's cached prefix is unaffected.
+/// Todo guidance is Jan's own prose and is withheld like every other block.
+async fn turn_addendum(
+    run_mode: crate::core::agent::plan::RunMode,
+    jan_owns_prompt: bool,
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<(Composer, &'static str)> {
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        return Some((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum(),
+        ));
+    }
+    if !jan_owns_prompt {
+        return None;
+    }
+    todo_prompt_addendum(eager_todo_plan, todo_registry)
+        .await
+        .map(|addendum| (Composer::TodoAddendum, addendum))
+}
+
 /// True when this turn should be forced to stage a plan: a `/goal` run whose
 /// list is still empty. Forcing is deliberately limited to goal mode -- an
 /// unattended loop needs a plan to work against, while an ordinary turn is the
@@ -3012,11 +3037,11 @@ async fn orchestrate_inner(
             &prompt_policy,
         )?,
     };
-    let jan_prompt = host_system_prompt.is_none();
+    let jan_owns_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    if jan_prompt {
+    if jan_owns_prompt {
         volatile_parts.push((
             Composer::Date,
             format!(
@@ -3028,14 +3053,15 @@ async fn orchestrate_inner(
     // Which checkout the work applies to. Per-turn rather than part of the
     // environment block above, because anything that switches branch -- the
     // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref().filter(|_| jan_prompt) {
+    if let Some(root) = project_root.as_deref().filter(|_| jan_owns_prompt) {
         volatile_parts.push((Composer::GitState, git_state_block(root)));
     }
     // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory, and
-    // so does a host-prompted run: recall is a block Jan would write into it.
-    let use_memory = *project_memory && system_prompt_override.is_none() && jan_prompt;
-    if use_memory {
+    // is indexed. Child runs keep their isolated history and skip memory. A
+    // host-prompted run still indexes its answers but is never sent recall:
+    // that is a block Jan would write into a prompt the host owns.
+    let use_memory = *project_memory && system_prompt_override.is_none();
+    if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
@@ -3058,17 +3084,10 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    // Under a host prompt Plan mode is still enforced by the gate; only its
-    // prose is withheld, like every other block Jan writes.
-    if jan_prompt {
-        if run_mode == crate::core::agent::plan::RunMode::Plan {
-            volatile_parts.push((
-                Composer::PlanAddendum,
-                crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
-            ));
-        } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-            volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
-        }
+    if let Some((composer, addendum)) =
+        turn_addendum(run_mode, jan_owns_prompt, eager_todo_plan, todo_registry).await
+    {
+        volatile_parts.push((composer, addendum.to_string()));
     }
 
     // One tail message, built from every block the policy kept below the cache
@@ -3470,8 +3489,9 @@ async fn orchestrate_inner(
                 },
             )
             .await;
-        // The same gate as the recall: an ephemeral session or a child run
-        // leaves no answer behind for a later session to recall.
+        // The recall's gate minus the prompt-ownership half: an ephemeral
+        // session or a child run leaves no answer behind for a later session
+        // to recall, while a host-prompted run does.
         if use_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
@@ -5109,6 +5129,30 @@ mod tests {
         // No registry means the `todo` tool is never advertised, so forcing it
         // would name a tool the request does not carry.
         assert!(!should_force_goal_todo_plan(true, &None).await);
+    }
+
+    #[tokio::test]
+    async fn plan_guidance_reaches_a_host_prompted_turn_but_todo_guidance_does_not() {
+        use crate::core::agent::plan::RunMode;
+        let staged = Some(staged_todo_registry());
+        for jan_owns_prompt in [true, false] {
+            assert_eq!(
+                turn_addendum(RunMode::Plan, jan_owns_prompt, false, &staged).await,
+                Some((
+                    Composer::PlanAddendum,
+                    crate::core::agent::plan::plan_mode_prompt_addendum()
+                )),
+                "jan_owns_prompt={jan_owns_prompt}"
+            );
+        }
+        assert_eq!(
+            turn_addendum(RunMode::Normal, true, false, &staged).await,
+            Some((
+                Composer::TodoAddendum,
+                crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM
+            ))
+        );
+        assert_eq!(turn_addendum(RunMode::Normal, false, false, &staged).await, None);
     }
 
     #[tokio::test]

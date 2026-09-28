@@ -131,9 +131,10 @@ export interface CreateSessionOptions {
   subagents?: boolean
   /**
    * The whole system prompt, sent exactly as given in place of Jan's: no Jan
-   * identity, guides, environment, date, git state or project memory (none is
-   * recalled or indexed). Jan may still append runtime notices to the
-   * conversation. Subagents keep their own prompts. Must not be blank.
+   * identity, guides, environment, date, git state or recalled project memory.
+   * Answers are still indexed for later sessions unless `ephemeral`. Jan may
+   * still append runtime notices to the conversation. Subagents keep their own
+   * prompts. Must not be blank.
    */
   systemPrompt?: string
   /**

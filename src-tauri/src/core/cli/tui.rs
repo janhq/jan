@@ -2815,6 +2815,22 @@ impl App {
         self.workspace = workspace;
     }
 
+    /// Run the session on `prompt` in place of Jan's system prompt, or back on
+    /// Jan's with `None`. Only a thread an RPC host wrote carries one; the run
+    /// args are swapped rather than edited because they are shared behind an
+    /// `Arc` with any run already spawned from them.
+    fn set_host_system_prompt(&mut self, prompt: Option<String>) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        if args.host_system_prompt == prompt {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.host_system_prompt = prompt;
+        self.args = Some(Arc::new(next));
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -2830,6 +2846,7 @@ impl App {
         // A fresh session is a root, whatever the one it replaced was, and it
         // owns the checkout this session is working in.
         self.forked_from = None;
+        self.set_host_system_prompt(None);
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -4788,16 +4805,23 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+        let host_prompt = self.args.as_ref().and_then(|a| a.host_system_prompt.clone());
         if self.base_snapshot.is_none()
             && self.goal.is_none()
             && !planning
             && self.todos.is_empty()
             && self.forked_from.is_none()
             && self.workspace_record.is_none()
+            && host_prompt.is_none()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
+        // Metadata is replaced whole on save, so a prompt a host wrote the
+        // thread under is carried or it is lost.
+        if let Some(prompt) = host_prompt {
+            meta.insert(super::SYSTEM_PROMPT_KEY.to_string(), serde_json::json!(prompt));
+        }
         if let Some(workspace) = self.workspace_record.as_ref() {
             meta.insert(
                 super::worktree::WORKTREE_KEY.to_string(),
@@ -16420,6 +16444,26 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Reload the system prompt an RPC host wrote a thread under, or return to
+/// Jan's for a thread with none, so the resumed conversation keeps the prompt
+/// its history was produced under.
+fn restore_host_system_prompt(app: &mut App, metadata: Option<&serde_json::Value>) {
+    let prompt = metadata
+        .and_then(|m| m.get(super::SYSTEM_PROMPT_KEY))
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.trim().is_empty())
+        .map(str::to_owned);
+    if prompt.is_some() {
+        // The prompt was written for the host's tools, which a TUI session
+        // does not have; the user should know before the model reaches for them.
+        app.note(
+            "resumed on the host's system prompt from this thread; the host's tools are \
+             not available here. /new returns to Jan's prompt",
+        );
+    }
+    app.set_host_system_prompt(prompt);
+}
+
 /// Reload the canonical todo list for a resumed thread from its persisted
 /// metadata into the TUI projection. The caller also mirrors it into the shared
 /// registry so the model's next `todo` op operates on the reconstructed state.
@@ -16938,6 +16982,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     restore_goal(app, thread.get("metadata"));
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
+    restore_host_system_prompt(app, thread.get("metadata"));
     app.forked_from = thread
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
@@ -20123,8 +20168,8 @@ mod tests {
         message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
         open_tree_picker, pairs_to_str, parse_command, partial_json_field,
         provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
-        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
-        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
+        route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
@@ -34985,6 +35030,28 @@ mod tests {
         // Resume must never auto-execute a saved plan.
         assert_eq!(restored.status, Status::Idle);
         assert!(restored.message_queue.is_empty());
+    }
+
+    /// A thread an RPC host wrote under its own system prompt resumes on that
+    /// prompt, carries it on the next save, and `/new` returns to Jan's.
+    #[test]
+    fn a_host_system_prompt_round_trips_through_thread_metadata() {
+        let mut app = test_app();
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let meta = serde_json::json!({ super::super::SYSTEM_PROMPT_KEY: "You drive the arm." });
+        restore_host_system_prompt(&mut app, Some(&meta));
+        let prompt = |app: &App| app.args.as_ref().and_then(|a| a.host_system_prompt.clone());
+        assert_eq!(prompt(&app).as_deref(), Some("You drive the arm."));
+        let saved = app.thread_metadata().expect("the prompt alone is worth saving");
+        assert_eq!(saved[super::super::SYSTEM_PROMPT_KEY], "You drive the arm.");
+
+        app.reset_session();
+        assert_eq!(prompt(&app), None, "a fresh session is Jan's again");
+        assert!(app.thread_metadata().is_none());
+
+        restore_host_system_prompt(&mut app, Some(&meta));
+        restore_host_system_prompt(&mut app, Some(&serde_json::json!({})));
+        assert_eq!(prompt(&app), None, "a thread without one resumes on Jan's");
     }
 
     #[test]
