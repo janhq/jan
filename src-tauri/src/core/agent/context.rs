@@ -37,12 +37,29 @@ get on with unrelated work or finish the turn.";
 /// the project root up to the filesystem root. When a directory has a
 /// non-empty one it wins outright: nothing else in that directory is read.
 ///
-/// #8642 made `JAN.md` the only file ingested, so another agent's file never
-/// became authoritative behind the user's back. #9079 keeps `JAN.md` primary
-/// and adds a *fallback* for directories without one: the names in
-/// `[context].fallback_files` (default `AGENTS.md`; `CLAUDE.md` is opt-in),
-/// tried in order, one file per directory. `[]` restores JAN.md-only exactly.
-const CONTEXT_FILE_NAME: &str = "JAN.md";
+/// `JAN.md` is the *legacy* name: `/init` now writes `AGENTS.md` (#9083), but a
+/// `JAN.md` the user already has keeps winning, so an existing project loads
+/// exactly the bytes it loaded before and its prompt cache stays warm. Other
+/// directories fall back to the names in `[context].fallback_files` (default
+/// `AGENTS.md`; `CLAUDE.md` is opt-in), tried in order, one file per directory.
+/// `[]` restores JAN.md-only exactly.
+pub(crate) const CONTEXT_FILE_NAME: &str = "JAN.md";
+
+/// The instructions file `/init` writes for a new project (#9083).
+#[cfg(feature = "cli")]
+pub(crate) const DEFAULT_INSTRUCTIONS_FILE: &str = "AGENTS.md";
+
+/// How a surface labels a loaded instructions file by its name: `JAN.md` is
+/// the legacy name, `CLAUDE.md` an opt-in fallback, and `AGENTS.md` -- the
+/// default -- needs no label.
+#[cfg(feature = "cli")]
+pub(crate) fn instructions_file_label(path: &Path) -> Option<&'static str> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some(CONTEXT_FILE_NAME) => Some("legacy JAN.md"),
+        Some(DEFAULT_INSTRUCTIONS_FILE) | None => None,
+        Some(_) => Some("fallback"),
+    }
+}
 
 /// One instructions file the walk picked: where it is, what it says, and
 /// whether it is a fallback (not `JAN.md`), so a surface can say so.
@@ -147,13 +164,11 @@ pub(crate) fn has_context_file(project_root: &Path) -> bool {
     !project_context_files(project_root).is_empty()
 }
 
-/// Whether the project root itself has a non-empty `JAN.md`. `/init` uses it to
-/// decide between writing one and reviewing one, since a fallback file (or an
-/// ancestor's) is not the project's own.
+/// Whether `project_root` itself (not an ancestor) has a non-empty `name`.
+/// `/init` uses it to decide between writing a file and reviewing one.
 #[cfg(feature = "cli")]
-pub(crate) fn has_own_jan_md(project_root: &Path) -> bool {
-    std::fs::read_to_string(project_root.join(CONTEXT_FILE_NAME))
-        .is_ok_and(|content| !content.trim().is_empty())
+pub(crate) fn has_own_file(project_root: &Path, name: &str) -> bool {
+    std::fs::read_to_string(project_root.join(name)).is_ok_and(|content| !content.trim().is_empty())
 }
 
 /// Built-in guide teaching the model the skills/memory file conventions. Always

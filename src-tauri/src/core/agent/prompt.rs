@@ -154,7 +154,7 @@ impl Composer {
             Composer::SkillGuide => "the skills and memory file conventions",
             Composer::WebToolsGuide => "the native web tools and when to reach for them",
             Composer::ProjectContext => {
-                "JAN.md (or its AGENTS.md fallback), from the project and its ancestors"
+                "AGENTS.md (or a legacy JAN.md), from the project and its ancestors"
             },
             Composer::Skills => "the installed skill catalog",
             Composer::MemoryCatalog => "the curated memory note catalog",

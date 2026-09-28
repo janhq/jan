@@ -6766,8 +6766,8 @@ struct ContextReport {
     session_cached_tokens: u64,
     session_cache_write_tokens: u64,
     /// The instructions files the project context loaded, farthest first, each
-    /// with whether it is a fallback (`AGENTS.md`, `CLAUDE.md`) read because its
-    /// directory has no `JAN.md` (#9079). Listed so a fallback is never silent.
+    /// with whether it is not a `JAN.md` (#9079). `/context` labels each by
+    /// name (legacy `JAN.md`, `CLAUDE.md` fallback), so the choice is never silent.
     instruction_files: Vec<(String, bool)>,
 }
 
@@ -6993,18 +6993,20 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
 }
 
 /// Which instructions files the project context holds, for `/context`: a blank
-/// separator, a heading, then one path per file, a fallback marked as such.
+/// separator, a heading, then one path per file, a legacy JAN.md or a CLAUDE.md
+/// fallback labelled as such.
 /// Empty when none loaded, so a project without instructions shows nothing.
 fn instruction_file_lines(report: &ContextReport) -> Vec<String> {
     if report.instruction_files.is_empty() {
         return Vec::new();
     }
     let mut lines = vec![String::new(), "Project instructions".to_string()];
-    for (path, fallback) in &report.instruction_files {
-        lines.push(if *fallback {
-            format!("  {path} (fallback: no JAN.md in that folder)")
-        } else {
-            format!("  {path}")
+    for (path, _) in &report.instruction_files {
+        let label =
+            crate::core::agent::context::instructions_file_label(std::path::Path::new(path));
+        lines.push(match label {
+            Some(label) => format!("  {path} ({label})"),
+            None => format!("  {path}"),
         });
     }
     lines
@@ -9572,8 +9574,8 @@ pub async fn run(
         // middle of a run.
         app.note(&warning);
     }
-    // Only when there is nothing to load: a project that already has JAN.md needs
-    // no invitation, and the splash hint covers re-running /init deliberately.
+    // An invitation when there is nothing to load, a label when a legacy JAN.md
+    // or a CLAUDE.md is what loaded; an AGENTS.md project hears nothing.
     if let Some(note) = project_instructions_note(&app.project_root) {
         app.note(&note);
     }
@@ -12148,7 +12150,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/init",
         hint: "",
-        description: "Study the project, then write JAN.md, skills, and memory",
+        description: "Study the project, then write AGENTS.md, skills, and memory",
         alias_of: None,
     },
     SlashCommand {
@@ -12280,7 +12282,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/reload",
         hint: "[config|plugin|skills|system-prompt]",
-        description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
+        description: "Re-read agent.toml, skills, plugins and AGENTS.md without restarting (bare: all)",
         alias_of: None,
     },
     SlashCommand {
@@ -12739,47 +12741,97 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
 
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
-/// later session reads back: the root `JAN.md` (ingested as project context),
-/// skills for repeatable workflows, and memory for durable facts. Phrased as a
-/// task for the model rather than executed here -- only the model can read the
-/// project and judge what is worth writing down.
-const INIT_PROMPT: &str = "Onboard yourself to this project so future sessions start informed.\n\n\
+/// later session reads back: the root instructions file (ingested as project
+/// context), skills for repeatable workflows, and memory for durable facts.
+/// Phrased as a task for the model rather than executed here -- only the model
+/// can read the project and judge what is worth writing down. `{file}` is the
+/// file [`init_plan`] chose.
+fn init_prompt(file: &str) -> String {
+    format!(
+        "Onboard yourself to this project so future sessions start informed.\n\n\
 1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
 find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
 guesswork). Note the conventions the code actually follows.\n\n\
-2. Write `JAN.md` in the project root. It is the only instructions file loaded into your system \
-prompt, and it is loaded every session, so it must earn its tokens: the commands to build/test/lint, \
-the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip \
-anything obvious from a directory listing, and do not pad it. If `JAN.md` already exists, read it and \
-correct what has drifted instead of rewriting it wholesale.\n\n\
+2. Write `{file}` in the project root. It is loaded into your system prompt every session, so it \
+must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from \
+the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and \
+do not pad it. If `{file}` already exists, read it and correct what has drifted instead of rewriting \
+it wholesale.\n\n\
 3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
 migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
 multi-step recipe exists. Do not invent skills to fill space.\n\n\
 4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
 true beyond this session and not already stated in the code.\n\n\
-Then report what you wrote and why, briefly.";
+Then report what you wrote and why, briefly."
+    )
+}
 
 /// The startup note about project instructions: an invitation to `/init` when
-/// there are none, and a plain statement when the context came from a fallback
-/// file (`AGENTS.md`) rather than `JAN.md`, so that choice is never silent
-/// (#9079). `None` when every loaded file is a `JAN.md`: nothing to say.
+/// there are none, and a plain statement when a loaded file is not the default
+/// `AGENTS.md` -- a legacy `JAN.md` or an opt-in `CLAUDE.md` -- so which file
+/// the prompt holds is never silent (#9079). `None` when every loaded file is
+/// an `AGENTS.md`: nothing to say.
 fn project_instructions_note(project_root: &std::path::Path) -> Option<String> {
-    let files = crate::core::agent::context::project_context_files(project_root);
+    use crate::core::agent::context::{instructions_file_label, project_context_files};
+    let files = project_context_files(project_root);
     if files.is_empty() {
-        return Some("no JAN.md here — run /init to study this project and write one".to_string());
+        return Some(
+            "no AGENTS.md here — run /init to study this project and write one".to_string(),
+        );
     }
-    let fallbacks: Vec<String> = files
+    let labelled: Vec<String> = files
         .iter()
-        .filter(|file| file.fallback)
-        .map(|file| file.path.display().to_string())
+        .filter_map(|file| {
+            instructions_file_label(&file.path)
+                .map(|label| format!("{} ({label})", file.path.display()))
+        })
         .collect();
-    if fallbacks.is_empty() {
+    if labelled.is_empty() {
         return None;
     }
-    Some(format!(
-        "project instructions from {} (no JAN.md there) · [context].fallback_files in agent.toml controls this",
-        fallbacks.join(", ")
-    ))
+    Some(format!("project instructions from {}", labelled.join(", ")))
+}
+
+/// What `/init` does in this project root: which file it writes or reviews,
+/// whether that file already exists, and which other agent's file (if any) it
+/// starts from.
+#[derive(Debug, PartialEq, Eq)]
+struct InitPlan {
+    file: &'static str,
+    existing: bool,
+    seed: Option<&'static str>,
+}
+
+/// Choose `/init`'s target (#9083). `AGENTS.md` is the default. A root that
+/// already has a legacy `JAN.md` keeps it: `JAN.md` wins over `AGENTS.md` in the
+/// same folder, so an `AGENTS.md` written next to it would never load. A project
+/// whose `[context].fallback_files` leaves `AGENTS.md` out gets `JAN.md`, the
+/// one name that is always read. A `CLAUDE.md` seeds a new file.
+fn init_plan(project_root: &std::path::Path) -> InitPlan {
+    use crate::core::agent::context::{
+        has_own_file, CONTEXT_FILE_NAME, DEFAULT_INSTRUCTIONS_FILE,
+    };
+    let agents_read = crate::core::agent::project::context_fallback_files(project_root)
+        .iter()
+        .any(|name| name == DEFAULT_INSTRUCTIONS_FILE);
+    let file = if has_own_file(project_root, CONTEXT_FILE_NAME) || !agents_read {
+        CONTEXT_FILE_NAME
+    } else {
+        DEFAULT_INSTRUCTIONS_FILE
+    };
+    let existing = has_own_file(project_root, file);
+    let seed = (!existing)
+        .then(|| {
+            [DEFAULT_INSTRUCTIONS_FILE, "CLAUDE.md"]
+                .into_iter()
+                .find(|name| *name != file && has_own_file(project_root, name))
+        })
+        .flatten();
+    InitPlan {
+        file,
+        existing,
+        seed,
+    }
 }
 
 /// `/init`: hand the model the onboarding task as a user turn, so it runs with
@@ -12793,50 +12845,47 @@ fn init_command(app: &mut App) {
         app.note("/init is only available once the run has finished");
         return;
     }
-    let existing = crate::core::agent::context::has_own_jan_md(&app.project_root);
-    let seed = (!existing)
-        .then(|| init_seed_file(&app.project_root))
-        .flatten();
-    match (&seed, existing) {
-        (_, true) => app.note("◈ init · reviewing JAN.md, skills, and memory for this project"),
-        (Some(name), false) => app.note(&format!(
-            "◈ init · writing JAN.md from this project's {name}, plus skills and memory"
+    let plan = init_plan(&app.project_root);
+    let file = plan.file;
+    match (plan.seed, plan.existing) {
+        (_, true) => app.note(&format!(
+            "◈ init · reviewing {file}, skills, and memory for this project"
         )),
-        (None, false) => {
-            app.note("◈ init · studying the project to write JAN.md, skills, and memory")
-        }
+        (Some(seed), false) => app.note(&format!(
+            "◈ init · writing {file} from this project's {seed}, plus skills and memory"
+        )),
+        (None, false) => app.note(&format!(
+            "◈ init · studying the project to write {file}, skills, and memory"
+        )),
     }
-    let prompt = match seed {
-        Some(name) => format!("{INIT_PROMPT}\n\n{}", init_seed_paragraph(&name)),
-        None => INIT_PROMPT.to_string(),
-    };
+    let mut prompt = init_prompt(file);
+    if let Some(seed) = plan.seed {
+        prompt.push_str("\n\n");
+        prompt.push_str(&init_seed_paragraph(file, seed));
+    }
+    if file == crate::core::agent::context::CONTEXT_FILE_NAME && plan.existing {
+        prompt.push_str("\n\n");
+        prompt.push_str(INIT_LEGACY_PARAGRAPH);
+    }
     app.submit_user_hidden(prompt);
 }
 
-/// The other agent's instructions file `/init` should start from, when the
-/// project root has one and no `JAN.md` (#9079): `AGENTS.md`, else `CLAUDE.md`.
-/// Both are offered regardless of `[context].fallback_files`, because this only
-/// seeds a file the user then owns -- nothing is loaded from it by this choice.
-fn init_seed_file(project_root: &std::path::Path) -> Option<String> {
-    ["AGENTS.md", "CLAUDE.md"]
-        .into_iter()
-        .find(|name| {
-            std::fs::read_to_string(project_root.join(name))
-                .is_ok_and(|content| !content.trim().is_empty())
-        })
-        .map(str::to_string)
-}
+/// The `/init` addendum for a project whose own file is the legacy `JAN.md`:
+/// keep editing it in place, and leave the rename to the user.
+const INIT_LEGACY_PARAGRAPH: &str = "`JAN.md` is Jan's legacy instructions file; new projects use \
+`AGENTS.md`, which other coding agents read too. Keep editing `JAN.md` in place -- it wins over an \
+`AGENTS.md` in the same folder -- and do not rename it yourself. In your report, mention that the \
+user can rename it to `AGENTS.md` if they want one file shared by every agent.";
 
 /// The `/init` addendum for a project that already keeps instructions for
 /// another agent: build on them rather than writing from scratch, and drop what
 /// was aimed at that agent -- the concern #8642 raised about ingesting it as is.
-fn init_seed_paragraph(name: &str) -> String {
+fn init_seed_paragraph(file: &str, seed: &str) -> String {
     format!(
-        "This project has no `JAN.md` but has `{name}`, written for another coding agent. Read it \
-first and use it as the starting point for `JAN.md`: keep the commands, architecture, and \
+        "This project has no `{file}` but has `{seed}`, written for another coding agent. Read it \
+first and use it as the starting point for `{file}`: keep the commands, architecture, and \
 conventions that hold for any agent, and drop or rewrite anything aimed at that specific agent (its \
-tool names, its CLI commands, its config files). Leave `{name}` itself unchanged. If the user would \
-rather keep one file, mention that `ln -s {name} JAN.md` makes Jan read it directly."
+tool names, its CLI commands, its config files). Leave `{seed}` itself unchanged."
     )
 }
 
@@ -14767,13 +14816,15 @@ fn reload_system_prompt(app: &mut App) {
     let files = crate::core::agent::context::project_context_files(&app.project_root);
     if files.is_empty() {
         app.note(
-            "◈ reload · system-prompt · no JAN.md or [context].fallback_files match in this project or its ancestors",
+            "◈ reload · system-prompt · no AGENTS.md or JAN.md in this project or its ancestors",
         );
         return;
     }
     app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
     for file in &files {
-        let tag = if file.fallback { ", fallback" } else { "" };
+        let tag = crate::core::agent::context::instructions_file_label(&file.path)
+            .map(|label| format!(", {label}"))
+            .unwrap_or_default();
         app.system_detail_text(&format!(
             "  {} ({} bytes{tag})",
             file.path.display(),
@@ -25500,7 +25551,8 @@ mod tests {
         super::init_command(&mut app);
         assert!(app.want_start, "/init must start a turn");
         let sent = app.history.last().expect("user message").to_string();
-        assert!(sent.contains("JAN.md"), "{sent}");
+        assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
+        assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
         assert!(sent.contains("skill_write"), "{sent}");
         assert!(sent.contains("memory_write"), "{sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
@@ -37657,7 +37709,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
         assert!(
-            transcript_text(&app).contains("no JAN.md or [context].fallback_files match"),
+            transcript_text(&app).contains("no AGENTS.md or JAN.md"),
             "empty project: {}",
             transcript_text(&app)
         );
@@ -37670,23 +37722,23 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// #9079 x #9077: `/reload system-prompt` goes through the fallback
-    /// discovery, so a project with only AGENTS.md reports it (tagged), and a
-    /// JAN.md added later shadows it.
+    /// #9079 x #9077: `/reload system-prompt` goes through the same discovery,
+    /// so a project with only AGENTS.md reports it, and a legacy JAN.md added
+    /// later shadows it and is labelled.
     #[tokio::test]
     async fn reload_system_prompt_reads_agents_md_fallback() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         std::fs::write(root.join("AGENTS.md"), "# Agents\n\nUse make.\n").unwrap();
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
         let out = transcript_text(&app);
-        assert!(out.contains("AGENTS.md") && out.contains("fallback"), "{out}");
+        assert!(out.contains("AGENTS.md (") && !out.contains("fallback"), "{out}");
 
         std::fs::write(root.join("JAN.md"), "# Rules\n").unwrap();
         let before = transcript_text(&app).len();
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
         let out = transcript_text(&app);
         let tail = &out[before..];
-        assert!(tail.contains("JAN.md") && !tail.contains("AGENTS.md"), "{tail}");
+        assert!(tail.contains("legacy JAN.md") && !tail.contains("AGENTS.md"), "{tail}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -38960,8 +39012,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// #9079: a fallback is never silent. No instructions invites `/init`; a
-    /// JAN.md says nothing; an AGENTS.md fallback names the file it loaded.
+    /// #9079/#9083: no instructions invites `/init`; an AGENTS.md says nothing;
+    /// a legacy JAN.md (which shadows it) is named as such.
     #[test]
     fn startup_note_names_an_agents_md_fallback() {
         crate::core::agent::global_config::with_temp_home(|_| {
@@ -38970,18 +39022,22 @@ mod tests {
             let _ = std::fs::remove_dir_all(&root);
             std::fs::create_dir_all(&root).unwrap();
             let none = super::project_instructions_note(&root).expect("an invitation");
-            assert!(none.contains("/init"), "{none}");
+            assert!(none.contains("/init") && none.contains("AGENTS.md"), "{none}");
             std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
-            let fallback = super::project_instructions_note(&root).expect("a fallback note");
-            assert!(fallback.contains("AGENTS.md"), "{fallback}");
-            assert!(fallback.contains("no JAN.md"), "{fallback}");
+            assert_eq!(
+                super::project_instructions_note(&root),
+                None,
+                "AGENTS.md is the default: nothing to say"
+            );
             std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
-            assert_eq!(super::project_instructions_note(&root), None);
+            let legacy = super::project_instructions_note(&root).expect("a legacy note");
+            assert!(legacy.contains("JAN.md (legacy JAN.md)"), "{legacy}");
             let _ = std::fs::remove_dir_all(&root);
         });
     }
 
-    /// `/context` lists the files the project context holds, marking a fallback.
+    /// `/context` lists the files the project context holds, labelling a legacy
+    /// JAN.md and a CLAUDE.md fallback.
     #[test]
     fn context_view_lists_instruction_files_and_marks_a_fallback() {
         let mut report = context_report(128_000, 16_000, [100, 100, 100, 100, 100]);
@@ -39000,36 +39056,83 @@ mod tests {
             assert!(text.contains("/repo/JAN.md"), "{text}");
             assert!(text.contains("AGENTS.md"), "{text}");
         }
-        assert!(context_text(&report).contains("AGENTS.md (fallback"));
+        let text = context_text(&report);
+        assert!(text.contains("/repo/JAN.md (legacy JAN.md)"), "{text}");
+        assert!(!text.contains("AGENTS.md ("), "AGENTS.md is unlabelled: {text}");
+        report.instruction_files = vec![("/repo/CLAUDE.md".into(), true)];
+        assert!(context_text(&report).contains("CLAUDE.md (fallback)"));
     }
 
-    /// #9079: `/init` in a project with AGENTS.md and no JAN.md builds on it
-    /// rather than writing from scratch, and offers the symlink.
+    /// #9083: `/init` writes AGENTS.md by default, reviews one that exists,
+    /// starts from a CLAUDE.md, keeps a legacy JAN.md, and falls back to JAN.md
+    /// when `[context].fallback_files` would not read AGENTS.md.
     #[test]
-    fn init_starts_from_an_existing_agents_md() {
-        let root = std::env::temp_dir().join(format!("jan_init_seed_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        assert_eq!(super::init_seed_file(&root), None);
-        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
-        assert_eq!(super::init_seed_file(&root).as_deref(), Some("CLAUDE.md"));
-        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
-        assert_eq!(super::init_seed_file(&root).as_deref(), Some("AGENTS.md"));
+    fn init_plan_defaults_to_agents_md_and_keeps_a_legacy_jan_md() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_init_plan_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            let plan = |file, existing, seed| super::InitPlan {
+                file,
+                existing,
+                seed,
+            };
+            assert_eq!(super::init_plan(&root), plan("AGENTS.md", false, None));
+            std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+            assert_eq!(
+                super::init_plan(&root),
+                plan("AGENTS.md", false, Some("CLAUDE.md"))
+            );
+            std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+            assert_eq!(super::init_plan(&root), plan("AGENTS.md", true, None));
+            // A legacy JAN.md shadows AGENTS.md, so /init edits it, not AGENTS.md.
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            assert_eq!(super::init_plan(&root), plan("JAN.md", true, None));
+            // `fallback_files = []` reads JAN.md only: /init writes that.
+            std::fs::remove_file(root.join("JAN.md")).unwrap();
+            let store = crate::core::agent::project::store_root(&root);
+            std::fs::create_dir_all(&store).unwrap();
+            std::fs::write(store.join("agent.toml"), "[context]\nfallback_files = []\n").unwrap();
+            assert_eq!(
+                super::init_plan(&root),
+                plan("JAN.md", false, Some("AGENTS.md"))
+            );
+            let _ = std::fs::remove_dir_all(&store);
+            let _ = std::fs::remove_dir_all(&root);
+        });
+    }
 
-        let mut app = test_app();
-        app.project_root = root.clone();
-        super::init_command(&mut app);
-        let sent = app.history.last().expect("user message").to_string();
-        assert!(sent.contains("has `AGENTS.md`"), "{sent}");
-        assert!(sent.contains("ln -s AGENTS.md JAN.md"), "{sent}");
-        let text: String = row_lines(&app.transcript)
-            .iter()
-            .flat_map(|l| l.spans.clone())
-            .map(|s| s.content.to_string())
-            .collect();
-        assert!(text.contains("from this project's AGENTS.md"), "{text}");
-        let _ = std::fs::remove_dir_all(&app.agent_dir);
-        let _ = std::fs::remove_dir_all(&root);
+    /// `/init` in a project with CLAUDE.md builds AGENTS.md on it; one with a
+    /// legacy JAN.md keeps editing it and is told about the rename.
+    #[test]
+    fn init_prompt_names_the_planned_file() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_init_seed_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+            let mut app = test_app();
+            app.project_root = root.clone();
+            super::init_command(&mut app);
+            let sent = app.history.last().expect("user message").to_string();
+            assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
+            assert!(sent.contains("has `CLAUDE.md`"), "{sent}");
+            assert!(transcript_text(&app).contains("writing AGENTS.md from this project's CLAUDE.md"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            let mut app = test_app();
+            app.project_root = root.clone();
+            super::init_command(&mut app);
+            let sent = app.history.last().expect("user message").to_string();
+            assert!(sent.contains("Write `JAN.md`"), "{sent}");
+            assert!(sent.contains("legacy instructions file"), "{sent}");
+            assert!(transcript_text(&app).contains("reviewing JAN.md"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+            let _ = std::fs::remove_dir_all(&root);
+        });
     }
 
     #[test]

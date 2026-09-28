@@ -1,7 +1,7 @@
 ---
 title: Project Config
-description: JAN.md and agent.toml - per-project instructions, model, budget, and tool policy.
-keywords: [Jan, Jan Agent, agent.toml, JAN.md, project config, instructions, budget]
+description: AGENTS.md and agent.toml - per-project instructions, model, budget, and tool policy.
+keywords: [Jan, Jan Agent, agent.toml, AGENTS.md, JAN.md, project config, instructions, budget]
 ---
 
 import { Callout } from 'nextra/components'
@@ -9,11 +9,11 @@ import { Callout } from 'nextra/components'
 # Project Config
 
 Each project gets a store under `~/.jan/projects/` holding how the agent should behave there. The
-project directory itself holds only `JAN.md`.
+project directory itself holds only `AGENTS.md`.
 
 ```
 your-project/
-`-- JAN.md                 # instructions for the agent
+`-- AGENTS.md              # instructions for the agent
 
 ~/.jan/projects/<name>-<hash>/
 |-- project.json           # which directory this store belongs to
@@ -37,7 +37,7 @@ jan cli agent status --project .
 ```
 
 <Callout type="tip">
-Commit `JAN.md` so the whole team gets the same instructions. It is the only file Jan keeps in the
+Commit `AGENTS.md` so the whole team gets the same instructions. It is the only file Jan keeps in the
 project; everything in the store is per user and stays out of your repository.
 </Callout>
 
@@ -49,7 +49,7 @@ so. It never merges: if the store already has content, the old folder is left al
 for you to merge or delete by hand. Any other files in `.jan/` are left in place and listed. A
 workspace that is your home directory is skipped, since its `.jan` is the user-wide `~/.jan`.
 
-## JAN.md
+## AGENTS.md
 
 Plain markdown, injected into the system prompt on every run. The highest-leverage file here.
 
@@ -67,23 +67,25 @@ This is a Rust workspace. `cargo test` must pass before you call anything done.
 Write it as rules, not prose. Things that are true every time belong here; a procedure for one kind
 of task belongs in a [skill](/docs/agent/skills).
 
-Jan reads `JAN.md` from the project root and each of its ancestors; the nearest file wins. Write one
-by hand or with `/init`.
+Jan reads it from the project root and each of its ancestors; the nearest file wins. Write one by
+hand or with `/init`, which writes `AGENTS.md`. Other coding agents read `AGENTS.md` too, so one file
+serves them all.
 
-### AGENTS.md and CLAUDE.md
+### JAN.md and CLAUDE.md
 
-Many repositories already keep instructions for other coding agents in `AGENTS.md`. Jan reads one
-file per directory on that same walk:
+Jan reads one file per directory on that same walk:
 
-1. `JAN.md`, if it is there and not empty. It always wins, so a repo with both files loads only
-   `JAN.md`.
+1. `JAN.md`, if it is there and not empty. This is Jan's legacy name. It still wins, so a project
+   that already has one loads exactly what it did before, and `/init` keeps editing it. Rename it to
+   `AGENTS.md` whenever you like.
 2. Otherwise `AGENTS.md`.
 3. Otherwise `CLAUDE.md`, but only if you opt in to it.
 
-A file already loaded under another name is skipped, so the common `ln -s AGENTS.md JAN.md` loads
-once. Each file keeps its path in the prompt, so the model can see which one it got. When a
-fallback is used, the startup note says so and `/context` lists it under **Project instructions**.
-In a project that has `AGENTS.md` but no `JAN.md`, `/init` uses it as the starting point.
+A file already loaded under another name is skipped, so a `JAN.md -> AGENTS.md` symlink loads once.
+Each file keeps its path in the prompt, so the model can see which one it got. When a legacy
+`JAN.md` or a `CLAUDE.md` is used, the startup note says so and `/context` labels it under
+**Project instructions**. In a project with only `CLAUDE.md`, `/init` uses it as the starting point
+for `AGENTS.md`.
 
 Configure it in `agent.toml`, or in `~/.jan/config.toml` for every project (the project wins):
 
@@ -91,7 +93,7 @@ Configure it in `agent.toml`, or in `~/.jan/config.toml` for every project (the 
 [context]
 fallback_files = ["AGENTS.md"]               # the default
 # fallback_files = ["AGENTS.md", "CLAUDE.md"] # also read CLAUDE.md
-# fallback_files = []                         # JAN.md only
+# fallback_files = []                         # JAN.md only; /init then writes JAN.md
 ```
 
 Only `AGENTS.md` and `CLAUDE.md` are recognised. The files are re-read at the start of every run;
@@ -99,8 +101,8 @@ Only `AGENTS.md` and `CLAUDE.md` are recognised. The files are re-read at the st
 
 <Callout type="warning">
 A file written for another agent can mention that agent's own tools or commands. If Jan follows
-something meant for another tool, write a `JAN.md` (it shadows the other file) or set
-`fallback_files = []`.
+something meant for another tool, edit the file, write a `JAN.md` (it shadows the other file), or
+set `fallback_files = []`.
 </Callout>
 
 ## agent.toml

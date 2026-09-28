@@ -11,8 +11,10 @@ Run `jan` in a folder. That CWD is the project root; `--project DIR` selects ano
 
 ## Project files
 
-Jan reads non-empty `JAN.md` files from the project root and its ancestors. The nearest file wins.
-`JAN.md` is the only file Jan keeps in the project; commit it to share instructions.
+Jan reads one non-empty instructions file per folder, from the project root and its ancestors. The
+nearest file wins. `AGENTS.md` is the default and what `/init` writes; a legacy `JAN.md` still loads
+and wins over `AGENTS.md` in the same folder. It is the only file Jan keeps in the project; commit it
+to share instructions.
 Everything else is per-user state under `~/.jan/`, created on first use.
 
 ## User files
