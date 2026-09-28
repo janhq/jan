@@ -238,7 +238,7 @@ describe('TauriProvidersService', () => {
       expect(result).toEqual(['m1', 'm2'])
     })
 
-    it('returns empty for unexpected format', async () => {
+    it('throws structured error for unexpected response format', async () => {
       vi.mocked(fetchTauri).mockResolvedValueOnce({
         ok: true,
         status: 200,
@@ -246,8 +246,9 @@ describe('TauriProvidersService', () => {
       } as any)
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const result = await svc.fetchModelsFromProvider(baseProvider)
-      expect(result).toEqual([])
+      await expect(svc.fetchModelsFromProvider(baseProvider)).rejects.toThrow(
+        'Unexpected response format from test-provider'
+      )
       warnSpy.mockRestore()
     })
 
