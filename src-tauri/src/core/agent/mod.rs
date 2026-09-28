@@ -38,6 +38,7 @@ pub mod host_schema;
 pub mod interaction;
 pub mod r#loop;
 pub mod memory;
+pub mod otel;
 pub mod plan;
 pub mod plugin_commands;
 pub mod plugins;

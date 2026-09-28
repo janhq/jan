@@ -56,6 +56,13 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # Defaults to 👋; set "" for the plain
 #                                     # throbber if your terminal draws tofu
 #
+# [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
+# enabled = true                      # usage metrics and events to YOUR
+#                                     # collector (OTEL_EXPORTER_OTLP_* env);
+#                                     # off by default. A project's agent.toml
+#                                     # [telemetry] and JAN_AGENT_ENABLE_TELEMETRY
+#                                     # win over this
+#
 # [providers.my-provider]
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
@@ -153,8 +160,27 @@ struct GlobalConfigToml {
     /// but a human appending to the file would not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[telemetry]` -- opt-in OTLP export (`core::agent::otel`). A table, so
+    /// declared after the plain values and before `providers`.
+    #[serde(default, skip_serializing_if = "TelemetrySection::is_empty")]
+    telemetry: TelemetrySection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[telemetry]` in `~/.jan/config.toml` or a project's `agent.toml`. Only the
+/// switch lives here: where the data goes is the standard `OTEL_*` env, so one
+/// collector setup serves every OpenTelemetry-speaking tool unchanged.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct TelemetrySection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+impl TelemetrySection {
+    fn is_empty(&self) -> bool {
+        self.enabled.is_none()
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -279,6 +305,14 @@ pub(crate) fn default_model() -> Result<Option<String>, String> {
 pub(crate) fn smol_model() -> Result<Option<String>, String> {
     let config = load_raw()?;
     Ok(config.smol_model.filter(|m| !m.trim().is_empty()))
+}
+
+/// `[telemetry].enabled` in `~/.jan/config.toml`; `None` when unset. Fails
+/// open to "unset" like every other preference here: telemetry is never a
+/// reason for a session not to start. CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn telemetry_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.telemetry.enabled)
 }
 
 /// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),
@@ -806,6 +840,22 @@ mod tests {
         with_temp_home(|_| {
             let configs = load_global_config().expect("load");
             assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn telemetry_is_unset_by_default_and_reads_its_table() {
+        with_temp_home(|_| {
+            assert_eq!(telemetry_setting(), None, "missing file");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(telemetry_setting(), None, "scaffolded file");
+            std::fs::write(&path, "[telemetry]\nenabled = true\n").unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            // A provider write keeps the table.
+            set_provider("p", ProviderUpdate::default()).unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(telemetry_setting(), None, "fails open to unset");
         });
     }
 

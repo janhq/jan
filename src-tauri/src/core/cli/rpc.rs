@@ -840,6 +840,7 @@ pub async fn serve() -> Result<(), String> {
                 let turn = active.as_mut().expect("active");
                 match message {
                     TurnMessage::Event(event) => {
+                        crate::core::agent::otel::observe(&event);
                         if let StreamEvent::MessagesUpdated { messages } = &event { turn.updated_history = Some(messages.clone()); }
                         let wire = serde_json::to_value(&event).map_err(|e| e.to_string())?;
                         let method = format!("item/{}", wire["type"].as_str().ok_or("event has no tag")?);

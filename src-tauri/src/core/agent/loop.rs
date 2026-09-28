@@ -3368,6 +3368,15 @@ async fn orchestrate_inner(
         // hooks fire back to back on the same state.
         let request_message_count =
             projected_message_count(&transcript, volatile_projection.as_deref(), send_reasoning);
+        // Telemetry's bracket around the same span the hooks bracket: the run
+        // (and the prompt that started it) now, its end and active time when
+        // this is dropped -- on cancellation too. Inert unless the exporter is
+        // on, and it never touches the request.
+        let _telemetry_run = crate::core::agent::otel::RunScope::begin(
+            session_id.as_deref(),
+            run_id.as_deref(),
+            submitted_prompt.as_deref(),
+        );
         tools
             .fire_hooks(
                 tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,

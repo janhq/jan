@@ -9613,6 +9613,9 @@ async fn apply_stream_event(
     current: &mut Option<CurrentRun>,
 ) {
     note_claude_alias_if_engaged(app);
+    if let Some(ev) = &ev {
+        crate::core::agent::otel::observe(ev);
+    }
     match ev {
         Some(StreamEvent::Done { stop_reason, usage }) => {
             app.on_done(stop_reason, usage);
