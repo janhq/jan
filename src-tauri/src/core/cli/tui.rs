@@ -37,6 +37,7 @@ use tokio::task::JoinHandle;
 mod highlight;
 mod markdown;
 mod theme;
+mod vibe_setting;
 
 use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
@@ -2064,6 +2065,12 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// `/vibe-setting`'s side call mapping the request onto settings, while it
+    /// runs. Awaited by the chat loop; off the render loop like `/context`.
+    vibe_task: Option<JoinHandle<Result<String, String>>>,
+    /// `/vibe-setting`'s proposed diff, docked for a yes/no. Owns the keyboard
+    /// while open; nothing is written until it is confirmed.
+    vibe_confirm: Option<vibe_setting::VibeProposal>,
     /// The open readout (`/context` or any `/usage` view), or `None`. One
     /// field, so opening either replaces the other instead of stacking two
     /// popups over each other.
@@ -2691,6 +2698,8 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
+            vibe_task: None,
+            vibe_confirm: None,
             readout: None,
             context_request: false,
             last_execution_id: None,
@@ -3638,6 +3647,8 @@ impl App {
             Some("answer the question above")
         } else if self.settings_prompt.is_some() {
             Some("edit the setting above")
+        } else if self.vibe_confirm.is_some() {
+            Some("answer the proposal above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
             Some("finish the wizard above")
         } else if self.readout.is_some() {
@@ -9062,6 +9073,19 @@ fn spawn_snapshot(
     })
 }
 
+/// Await `/vibe-setting`'s side call, parking forever when none is running so
+/// this can sit in the loop's `select!` unconditionally.
+async fn await_vibe(
+    task: &mut Option<JoinHandle<Result<String, String>>>,
+) -> Option<Result<String, String>> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    Some(joined.unwrap_or_else(|e| Err(format!("vibe-setting task failed: {e}"))))
+}
+
 /// Await the in-flight snapshot task once, clearing the slot. Same cancel-safe
 /// borrow as `await_mcp`; pends forever when idle.
 async fn await_snapshot(
@@ -10192,6 +10216,9 @@ async fn chat_loop<B: Backend>(
             Some(done) = await_mcp_job(&mut mcp_job) => {
                 finish_mcp_job(app, done, mcp_servers, &mut mcp_job).await;
             }
+            Some(reply) = await_vibe(&mut app.vibe_task) => {
+                vibe_setting::finish(app, reply);
+            }
             Some(report) = await_context(&mut context_task) => {
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
@@ -10689,6 +10716,8 @@ fn route_paste_event(app: &mut App, event: Event) {
         prompt.paste(&text);
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
+    } else if let Some(proposal) = app.vibe_confirm.as_mut() {
+        proposal.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.provider_prompt.as_mut() {
@@ -11130,6 +11159,11 @@ async fn handle_key(
     // The `/settings` edit dock owns the keyboard while open, same as `/login`.
     if app.settings_prompt.is_some() {
         handle_settings_key(app, key, ctrl);
+        return;
+    }
+    // So does `/vibe-setting`'s confirm dock: nothing is written without it.
+    if app.vibe_confirm.is_some() {
+        vibe_setting::handle_key(app, key, ctrl);
         return;
     }
 
@@ -12280,6 +12314,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/vibe-setting",
+        hint: "<what you want>",
+        description: "Describe what you want; review and confirm the settings it changes",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/update",
         hint: "",
         description: "Install the latest published build (takes effect on restart)",
@@ -12492,6 +12532,7 @@ async fn run_command(
         "config" => open_config_screen(app),
         "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
+        "vibe-setting" => vibe_setting::command(app, arg),
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
@@ -13805,6 +13846,83 @@ fn grapheme_prefix(s: &str, n: usize) -> String {
     s.graphemes(true).take(n).collect()
 }
 
+/// Parse what was typed for a `/settings` row into the TOML item to write, the
+/// one validator every settings writer shares (`/settings` and `/vibe-setting`).
+/// `Ok(None)` is an unset -- the key is removed so its default applies -- except
+/// for a `Glyph`, where an empty field is the written "off" value. `Err` is the
+/// message to show, naming the valid range.
+fn parse_setting_input(
+    def: &AgentSettingDef,
+    input: &str,
+) -> Result<Option<toml_edit::Item>, String> {
+    let trimmed = input.trim();
+    match def.kind {
+        AgentSettingKind::Int { default, min } => {
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            match trimmed.parse::<u64>() {
+                Ok(n) if n >= min => Ok(Some(toml_edit::value(n as i64))),
+                Ok(_) => Err(format!(
+                    "must be at least {min} (default: {})",
+                    default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".into())
+                )),
+                Err(_) => Err(format!("'{input}' is not an integer")),
+            }
+        }
+        AgentSettingKind::Float { default, min, max } => {
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            match trimmed.parse::<f64>() {
+                Ok(n) if n >= min && n <= max => Ok(Some(toml_edit::value(n))),
+                Ok(_) => Err(format!(
+                    "must be between {min} and {max} (default: {})",
+                    default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".into())
+                )),
+                Err(_) => Err(format!("'{input}' is not a number")),
+            }
+        }
+        AgentSettingKind::Glyph { .. } => {
+            // Not trimmed to empty-means-unset like `Text`: a cleared field
+            // writes `""`, which is the off switch. `x` on the row is how you
+            // get back to the default.
+            if let Some(err) = crate::core::agent::global_config::wave_error(trimmed) {
+                return Err(err);
+            }
+            Ok(Some(toml_edit::value(trimmed.to_string())))
+        }
+        AgentSettingKind::Text { .. } => {
+            Ok((!trimmed.is_empty()).then(|| toml_edit::value(trimmed.to_string())))
+        }
+        AgentSettingKind::Enum { options, default } => {
+            if trimmed.is_empty() {
+                Ok(None)
+            } else if options.contains(&trimmed) {
+                Ok(Some(toml_edit::value(trimmed.to_string())))
+            } else {
+                Err(format!(
+                    "must be one of: {} (default: {default})",
+                    options.join(" | ")
+                ))
+            }
+        }
+        AgentSettingKind::Bool { default } => {
+            if trimmed.is_empty() {
+                Ok(None)
+            } else if let Ok(b) = trimmed.parse::<bool>() {
+                Ok(Some(toml_edit::value(b)))
+            } else {
+                Err(format!("must be true or false (default: {default})"))
+            }
+        }
+    }
+}
+
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
 /// Enter validates and writes (an empty field clears the key, except for a
 /// `Glyph`, where it writes the off value), Esc cancels. Mirrors
@@ -13822,90 +13940,11 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     match key.code {
         KeyCode::Enter => {
             let toml_path = app.agent_dir.join("agent.toml");
-            let value: Option<toml_edit::Item> = match prompt.def().kind {
-                AgentSettingKind::Int { default, min } => {
-                    if prompt.input.trim().is_empty() {
-                        None
-                    } else {
-                        match prompt.input.trim().parse::<u64>() {
-                            Ok(n) if n >= min => Some(toml_edit::value(n as i64)),
-                            Ok(_) => {
-                                prompt.error = Some(format!(
-                                    "must be at least {min} (default: {})",
-                                    default
-                                        .map(|d| d.to_string())
-                                        .unwrap_or_else(|| "unset".into())
-                                ));
-                                return;
-                            }
-                            Err(_) => {
-                                prompt.error =
-                                    Some(format!("'{}' is not an integer", prompt.input));
-                                return;
-                            }
-                        }
-                    }
-                }
-                AgentSettingKind::Float { default, min, max } => {
-                    if prompt.input.trim().is_empty() {
-                        None
-                    } else {
-                        match prompt.input.trim().parse::<f64>() {
-                            Ok(n) if n >= min && n <= max => Some(toml_edit::value(n)),
-                            Ok(_) => {
-                                prompt.error = Some(format!(
-                                    "must be between {min} and {max} (default: {})",
-                                    default
-                                        .map(|d| d.to_string())
-                                        .unwrap_or_else(|| "unset".into())
-                                ));
-                                return;
-                            }
-                            Err(_) => {
-                                prompt.error =
-                                    Some(format!("'{}' is not a number", prompt.input));
-                                return;
-                            }
-                        }
-                    }
-                }
-                AgentSettingKind::Glyph { .. } => {
-                    // Not trimmed to empty-means-unset like `Text`: a cleared
-                    // field writes `""`, which is the off switch. `x` on the
-                    // row is how you get back to the default.
-                    let input = prompt.input.trim();
-                    if let Some(err) = crate::core::agent::global_config::wave_error(input) {
-                        prompt.error = Some(err);
-                        return;
-                    }
-                    Some(toml_edit::value(input.to_string()))
-                }
-                AgentSettingKind::Text { .. } => (!prompt.input.trim().is_empty())
-                    .then(|| toml_edit::value(prompt.input.trim().to_string())),
-                AgentSettingKind::Enum { options, default } => {
-                    let input = prompt.input.trim();
-                    if input.is_empty() {
-                        None
-                    } else if options.contains(&input) {
-                        Some(toml_edit::value(input.to_string()))
-                    } else {
-                        prompt.error = Some(format!(
-                            "must be one of: {} (default: {default})",
-                            options.join(" | ")
-                        ));
-                        return;
-                    }
-                }
-                AgentSettingKind::Bool { default } => {
-                    let input = prompt.input.trim();
-                    if input.is_empty() {
-                        None
-                    } else if let Ok(b) = input.parse::<bool>() {
-                        Some(toml_edit::value(b))
-                    } else {
-                        prompt.error = Some(format!("must be true or false (default: {default})"));
-                        return;
-                    }
+            let value = match parse_setting_input(prompt.def(), &prompt.input) {
+                Ok(value) => value,
+                Err(error) => {
+                    prompt.error = Some(error);
+                    return;
                 }
             };
             match write_setting(prompt.def(), &toml_path, value) {
@@ -17876,6 +17915,19 @@ fn draw(f: &mut Frame, app: &mut App) {
         draw_login(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
         draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
+    } else if let Some(proposal) = &app.vibe_confirm {
+        let height = (vibe_setting::lines(proposal, chunks[2].width.saturating_sub(2)).len()
+            as u16
+            + 2)
+        .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        vibe_setting::draw(f, rect, proposal);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
         let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
@@ -25248,7 +25300,7 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 8] = [
+        let setups: [DockSetup; 9] = [
             // The account OAuth dock takes every keystroke and outranks the
             // API-key one, so it has to block the field as hard as the rest.
             ("account_login", |app| {
@@ -25288,6 +25340,13 @@ mod tests {
             }),
             ("provider_prompt", |app| {
                 app.provider_prompt = Some(super::ProviderPrompt::new())
+            }),
+            ("vibe_confirm", |app| {
+                super::vibe_setting::finish(
+                    app,
+                    Ok(r#"{"changes": [{"key": "max_tokens", "new_value": 512}]}"#.into()),
+                );
+                assert!(app.vibe_confirm.is_some());
             }),
         ];
         for (name, open) in setups {
@@ -26124,6 +26183,173 @@ mod tests {
         assert!(doc.contains("max_parallel_subagents = 3"), "{doc}");
         assert!(transcript_text(&app).contains("max_parallel_subagents = 3 written"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    // ── /vibe-setting (#9078) ────────────────────────────────────────────
+
+    /// A project agent.toml under a scratch HOME, so a global key written by a
+    /// test never reaches the developer's ~/.jan.
+    fn vibe_app(body: &str) -> TestApp {
+        let app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        std::fs::write(app.agent_dir.join("agent.toml"), body).unwrap();
+        app
+    }
+
+    fn vibe_reply(app: &mut App, reply: &str) {
+        super::vibe_setting::finish(app, Ok(reply.to_string()));
+    }
+
+    /// The confirm path: the diff docks, nothing is written until `y`, then the
+    /// writes go through the /settings writer and the note says when they apply.
+    #[test]
+    fn vibe_setting_writes_only_after_confirmation() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let mut app = vibe_app("# keep me\n[agent]\ncontext_window = 128000\n");
+            let toml_path = app.agent_dir.join("agent.toml");
+            vibe_reply(
+                &mut app,
+                r#"{"changes": [
+                  {"key": "context_window", "scope": "project", "new_value": 1000000, "reason": "1M window"},
+                  {"key": "show_reasoning", "scope": "project", "new_value": true},
+                  {"key": "wave", "scope": "global", "new_value": "~"}
+                ]}"#,
+            );
+            assert!(app.vibe_confirm.is_some(), "the diff docks");
+            assert!(app.blocking_dock().is_some(), "and owns the field");
+            let before = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(!before.contains("1000000"), "nothing written yet: {before}");
+            let screen = render_rows(&mut app, 100, 30).join("\n");
+            assert!(screen.contains("128000 -> 1000000"), "{screen}");
+            assert!(screen.contains("~/.jan/config.toml"), "{screen}");
+            assert!(screen.contains("Apply? [y/N]"), "{screen}");
+
+            super::vibe_setting::handle_key(&mut app, key(KeyCode::Char('y')), false);
+            assert!(app.vibe_confirm.is_none());
+            let doc = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(doc.contains("context_window = 1000000"), "{doc}");
+            assert!(doc.contains("# keep me"), "format-preserving: {doc}");
+            assert!(doc.contains("show_reasoning = true"), "{doc}");
+            let global = std::fs::read_to_string(home.join(".jan/config.toml")).unwrap();
+            assert!(global.contains("wave = \"~\""), "{global}");
+            let note = transcript_text(&app);
+            assert!(note.contains("wrote 3 setting(s)"), "{note}");
+            let flat = note.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(flat.contains("wave in effect now"), "{flat}");
+            assert!(flat.contains("run /reload config to apply context_window"), "{flat}");
+            assert!(flat.contains("show_reasoning applies when jan restarts"), "{flat}");
+            // A side call, not a turn: the conversation -- and so the cached
+            // request prefix -- is exactly what it was before the command.
+            assert!(app.history.is_empty(), "{:?}", app.history);
+            assert!(!app.want_start);
+            super::set_wave_glyph(None);
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// The note's `/reload config` bucket is exactly what `/reload config`
+    /// re-applies, and every such key is a `/settings` row.
+    #[test]
+    fn vibe_setting_reload_keys_match_reload_config() {
+        let (app, root) = skill_test_app("deploy", "How to deploy.");
+        let mut reloaded: Vec<String> =
+            super::reload_config_entries(&app).into_iter().map(|e| e.key).collect();
+        let mut listed: Vec<String> = super::vibe_setting::RELOAD_CONFIG_KEYS
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        reloaded.sort();
+        listed.sort();
+        assert_eq!(listed, reloaded);
+        for key in super::vibe_setting::RELOAD_CONFIG_KEYS {
+            assert!(super::AGENT_SETTINGS.iter().any(|d| d.key == *key), "{key}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The refuse path: Enter (the default, N) or Esc drops the proposal and
+    /// writes nothing.
+    #[test]
+    fn vibe_setting_declined_writes_nothing() {
+        for answer in [KeyCode::Enter, KeyCode::Char('n'), KeyCode::Esc] {
+            let mut app = vibe_app("[agent]\n");
+            let toml_path = app.agent_dir.join("agent.toml");
+            vibe_reply(
+                &mut app,
+                r#"{"changes": [{"key": "max_parallel_subagents", "new_value": 3}]}"#,
+            );
+            assert!(app.vibe_confirm.is_some());
+            super::vibe_setting::handle_key(&mut app, key(answer), false);
+            assert!(app.vibe_confirm.is_none(), "{answer:?} closes the dock");
+            assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+            assert!(transcript_text(&app).contains("nothing written"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        }
+    }
+
+    /// Widening tool permissions needs `yes` typed out: a stray `y` is not it.
+    #[test]
+    fn vibe_setting_widening_permissions_needs_a_typed_yes() {
+        let mut app = vibe_app("[tools]\ndefault = \"read-only\"\n");
+        let toml_path = app.agent_dir.join("agent.toml");
+        vibe_reply(
+            &mut app,
+            r#"{"changes": [{"key": "tools.default", "new_value": "allow", "reason": "stop asking"}]}"#,
+        );
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("widens tool permissions"), "{screen}");
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Char('y')), false);
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.vibe_confirm.is_some(), "`y` alone does not apply it");
+        assert!(std::fs::read_to_string(&toml_path).unwrap().contains("read-only"));
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Backspace), false);
+        for ch in "yes".chars() {
+            super::vibe_setting::handle_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.vibe_confirm.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"allow\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// An ambiguous request asks back; a failed or non-JSON reply writes nothing.
+    #[test]
+    fn vibe_setting_asks_back_and_survives_bad_replies() {
+        let mut app = vibe_app("[agent]\n");
+        vibe_reply(
+            &mut app,
+            r#"{"changes": [], "question": "Faster as in a smaller model, or shorter replies?"}"#,
+        );
+        assert!(app.vibe_confirm.is_none());
+        assert!(transcript_text(&app).contains("smaller model"));
+        vibe_reply(&mut app, "I changed it for you!");
+        super::vibe_setting::finish(&mut app, Err("HTTP 500".into()));
+        assert!(app.vibe_confirm.is_none());
+        let text = transcript_text(&app);
+        assert!(text.contains("vibe-setting failed: the model did not answer with JSON"), "{text}");
+        assert!(text.contains("vibe-setting failed: HTTP 500"), "{text}");
+        assert_eq!(
+            std::fs::read_to_string(app.agent_dir.join("agent.toml")).unwrap(),
+            "[agent]\n"
+        );
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The command refuses what it cannot do instead of queueing it.
+    #[test]
+    fn vibe_setting_command_guards() {
+        let mut app = test_app();
+        super::vibe_setting::command(&mut app, "  ");
+        assert!(transcript_text(&app).contains("usage: /vibe-setting"));
+        app.status = Status::Running;
+        super::vibe_setting::command(&mut app, "cheaper runs");
+        assert!(transcript_text(&app).contains("only available once the run has finished"));
+        app.status = Status::Idle;
+        super::vibe_setting::command(&mut app, "cheaper runs");
+        assert!(transcript_text(&app).contains("no active session"));
+        assert!(app.vibe_task.is_none());
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/vibe-setting"));
     }
 
     #[test]

@@ -74,6 +74,47 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | `/config` | View provider config (`~/.jan/config.toml`) |
 | `/terminal-setup` | Configure this terminal so <kbd>Shift</kbd>+<kbd>Enter</kbd> inserts a newline and, on macOS, <kbd>Option</kbd>+<kbd>Delete</kbd> deletes a word. Writes the terminal's own config where it can (VS Code, kitty, Ghostty, tmux) and prints the manual step where it cannot. Idempotent |
 | `/settings [max_parallel_subagents N]` | Edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next session (or after `/reload config` for the `[agent]`/`[budget]` limits), except cosmetic ones like `wave` that apply immediately |
+| `/vibe-setting <what you want>` | Say what you want in plain words and the agent proposes the settings changes that get it. See [below](#vibe-setting) |
+
+### `/vibe-setting`
+
+```
+/vibe-setting I work on huge repos with Opus, stop compacting so often and show me its thinking
+```
+
+The session's model receives the `/settings` keys (name, file, type, default, current value, what
+it does) and your sentence, in one request of its own. The conversation is not included, and
+nothing is added to it. The model answers with a list of changes. Jan checks each one with the
+same rules `/settings` uses, then shows a diff:
+
+```
+agent.toml (this project)
+  context_window  128000 -> 1000000   Opus has a 1M window
+  compaction_ratio  0.8 -> 0.9        compact later
+  show_reasoning  default (false) -> true
+Apply? [y/N]
+```
+
+Nothing is written until you press <kbd>y</kbd>. <kbd>Enter</kbd>, <kbd>n</kbd> or <kbd>Esc</kbd>
+cancels. Accepted changes go through the `/settings` writer, and the note that follows says when
+each one applies:
+
+| Keys | Applies |
+| --- | --- |
+| `wave` | Now |
+| `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, `budget.max_tokens` | After `/reload config`, from the next run |
+| Everything else (`max_parallel_subagents`, `tools.default`, `skills.inject`, `show_reasoning`, ...) | When Jan restarts |
+
+- It only changes `/settings` keys. The model, providers, API keys, MCP servers and skills are out
+  of scope; when a request needs one, the reply names the command to use (`/model`, `/login`, ...).
+- It never touches credentials. `claude_code_alias` is not offered.
+- A change that loosens tool permissions (`tools.default` toward `allow`) needs `yes` typed out, not
+  a single key.
+- A key it doesn't know, or a value outside its range, is listed as refused and never written.
+- When the request is ambiguous ("make it faster"), it asks a question instead of guessing. Nothing
+  is written.
+
+It runs only while the agent is idle.
 
 See [Providers](/docs/agent/providers), [MCP](/docs/agent/mcp), [Plugins](/docs/agent/plugins), and
 [Keybindings](/docs/agent/keybindings#shiftenter-and-the-option-key).
