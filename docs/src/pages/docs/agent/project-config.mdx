@@ -92,8 +92,8 @@ by hand or with `/init`.
 # compaction_ratio = 0.6  # override the [agent] ratio for this provider's routes
 
 # The run's only cap: new token spend across all turns (replayed context is not
-# recharged each turn). There is no turn limit. Defaults to 128000 when unset;
-# 0 disables the cap.
+# recharged each turn). There is no turn limit. Defaults to the model's context
+# window when unset (128000 if the window is unknown); 0 disables the cap.
 [budget]
 # max_tokens = 128000
 # max_usd = 5.00
@@ -145,7 +145,7 @@ Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `max_tokens` | `128000` | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to `128000` when unset |
+| `max_tokens` | model's context window | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to the model's context window when unset, or `128000` when the window is unknown |
 | `max_usd` | unset | USD one run may spend before it stops -- a hard bound, unlike `max_tokens`. Priced from the provider's published rates, so a model with no published price is refused rather than run uncapped. Subagents inherit it. Overridden per invocation by `--max-budget-usd` |
 
 A marker for how far one run has gone, distinct from the per-request context window. It tracks the

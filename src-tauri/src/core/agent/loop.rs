@@ -4181,6 +4181,12 @@ async fn run_turn_cycle(
                              summary (attempt {})",
                             attempts + 1
                         );
+                        let _ = events.send(StreamEvent::Notice {
+                            text: format!(
+                                "context overflow: compacted {dropped} messages into a summary \
+                                 and retrying"
+                            ),
+                        });
                         // Publish now, not at the end of the run: a retry that
                         // never recovers returns Err, and an unpublished
                         // compaction leaves the client holding the oversized
@@ -4361,6 +4367,16 @@ async fn run_turn_cycle(
                             "agent: budget exhausted at end of run, compacted {dropped} messages \
                              into a summary"
                         );
+                        // Said out loud like the preflight path: the TUI runs
+                        // with logging off, so a log line alone is a silent
+                        // compaction the user reads as lost context.
+                        let _ = events.send(StreamEvent::Notice {
+                            text: format!(
+                                "compacted {dropped} messages into a summary: the session \
+                                 token budget ({} tokens) was used up",
+                                budget.spent()
+                            ),
+                        });
                     }
                     Ok(None) => {}
                     Err(error) => {
@@ -7192,14 +7208,25 @@ mod tests {
             "one turn, plus the summarizer call compaction makes"
         );
 
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        // The user is told: the TUI runs with logging off, so without a Notice
+        // this compaction is invisible.
+        assert!(
+            events.iter().any(|ev| matches!(
+                ev,
+                StreamEvent::Notice { text } if text.contains("session token budget")
+            )),
+            "the budget compaction is announced"
+        );
         // The published history is the compacted one: shorter, and carrying the
         // summary in place of the dropped middle.
-        let published = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
+        let published = events
+            .into_iter()
+            .rev()
+            .find_map(|ev| match ev {
                 StreamEvent::MessagesUpdated { messages } => Some(messages),
                 _ => None,
             })
-            .last()
             .expect("a MessagesUpdated is published");
         assert!(
             published.len() < original_len,
@@ -7291,7 +7318,7 @@ mod tests {
 
     #[tokio::test]
     async fn turn_cycle_compacts_and_retries_on_context_overflow() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         // 1) main request overflows, 2) summarizer succeeds, 3) retry succeeds.
         let overflow = Err(format!(
             "[{}] Upstream returned HTTP 400: context_length_exceeded",
@@ -7339,6 +7366,13 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(|ev| matches!(
+                ev,
+                StreamEvent::Notice { text } if text.contains("context overflow")
+            )),
+            "the overflow compaction is announced"
+        );
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension

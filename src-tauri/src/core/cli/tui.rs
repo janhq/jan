@@ -50,7 +50,8 @@ use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
 use super::{
-    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
+    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget,
+    SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -1854,9 +1855,9 @@ struct App {
     /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
     /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
-    /// `--max-session-tokens` pinned `max_session_tokens`, so `/reload config`
-    /// does not replace it with `[budget].max_tokens`.
-    max_session_tokens_pinned: bool,
+    /// Which source set `max_session_tokens`. `--max-session-tokens` pins it
+    /// against `/reload config`; a window-derived one follows the model.
+    max_session_tokens_source: SessionBudgetSource,
     /// `[budget].max_usd`: what one message's run may spend before it stops,
     /// with the rates to meter it against. `None` -- the default -- leaves the
     /// session unmetered. Per run, not per session: each message gets the same
@@ -2623,7 +2624,7 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
-            max_session_tokens_pinned: limits.max_session_tokens_pinned,
+            max_session_tokens_source: limits.max_session_tokens_source,
             cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
@@ -4998,6 +4999,12 @@ impl App {
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
+        // An unconfigured session budget is sized by the window, so it moves
+        // with it; a flag or `[budget].max_tokens` stays put.
+        if self.max_session_tokens_source.follows_window() {
+            (self.max_session_tokens, self.max_session_tokens_source) =
+                super::resolve_session_budget(None, None, super::known_window(resolved));
+        }
         self.sync_compaction_budget();
         changed
     }
@@ -5911,6 +5918,12 @@ impl App {
                 // and the `--output-format json` envelope disagree.
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
+            }
+            // A child's headline (a compaction, a monitor match) is as much the
+            // user's business as the parent's: dropping it made a child's
+            // compaction invisible.
+            StreamEvent::Notice { text } => {
+                self.note(&format!("{name}: {text}"));
             }
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
@@ -14686,8 +14699,12 @@ fn reload_config(app: &mut App) {
     }
     app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
     app.max_tokens = cfg.agent.max_tokens;
-    if !app.max_session_tokens_pinned {
-        app.max_session_tokens = super::resolve_session_budget(None, cfg.budget.max_tokens);
+    let pinned = app.max_session_tokens_source == SessionBudgetSource::Flag;
+    if !pinned {
+        // Seeded from the file alone; `refresh_context_window` below fills in
+        // the window-derived default when the file sets none.
+        (app.max_session_tokens, app.max_session_tokens_source) =
+            super::resolve_session_budget(None, cfg.budget.max_tokens, None);
     }
     app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
     // Re-resolves the window and pushes the compaction budget to the engine.
@@ -14699,9 +14716,7 @@ fn reload_config(app: &mut App) {
         crate::core::agent::project::agent_toml_path(&app.project_root).display()
     ));
     report_reload_diff(app, diff_reload_entries(&before, &after));
-    if app.max_session_tokens_pinned
-        && super::resolve_session_budget(None, cfg.budget.max_tokens) != budget_before
-    {
+    if pinned && cfg.budget.max_tokens.is_some_and(|v| v != budget_before) {
         app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
     }
     if !ratio_busy
@@ -20271,7 +20286,7 @@ mod tests {
             compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
-            max_session_tokens_pinned: false,
+            max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
             max_turns: None,
             cost_ceiling: None,
         };
@@ -20778,7 +20793,7 @@ mod tests {
                     compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
-                    max_session_tokens_pinned: false,
+                    max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
                     max_turns: None,
                     cost_ceiling: None,
                 },
@@ -37409,7 +37424,7 @@ mod tests {
     async fn reload_config_respects_a_pinned_session_budget() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         app.max_session_tokens = 42;
-        app.max_session_tokens_pinned = true;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Flag;
         write_agent_toml(&root, "[budget]\nmax_tokens = 999\n");
         run_command(&mut app, "reload config", &no_mcp()).await;
         assert_eq!(app.max_session_tokens, 42, "--max-session-tokens outranks the file");
@@ -38143,6 +38158,29 @@ mod tests {
             Some(CompactKind::Auto),
             "a smaller-window switch must queue target compaction"
         );
+    }
+
+    /// An unconfigured session budget is sized by the model's window and
+    /// follows a model switch; the old fixed 128K compacted 1M-window models at
+    /// an eighth of their capacity. A `[budget].max_tokens` value stays put.
+    #[test]
+    fn default_session_budget_follows_the_model_window() {
+        let mut app = test_app();
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.context_window, 1_000_000);
+        assert_eq!(app.max_session_tokens, 1_000_000);
+        assert_eq!(
+            app.max_session_tokens_source,
+            crate::core::cli::SessionBudgetSource::ContextWindow
+        );
+
+        app.set_model("claude-sonnet-4-5".to_string());
+        assert_eq!(app.max_session_tokens, 200_000);
+
+        app.max_session_tokens = 50_000;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Config;
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.max_session_tokens, 50_000, "a configured budget is not resized");
     }
 
     #[test]

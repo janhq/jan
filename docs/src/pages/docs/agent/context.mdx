@@ -215,7 +215,7 @@ Separately from the context window, a project can bound how far one run goes:
 
 ```toml
 [budget]
-# max_tokens = 128000  # token-spend ceiling per run; 0 disables the cap
+# max_tokens = 128000  # token-spend ceiling per run; defaults to the model's context window; 0 disables the cap
 ```
 
 That's a stop point for the run as a whole, not a per-request limit. There is no turn cap - the

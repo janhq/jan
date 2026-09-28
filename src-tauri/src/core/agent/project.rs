@@ -113,7 +113,8 @@ pub(crate) struct SkillsSection {
 /// `[budget]` — the only cap on how long a run may go. The agent takes as many
 /// turns as the task needs; `max_tokens` bounds the run's *marginal* token
 /// spend (see `SessionBudget`: replayed context is not recharged each turn).
-/// Unset applies `DEFAULT_MAX_SESSION_TOKENS`; an explicit `0` disables the
+/// Unset applies the model's context window, or `DEFAULT_MAX_SESSION_TOKENS`
+/// when that is unknown; an explicit `0` disables the
 /// ceiling, leaving cancellation as the only guard.
 #[cfg(feature = "cli")]
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -257,7 +258,8 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 
 # New token spend across all turns (replayed context is not recharged each
 # turn). Advisory: crossing it compacts and files a note, it does not stop the
-# run. Defaults to 128000 when unset; 0 disables the cap.
+# run. Defaults to the model's context window when unset (128000 if the window
+# is unknown); 0 disables the cap.
 [budget]
 # max_tokens = 128000
 # USD this run may spend before it stops -- unlike max_tokens, a hard bound.
