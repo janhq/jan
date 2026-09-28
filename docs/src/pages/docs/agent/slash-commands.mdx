@@ -71,10 +71,10 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | `/plugin [list\|install <spec>\|remove <name>\|search [query]]` | Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace |
 | `/reload [config\|plugin\|skills\|system-prompt]` | Re-read on-disk state into the running session without a restart (bare: all). `config` re-applies the project's `agent.toml` limits - `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, `[budget].max_tokens` - to the next run and lists what changed; the model, `[tools]`, `[provider]` and `[budget].max_usd` still need a restart. `plugin`/`skills` re-scan and rebuild the catalog, reporting added/removed/changed entries. `system-prompt` re-reads the project instructions (`JAN.md`, or a `[context].fallback_files` entry such as `AGENTS.md` where a directory has none), which apply on the next run |
 | `/login` | Sign in to Tokamak and save the API key |
-| `/config` | View provider config (`~/.jan/config.toml`) |
+| `/config [what you want]` | View provider config (`~/.jan/config.toml`). With words, it is `/vibe-setting` |
 | `/terminal-setup` | Configure this terminal so <kbd>Shift</kbd>+<kbd>Enter</kbd> inserts a newline and, on macOS, <kbd>Option</kbd>+<kbd>Delete</kbd> deletes a word. Writes the terminal's own config where it can (VS Code, kitty, Ghostty, tmux) and prints the manual step where it cannot. Idempotent |
-| `/settings [max_parallel_subagents N]` | Edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next session (or after `/reload config` for the `[agent]`/`[budget]` limits), except cosmetic ones like `wave` that apply immediately |
-| `/vibe-setting <what you want>` | Say what you want in plain words and the agent proposes the settings changes that get it. See [below](#vibe-setting) |
+| `/settings [what you want]` | With words (other than the `max_parallel_subagents N` shortcut), it is `/vibe-setting`. Bare, it opens the menu to edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next session (or after `/reload config` for the `[agent]`/`[budget]` limits), except cosmetic ones like `wave` that apply immediately |
+| `/vibe-setting <what you want>` | Say what you want in plain words and the agent proposes the settings changes that get it. `/settings <words>` and `/config <words>` do the same. See [below](#vibe-setting) |
 
 ### `/vibe-setting`
 
@@ -127,6 +127,6 @@ See [Providers](/docs/agent/providers), [MCP](/docs/agent/mcp), [Plugins](/docs/
 | `/update` | Install the latest published build. Takes effect on restart |
 
 <Callout type="info">
-`/config` is read-only. To change providers, use `jan config set` from the shell - see
+Bare `/config` is read-only. To change providers, use `jan config set` from the shell - see
 [Providers](/docs/agent/providers).
 </Callout>

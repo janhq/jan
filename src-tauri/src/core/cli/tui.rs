@@ -12303,14 +12303,14 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/config",
-        hint: "",
-        description: "View provider config (~/.jan/config.toml)",
+        hint: "[what you want]",
+        description: "View provider config (~/.jan/config.toml); with words, same as /vibe-setting",
         alias_of: None,
     },
     SlashCommand {
         name: "/settings",
-        hint: "[max_parallel_subagents N]",
-        description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
+        hint: "[what you want]",
+        description: "Edit agent.toml and ~/.jan settings (menu); with words, same as /vibe-setting",
         alias_of: None,
     },
     SlashCommand {
@@ -12529,7 +12529,8 @@ async fn run_command(
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
-        "config" => open_config_screen(app),
+        "config" if arg.trim().is_empty() => open_config_screen(app),
+        "config" => vibe_setting::command(app, arg),
         "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
         "vibe-setting" => vibe_setting::command(app, arg),
@@ -13719,8 +13720,16 @@ fn apply_live_unset(def: &AgentSettingDef) -> bool {
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
-    let Some((key, value)) = arg.split_once(char::is_whitespace) else {
+    if arg.is_empty() {
         return open_settings_screen(app);
+    }
+    // `/settings max_parallel_subagents N` keeps its direct write; any other
+    // words are a plain-language request for the `/vibe-setting` flow.
+    let Some((key, value)) = arg
+        .split_once(char::is_whitespace)
+        .filter(|(key, _)| *key == "max_parallel_subagents")
+    else {
+        return vibe_setting::command(app, arg);
     };
     match key {
         "max_parallel_subagents" => {
@@ -13742,9 +13751,7 @@ fn settings_command(app: &mut App, arg: &str) {
                 Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
             }
         }
-        other => app.note(&format!(
-            "unknown setting '/settings {other}' (bare /settings opens the menu)"
-        )),
+        _ => unreachable!("only max_parallel_subagents reaches the direct write"),
     }
 }
 
@@ -26159,9 +26166,35 @@ mod tests {
 
         super::settings_command(&mut app, "max_parallel_subagents lots");
         assert!(transcript_text(&app).contains("is not an integer"));
-        super::settings_command(&mut app, "warp_drive 5");
-        assert!(transcript_text(&app).contains("unknown setting"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// `/settings <words>` and `/config <words>` are `/vibe-setting`: they
+    /// reach its guards (here, no signed-in model) instead of the menu or an
+    /// "unknown setting" error. Bare forms keep opening their screens.
+    #[tokio::test]
+    async fn settings_and_config_with_words_route_to_vibe_setting() {
+        for line in ["settings stop compacting so often", "config show me its thinking", "settings warp_drive 5"] {
+            let mut app = test_app();
+            app.model.clear();
+            run_command(&mut app, line, &no_mcp()).await;
+            let text = transcript_text(&app);
+            assert!(text.contains("not signed in"), "{line}: {text}");
+            assert!(!text.contains("unknown setting"), "{line}: {text}");
+            assert!(app.picker.is_none(), "{line} must not open the menu");
+        }
+        let mut app = test_app();
+        run_command(&mut app, "settings", &no_mcp()).await;
+        assert!(app.picker.is_some(), "bare /settings still opens the menu");
+    }
+
+    #[test]
+    fn settings_and_config_advertise_the_vibe_form() {
+        for name in ["/settings", "/config"] {
+            let row = SLASH_COMMANDS.iter().find(|c| c.name == name).unwrap();
+            assert_eq!(row.hint, "[what you want]", "{name}");
+            assert!(row.description.contains("/vibe-setting"), "{name}");
+        }
     }
 
     #[test]
