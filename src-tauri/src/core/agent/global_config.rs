@@ -56,6 +56,13 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # Defaults to 👋; set "" for the plain
 #                                     # throbber if your terminal draws tofu
 #
+# [context]
+# fallback_files = ["AGENTS.md"]      # instructions files read where a folder
+#                                     # has no JAN.md (JAN.md always wins).
+#                                     # Default ["AGENTS.md"]; add "CLAUDE.md"
+#                                     # to opt in; [] reads JAN.md only. A
+#                                     # project's agent.toml [context] wins
+#
 # [providers.my-provider]
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
@@ -153,8 +160,19 @@ struct GlobalConfigToml {
     /// but a human appending to the file would not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[context]` -- the user-wide default for which instructions files are
+    /// read where a directory has no `JAN.md`. A project's own `[context]`
+    /// wins. See `project::context_fallback_files`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<GlobalContextSection>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct GlobalContextSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fallback_files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -323,6 +341,16 @@ pub(crate) fn claude_code_alias_enabled() -> bool {
 /// user cannot parse must not be the thing that blocks a session from starting.
 pub(crate) fn sandbox_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.sandbox)
+}
+
+/// `[context].fallback_files` from `~/.jan/config.toml`, or `None` when unset
+/// or unreadable, so the project's `agent.toml` and then the built-in default
+/// decide. Like the other preferences, a bad file never blocks a session.
+pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.context)
+        .and_then(|context| context.fallback_files)
 }
 
 /// Whether a session gets its own git worktree by default (`worktree` in

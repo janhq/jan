@@ -70,6 +70,39 @@ of task belongs in a [skill](/docs/agent/skills).
 Jan reads `JAN.md` from the project root and each of its ancestors; the nearest file wins. Write one
 by hand or with `/init`.
 
+### AGENTS.md and CLAUDE.md
+
+Many repositories already keep instructions for other coding agents in `AGENTS.md`. Jan reads one
+file per directory on that same walk:
+
+1. `JAN.md`, if it is there and not empty. It always wins, so a repo with both files loads only
+   `JAN.md`.
+2. Otherwise `AGENTS.md`.
+3. Otherwise `CLAUDE.md`, but only if you opt in to it.
+
+A file already loaded under another name is skipped, so the common `ln -s AGENTS.md JAN.md` loads
+once. Each file keeps its path in the prompt, so the model can see which one it got. When a
+fallback is used, the startup note says so and `/context` lists it under **Project instructions**.
+In a project that has `AGENTS.md` but no `JAN.md`, `/init` uses it as the starting point.
+
+Configure it in `agent.toml`, or in `~/.jan/config.toml` for every project (the project wins):
+
+```toml
+[context]
+fallback_files = ["AGENTS.md"]               # the default
+# fallback_files = ["AGENTS.md", "CLAUDE.md"] # also read CLAUDE.md
+# fallback_files = []                         # JAN.md only
+```
+
+Only `AGENTS.md` and `CLAUDE.md` are recognised. The files are re-read at the start of every run;
+`/reload system-prompt` lists what the next run will load, with fallbacks marked.
+
+<Callout type="warning">
+A file written for another agent can mention that agent's own tools or commands. If Jan follows
+something meant for another tool, write a `JAN.md` (it shadows the other file) or set
+`fallback_files = []`.
+</Callout>
+
 ## agent.toml
 
 ```toml
@@ -167,6 +200,12 @@ by default on the CLI.
 | --- | --- | --- |
 | `env_passthrough` | `[]` | Host environment variables the shell may inherit beyond the minimal base (exact names or a `*` wildcard). Merged with `~/.jan/config.toml`. A secret-looking name is never copied by a wildcard - see [The shell environment](/docs/agent/permissions#the-shell-environment) |
 | `env_set` | `{}` | Explicit `key = "value"` pairs for the shell env, as a `[tools.env_set]` table. Wins over `env_passthrough` and the global value; the way to inject a secret-named variable on purpose |
+
+### `[context]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `fallback_files` | `["AGENTS.md"]` | Instructions files read, in order, from a directory with no `JAN.md`. Only `AGENTS.md` and `CLAUDE.md` are recognised; `[]` reads `JAN.md` only. Falls back to `~/.jan/config.toml`'s `[context]`. See [AGENTS.md and CLAUDE.md](#agentsmd-and-claudemd) |
 
 ### `[prompt]`
 

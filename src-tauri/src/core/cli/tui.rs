@@ -5187,6 +5187,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     // the two would make the same non-ASCII text count differently depending
     // on which segment it landed in.
     let (mut prompt_bytes, mut context_bytes, mut skills_bytes) = (0usize, 0usize, 0usize);
+    let mut instruction_files: Vec<(String, bool)> = Vec::new();
     if let (Some(args), Some(root)) = (args, root.as_deref()) {
         let full = crate::core::agent::r#loop::context_system_prompt_preview(
             args.system_prompt_override.as_deref(),
@@ -5198,6 +5199,10 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         .unwrap_or_default();
         context_bytes =
             crate::core::agent::context::load_context_files(root).map_or(0, |s| s.len());
+        instruction_files = crate::core::agent::context::project_context_files(root)
+            .into_iter()
+            .map(|file| (file.path.display().to_string(), file.fallback))
+            .collect();
         skills_bytes = crate::core::agent::context::load_skills(root).map_or(0, |s| s.len())
             + crate::core::agent::context::load_memory_catalog(root).map_or(0, |s| s.len());
         prompt_bytes = full.len().saturating_sub(context_bytes + skills_bytes);
@@ -5295,6 +5300,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         session_prompt_tokens: snapshot.session_prompt_tokens,
         session_cached_tokens: snapshot.session_cached_tokens,
         session_cache_write_tokens: snapshot.session_cache_write_tokens,
+        instruction_files,
     }
 }
 
@@ -6735,6 +6741,10 @@ struct ContextReport {
     session_prompt_tokens: u64,
     session_cached_tokens: u64,
     session_cache_write_tokens: u64,
+    /// The instructions files the project context loaded, farthest first, each
+    /// with whether it is a fallback (`AGENTS.md`, `CLAUDE.md`) read because its
+    /// directory has no `JAN.md` (#9079). Listed so a fallback is never silent.
+    instruction_files: Vec<(String, bool)>,
 }
 
 impl ContextReport {
@@ -6956,6 +6966,24 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
         "Session cost (estimated): ~{}{suffix} - /usage for the breakdown",
         format_usd(total)
     ))
+}
+
+/// Which instructions files the project context holds, for `/context`: a blank
+/// separator, a heading, then one path per file, a fallback marked as such.
+/// Empty when none loaded, so a project without instructions shows nothing.
+fn instruction_file_lines(report: &ContextReport) -> Vec<String> {
+    if report.instruction_files.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![String::new(), "Project instructions".to_string()];
+    for (path, fallback) in &report.instruction_files {
+        lines.push(if *fallback {
+            format!("  {path} (fallback: no JAN.md in that folder)")
+        } else {
+            format!("  {path}")
+        });
+    }
+    lines
 }
 
 /// Plain `/context` summary: current usage and autocompaction threshold first,
@@ -7180,6 +7208,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 format_tokens(segment.tokens),
             ))]);
         }
+        for text in instruction_file_lines(report) {
+            rows.push(vec![Span::styled(text, Style::new().dim())]);
+        }
         return rows
             .into_iter()
             .map(|spans| Line::from(clip_spans(spans, max)))
@@ -7306,6 +7337,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             Span::styled(empty, Style::new().dark_gray()),
             Span::raw(suffix),
         ]);
+    }
+    for text in instruction_file_lines(report) {
+        rows.push(vec![Span::styled(text, Style::new().dim())]);
     }
 
     rows.into_iter()
@@ -9503,8 +9537,8 @@ pub async fn run(
     }
     // Only when there is nothing to load: a project that already has JAN.md needs
     // no invitation, and the splash hint covers re-running /init deliberately.
-    if !crate::core::agent::context::has_context_file(&app.project_root) {
-        app.note("no JAN.md here — run /init to study this project and write one");
+    if let Some(note) = project_instructions_note(&app.project_root) {
+        app.note(&note);
     }
     // A modified key the terminal is dropping looks like a bug in the composer,
     // so say so once, and only where a config file proves it is unconfigured
@@ -12667,6 +12701,29 @@ multi-step recipe exists. Do not invent skills to fill space.\n\n\
 true beyond this session and not already stated in the code.\n\n\
 Then report what you wrote and why, briefly.";
 
+/// The startup note about project instructions: an invitation to `/init` when
+/// there are none, and a plain statement when the context came from a fallback
+/// file (`AGENTS.md`) rather than `JAN.md`, so that choice is never silent
+/// (#9079). `None` when every loaded file is a `JAN.md`: nothing to say.
+fn project_instructions_note(project_root: &std::path::Path) -> Option<String> {
+    let files = crate::core::agent::context::project_context_files(project_root);
+    if files.is_empty() {
+        return Some("no JAN.md here — run /init to study this project and write one".to_string());
+    }
+    let fallbacks: Vec<String> = files
+        .iter()
+        .filter(|file| file.fallback)
+        .map(|file| file.path.display().to_string())
+        .collect();
+    if fallbacks.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "project instructions from {} (no JAN.md there) · [context].fallback_files in agent.toml controls this",
+        fallbacks.join(", ")
+    ))
+}
+
 /// `/init`: hand the model the onboarding task as a user turn, so it runs with
 /// the normal toolset, permission gate, and transcript. The prompt body itself
 /// is hidden -- the note below is what the user asked for, the canned text is
@@ -12678,13 +12735,51 @@ fn init_command(app: &mut App) {
         app.note("/init is only available once the run has finished");
         return;
     }
-    let existing = crate::core::agent::context::has_context_file(&app.project_root);
-    app.note(if existing {
-        "◈ init · reviewing JAN.md, skills, and memory for this project"
-    } else {
-        "◈ init · studying the project to write JAN.md, skills, and memory"
-    });
-    app.submit_user_hidden(INIT_PROMPT.to_string());
+    let existing = crate::core::agent::context::has_own_jan_md(&app.project_root);
+    let seed = (!existing)
+        .then(|| init_seed_file(&app.project_root))
+        .flatten();
+    match (&seed, existing) {
+        (_, true) => app.note("◈ init · reviewing JAN.md, skills, and memory for this project"),
+        (Some(name), false) => app.note(&format!(
+            "◈ init · writing JAN.md from this project's {name}, plus skills and memory"
+        )),
+        (None, false) => {
+            app.note("◈ init · studying the project to write JAN.md, skills, and memory")
+        }
+    }
+    let prompt = match seed {
+        Some(name) => format!("{INIT_PROMPT}\n\n{}", init_seed_paragraph(&name)),
+        None => INIT_PROMPT.to_string(),
+    };
+    app.submit_user_hidden(prompt);
+}
+
+/// The other agent's instructions file `/init` should start from, when the
+/// project root has one and no `JAN.md` (#9079): `AGENTS.md`, else `CLAUDE.md`.
+/// Both are offered regardless of `[context].fallback_files`, because this only
+/// seeds a file the user then owns -- nothing is loaded from it by this choice.
+fn init_seed_file(project_root: &std::path::Path) -> Option<String> {
+    ["AGENTS.md", "CLAUDE.md"]
+        .into_iter()
+        .find(|name| {
+            std::fs::read_to_string(project_root.join(name))
+                .is_ok_and(|content| !content.trim().is_empty())
+        })
+        .map(str::to_string)
+}
+
+/// The `/init` addendum for a project that already keeps instructions for
+/// another agent: build on them rather than writing from scratch, and drop what
+/// was aimed at that agent -- the concern #8642 raised about ingesting it as is.
+fn init_seed_paragraph(name: &str) -> String {
+    format!(
+        "This project has no `JAN.md` but has `{name}`, written for another coding agent. Read it \
+first and use it as the starting point for `JAN.md`: keep the commands, architecture, and \
+conventions that hold for any agent, and drop or rewrite anything aimed at that specific agent (its \
+tool names, its CLI commands, its config files). Leave `{name}` itself unchanged. If the user would \
+rather keep one file, mention that `ln -s {name} JAN.md` makes Jan read it directly."
+    )
 }
 
 /// Manually compact the conversation: summarize older turns, keeping the recent
@@ -14604,15 +14699,24 @@ fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
 fn reload_system_prompt(app: &mut App) {
     // Nothing caches the instructions across runs: the system prompt
     // (including this block and the skills catalog) is rebuilt from disk at
-    // the start of every run. Re-read now to confirm what the next run picks up.
-    let files = crate::core::agent::context::context_files(&app.project_root);
+    // the start of every run. Re-read now to confirm what the next run picks up,
+    // through the same discovery the prompt uses: JAN.md per directory, else a
+    // `[context].fallback_files` entry (#9079), with that list re-resolved too.
+    let files = crate::core::agent::context::project_context_files(&app.project_root);
     if files.is_empty() {
-        app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+        app.note(
+            "◈ reload · system-prompt · no JAN.md or [context].fallback_files match in this project or its ancestors",
+        );
         return;
     }
     app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
-    for (path, content) in &files {
-        app.system_detail_text(&format!("  {} ({} bytes)", path.display(), content.len()));
+    for file in &files {
+        let tag = if file.fallback { ", fallback" } else { "" };
+        app.system_detail_text(&format!(
+            "  {} ({} bytes{tag})",
+            file.path.display(),
+            file.content.len()
+        ));
     }
 }
 
@@ -32560,6 +32664,7 @@ mod tests {
             session_prompt_tokens: 0,
             session_cached_tokens: 0,
             session_cache_write_tokens: 0,
+            instruction_files: Vec::new(),
         }
     }
 
@@ -37238,7 +37343,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
         assert!(
-            transcript_text(&app).contains("no JAN.md in this project"),
+            transcript_text(&app).contains("no JAN.md or [context].fallback_files match"),
             "empty project: {}",
             transcript_text(&app)
         );
@@ -37248,6 +37353,26 @@ mod tests {
         let out = transcript_text(&app);
         assert!(out.contains("re-read project instructions"), "{out}");
         assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// #9079 x #9077: `/reload system-prompt` goes through the fallback
+    /// discovery, so a project with only AGENTS.md reports it (tagged), and a
+    /// JAN.md added later shadows it.
+    #[tokio::test]
+    async fn reload_system_prompt_reads_agents_md_fallback() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        std::fs::write(root.join("AGENTS.md"), "# Agents\n\nUse make.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("AGENTS.md") && out.contains("fallback"), "{out}");
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n").unwrap();
+        let before = transcript_text(&app).len();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        let tail = &out[before..];
+        assert!(tail.contains("JAN.md") && !tail.contains("AGENTS.md"), "{tail}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -38518,6 +38643,78 @@ mod tests {
             crate::core::agent::context::has_context_file(&nested),
             "an ancestor's JAN.md already onboards this project"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// #9079: a fallback is never silent. No instructions invites `/init`; a
+    /// JAN.md says nothing; an AGENTS.md fallback names the file it loaded.
+    #[test]
+    fn startup_note_names_an_agents_md_fallback() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_fallback_note_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            let none = super::project_instructions_note(&root).expect("an invitation");
+            assert!(none.contains("/init"), "{none}");
+            std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+            let fallback = super::project_instructions_note(&root).expect("a fallback note");
+            assert!(fallback.contains("AGENTS.md"), "{fallback}");
+            assert!(fallback.contains("no JAN.md"), "{fallback}");
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            assert_eq!(super::project_instructions_note(&root), None);
+            let _ = std::fs::remove_dir_all(&root);
+        });
+    }
+
+    /// `/context` lists the files the project context holds, marking a fallback.
+    #[test]
+    fn context_view_lists_instruction_files_and_marks_a_fallback() {
+        let mut report = context_report(128_000, 16_000, [100, 100, 100, 100, 100]);
+        assert!(!context_text(&report).contains("Project instructions"));
+        report.instruction_files = vec![
+            ("/repo/JAN.md".into(), false),
+            ("/repo/pkg/AGENTS.md".into(), true),
+        ];
+        for width in [80usize, 30] {
+            let text = context_lines(&report, width)
+                .iter()
+                .map(line_text)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("Project instructions"), "{text}");
+            assert!(text.contains("/repo/JAN.md"), "{text}");
+            assert!(text.contains("AGENTS.md"), "{text}");
+        }
+        assert!(context_text(&report).contains("AGENTS.md (fallback"));
+    }
+
+    /// #9079: `/init` in a project with AGENTS.md and no JAN.md builds on it
+    /// rather than writing from scratch, and offers the symlink.
+    #[test]
+    fn init_starts_from_an_existing_agents_md() {
+        let root = std::env::temp_dir().join(format!("jan_init_seed_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(super::init_seed_file(&root), None);
+        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+        assert_eq!(super::init_seed_file(&root).as_deref(), Some("CLAUDE.md"));
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        assert_eq!(super::init_seed_file(&root).as_deref(), Some("AGENTS.md"));
+
+        let mut app = test_app();
+        app.project_root = root.clone();
+        super::init_command(&mut app);
+        let sent = app.history.last().expect("user message").to_string();
+        assert!(sent.contains("has `AGENTS.md`"), "{sent}");
+        assert!(sent.contains("ln -s AGENTS.md JAN.md"), "{sent}");
+        let text: String = row_lines(&app.transcript)
+            .iter()
+            .flat_map(|l| l.spans.clone())
+            .map(|s| s.content.to_string())
+            .collect();
+        assert!(text.contains("from this project's AGENTS.md"), "{text}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
         let _ = std::fs::remove_dir_all(&root);
     }
 
