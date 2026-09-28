@@ -31677,6 +31677,28 @@ mod tests {
         });
     }
 
+    /// A child's `Notice` (e.g. "compacted N messages") reaches the parent
+    /// transcript, attributed to the child. It used to fall into the catch-all
+    /// arm, so a subagent's compaction was invisible.
+    #[test]
+    fn subagent_notice_is_shown_in_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::Notice {
+                text: "compacted 12 messages into a summary".into(),
+            },
+        );
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("alpha: compacted 12 messages into a summary"),
+            "{out}"
+        );
+    }
+
     /// Parallel agents collapse into one fixed-height block, each carrying the
     /// numbers that say whether it is progressing or about to blow its context.
     #[test]
