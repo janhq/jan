@@ -152,7 +152,8 @@ Two more session options suit an app that drives Jan with only its own tools:
 - **`systemPrompt` / `system_prompt=`** replaces Jan's whole system prompt with yours, byte for
   byte. Jan adds no identity, guides, environment, date or recalled memory, though it may still
   append runtime notices (such as a finished subagent) to the conversation. Subagents keep their
-  own prompts.
+  own prompts. The session's answers are still saved to project memory for later sessions;
+  only `ephemeral` turns that off, and it also stops the thread being saved.
 
 ```js
 const session = await runtime.createSession({

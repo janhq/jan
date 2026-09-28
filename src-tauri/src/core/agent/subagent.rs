@@ -2844,6 +2844,16 @@ mod tests {
         }
     }
 
+    /// `resolve_dispatch` with no host-name qualification, for tests whose
+    /// tools are all built-ins.
+    fn resolve_dispatch_plain(
+        reg: &SubagentRegistry,
+        req: &SubagentRequest,
+        p: &ToolPermissions,
+    ) -> Result<ResolvedDispatch, SubagentError> {
+        resolve_dispatch(reg, req, p, |t| t)
+    }
+
     /// A capped parent's children are capped too. Subagents are where a run's
     /// spend multiplies, so a ceiling that stopped at the parent would be one
     /// any run could spend around by dispatching.
@@ -2851,7 +2861,7 @@ mod tests {
     fn child_body_inherits_the_parents_cost_ceiling() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p, |t| t).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
 
         let uncapped = child_body(&resolved, "task", &parent_run());
         assert!(
@@ -2937,7 +2947,7 @@ mod tests {
     fn child_body_forwards_the_parents_send_reasoning_opt_out() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p, |t| t).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
         let on = child_body(&resolved, "task", &parent_run());
         assert!(
             on.get("send_reasoning").is_none(),
@@ -2965,7 +2975,7 @@ mod tests {
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
         };
-        let resolved = resolve_dispatch(&reg, &request, &p, |t| t).unwrap();
+        let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.name, "one-off");
         assert!(resolved.definition.system_prompt.contains("one-off"));
         assert_eq!(
@@ -3055,7 +3065,7 @@ mod tests {
         );
         let p = ToolPermissions::allow_all();
         let resolved =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p, |t| t).unwrap();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
         assert_eq!(
             resolved.allowed_tools,
             Some(vec![
@@ -3087,7 +3097,7 @@ mod tests {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p, |t| t).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 

@@ -2882,6 +2882,31 @@ async fn todo_prompt_addendum(
     has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
+/// The per-turn guidance block for this run, if any. Plan mode's is kept even
+/// under a host prompt: a TUI `/resume` of a host-prompted thread can run in
+/// Plan mode, and without the warning the model only learns of it from
+/// refusals. It sits in the tail, so the host's cached prefix is unaffected.
+/// Todo guidance is Jan's own prose and is withheld like every other block.
+async fn turn_addendum(
+    run_mode: crate::core::agent::plan::RunMode,
+    jan_owns_prompt: bool,
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<(Composer, &'static str)> {
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        return Some((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum(),
+        ));
+    }
+    if !jan_owns_prompt {
+        return None;
+    }
+    todo_prompt_addendum(eager_todo_plan, todo_registry)
+        .await
+        .map(|addendum| (Composer::TodoAddendum, addendum))
+}
+
 /// True when this turn should be forced to stage a plan: a `/goal` run whose
 /// list is still empty. Forcing is deliberately limited to goal mode -- an
 /// unattended loop needs a plan to work against, while an ordinary turn is the
@@ -3059,19 +3084,10 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    // A host prompt only arrives over RPC, whose sessions never run in Plan
-    // mode, so the two do not meet today. Were they to, the gate would still
-    // enforce Plan mode and each refusal names it (`plan_mode_read_only_msg`);
-    // only this prose is withheld, like every other block Jan writes.
-    if jan_owns_prompt {
-        if run_mode == crate::core::agent::plan::RunMode::Plan {
-            volatile_parts.push((
-                Composer::PlanAddendum,
-                crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
-            ));
-        } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-            volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
-        }
+    if let Some((composer, addendum)) =
+        turn_addendum(run_mode, jan_owns_prompt, eager_todo_plan, todo_registry).await
+    {
+        volatile_parts.push((composer, addendum.to_string()));
     }
 
     // One tail message, built from every block the policy kept below the cache
@@ -5113,6 +5129,30 @@ mod tests {
         // No registry means the `todo` tool is never advertised, so forcing it
         // would name a tool the request does not carry.
         assert!(!should_force_goal_todo_plan(true, &None).await);
+    }
+
+    #[tokio::test]
+    async fn plan_guidance_reaches_a_host_prompted_turn_but_todo_guidance_does_not() {
+        use crate::core::agent::plan::RunMode;
+        let staged = Some(staged_todo_registry());
+        for jan_owns_prompt in [true, false] {
+            assert_eq!(
+                turn_addendum(RunMode::Plan, jan_owns_prompt, false, &staged).await,
+                Some((
+                    Composer::PlanAddendum,
+                    crate::core::agent::plan::plan_mode_prompt_addendum()
+                )),
+                "jan_owns_prompt={jan_owns_prompt}"
+            );
+        }
+        assert_eq!(
+            turn_addendum(RunMode::Normal, true, false, &staged).await,
+            Some((
+                Composer::TodoAddendum,
+                crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM
+            ))
+        );
+        assert_eq!(turn_addendum(RunMode::Normal, false, false, &staged).await, None);
     }
 
     #[tokio::test]

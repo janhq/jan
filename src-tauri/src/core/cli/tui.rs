@@ -16454,7 +16454,12 @@ fn restore_host_system_prompt(app: &mut App, metadata: Option<&serde_json::Value
         .filter(|p| !p.trim().is_empty())
         .map(str::to_owned);
     if prompt.is_some() {
-        app.note("resumed on the host's system prompt from this thread; /new returns to Jan's");
+        // The prompt was written for the host's tools, which a TUI session
+        // does not have; the user should know before the model reaches for them.
+        app.note(
+            "resumed on the host's system prompt from this thread; the host's tools are \
+             not available here. /new returns to Jan's prompt",
+        );
     }
     app.set_host_system_prompt(prompt);
 }
