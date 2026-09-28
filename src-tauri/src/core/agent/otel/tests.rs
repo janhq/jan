@@ -585,3 +585,327 @@ fn api_error_messages_are_redacted() {
     assert!(!message.contains("supersecret99"), "{message}");
     assert!(message.contains("401: invalid key"), "{message}");
 }
+
+// ── Traces ───────────────────────────────────────────────────────────────────
+
+fn cfg_traced(extra: &[(&'static str, &'static str)]) -> Config {
+    let extra: Vec<(&str, &str)> = extra.to_vec();
+    let env = move |key: &str| {
+        if key == config::ENABLE_ENV || key == "OTEL_TRACES_EXPORTER" {
+            return Some(if key == config::ENABLE_ENV { "1" } else { "otlp" }.to_string());
+        }
+        extra.iter().find(|(k, _)| *k == key).map(|(_, v)| v.to_string())
+    };
+    config::resolve(&env, None, None).unwrap()
+}
+
+fn tool_call(id: &str, name: &str) -> StreamEvent {
+    StreamEvent::ToolCall { id: id.into(), name: name.into(), args: json!({"command": "echo hi"}) }
+}
+
+fn tool_result(id: &str, is_error: bool) -> StreamEvent {
+    StreamEvent::ToolResult { id: id.into(), content: "hi".into(), is_error, diff: None }
+}
+
+/// One whole turn: prompt, a request that calls a tool, the tool, a final
+/// request, and the run's end.
+fn traced_turn(cfg: Config) -> State {
+    let mut state = fold(
+        cfg,
+        None,
+        &[
+            provenance(None, "sess-1"),
+            StreamEvent::Step { index: 1, max: 0 },
+            usage(100, 10, 40, 5),
+            tool_call("call-1", "bash"),
+            tool_result("call-1", false),
+            provenance(None, "sess-1"),
+            usage(120, 5, 100, 0),
+        ],
+    );
+    state.apply(
+        Instant::now(),
+        9,
+        Signal::RunEnd { session: Some("sess-1".into()), run_id: None, elapsed: Duration::from_secs(1) },
+    );
+    state
+}
+
+fn span_attr<'a>(span: &'a Span, key: &str) -> Option<&'a AnyValue> {
+    span.attrs.iter().find(|(k, _)| k == key).map(|(_, v)| v)
+}
+
+#[test]
+fn traces_are_off_unless_asked_for() {
+    let mut state = traced_turn(cfg_with(true, true));
+    assert!(state.take_spans().is_empty(), "metrics/logs opt-in must not produce spans");
+}
+
+#[test]
+fn a_turn_is_one_trace_rooted_at_its_interaction() {
+    let spans = traced_turn(cfg_traced(&[])).take_spans();
+    let names: Vec<&str> = spans.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["jan_agent.llm_request", "jan_agent.tool", "jan_agent.llm_request", "jan_agent.interaction"]
+    );
+    let root = spans.last().unwrap();
+    assert_eq!(root.parent_span_id, None, "no TRACEPARENT: the interaction is the root");
+    for child in &spans[..3] {
+        assert_eq!(child.trace_id, root.trace_id);
+        assert_eq!(child.parent_span_id, Some(root.span_id), "{}", child.name);
+        assert_eq!(span_attr(child, "prompt.id"), span_attr(root, "prompt.id"));
+    }
+    let ids: HashSet<[u8; 8]> = spans.iter().map(|s| s.span_id).collect();
+    assert_eq!(ids.len(), spans.len(), "span ids are unique");
+    assert!(spans.iter().all(|s| s.end_unix_nano >= s.start_unix_nano));
+}
+
+#[test]
+fn llm_request_spans_carry_genai_usage() {
+    let spans = traced_turn(cfg_traced(&[])).take_spans();
+    let llm = &spans[0];
+    assert_eq!(llm.kind, encode::SPAN_KIND_CLIENT);
+    assert_eq!(span_attr(llm, "gen_ai.operation.name"), Some(&AnyValue::Str("chat".into())));
+    assert_eq!(span_attr(llm, "gen_ai.request.model"), Some(&AnyValue::Str("stub-model".into())));
+    assert_eq!(span_attr(llm, "gen_ai.system"), Some(&AnyValue::Str("stub".into())));
+    // Of 100 prompt tokens, 40 were cache reads and 5 cache writes.
+    assert_eq!(span_attr(llm, "input_tokens"), Some(&AnyValue::Int(55)));
+    assert_eq!(span_attr(llm, "gen_ai.usage.input_tokens"), Some(&AnyValue::Int(100)));
+    assert_eq!(span_attr(llm, "gen_ai.usage.output_tokens"), Some(&AnyValue::Int(10)));
+    assert_eq!(span_attr(llm, "cache_read_tokens"), Some(&AnyValue::Int(40)));
+    assert_eq!(span_attr(llm, "cache_creation_tokens"), Some(&AnyValue::Int(5)));
+    assert_eq!(llm.error, None);
+}
+
+#[test]
+fn tool_spans_join_to_the_call_and_record_failure() {
+    let mut state = fold(
+        cfg_traced(&[]),
+        None,
+        &[tool_call("call-9", "bash"), tool_result("call-9", true)],
+    );
+    let spans = state.take_spans();
+    let tool = spans.iter().find(|s| s.name == "jan_agent.tool").unwrap();
+    assert_eq!(span_attr(tool, "tool_use_id"), Some(&AnyValue::Str("call-9".into())));
+    assert_eq!(span_attr(tool, "gen_ai.tool.call.id"), Some(&AnyValue::Str("call-9".into())));
+    assert_eq!(span_attr(tool, "tool_name"), Some(&AnyValue::Str("bash".into())));
+    assert_eq!(span_attr(tool, "success"), Some(&AnyValue::Bool(false)));
+    assert!(tool.error.is_some(), "a failed tool sets status ERROR");
+}
+
+#[test]
+fn span_content_is_gated() {
+    let spans = traced_turn(cfg_traced(&[])).take_spans();
+    let root = spans.last().unwrap();
+    assert_eq!(span_attr(root, "user_prompt"), Some(&AnyValue::Str("<REDACTED>".into())));
+    assert_eq!(span_attr(root, "user_prompt_length"), Some(&AnyValue::Int(11)));
+    let tool = spans.iter().find(|s| s.name == "jan_agent.tool").unwrap();
+    assert_eq!(span_attr(tool, "tool_parameters"), None);
+
+    let spans = traced_turn(cfg_traced(&[("OTEL_LOG_USER_PROMPTS", "1"), ("OTEL_LOG_TOOL_DETAILS", "1")]))
+        .take_spans();
+    let root = spans.last().unwrap();
+    assert_eq!(span_attr(root, "user_prompt"), Some(&AnyValue::Str("secret plan".into())));
+    let tool = spans.iter().find(|s| s.name == "jan_agent.tool").unwrap();
+    assert!(matches!(span_attr(tool, "tool_parameters"), Some(AnyValue::Str(a)) if a.contains("echo hi")));
+}
+
+#[test]
+fn traceparent_makes_the_interaction_a_child_of_the_caller() {
+    let spans = traced_turn(cfg_traced(&[(
+        "TRACEPARENT",
+        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+    )]))
+    .take_spans();
+    let root = spans.last().unwrap();
+    assert_eq!(hex::encode(root.trace_id), "4bf92f3577b34da6a3ce929d0e0e4736");
+    assert_eq!(root.parent_span_id.map(hex::encode).as_deref(), Some("00f067aa0ba902b7"));
+    assert!(spans.iter().all(|s| s.trace_id == root.trace_id));
+}
+
+#[test]
+fn a_failed_request_is_an_error_span() {
+    let mut state = fold(
+        cfg_traced(&[]),
+        None,
+        &[
+            provenance(None, "sess-1"),
+            StreamEvent::Error { code: "upstream".into(), message: "429 key sk-abcdefghijklmnop1234".into() },
+        ],
+    );
+    let spans = state.take_spans();
+    let llm = spans.iter().find(|s| s.name == "jan_agent.llm_request").unwrap();
+    let message = llm.error.as_deref().unwrap();
+    assert!(message.contains("429") && !message.contains("sk-abcdefghijklmnop1234"), "{message}");
+    assert_eq!(span_attr(llm, "success"), Some(&AnyValue::Bool(false)));
+}
+
+#[test]
+fn subagent_spans_nest_under_the_parents_interaction() {
+    let mut state = fold(
+        cfg_traced(&[]),
+        None,
+        &[StreamEvent::Subagent {
+            run_id: "r1".into(),
+            name: "explore".into(),
+            event: Box::new(provenance(Some("r1"), "sess-1")),
+        }],
+    );
+    let usage_event = StreamEvent::Subagent {
+        run_id: "r1".into(),
+        name: "explore".into(),
+        event: Box::new(usage(1, 1, 0, 0)),
+    };
+    let cfg = cfg_traced(&[]);
+    if let Some(sig) = classify(&cfg, &usage_event, None) {
+        state.apply(Instant::now(), 3, sig);
+    }
+    state.apply(
+        Instant::now(),
+        9,
+        Signal::RunEnd { session: Some("sess-1".into()), run_id: None, elapsed: Duration::from_secs(1) },
+    );
+    let spans = state.take_spans();
+    let root = spans.iter().find(|s| s.name == "jan_agent.interaction").unwrap();
+    let llm = spans.iter().find(|s| s.name == "jan_agent.llm_request").unwrap();
+    assert_eq!(llm.parent_span_id, Some(root.span_id));
+    assert_eq!(span_attr(llm, "agent_id"), Some(&AnyValue::Str("r1".into())));
+}
+
+#[tokio::test]
+async fn a_traced_run_posts_spans_to_v1_traces() {
+    for protocol in ["http/json", "http/protobuf"] {
+        let (url, seen) = collector(false).await;
+        let mut cfg = cfg_for(&url, protocol);
+        let base = cfg.metrics.clone().unwrap();
+        cfg.traces = Some(config::Target { url: format!("{url}/v1/traces"), ..base });
+        let t = Telemetry::start(cfg, None, "0.0.0-test");
+        scripted_run(&t);
+        t.shutdown(Duration::from_secs(5)).await;
+        let seen = seen.lock().unwrap().clone();
+        let (_, body) = seen.iter().find(|(p, _)| p == "/v1/traces").unwrap_or_else(|| panic!("{protocol}: no traces POST"));
+        if protocol == "http/json" {
+            let v: Value = serde_json::from_slice(body).unwrap();
+            let names: Vec<&str> = v["resourceSpans"][0]["scopeSpans"][0]["spans"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["name"].as_str().unwrap())
+                .collect();
+            assert_eq!(names, vec!["jan_agent.llm_request", "jan_agent.interaction"]);
+        } else {
+            assert!(body.windows(21).any(|w| w == b"jan_agent.interaction"));
+        }
+    }
+}
+
+// ── Claude Code compatibility ────────────────────────────────────────────────
+//
+// Each Claude Code signal (https://code.claude.com/docs/en/monitoring-usage,
+// read 2026-09-28) and the jan_agent signal a dashboard built for it should
+// use instead, with the attribute keys that must be present. A row that jan
+// does not emit says why, so dropping a signal fails here instead of silently.
+
+enum Kind {
+    Metric,
+    Event,
+    Span,
+}
+
+enum Jan {
+    Same(&'static str, &'static [&'static str]),
+    Unsupported(&'static str),
+}
+
+const CLAUDE_CODE: &[(&str, Kind, Jan)] = &[
+    ("claude_code.session.count", Kind::Metric, Jan::Same("jan_agent.session.count", &["session.id"])),
+    ("claude_code.token.usage", Kind::Metric, Jan::Same("jan_agent.token.usage", &["session.id", "model", "type"])),
+    ("claude_code.cost.usage", Kind::Metric, Jan::Same("jan_agent.cost.usage", &["session.id", "model"])),
+    ("claude_code.active_time.total", Kind::Metric, Jan::Same("jan_agent.active_time.total", &["session.id"])),
+    ("claude_code.code_edit_tool.decision", Kind::Metric, Jan::Same("jan_agent.tool.count", &["tool_name", "decision"])),
+    ("claude_code.lines_of_code.count", Kind::Metric, Jan::Unsupported("edit tools do not report line counts on the event stream")),
+    ("claude_code.pull_request.count", Kind::Metric, Jan::Unsupported("no PR detection in bash output")),
+    ("claude_code.commit.count", Kind::Metric, Jan::Unsupported("no commit detection in bash output")),
+    ("claude_code.user_prompt", Kind::Event, Jan::Same("jan_agent.user_prompt", &["event.name", "session.id", "prompt.id", "prompt_length"])),
+    ("claude_code.api_request", Kind::Event, Jan::Same("jan_agent.api_request", &["session.id", "prompt.id", "model", "input_tokens", "output_tokens", "cache_read_tokens", "duration_ms"])),
+    ("claude_code.api_error", Kind::Event, Jan::Same("jan_agent.api_error", &["session.id", "prompt.id", "error", "model", "duration_ms"])),
+    ("claude_code.tool_result", Kind::Event, Jan::Same("jan_agent.tool_result", &["session.id", "prompt.id", "tool_name", "success", "duration_ms", "decision", "decision_source"])),
+    ("claude_code.tool_decision", Kind::Event, Jan::Same("jan_agent.tool_decision", &["session.id", "prompt.id", "tool_name", "decision", "source"])),
+    ("claude_code.interaction", Kind::Span, Jan::Same("jan_agent.interaction", &["span.type", "session.id", "prompt.id", "user_prompt", "user_prompt_length", "interaction.sequence", "interaction.duration_ms"])),
+    ("claude_code.llm_request", Kind::Span, Jan::Same("jan_agent.llm_request", &["span.type", "model", "gen_ai.system", "gen_ai.request.model", "duration_ms", "input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens", "success"])),
+    ("claude_code.tool", Kind::Span, Jan::Same("jan_agent.tool", &["span.type", "tool_name", "duration_ms", "tool_use_id", "gen_ai.tool.call.id"])),
+    ("claude_code.tool.execution", Kind::Span, Jan::Unsupported("the event stream has no separate execution start; claude_code.tool's success/duration are on jan_agent.tool")),
+    ("claude_code.tool.blocked_on_user", Kind::Span, Jan::Unsupported("permission waits are not timed yet; decision/source are on jan_agent.tool_decision")),
+    ("claude_code.hook", Kind::Span, Jan::Unsupported("detailed-beta only in Claude Code; hooks do not report to the stream")),
+];
+
+#[test]
+fn every_claude_code_signal_has_a_jan_equivalent_or_a_reason() {
+    let pricer: Pricer = Box::new(|_, _| {
+        Some(TokenRates { prompt_usd: 1e-6, completion_usd: 1e-6, cache_read_usd: None, cache_write_usd: None })
+    });
+    let cfg = Arc::new(cfg_traced(&[]));
+    let mut state = State::new(Arc::clone(&cfg), Some(pricer));
+    let feed = |state: &mut State, e: StreamEvent| {
+        if let Some(sig) = classify(&cfg, &e, None) {
+            state.apply(Instant::now(), 2, sig);
+        }
+    };
+    state.apply(
+        Instant::now(),
+        1,
+        Signal::RunStart { session: Some("sess-1".into()), run_id: None, prompt: Some((3, None)) },
+    );
+    feed(&mut state, provenance(None, "sess-1"));
+    feed(&mut state, usage(10, 2, 4, 1));
+    feed(&mut state, tool_call("c1", "edit"));
+    feed(&mut state, tool_result("c1", false));
+    feed(&mut state, provenance(None, "sess-1"));
+    feed(&mut state, StreamEvent::Error { code: "upstream".into(), message: "boom".into() });
+    state.apply(
+        Instant::now(),
+        5,
+        Signal::RunEnd { session: Some("sess-1".into()), run_id: None, elapsed: Duration::from_secs(2) },
+    );
+    let metrics = state.metrics(9, 0);
+    let spans = state.take_spans();
+    let logs = state.take_logs();
+
+    let mut missing = Vec::new();
+    for (theirs, kind, jan) in CLAUDE_CODE {
+        let Jan::Same(ours, keys) = jan else { continue };
+        let keys_of: Vec<Vec<String>> = match kind {
+            Kind::Metric => metrics
+                .iter()
+                .filter(|m| m.name == *ours)
+                .flat_map(|m| m.points.iter().map(|p| p.attrs.iter().map(|(k, _)| k.clone()).collect()))
+                .collect(),
+            Kind::Event => logs
+                .iter()
+                .filter(|l| l.event_name == *ours)
+                .map(|l| l.attrs.iter().map(|(k, _)| k.clone()).collect())
+                .collect(),
+            Kind::Span => spans
+                .iter()
+                .filter(|s| s.name == *ours)
+                .map(|s| s.attrs.iter().map(|(k, _)| k.clone()).collect())
+                .collect(),
+        };
+        if keys_of.is_empty() {
+            missing.push(format!("{theirs} -> {ours}: not emitted"));
+            continue;
+        }
+        for key in *keys {
+            if !keys_of.iter().any(|ks| ks.iter().any(|k| k == key)) {
+                missing.push(format!("{theirs} -> {ours}: no `{key}`"));
+            }
+        }
+    }
+    assert!(missing.is_empty(), "Claude Code parity gaps:\n{}", missing.join("\n"));
+    for (theirs, _, jan) in CLAUDE_CODE {
+        if let Jan::Unsupported(why) = jan {
+            assert!(!why.is_empty(), "{theirs} needs a reason");
+        }
+    }
+}

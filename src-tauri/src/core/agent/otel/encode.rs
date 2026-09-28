@@ -1,5 +1,5 @@
-//! OTLP wire encoding for the two signals this exporter sends: cumulative
-//! monotonic sums (metrics) and event log records (logs).
+//! OTLP wire encoding for the three signals this exporter sends: cumulative
+//! monotonic sums (metrics), event log records (logs) and spans (traces).
 //!
 //! Hand-rolled rather than generated: the subset is small and stable (OTLP v1
 //! is frozen for these messages), and carrying `prost` + the generated proto
@@ -57,6 +57,25 @@ pub struct LogRecord {
     pub severity_text: &'static str,
     pub event_name: String,
     pub attrs: Attrs,
+}
+
+/// OTLP `Span.SpanKind`: 1 = INTERNAL, 3 = CLIENT.
+pub const SPAN_KIND_INTERNAL: u32 = 1;
+pub const SPAN_KIND_CLIENT: u32 = 3;
+
+/// One finished span.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Span {
+    pub trace_id: [u8; 16],
+    pub span_id: [u8; 8],
+    pub parent_span_id: Option<[u8; 8]>,
+    pub name: String,
+    pub kind: u32,
+    pub start_unix_nano: u64,
+    pub end_unix_nano: u64,
+    pub attrs: Attrs,
+    /// `Some(message)` sets status ERROR; `None` leaves it UNSET.
+    pub error: Option<String>,
 }
 
 /// Who produced the batch: resource attributes plus the instrumentation scope.
@@ -153,6 +172,41 @@ pub fn logs_json(origin: &Origin, records: &[LogRecord]) -> Vec<u8> {
         "resourceLogs": [{
             "resource": resource,
             "scopeLogs": [{ "scope": scope, "logRecords": records }],
+        }]
+    }))
+    .unwrap_or_default()
+}
+
+/// OTLP/JSON writes trace and span ids as lowercase hex, not base64.
+pub fn spans_json(origin: &Origin, spans: &[Span]) -> Vec<u8> {
+    let (resource, scope) = origin_json(origin);
+    let spans: Vec<Value> = spans
+        .iter()
+        .map(|s| {
+            let mut span = json!({
+                "traceId": hex::encode(s.trace_id),
+                "spanId": hex::encode(s.span_id),
+                "name": s.name,
+                "kind": s.kind,
+                "startTimeUnixNano": s.start_unix_nano.to_string(),
+                "endTimeUnixNano": s.end_unix_nano.to_string(),
+                "attributes": attrs_json(&s.attrs),
+                // 2 = STATUS_CODE_ERROR, 0 = UNSET
+                "status": match &s.error {
+                    Some(m) => json!({ "code": 2, "message": m }),
+                    None => json!({}),
+                },
+            });
+            if let Some(parent) = s.parent_span_id {
+                span["parentSpanId"] = json!(hex::encode(parent));
+            }
+            span
+        })
+        .collect();
+    serde_json::to_vec(&json!({
+        "resourceSpans": [{
+            "resource": resource,
+            "scopeSpans": [{ "scope": scope, "spans": spans }],
         }]
     }))
     .unwrap_or_default()
@@ -295,6 +349,44 @@ pub fn logs_proto(origin: &Origin, records: &[LogRecord]) -> Vec<u8> {
     pb_bytes(&mut resource_logs, 2, &scope_logs);
     let mut request = Vec::new();
     pb_bytes(&mut request, 1, &resource_logs);
+    request
+}
+
+/// `ExportTraceServiceRequest { resource_spans = 1 }` ->
+/// `ResourceSpans { resource = 1; scope_spans = 2 }` ->
+/// `ScopeSpans { scope = 1; spans = 2 }` ->
+/// `Span { trace_id = 1; span_id = 2; parent_span_id = 4; name = 5; kind = 6;
+///         start = 7; end = 8; attributes = 9; status = 15 }` ->
+/// `Status { message = 2; code = 3 }`.
+pub fn spans_proto(origin: &Origin, spans: &[Span]) -> Vec<u8> {
+    let (resource, scope) = origin_pb(origin);
+    let mut scope_spans = Vec::new();
+    pb_bytes(&mut scope_spans, 1, &scope);
+    for s in spans {
+        let mut span = Vec::new();
+        pb_bytes(&mut span, 1, &s.trace_id);
+        pb_bytes(&mut span, 2, &s.span_id);
+        if let Some(parent) = s.parent_span_id {
+            pb_bytes(&mut span, 4, &parent);
+        }
+        pb_str(&mut span, 5, &s.name);
+        pb_varint(&mut span, 6, s.kind as u64);
+        pb_fixed64(&mut span, 7, s.start_unix_nano);
+        pb_fixed64(&mut span, 8, s.end_unix_nano);
+        attrs_pb(&mut span, 9, &s.attrs);
+        if let Some(message) = &s.error {
+            let mut status = Vec::new();
+            pb_str(&mut status, 2, message);
+            pb_varint(&mut status, 3, 2);
+            pb_bytes(&mut span, 15, &status);
+        }
+        pb_bytes(&mut scope_spans, 2, &span);
+    }
+    let mut resource_spans = Vec::new();
+    pb_bytes(&mut resource_spans, 1, &resource);
+    pb_bytes(&mut resource_spans, 2, &scope_spans);
+    let mut request = Vec::new();
+    pb_bytes(&mut request, 1, &resource_spans);
     request
 }
 
@@ -442,5 +534,58 @@ mod tests {
         assert_eq!(record["eventName"], "jan_agent.api_error");
         assert_eq!(record["severityNumber"], 17);
         assert_eq!(record["attributes"][0]["value"]["boolValue"], false);
+    }
+
+    fn span(error: Option<&str>, parent: Option<[u8; 8]>) -> Span {
+        Span {
+            trace_id: [0xab; 16],
+            span_id: [0xcd; 8],
+            parent_span_id: parent,
+            name: "jan_agent.llm_request".into(),
+            kind: SPAN_KIND_CLIENT,
+            start_unix_nano: 10,
+            end_unix_nano: 20,
+            attrs: vec![("gen_ai.request.model".into(), AnyValue::Str("m".into()))],
+            error: error.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn spans_protobuf_carries_ids_times_and_status() {
+        let bytes = spans_proto(&origin(), &[span(Some("boom"), Some([0xef; 8]))]);
+        let scope_spans = only(&only(&bytes, 1), 2);
+        let s = only(&scope_spans, 2);
+        assert_eq!(only(&s, 1), vec![0xab; 16]);
+        assert_eq!(only(&s, 2), vec![0xcd; 8]);
+        assert_eq!(only(&s, 4), vec![0xef; 8]);
+        assert_eq!(only(&s, 5), b"jan_agent.llm_request");
+        assert_eq!(only(&s, 6)[0], SPAN_KIND_CLIENT as u8);
+        assert_eq!(u64::from_le_bytes(only(&s, 7).try_into().unwrap()), 10);
+        assert_eq!(u64::from_le_bytes(only(&s, 8).try_into().unwrap()), 20);
+        let kv = only(&s, 9);
+        assert_eq!(only(&kv, 1), b"gen_ai.request.model");
+        let status = only(&s, 15);
+        assert_eq!(only(&status, 2), b"boom");
+        assert_eq!(only(&status, 3)[0], 2, "STATUS_CODE_ERROR");
+    }
+
+    #[test]
+    fn a_root_span_has_no_parent_and_an_ok_span_no_status() {
+        let bytes = spans_proto(&origin(), &[span(None, None)]);
+        let s = only(&only(&only(&bytes, 1), 2), 2);
+        assert!(fields(&s).iter().all(|f| f.0 != 4 && f.0 != 15));
+    }
+
+    #[test]
+    fn spans_json_writes_ids_as_hex() {
+        let v: Value =
+            serde_json::from_slice(&spans_json(&origin(), &[span(Some("x"), Some([1; 8]))])).unwrap();
+        let s = &v["resourceSpans"][0]["scopeSpans"][0]["spans"][0];
+        assert_eq!(s["traceId"], "ab".repeat(16));
+        assert_eq!(s["spanId"], "cd".repeat(8));
+        assert_eq!(s["parentSpanId"], "01".repeat(8));
+        assert_eq!(s["startTimeUnixNano"], "10");
+        assert_eq!(s["status"]["code"], 2);
+        assert_eq!(s["kind"], 3);
     }
 }

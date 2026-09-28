@@ -49,10 +49,17 @@ pub struct Target {
 pub struct Config {
     pub metrics: Option<Target>,
     pub logs: Option<Target>,
+    /// Off unless `OTEL_TRACES_EXPORTER=otlp` asks for it: enabling telemetry
+    /// alone keeps sending what it always sent.
+    pub traces: Option<Target>,
+    /// W3C `TRACEPARENT` from the environment: `(trace_id, span_id)` of the
+    /// caller's span, so an embedding process sees our spans as its children.
+    pub parent: Option<([u8; 16], [u8; 8])>,
     /// `service.name` and `OTEL_RESOURCE_ATTRIBUTES`, in order, service first.
     pub resource: Vec<(String, String)>,
     pub metric_interval: Duration,
     pub logs_interval: Duration,
+    pub traces_interval: Duration,
     pub export_timeout: Duration,
     /// `OTEL_LOG_USER_PROMPTS`: include prompt text on `user_prompt`.
     pub log_user_prompts: bool,
@@ -114,7 +121,10 @@ pub fn resolve(
 
     let mut target = |signal: &str, path: &str| -> Option<Target> {
         let upper = signal.to_ascii_uppercase();
-        match get(&format!("OTEL_{upper}_EXPORTER")).as_deref() {
+        let exporter = get(&format!("OTEL_{upper}_EXPORTER"));
+        match exporter.as_deref() {
+            // Traces are opt-in on their own, as in Claude Code.
+            None if signal == "traces" => return None,
             None | Some("otlp") => {}
             Some("none") => return None,
             // stdout is the protocol channel for RPC and stream-json, so a
@@ -162,7 +172,8 @@ pub fn resolve(
     };
     let metrics = target("metrics", "v1/metrics");
     let logs = target("logs", "v1/logs");
-    if metrics.is_none() && logs.is_none() {
+    let traces = target("traces", "v1/traces");
+    if metrics.is_none() && logs.is_none() && traces.is_none() {
         return None;
     }
 
@@ -191,9 +202,12 @@ pub fn resolve(
     Some(Config {
         metrics,
         logs,
+        traces,
+        parent: get("TRACEPARENT").as_deref().and_then(parse_traceparent),
         resource,
         metric_interval: millis("OTEL_METRIC_EXPORT_INTERVAL", 60_000),
         logs_interval: millis("OTEL_LOGS_EXPORT_INTERVAL", 5_000),
+        traces_interval: millis("OTEL_TRACES_EXPORT_INTERVAL", 5_000),
         export_timeout: millis("OTEL_EXPORTER_OTLP_TIMEOUT", 10_000),
         log_user_prompts: gate("OTEL_LOG_USER_PROMPTS"),
         log_tool_details: gate("OTEL_LOG_TOOL_DETAILS"),
@@ -203,6 +217,20 @@ pub fn resolve(
             .unwrap_or(true),
         warnings,
     })
+}
+
+/// A W3C `traceparent` (`00-<32 hex>-<16 hex>-<2 hex>`). All-zero ids and
+/// the reserved version `ff` are invalid and ignored, as the spec requires.
+pub fn parse_traceparent(raw: &str) -> Option<([u8; 16], [u8; 8])> {
+    let parts: Vec<&str> = raw.trim().split('-').collect();
+    let [version, trace, span, flags, ..] = parts.as_slice() else { return None };
+    if version.len() != 2 || *version == "ff" || flags.len() != 2 || (*version == "00" && parts.len() != 4) {
+        return None;
+    }
+    let trace: [u8; 16] = hex::decode(trace).ok()?.try_into().ok()?;
+    let span: [u8; 8] = hex::decode(span).ok()?.try_into().ok()?;
+    hex::decode(flags).ok()?;
+    (trace != [0; 16] && span != [0; 8]).then_some((trace, span))
 }
 
 /// `k=v,k2=v2` as the OTel spec writes headers and resource attributes, with
@@ -374,6 +402,55 @@ mod tests {
             None
         )
         .is_none());
+    }
+
+    #[test]
+    fn traces_are_opt_in_and_follow_the_signal_rules() {
+        let c = resolve(&env(&[(ENABLE_ENV, "1")]), None, None).unwrap();
+        assert!(c.traces.is_none(), "enabling telemetry alone sends no spans");
+        let c = resolve(
+            &env(&[
+                (ENABLE_ENV, "1"),
+                ("OTEL_TRACES_EXPORTER", "otlp"),
+                ("OTEL_METRICS_EXPORTER", "none"),
+                ("OTEL_LOGS_EXPORTER", "none"),
+                ("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "http/json"),
+                ("OTEL_TRACES_EXPORT_INTERVAL", "250"),
+            ]),
+            None,
+            None,
+        )
+        .expect("traces alone keep telemetry on");
+        let t = c.traces.unwrap();
+        assert_eq!(t.url, "http://localhost:4318/v1/traces");
+        assert_eq!(t.protocol, Protocol::HttpJson);
+        assert_eq!(c.traces_interval, Duration::from_millis(250));
+        let c = resolve(&env(&[(ENABLE_ENV, "1"), ("OTEL_TRACES_EXPORTER", "console")]), None, None)
+            .unwrap();
+        assert!(c.traces.is_none());
+        assert_eq!(c.warnings.len(), 1);
+    }
+
+    #[test]
+    fn traceparent_is_parsed_strictly() {
+        let good = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        let (trace, span) = parse_traceparent(good).unwrap();
+        assert_eq!(hex::encode(trace), "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert_eq!(hex::encode(span), "00f067aa0ba902b7");
+        for bad in [
+            "",
+            "garbage",
+            "00-00000000000000000000000000000000-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-0000000000000000-01",
+            "ff-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e473-00f067aa0ba902b7-01",
+            "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra",
+            "00-zzf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+        ] {
+            assert_eq!(parse_traceparent(bad), None, "{bad}");
+        }
+        let c = resolve(&env(&[(ENABLE_ENV, "1"), ("TRACEPARENT", good)]), None, None).unwrap();
+        assert_eq!(c.parent.map(|(t, _)| hex::encode(t)).as_deref(), Some("4bf92f3577b34da6a3ce929d0e0e4736"));
     }
 
     #[test]

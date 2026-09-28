@@ -1,5 +1,5 @@
-//! Opt-in OpenTelemetry export of the agent's usage: metrics and event logs over
-//! OTLP/HTTP, to a collector the user names (janhq/jan-internal#393).
+//! Opt-in OpenTelemetry export of the agent's usage: metrics, event logs and
+//! (separately opted into) traces over OTLP/HTTP, to a collector the user names (janhq/jan-internal#393).
 //!
 //! Off by default: nothing here runs, and no request is made, unless
 //! [`config::enabled`] says so. This is separate from Jan's own update-check
@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::TokenRates;
 use config::{Config, Target};
-use encode::{AnyValue, Attrs, LogRecord, Metric, Origin, Point, PointValue};
+use encode::{AnyValue, Attrs, LogRecord, Metric, Origin, Point, PointValue, Span};
 
 /// Signals that can wait for the worker. Generous: a busy turn emits a few
 /// dozen, and the worker drains continuously.
@@ -49,6 +49,8 @@ pub const QUEUE_CAPACITY: usize = 4096;
 pub const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 /// Logs buffered before an early export, whatever the interval.
 const LOG_BATCH: usize = 512;
+/// Spans buffered before an early export, whatever the interval.
+const SPAN_BATCH: usize = 512;
 /// Cap on a gated free-text attribute (prompt text, tool arguments).
 const CONTENT_CAP: usize = 4096;
 /// Cap on an error message carried by `api_error`.
@@ -493,6 +495,7 @@ type SeriesKey = (&'static str, Vec<(String, String)>);
 #[derive(Debug)]
 struct PendingRequest {
     at: Instant,
+    wall: u64,
     model: String,
     provider: Option<String>,
     body_bytes: u64,
@@ -501,8 +504,32 @@ struct PendingRequest {
 #[derive(Debug)]
 struct PendingTool {
     at: Instant,
+    wall: u64,
     name: String,
     args: Option<String>,
+}
+
+/// The span a top-level run is recorded under, open until its `RunEnd`.
+#[derive(Debug, Clone)]
+struct Interaction {
+    trace_id: [u8; 16],
+    span_id: [u8; 8],
+    start: u64,
+    sequence: u64,
+    prompt: Option<(usize, Option<String>)>,
+}
+
+fn random_ids() -> ([u8; 16], [u8; 8]) {
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    // All-zero ids are invalid in W3C trace context; a 2^-64 retry is cheap.
+    loop {
+        let trace: [u8; 16] = rng.gen();
+        let span: [u8; 8] = rng.gen();
+        if trace != [0; 16] && span != [0; 8] {
+            return (trace, span);
+        }
+    }
 }
 
 /// Everything the worker folds signals into. Pure: no I/O, so the mapping from
@@ -525,6 +552,36 @@ pub struct State {
     /// so overlapping RPC sessions never tag each other's records.
     prompt_ids: HashMap<String, String>,
     main_session: Option<String>,
+    /// Open interaction span per session key (`""` = no session id). Only
+    /// populated when traces are exported.
+    interactions: HashMap<String, Interaction>,
+    interaction_seq: HashMap<String, u64>,
+    spans: Vec<Span>,
+}
+
+/// `llm_request` span attributes from the `api_request` event's fields, plus
+/// the OpenTelemetry GenAI semantic-convention names for the same values.
+fn llm_attrs(fields: &[(String, AnyValue)]) -> Attrs {
+    let mut attrs: Attrs = fields.iter().filter(|(k, _)| k != "input_tokens").cloned().collect();
+    let get = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+    attrs.push(("gen_ai.operation.name".into(), AnyValue::Str("chat".into())));
+    if let Some(model) = get("model") {
+        attrs.push(("gen_ai.request.model".into(), model));
+    }
+    if let Some(AnyValue::Str(p)) = get("provider") {
+        if !p.is_empty() {
+            attrs.push(("gen_ai.system".into(), AnyValue::Str(p.clone())));
+            attrs.push(("gen_ai.provider.name".into(), AnyValue::Str(p)));
+        }
+    }
+    if let Some(v) = get("cache_read_tokens") {
+        attrs.push(("gen_ai.usage.cache_read.input_tokens".into(), v));
+    }
+    if let Some(v) = get("cache_write_tokens") {
+        attrs.push(("cache_creation_tokens".into(), v.clone()));
+        attrs.push(("gen_ai.usage.cache_creation.input_tokens".into(), v));
+    }
+    attrs
 }
 
 fn metric_attr(key: &str, value: impl Into<String>) -> (String, String) {
@@ -546,6 +603,9 @@ impl State {
             prompted: HashMap::new(),
             prompt_ids: HashMap::new(),
             main_session: None,
+            interactions: HashMap::new(),
+            interaction_seq: HashMap::new(),
+            spans: Vec::new(),
         }
     }
 
@@ -603,9 +663,121 @@ impl State {
         });
     }
 
+    fn tracing(&self) -> bool {
+        self.cfg.traces.is_some()
+    }
+
+    /// Record a finished span under the session's open interaction, or as a
+    /// root of its own trace (under `TRACEPARENT`, when set) if none is open.
+    #[allow(clippy::too_many_arguments)]
+    fn span(
+        &mut self,
+        name: &str,
+        kind: u32,
+        session: Option<&str>,
+        child: Option<&Child>,
+        start: u64,
+        end: u64,
+        error: Option<String>,
+        mut attrs: Attrs,
+    ) {
+        if !self.tracing() {
+            return;
+        }
+        let key = session.unwrap_or("").to_string();
+        let (trace_id, parent) = match self.interactions.get(&key) {
+            Some(i) => (i.trace_id, Some(i.span_id)),
+            None => match self.cfg.parent {
+                Some((trace, span)) => (trace, Some(span)),
+                None => (random_ids().0, None),
+            },
+        };
+        let mut all: Attrs = vec![(
+            "span.type".into(),
+            AnyValue::Str(name.trim_start_matches("jan_agent.").to_string()),
+        )];
+        if let Some(s) = session {
+            all.push(("session.id".into(), AnyValue::Str(s.to_string())));
+        }
+        if let Some(p) = self.prompt_ids.get(&key) {
+            all.push(("prompt.id".into(), AnyValue::Str(p.clone())));
+        }
+        if let Some(c) = child {
+            all.push(("agent_id".into(), AnyValue::Str(c.run_id.clone())));
+            all.push(("subagent.name".into(), AnyValue::Str(c.name.clone())));
+        }
+        all.append(&mut attrs);
+        self.spans.push(Span {
+            trace_id,
+            span_id: random_ids().1,
+            parent_span_id: parent,
+            name: name.to_string(),
+            kind,
+            start_unix_nano: start,
+            end_unix_nano: end.max(start),
+            attrs: all,
+            error,
+        });
+    }
+
+    /// Close the session's interaction span, if one is open.
+    fn end_interaction(&mut self, session: Option<&str>, wall: u64) {
+        let key = session.unwrap_or("").to_string();
+        let Some(i) = self.interactions.remove(&key) else { return };
+        let mut attrs: Attrs = vec![("span.type".into(), AnyValue::Str("interaction".into()))];
+        if let Some(s) = session {
+            attrs.push(("session.id".into(), AnyValue::Str(s.to_string())));
+        }
+        if let Some(p) = self.prompt_ids.get(&key) {
+            attrs.push(("prompt.id".into(), AnyValue::Str(p.clone())));
+        }
+        if let Some((length, text)) = i.prompt {
+            attrs.push(("user_prompt_length".into(), AnyValue::Int(length as i64)));
+            // Claude Code writes a placeholder when the gate is off.
+            attrs.push(("user_prompt".into(), AnyValue::Str(text.unwrap_or_else(|| "<REDACTED>".into()))));
+        }
+        attrs.push(("interaction.sequence".into(), AnyValue::Int(i.sequence as i64)));
+        attrs.push((
+            "interaction.duration_ms".into(),
+            AnyValue::Int((wall.saturating_sub(i.start) / 1_000_000) as i64),
+        ));
+        self.spans.push(Span {
+            trace_id: i.trace_id,
+            span_id: i.span_id,
+            parent_span_id: self.cfg.parent.map(|(_, span)| span),
+            name: "jan_agent.interaction".into(),
+            kind: encode::SPAN_KIND_INTERNAL,
+            start_unix_nano: i.start,
+            end_unix_nano: wall.max(i.start),
+            attrs,
+            error: None,
+        });
+    }
+
+    pub fn take_spans(&mut self) -> Vec<Span> {
+        std::mem::take(&mut self.spans)
+    }
+
+    pub fn pending_spans(&self) -> usize {
+        self.spans.len()
+    }
+
     pub fn apply(&mut self, at: Instant, wall: u64, signal: Signal) {
         match signal {
             Signal::RunStart { session, run_id, prompt } => {
+                if run_id.is_none() && self.tracing() {
+                    let key = session.clone().unwrap_or_default();
+                    let seq = self.interaction_seq.entry(key.clone()).or_insert(0);
+                    *seq += 1;
+                    let (trace_id, span_id) = match self.cfg.parent {
+                        Some((trace, _)) => (trace, random_ids().1),
+                        None => random_ids(),
+                    };
+                    self.interactions.insert(
+                        key,
+                        Interaction { trace_id, span_id, start: wall, sequence: *seq, prompt: prompt.clone() },
+                    );
+                }
                 if run_id.is_none() {
                     self.main_session = session.clone();
                     if let Some(s) = &session {
@@ -636,6 +808,7 @@ impl State {
                 if run_id.is_none() {
                     let attrs = self.session_attr(session.as_deref());
                     self.add("jan_agent.active_time.total", attrs, elapsed.as_secs_f64());
+                    self.end_interaction(session.as_deref(), wall);
                 }
             }
             Signal::Compaction { message_count } => {
@@ -663,7 +836,7 @@ impl State {
                 if let Some(s) = session {
                     self.run_session.insert(run.clone(), s);
                 }
-                self.requests.insert(run, PendingRequest { at, model, provider, body_bytes });
+                self.requests.insert(run, PendingRequest { at, wall, model, provider, body_bytes });
             }
             EventSignal::Usage { tokens, execution_id } => {
                 let session = self.session_of(&run);
@@ -724,6 +897,24 @@ impl State {
                 if let Some(id) = execution_id {
                     fields.push(("execution_id".into(), AnyValue::Str(id)));
                 }
+                if self.tracing() {
+                    let mut attrs = llm_attrs(&fields);
+                    attrs.push(("input_tokens".into(), AnyValue::Int(input as i64)));
+                    attrs.push(("gen_ai.usage.input_tokens".into(), AnyValue::Int(prompt as i64)));
+                    attrs.push(("gen_ai.usage.output_tokens".into(), AnyValue::Int(output as i64)));
+                    attrs.push(("success".into(), AnyValue::Bool(true)));
+                    let start = request.as_ref().map_or(wall, |r| r.wall);
+                    self.span(
+                        "jan_agent.llm_request",
+                        encode::SPAN_KIND_CLIENT,
+                        session.as_deref(),
+                        child.as_ref(),
+                        start,
+                        wall,
+                        None,
+                        attrs,
+                    );
+                }
                 self.log(wall, "jan_agent.api_request", false, session.as_deref(), child.as_ref(), fields);
             }
             EventSignal::Step => {
@@ -732,14 +923,14 @@ impl State {
                 self.add("jan_agent.turn.count", attrs, 1.0);
             }
             EventSignal::ToolCall { id, name, args } => {
-                self.tools.insert((run, id), PendingTool { at, name, args });
+                self.tools.insert((run, id), PendingTool { at, wall, name, args });
             }
             EventSignal::Permission { tool_name } => {
                 self.prompted.entry(run).or_default().push(tool_name);
             }
             EventSignal::ToolResult { id, is_error, refusal, bytes } => {
                 let session = self.session_of(&run);
-                let Some(tool) = self.tools.remove(&(run.clone(), id)) else {
+                let Some(tool) = self.tools.remove(&(run.clone(), id.clone())) else {
                     return;
                 };
                 let prompted = self
@@ -774,7 +965,7 @@ impl State {
                     ],
                 );
                 let mut fields: Attrs = vec![
-                    ("tool_name".into(), AnyValue::Str(tool.name)),
+                    ("tool_name".into(), AnyValue::Str(tool.name.clone())),
                     ("success".into(), AnyValue::Bool(success)),
                     (
                         "duration_ms".into(),
@@ -787,11 +978,49 @@ impl State {
                 if let Some(args) = tool.args {
                     fields.push(("tool_parameters".into(), AnyValue::Str(args)));
                 }
+                if self.tracing() {
+                    let mut attrs = fields.clone();
+                    attrs.push(("tool_use_id".into(), AnyValue::Str(id.clone())));
+                    attrs.push(("gen_ai.tool.call.id".into(), AnyValue::Str(id.clone())));
+                    attrs.push(("gen_ai.tool.name".into(), AnyValue::Str(tool.name.clone())));
+                    attrs.push(("gen_ai.operation.name".into(), AnyValue::Str("execute_tool".into())));
+                    self.span(
+                        "jan_agent.tool",
+                        encode::SPAN_KIND_INTERNAL,
+                        session.as_deref(),
+                        child.as_ref(),
+                        tool.wall,
+                        wall,
+                        (!success).then(|| "tool failed".to_string()),
+                        attrs,
+                    );
+                }
                 self.log(wall, "jan_agent.tool_result", !success, session.as_deref(), child.as_ref(), fields);
             }
             EventSignal::Error { code, message } => {
                 let session = self.session_of(&run);
                 let request = self.requests.remove(&run);
+                if let Some(r) = &request {
+                    if self.tracing() {
+                        let mut attrs = llm_attrs(&[
+                            ("model".into(), AnyValue::Str(r.model.clone())),
+                            ("provider".into(), AnyValue::Str(r.provider.clone().unwrap_or_default())),
+                        ]);
+                        attrs.push(("success".into(), AnyValue::Bool(false)));
+                        attrs.push(("error.type".into(), AnyValue::Str(code.clone())));
+                        attrs.push(("error".into(), AnyValue::Str(message.clone())));
+                        self.span(
+                            "jan_agent.llm_request",
+                            encode::SPAN_KIND_CLIENT,
+                            session.as_deref(),
+                            child.as_ref(),
+                            r.wall,
+                            wall,
+                            Some(message.clone()),
+                            attrs,
+                        );
+                    }
+                }
                 let mut fields: Attrs = vec![
                     ("code".into(), AnyValue::Str(code)),
                     ("error".into(), AnyValue::Str(message)),
@@ -935,9 +1164,11 @@ impl Worker {
     ) {
         let mut metric_tick = tokio::time::interval(self.cfg.metric_interval);
         let mut logs_tick = tokio::time::interval(self.cfg.logs_interval);
+        let mut traces_tick = tokio::time::interval(self.cfg.traces_interval);
         // The first tick of an interval fires at once; skip it.
         metric_tick.tick().await;
         logs_tick.tick().await;
+        traces_tick.tick().await;
         loop {
             tokio::select! {
                 biased;
@@ -952,10 +1183,13 @@ impl Worker {
                         self.export_all().await;
                     } else if self.state.pending_logs() >= LOG_BATCH {
                         self.export_logs().await;
+                    } else if self.state.pending_spans() >= SPAN_BATCH {
+                        self.export_traces().await;
                     }
                 }
                 _ = metric_tick.tick() => self.export_metrics().await,
                 _ = logs_tick.tick() => self.export_logs().await,
+                _ = traces_tick.tick() => self.export_traces().await,
             }
         }
         // Whatever the agent already queued is part of the run being reported.
@@ -969,6 +1203,7 @@ impl Worker {
     }
 
     async fn export_all(&mut self) {
+        self.export_traces().await;
         self.export_logs().await;
         self.export_metrics().await;
     }
@@ -1004,6 +1239,19 @@ impl Worker {
             || encode::logs_proto(&self.origin, &logs),
         );
         self.post(&target, body, "logs").await;
+    }
+
+    async fn export_traces(&mut self) {
+        let spans = self.state.take_spans();
+        let Some(target) = self.cfg.traces.clone() else { return };
+        if spans.is_empty() {
+            return;
+        }
+        let body = target.protocol.encode(
+            || encode::spans_json(&self.origin, &spans),
+            || encode::spans_proto(&self.origin, &spans),
+        );
+        self.post(&target, body, "traces").await;
     }
 
     /// One POST. Failures are the collector's problem, not the run's: logged
