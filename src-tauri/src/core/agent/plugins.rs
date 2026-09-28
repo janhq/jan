@@ -2016,7 +2016,10 @@ mod tests {
     /// one required env var, plus the store dir tests use instead of `~/.jan`.
     fn plugin_with_env_requirement(tag: &str, var: &str, url: &str) -> (PathBuf, PathBuf) {
         let root = unique_root(tag);
-        let dir = root.join(".jan/agent/plugins/acme");
+        // Create the root first: the store is keyed on the canonical path,
+        // which differs from the raw temp path on macOS (/var -> /private/var).
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = crate::core::agent::skills::plugins_dir(&root).join("acme");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("plugin.toml"),
@@ -2121,7 +2124,8 @@ mod tests {
         let unrelated = temp.path().join("unrelated");
         std::fs::create_dir_all(&unrelated).unwrap();
         for (root, value) in [(&first, "first-secret"), (&second, "second-secret")] {
-            let plugin = root.join(".jan/agent/plugins/acme");
+            std::fs::create_dir_all(root).unwrap();
+            let plugin = crate::core::agent::skills::plugins_dir(root).join("acme");
             std::fs::create_dir_all(&plugin).unwrap();
             std::fs::write(
                 plugin.join("plugin.toml"),
@@ -2146,7 +2150,7 @@ mod tests {
             assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
         }
         // Dropping a manifest requirement must revoke the next shell's key.
-        std::fs::write(first.join(".jan/agent/plugins/acme/plugin.toml"), "name = \"acme\"\n").unwrap();
+        std::fs::write(crate::core::agent::skills::plugins_dir(&first).join("acme").join("plugin.toml"), "name = \"acme\"\n").unwrap();
         sync_env_registry_in(&first, &first.join("key-store"));
         let child = proc::spawn(
             proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", &first, None,

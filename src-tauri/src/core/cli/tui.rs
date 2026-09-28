@@ -38055,7 +38055,7 @@ mod tests {
 
     /// A plugin whose manifest declares one required env var.
     fn plugin_with_setup_requirement(root: &std::path::Path, var: &str, url: &str) {
-        let dir = root.join(".jan/agent/plugins/acme");
+        let dir = crate::core::agent::skills::plugins_dir(root).join("acme");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             dir.join("plugin.toml"),
@@ -38071,7 +38071,7 @@ mod tests {
             ("beta", "shared", "Second"),
             ("gamma", "beta", "Third"),
         ] {
-            let dir = root.join(".jan/agent/plugins").join(directory);
+            let dir = crate::core::agent::skills::plugins_dir(&root).join(directory);
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join("plugin.toml"),
@@ -38103,7 +38103,7 @@ mod tests {
             ("figma", "Canvas design tools with a long description that must not hide the plugin name"),
             ("qjk-tools", "Keyboard tools"),
         ] {
-            let dir = root.join(".jan/agent/plugins").join(name);
+            let dir = crate::core::agent::skills::plugins_dir(&root).join(name);
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(
                 dir.join("plugin.toml"),
@@ -38159,7 +38159,7 @@ mod tests {
     async fn plugin_setup_without_name_waits_for_one_selection() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         for name in ["alpha", "example-plugin", "figma"] {
-            let dir = root.join(".jan/agent/plugins").join(name);
+            let dir = crate::core::agent::skills::plugins_dir(&root).join(name);
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("plugin.toml"), format!("name = \"{name}\"\n")).unwrap();
             if name != "alpha" {
@@ -38241,7 +38241,7 @@ mod tests {
             rt().block_on(run_command(&mut app, "plugin setup design", &no_mcp()));
             assert!(transcript_text(&app).contains("is not installed"));
             assert!(app.plugin_setup.is_none());
-            let dir = root.join(".jan/agent/plugins/design");
+            let dir = crate::core::agent::skills::plugins_dir(&root).join("design");
             std::fs::create_dir_all(&dir).unwrap();
             std::fs::write(dir.join("plugin.toml"), "name = \"design\"\n").unwrap();
             std::fs::write(

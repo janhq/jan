@@ -729,8 +729,16 @@ mod tests {
                         "access_token": if refreshed { "refreshed" } else { "issued" },
                         "token_type": "Bearer", "expires_in": 3600, "refresh_token": "refresh",
                     }).to_string())
+                } else if bytes.starts_with(b"GET /mcp ") {
+                    // A 200 here is read as the RFC 9728 protected-resource
+                    // document, whose `resource` rmcp 3.2 requires to match.
+                    (200, json!({
+                        "resource": format!("{origin}/mcp"),
+                        "authorization_servers": [origin.clone()],
+                    }).to_string())
                 } else {
                     (200, json!({
+                        "issuer": origin.clone(),
                         "authorization_endpoint": format!("{origin}/authorize"),
                         "token_endpoint": format!("{origin}/token"),
                         "registration_endpoint": format!("{origin}/register"),

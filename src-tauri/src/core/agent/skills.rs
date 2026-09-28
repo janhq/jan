@@ -226,16 +226,12 @@ pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
     crate::core::agent::project::store_root(root).join("plugins")
 }
 
-/// Project roots whose stores this project sees, in shadowing order:
-/// the project root first, then the main worktree root when the project is a
-/// linked git worktree. Skills and plugins install into whichever checkout ran
-/// the install; a linked worktree shares the repository but not the working
-/// tree, so discovery follows the repo, not the checkout. Earlier roots win:
-/// a project-local entry shadows a same-named shared one.
+/// Roots whose plugin and skill stores this project sees. Only the project
+/// itself: [`crate::core::agent::project::store_root`] already maps a linked
+/// git worktree onto its main checkout's store, so worktrees share skills and
+/// plugins without a second root (or a `git` call per lookup).
 pub(crate) fn discovery_roots(root: &Path) -> Vec<PathBuf> {
-    let mut roots = vec![root.to_path_buf()];
-    roots.extend(crate::core::agent::git::worktree_primary_root(root));
-    roots
+    vec![root.to_path_buf()]
 }
 
 /// Locate an installed plugin's directory by name across the discovery roots
@@ -1301,8 +1297,7 @@ mod tests {
     }
 
     /// Skills and plugins installed in the main worktree are visible from a
-    /// linked worktree (agent setup follows the repo, not the checkout), and a
-    /// project-local skill shadows a same-named shared one.
+    /// linked worktree: the store follows the repo, not the checkout.
     #[test]
     fn linked_worktree_sees_main_worktree_skills_and_plugins() {
         let Some((main, linked)) = repo_with_linked_worktree("discover") else {
@@ -1324,20 +1319,10 @@ mod tests {
             plugins.iter().map(qualified_name).collect::<Vec<_>>(),
             vec!["shared-plugin:prep".to_string()]
         );
-        // Reading a shared plugin skill resolves through the linked root too.
+        // Both checkouts resolve to one store, so the file lives in it.
         let entry = resolve_readable(&linked, "shared-plugin:prep").unwrap();
-        assert!(entry.file.starts_with(&main));
-
-        // Project-local shadows shared: the linked worktree's own copy wins.
-        project_skill(&linked, "shared", "local\n");
-        let entry = discover(&linked)
-            .into_iter()
-            .find(|e| e.name == "shared")
-            .unwrap();
-        assert!(entry.file.starts_with(&linked), "local must win");
-
-        // The main worktree does not merge with itself (no duplicates).
-        assert_eq!(discover(&main).iter().filter(|e| e.name == "shared").count(), 1);
+        assert!(entry.file.starts_with(plugins_dir(&main)), "{:?}", entry.file);
+        assert_eq!(plugins_dir(&linked), plugins_dir(&main));
 
         let _ = std::fs::remove_dir_all(&main);
         let _ = std::fs::remove_dir_all(&linked);
