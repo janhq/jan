@@ -2152,6 +2152,11 @@ struct App {
     /// or budget path), and since when. Display-only: unlike `compacting` it
     /// gates nothing, because the run that compacts is the one already going.
     run_compacting: Option<Instant>,
+    /// The running turn's upstream request failed before anything streamed and
+    /// the loop is waiting to resend it. Display-only, like `run_compacting`;
+    /// cleared by the next event of the parent run, since any of them means the
+    /// wait is over.
+    retrying: Option<RetryWait>,
     /// A mid-run compaction finished, so the next `MessagesUpdated` carries a
     /// shorter history the gauge must be re-estimated against.
     pending_compaction_refresh: bool,
@@ -2728,6 +2733,7 @@ impl App {
             compacting: None,
             compact_started: None,
             run_compacting: None,
+            retrying: None,
             pending_compaction_refresh: false,
             retry_after_compact: false,
             overflow_retries: 0,
@@ -5344,6 +5350,12 @@ impl App {
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
+        // Whatever the parent run sends next -- a token, a tool call, the
+        // terminal error -- means the wait for a resend is over. A child's
+        // events say nothing about the parent's request.
+        if !matches!(ev, StreamEvent::Retry { .. } | StreamEvent::Subagent { .. }) {
+            self.retrying = None;
+        }
         match ev {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
@@ -5762,6 +5774,26 @@ impl App {
                 self.note(&text);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
+            // The live countdown carries every attempt; the transcript notes
+            // only the first, so a flaky link leaves one line, not ten.
+            StreamEvent::Retry {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            } => {
+                if attempt == 2 {
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.note(&format!("{reason}; retrying"));
+                }
+                self.retrying = Some(RetryWait {
+                    attempt,
+                    max_attempts,
+                    at: Instant::now() + Duration::from_millis(delay_ms),
+                    reason,
+                });
+            }
             // The model is done and the loop waits on background work it
             // dispatched. Nothing is generating, so present as idle (see
             // `Status::Parked`) while the run stays open.
@@ -5950,6 +5982,15 @@ impl App {
             // compaction invisible.
             StreamEvent::Notice { text } => {
                 self.note(&format!("{name}: {text}"));
+            }
+            // The live countdown belongs to the parent's request; a child's
+            // retry gets the same one-line note the parent's first retry does.
+            StreamEvent::Retry {
+                attempt: 2,
+                reason,
+                ..
+            } => {
+                self.note(&format!("{name}: {reason}; retrying"));
             }
             // A child's compaction is announced, but the spinner and gauge are
             // the parent's: the child's history is not the one on screen.
@@ -6407,6 +6448,9 @@ impl App {
         }
         self.status = Status::Idle;
         self.run_started = None;
+        // A cancel sends no further event to clear it, so an interrupted wait
+        // would otherwise leave `[retrying]` over an idle session.
+        self.retrying = None;
         // Drop any run queued but not yet spawned (still gated on model/MCP/
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
@@ -8036,6 +8080,30 @@ struct StartingPreview {
 }
 
 /// A tool call announced by the model whose arguments are still arriving.
+/// The input row while a resend is pending: a countdown until it goes out,
+/// then the attempt itself, which can take as long as a connect timeout.
+fn retry_wait_label(wait: &RetryWait, now: Instant) -> String {
+    let left = wait.at.saturating_duration_since(now);
+    let when = if left.is_zero() {
+        "retrying".to_string()
+    } else {
+        format!("retrying in {}s", left.as_secs_f32().ceil() as u64)
+    };
+    format!(
+        "{when} (attempt {}/{})… {}",
+        wait.attempt, wait.max_attempts, wait.reason
+    )
+}
+
+/// A pending resend of a failed upstream request, from `StreamEvent::Retry`.
+struct RetryWait {
+    attempt: u32,
+    max_attempts: u32,
+    /// When the resend goes out, for the countdown.
+    at: Instant,
+    reason: String,
+}
+
 struct StartingCall {
     id: String,
     name: String,
@@ -19483,6 +19551,8 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         (kind.label().to_string(), Style::new().magenta().bold())
     } else if app.run_compacting.is_some() {
         ("compacting".to_string(), Style::new().magenta().bold())
+    } else if app.retrying.is_some() {
+        ("retrying".to_string(), Style::new().yellow().bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
@@ -20053,6 +20123,14 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ),
         ]))
         .block(block)
+    } else if let Some(wait) = app.retrying.as_ref().filter(|_| app.input.is_empty()) {
+        // Without this the row reads "working" through up to the whole retry
+        // budget, indistinguishable from a slow model.
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
+            Span::styled(retry_wait_label(wait, Instant::now()), Style::new().dim().italic()),
+        ]))
+        .block(block)
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
@@ -20334,7 +20412,8 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
+        cache_summary_lines, collapse_runs, open_agents_picker, retry_wait_label, trailing_repeat,
+        RetryWait, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -31845,6 +31924,84 @@ mod tests {
         });
         assert!(app.tokens < 1_000, "gauge re-estimated: {}", app.tokens);
         assert!(app.tokens_estimated);
+    }
+
+    fn retry(attempt: u32) -> StreamEvent {
+        StreamEvent::Retry {
+            attempt,
+            max_attempts: 10,
+            delay_ms: 2_000,
+            reason: "Upstream request failed: connection refused".into(),
+        }
+    }
+
+    /// A retry is visible while it waits: the header says `retrying`, the input
+    /// row counts down with the attempt and the reason, and the transcript notes
+    /// the first retry only. The next event of the run clears it.
+    #[test]
+    fn a_retry_is_shown_live_and_cleared_by_the_next_event() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(retry(2));
+        app.apply(retry(3));
+
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("retrying"), "{header}");
+        let out = render_rows(&mut app, 120, 20).join("\n");
+        assert!(out.contains("retrying in 2s (attempt 3/10)"), "{out}");
+        assert!(out.contains("connection refused"), "{out}");
+        let notes = transcript_text(&app);
+        assert_eq!(notes.matches("retrying").count(), 1, "one note per failure: {notes}");
+
+        app.apply(StreamEvent::Token { text: "hi".into() });
+        assert!(app.retrying.is_none());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(!header.contains("retrying"), "{header}");
+    }
+
+    /// Cancelling during the wait takes the countdown down with the run.
+    #[test]
+    fn cancelling_during_a_retry_clears_it() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(retry(2));
+        app.cancel_run();
+        assert!(app.retrying.is_none());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("ready"), "{header}");
+    }
+
+    /// The countdown turns into the attempt itself once the wait is over,
+    /// rather than sitting on "in 0s" through a connect timeout.
+    #[test]
+    fn a_retry_past_its_wait_reads_as_in_flight() {
+        let at = Instant::now();
+        let wait = RetryWait {
+            attempt: 4,
+            max_attempts: 10,
+            at,
+            reason: "boom".into(),
+        };
+        assert_eq!(retry_wait_label(&wait, at), "retrying (attempt 4/10)… boom");
+        assert_eq!(
+            retry_wait_label(&wait, at - Duration::from_millis(1_500)),
+            "retrying in 2s (attempt 4/10)… boom"
+        );
+    }
+
+    /// A child's retry is noted under its name but leaves the parent's status
+    /// alone, and a child's events do not clear a parent retry.
+    #[test]
+    fn a_subagent_retry_is_noted_without_the_parent_countdown() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "scout");
+        subagent_event(&mut app, "r1", "scout", retry(2));
+        assert!(app.retrying.is_none());
+        assert!(transcript_text(&app).contains("scout: Upstream request failed"));
+
+        app.apply(retry(2));
+        subagent_event(&mut app, "r1", "scout", StreamEvent::Token { text: "x".into() });
+        assert!(app.retrying.is_some(), "a child's token is not the parent's resend");
     }
 
     /// A failed compaction takes its throbber down and says so.
