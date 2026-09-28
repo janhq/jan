@@ -454,3 +454,49 @@ async fn bash_exit_status_decides_is_error() {
     client.cancel().await.ok();
     server_task.abort();
 }
+
+/// janhq/jan-internal#394: a served client reaches the same skills the agent
+/// does: user-scope skills from `~/.jan/skills` and plugin skills, by the
+/// names `skill_list` advertises, and `skill_write` `scope:"user"` lands in
+/// the user store.
+#[tokio::test]
+async fn served_skill_tools_reach_user_and_plugin_skills() {
+    let root = std::env::temp_dir().join(format!(
+        "jan_mcp_skills_{}_{}",
+        std::process::id(),
+        std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let plugin = crate::core::agent::skills::plugins_dir(&root).join("rel/skills/prep394");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(plugin.join("SKILL.md"), "---\ndescription: prep\n---\nplugin body\n").unwrap();
+    let user_dir = crate::core::agent::skills::user_skills_dir().unwrap();
+    let user_skill = user_dir.join("mcp394-user");
+    std::fs::create_dir_all(&user_skill).unwrap();
+    std::fs::write(user_skill.join("SKILL.md"), "---\ndescription: mine\n---\nuser body\n").unwrap();
+
+    let server = JanToolServer::new(options(&root));
+    let (list, _) = server.dispatch("skill_list", &serde_json::json!({})).await;
+    assert!(list.contains("mcp394-user — mine"), "{list}");
+    assert!(list.contains("rel:prep394 — prep"), "{list}");
+    let (body, _) = server
+        .dispatch("skill_read", &serde_json::json!({"name": "mcp394-user"}))
+        .await;
+    assert_eq!(body, "user body");
+    let (body, _) = server
+        .dispatch("skill_read", &serde_json::json!({"name": "rel:prep394"}))
+        .await;
+    assert_eq!(body, "plugin body");
+    let (out, _) = server
+        .dispatch(
+            "skill_write",
+            &serde_json::json!({"name": "mcp394-written", "content": "x", "scope": "user"}),
+        )
+        .await;
+    assert_eq!(out, "Wrote user skill 'mcp394-written'");
+    assert!(user_dir.join("mcp394-written/SKILL.md").is_file());
+
+    let _ = std::fs::remove_dir_all(&user_skill);
+    let _ = std::fs::remove_dir_all(user_dir.join("mcp394-written"));
+    let _ = std::fs::remove_dir_all(&root);
+}

@@ -931,6 +931,16 @@ impl CompositeToolInvoker {
             Some(home) => ctx.with_memory_home(home, self.cross_project),
             None => ctx,
         };
+        // The model's skill tools resolve through the same layering as the
+        // system-prompt catalog (project, plugin, user, built-in), and
+        // `skill_write` `scope:"user"` lands in `~/.jan/skills` (the same
+        // `~/.jan` as the user memory scope).
+        let ctx = ctx
+            .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                &self.project_root,
+                &self.enabled_skills,
+            ))
+            .with_skill_user_root(self.memory_home.as_deref());
         ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
@@ -2172,6 +2182,10 @@ impl ToolInvoker for CompositeToolInvoker {
                         None => ctx,
                     };
                     let ctx = ctx
+                        .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                            &root, &enabled,
+                        ))
+                        .with_skill_user_root(memory_home.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
@@ -7962,6 +7976,47 @@ mod tests {
             command: command.to_string(),
             timeout_secs: None,
         }
+    }
+
+    /// janhq/jan-internal#394: the CLI's `skill_list`/`skill_read` resolve
+    /// through the same layering as the prompt catalog, so a plugin skill the
+    /// prompt advertises is readable (it used to read only `<store>/skills`),
+    /// on both the concurrent read path and the serial one.
+    #[tokio::test]
+    async fn the_cli_skill_tools_read_plugin_skills() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_plugin_skill_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = crate::core::agent::skills::plugins_dir(&root).join("rel/skills/prepare");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\ndescription: prep\n---\nplugin body\n")
+            .unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        let call = |id: &str, name: &str, args: &str| {
+            json!({"id": id, "type": "function", "function": {"name": name, "arguments": args}})
+        };
+        let out = invoker
+            .invoke(&[
+                call("l", "skill_list", "{}"),
+                call("r", "skill_read", r#"{"name":"rel:prepare"}"#),
+            ])
+            .await
+            .unwrap();
+        assert!(out[0].content.contains("rel:prepare — prep"), "{}", out[0].content);
+        assert_eq!(out[1].content, "plugin body");
+        // Through the non-concurrent context too (the one writes use).
+        let (text, _) = tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+            tauri_plugin_agent_tools::tools::lookup("skill_read").unwrap(),
+            &json!({"name": "prepare"}),
+            &invoker.tool_context(),
+        )
+        .await;
+        assert_eq!(text, "plugin body");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The acceptance requirement that a hook denial is indistinguishable from

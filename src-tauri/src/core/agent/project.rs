@@ -108,6 +108,12 @@ pub(crate) struct ProviderSection {
 pub(crate) struct SkillsSection {
     #[serde(default)]
     pub enabled: Vec<String>,
+    /// Retired `inject = "always" | "relevance"`: it was scaffolded and
+    /// documented but never read, so it is no longer part of the config.
+    /// Still accepted (any value) so an older agent.toml keeps parsing; its
+    /// presence only earns a one-time log warning.
+    #[serde(default)]
+    pub inject: Option<toml::Value>,
 }
 
 /// `[budget]` — the only cap on how long a run may go. The agent takes as many
@@ -301,8 +307,6 @@ allow_write = []
 
 [skills]
 enabled = []
-# always | relevance
-inject = "always"
 
 # Where each contributor to the system prompt may sit, deny-wins like [tools].
 # Above the cache line ("prefix") a contributor must be constant for the whole
@@ -449,6 +453,9 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     let Ok(cfg) = load_agent_config(project_root) else {
         return RunSettings::default();
     };
+    if cfg.skills.inject.is_some() {
+        warn_retired_inject();
+    }
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
@@ -460,6 +467,16 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
+}
+
+/// Log once per process that `[skills].inject` is ignored.
+fn warn_retired_inject() {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    WARNED.call_once(|| {
+        log::warn!(
+            "agent.toml: [skills].inject is no longer used and is ignored; every enabled skill's name and description is listed in the prompt. Remove the key to silence this warning."
+        );
+    });
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
@@ -691,6 +708,21 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&root);
         let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    /// `[skills].inject` was scaffolded but never read (janhq/jan-internal#394);
+    /// it is gone from the template, and an agent.toml that still has it keeps
+    /// parsing with the whitelist intact.
+    #[test]
+    fn retired_skills_inject_is_dropped_from_the_template_but_still_parses() {
+        assert!(!AGENT_TOML_TEMPLATE.contains("inject ="));
+        for value in ["\"always\"", "\"relevance\"", "true"] {
+            let cfg: AgentToml =
+                toml::from_str(&format!("[skills]\nenabled = [\"a\"]\ninject = {value}\n"))
+                    .expect("a legacy inject key still parses");
+            assert_eq!(cfg.skills.enabled, vec!["a".to_string()]);
+            assert!(cfg.skills.inject.is_some());
+        }
     }
 
     /// The scaffold documents the key, so it has to stay parseable as written.

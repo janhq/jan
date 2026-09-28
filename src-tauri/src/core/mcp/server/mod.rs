@@ -93,6 +93,9 @@ pub struct ServeOptions {
     pub store_root: PathBuf,
     /// The `[skills].enabled` whitelist; empty means every skill.
     pub enabled_skills: Vec<String>,
+    /// `~/.jan`, whose `skills/` is the user scope `skill_write` `scope:"user"`
+    /// writes to. `None` refuses that scope.
+    pub user_store_root: Option<PathBuf>,
     /// Let the sandboxed shell reach the network.
     pub allow_network: bool,
     /// Run `bash` under OS confinement. Left on unless the operator turns it off.
@@ -112,6 +115,7 @@ impl ServeOptions {
             project_root,
             store_root,
             enabled_skills: Vec::new(),
+            user_store_root: crate::core::agent::skills::user_store_root(),
             allow_network: false,
             sandbox: true,
             scratch_root: None,
@@ -197,7 +201,12 @@ impl JanToolServer {
         .with_network(self.opts.allow_network)
         .with_sandbox(self.opts.sandbox)
         .with_hidden_root(self.hidden_root.as_deref())
-        .with_confined_writes(true);
+        .with_confined_writes(true)
+        .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+            &self.opts.project_root,
+            &self.opts.enabled_skills,
+        ))
+        .with_skill_user_root(self.opts.user_store_root.as_deref());
         if let Some(scratch) = self.opts.scratch_root.as_deref() {
             ctx = ctx.with_scratch_root(scratch);
         }
