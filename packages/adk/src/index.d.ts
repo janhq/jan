@@ -121,7 +121,7 @@ export interface CreateSessionOptions {
   model?: string
   /** Keep nothing on disk: no thread, no media files, and no answers indexed for later recall. */
   ephemeral?: boolean
-  /** `false` advertises only the host tools, no built-ins or MCP (and no subagent tools unless `subagents` is `true`). */
+  /** `false` advertises only the host tools, no built-ins or MCP. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`. */
   builtins?: boolean
   /**
    * Whether the model may delegate to subagents; defaults to `builtins`. With

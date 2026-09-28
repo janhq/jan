@@ -92,7 +92,7 @@
           "default": []
         },
         "builtins": {
-          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo` or monitor tools, and no subagent tools unless\n`subagents` is `true`.",
+          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo` or monitor tools. `subagents: true` adds back only\n`dispatch_subagent` and `list_subagents`.",
           "type": "boolean",
           "default": true
         },

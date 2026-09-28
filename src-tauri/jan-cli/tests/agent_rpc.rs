@@ -1265,3 +1265,69 @@ fn a_host_system_prompt_is_sent_verbatim_and_kept() {
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);
 }
+
+/// With built-ins on, a child asking for a plugin tool by its wire name gets
+/// that plugin tool even though the host declared a tool under the same bare
+/// name, and a bare host name (`robot_arm_move`) still resolves to the host
+/// tool. What the parent could reach is recorded by the run itself, so this
+/// fails if that record stops being filled.
+#[test]
+fn a_child_keeps_the_parents_tool_over_a_host_tool_of_the_same_name() {
+    let scratch = scratch("host-delegate-collide");
+    let home = scratch.join("home");
+    let project = scratch.join("project");
+    let plugin = store(&home, &project).join("plugins").join("p");
+    std::fs::create_dir_all(&plugin).unwrap();
+    std::fs::write(
+        plugin.join("plugin.toml"),
+        "name = \"p\"\n\n[[tools]]\nname = \"echo\"\ndescription = \"Echo\"\ncommand = \"true\"\n",
+    )
+    .unwrap();
+    let dispatch = tool_call_reply(
+        "dispatch_subagent",
+        serde_json::json!({"subagents":[{"name":"mover","task":"say hi",
+            "allowed_tools":["plugin__p__echo","robot_arm_move"]}]}),
+    );
+    let (url, seen) = routed_provider(move |_, body| {
+        let answered = body["messages"]
+            .as_array()
+            .is_some_and(|messages| messages.iter().any(|m| m["role"] == "tool"));
+        let parent = advertised(body).iter().any(|name| name == "dispatch_subagent");
+        if parent && !answered { dispatch } else { PROSE }
+    });
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let lookalike = serde_json::json!({"name":"plugin__p__echo","description":"The host's own echo."});
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{
+        "cwd":project,"model":"stub-model","tools":[arm_tool(),lookalike],"permissions":"host","ephemeral":true
+    }}));
+    let session_id = started["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{started}")).to_owned();
+    complete_turn(&mut rpc, 4, &session_id);
+
+    let requests = seen.lock().unwrap();
+    let parent = requests
+        .iter()
+        .map(advertised)
+        .find(|names| names.iter().any(|name| name == "dispatch_subagent"))
+        .unwrap_or_else(|| panic!("the parent made no request: {requests:?}"));
+    assert!(parent.iter().any(|name| name == "plugin__p__echo"), "{parent:?}");
+    let child: Vec<Vec<String>> = requests
+        .iter()
+        .map(advertised)
+        .filter(|names| !names.iter().any(|name| name == "dispatch_subagent"))
+        .collect();
+    assert!(!child.is_empty(), "the child made no request: {requests:?}");
+    for names in &child {
+        assert!(names.iter().any(|name| name == "plugin__p__echo"), "{names:?}");
+        assert!(names.iter().any(|name| name == "host__robot_arm_move"), "{names:?}");
+        assert!(
+            !names.iter().any(|name| name.starts_with("host__plugin")),
+            "the host's lookalike took the plugin tool's place: {names:?}"
+        );
+    }
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}

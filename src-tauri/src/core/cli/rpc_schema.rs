@@ -45,8 +45,8 @@ pub struct SessionStartParams {
     #[schemars(with = "Vec<HostToolDeclSchema>")]
     pub tools: Vec<serde_json::Value>,
     /// `false` advertises only the host tools: no built-ins, MCP, plugin,
-    /// `ask`, `todo` or monitor tools, and no subagent tools unless
-    /// `subagents` is `true`.
+    /// `ask`, `todo` or monitor tools. `subagents: true` adds back only
+    /// `dispatch_subagent` and `list_subagents`.
     #[serde(default = "builtins_default")]
     pub builtins: bool,
     /// Whether the session may delegate to subagents; defaults to `builtins`.

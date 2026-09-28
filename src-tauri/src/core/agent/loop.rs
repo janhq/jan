@@ -520,9 +520,9 @@ struct SubagentContext {
     /// is held to (see
     /// [`crate::core::agent::subagent::ParentRun::tool_ceiling`]).
     tool_ceiling: Option<Vec<String>>,
-    /// The tool names this run advertises (see
-    /// [`crate::core::agent::subagent::ParentRun::advertised_tools`]).
-    advertised_tools: Vec<String>,
+    /// Every non-host tool name this run could reach (see
+    /// [`crate::core::agent::subagent::ParentRun::known_tools`]).
+    known_tools: Vec<String>,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
     /// The registry's teardown generation when this run started. A dispatch may
@@ -1298,7 +1298,7 @@ impl CompositeToolInvoker {
                         send_reasoning: ctx.send_reasoning,
                         cost_remaining: ctx.cost_ceiling,
                         tool_ceiling: ctx.tool_ceiling.clone(),
-                        advertised_tools: ctx.advertised_tools.clone(),
+                        known_tools: ctx.known_tools.clone(),
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -2446,6 +2446,14 @@ pub(crate) async fn run_orchestration_streamed(
 
 /// Restrict the collected MCP tools to `allowed` (by tool name), pruning both
 /// the OpenAI tool array and the tool->server routing map in lockstep.
+/// The function names in an OpenAI `tools` array.
+fn tool_names(tools: &[serde_json::Value]) -> Vec<String> {
+    tools
+        .iter()
+        .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
+        .collect()
+}
+
 fn apply_tool_allowlist(
     openai_tools: &mut Vec<serde_json::Value>,
     tool_to_server: &mut HashMap<String, String>,
@@ -3148,6 +3156,10 @@ async fn orchestrate_inner(
 
     let (mut openai_tools, mut tool_to_server) =
         collect_mcp_openai_tools(mcp_servers, mcp_settings).await?;
+    // Taken before plan mode, the allowlist and deny rules filter the list: a
+    // child naming a tool the parent withholds must still be read as that
+    // tool, never as a host tool that shares its bare name.
+    let mut known_tools = tool_names(&openai_tools);
 
     // Optional per-run allowlist: when `allowed_tools` is present, expose only
     // those MCP tools (an empty array means no tools). Absent = all tools.
@@ -3264,10 +3276,20 @@ async fn orchestrate_inner(
                 names.sort_unstable();
                 names
             }),
-            advertised_tools: openai_tools
-                .iter()
-                .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
-                .collect(),
+            known_tools: {
+                known_tools.extend(tool_names(&openai_tools));
+                if let Some(root) = project_root.as_deref() {
+                    known_tools.extend(
+                        crate::core::agent::hooks_config::resolve_plugin_tools(root)
+                            .all()
+                            .iter()
+                            .map(|tool| tool.qualified_name.clone()),
+                    );
+                }
+                known_tools.sort_unstable();
+                known_tools.dedup();
+                std::mem::take(&mut known_tools)
+            },
             bg_generation: bg.generation(),
             bg: bg.clone(),
         });

@@ -171,7 +171,7 @@ export interface SessionStartParams {
   "ephemeral"?: boolean
   /** Host tools this session may call. Kept as raw values until declaration so a malformed entry is reported as `invalid_tools` with the reason, rather than as a generic params error that names nothing. */
   "tools"?: HostToolDeclSchema[]
-  /** `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools, and no subagent tools unless `subagents` is `true`. */
+  /** `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`. */
   "builtins"?: boolean
   /** Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins. */
   "subagents"?: boolean | null
