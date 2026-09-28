@@ -64,6 +64,26 @@ export function ensureAnthropicHeaders(
   setDefaultHeader(headers, ANTHROPIC_BROWSER_ACCESS_HEADER, 'true')
 }
 
+/// Attach the single auth header a provider expects on model-list / key-test
+/// requests. Anthropic-shaped providers authenticate via `x-api-key`; every
+/// other (OpenAI-compatible) provider uses `Authorization: *** Sending both
+/// at once breaks upstreams that reject mixed auth — e.g. AWS Bedrock Mantle
+/// answers `401 "request must not include both 'authorization' and
+/// 'x-api-key' headers"`. This mirrors how chat requests already pick one
+/// header per provider in model-factory.
+export function applyProviderAuthHeader(
+  provider: { provider?: string; base_url?: string; api_type?: string },
+  headers: Record<string, string>,
+  key: string | undefined
+): void {
+  if (!key) return
+  if (isAnthropicProvider(provider)) {
+    headers['x-api-key'] = key
+  } else {
+    headers['Authorization'] = `Bearer ${key}`
+  }
+}
+
 type CatalogKind = 'openai' | 'anthropic' | 'gemini'
 
 /// Resolve which catalog shape a provider speaks. `api_type` is authoritative
@@ -162,10 +182,7 @@ function inferAnthropicCapabilities(id: string): string[] | null {
 
 function buildHeaders(p: ProviderLike, key: string | undefined): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (key) {
-    headers['x-api-key'] = key
-    headers['Authorization'] = `Bearer ${key}`
-  }
+  applyProviderAuthHeader(p, headers, key)
   if (p.custom_header) {
     for (const h of p.custom_header) headers[h.header] = h.value
   }
