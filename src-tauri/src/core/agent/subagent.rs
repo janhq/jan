@@ -1295,6 +1295,34 @@ fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
         .unwrap_or_else(|| parent.model.clone())
 }
 
+/// The context window `model` resolves to, the way the CLI resolves a run's
+/// (provider listing first, then the catalog).
+#[cfg(feature = "cli")]
+fn model_window(
+    model: &str,
+    provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    let provider = crate::core::agent::upstream::pick_provider_for_model(model, provider_configs);
+    Some(
+        crate::core::cli::model_capabilities::resolve_context_window(
+            model,
+            None,
+            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), model),
+        )
+        .tokens,
+    )
+}
+
+/// No model catalog outside the `cli` build, so no window can be sized here;
+/// a child keeps the budget it inherited.
+#[cfg(not(feature = "cli"))]
+fn model_window(
+    _model: &str,
+    _provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    None
+}
+
 /// The per-token rates a model is published at, or `None` when it cannot be
 /// priced at all.
 ///
@@ -1462,6 +1490,15 @@ async fn run_subagent(
     child_args.run_id = Some(run_id.clone());
 
     let body = child_body(&resolved, &description, &parent);
+    // The parent's compaction budget describes the parent's model. A child on
+    // another model compacts against its own window, or a 200K child of a 1M
+    // parent would only compact after the provider rejected it.
+    if let Some(budget) = child_args.compaction {
+        let pc = child_args.provider_configs.lock().await;
+        let model = child_model(&resolved, &parent);
+        child_args.compaction =
+            Some(budget.for_model(&model, &parent.model, |m| model_window(m, &pc)));
+    }
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -2452,6 +2489,37 @@ mod tests {
     use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// A child on another model compacts against its own window, not the
+    /// parent's: a 200K child of a 1M parent would otherwise sail past its
+    /// window. Same model, or a configured window, keeps the parent's budget.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_on_another_model_compacts_against_its_own_window() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let parent = crate::core::agent::compaction::CompactionBudget {
+                context_window: 1_000_000,
+                ratio: 0.7,
+                reserve_tokens: None,
+                window_pinned: false,
+            };
+            let pc = std::collections::HashMap::new();
+            let window = |m: &str| model_window(m, &pc);
+            let child = parent.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(child.context_window, 200_000);
+            assert_eq!(child.ratio, 0.7, "the project's ratio carries over");
+
+            let same = parent.for_model("claude-sonnet-4-6", "claude-sonnet-4-6", window);
+            assert_eq!(same.context_window, 1_000_000);
+
+            let pinned = crate::core::agent::compaction::CompactionBudget {
+                window_pinned: true,
+                ..parent
+            };
+            let kept = pinned.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(kept.context_window, 1_000_000, "a configured window holds");
+        });
+    }
 
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);

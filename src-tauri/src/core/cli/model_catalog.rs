@@ -290,6 +290,8 @@ fn model_info(entry: &serde_json::Value) -> ModelInfo {
         context_length: entry
             .get("context_length")
             .or_else(|| entry.get("context_window"))
+            // Anthropic's own Models API.
+            .or_else(|| entry.get("max_input_tokens"))
             .and_then(number)
             .map(|v| v as u64),
         max_output_tokens: entry
@@ -362,6 +364,16 @@ mod tests {
         assert!(parse_listing(&json!({"data": [{"id": "m-a"}, {"id": "m-b"}]})).is_empty());
         assert!(parse_listing(&json!(["m-a"])).is_empty());
         assert!(parse_listing(&json!({"unexpected": 1})).is_empty());
+    }
+
+    /// Anthropic's Models API names the window `max_input_tokens`; without it
+    /// a direct Anthropic route never learns a window from its listing.
+    #[test]
+    fn anthropic_max_input_tokens_is_read_as_the_window() {
+        let parsed = parse_listing(&json!({"data": [
+            {"id": "claude-opus-5", "type": "model", "max_input_tokens": 1000000, "max_tokens": 128000},
+        ]}));
+        assert_eq!(parsed["claude-opus-5"].context_length, Some(1_000_000));
     }
 
     /// Numbers and numeric strings are both accepted, and a nonsense price is

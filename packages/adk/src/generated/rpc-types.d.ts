@@ -38,6 +38,7 @@ export type EventTag =
   | "subagent_plan"
   | "subagent"
   | "notice"
+  | "compaction"
   | "monitors"
   | "parked"
   | "messages_updated"
@@ -67,6 +68,12 @@ export interface ClientInfo {
   "name": string
   "version": string
 }
+
+/** `Deserialize` as well as `Serialize`: a consumer validates what it received against these shapes, and `JsonSchema` is what `jan cli agent schema` publishes them as -- a consumer generates its own types from `protocol/schema.json` rather than copying this declaration. The wire has to survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the tag on both sides. Where a [`StreamEvent::Compaction`] is in its round trip. */
+export type CompactionPhase = "started" | "finished" | "failed"
+
+/** Which path asked for a [`StreamEvent::Compaction`]. */
+export type CompactionReason = "preflight" | "context_overflow" | "session_budget"
 
 /** What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default. */
 export type HostCapability = "read" | "actuator"
@@ -345,6 +352,14 @@ export interface NoticeEvent {
   "type": "notice"
 }
 
+/** The loop is summarizing part of the conversation to make room. Sent as `Started` before the summarizer call and `Finished` or `Failed` after it, so a consumer can show progress for what is otherwise a silent round trip. `reason` says which path asked. `messages` is how many were folded into the summary, `None` except on `Finished`. Display-only and never journaled; the compacted history itself arrives as `MessagesUpdated`. */
+export interface CompactionEvent {
+  "phase": CompactionPhase
+  "reason": CompactionReason
+  "messages"?: number | null
+  "type": "compaction"
+}
+
 /** The run's active file monitors, as a whole replacing the previous set. Emitted whenever the set changes (a `monitor` start or stop, a condition matching, a monitor finishing), so a consumer keeps a live view without bookkeeping of its own. Display-only and never journaled. Not forwarded from a child: a child's monitors are its own. */
 export interface MonitorsEvent {
   "monitors": MonitorSnapshot[]
@@ -483,6 +498,7 @@ export type StreamEvent =
   | SubagentPlanEvent
   | SubagentEvent
   | NoticeEvent
+  | CompactionEvent
   | MonitorsEvent
   | ParkedEvent
   | MessagesUpdatedEvent
@@ -514,6 +530,7 @@ export interface EventByTag {
   "subagent_plan": SubagentPlanEvent
   "subagent": SubagentEvent
   "notice": NoticeEvent
+  "compaction": CompactionEvent
   "monitors": MonitorsEvent
   "parked": ParkedEvent
   "messages_updated": MessagesUpdatedEvent

@@ -14,7 +14,7 @@ pub mod login;
 pub mod mcp;
 /// `jan mcp serve`: the other direction, Jan's toolset served over MCP.
 pub mod mcp_serve;
-mod model_capabilities;
+pub(crate) mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;
 /// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
@@ -1776,6 +1776,7 @@ fn prepare_agent_session(
         context_window: resolved_window.tokens,
         ratio: compaction_ratio,
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
+        window_pinned: cfg.agent.context_window.is_some(),
     });
 
     let session_budget = resolve_session_budget(
@@ -2835,6 +2836,21 @@ pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
+/// One headless line for a compaction event: `started (session_budget)`.
+fn describe_compaction(
+    phase: crate::core::agent::events::CompactionPhase,
+    reason: crate::core::agent::events::CompactionReason,
+    messages: Option<usize>,
+) -> String {
+    let wire = |v: serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let phase = wire(serde_json::json!(phase));
+    let reason = wire(serde_json::json!(reason));
+    match messages {
+        Some(n) => format!("{phase} ({reason}): {n} messages summarized"),
+        None => format!("{phase} ({reason})"),
+    }
+}
+
 async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: bool) {
     if crate::core::cli::auth::account::take_claude_alias_engaged() {
         eprintln!(
@@ -2911,6 +2927,11 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
         // The snapshot backs a live panel the headless printer has no room
         // for; `Notice` already reports each match as it lands.
         StreamEvent::Monitors { .. } => {}
@@ -2925,6 +2946,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             StreamEvent::Notice { text } => {
                 eprintln!("\x1b[2m[subagent:{name}] [notice] {text}\x1b[0m")
             }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => eprintln!(
+                "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
+                describe_compaction(phase, reason, messages)
+            ),
             _ => {}
         },
         StreamEvent::Done { stop_reason, usage } => {

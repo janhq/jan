@@ -2148,6 +2148,13 @@ struct App {
     compacting: Option<CompactKind>,
     /// When the in-flight compaction started, for the elapsed counter.
     compact_started: Option<Instant>,
+    /// The running turn is itself compacting (the loop's preflight, overflow
+    /// or budget path), and since when. Display-only: unlike `compacting` it
+    /// gates nothing, because the run that compacts is the one already going.
+    run_compacting: Option<Instant>,
+    /// A mid-run compaction finished, so the next `MessagesUpdated` carries a
+    /// shorter history the gauge must be re-estimated against.
+    pending_compaction_refresh: bool,
     /// The in-flight compaction was triggered by a context-overflow error, so
     /// the errored turn is resumed once it lands.
     retry_after_compact: bool,
@@ -2720,6 +2727,8 @@ impl App {
             compact_request: None,
             compacting: None,
             compact_started: None,
+            run_compacting: None,
+            pending_compaction_refresh: false,
             retry_after_compact: false,
             overflow_retries: 0,
             scrollback: 0,
@@ -5023,11 +5032,13 @@ impl App {
             context_window: self.context_window,
             ratio: self.compaction_ratio,
             reserve_tokens: self.compaction_reserve_tokens,
+            window_pinned: self.configured_context_window.is_some(),
         };
         let unchanged = args.compaction.is_some_and(|b| {
             b.context_window == budget.context_window
                 && b.ratio == budget.ratio
                 && b.reserve_tokens == budget.reserve_tokens
+                && b.window_pinned == budget.window_pinned
         });
         if unchanged {
             return;
@@ -5811,11 +5822,26 @@ impl App {
                     self.tokens_estimated = false;
                 }
             }
-            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                self.run_compacting = None;
+            }
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+                // A compaction mid-run replaced the history the last `usage`
+                // measured, so the gauge re-estimates instead of showing the
+                // pre-compaction fill until the next response lands.
+                if self.pending_compaction_refresh {
+                    self.pending_compaction_refresh = false;
+                    self.tokens = estimate_token_count(&self.history);
+                    self.invalidate_token_provenance();
+                }
             }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -5925,6 +5951,13 @@ impl App {
             StreamEvent::Notice { text } => {
                 self.note(&format!("{name}: {text}"));
             }
+            // A child's compaction is announced, but the spinner and gauge are
+            // the parent's: the child's history is not the one on screen.
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, Some(name)),
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
             // surfaced in the parent transcript: a subagent panel is a one-line
@@ -5932,6 +5965,50 @@ impl App {
             // go and would push the parent's own live panel off screen. Deliberate
             // -- the child's output still reaches its `ToolResult`.
             _ => {}
+        }
+    }
+
+    /// Show a loop-side compaction: a throbber while the summarizer runs and a
+    /// note when it lands or fails. `child` names the subagent it came from,
+    /// whose compaction gets a note only.
+    fn apply_compaction(
+        &mut self,
+        phase: crate::core::agent::events::CompactionPhase,
+        reason: crate::core::agent::events::CompactionReason,
+        messages: Option<usize>,
+        child: Option<&str>,
+    ) {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let why = match reason {
+            CompactionReason::Preflight => "the prompt neared the context window",
+            CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
+            CompactionReason::SessionBudget => "the session token budget was used up",
+        };
+        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        match phase {
+            CompactionPhase::Started => {
+                if child.is_none() {
+                    self.run_compacting = Some(Instant::now());
+                }
+            }
+            CompactionPhase::Finished => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                    self.pending_compaction_refresh = true;
+                }
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&format!(
+                    "{who}compacted {} messages into a summary: {why}",
+                    messages.unwrap_or(0)
+                ));
+            }
+            CompactionPhase::Failed => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                }
+                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+            }
         }
     }
 
@@ -19361,6 +19438,8 @@ fn header(app: &App) -> Paragraph<'static> {
 fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.run_compacting.is_some() {
+        ("compacting".to_string(), Style::new().magenta().bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
@@ -19915,6 +19994,18 @@ fn input_box(app: &App) -> Paragraph<'static> {
             Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
             Span::styled(
                 format!("{} conversation…{elapsed}", kind.label()),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
+    } else if let Some(started) = app.run_compacting.filter(|_| app.input.is_empty()) {
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!(
+                    "compacting conversation… {}",
+                    format_elapsed(started.elapsed().as_secs())
+                ),
                 Style::new().dim().italic(),
             ),
         ]))
@@ -31675,6 +31766,85 @@ mod tests {
             name: name.into(),
             event: Box::new(event),
         });
+    }
+
+    /// A compaction the running turn makes shows a throbber while the
+    /// summarizer runs, a note saying why when it lands, and re-estimates the
+    /// gauge from the compacted history instead of keeping the old fill.
+    #[test]
+    fn a_mid_run_compaction_shows_progress_and_refreshes_the_gauge() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.tokens = 900_000;
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::SessionBudget,
+            messages: None,
+        });
+        assert!(app.run_compacting.is_some());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("compacting"), "{header}");
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::SessionBudget,
+            messages: Some(12),
+        });
+        assert!(app.run_compacting.is_none());
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("compacted 12 messages into a summary: the session token budget"),
+            "{out}"
+        );
+
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![serde_json::json!({ "role": "user", "content": "short" })],
+        });
+        assert!(app.tokens < 1_000, "gauge re-estimated: {}", app.tokens);
+        assert!(app.tokens_estimated);
+    }
+
+    /// A failed compaction takes its throbber down and says so.
+    #[test]
+    fn a_failed_mid_run_compaction_clears_the_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        for phase in [CompactionPhase::Started, CompactionPhase::Failed] {
+            app.apply(StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::ContextOverflow,
+                messages: None,
+            });
+        }
+        assert!(app.run_compacting.is_none());
+        assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// A child's compaction gets a note but not the parent's throbber: the
+    /// child's history is not the one on screen.
+    #[test]
+    fn a_subagent_compaction_is_noted_without_the_parent_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        for (phase, messages) in [(CompactionPhase::Started, None), (CompactionPhase::Finished, Some(5))] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::Preflight,
+                    messages,
+                },
+            );
+            assert!(app.run_compacting.is_none());
+        }
+        assert!(
+            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            "{}",
+            transcript_text(&app)
+        );
     }
 
     /// A child's `Notice` (e.g. "compacted N messages") reaches the parent
