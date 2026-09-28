@@ -1390,6 +1390,10 @@ enum RowKind {
         /// Path of the edited file, for diff syntax highlighting.
         lang: Option<String>,
     },
+    /// A standalone call row with its result drawn beneath it, in the call's
+    /// slot. A batch emits every call before any result, so appending the
+    /// result would strand it below the rows of later calls in the batch.
+    Resolved { call: Box<RowKind>, result: Box<RowKind> },
 }
 
 impl From<RowKind> for Row {
@@ -1434,7 +1438,7 @@ impl Row {
         {
             return;
         }
-        let lines = self.render(width);
+        let lines = self.kind.render(width);
         let height = wrapped_height(lines.clone(), width);
         *self.cache.borrow_mut() = Some(RowRender {
             width,
@@ -1443,8 +1447,19 @@ impl Row {
         });
     }
 
-    fn render(&self, width: u16) -> Vec<Line<'static>> {
+    /// Whether this row is the blank separator `gap` inserts. Only a literal
+    /// blank line qualifies; a source-backed row always renders content.
+    fn is_blank(&self) -> bool {
         match &self.kind {
+            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
+            _ => false,
+        }
+    }
+}
+
+impl RowKind {
+    fn render(&self, width: u16) -> Vec<Line<'static>> {
+        match self {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => format_markdown_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
@@ -1512,15 +1527,11 @@ impl Row {
                 }
                 out
             }
-        }
-    }
-
-    /// Whether this row is the blank separator `gap` inserts. Only a literal
-    /// blank line qualifies; a source-backed row always renders content.
-    fn is_blank(&self) -> bool {
-        match &self.kind {
-            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
-            _ => false,
+            RowKind::Resolved { call, result } => {
+                let mut out = call.render(width);
+                out.extend(result.render(width));
+                out
+            }
         }
     }
 }
@@ -3541,29 +3552,41 @@ impl App {
     /// Rewrite a standalone tool row to its resolved form once its result lands:
     /// past-tense label plus an outcome tag, matching how a tool group's row
     /// resolves. Without this a finished `edit` keeps reading as "Editing X".
-    /// Returns whether the row was found and rewritten.
-    fn resolve_pending_row(&mut self, id: &str, is_error: bool) -> bool {
+    /// `result` (the diff panel or error text) is drawn in the same slot: the
+    /// batch's later calls may already have rows below this one, so appending
+    /// it would strand the diff under an unrelated command. Returns `result`
+    /// back when there is no pending row to attach it to.
+    fn resolve_pending_row(
+        &mut self,
+        id: &str,
+        is_error: bool,
+        result: RowKind,
+    ) -> Option<RowKind> {
         let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
-            return false;
+            return Some(result);
         };
         let row = self.pending_rows.remove(pos);
         if row.idx >= self.transcript.len() {
-            return false;
+            return Some(result);
         }
         let (tag, tag_style) = if is_error {
             ("✗", Style::new().red())
         } else {
             ("✓", Style::new().green())
         };
-        self.transcript[row.idx] = RowKind::Tool {
+        let call = RowKind::Tool {
             tag: tag.to_string(),
             tag_style,
             label: row.done,
             label_style: Style::new().dim(),
             reserve: TOOL_ROW_RESERVE,
+        };
+        self.transcript[row.idx] = RowKind::Resolved {
+            call: Box::new(call),
+            result: Box::new(result),
         }
         .into();
-        true
+        None
     }
 
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
@@ -5525,7 +5548,6 @@ impl App {
                 // in-flight command label and the live buffer are both dead weight.
                 self.bash_commands.remove(&id);
                 self.live_output.remove(&id);
-                let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -5568,19 +5590,26 @@ impl App {
                     .is_some()
                     .then(|| self.diff_paths.remove(&id))
                     .flatten();
-                // The resolved call row above already names the tool and file in
-                // past tense, so a successful "Applied N edit(s) to X" only
-                // repeats it; the diff is the informative part. Errors keep their
-                // text -- the row says nothing about why the call failed.
-                let content = (!(resolved && !is_error && diff.is_some())).then_some(content);
-                self.gap(Kind::Tool);
-                self.push_row(RowKind::Result {
+                // The resolved call row already names the tool and file in past
+                // tense, so a successful "Applied N edit(s) to X" only repeats
+                // it; the diff is the informative part. Errors keep their text
+                // -- the row says nothing about why the call failed.
+                let has_row = self
+                    .pending_rows
+                    .iter()
+                    .any(|row| row.id == id && row.idx < self.transcript.len());
+                let content = (!(has_row && !is_error && diff.is_some())).then_some(content);
+                let result = RowKind::Result {
                     tag,
                     tag_style,
                     content,
                     diff,
                     lang,
-                });
+                };
+                if let Some(result) = self.resolve_pending_row(&id, is_error, result) {
+                    self.gap(Kind::Tool);
+                    self.push_row(result);
+                }
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -21268,6 +21297,49 @@ mod tests {
         );
     }
 
+    /// A batch emits every call before any result, so an edit's diff lands after
+    /// later calls in the same batch already have rows. The diff must still sit
+    /// under its own "Edited" row, not under whatever was drawn last.
+    #[test]
+    fn batched_edit_diff_stays_under_its_call_row() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/run_report.rs"}),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cargo check"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "Applied 1 edit(s) to src/run_report.rs".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-old_line\n+new_line".into()),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 100, 40);
+        let pos = |needle: &str| {
+            rows.iter()
+                .position(|r| r.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} missing: {rows:?}"))
+        };
+        let edited = pos("Edited run_report.rs");
+        let diff = pos("new_line");
+        let bash = pos("cargo check");
+        assert!(
+            edited < diff && diff < bash,
+            "diff rendered away from its edit row: {rows:?}"
+        );
+    }
+
     /// A failed edit's row only says "Edited <file>" with a cross, so the error
     /// text is the only place the reason survives and must still render.
     #[test]
@@ -30250,8 +30322,9 @@ mod tests {
             is_error: false,
             diff: Some("- old\n+ new".into()),
         });
-        // Call row preserved; result row + boxed diff appended below it.
-        assert!(app.transcript.len() > before);
+        // The diff folds into the call's own slot rather than being appended,
+        // so later calls in the same batch can never land between them.
+        assert_eq!(app.transcript.len(), before);
         let joined: String = app
             .transcript
             .iter()
