@@ -92,7 +92,7 @@
           "default": []
         },
         "builtins": {
-          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo`, subagent or monitor tools.",
+          "description": "`false` advertises only the host tools: no built-ins, MCP, plugin,\n`ask`, `todo` or monitor tools. `subagents: true` adds back only\n`dispatch_subagent` and `list_subagents`.",
           "type": "boolean",
           "default": true
         },
@@ -105,7 +105,7 @@
           "default": null
         },
         "systemPrompt": {
-          "description": "The session's whole system prompt, sent byte for byte in place of the\none Jan composes: no Jan identity, guides, environment, date, git state\nor project memory. Children keep their own prompts.",
+          "description": "The session's whole system prompt, sent byte for byte in place of the\none Jan composes: no Jan identity, guides, environment, date, git state\nor project memory, and the session neither recalls nor indexes project\nmemory. Jan may still append runtime notices to the conversation.\nChildren keep their own prompts.",
           "type": [
             "string",
             "null"

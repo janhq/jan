@@ -214,7 +214,9 @@ class JanRuntime:
 
         ``subagents`` lets the model delegate (default: same as ``builtins``);
         with ``builtins=False`` every child is limited to these host tools.
-        ``system_prompt`` is sent exactly as given in place of Jan's prompt.
+        ``system_prompt`` is sent exactly as given in place of Jan's prompt;
+        the session then neither recalls nor indexes project memory, and Jan
+        may still append runtime notices to the conversation.
 
         ``permissions`` says who gates a host tool call: ``"host"`` when this
         process runs and gates its own tools, so the runtime never prompts for

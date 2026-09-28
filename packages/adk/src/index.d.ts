@@ -121,7 +121,7 @@ export interface CreateSessionOptions {
   model?: string
   /** Keep nothing on disk: no thread, no media files, and no answers indexed for later recall. */
   ephemeral?: boolean
-  /** `false` advertises only the host tools, no built-ins or MCP. */
+  /** `false` advertises only the host tools, no built-ins or MCP. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`. */
   builtins?: boolean
   /**
    * Whether the model may delegate to subagents; defaults to `builtins`. With
@@ -131,8 +131,9 @@ export interface CreateSessionOptions {
   subagents?: boolean
   /**
    * The whole system prompt, sent exactly as given in place of Jan's: no Jan
-   * identity, guides, environment, date, git state or project memory.
-   * Subagents keep their own prompts. Must not be blank.
+   * identity, guides, environment, date, git state or project memory (none is
+   * recalled or indexed). Jan may still append runtime notices to the
+   * conversation. Subagents keep their own prompts. Must not be blank.
    */
   systemPrompt?: string
   /**
