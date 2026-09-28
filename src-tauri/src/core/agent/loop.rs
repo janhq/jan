@@ -16,7 +16,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::context::ComposedPrompt;
-use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::events::{CompactionPhase, CompactionReason, StreamEvent, Usage};
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
@@ -3954,21 +3954,45 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// into `budget` here. A turn can compact several times (the preflight plus the
 /// overflow retries), and spend the budget never saw would make `/usage` and
 /// the money ceiling agree with each other while both undercounted.
+///
+/// Every in-run compaction goes through here, so this is where it is reported:
+/// `Compaction { Started }` before the summarizer call and `Finished` or
+/// `Failed` after it. A plan with nothing to drop sends nothing, since no
+/// summarizer call was made.
 async fn compact(
     transcript: &mut Transcript,
     keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
     budget: &mut SessionBudget,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    reason: CompactionReason,
 ) -> Result<Option<usize>, String> {
     let Some(plan) = transcript.compaction_plan(keep_recent) else {
         return Ok(None);
     };
     let summarized = plan.summarize.len();
+    let report = |phase, messages| {
+        let _ = events.send(StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        });
+    };
+    report(CompactionPhase::Started, None);
     let (summary, usage) =
-        crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
+            .await
+        {
+            Ok(done) => done,
+            Err(error) => {
+                report(CompactionPhase::Failed, None);
+                return Err(error);
+            }
+        };
     budget.record_side_request(&usage);
     transcript.record_compaction(summary, plan.covers);
+    report(CompactionPhase::Finished, Some(summarized));
     Ok(Some(summarized))
 }
 
@@ -4140,6 +4164,8 @@ async fn run_turn_cycle(
                                 model_id,
                                 model,
                                 budget,
+                                events,
+                                CompactionReason::Preflight,
                             )
                             .await?
                             {
@@ -4156,16 +4182,9 @@ async fn run_turn_cycle(
                                 let _ = events.send(StreamEvent::MessagesUpdated {
                                     messages: client_history(&transcript, send_reasoning),
                                 });
-                                // The one legitimate cache break in a session,
-                                // and the only way the user can tell it apart
-                                // from a stall: say it happened, and why.
-                                let _ = events.send(StreamEvent::Notice {
-                                    text: format!(
-                                        "compacted {dropped} messages into a summary before sending \
-                                         ({estimate} tokens against a {} token budget)",
-                                        window.trigger_tokens()
-                                    ),
-                                });
+                                // Announced by `compact` itself, which is
+                                // how the user tells this cache break apart
+                                // from a stall.
                                 continue;
                             }
                         }
@@ -4187,9 +4206,17 @@ async fn run_turn_cycle(
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
                         let dropped =
-                            compact(&mut transcript, keep_recent, model_id, model, budget)
-                                .await?
-                                .ok_or(e)?;
+                            compact(
+                                &mut transcript,
+                                keep_recent,
+                                model_id,
+                                model,
+                                budget,
+                                events,
+                                CompactionReason::ContextOverflow,
+                            )
+                            .await?
+                            .ok_or(e)?;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -4367,6 +4394,8 @@ async fn run_turn_cycle(
                     model_id,
                     model,
                     budget,
+                    events,
+                    CompactionReason::SessionBudget,
                 )
                 .await
                 {
@@ -5616,6 +5645,7 @@ mod tests {
                 context_window: 1_000,
                 ratio: 0.5,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -5650,15 +5680,21 @@ mod tests {
         }
 
         drop(tx);
-        let mut notices = Vec::new();
+        let mut phases = Vec::new();
         while let Some(ev) = rx.recv().await {
-            if let StreamEvent::Notice { text } = ev {
-                notices.push(text);
+            if let StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::Preflight,
+                ..
+            } = ev
+            {
+                phases.push(phase);
             }
         }
-        assert!(
-            notices.iter().any(|n| n.contains("before sending")),
-            "a prefix break the user did not ask for has to be announced: {notices:?}"
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "a prefix break the user did not ask for has to be announced"
         );
     }
 
@@ -5693,6 +5729,7 @@ mod tests {
                 context_window: 128_000,
                 ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -6985,7 +7022,16 @@ mod tests {
         ));
         assert!(!budget.over_cost_ceiling(), "nothing spent yet");
 
-        let dropped = compact(&mut transcript, 4, "m", &model, &mut budget)
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let dropped = compact(
+            &mut transcript,
+            4,
+            "m",
+            &model,
+            &mut budget,
+            &tx,
+            CompactionReason::Preflight,
+        )
             .await
             .expect("the summarizer answered")
             .expect("a long history has a span to compact");
@@ -7058,7 +7104,9 @@ mod tests {
     async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let done = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
@@ -7169,7 +7217,9 @@ mod tests {
         let mut over_budget = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let summary = json!({
             "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
         });
@@ -7206,14 +7256,34 @@ mod tests {
             "one turn, plus the summarizer call compaction makes"
         );
 
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        // The user is told: the TUI runs with logging off, so without an event
+        // this compaction is invisible.
+        let phases: Vec<CompactionPhase> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::SessionBudget,
+                    ..
+                } => Some(*phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "the budget compaction is announced, start and end"
+        );
         // The published history is the compacted one: shorter, and carrying the
         // summary in place of the dropped middle.
-        let published = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
+        let published = events
+            .into_iter()
+            .rev()
+            .find_map(|ev| match ev {
                 StreamEvent::MessagesUpdated { messages } => Some(messages),
                 _ => None,
             })
-            .last()
             .expect("a MessagesUpdated is published");
         assert!(
             published.len() < original_len,
@@ -7305,7 +7375,7 @@ mod tests {
 
     #[tokio::test]
     async fn turn_cycle_compacts_and_retries_on_context_overflow() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         // 1) main request overflows, 2) summarizer succeeds, 3) retry succeeds.
         let overflow = Err(format!(
             "[{}] Upstream returned HTTP 400: context_length_exceeded",
@@ -7353,6 +7423,17 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(|ev| matches!(
+                ev,
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Finished,
+                    reason: CompactionReason::ContextOverflow,
+                    messages: Some(_),
+                }
+            )),
+            "the overflow compaction is announced"
+        );
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
@@ -7596,15 +7677,23 @@ mod tests {
         );
         drop(tx);
         let mut published = false;
+        let mut failed = false;
         while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::MessagesUpdated { .. } = ev {
-                published = true;
+            match ev {
+                StreamEvent::MessagesUpdated { .. } => published = true,
+                // The throbber a `Started` put up has to come down again.
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Failed,
+                    ..
+                } => failed = true,
+                _ => {}
             }
         }
         assert!(
             !published,
             "no fabricated compacted history may be published"
         );
+        assert!(failed, "a summarizer failure ends the compaction as Failed");
     }
 
     #[tokio::test]
