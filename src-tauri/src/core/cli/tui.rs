@@ -12990,16 +12990,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Project,
     },
     AgentSettingDef {
-        key: "skills.inject",
-        label: "skills.inject",
-        desc: "when project skills are injected into the prompt",
-        kind: AgentSettingKind::Enum {
-            options: &["always", "relevance"],
-            default: "always",
-        },
-        scope: SettingScope::Project,
-    },
-    AgentSettingDef {
         key: "show_reasoning",
         label: "show_reasoning",
         desc: "expand  reasoning in the transcript (Ctrl-O still toggles)",
