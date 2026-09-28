@@ -1,6 +1,5 @@
 import { Toaster } from '@/components/ui/sonner'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
-import { getToastOffset } from '@/utils/toastPlacement'
 
 export function ToasterProvider() {
   const notificationPosition = useInterfaceSettings(
@@ -11,7 +10,6 @@ export function ToasterProvider() {
     <Toaster
       richColors
       position={notificationPosition}
-      offset={getToastOffset(notificationPosition)}
       visibleToasts={5}
       toastOptions={{
         style: {
