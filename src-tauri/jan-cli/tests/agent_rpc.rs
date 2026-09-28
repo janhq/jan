@@ -1045,3 +1045,289 @@ fn an_ephemeral_session_neither_indexes_nor_recalls_project_memory() {
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);
 }
+
+/// One recorded provider request: the headers that carry credentials and
+/// correlation, and the body the model was sent.
+#[derive(Clone, Debug)]
+struct SeenRequest {
+    headers: Vec<(String, String)>,
+    body: serde_json::Value,
+}
+
+impl SeenRequest {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(key, _)| key.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
+}
+
+/// An SSE reply in which the model calls host tool `host__<tool>`.
+fn host_call_sse(tool: &str) -> String {
+    let call = serde_json::json!({
+        "id":"stub-1","object":"chat.completion.chunk","created":1,"model":"stub-model",
+        "choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call-1","type":"function",
+            "function":{"name":format!("host__{tool}"),"arguments":"{\"position\":\"bin\"}"}}]},"finish_reason":null}]
+    });
+    let stop = serde_json::json!({
+        "id":"stub-1","object":"chat.completion.chunk","created":1,"model":"stub-model",
+        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],
+        "usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+    });
+    format!("data: {call}\n\ndata: {stop}\n\ndata: [DONE]\n\n")
+}
+
+/// Like `scripted_provider`, but owning its replies and keeping each request's
+/// headers: credentials travel in headers, so a body-only record could not show
+/// which session's key a request carried.
+fn recording_provider(replies: Vec<String>) -> (String, std::sync::Arc<std::sync::Mutex<Vec<SeenRequest>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/v1", listener.local_addr().unwrap());
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    std::thread::spawn(move || {
+        for (index, connection) in listener.incoming().enumerate() {
+            let Ok(mut stream) = connection else { break };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = Vec::new();
+            let mut size = 0;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some((key, value)) = line.trim_end().split_once(':') {
+                    let (key, value) = (key.trim().to_owned(), value.trim().to_owned());
+                    if key.eq_ignore_ascii_case("content-length") {
+                        size = value.parse().unwrap_or(0);
+                    }
+                    headers.push((key, value));
+                }
+            }
+            let mut request = vec![0; size];
+            if std::io::Read::read_exact(&mut reader, &mut request).is_err() {
+                continue;
+            }
+            let body = serde_json::from_slice(&request).unwrap_or(serde_json::Value::Null);
+            sink.lock().unwrap().push(SeenRequest { headers, body });
+            let reply = &replies[index.min(replies.len() - 1)];
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len());
+        }
+    });
+    (url, seen)
+}
+
+/// Give `project` its own provider through agent.toml's project-local
+/// `[provider]` override: the same provider name and model in both projects, so
+/// the only thing that tells the two sessions' routes apart is whose
+/// configuration each one resolved.
+fn project_provider(home: &Path, project: &Path, base_url: &str, api_key: &str) {
+    let store = store(home, project);
+    std::fs::create_dir_all(&store).unwrap();
+    std::fs::write(
+        store.join("agent.toml"),
+        format!("[agent]\n\n[provider]\nname = \"stub\"\napi_key = \"{api_key}\"\nbase_url = \"{base_url}\"\nmodels = [\"stub-model\"]\n"),
+    )
+    .unwrap();
+}
+
+/// A host tool of the arm's shape under `name`, with no declared capability:
+/// opaque, so Jan's own gate prompts for it with a `permission_request`.
+fn opaque_tool(name: &str) -> serde_json::Value {
+    let mut tool = arm_tool();
+    tool["name"] = serde_json::json!(name);
+    tool
+}
+
+/// Read until `stop` matches, keeping every record read on the way (the
+/// matching one included), so a test can check all of them.
+fn collect_until(
+    rpc: &mut Rpc,
+    log: &mut Vec<serde_json::Value>,
+    mut stop: impl FnMut(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    rpc.read_until(|record| {
+        log.push(record.clone());
+        stop(record)
+    })
+    .expect("the channel closed before the expected record")
+}
+
+/// Every notification in `log` belongs to `session` and its `turn`, and the
+/// provenance of every outbound request names `session`.
+fn assert_all_belong_to(log: &[serde_json::Value], session: &str, turn: &serde_json::Value) {
+    let notes: Vec<_> = log.iter().filter(|r| r["method"].is_string()).collect();
+    assert!(!notes.is_empty(), "no notifications to check");
+    for note in notes {
+        assert_eq!(note["params"]["sessionId"], session, "routed to the wrong session: {note}");
+        assert_eq!(note["params"]["turnId"], *turn, "routed to the wrong turn: {note}");
+        if note["method"] == "item/request_provenance" {
+            assert_eq!(note["params"]["event"]["session_id"], session, "{note}");
+        }
+    }
+}
+
+/// #385 E: two sessions held open at once in one runtime process never receive
+/// each other's events, permission replies, tool results or credentials.
+///
+/// RPC runs one turn per process at a time (a second `turn/start` is refused
+/// with a retryable `-32001`), so the sessions interleave rather than stream in
+/// parallel: A's turn is parked on the host while B is open and addressed, then
+/// B's turn runs while A's answered and stale ids are still in the client's
+/// hands. Each session has its own project, its own provider endpoint and key,
+/// and its own host tool, so a leak in any direction is visible by name.
+///
+/// Capture handles are not asserted: the protocol has none yet (#385 G).
+#[test]
+fn simultaneous_sessions_never_cross() {
+    let scratch = scratch("isolation");
+    let home = scratch.join("home");
+    let project_a = scratch.join("project");
+    let project_b = scratch.join("project-b");
+    std::fs::create_dir_all(&project_b).unwrap();
+    let (url_a, seen_a) = recording_provider(vec![host_call_sse("arm_move"), PROSE.to_owned()]);
+    let (url_b, seen_b) = recording_provider(vec![host_call_sse("gripper_close"), PROSE.to_owned()]);
+    project_provider(&home, &project_a, &url_a, "key-session-a");
+    project_provider(&home, &project_b, &url_b, "key-session-b");
+
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let start = |rpc: &mut Rpc, id: u64, cwd: &Path, tool: &str| {
+        let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"session/start","params":{
+            "cwd":cwd,"model":"stub-model","tools":[opaque_tool(tool)]
+        }}));
+        started["result"]["sessionId"]
+            .as_str()
+            .unwrap_or_else(|| panic!("{started}"))
+            .to_owned()
+    };
+    let a = start(&mut rpc, 3, &project_a, "arm_move");
+    let b = start(&mut rpc, 4, &project_b, "gripper_close");
+    assert_ne!(a, b);
+
+    // --- A's turn: parked on its permission prompt while B is open. ---
+    let turn_a = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":10,"method":"turn/start","params":{"sessionId":a,"input":"move the arm"}}));
+    let turn_a = turn_a["result"]["turnId"].clone();
+    assert!(turn_a.is_string(), "{turn_a}");
+    let mut log_a = Vec::new();
+    let prompt_a = collect_until(&mut rpc, &mut log_a, |r| r["method"] == "item/permission_request");
+    assert_eq!(prompt_a["params"]["event"]["tool_name"], "host__arm_move", "{prompt_a}");
+    let perm_a = prompt_a["params"]["event"]["request_id"].as_str().unwrap().to_owned();
+
+    // B cannot act on A's turn: not by interrupting it, steering it, or
+    // starting its own over it.
+    let mut stray = Vec::new();
+    for (id, method, params) in [
+        (11, "turn/interrupt", serde_json::json!({"sessionId":b})),
+        (12, "turn/steer", serde_json::json!({"sessionId":b,"input":"from b"})),
+        (13, "turn/start", serde_json::json!({"sessionId":b,"input":"from b"})),
+    ] {
+        rpc.send(serde_json::json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}));
+        let refused = reply_to(&mut rpc, id, &mut stray);
+        assert!(refused["error"].is_object(), "{method} for B was accepted during A's turn: {refused}");
+    }
+    log_a.extend(stray);
+
+    // allow_always, so a grant that crossed sessions would show up as B's
+    // prompt never arriving.
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":14,"method":"permission/respond","params":{"requestId":perm_a,"decision":"allow_always"}}));
+    let allowed = reply_to(&mut rpc, 14, &mut log_a);
+    assert_eq!(allowed["result"], serde_json::json!({}), "{allowed}");
+    let call_a = collect_until(&mut rpc, &mut log_a, |r| r["method"] == "item/tool_request");
+    assert_eq!(call_a["params"]["event"]["tool_name"], "arm_move", "{call_a}");
+    let host_a = call_a["params"]["event"]["request_id"].as_str().unwrap().to_owned();
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":15,"method":"tool/respond","params":{"requestId":host_a,"content":"result-for-a"}}));
+    let answered = reply_to(&mut rpc, 15, &mut log_a);
+    assert_eq!(answered["result"], serde_json::json!({}), "{answered}");
+    let done_a = collect_until(&mut rpc, &mut log_a, |r| r["method"] == "turn/completed");
+    assert_eq!(done_a["params"]["stopReason"], "completed", "{done_a}");
+    assert_all_belong_to(&log_a, &a, &turn_a);
+
+    // --- B's turn: A's grant does not cover it, A's ids do not settle it. ---
+    let turn_b = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":20,"method":"turn/start","params":{"sessionId":b,"input":"close the gripper"}}));
+    let turn_b = turn_b["result"]["turnId"].clone();
+    assert!(turn_b.is_string(), "{turn_b}");
+    let mut log_b = Vec::new();
+    let prompt_b = collect_until(&mut rpc, &mut log_b, |r| r["method"] == "item/permission_request");
+    assert_eq!(prompt_b["params"]["event"]["tool_name"], "host__gripper_close", "{prompt_b}");
+    let perm_b = prompt_b["params"]["event"]["request_id"].as_str().unwrap().to_owned();
+    assert_ne!(perm_a, perm_b, "permission ids are never reused across sessions");
+
+    // A's permission id, answered or not, is not B's request.
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":21,"method":"permission/respond","params":{"requestId":perm_a,"decision":"allow_once"}}));
+    let crossed = reply_to(&mut rpc, 21, &mut log_b);
+    assert_eq!(crossed["error"]["code"], -32602, "{crossed}");
+    assert_eq!(crossed["error"]["data"]["kind"], "not_pending", "{crossed}");
+    // B's prompt is still the one waiting: answering it by its own id works.
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":22,"method":"permission/respond","params":{"requestId":perm_b,"decision":"allow_once"}}));
+    let allowed = reply_to(&mut rpc, 22, &mut log_b);
+    assert_eq!(allowed["result"], serde_json::json!({}), "{allowed}");
+
+    let call_b = collect_until(&mut rpc, &mut log_b, |r| r["method"] == "item/tool_request");
+    assert_eq!(call_b["params"]["event"]["tool_name"], "gripper_close", "{call_b}");
+    let host_b = call_b["params"]["event"]["request_id"].as_str().unwrap().to_owned();
+    assert_ne!(host_a, host_b, "host request ids are never reused across sessions");
+    // A's host request id cannot settle B's call.
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":23,"method":"tool/respond","params":{"requestId":host_a,"content":"forged-by-a"}}));
+    let crossed = reply_to(&mut rpc, 23, &mut log_b);
+    assert_eq!(crossed["error"]["code"], -32602, "{crossed}");
+    assert_eq!(crossed["error"]["data"]["kind"], "not_pending", "{crossed}");
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":24,"method":"tool/respond","params":{"requestId":host_b,"content":"result-for-b"}}));
+    let answered = reply_to(&mut rpc, 24, &mut log_b);
+    assert_eq!(answered["result"], serde_json::json!({}), "{answered}");
+    let done_b = collect_until(&mut rpc, &mut log_b, |r| r["method"] == "turn/completed");
+    assert_eq!(done_b["params"]["stopReason"], "completed", "{done_b}");
+    assert_all_belong_to(&log_b, &b, &turn_b);
+
+    // --- A again: its history carries nothing of B's turn. ---
+    let turn_a2 = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":30,"method":"turn/start","params":{"sessionId":a,"input":"and now?"}}));
+    let turn_a2 = turn_a2["result"]["turnId"].clone();
+    let mut log_a2 = Vec::new();
+    let done_a2 = collect_until(&mut rpc, &mut log_a2, |r| r["method"] == "turn/completed");
+    assert_eq!(done_a2["params"]["stopReason"], "completed", "{done_a2}");
+    assert_all_belong_to(&log_a2, &a, &turn_a2);
+
+    // --- The provider side: each endpoint saw only its own session. ---
+    let check = |seen: &std::sync::Mutex<Vec<SeenRequest>>,
+                 session: &str,
+                 key: &str,
+                 own: (&str, &str),
+                 other: (&str, &str, &str),
+                 expected: usize| {
+        let requests = seen.lock().unwrap().clone();
+        assert_eq!(requests.len(), expected, "{session}: {requests:?}");
+        for request in &requests {
+            assert_eq!(request.header("authorization"), Some(format!("Bearer {key}").as_str()), "{request:?}");
+            assert_eq!(
+                request.header("x-client-request-id"),
+                Some(format!("jan-{session}").as_str()),
+                "{request:?}"
+            );
+            let body = request.body.to_string();
+            let (other_tool, other_result, other_key) = other;
+            for leaked in [other_tool, other_result, other_key, "forged-by-a"] {
+                assert!(!body.contains(leaked), "{session}'s request carries {leaked}: {body}");
+            }
+            let tools: Vec<&str> = request.body["tools"]
+                .as_array()
+                .expect("the request advertises tools")
+                .iter()
+                .filter_map(|tool| tool["function"]["name"].as_str())
+                .collect();
+            assert!(tools.contains(&own.0), "{session}: {tools:?}");
+        }
+        // The session's own result reached its own follow-up request.
+        assert!(requests[1].body.to_string().contains(own.1), "{:?}", requests[1]);
+    };
+    check(&seen_a, &a, "key-session-a", ("host__arm_move", "result-for-a"),
+        ("host__gripper_close", "result-for-b", "key-session-b"), 3);
+    check(&seen_b, &b, "key-session-b", ("host__gripper_close", "result-for-b"),
+        ("host__arm_move", "result-for-a", "key-session-a"), 2);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
