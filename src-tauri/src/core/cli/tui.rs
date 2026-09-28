@@ -1854,6 +1854,9 @@ struct App {
     /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
     /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
+    /// `--max-session-tokens` pinned `max_session_tokens`, so `/reload config`
+    /// does not replace it with `[budget].max_tokens`.
+    max_session_tokens_pinned: bool,
     /// `[budget].max_usd`: what one message's run may spend before it stops,
     /// with the rates to meter it against. `None` -- the default -- leaves the
     /// session unmetered. Per run, not per session: each message gets the same
@@ -2620,6 +2623,7 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
+            max_session_tokens_pinned: limits.max_session_tokens_pinned,
             cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
@@ -4970,7 +4974,36 @@ impl App {
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
+        self.sync_compaction_budget();
         changed
+    }
+
+    /// Hand the engine the compaction budget the TUI now shows. The loop's
+    /// preflight reads `args.compaction`, a copy taken at startup, so without
+    /// this a model switch or `/reload config` would move the header gauge
+    /// while runs kept compacting against the startup window. `args` is shared
+    /// behind an `Arc`; a cheap clone with the new budget replaces it, and the
+    /// next run spawned from `self.args` picks it up.
+    fn sync_compaction_budget(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let budget = crate::core::agent::compaction::CompactionBudget {
+            context_window: self.context_window,
+            ratio: self.compaction_ratio,
+            reserve_tokens: self.compaction_reserve_tokens,
+        };
+        let unchanged = args.compaction.is_some_and(|b| {
+            b.context_window == budget.context_window
+                && b.ratio == budget.ratio
+                && b.reserve_tokens == budget.reserve_tokens
+        });
+        if unchanged {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.compaction = Some(budget);
+        self.args = Some(Arc::new(next));
     }
     /// Mark the memoized model -> provider answer as needing re-resolution
     /// while keeping the answer itself. The value survives because
@@ -9953,7 +9986,9 @@ async fn chat_loop<B: Backend>(
         // flight, and the result replaces `history` wholesale.
         if compact_task.is_none() {
             if let Some(kind) = app.compact_request.take() {
-                let args = args.clone();
+                // `app.args`, not the startup handle: it carries the budget a
+                // model switch or `/reload config` last synced.
+                let args = app.args.clone().unwrap_or_else(|| args.clone());
                 let model = app.model.clone();
                 let history = app.history.clone();
                 compact_base = history.len();
@@ -9992,7 +10027,8 @@ async fn chat_loop<B: Backend>(
                 // The submission itself is one human turn toward the aging
                 // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
-                current = Some(spawn_run(args, app.body()));
+                let run_args = app.args.clone().unwrap_or_else(|| args.clone());
+                current = Some(spawn_run(&run_args, app.body()));
             } else if !loading_noted && !mcp_ready {
                 // The base snapshot gates silently; only the MCP connect notes.
                 loading_noted = true;
@@ -11788,10 +11824,18 @@ struct SlashCommand {
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
-/// Plugin installation and removal explicitly refresh this snapshot.
+/// Plugin installation and removal explicitly refresh this snapshot — as does
+/// `/reload`, which diffs a fresh scan against it to report what changed.
 struct SlashCatalog {
     commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
     skills: Vec<crate::core::agent::skills::SkillMeta>,
+    /// Installed plugin summaries from the same scan, for `/reload plugin`'s
+    /// added/removed/updated report.
+    plugins: Vec<crate::core::agent::plugins::InstalledPlugin>,
+    /// Every discovered skill, both invocation sides — the full disk truth
+    /// `/reload skills` diffs against (the popup list above is only the
+    /// user-invocable subset).
+    all_skills: Vec<crate::core::agent::skills::SkillMeta>,
 }
 
 impl SlashCatalog {
@@ -11801,6 +11845,8 @@ impl SlashCatalog {
             // Keep every user-invocable skill here. The enabled whitelist is
             // re-read below so edits to agent.toml take effect immediately.
             skills: crate::core::agent::skills::user_catalog(root, &[]),
+            plugins: crate::core::agent::plugins::installed(root),
+            all_skills: crate::core::agent::skills::full_catalog(root),
         }
     }
 
@@ -12148,6 +12194,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/reload",
+        hint: "[config|plugin|skills|system-prompt]",
+        description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/cancel",
         hint: "[N]",
         description: "Cancel pending messages (bare: all, or index)",
@@ -12383,6 +12435,7 @@ async fn run_command(
         "agents" => open_agents_picker(app),
         "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
+        "reload" => reload_command(app, arg),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -14420,6 +14473,274 @@ async fn plugin_command(app: &mut App, arg: &str) {
         other => app.note(&format!(
             "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
         )),
+    }
+}
+
+/// One diffable catalog entry for `/reload`: `key` is the stable identity,
+/// `label` the display line, `state` everything whose change marks the entry
+/// as updated (version/description/counts for plugins, description and
+/// invocation flags for skills).
+struct ReloadEntry {
+    key: String,
+    label: String,
+    state: String,
+}
+
+/// Snapshot the installed-plugin summaries for `/reload plugin`'s diff.
+fn reload_plugin_entries(plugins: &[crate::core::agent::plugins::InstalledPlugin]) -> Vec<ReloadEntry> {
+    plugins
+        .iter()
+        .map(|p| ReloadEntry {
+            key: p.name.clone(),
+            label: format!("plugin {} (v{})", p.name, p.version),
+            state: format!(
+                "v{} · {} skill(s) · {} command(s) · {} agent(s) · {}",
+                p.version, p.skills, p.commands, p.agents, p.description
+            ),
+        })
+        .collect()
+}
+
+/// Snapshot the full skill catalog for `/reload skills`'s diff, keyed by
+/// qualified name (`<plugin>:<skill>` for plugin skills).
+fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec<ReloadEntry> {
+    skills
+        .iter()
+        .map(|m| {
+            let name = m
+                .plugin
+                .as_ref()
+                .map_or_else(|| m.name.clone(), |p| format!("{p}:{}", m.name));
+            ReloadEntry {
+                key: name.clone(),
+                label: name,
+                state: format!(
+                    "{} [user:{} model:{}]",
+                    m.description, m.user_invocable, m.model_invocable
+                ),
+            }
+        })
+        .collect()
+}
+
+/// Display lines for what a reload changed, one list per kind of change.
+#[derive(Default)]
+struct ReloadDiff {
+    added: Vec<String>,
+    removed: Vec<String>,
+    updated: Vec<String>,
+}
+
+/// Diff two catalog snapshots by identity, returning display lines for
+/// added, removed, and updated entries in scan order.
+fn diff_reload_entries(before: &[ReloadEntry], after: &[ReloadEntry]) -> ReloadDiff {
+    fn keyed(items: &[ReloadEntry]) -> std::collections::BTreeMap<String, &ReloadEntry> {
+        items.iter().map(|e| (e.key.clone(), e)).collect()
+    }
+    let (old, new) = (keyed(before), keyed(after));
+    let mut diff = ReloadDiff::default();
+    for (key, entry) in &new {
+        match old.get(key) {
+            None => diff.added.push(entry.label.clone()),
+            Some(prev) if prev.state != entry.state => diff.updated.push(format!(
+                "{} ({} → {})",
+                entry.label, prev.state, entry.state
+            )),
+            Some(_) => {}
+        }
+    }
+    for (key, entry) in &old {
+        if !new.contains_key(key) {
+            diff.removed.push(entry.label.clone());
+        }
+    }
+    diff
+}
+
+/// `/reload [config|plugin|skills|system-prompt]`: re-read on-disk state into
+/// the running session instead of restarting it. `config` re-applies the
+/// project's `agent.toml` limits (context window, compaction, output cap,
+/// token budget) and reports each value that moved; `plugin`/`skills` re-run
+/// discovery and rebuild the slash catalog, reporting added/removed/changed
+/// entries. The model-facing system prompt (JAN.md instructions, the skills
+/// catalog) is rebuilt from disk on every run, so `system-prompt` re-reads and
+/// reports what the next run picks up. Bare `/reload` does all of them.
+fn reload_command(app: &mut App, arg: &str) {
+    match arg.trim() {
+        "" => {
+            reload_config(app);
+            reload_catalog(app, true, true);
+            reload_system_prompt(app);
+        }
+        "config" => reload_config(app),
+        "plugin" => reload_catalog(app, true, false),
+        "skills" => reload_catalog(app, false, true),
+        "system-prompt" => reload_system_prompt(app),
+        other => app.note(&format!(
+            "unknown /reload target '{other}' (try config | plugin | skills | system-prompt)"
+        )),
+    }
+}
+
+/// Re-run discovery once and report the plugin and/or skill diff. Both
+/// snapshots are taken before the single refresh: one refresh rescans both
+/// catalogs, so diffing skills after a plugin refresh would always come up empty.
+fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
+    let plugins_before = reload_plugin_entries(&app.slash_catalog.plugins);
+    let skills_before = reload_skill_entries(&app.slash_catalog.all_skills);
+    app.refresh_slash_catalog();
+    if plugins {
+        let after = reload_plugin_entries(&app.slash_catalog.plugins);
+        app.note("◈ reload · plugin · re-scanned installed plugins");
+        report_reload_diff(app, diff_reload_entries(&plugins_before, &after));
+    }
+    if skills {
+        let after = reload_skill_entries(&app.slash_catalog.all_skills);
+        app.note("◈ reload · skills · re-scanned project and plugin skills");
+        report_reload_diff(app, diff_reload_entries(&skills_before, &after));
+    }
+}
+
+fn reload_system_prompt(app: &mut App) {
+    // Nothing caches the instructions across runs: the system prompt
+    // (including this block and the skills catalog) is rebuilt from disk at
+    // the start of every run. Re-read now to confirm what the next run picks up.
+    let files = crate::core::agent::context::context_files(&app.project_root);
+    if files.is_empty() {
+        app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+        return;
+    }
+    app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
+    for (path, content) in &files {
+        app.system_detail_text(&format!("  {} ({} bytes)", path.display(), content.len()));
+    }
+}
+
+/// Re-read the project's `agent.toml` and apply the `[agent]`/`[budget]`
+/// limits the session snapshotted at startup, using the same precedence the
+/// startup path does (`prepare_agent_session`): a provider's own
+/// `compaction_ratio` beats the project's, and a `--max-session-tokens` flag
+/// beats `[budget].max_tokens`. The next run spawned gets the new compaction
+/// budget via [`App::sync_compaction_budget`]; a run already in flight keeps
+/// the one it started with.
+///
+/// Not reloaded: the model (switch it with `/model`), `[tools]` permissions
+/// and `[provider]`, which are wired into the session's tools and routes at
+/// startup, and `[budget].max_usd`, whose rates are priced once at startup.
+fn reload_config(app: &mut App) {
+    let cfg = match crate::core::agent::project::load_agent_config(&app.project_root) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            app.note(&format!("◈ reload · config · {e}; kept the current settings"));
+            return;
+        }
+    };
+    let before = reload_config_entries(app);
+    let budget_before = app.max_session_tokens;
+
+    app.configured_context_window = cfg.agent.context_window;
+    // Provider configs sit behind the engine's lock. If a run holds it right
+    // now, keep the current ratio rather than resolve without the provider's
+    // own override and silently pick the wrong one.
+    let configured_ratio = cfg.agent.compaction_ratio;
+    let ratio = match app.args.as_ref().map(|a| a.provider_configs.try_lock()) {
+        Some(Ok(pc)) => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &pc,
+            configured_ratio,
+        )),
+        Some(Err(_)) => None,
+        None => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &HashMap::new(),
+            configured_ratio,
+        )),
+    };
+    let ratio_busy = ratio.is_none();
+    if let Some(ratio) = ratio {
+        app.compaction_ratio = ratio;
+    }
+    app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
+    app.max_tokens = cfg.agent.max_tokens;
+    if !app.max_session_tokens_pinned {
+        app.max_session_tokens = super::resolve_session_budget(None, cfg.budget.max_tokens);
+    }
+    app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
+    // Re-resolves the window and pushes the compaction budget to the engine.
+    app.refresh_context_window();
+
+    let after = reload_config_entries(app);
+    app.note(&format!(
+        "◈ reload · config · re-read {}",
+        crate::core::agent::project::agent_toml_path(&app.project_root).display()
+    ));
+    report_reload_diff(app, diff_reload_entries(&before, &after));
+    if app.max_session_tokens_pinned
+        && super::resolve_session_budget(None, cfg.budget.max_tokens) != budget_before
+    {
+        app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
+    }
+    if !ratio_busy
+        && cfg.agent.compaction_ratio.is_some_and(|r| r != app.compaction_ratio)
+    {
+        app.system_detail_text(
+            "  compaction_ratio from agent.toml ignored: the serving provider sets its own",
+        );
+    }
+    if ratio_busy {
+        app.system_detail_text(
+            "  compaction_ratio kept: provider settings are busy; /reload config again when idle",
+        );
+    }
+    if app.should_auto_compact() {
+        app.compact_request = Some(CompactKind::Auto);
+        app.system_detail_text("  context now over the compaction trigger; compacting");
+    }
+}
+
+/// The reloadable limits as diffable entries, so `/reload config` reports
+/// exactly the values that moved.
+fn reload_config_entries(app: &App) -> Vec<ReloadEntry> {
+    fn entry(key: &str, state: String) -> ReloadEntry {
+        ReloadEntry {
+            key: key.to_string(),
+            label: key.to_string(),
+            state,
+        }
+    }
+    let opt = |v: Option<u64>| v.map_or_else(|| "unset".to_string(), |v| v.to_string());
+    vec![
+        entry(
+            "context_window",
+            format!("{} ({})", app.context_window, app.context_window_source.label()),
+        ),
+        entry("compaction_ratio", app.compaction_ratio.to_string()),
+        entry("compaction_reserve_tokens", opt(app.compaction_reserve_tokens)),
+        entry("max_tokens", opt(app.max_tokens)),
+        entry("budget.max_tokens", app.max_session_tokens.to_string()),
+        entry("send_reasoning", app.send_reasoning.to_string()),
+    ]
+}
+
+/// Print a reload diff, or the unchanged note when the scan found nothing new.
+fn report_reload_diff(app: &mut App, diff: ReloadDiff) {
+    let ReloadDiff {
+        added,
+        removed,
+        updated,
+    } = diff;
+    if added.is_empty() && removed.is_empty() && updated.is_empty() {
+        app.system_detail_text("  no changes since the last scan");
+        return;
+    }
+    for line in added {
+        app.system_detail_text(&format!("  + {line}"));
+    }
+    for line in removed {
+        app.system_detail_text(&format!("  - {line}"));
+    }
+    for line in updated {
+        app.system_detail_text(&format!("  ~ {line}"));
     }
 }
 
@@ -19905,6 +20226,7 @@ mod tests {
             compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
+            max_session_tokens_pinned: false,
             max_turns: None,
             cost_ceiling: None,
         };
@@ -20411,6 +20733,7 @@ mod tests {
                     compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
+                    max_session_tokens_pinned: false,
                     max_turns: None,
                     cost_ceiling: None,
                 },
@@ -36300,11 +36623,15 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        // Both `/resume` and `/reasoning` start with `re`; catalog order
-        // (stable sort on equal prefix score) keeps resume first.
+        // `/resume`, `/reasoning`, and `/reload` start with `re`; catalog
+        // order (stable sort on equal prefix score) keeps resume first.
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/reasoning".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/reload".to_string()
+            ]
         );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
@@ -36802,6 +37129,273 @@ mod tests {
         app.input = "/skill:rel".into();
         assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin summary manifest on disk, so `/reload plugin` has a version
+    /// to report.
+    fn plugin_manifest_in_app(root: &std::path::Path, plugin: &str, version: &str) {
+        std::fs::write(
+            crate::core::agent::project::store_root(root)
+                .join("plugins")
+                .join(plugin)
+                .join("plugin.toml"),
+            format!("name = \"{plugin}\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_plugin_reports_installed_plugins() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Nothing installed, nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("re-scanned installed plugins"),
+            "note: {out}"
+        );
+        assert!(
+            out.contains("no changes since the last scan"),
+            "diff: {out}"
+        );
+
+        // Install a plugin payload on disk; the next reload reports it and
+        // the rebuilt catalog serves its command immediately.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .commands
+                .iter()
+                .any(|c| c.plugin == "acme" && c.name == "ship"),
+            "command must be live after reload"
+        );
+
+        // A second reload has an up-to-date snapshot: nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_skills_reports_added_changed_and_removed() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+
+        let skills = crate::core::agent::project::store_root(&root).join("skills");
+
+        // Added: a new skill shows up and joins the popup catalog.
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ audit"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .skills
+                .iter()
+                .any(|m| m.name == "audit"),
+            "skill must be live after reload"
+        );
+
+        // Changed: an edited description is reported as an update.
+        std::fs::write(
+            skills.join("deploy").join("SKILL.md"),
+            "---\ndescription: How to ship\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("~ deploy (How to deploy."),
+            "diff: {out}"
+        );
+        assert!(out.contains("→ How to ship"), "diff: {out}");
+
+        // Removed: a deleted skill leaves the catalog.
+        std::fs::remove_dir_all(skills.join("audit")).unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("- audit"), "diff: {out}");
+        assert!(
+            !app.slash_catalog.skills.iter().any(|m| m.name == "audit"),
+            "removed skill must drop from the catalog"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_system_prompt_reads_jan_md() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("no JAN.md in this project"),
+            "empty project: {}",
+            transcript_text(&app)
+        );
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n\nRun the tests.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("re-read project instructions"), "{out}");
+        assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_bare_covers_every_target() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        for want in [
+            "reload · config",
+            "reload · plugin",
+            "reload · skills",
+            "reload · system-prompt",
+        ] {
+            assert!(out.contains(want), "missing {want}: {out}");
+        }
+
+        // One bare reload reports both a new plugin and a new skill: the
+        // plugin refresh must not swallow the skill diff.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        let skills = crate::core::agent::project::store_root(&root).join("skills");
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "plugin diff: {out}");
+        assert!(out.contains("+ audit"), "skill diff: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_agent_toml(root: &std::path::Path, body: &str) {
+        let path = crate::core::agent::project::agent_toml_path(root);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_config_applies_agent_toml_limits_live() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        write_agent_toml(
+            &root,
+            "[agent]\ncontext_window = 300000\ncompaction_ratio = 0.7\nmax_tokens = 8192\n\n[budget]\nmax_tokens = 0\n",
+        );
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.context_window, 300_000);
+        assert_eq!(app.configured_context_window, Some(300_000));
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured
+        );
+        assert_eq!(app.compaction_ratio, 0.7);
+        assert_eq!(app.max_tokens, Some(8192));
+        assert_eq!(app.max_session_tokens, 0);
+        assert_eq!(app.body()["max_tokens"], 8192);
+        let out = transcript_text(&app);
+        assert!(out.contains("~ context_window (128000"), "diff: {out}");
+        assert!(out.contains("→ 300000"), "diff: {out}");
+
+        // Unchanged file: nothing to report.
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert!(transcript_text(&app).ends_with("no changes since the last scan"));
+
+        // Removing the override falls back to the catalog/fallback window.
+        write_agent_toml(&root, "[agent]\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.configured_context_window, None);
+        assert_eq!(app.context_window, 128_000);
+        assert_eq!(app.max_tokens, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_keeps_settings_on_a_malformed_file() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        write_agent_toml(&root, "[agent\ncontext_window = 300000\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.context_window, 128_000);
+        assert!(
+            transcript_text(&app).contains("kept the current settings"),
+            "{}",
+            transcript_text(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_respects_a_pinned_session_budget() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.max_session_tokens = 42;
+        app.max_session_tokens_pinned = true;
+        write_agent_toml(&root, "[budget]\nmax_tokens = 999\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.max_session_tokens, 42, "--max-session-tokens outranks the file");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_hands_the_new_window_to_the_engine() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        let args = test_args(&app, std::collections::HashMap::new());
+        app.args = Some(args.clone());
+        write_agent_toml(&root, "[agent]\ncontext_window = 300000\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        let budget = app
+            .args
+            .as_ref()
+            .and_then(|a| a.compaction)
+            .expect("compaction budget synced to the run args");
+        assert_eq!(budget.context_window, 300_000);
+        assert_eq!(budget.ratio, app.compaction_ratio);
+        // The shared session args are untouched; only new runs see the swap.
+        assert!(!Arc::ptr_eq(app.args.as_ref().unwrap(), &args));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn model_switch_hands_the_new_window_to_the_engine() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        app.configured_context_window = Some(64_000);
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let budget = app.args.as_ref().and_then(|a| a.compaction);
+        assert_eq!(
+            budget.map(|b| b.context_window),
+            Some(app.context_window),
+            "the engine compacts against the window the header shows"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_commands_include_reload() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/reload"));
+    }
+
+    #[tokio::test]
+    async fn reload_unknown_target_notes_usage() {
+        let mut app = test_app();
+        run_command(&mut app, "reload bogus", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("unknown /reload target 'bogus'"),
+            "{}",
+            transcript_text(&app)
+        );
     }
 
     #[tokio::test]

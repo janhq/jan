@@ -115,6 +115,11 @@ inject = "always"
 
 ### `[agent]`
 
+The running agent reads this file at startup. After editing `context_window`, `compaction_ratio`,
+`compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, or `[budget].max_tokens`, run
+`/reload config` to apply them from the next run without restarting. The model, `[tools]`,
+`[provider]`, and `[budget].max_usd` still need a restart.
+
 | Key | Default | Description |
 | --- | --- | --- |
 | `model` | inherited | Model id. Overridden by `--model` |
