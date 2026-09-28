@@ -84,16 +84,19 @@ and the host's answer becomes the model's tool message. Request and parameter sh
 
 ### Declaring tools
 
-`session/start` accepts three optional fields next to `cwd`, `model` and `ephemeral`:
+`session/start` accepts these optional fields next to `cwd`, `model` and `ephemeral`:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
 | `tools` | `[]` | Declarations `{name, description?, parameters?, capability?}`. `capability` is `read` or `actuator`; absent is opaque. |
 | `builtins` | `true` | `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo`, subagent or monitor tools. |
+| `subagents` | same as `builtins` | Whether the model may delegate. With `builtins: false`, `true` adds only `dispatch_subagent` and `list_subagents`, and every child is limited to the session's host tools (no shell, files, web or skills). A child's host tool call arrives as an ordinary `item/tool_request` with `run_id` set. `false` removes subagent tools even when built-ins are on. |
+| `systemPrompt` | none | The whole system prompt, sent exactly as given. Jan adds nothing to it: no identity, guides, environment, date, git state, plan/todo guidance or project memory. Subagents keep their own prompts. Kept across `session/model/set` and `session/fork`. A blank string fails with `-32602`. |
 | `permissions` | `"jan"` | `"host"` means the host's callback is the gate: Jan never sends a `permission_request` for a host tool. Built-ins are unaffected. |
 
 The result is `{sessionId, model, tools, toolSpecs}`. `tools` lists the names the next turn
-advertises (with `builtins: false`, only the host tools). `toolSpecs` echoes the schemas of the
+advertises (with `builtins: false`, only the host tools, plus the two subagent tools when
+`subagents: true`). `toolSpecs` echoes the schemas of the
 host tools that are actually advertised, so a host can compare them with what it sent and see a
 tool that a deny list or Plan mode withheld. A declaration Jan refuses (reserved name, duplicate,
 unknown key, non-object `parameters`) fails the whole call with `-32602` and
@@ -137,14 +140,14 @@ turn's `turn/completed`. When stdin closes, pending requests are cancelled the s
 | --- | --- | --- |
 | `session/tools/get` | `{sessionId}` | `{tools, toolSpecs}` |
 | `session/tools/set` | `{sessionId, tools}` | `{tools, toolSpecs}`. Replaces the host set; refusals are `invalid_tools`. |
-| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins` and `permissions` are kept. A model no configured provider can serve fails here with `-32602` rather than being substituted at the next turn; the check is servability, so it does not fetch (or refresh) the credential the model's provider needs - the next turn resolves that, and reports a credential failure as its own. |
+| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins`, `subagents`, `systemPrompt` and `permissions` are kept. A model no configured provider can serve fails here with `-32602` rather than being substituted at the next turn; the check is servability, so it does not fetch (or refresh) the credential the model's provider needs - the next turn resolves that, and reports a credential failure as its own. |
 | `session/reset` | `{sessionId}` | `{tools, toolSpecs}`. History is cleared; model and tools are kept. |
 
 These four methods are refused while that session's turn is running: `-32001` with
 `data: {"retryable": true, "kind": "turn_active"}`. Retry after `turn/completed`. (`session/fork`
 and `session/archive` of a busy session, and a second `turn/start`, keep their plain retryable
 `-32001`.) An unknown `sessionId` is `-32602`. `session/fork` copies the host
-tools, `builtins` and `permissions`, but pending requests are never shared between sessions.
+tools, `builtins`, `subagents`, `systemPrompt` and `permissions`, but pending requests are never shared between sessions.
 `session/list` entries include `hostTools`, the number of declared host tools.
 
 `provider/model` is explicit selection: the provider is taken from the name, so a provider that

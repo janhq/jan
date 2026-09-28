@@ -124,6 +124,18 @@ export interface CreateSessionOptions {
   /** `false` advertises only the host tools, no built-ins or MCP. */
   builtins?: boolean
   /**
+   * Whether the model may delegate to subagents; defaults to `builtins`. With
+   * `builtins: false` it adds only `dispatch_subagent` and `list_subagents`,
+   * and every child is limited to this session's host tools.
+   */
+  subagents?: boolean
+  /**
+   * The whole system prompt, sent exactly as given in place of Jan's: no Jan
+   * identity, guides, environment, date, git state or project memory.
+   * Subagents keep their own prompts. Must not be blank.
+   */
+  systemPrompt?: string
+  /**
    * Who gates a host tool call. `'host'` when this process runs and gates its
    * own tools, so the runtime never prompts for them. `'jan'` (the default)
    * leaves the gate with the runtime: an `actuator` call raises

@@ -545,6 +545,15 @@ const PROSE: &str = concat!(
 fn scripted_provider(
     replies: &'static [&'static str],
 ) -> (String, std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
+    routed_provider(move |index, _| replies[index.min(replies.len() - 1)])
+}
+
+/// Serve whatever `reply` picks for each request, from its arrival index and
+/// body, and keep every body. A run with children sends requests from more
+/// than one conversation at once, so their order is not the script's to fix.
+fn routed_provider(
+    reply: impl Fn(usize, &serde_json::Value) -> &'static str + Send + 'static,
+) -> (String, std::sync::Arc<std::sync::Mutex<Vec<serde_json::Value>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/v1", listener.local_addr().unwrap());
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -570,10 +579,10 @@ fn scripted_provider(
             if std::io::Read::read_exact(&mut reader, &mut request).is_err() {
                 continue;
             }
-            sink.lock()
-                .unwrap()
-                .push(serde_json::from_slice(&request).unwrap_or(serde_json::Value::Null));
-            let reply = replies[index.min(replies.len() - 1)];
+            let body: serde_json::Value =
+                serde_json::from_slice(&request).unwrap_or(serde_json::Value::Null);
+            let reply = reply(index, &body);
+            sink.lock().unwrap().push(body);
             let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", reply.len());
         }
     });
@@ -1041,6 +1050,217 @@ fn an_ephemeral_session_neither_indexes_nor_recalls_project_memory() {
         1,
         "no ephemeral turn is sent an earlier episode's answer"
     );
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// One streamed assistant turn that calls `name` with `args`, as the provider
+/// would send it.
+fn tool_call_reply(name: &str, args: serde_json::Value) -> &'static str {
+    let call = serde_json::json!({
+        "id":"stub-3","object":"chat.completion.chunk","created":1,"model":"stub-model",
+        "choices":[{"index":0,"delta":{"role":"assistant","tool_calls":[{"index":0,"id":"call-9","type":"function",
+            "function":{"name":name,"arguments":args.to_string()}}]},"finish_reason":null}]
+    });
+    let end = serde_json::json!({
+        "id":"stub-3","object":"chat.completion.chunk","created":1,"model":"stub-model",
+        "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],
+        "usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}
+    });
+    Box::leak(format!("data: {call}\n\ndata: {end}\n\ndata: [DONE]\n\n").into_boxed_str())
+}
+
+fn advertised(request: &serde_json::Value) -> Vec<String> {
+    request["tools"]
+        .as_array()
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn system_text(request: &serde_json::Value) -> Option<String> {
+    request["messages"]
+        .as_array()?
+        .iter()
+        .find(|message| message["role"] == "system")
+        .map(|message| match &message["content"] {
+            serde_json::Value::String(text) => text.clone(),
+            other => other.to_string(),
+        })
+}
+
+/// A session with only host tools can still delegate. The parent is offered
+/// dispatch and nothing else of Jan's; the child is held to the parent's host
+/// tools -- no shell, files, web or skills -- even though the model names the
+/// tool by the bare name the host declared; and the child's call reaches the
+/// host attributed to the child.
+#[test]
+fn a_host_only_session_delegates_to_a_child_held_to_its_host_tools() {
+    let scratch = scratch("host-delegate");
+    let home = scratch.join("home");
+    let dispatch = tool_call_reply(
+        "dispatch_subagent",
+        serde_json::json!({"subagents":[{"name":"mover","task":"move the arm to bin","allowed_tools":["robot_arm_move"]}]}),
+    );
+    let (url, seen) = routed_provider(move |_, body| {
+        let answered = body["messages"]
+            .as_array()
+            .is_some_and(|messages| messages.iter().any(|m| m["role"] == "tool"));
+        let parent = advertised(body).iter().any(|name| name == "dispatch_subagent");
+        match (parent, answered) {
+            (true, false) => dispatch,
+            (false, false) => HOST_TOOL_CALL,
+            _ => PROSE,
+        }
+    });
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{
+        "cwd":project,"model":"stub-model","tools":[arm_tool()],"builtins":false,"subagents":true,
+        "permissions":"host","ephemeral":true,"systemPrompt":"You drive the arm."
+    }}));
+    assert_eq!(
+        started["result"]["tools"],
+        serde_json::json!(["dispatch_subagent", "list_subagents", "host__robot_arm_move"]),
+        "{started}"
+    );
+    let session_id = started["result"]["sessionId"].as_str().unwrap().to_owned();
+
+    let turn = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"turn/start","params":{"sessionId":session_id,"input":"delegate the move"}}));
+    assert!(turn["result"]["turnId"].is_string(), "{turn}");
+    let request = rpc
+        .read_until(|record| record["method"] == "item/tool_request")
+        .expect("the child's call reaches the host");
+    let event = &request["params"]["event"];
+    assert_eq!(event["tool_name"], "robot_arm_move", "{request}");
+    assert!(
+        event["run_id"].as_str().is_some_and(|id| id.starts_with("sub-mover")),
+        "the call is attributed to the child: {request}"
+    );
+    let request_id = event["request_id"].as_str().unwrap().to_owned();
+    rpc.send(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"tool/respond","params":{"requestId":request_id,"content":"moved"}}));
+    let terminal = rpc
+        .read_until(|record| record["method"] == "turn/completed")
+        .expect("the turn completes");
+    assert_eq!(terminal["params"]["stopReason"], "completed", "{terminal}");
+
+    let requests = seen.lock().unwrap();
+    let child: Vec<&serde_json::Value> = requests
+        .iter()
+        .filter(|body| !advertised(body).iter().any(|name| name == "dispatch_subagent"))
+        .collect();
+    assert!(!child.is_empty(), "the child made no request");
+    for body in &child {
+        assert_eq!(advertised(body), ["host__robot_arm_move"], "{body}");
+        assert_ne!(
+            system_text(body).as_deref(),
+            Some("You drive the arm."),
+            "a child runs on its own prompt, not the host's"
+        );
+    }
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// A child a host-only session dispatches with no allowlist of its own is
+/// still held to the session's host tools: without the parent's allowlist it
+/// would inherit Jan's whole toolset, shell included.
+#[test]
+fn a_child_dispatched_without_an_allowlist_inherits_the_host_only_set() {
+    let scratch = scratch("host-delegate-inherit");
+    let home = scratch.join("home");
+    let dispatch = tool_call_reply(
+        "dispatch_subagent",
+        serde_json::json!({"subagents":[{"name":"mover","task":"say hi"}]}),
+    );
+    let (url, seen) = routed_provider(move |_, body| {
+        let answered = body["messages"]
+            .as_array()
+            .is_some_and(|messages| messages.iter().any(|m| m["role"] == "tool"));
+        let parent = advertised(body).iter().any(|name| name == "dispatch_subagent");
+        if parent && !answered { dispatch } else { PROSE }
+    });
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{
+        "cwd":project,"model":"stub-model","tools":[arm_tool()],"builtins":false,"subagents":true,"permissions":"host"
+    }}));
+    let session_id = started["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{started}")).to_owned();
+    complete_turn(&mut rpc, 4, &session_id);
+
+    let requests = seen.lock().unwrap();
+    let child: Vec<Vec<String>> = requests
+        .iter()
+        .map(advertised)
+        .filter(|names| !names.iter().any(|name| name == "dispatch_subagent"))
+        .collect();
+    assert_eq!(child, [["host__robot_arm_move"]], "{requests:?}");
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
+/// `systemPrompt` is the whole system prompt, byte for byte: no Jan identity,
+/// guides, environment, date or git state around it. A model switch and a fork
+/// keep it; a blank one is refused rather than read as "no prompt".
+#[test]
+fn a_host_system_prompt_is_sent_verbatim_and_kept() {
+    let scratch = scratch("host-system-prompt");
+    let home = scratch.join("home");
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+    let project = scratch.join("project");
+
+    let blank = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{
+        "cwd":project,"model":"stub-model","systemPrompt":"  "
+    }}));
+    assert_eq!(blank["error"]["code"], -32602, "{blank}");
+
+    let prompt = "You are the arm controller.\nAnswer in one line.";
+    let started = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":4,"method":"session/start","params":{
+        "cwd":project,"model":"stub-model","tools":[arm_tool()],"builtins":false,"systemPrompt":prompt
+    }}));
+    let session_id = started["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{started}")).to_owned();
+    complete_turn(&mut rpc, 5, &session_id);
+    let set = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":6,"method":"session/model/set","params":{"sessionId":session_id,"model":"stub-model"}}));
+    assert_eq!(set["result"]["model"], "stub-model", "{set}");
+    complete_turn(&mut rpc, 7, &session_id);
+    let fork = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":8,"method":"session/fork","params":{"sessionId":session_id}}));
+    let fork = fork["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{fork}")).to_owned();
+    complete_turn(&mut rpc, 9, &fork);
+
+    let requests = seen.lock().unwrap();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    for body in requests.iter() {
+        let systems: Vec<&serde_json::Value> = body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|message| message["role"] == "system")
+            .collect();
+        assert_eq!(systems.len(), 1, "{body}");
+        assert_eq!(system_text(body).as_deref(), Some(prompt), "{body}");
+        let wire = body.to_string();
+        for jan_text in ["Jan agent harness", "Today's date is", "# Working Directory"] {
+            assert!(!wire.contains(jan_text), "{jan_text:?} leaked into {body}");
+        }
+    }
+    drop(requests);
 
     rpc.close();
     let _ = std::fs::remove_dir_all(scratch);

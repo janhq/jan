@@ -96,6 +96,22 @@
           "type": "boolean",
           "default": true
         },
+        "subagents": {
+          "description": "Whether the session may delegate to subagents; defaults to `builtins`.\nWith `builtins: false` it adds only `dispatch_subagent` and\n`list_subagents`, and every child is held to the session's host tools.\n`false` withholds subagent tools even from a session with built-ins.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "systemPrompt": {
+          "description": "The session's whole system prompt, sent byte for byte in place of the\none Jan composes: no Jan identity, guides, environment, date, git state\nor project memory. Children keep their own prompts.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "permissions": {
           "$ref": "#/$defs/PermissionOwner",
           "default": "jan"
