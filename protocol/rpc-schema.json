@@ -105,7 +105,7 @@
           "default": null
         },
         "systemPrompt": {
-          "description": "The session's whole system prompt, sent byte for byte in place of the\none Jan composes: no Jan identity, guides, environment, date, git state\nor project memory, and the session neither recalls nor indexes project\nmemory. Jan may still append runtime notices to the conversation.\nChildren keep their own prompts.",
+          "description": "The session's whole system prompt, sent byte for byte in place of the\none Jan composes: no Jan identity, guides, environment, date, git state\nor recalled project memory. Its answers are still indexed for later\nsessions unless it is `ephemeral`. Jan may still append runtime notices\nto the conversation.\nChildren keep their own prompts.",
           "type": [
             "string",
             "null"

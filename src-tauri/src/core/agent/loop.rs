@@ -3012,11 +3012,11 @@ async fn orchestrate_inner(
             &prompt_policy,
         )?,
     };
-    let jan_prompt = host_system_prompt.is_none();
+    let jan_owns_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    if jan_prompt {
+    if jan_owns_prompt {
         volatile_parts.push((
             Composer::Date,
             format!(
@@ -3028,14 +3028,15 @@ async fn orchestrate_inner(
     // Which checkout the work applies to. Per-turn rather than part of the
     // environment block above, because anything that switches branch -- the
     // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref().filter(|_| jan_prompt) {
+    if let Some(root) = project_root.as_deref().filter(|_| jan_owns_prompt) {
         volatile_parts.push((Composer::GitState, git_state_block(root)));
     }
     // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory, and
-    // so does a host-prompted run: recall is a block Jan would write into it.
-    let use_memory = *project_memory && system_prompt_override.is_none() && jan_prompt;
-    if use_memory {
+    // is indexed. Child runs keep their isolated history and skip memory. A
+    // host-prompted run still indexes its answers but is never sent recall:
+    // that is a block Jan would write into a prompt the host owns.
+    let use_memory = *project_memory && system_prompt_override.is_none();
+    if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
@@ -3058,9 +3059,11 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    // Under a host prompt Plan mode is still enforced by the gate; only its
-    // prose is withheld, like every other block Jan writes.
-    if jan_prompt {
+    // A host prompt only arrives over RPC, whose sessions never run in Plan
+    // mode, so the two do not meet today. Were they to, the gate would still
+    // enforce Plan mode and each refusal names it (`plan_mode_read_only_msg`);
+    // only this prose is withheld, like every other block Jan writes.
+    if jan_owns_prompt {
         if run_mode == crate::core::agent::plan::RunMode::Plan {
             volatile_parts.push((
                 Composer::PlanAddendum,
@@ -3470,8 +3473,9 @@ async fn orchestrate_inner(
                 },
             )
             .await;
-        // The same gate as the recall: an ephemeral session or a child run
-        // leaves no answer behind for a later session to recall.
+        // The recall's gate minus the prompt-ownership half: an ephemeral
+        // session or a child run leaves no answer behind for a later session
+        // to recall, while a host-prompted run does.
         if use_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {

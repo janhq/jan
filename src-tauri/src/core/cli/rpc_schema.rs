@@ -57,8 +57,9 @@ pub struct SessionStartParams {
     pub subagents: Option<bool>,
     /// The session's whole system prompt, sent byte for byte in place of the
     /// one Jan composes: no Jan identity, guides, environment, date, git state
-    /// or project memory, and the session neither recalls nor indexes project
-    /// memory. Jan may still append runtime notices to the conversation.
+    /// or recalled project memory. Its answers are still indexed for later
+    /// sessions unless it is `ephemeral`. Jan may still append runtime notices
+    /// to the conversation.
     /// Children keep their own prompts.
     #[serde(default)]
     pub system_prompt: Option<String>,

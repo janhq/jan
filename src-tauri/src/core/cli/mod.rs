@@ -468,6 +468,11 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
 /// (where every thread is a root) renders as today's flat list.
 pub const FORKED_FROM_KEY: &str = "forked_from";
 
+/// Key in a thread's `metadata` holding an RPC host's `systemPrompt`. Saved so
+/// a thread reopened elsewhere (the TUI's `/resume`) keeps running on the
+/// prompt it was written under instead of falling back to Jan's.
+pub const SYSTEM_PROMPT_KEY: &str = "system_prompt";
+
 /// True for a `user` message the user actually authored. Hidden reminders ride
 /// in on the `user` role but are not turns: a rewind target, a fork point, a
 /// recall entry or a checkpoint key built from one would be a row the user never
