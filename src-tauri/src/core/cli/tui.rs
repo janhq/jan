@@ -14523,23 +14523,26 @@ fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec
         .collect()
 }
 
+/// Display lines for what a reload changed, one list per kind of change.
+#[derive(Default)]
+struct ReloadDiff {
+    added: Vec<String>,
+    removed: Vec<String>,
+    updated: Vec<String>,
+}
+
 /// Diff two catalog snapshots by identity, returning display lines for
 /// added, removed, and updated entries in scan order.
-fn diff_reload_entries(
-    before: &[ReloadEntry],
-    after: &[ReloadEntry],
-) -> (Vec<String>, Vec<String>, Vec<String>) {
+fn diff_reload_entries(before: &[ReloadEntry], after: &[ReloadEntry]) -> ReloadDiff {
     fn keyed(items: &[ReloadEntry]) -> std::collections::BTreeMap<String, &ReloadEntry> {
         items.iter().map(|e| (e.key.clone(), e)).collect()
     }
     let (old, new) = (keyed(before), keyed(after));
-    let mut added = Vec::new();
-    let mut removed = Vec::new();
-    let mut updated = Vec::new();
+    let mut diff = ReloadDiff::default();
     for (key, entry) in &new {
         match old.get(key) {
-            None => added.push(entry.label.clone()),
-            Some(prev) if prev.state != entry.state => updated.push(format!(
+            None => diff.added.push(entry.label.clone()),
+            Some(prev) if prev.state != entry.state => diff.updated.push(format!(
                 "{} ({} → {})",
                 entry.label, prev.state, entry.state
             )),
@@ -14548,10 +14551,10 @@ fn diff_reload_entries(
     }
     for (key, entry) in &old {
         if !new.contains_key(key) {
-            removed.push(entry.label.clone());
+            diff.removed.push(entry.label.clone());
         }
     }
-    (added, removed, updated)
+    diff
 }
 
 /// `/reload [config|plugin|skills|system-prompt]`: re-read on-disk state into
@@ -14564,15 +14567,14 @@ fn diff_reload_entries(
 /// reports what the next run picks up. Bare `/reload` does all of them.
 fn reload_command(app: &mut App, arg: &str) {
     match arg.trim() {
-        "" | "all" => {
+        "" => {
             reload_config(app);
-            reload_plugins(app);
-            reload_skills(app);
+            reload_catalog(app, true, true);
             reload_system_prompt(app);
         }
-        "config" | "settings" => reload_config(app),
-        "plugin" | "plugins" => reload_plugins(app),
-        "skill" | "skills" => reload_skills(app),
+        "config" => reload_config(app),
+        "plugin" => reload_catalog(app, true, false),
+        "skills" => reload_catalog(app, false, true),
         "system-prompt" => reload_system_prompt(app),
         other => app.note(&format!(
             "unknown /reload target '{other}' (try config | plugin | skills | system-prompt)"
@@ -14580,20 +14582,23 @@ fn reload_command(app: &mut App, arg: &str) {
     }
 }
 
-fn reload_plugins(app: &mut App) {
-    let before = reload_plugin_entries(&app.slash_catalog.plugins);
+/// Re-run discovery once and report the plugin and/or skill diff. Both
+/// snapshots are taken before the single refresh: one refresh rescans both
+/// catalogs, so diffing skills after a plugin refresh would always come up empty.
+fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
+    let plugins_before = reload_plugin_entries(&app.slash_catalog.plugins);
+    let skills_before = reload_skill_entries(&app.slash_catalog.all_skills);
     app.refresh_slash_catalog();
-    let after = reload_plugin_entries(&app.slash_catalog.plugins);
-    app.note("◈ reload · plugin · re-scanned installed plugins");
-    report_reload_diff(app, diff_reload_entries(&before, &after));
-}
-
-fn reload_skills(app: &mut App) {
-    let before = reload_skill_entries(&app.slash_catalog.all_skills);
-    app.refresh_slash_catalog();
-    let after = reload_skill_entries(&app.slash_catalog.all_skills);
-    app.note("◈ reload · skills · re-scanned project and plugin skills");
-    report_reload_diff(app, diff_reload_entries(&before, &after));
+    if plugins {
+        let after = reload_plugin_entries(&app.slash_catalog.plugins);
+        app.note("◈ reload · plugin · re-scanned installed plugins");
+        report_reload_diff(app, diff_reload_entries(&plugins_before, &after));
+    }
+    if skills {
+        let after = reload_skill_entries(&app.slash_catalog.all_skills);
+        app.note("◈ reload · skills · re-scanned project and plugin skills");
+        report_reload_diff(app, diff_reload_entries(&skills_before, &after));
+    }
 }
 
 fn reload_system_prompt(app: &mut App) {
@@ -14631,23 +14636,34 @@ fn reload_config(app: &mut App) {
         }
     };
     let before = reload_config_entries(app);
+    let budget_before = app.max_session_tokens;
 
     app.configured_context_window = cfg.agent.context_window;
-    let provider_ratio = app.args.as_ref().and_then(|args| {
-        let pc = args.provider_configs.try_lock().ok()?;
-        crate::core::agent::upstream::pick_provider_for_model(&app.model, &pc)
-            .and_then(|name| pc.get(&name)?.compaction_ratio)
-    });
-    app.compaction_ratio = provider_ratio
-        .or(cfg.agent.compaction_ratio)
-        .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO);
+    // Provider configs sit behind the engine's lock. If a run holds it right
+    // now, keep the current ratio rather than resolve without the provider's
+    // own override and silently pick the wrong one.
+    let configured_ratio = cfg.agent.compaction_ratio;
+    let ratio = match app.args.as_ref().map(|a| a.provider_configs.try_lock()) {
+        Some(Ok(pc)) => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &pc,
+            configured_ratio,
+        )),
+        Some(Err(_)) => None,
+        None => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &HashMap::new(),
+            configured_ratio,
+        )),
+    };
+    let ratio_busy = ratio.is_none();
+    if let Some(ratio) = ratio {
+        app.compaction_ratio = ratio;
+    }
     app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
     app.max_tokens = cfg.agent.max_tokens;
     if !app.max_session_tokens_pinned {
-        app.max_session_tokens = cfg
-            .budget
-            .max_tokens
-            .unwrap_or(super::DEFAULT_MAX_SESSION_TOKENS);
+        app.max_session_tokens = super::resolve_session_budget(None, cfg.budget.max_tokens);
     }
     app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
     // Re-resolves the window and pushes the compaction budget to the engine.
@@ -14659,8 +14675,22 @@ fn reload_config(app: &mut App) {
         crate::core::agent::project::agent_toml_path(&app.project_root).display()
     ));
     report_reload_diff(app, diff_reload_entries(&before, &after));
-    if app.max_session_tokens_pinned {
+    if app.max_session_tokens_pinned
+        && super::resolve_session_budget(None, cfg.budget.max_tokens) != budget_before
+    {
         app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
+    }
+    if !ratio_busy
+        && cfg.agent.compaction_ratio.is_some_and(|r| r != app.compaction_ratio)
+    {
+        app.system_detail_text(
+            "  compaction_ratio from agent.toml ignored: the serving provider sets its own",
+        );
+    }
+    if ratio_busy {
+        app.system_detail_text(
+            "  compaction_ratio kept: provider settings are busy; /reload config again when idle",
+        );
     }
     if app.should_auto_compact() {
         app.compact_request = Some(CompactKind::Auto);
@@ -14693,10 +14723,12 @@ fn reload_config_entries(app: &App) -> Vec<ReloadEntry> {
 }
 
 /// Print a reload diff, or the unchanged note when the scan found nothing new.
-fn report_reload_diff(
-    app: &mut App,
-    (added, removed, updated): (Vec<String>, Vec<String>, Vec<String>),
-) {
+fn report_reload_diff(app: &mut App, diff: ReloadDiff) {
+    let ReloadDiff {
+        added,
+        removed,
+        updated,
+    } = diff;
     if added.is_empty() && removed.is_empty() && updated.is_empty() {
         app.system_detail_text("  no changes since the last scan");
         return;
@@ -37113,9 +37145,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reload_bare_defaults_to_plugin_and_reports_changes() {
+    async fn reload_plugin_reports_installed_plugins() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        // Bare /reload covers plugins; nothing installed, nothing changed.
+        // Nothing installed, nothing changed.
         run_command(&mut app, "reload plugin", &no_mcp()).await;
         let out = transcript_text(&app);
         assert!(
@@ -37131,7 +37163,7 @@ mod tests {
         // the rebuilt catalog serves its command immediately.
         plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
         plugin_manifest_in_app(&root, "acme", "1.0.0");
-        run_command(&mut app, "reload", &no_mcp()).await;
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
         let out = transcript_text(&app);
         assert!(out.contains("+ plugin acme (v1.0.0)"), "diff: {out}");
         assert!(
@@ -37231,6 +37263,22 @@ mod tests {
         ] {
             assert!(out.contains(want), "missing {want}: {out}");
         }
+
+        // One bare reload reports both a new plugin and a new skill: the
+        // plugin refresh must not swallow the skill diff.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        let skills = crate::core::agent::project::store_root(&root).join("skills");
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "plugin diff: {out}");
+        assert!(out.contains("+ audit"), "skill diff: {out}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -37316,6 +37364,21 @@ mod tests {
         assert_eq!(budget.ratio, app.compaction_ratio);
         // The shared session args are untouched; only new runs see the swap.
         assert!(!Arc::ptr_eq(app.args.as_ref().unwrap(), &args));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn model_switch_hands_the_new_window_to_the_engine() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        app.configured_context_window = Some(64_000);
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let budget = app.args.as_ref().and_then(|a| a.compaction);
+        assert_eq!(
+            budget.map(|b| b.context_window),
+            Some(app.context_window),
+            "the engine compacts against the window the header shows"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

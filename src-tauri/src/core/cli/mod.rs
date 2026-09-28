@@ -767,7 +767,7 @@ use tokio::sync::{mpsc, Mutex};
 /// Advisory, not a bound: crossing it compacts the history and records a note,
 /// then the run carries on (see `body_session_budget`). `--max-turns` and
 /// cancellation are what actually stop a runaway loop.
-pub(crate) const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
+const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Where the session token ceiling in effect came from, so `agent status` can
 /// say which source won.
@@ -790,8 +790,24 @@ fn session_budget_source(flag: Option<u64>, configured: Option<u64>) -> &'static
 /// `DEFAULT_MAX_SESSION_TOKENS` - the same flag/config/default shape the
 /// sandbox setting resolves with. `0` from either source means unbounded and is
 /// carried through as-is (see `body_session_budget`).
-fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
+pub(crate) fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
     flag.or(configured).unwrap_or(DEFAULT_MAX_SESSION_TOKENS)
+}
+
+/// The compaction ratio for `model`. A provider that names its own ratio wins
+/// over the project's: context windows differ by an order of magnitude across
+/// providers, so one ratio cannot be right for all of them. Resolved through
+/// the same selection the upstream resolution makes, so the ratio always
+/// describes the route that will actually serve this request.
+pub(crate) fn resolve_compaction_ratio(
+    model: &str,
+    provider_configs: &HashMap<String, crate::core::state::ProviderConfig>,
+    configured: Option<f64>,
+) -> f64 {
+    crate::core::agent::upstream::pick_provider_for_model(model, provider_configs)
+        .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
+        .or(configured)
+        .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO)
 }
 
 /// The money ceiling for a run, priced against the model actually being billed.
@@ -1663,16 +1679,8 @@ fn prepare_agent_session(
         .as_ref()
         .map(|w| w.path.clone())
         .unwrap_or_else(|| project_root.clone());
-    // A provider that names its own ratio wins over the project's: context
-    // windows differ by an order of magnitude across providers, so one ratio
-    // cannot be right for all of them. Resolved through the same selection the
-    // upstream resolution makes, so the ratio always describes the route that
-    // will actually serve this request.
     let compaction_ratio =
-        crate::core::agent::upstream::pick_provider_for_model(&model, &provider_configs)
-            .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
-            .or(cfg.agent.compaction_ratio)
-            .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO);
+        resolve_compaction_ratio(&model, &provider_configs, cfg.agent.compaction_ratio);
 
     let mut args = build_cli_orchestration_args(
         tool_root,
