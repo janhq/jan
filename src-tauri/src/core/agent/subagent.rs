@@ -512,10 +512,11 @@ pub fn intersect_allowed_tools(
 fn capped_tools(
     resolved: Option<Vec<String>>,
     ceiling: Option<&[String]>,
+    advertised: &[String],
     child: &str,
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
 ) -> Result<Option<Vec<String>>, SubagentError> {
-    let resolved = resolved.map(|tools| qualify_host_names(tools, parent_args));
+    let resolved = resolved.map(|tools| qualify_host_names(tools, advertised, parent_args));
     let Some(ceiling) = ceiling else {
         return Ok(resolved);
     };
@@ -543,19 +544,29 @@ fn capped_tools(
 /// `arm.move`) to the wire name the child is offered it under. Looked up in the
 /// declarations rather than prefixed: a dotted name maps to a hashed wire name
 /// only the declaration still knows. Every other name passes through.
+///
+/// A name that is already a wire name -- one the parent advertises, or a host
+/// tool's qualified name -- is kept as is. The bare-name lookup is only the
+/// fallback, so a host that declared `host__observe` or an MCP tool's name
+/// cannot redirect a child that asked for that exact tool.
 #[cfg(feature = "cli")]
 fn qualify_host_names(
     tools: Vec<String>,
+    advertised: &[String],
     parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
 ) -> Vec<String> {
+    let host_tools = parent_args.host_tools.all();
     let mut out: Vec<String> = Vec::with_capacity(tools.len());
     for tool in tools {
-        let wire = parent_args
-            .host_tools
-            .all()
-            .iter()
-            .find(|host| host.name == tool)
-            .map_or(tool, |host| host.qualified_name.clone());
+        let is_wire = advertised.contains(&tool) || parent_args.host_tools.is_host_tool(&tool);
+        let wire = if is_wire {
+            tool
+        } else {
+            host_tools
+                .iter()
+                .find(|host| host.name == tool)
+                .map_or(tool, |host| host.qualified_name.clone())
+        };
         if !out.contains(&wire) {
             out.push(wire);
         }
@@ -567,6 +578,7 @@ fn qualify_host_names(
 #[cfg(not(feature = "cli"))]
 fn qualify_host_names(
     tools: Vec<String>,
+    _advertised: &[String],
     _parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
 ) -> Vec<String> {
     tools
@@ -1256,6 +1268,10 @@ pub(crate) struct ParentRun {
     /// tools are no exception here, since they are Jan's and the session
     /// excluded Jan's tools.
     pub(crate) tool_ceiling: Option<Vec<String>>,
+    /// Every tool name the parent's request advertises. A child asking for
+    /// one of these by its exact name gets that tool, never a host tool that
+    /// happens to have been declared under the same bare name.
+    pub(crate) advertised_tools: Vec<String>,
 }
 
 /// The model a dispatch will actually be billed for: the definition's own when
@@ -1537,6 +1553,7 @@ pub(crate) fn spawn_subagent(
         allowed_tools: capped_tools(
             resolved.allowed_tools,
             parent.tool_ceiling.as_deref(),
+            &parent.advertised_tools,
             &req.name,
             parent_args,
         )?,
@@ -1776,6 +1793,7 @@ pub(crate) fn spawn_dispatch_plan(
             capped_tools(
                 resolved.allowed_tools.clone(),
                 parent.tool_ceiling.as_deref(),
+                &parent.advertised_tools,
                 &req.name,
                 parent_args,
             )?;
@@ -2799,6 +2817,7 @@ mod tests {
             send_reasoning: true,
             cost_remaining: None,
             tool_ceiling: None,
+            advertised_tools: Vec::new(),
         }
     }
 
@@ -3309,11 +3328,41 @@ mod tests {
         let out = capped_tools(
             Some(names(&["observe", "arm.move", "host__observe", "skill_read"])),
             None,
+            &[],
             "probe",
             &parent,
         )
         .unwrap();
         assert_eq!(out, Some(vec!["host__observe".to_string(), arm, "skill_read".to_string()]));
+    }
+
+    /// A name the parent already advertises keeps its meaning, even when a
+    /// host also declared that string as a bare name: `host__observe` stays
+    /// the tool the host called `observe` (not the one it called
+    /// `host__observe`), and a host tool called `search` does not take over
+    /// the MCP tool advertised as `search`.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn an_exact_wire_name_wins_over_a_colliding_bare_name() {
+        let root = unique_root("capped-tools-collide");
+        let mut parent = max_par_args(&root);
+        parent.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "host__observe", "search"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        // `search` is also an MCP tool, which goes on the wire under its bare name.
+        let advertised = names(&["host__observe", "host__host__observe", "host__search", "search"]);
+        let out = capped_tools(
+            Some(names(&["host__observe", "search", "observe"])),
+            None,
+            &advertised,
+            "probe",
+            &parent,
+        )
+        .unwrap();
+        assert_eq!(out, Some(names(&["host__observe", "search"])));
     }
 
     /// Under a ceiling a child is never offered more than its parent: no
@@ -3325,11 +3374,11 @@ mod tests {
         let parent = host_parent();
         let ceiling = names(&["dispatch_subagent", "host__observe"]);
         assert_eq!(
-            capped_tools(None, Some(&ceiling), "probe", &parent).unwrap(),
+            capped_tools(None, Some(&ceiling), &[], "probe", &parent).unwrap(),
             Some(ceiling.clone())
         );
         assert_eq!(
-            capped_tools(Some(names(&["observe", "bash", "skill_list"])), Some(&ceiling), "probe", &parent)
+            capped_tools(Some(names(&["observe", "bash", "skill_list"])), Some(&ceiling), &[], "probe", &parent)
                 .unwrap(),
             Some(names(&["host__observe"]))
         );
@@ -3342,7 +3391,7 @@ mod tests {
     fn a_list_the_ceiling_keeps_nothing_of_is_refused() {
         let parent = host_parent();
         let ceiling = names(&["host__observe"]);
-        let err = capped_tools(Some(names(&["bash"])), Some(&ceiling), "probe", &parent).unwrap_err();
+        let err = capped_tools(Some(names(&["bash"])), Some(&ceiling), &[], "probe", &parent).unwrap_err();
         let message = err.to_string();
         assert!(matches!(err, SubagentError::PermissionDenied(_)), "{message}");
         assert!(message.contains("host__observe") && message.contains("probe"), "{message}");

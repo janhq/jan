@@ -520,6 +520,9 @@ struct SubagentContext {
     /// is held to (see
     /// [`crate::core::agent::subagent::ParentRun::tool_ceiling`]).
     tool_ceiling: Option<Vec<String>>,
+    /// The tool names this run advertises (see
+    /// [`crate::core::agent::subagent::ParentRun::advertised_tools`]).
+    advertised_tools: Vec<String>,
     /// Background children of this run, aborted when the run ends.
     bg: std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>,
     /// The registry's teardown generation when this run started. A dispatch may
@@ -1295,6 +1298,7 @@ impl CompositeToolInvoker {
                         send_reasoning: ctx.send_reasoning,
                         cost_remaining: ctx.cost_ceiling,
                         tool_ceiling: ctx.tool_ceiling.clone(),
+                        advertised_tools: ctx.advertised_tools.clone(),
                     },
                     &self.events,
                     // Unconfined means no scratch: the tools see the real
@@ -3260,6 +3264,10 @@ async fn orchestrate_inner(
                 names.sort_unstable();
                 names
             }),
+            advertised_tools: openai_tools
+                .iter()
+                .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
+                .collect(),
             bg_generation: bg.generation(),
             bg: bg.clone(),
         });
