@@ -508,3 +508,80 @@ fn every_exported_metric_is_described() {
     assert_eq!(dropped.unwrap().points[0].value, PointValue::Int(5));
     assert!(state.metrics(3, 0).iter().all(|m| m.name != "jan_agent.telemetry.dropped"));
 }
+
+#[test]
+fn refusals_classify_the_messages_the_loop_builds() {
+    use crate::core::agent::r#loop::{
+        DENIED_BY_POLICY, DENIED_BY_USER, HIDDEN_PATH_REFUSED, HOOK_DENIED, PLAN_MODE_UNAVAILABLE,
+    };
+    // Built the way loop.rs builds them, from the same constants.
+    assert_eq!(refusal_of(&format!("ERROR: tool 'bash' {DENIED_BY_USER}")), Some(Refusal::User));
+    assert_eq!(
+        refusal_of(&format!("ERROR: tool 'bash' {DENIED_BY_POLICY} (see [tools] deny in x)")),
+        Some(Refusal::Config)
+    );
+    assert_eq!(
+        refusal_of(&format!("ERROR: tool 'read' {HIDDEN_PATH_REFUSED} (~/.jan) holds")),
+        Some(Refusal::Config)
+    );
+    assert_eq!(
+        refusal_of(&format!("ERROR: tool 'edit' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")),
+        Some(Refusal::Config)
+    );
+    assert_eq!(refusal_of(&format!("ERROR: tool 'x' {HOOK_DENIED}nope")), Some(Refusal::Hook));
+}
+
+#[test]
+fn overlapping_sessions_keep_their_own_prompt_id() {
+    let cfg = Arc::new(cfg_with(false, false));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    let start = |state: &mut State, s: &str| {
+        state.apply(
+            Instant::now(),
+            1,
+            Signal::RunStart { session: Some(s.into()), run_id: None, prompt: Some((1, None)) },
+        )
+    };
+    start(&mut state, "sess-a");
+    start(&mut state, "sess-b");
+    // A request from session A arrives after B started its prompt.
+    for event in [provenance(None, "sess-a"), usage(10, 1, 0, 0)] {
+        if let Some(signal) = classify(&cfg, &event, None) {
+            state.apply(Instant::now(), 2, signal);
+        }
+    }
+    let logs = state.logs.clone();
+    let prompt = |s: &str| {
+        logs.iter()
+            .find(|l| {
+                l.event_name == "jan_agent.user_prompt"
+                    && attr(l, "session.id") == Some(&AnyValue::Str(s.into()))
+            })
+            .and_then(|l| attr(l, "prompt.id"))
+            .cloned()
+    };
+    let request = logs.iter().find(|l| l.event_name == "jan_agent.api_request").unwrap();
+    assert_ne!(prompt("sess-a"), prompt("sess-b"));
+    assert_eq!(attr(request, "session.id"), Some(&AnyValue::Str("sess-a".into())));
+    assert_eq!(attr(request, "prompt.id").cloned(), prompt("sess-a"));
+}
+
+#[test]
+fn api_error_messages_are_redacted() {
+    let cfg = cfg_with(false, false);
+    let event = StreamEvent::Error {
+        code: "upstream".into(),
+        message: "401: invalid key sk-abcdefghijklmnop1234 (Authorization: Bearer abc.def.ghi12345) \
+                  url https://x/v1?api_key=supersecret99&x=1"
+            .into(),
+    };
+    let Some(Signal::Event { event: EventSignal::Error { message, .. }, .. }) =
+        classify(&cfg, &event, None)
+    else {
+        panic!("error should classify");
+    };
+    assert!(!message.contains("sk-abcdefghijklmnop1234"), "{message}");
+    assert!(!message.contains("abc.def.ghi12345"), "{message}");
+    assert!(!message.contains("supersecret99"), "{message}");
+    assert!(message.contains("401: invalid key"), "{message}");
+}

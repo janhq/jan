@@ -88,7 +88,7 @@ setup you already use for another agent works unchanged.
 | `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_METRICS_` / `_LOGS_` variants) | `http/protobuf` | `http/protobuf` or `http/json`. `grpc` isn't supported yet: Jan logs a warning and uses `http/protobuf`. |
 | `OTEL_EXPORTER_OTLP_HEADERS` (and `_METRICS_` / `_LOGS_` variants) | none | `key=value,key2=value2`, e.g. `Authorization=Bearer%20<token>`. Values are never logged. |
 | `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | Per-export timeout in ms. |
-| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` | `none` turns that signal off. `console` isn't supported, because stdout carries the RPC and stream-json protocol. |
+| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` | `none` turns that signal off. `console` isn't supported, because stdout carries the RPC and stream-json protocol: Jan logs a warning and doesn't export that signal. Any other value is treated the same way. |
 | `OTEL_SERVICE_NAME` | `jan-agent` | `service.name` resource attribute. |
 | `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes, e.g. `tenant.id=acme,deployment.environment=ci`. |
 | `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often metrics are exported, in ms. |

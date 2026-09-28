@@ -20,6 +20,14 @@ pub enum Protocol {
 }
 
 impl Protocol {
+    /// Pick the encoder for this protocol.
+    pub fn encode(self, json: impl FnOnce() -> Vec<u8>, proto: impl FnOnce() -> Vec<u8>) -> Vec<u8> {
+        match self {
+            Protocol::HttpJson => json(),
+            Protocol::HttpProtobuf => proto(),
+        }
+    }
+
     pub fn content_type(self) -> &'static str {
         match self {
             Protocol::HttpProtobuf => "application/x-protobuf",
@@ -110,19 +118,22 @@ pub fn resolve(
             None | Some("otlp") => {}
             Some("none") => return None,
             // stdout is the protocol channel for RPC and stream-json, so a
-            // console exporter would corrupt it. Refused everywhere, so the
-            // same environment behaves the same on every surface.
+            // console exporter would corrupt it. Refused everywhere (the
+            // signal is not exported), so the same environment behaves the
+            // same on every surface and nothing is sent that was not asked for.
             Some("console") => {
                 warnings.push(format!(
                     "OTEL_{upper}_EXPORTER=console is not supported (stdout carries the \
-                     agent protocol); {signal} are exported over OTLP instead"
+                     agent protocol); {signal} are not exported"
                 ));
+                return None;
             }
             Some(other) => {
                 warnings.push(format!(
-                    "OTEL_{upper}_EXPORTER={other} is not supported; {signal} are exported \
-                     over OTLP instead"
+                    "OTEL_{upper}_EXPORTER={other} is not supported (only otlp and none); \
+                     {signal} are not exported"
                 ));
+                return None;
             }
         }
         let url = get(&format!("OTEL_EXPORTER_OTLP_{upper}_ENDPOINT"))
@@ -319,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn grpc_and_console_fall_back_with_a_warning() {
+    fn grpc_falls_back_and_console_disables_the_signal() {
         let c = resolve(
             &env(&[
                 (ENABLE_ENV, "1"),
@@ -331,8 +342,21 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.metrics.unwrap().protocol, Protocol::HttpProtobuf);
+        assert!(c.logs.is_none(), "console must not fall back to OTLP");
+        assert_eq!(c.warnings.len(), 2, "{:?}", c.warnings);
+    }
+
+    #[test]
+    fn an_unknown_exporter_disables_the_signal() {
+        let c = resolve(
+            &env(&[(ENABLE_ENV, "1"), ("OTEL_METRICS_EXPORTER", "prometheus")]),
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(c.metrics.is_none());
         assert!(c.logs.is_some());
-        assert_eq!(c.warnings.len(), 3, "{:?}", c.warnings);
+        assert_eq!(c.warnings.len(), 1, "{:?}", c.warnings);
     }
 
     #[test]

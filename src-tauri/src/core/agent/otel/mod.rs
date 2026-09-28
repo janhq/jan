@@ -172,25 +172,52 @@ impl Refusal {
 }
 
 /// Classify a tool result the loop produced without running the tool. The
-/// messages are the loop's own (`denied_by_policy_msg`, `hook_denied_msg`, the
-/// user-deny arm), so this only ever reads the head of an `ERROR:` result.
+/// phrases are the loop's own constants (`r#loop::DENIED_BY_USER` and
+/// friends), the same ones its refusal messages are built from, so the two
+/// cannot drift apart. Only the head of an `ERROR:` result is read.
 pub fn refusal_of(content: &str) -> Option<Refusal> {
+    use crate::core::agent::r#loop::{
+        DENIED_BY_POLICY, DENIED_BY_USER, HIDDEN_PATH_REFUSED, HOOK_DENIED, PLAN_MODE_UNAVAILABLE,
+    };
     if !content.starts_with("ERROR:") {
         return None;
     }
     let head: String = content.chars().take(300).collect();
-    if head.contains("denied by user") {
+    if head.contains(DENIED_BY_USER) {
         Some(Refusal::User)
-    } else if head.contains("denied by project policy")
-        || head.contains("unavailable in plan_mode_read_only")
-        || head.contains("refused: the Jan home")
+    } else if head.contains(DENIED_BY_POLICY)
+        || head.contains(PLAN_MODE_UNAVAILABLE)
+        || head.contains(HIDDEN_PATH_REFUSED)
     {
         Some(Refusal::Config)
-    } else if head.starts_with("ERROR: tool '") && head.contains("' denied: ") {
+    } else if head.starts_with("ERROR: tool '") && head.contains(&format!("' {HOOK_DENIED}")) {
         Some(Refusal::Hook)
     } else {
         None
     }
+}
+
+/// Strip credentials a provider error may echo back (bearer tokens, API keys,
+/// `key=` query parameters) before the message leaves the process.
+pub fn redact_secrets(message: &str) -> String {
+    static PATTERNS: OnceLock<Vec<(regex::Regex, &'static str)>> = OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        [
+            (r"(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{8,}", "${1}[REDACTED]"),
+            (r"(?i)((?:api[_-]?key|access[_-]?token|token|key|secret|password)[\x22']?\s*[=:]\s*[\x22']?)[^\s&\x22',}]{6,}", "${1}[REDACTED]"),
+            (r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{12,}", "[REDACTED]"),
+            (r"\bAIza[0-9A-Za-z_-]{20,}", "[REDACTED]"),
+            (r"\bgh[pousr]_[A-Za-z0-9]{20,}", "[REDACTED]"),
+        ]
+        .into_iter()
+        .map(|(p, r)| (regex::Regex::new(p).expect("valid redaction pattern"), r))
+        .collect()
+    });
+    let mut out = message.to_string();
+    for (re, replacement) in patterns {
+        out = re.replace_all(&out, *replacement).into_owned();
+    }
+    out
 }
 
 fn truncate(s: &str, cap: usize) -> String {
@@ -246,7 +273,7 @@ pub fn classify(cfg: &Config, event: &StreamEvent, child: Option<Child>) -> Opti
         },
         StreamEvent::Error { code, message } => EventSignal::Error {
             code: code.clone(),
-            message: truncate(message, ERROR_CAP),
+            message: truncate(&redact_secrets(message), ERROR_CAP),
         },
         StreamEvent::SubagentEnd { run_id, name, error } => {
             return Some(Signal::Event {
@@ -494,7 +521,9 @@ pub struct State {
     tools: HashMap<(Option<String>, String), PendingTool>,
     /// Tools a permission prompt was raised for and not yet resolved, per run.
     prompted: HashMap<Option<String>, Vec<String>>,
-    prompt_id: Option<String>,
+    /// The prompt currently in flight, per session (`""` = no session id),
+    /// so overlapping RPC sessions never tag each other's records.
+    prompt_ids: HashMap<String, String>,
     main_session: Option<String>,
 }
 
@@ -515,7 +544,7 @@ impl State {
             requests: HashMap::new(),
             tools: HashMap::new(),
             prompted: HashMap::new(),
-            prompt_id: None,
+            prompt_ids: HashMap::new(),
             main_session: None,
         }
     }
@@ -557,7 +586,7 @@ impl State {
         if let Some(s) = session {
             all.push(("session.id".into(), AnyValue::Str(s.to_string())));
         }
-        if let Some(p) = &self.prompt_id {
+        if let Some(p) = self.prompt_ids.get(session.unwrap_or("")) {
             all.push(("prompt.id".into(), AnyValue::Str(p.clone())));
         }
         if let Some(c) = child {
@@ -588,7 +617,10 @@ impl State {
                     }
                 }
                 if let Some((length, text)) = prompt {
-                    self.prompt_id = Some(uuid::Uuid::new_v4().to_string());
+                    self.prompt_ids.insert(
+                        session.clone().unwrap_or_default(),
+                        uuid::Uuid::new_v4().to_string(),
+                    );
                     let attrs = self.session_attr(session.as_deref());
                     self.add("jan_agent.prompt.count", attrs, 1.0);
                     let mut fields: Attrs =
@@ -951,10 +983,10 @@ impl Worker {
             return;
         }
         self.metrics_dirty = false;
-        let body = match target.protocol {
-            config::Protocol::HttpJson => encode::metrics_json(&self.origin, &metrics),
-            config::Protocol::HttpProtobuf => encode::metrics_proto(&self.origin, &metrics),
-        };
+        let body = target.protocol.encode(
+            || encode::metrics_json(&self.origin, &metrics),
+            || encode::metrics_proto(&self.origin, &metrics),
+        );
         self.post(&target, body, "metrics").await;
     }
 
@@ -967,10 +999,10 @@ impl Worker {
         if logs.is_empty() {
             return;
         }
-        let body = match target.protocol {
-            config::Protocol::HttpJson => encode::logs_json(&self.origin, &logs),
-            config::Protocol::HttpProtobuf => encode::logs_proto(&self.origin, &logs),
-        };
+        let body = target.protocol.encode(
+            || encode::logs_json(&self.origin, &logs),
+            || encode::logs_proto(&self.origin, &logs),
+        );
         self.post(&target, body, "logs").await;
     }
 
