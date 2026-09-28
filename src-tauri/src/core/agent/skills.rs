@@ -204,19 +204,10 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
 }
 
 /// All project skills (`<store_root>/skills`), sorted by name. A linked git
-/// worktree also sees the main worktree's skills: installs land in the
-/// checkout that ran them, but agent setup follows the repository, not the
-/// checkout. Project-local skills shadow same-named shared ones.
+/// worktree shares its main checkout's skills because
+/// [`crate::core::agent::project::store_root`] maps both to one store.
 pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
-    let mut seen = std::collections::HashSet::new();
-    let mut out: Vec<SkillEntry> = Vec::new();
-    for r in discovery_roots(root) {
-        for e in scan_skill_dir(&skills_dir(&r)) {
-            if seen.insert(e.name.clone()) {
-                out.push(e);
-            }
-        }
-    }
+    let mut out = scan_skill_dir(&skills_dir(root));
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
@@ -226,48 +217,32 @@ pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
     crate::core::agent::project::store_root(root).join("plugins")
 }
 
-/// Roots whose plugin and skill stores this project sees. Only the project
-/// itself: [`crate::core::agent::project::store_root`] already maps a linked
-/// git worktree onto its main checkout's store, so worktrees share skills and
-/// plugins without a second root (or a `git` call per lookup).
-pub(crate) fn discovery_roots(root: &Path) -> Vec<PathBuf> {
-    vec![root.to_path_buf()]
-}
-
-/// Locate an installed plugin's directory by name across the discovery roots
-/// (project-local first). `None` when no root has it.
+/// Locate an installed plugin's directory by name. `None` when not installed.
 pub(crate) fn find_plugin_dir(root: &Path, plugin: &str) -> Option<PathBuf> {
-    discovery_roots(root)
-        .iter()
-        .map(|r| plugins_dir(r).join(plugin))
-        .find(|p| p.is_dir())
+    Some(plugins_dir(root).join(plugin)).filter(|p| p.is_dir())
 }
 
-/// Visit every installed plugin directory across the discovery roots, with
-/// first-root-wins shadowing: a project-local plugin hides a same-named one
-/// shared from the main worktree. Skips non-directories and interrupted
-/// `.installing-*` staging directories (a partially-copied plugin must not
-/// leak its payload mid-install). Shared by the skill, command, agent, and
-/// plugin-listing discovery passes so they all agree on what is installed.
-pub(crate) fn plugin_dirs_across_roots(root: &Path, mut visit: impl FnMut(&str, &Path)) {
-    let mut seen = std::collections::HashSet::new();
-    for r in discovery_roots(root) {
-        let Ok(rd) = std::fs::read_dir(plugins_dir(&r)) else {
+/// Visit every installed plugin directory. Skips non-directories and
+/// interrupted `.installing-*` staging directories (a partially-copied plugin
+/// must not leak its payload mid-install). Shared by the skill, command,
+/// agent, and plugin-listing discovery passes so they all agree on what is
+/// installed.
+pub(crate) fn for_each_plugin_dir(root: &Path, mut visit: impl FnMut(&str, &Path)) {
+    let Ok(rd) = std::fs::read_dir(plugins_dir(root)) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
-            let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            if plugin.starts_with(".installing-") || !seen.insert(plugin.to_string()) {
-                continue;
-            }
-            visit(plugin, &path);
+        if plugin.starts_with(".installing-") {
+            continue;
         }
+        visit(plugin, &path);
     }
 }
 
@@ -322,7 +297,7 @@ pub(crate) fn invocation_wrapper(name: &str, kind: &str) -> String {
 /// single `SKILL.md` at the plugin root (a repo that is itself one skill).
 pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
     let mut out: Vec<SkillEntry> = Vec::new();
-    plugin_dirs_across_roots(root, |plugin, path| {
+    for_each_plugin_dir(root, |plugin, path| {
         let mut tagged = Vec::new();
             for e in scan_skill_dir(&path.join("skills")) {
                 tagged.push(SkillEntry {

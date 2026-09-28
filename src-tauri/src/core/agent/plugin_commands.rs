@@ -37,7 +37,7 @@ pub(crate) struct ParsedCommand {
 /// shadowing shared ones (see `skills::discovery_roots`).
 pub(crate) fn discover(root: &Path) -> Vec<CommandEntry> {
     let mut out = Vec::new();
-    crate::core::agent::skills::plugin_dirs_across_roots(root, |plugin, path| {
+    crate::core::agent::skills::for_each_plugin_dir(root, |plugin, path| {
         crate::core::agent::skills::walk_markdown_files(&path.join("commands"), &mut |path| {
             let raw = std::fs::read_to_string(path).unwrap_or_default();
             let name = path

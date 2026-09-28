@@ -419,39 +419,37 @@ fn sync_env_registry_in(root: &Path, env_dir: &Path) {
 }
 
 pub(crate) fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
-    // A linked git worktree also sees the main worktree's plugins, the
-    // project-local one shadowing a same-named shared one. Counts come from
-    // the merged discovery above, so shared plugins report real payloads.
+    // Discover once and count per plugin, rather than rescanning each one.
     let all_skills = skills::discover_plugins(root);
     let all_commands = crate::core::agent::plugin_commands::discover(root);
     let mut out = Vec::new();
-    skills::plugin_dirs_across_roots(root, |directory, path| {
+    skills::for_each_plugin_dir(root, |directory, path| {
         let manifest = read_manifest(path);
-            let plugin_skills = all_skills
-                .iter()
-                .filter(|e| e.plugin.as_deref() == Some(directory))
-                .count();
-            let plugin_commands = all_commands
-                .iter()
-                .filter(|e| e.plugin == directory)
-                .count();
-            let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
-            out.push((
-                directory.to_string(),
-                InstalledPlugin {
-                    name: manifest.name.unwrap_or_else(|| directory.to_string()),
-                    description: manifest.description.unwrap_or_default(),
-                    version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
-                    repo: manifest.repo.unwrap_or_default(),
-                    skills: plugin_skills,
-                    commands: plugin_commands,
-                    agents: plugin_agents,
-                    tools: crate::core::agent::hooks_config::plugin_tool_entries(path).len(),
-                    hooks: tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(path)
-                        .0
-                        .len(),
-                },
-            ));
+        let plugin_skills = all_skills
+            .iter()
+            .filter(|e| e.plugin.as_deref() == Some(directory))
+            .count();
+        let plugin_commands = all_commands
+            .iter()
+            .filter(|e| e.plugin == directory)
+            .count();
+        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+        out.push((
+            directory.to_string(),
+            InstalledPlugin {
+                name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                description: manifest.description.unwrap_or_default(),
+                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                repo: manifest.repo.unwrap_or_default(),
+                skills: plugin_skills,
+                commands: plugin_commands,
+                agents: plugin_agents,
+                tools: crate::core::agent::hooks_config::plugin_tool_entries(path).len(),
+                hooks: tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(path)
+                    .0
+                    .len(),
+            },
+        ));
     });
     out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
     out

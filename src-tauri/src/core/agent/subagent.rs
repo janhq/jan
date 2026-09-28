@@ -254,7 +254,7 @@ impl SubagentRegistry {
 /// metadata and ignored (the parent's model runs the child); `tools` maps
 /// Claude tool names onto Jan tool names, dropping names with no equivalent.
 fn load_plugin_agents(project_root: &Path, out: &mut Vec<SubagentDefinition>) {
-    crate::core::agent::skills::plugin_dirs_across_roots(project_root, |_, path| {
+    crate::core::agent::skills::for_each_plugin_dir(project_root, |_, path| {
         scan_agent_dir(&path.join("agents"), out);
     });
 }
