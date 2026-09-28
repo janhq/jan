@@ -258,11 +258,16 @@ fn failure_for(definition: &ProviderDefinition, status: u16, _body: &str) -> Log
     }
 }
 
-/// Model ids from a `/models` payload, sorted and deduped so a config write
-/// and the "N models" report are stable across calls. Accepts the OpenAI shape
+/// Model ids in the order the endpoint listed them, trimmed and deduped but
+/// deliberately **not** sorted. Accepts the OpenAI shape
 /// (`{"data":[{"id":...}]}`) plus the bare-array and array-of-strings variants
 /// smaller gateways serve. Anthropic's `/models` uses the same `data` shape.
-pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
+///
+/// Wire order is kept because it is the only signal a provider has about which
+/// model it would lead with; a router-style gateway can rank its listing.
+/// Sorting is applied separately by [`parse_models`], for the stored roster
+/// where a stable order is what matters.
+pub(crate) fn listed_model_ids(value: &serde_json::Value) -> Vec<String> {
     let entries = value
         .get("data")
         .and_then(|d| d.as_array())
@@ -270,17 +275,29 @@ pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
     let Some(entries) = entries else {
         return Vec::new();
     };
-    let mut ids: Vec<String> = entries
-        .iter()
-        .filter_map(|entry| {
-            entry
-                .as_str()
-                .or_else(|| entry.get("id").and_then(|id| id.as_str()))
-        })
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(String::from)
-        .collect();
+    let mut ids: Vec<String> = Vec::new();
+    for entry in entries {
+        let Some(id) = entry
+            .as_str()
+            .or_else(|| entry.get("id").and_then(|id| id.as_str()))
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        else {
+            continue;
+        };
+        // Deduped in place rather than by sort+dedup, which would lose the
+        // order this function exists to preserve.
+        if !ids.iter().any(|seen| seen == id) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
+}
+
+/// Model ids from a `/models` payload, sorted and deduped so a config write
+/// and the "N models" report are stable across calls.
+pub(crate) fn parse_models(value: &serde_json::Value) -> Vec<String> {
+    let mut ids = listed_model_ids(value);
     ids.sort();
     ids.dedup();
     ids

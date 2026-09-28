@@ -1,0 +1,185 @@
+---
+title: Nightly ADK Installation
+description: Install prebuilt JavaScript and Python ADK previews without npm or PyPI publication, a repository clone, or a Rust build.
+---
+
+import { Callout, Tabs } from 'nextra/components'
+
+# Nightly ADK Installation
+
+**Install a packaged ADK preview, then its runtime.**
+The ADK is your language client; the `jan` runtime is the separate executable
+that runs the agent. Neither needs Jan Desktop, a Git checkout or a Rust compiler.
+
+<Callout type="warning">
+These are previews, not npm/PyPI releases. If a download below fails (HTTP 403 or 404), that
+build is not available; use the [source-install fallback](#source-install-fallback).
+</Callout>
+
+## Install the ADK
+
+Each command looks up the latest validated build and installs its versioned package URL, so
+your dependency file pins that exact build.
+
+<Tabs items={['JavaScript', 'Python']}>
+<Tabs.Tab>
+
+Node.js 20+ and npm:
+
+```bash
+npm install "$(node -e "fetch('https://delta.jan.ai/adk-nightly/manifest.json').then(r => r.json()).then(m => console.log(m.packages.javascript.url))")"
+```
+
+In PowerShell, replace `"$(...)"` with `(...)`.
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Python 3.11+, in a virtual environment. Node is not required:
+
+```bash
+python -m pip install "$(python -c "import json, urllib.request as r; p = json.load(r.urlopen('https://delta.jan.ai/adk-nightly/manifest.json'))['packages']['python']; print(p['url'] + '#sha256=' + p['sha256'])")"
+```
+
+In PowerShell, replace `"$(...)"` with `(...)`. The `#sha256=` fragment makes pip check the
+wheel against the digest the build published.
+
+</Tabs.Tab>
+</Tabs>
+
+Prefer to copy a fixed URL? The [download page](https://delta.jan.ai/adk-nightly/index.html)
+shows the same commands with the current build's URLs written out.
+
+For repeatable installs, save that build's **versioned manifest**
+(`https://delta.jan.ai/adk-nightly/<build>/manifest.json`, linked from the download page)
+alongside your lockfile. It identifies the package versions, source revision, digests, protocol
+version and compatible runtime. Use it rather than the moving latest manifest.
+
+## Install the runtime
+
+For a first run, the hosted installer puts the latest nightly `jan` on your PATH, which also gives
+you `jan login`:
+
+```bash
+curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash    # macOS / Linux
+irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex            # Windows PowerShell
+```
+
+`JanRuntime.start()` finds `jan` on PATH, or the binary named by `JAN_BIN`.
+
+### Pin the runtime your ADK build was tested with
+
+Each ADK build records the runtime it was smoke-tested against. To install exactly that one,
+download the build's versioned manifest as `adk-nightly.json` and pass its runtime pin to the ADK
+installer, which downloads, verifies and caches the binary. Configure your provider as described
+in the [Agent quickstart](/docs/agent/quickstart) before asking the agent to do work.
+
+<Tabs items={['JavaScript', 'Python']}>
+<Tabs.Tab>
+
+Save as `runtime.mjs`, then run `node runtime.mjs`:
+
+```js
+import { readFile } from 'node:fs/promises'
+import { JanRuntime, installRuntime } from '@janhq/adk'
+
+const manifest = JSON.parse(await readFile('adk-nightly.json', 'utf8'))
+const installed = await installRuntime({
+  manifestUrl: manifest.runtime.manifestUrl,
+  version: manifest.runtime.version,
+})
+const runtime = await JanRuntime.start({ bin: installed.bin })
+try {
+  console.log(runtime.serverInfo)
+} finally {
+  await runtime.close()
+}
+```
+
+</Tabs.Tab>
+<Tabs.Tab>
+
+Save as `runtime.py`, then run `python runtime.py`:
+
+```python
+import json
+from pathlib import Path
+from jan_adk import JanRuntime, install_runtime
+
+manifest = json.loads(Path('adk-nightly.json').read_text())
+installed = install_runtime(
+    manifest_url=manifest['runtime']['manifestUrl'],
+    version=manifest['runtime']['version'],
+)
+with JanRuntime.start(bin=installed.bin) as runtime:
+    print(runtime.server_info)
+```
+
+</Tabs.Tab>
+</Tabs>
+
+Expect the runtime's reported name and version, followed by a clean exit. A runtime's
+reported version can differ from its nightly artifact version; the manifest pins the
+artifact, while the ADK checks the wire protocol before starting work.
+
+An already provisioned compatible runtime can be passed directly as `bin`, or selected
+with `JAN_BIN`. For an offline launch, skip `installRuntime` / `install_runtime` and
+pass that existing binary. Do not silently substitute another build if a pinned
+artifact has gone missing.
+
+## Supported nightly platforms
+
+The publication gate exercises Linux x64 and ARM64, macOS Intel and Apple Silicon,
+and Windows x64. Windows ARM64 is not claimed by this ADK nightly matrix, even when
+the runtime channel offers an ARM64 binary.
+
+Each job installs the packaged ADKs into clean environments, downloads the pinned
+runtime, streams a turn, executes a host callback, checks that its answer reaches a
+loopback provider, and verifies runtime shutdown. Python runs without Node on `PATH`.
+This is a real-runtime packaging check, not evidence of a live model-provider run.
+
+## Versions, integrity and failures
+
+- The latest [manifest](https://delta.jan.ai/adk-nightly/manifest.json) and download
+  page each point to one complete, validated build. An unsuccessful build or smoke
+  run does not promote either pointer.
+- Versioned directories include the source revision and CI run/attempt. The workflow
+  does not overwrite or automatically delete them. Keep a local copy if you require
+  availability independent of the download service's storage policy.
+- The manifest records SHA-256 digests for both packages and the runtime manifest.
+  The Python install link includes the wheel digest; compare the downloaded JS
+  tarball with the manifest digest if independently verifying it. npm's lockfile
+  also records the installed tarball's integrity.
+- A 404 on a saved artifact URL means that build is unavailable. Choose another
+  build explicitly; the installer does not replace your pin with latest.
+- A digest or protocol mismatch is a failure before work starts. Do not retry a
+  potentially executed host action just because the runtime disconnected.
+
+## Source-install fallback
+
+Until a nightly is published, clone Jan once and install only your language package:
+
+```bash
+git clone --depth 1 https://github.com/janhq/jan.git jan-source
+```
+
+For JavaScript, run `npm install ./jan-source/packages/adk` in your project.
+For Python, run `python -m pip install ./jan-source/adk/python` in a virtual environment.
+This fallback needs Git and a source checkout; it still needs no Jan Desktop or Rust
+build. Install the runtime explicitly with the ADK installer as described in the
+package README.
+
+## Publishing and recovery
+
+Maintainers can run **Jan ADK Nightly** manually from `main`; it also runs after a
+successful **Jan Agent CLI - Nightly Build**. It snapshots the current published
+runtime manifest, rather than assuming an ADK package version is a runtime version.
+
+The workflow packages both clients, uploads immutable versioned assets, runs the
+platform smoke matrix against the public downloads, then advances discovery. PRs
+and manual runs on other branches validate artifacts without publishing credentials.
+If smoke fails, inspect that run; the previous nightly remains selected. A rerun
+creates a new run-attempt identity. To restore an older known-good build, restore its
+complete discovery documents; never replace files inside its versioned directory.
+
+This workflow does not publish to npm or PyPI. Registry releases are a separate path.

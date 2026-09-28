@@ -13,9 +13,6 @@
 //!   interpreter, loader, and libraries.
 //! - writes: the thread workspace and a private temp dir, nothing else.
 //! - network: denied unless explicitly allowed.
-//! - the agent's own `<workspace>/.jan` state directory is hidden even though it
-//!   sits inside the workspace ([`Policy::hide_root`]); AppContainer is the one
-//!   backend that cannot express it.
 //!
 //! AppContainer is stricter than that on reads: it can only read what grants
 //! `ALL APPLICATION PACKAGES`, which covers the system directories a process
@@ -75,11 +72,6 @@ pub struct Policy {
     /// masking it would hide the very files the agent works on.
     pub mask_root: Option<PathBuf>,
     pub allow_network: bool,
-    /// A path *inside* the workspace to hide from the shell: the agent's own
-    /// `<project>/.jan` state directory. The workspace bind/allow makes the whole
-    /// project reachable, so hiding it needs a rule layered on top -- see
-    /// [`Policy::with_hide_root`].
-    pub hide_root: Option<PathBuf>,
     /// Expose `$HOME` to the sandboxed shell read-only instead of hiding it.
     /// The CLI turns this on so helpers that read the user's home (`git`/`ssh`
     /// credential helpers, `~/.ssh/config`, `~/.netrc`) work, while writes stay
@@ -103,6 +95,10 @@ pub struct Policy {
     /// allowed) read-write in the same position as `read_roots`; an entry
     /// present in both lists is bound once, writable.
     pub write_roots: Vec<PathBuf>,
+    /// The Jan home (`~/.jan`), hidden from the shell wherever it sits: under a
+    /// read-only `$HOME`, inside the workspace (running in `$HOME`), or around
+    /// it (a Jan worktree in `~/.jan/worktrees/`). See [`Policy::with_hide_root`].
+    pub hide_root: Option<PathBuf>,
 }
 
 impl Policy {
@@ -111,12 +107,32 @@ impl Policy {
             workspace: workspace.to_path_buf(),
             mask_root: None,
             allow_network,
-            hide_root: None,
             home_readonly: false,
             scratch_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
+            hide_root: None,
         }
+    }
+
+    /// Hide `hide_root` from the sandboxed shell. The gate's token scan of the
+    /// command string is best-effort; this is what makes the directory
+    /// unreachable to the spellings a scan cannot see (`cd ~; cat .jan/*`, a
+    /// script the shell writes and runs). Not enforced on AppContainer, where
+    /// carving a subpath back out of a granted folder would mean writing a deny
+    /// ACE onto the user's directory; there the scan stands alone.
+    pub fn with_hide_root(mut self, hide_root: &Path) -> Self {
+        self.hide_root = Some(hide_root.to_path_buf());
+        self
+    }
+
+    /// True when a bind of the workspace or an attached root would re-expose the
+    /// hidden directory, so it has to be masked again after those binds.
+    fn hide_under_a_bind(&self, hide: &Path) -> bool {
+        std::iter::once(&self.workspace)
+            .chain(&self.read_roots)
+            .chain(&self.write_roots)
+            .any(|root| hide.starts_with(root) && hide != root)
     }
 
     /// Attach read-only roots. See [`Policy::read_roots`] for why their bind
@@ -138,18 +154,6 @@ impl Policy {
     /// thread workspace (nested under it) is re-bound on top so it survives.
     pub fn with_mask_root(mut self, mask_root: &Path) -> Self {
         self.mask_root = Some(mask_root.to_path_buf());
-        self
-    }
-
-    /// Hide `hide_root` from the sandboxed shell. Applied after the workspace is
-    /// bound/allowed, so it wins over it: the gate's token scan of the command
-    /// string is best-effort, and this is what makes `.jan` unreachable to the
-    /// spellings a scan cannot see (`cd .jan`, `$(echo ...)`, a script the shell
-    /// writes and runs). Not enforced on AppContainer, where the workspace is
-    /// granted by an ACE and carving a subpath back out would mean writing a deny
-    /// ACE onto the user's directory; there the scan stands alone.
-    pub fn with_hide_root(mut self, hide_root: &Path) -> Self {
-        self.hide_root = Some(hide_root.to_path_buf());
         self
     }
 
@@ -399,6 +403,11 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(mask) = &policy.mask_root {
         push(&mut args, &["--tmpfs", &mask.to_string_lossy()]);
     }
+    // The Jan home, masked with the others: before the binds below, so a
+    // workspace living under it (a Jan worktree) is punched back through.
+    if let Some(hide) = &policy.hide_root {
+        push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
+    }
 
     // Between the masks above and the workspace below, and that position is the
     // enforcement: after the `$HOME`/data-folder tmpfs so a project living under
@@ -424,12 +433,9 @@ pub fn bwrap_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     }
 
     push(&mut args, &["--bind", &ws, &ws]);
-    // After the workspace bind, so it is not shadowed by it: an empty tmpfs where
-    // the agent's own state directory sits. Mounted unconditionally rather than
-    // only when the directory exists, so a `.jan` created while the sandbox runs
-    // cannot be read back by the next command in the same shell. Writes into it
-    // are discarded with the sandbox (and hard-denied at the tool layer anyway).
-    if let Some(hide) = &policy.hide_root {
+    // And again after, when a bind contains it (running in `$HOME`): the
+    // workspace bind would otherwise shadow the mask above and re-expose it.
+    if let Some(hide) = policy.hide_root.as_deref().filter(|h| policy.hide_under_a_bind(h)) {
         push(&mut args, &["--tmpfs", &hide.to_string_lossy()]);
     }
     push(&mut args, &["--chdir", &ws]);
@@ -464,6 +470,11 @@ fn seatbelt_program() -> &'static str {
         "/usr/bin/sandbox-exec"
     }
 }
+
+/// Seatbelt rules hiding the Jan home; where they go in the profile decides
+/// whether they win over the workspace allow (see [`seatbelt_policy`]).
+const HIDE_RULES: &str = "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
+                          (deny file-write* (subpath (param \"HIDE_ROOT\")))\n";
 
 /// Seatbelt profile. `(deny default)` closes everything, then each section opens
 /// the narrowest thing that works. Later rules win, which is what lets the
@@ -502,6 +513,16 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
     if policy.mask_root.is_some() {
         p.push_str("(deny file-read* (subpath (param \"MASK_ROOT\")))\n");
     }
+    // Later rules win. Denied here, before the allows below, when the
+    // workspace lives under the Jan home (a worktree) so it is read back; when
+    // the home lies inside an allowed root instead, the deny goes last.
+    let hide_last = policy
+        .hide_root
+        .as_deref()
+        .is_some_and(|h| policy.hide_under_a_bind(h));
+    if policy.hide_root.is_some() && !hide_last {
+        p.push_str(HIDE_RULES);
+    }
     p.push_str(
         "(allow file-read* (subpath (param \"WORKSPACE\")))\n\
          ; Writes: the workspace and the temp dir, nothing else.\n\
@@ -538,13 +559,8 @@ pub fn seatbelt_policy(policy: &Policy) -> String {
              (allow file-write* (subpath (param \"WRITE_ROOT_{i}\")))\n"
         ));
     }
-    // Last, so it wins over the workspace allow above: the agent's own state
-    // directory is neither readable nor writable, however the command spells it.
-    if policy.hide_root.is_some() {
-        p.push_str(
-            "(deny file-read* (subpath (param \"HIDE_ROOT\")))\n\
-             (deny file-write* (subpath (param \"HIDE_ROOT\")))\n",
-        );
+    if hide_last {
+        p.push_str(HIDE_RULES);
     }
     if policy.allow_network {
         p.push_str(
@@ -576,14 +592,14 @@ pub fn seatbelt_args(policy: &Policy, cfg: &ShellConfig) -> Vec<String> {
     if let Some(mask) = &policy.mask_root {
         args.push(format!("-DMASK_ROOT={}", mask.to_string_lossy()));
     }
+    if let Some(hide) = &policy.hide_root {
+        args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
+    }
     for (i, root) in policy.read_roots.iter().enumerate() {
         args.push(format!("-DREAD_ROOT_{i}={}", root.to_string_lossy()));
     }
     for (i, root) in policy.write_roots.iter().enumerate() {
         args.push(format!("-DWRITE_ROOT_{i}={}", root.to_string_lossy()));
-    }
-    if let Some(hide) = &policy.hide_root {
-        args.push(format!("-DHIDE_ROOT={}", hide.to_string_lossy()));
     }
     args.push(format!(
         "-DTMPDIR={}",
@@ -717,6 +733,56 @@ mod tests {
         args.join(" ")
     }
 
+    /// Running in `$HOME`: the Jan home is inside the workspace, so the
+    /// workspace bind would shadow the first mask; a second one must follow.
+    #[test]
+    fn bwrap_hides_the_jan_home_after_a_workspace_that_contains_it() {
+        let ws = "/home/u";
+        let hide = "/home/u/.jan";
+        let text = joined(&bwrap_args(
+            &Policy::new(Path::new(ws), false).with_hide_root(Path::new(hide)),
+            &cfg(),
+        ));
+        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
+        let last = text.rfind(&format!("--tmpfs {hide}")).expect("mask");
+        assert!(bind < last, "the mask must follow the workspace bind: {text}");
+    }
+
+    /// A Jan worktree lives under the home: the mask goes before the workspace
+    /// bind only, or it would hide the tree the agent is working in.
+    #[test]
+    fn bwrap_hides_the_jan_home_before_a_workspace_inside_it() {
+        let ws = "/home/u/.jan/worktrees/r-1/feat";
+        let hide = "/home/u/.jan";
+        let text = joined(&bwrap_args(
+            &Policy::new(Path::new(ws), false).with_hide_root(Path::new(hide)),
+            &cfg(),
+        ));
+        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
+        let mask = format!("--tmpfs {hide} ");
+        assert_eq!(text.matches(&mask).count(), 1, "{text}");
+        assert!(text.find(&mask).unwrap() < bind, "{text}");
+        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(".jan"));
+    }
+
+    #[test]
+    fn seatbelt_orders_the_jan_home_deny_by_where_the_workspace_is() {
+        let deny = "(deny file-read* (subpath (param \"HIDE_ROOT\")))";
+        let allow = "(allow file-read* (subpath (param \"WORKSPACE\")))";
+        let home = Policy::new(Path::new("/Users/u"), false).with_hide_root(Path::new("/Users/u/.jan"));
+        let p = seatbelt_policy(&home);
+        assert!(p.find(allow).unwrap() < p.find(deny).unwrap(), "{p}");
+        assert!(p.contains("(deny file-write* (subpath (param \"HIDE_ROOT\")))"));
+        let wt = Policy::new(Path::new("/Users/u/.jan/worktrees/r/f"), false)
+            .with_hide_root(Path::new("/Users/u/.jan"));
+        let p = seatbelt_policy(&wt);
+        assert!(p.find(deny).unwrap() < p.find(allow).unwrap(), "{p}");
+        // The path travels as a -D parameter, never interpolated into the profile.
+        assert!(!p.contains("/Users/u/.jan"), "{p}");
+        assert!(joined(&seatbelt_args(&wt, &cfg())).contains("-DHIDE_ROOT=/Users/u/.jan"));
+        assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
+    }
+
     #[test]
     fn bwrap_mounts_root_read_only_before_layering_on_it() {
         let args = bwrap_args(&policy(), &cfg());
@@ -756,26 +822,6 @@ mod tests {
         let ro = joined(&bwrap_args(&policy().with_home_readonly(true), &cfg()));
         assert!(!ro.contains(&tmpfs), "{ro}");
         assert!(ro.contains(&ro_bind), "{ro}");
-    }
-
-    /// The workspace bind makes the whole project reachable, so the mask must be
-    /// layered on after it or it would be shadowed and silently do nothing.
-    #[test]
-    fn bwrap_hides_the_agent_state_dir_after_binding_the_workspace() {
-        let ws = "/data/agent-workspace/threads/t1";
-        let hide = format!("{ws}/.jan");
-        let text = joined(&bwrap_args(
-            &policy().with_hide_root(Path::new(&hide)),
-            &cfg(),
-        ));
-        let bind = text.find(&format!("--bind {ws} {ws}")).expect("bind");
-        let tmpfs = text.find(&format!("--tmpfs {hide}")).expect("hide tmpfs");
-        assert!(
-            bind < tmpfs,
-            "the mask must follow the workspace bind: {text}"
-        );
-        // Unset by default, so nothing is hidden where no state dir is named.
-        assert!(!joined(&bwrap_args(&policy(), &cfg())).contains(".jan"));
     }
 
     /// The bind order *is* the enforcement, on both sides: after the `$HOME`
@@ -907,25 +953,6 @@ mod tests {
         assert!(!seatbelt_args(&policy(), &cfg())
             .iter()
             .any(|a| a.contains("READ_ROOT")));
-    }
-
-    #[test]
-    fn seatbelt_denies_the_agent_state_dir_last() {
-        let hide = "/data/agent-workspace/threads/t1/.jan";
-        let p = policy().with_hide_root(Path::new(hide));
-        let profile = seatbelt_policy(&p);
-        let allow = profile
-            .find("(allow file-read* (subpath (param \"WORKSPACE\")))")
-            .expect("workspace allow");
-        let deny = profile
-            .find("(deny file-read* (subpath (param \"HIDE_ROOT\")))")
-            .expect("hide deny");
-        assert!(allow < deny, "later rules win, so the deny must come last");
-        assert!(profile.contains("(deny file-write* (subpath (param \"HIDE_ROOT\")))"));
-        // The path travels as a -D parameter, never interpolated into the profile.
-        assert!(!profile.contains(hide), "{profile}");
-        assert!(joined(&seatbelt_args(&p, &cfg())).contains(&format!("-DHIDE_ROOT={hide}")));
-        assert!(!seatbelt_policy(&policy()).contains("HIDE_ROOT"));
     }
 
     #[test]

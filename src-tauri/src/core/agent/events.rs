@@ -17,10 +17,35 @@
 pub const PROTOCOL_VERSION: u32 = 1;
 
 /// `Deserialize` as well as `Serialize`: a consumer validates what it received
-/// against these shapes (and, for a future `jan cli agent schema`, generates its
-/// own types from them), so the wire has to survive a round trip, not just a
-/// write. `#[serde(tag = "type")]` keeps the tag on both sides.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// against these shapes, and `JsonSchema` is what `jan cli agent schema`
+/// publishes them as -- a consumer generates its own types from
+/// `protocol/schema.json` rather than copying this declaration. The wire has to
+/// survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the
+/// tag on both sides.
+/// Where a [`StreamEvent::Compaction`] is in its round trip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionPhase {
+    Started,
+    Finished,
+    /// The summarizer call failed or had nothing to fold; the history is
+    /// unchanged.
+    Failed,
+}
+
+/// Which path asked for a [`StreamEvent::Compaction`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionReason {
+    /// The request about to be sent was over the window's trigger.
+    Preflight,
+    /// The provider rejected a request as too long for its window.
+    ContextOverflow,
+    /// The run used up its session token budget.
+    SessionBudget,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
     /// A streamed content delta from the model.
@@ -131,6 +156,11 @@ pub enum StreamEvent {
     /// concurrently. `event` is a non-terminal child event (Token/Step/ToolCall/
     /// ToolResult/PermissionRequest); the child's terminal Done/Error is never
     /// wrapped (its result is delivered via `await_subagent`).
+    ///
+    /// Never a `ToolRequest`: a client answers a request by `request_id` on
+    /// stdin, and it is told nothing about this wrapper, so a nested request
+    /// would be unanswerable. A child's host tool call is routed to the root
+    /// channel unwrapped instead, attributed by `ToolRequest.run_id`.
     Subagent {
         run_id: String,
         name: String,
@@ -142,6 +172,19 @@ pub enum StreamEvent {
     /// transcript reads in the order the model saw things. Display-only and
     /// transient, like notes: it is never journaled.
     Notice { text: String },
+    /// The loop is summarizing part of the conversation to make room. Sent as
+    /// `Started` before the summarizer call and `Finished` or `Failed` after
+    /// it, so a consumer can show progress for what is otherwise a silent
+    /// round trip. `reason` says which path asked. `messages` is how many were
+    /// folded into the summary, `None` except on `Finished`. Display-only and
+    /// never journaled; the compacted history itself arrives as
+    /// `MessagesUpdated`.
+    Compaction {
+        phase: CompactionPhase,
+        reason: CompactionReason,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        messages: Option<usize>,
+    },
     /// The run's active file monitors, as a whole replacing the previous set.
     /// Emitted whenever the set changes (a `monitor` start or stop, a condition
     /// matching, a monitor finishing), so a consumer keeps a live view without
@@ -191,7 +234,21 @@ pub enum StreamEvent {
     /// all. Consumers accumulate these to show context pressure, output
     /// volume, and throughput while the work is still happening -- for the
     /// parent run and, via the [`Subagent`] bracket, for each child.
-    TurnUsage { usage: Usage },
+    TurnUsage {
+        usage: Usage,
+        /// The provider's id for the execution that produced this usage, when
+        /// it reported one. This is the handle a per-request billing lookup is
+        /// keyed by, so a consumer can ask what this one request actually
+        /// cost rather than only what it estimates.
+        ///
+        /// A sibling of `usage` rather than a field inside it, because it is a
+        /// billing handle and not a token count. Absent on the default upstream
+        /// path, which cannot see the response headers (see
+        /// [`crate::core::agent::correlation`]); that is a limitation to report,
+        /// not a reason to synthesize one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution_id: Option<String>,
+    },
     /// Terminal success: the model returned a final (tool-free) completion.
     Done {
         stop_reason: String,
@@ -217,28 +274,127 @@ pub enum StreamEvent {
         prompt_kind: String,
         offers_always: bool,
     },
+    /// A host-registered tool was called and the run is waiting for the host to
+    /// execute it. The client replies with a `tool_result` line carrying this
+    /// `request_id`; until it does, the turn is parked on this one call.
+    ///
+    /// `tool_name` is the name the *host* declared, not the `host__`-prefixed
+    /// name the model calls: the host dispatches on the name it chose and never
+    /// has to know this layer's prefixing rule.
+    ToolRequest {
+        request_id: String,
+        tool_name: String,
+        /// The arguments the model produced, already parsed from the call's
+        /// JSON string. Validated against nothing here -- the host owns the
+        /// schema it declared and is the only party that can enforce it.
+        args: serde_json::Value,
+        /// Which run raised the request: `None` for the main run, the child's
+        /// run id for a subagent. Attribution only -- the host answers by
+        /// `request_id` alone, and a child's request is emitted unwrapped at
+        /// the top level so the same answer path serves both.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+    },
+    /// A pending [`StreamEvent::ToolRequest`] was withdrawn: the host must not
+    /// answer it any more, and a late answer is reported as not pending.
+    /// `reason` is `aborted` | `interrupted` | `client_gone`.
+    ToolRequestCancelled { request_id: String, reason: String },
+    /// Host/UI-only structured data a host tool returned alongside its result,
+    /// emitted right after that call's [`StreamEvent::ToolResult`] (same `id`).
+    /// Never sent to the model; a display may render it or ignore it.
+    ToolDetails {
+        id: String,
+        details: serde_json::Value,
+    },
+    /// What the run is about to send a provider, emitted immediately before
+    /// each request goes out -- the hook an experiment harness needs to hold two
+    /// runs comparable (pi's `onPayload` is the shape Robot Studio already
+    /// records).
+    ///
+    /// Every outbound request gets one, including the side calls a turn makes
+    /// (compaction, a session title) and every child run's own requests; the
+    /// hashes describe the body Jan built for the adapter, so two runs can be
+    /// compared field by field. Nothing here is model input or output: it never
+    /// joins the transcript, and a consumer may render it, store it or ignore
+    /// it.
+    RequestProvenance {
+        /// Which run made the request: `None` for the main run, the child's
+        /// run id for a subagent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        /// The session the request belongs to, as the run's handshake names it
+        /// (the correlation id the request carries is derived from it).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        /// The configured provider the model resolved to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        /// The model id the upstream receives, without a `<provider>/` prefix.
+        model: String,
+        /// The wire API the request is built for (`anthropic`, `google`,
+        /// `openai-responses`), absent for chat/completions.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_type: Option<String>,
+        /// SHA-256 of the request body as Jan built it, as canonical JSON:
+        /// every object's keys sorted, recursively, so re-encoding the same
+        /// members in another order gives the same digest. It is the value that
+        /// makes two runs comparable even when a field this record does not
+        /// itemize has changed.
+        ///
+        /// The body hashed is the one Jan built, before the provider adapter
+        /// appends its transport fields (`stream`, `stream_options`), so it is
+        /// not byte-for-byte what the provider received: a harness recomputes it
+        /// by sorting keys and dropping those two fields.
+        request_sha256: String,
+        /// The canonical body's serialized length. Key order does not change it,
+        /// so it describes the built body either way.
+        body_bytes: u64,
+        /// SHA-256 of the `tools` array as sent, canonical JSON in the same
+        /// sense, able to change while the model id does not.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tools_sha256: Option<String>,
+        /// Every image in the body, in order, hashed over its decoded bytes so
+        /// the host can hash the same frame it captured.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<ProvenanceImage>,
+    },
+}
+
+/// One image in an outbound request, as [`StreamEvent::RequestProvenance`]
+/// reports it: identity, not content.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct ProvenanceImage {
+    /// SHA-256 over the image's decoded bytes.
+    pub sha256: String,
+    pub mime_type: String,
+    /// Decoded length in bytes.
+    pub bytes: u64,
+    /// The host tool call whose result carried it, when one did. `None` for an
+    /// image the user attached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
 /// across the plan, and its blackboard file) and 1-based phase number. Carried by
 /// [`StreamEvent::SubagentPlan`] so a consumer can show it waiting on the phase
 /// before it.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct PendingSubagent {
     pub name: String,
     pub phase: u32,
 }
 
-/// If `path` targets a file in the agent's skill or memory workspace, return the
-/// kind (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
+/// If `path` targets a file in a project's skill or memory store
+/// (`~/.jan/projects/<slug>/{skills,memory}/...`), return the kind
+/// (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
 fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
+    const PROJECTS: &str = ".jan/projects/";
     let norm = path.replace('\\', "/");
-    for (needle, kind) in [
-        (".jan/agent/skills/", "skill"),
-        (".jan/agent/memory/", "memory"),
-    ] {
-        if let Some(idx) = norm.find(needle) {
-            let rest = &norm[idx + needle.len()..];
+    let after = &norm[norm.find(PROJECTS)? + PROJECTS.len()..];
+    let (_slug, inside) = after.split_once('/')?;
+    for (prefix, kind) in [("skills/", "skill"), ("memory/", "memory")] {
+        if let Some(rest) = inside.strip_prefix(prefix) {
             if rest.is_empty() || rest.ends_with('/') {
                 return Some((kind, String::new()));
             }
@@ -299,7 +455,7 @@ fn arg_name(args: &serde_json::Value) -> String {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct Usage {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
@@ -452,6 +608,14 @@ pub(crate) mod tests {
                 },
             ),
             (
+                "Compaction",
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Finished,
+                    reason: CompactionReason::SessionBudget,
+                    messages: Some(12),
+                },
+            ),
+            (
                 "Monitors",
                 StreamEvent::Monitors {
                     monitors: vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
@@ -518,6 +682,26 @@ pub(crate) mod tests {
                         cached_tokens: Some(64),
                         cache_write_tokens: None,
                     },
+                    execution_id: None,
+                },
+            ),
+            (
+                "RequestProvenance",
+                StreamEvent::RequestProvenance {
+                    run_id: Some("run-1".into()),
+                    session_id: Some("session-9".into()),
+                    provider: Some("anthropic".into()),
+                    model: "claude-sonnet-5".into(),
+                    api_type: Some("anthropic".into()),
+                    request_sha256: "0".repeat(64),
+                    body_bytes: 41,
+                    tools_sha256: Some("1".repeat(64)),
+                    images: vec![ProvenanceImage {
+                        sha256: "2".repeat(64),
+                        mime_type: "image/png".into(),
+                        bytes: 3,
+                        tool_call_id: Some("call_7".into()),
+                    }],
                 },
             ),
             (
@@ -547,6 +731,29 @@ pub(crate) mod tests {
                     offers_always: true,
                 },
             ),
+            (
+                "ToolRequest",
+                StreamEvent::ToolRequest {
+                    request_id: "host-1".into(),
+                    tool_name: "observe".into(),
+                    args: serde_json::json!({ "camera": "front" }),
+                    run_id: Some("run-1".into()),
+                },
+            ),
+            (
+                "ToolRequestCancelled",
+                StreamEvent::ToolRequestCancelled {
+                    request_id: "host-1".into(),
+                    reason: "aborted".into(),
+                },
+            ),
+            (
+                "ToolDetails",
+                StreamEvent::ToolDetails {
+                    id: "t1".into(),
+                    details: serde_json::json!({ "pose": [0, 1] }),
+                },
+            ),
         ]
     }
 
@@ -570,6 +777,7 @@ pub(crate) mod tests {
             | StreamEvent::SubagentPlan { .. }
             | StreamEvent::Subagent { .. }
             | StreamEvent::Notice { .. }
+            | StreamEvent::Compaction { .. }
             | StreamEvent::Monitors { .. }
             | StreamEvent::Parked
             | StreamEvent::MessagesUpdated { .. }
@@ -579,7 +787,11 @@ pub(crate) mod tests {
             | StreamEvent::TurnUsage { .. }
             | StreamEvent::Done { .. }
             | StreamEvent::Error { .. }
-            | StreamEvent::PermissionRequest { .. } => {}
+            | StreamEvent::PermissionRequest { .. }
+            | StreamEvent::ToolRequest { .. }
+            | StreamEvent::ToolRequestCancelled { .. }
+            | StreamEvent::ToolDetails { .. }
+            | StreamEvent::RequestProvenance { .. } => {}
         }
     }
 
@@ -671,11 +883,11 @@ pub(crate) mod tests {
     #[test]
     fn describe_labels_fallback_path_ops() {
         assert_eq!(
-            describe_tool_call("read", &json!({"path": ".jan/agent/skills/deploy.md"})),
+            describe_tool_call("read", &json!({"path": "/home/u/.jan/projects/app-1/skills/deploy.md"})),
             "Reading skill: deploy"
         );
         assert_eq!(
-            describe_tool_call("write", &json!({"path": ".jan/agent/memory/decisions.md"})),
+            describe_tool_call("write", &json!({"path": "/home/u/.jan/projects/app-1/memory/decisions.md"})),
             "Updating memory: decisions"
         );
     }
@@ -779,6 +991,51 @@ pub(crate) mod tests {
                 "prompt_kind": "write",
                 "offers_always": true
             })
+        );
+    }
+
+    /// `run_id` is additive: a main-run request serializes exactly as it did
+    /// before the field existed, so a v1 host sees no change.
+    #[test]
+    fn host_tool_events_serialize_to_wire_shape() {
+        let main = serde_json::to_value(StreamEvent::ToolRequest {
+            request_id: "host-1".into(),
+            tool_name: "observe".into(),
+            args: json!({}),
+            run_id: None,
+        })
+        .unwrap();
+        assert_eq!(
+            main,
+            json!({ "type": "tool_request", "request_id": "host-1", "tool_name": "observe", "args": {} })
+        );
+        let old: StreamEvent = serde_json::from_value(main).expect("no run_id reads back");
+        assert!(matches!(old, StreamEvent::ToolRequest { run_id: None, .. }));
+
+        let child = serde_json::to_value(StreamEvent::ToolRequest {
+            request_id: "host-2".into(),
+            tool_name: "observe".into(),
+            args: json!({}),
+            run_id: Some("sub-1".into()),
+        })
+        .unwrap();
+        assert_eq!(child["run_id"], "sub-1");
+
+        assert_eq!(
+            serde_json::to_value(StreamEvent::ToolRequestCancelled {
+                request_id: "host-1".into(),
+                reason: "aborted".into(),
+            })
+            .unwrap(),
+            json!({ "type": "tool_request_cancelled", "request_id": "host-1", "reason": "aborted" })
+        );
+        assert_eq!(
+            serde_json::to_value(StreamEvent::ToolDetails {
+                id: "c1".into(),
+                details: json!({ "k": 1 }),
+            })
+            .unwrap(),
+            json!({ "type": "tool_details", "id": "c1", "details": { "k": 1 } })
         );
     }
 

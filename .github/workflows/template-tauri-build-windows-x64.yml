@@ -157,6 +157,29 @@ jobs:
           jq --arg version "${{ inputs.new_version }}" '.version = $version' web-app/package.json > /tmp/package.json
           mv /tmp/package.json web-app/package.json
 
+          # MSI's version field is major.minor.patch.build with a numeric build,
+          # so a prerelease it cannot express -- non-numeric like 0.8.5-rc1-beta,
+          # or numeric but past its 65535 ceiling -- has to be bundled as NSIS
+          # alone. Without this the job dies on the last target, after the app
+          # and the NSIS installer are already built and signed, and then uploads
+          # nothing. A release (0.8.5) and a nightly (0.8.5-5088) keep both
+          # targets, exactly as tauri.windows.conf.json declares them.
+          version="${{ inputs.new_version }}"
+          prerelease=""
+          if [[ "$version" == *-* ]]; then
+            prerelease="${version#*-}"
+          fi
+          msi=1
+          case "$prerelease" in
+            *[!0-9]*) msi=0 ;;
+            ?*) [ "$prerelease" -le 65535 ] || msi=0 ;;
+          esac
+          if [ "$msi" = 0 ]; then
+            echo "$version has no MSI form; bundling NSIS only"
+            jq '.bundle.targets = ["nsis"]' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
+            mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json
+          fi
+
           # Add sign commands to tauri.windows.conf.json
           jq '.bundle.windows.signCommand = "powershell -ExecutionPolicy Bypass -File ./sign.ps1 %1"' ./src-tauri/tauri.windows.conf.json > /tmp/tauri.windows.conf.json
           mv /tmp/tauri.windows.conf.json ./src-tauri/tauri.windows.conf.json

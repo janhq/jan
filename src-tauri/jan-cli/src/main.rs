@@ -57,7 +57,7 @@ to opt out of both.",
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Project root containing .jan/agent/agent.toml (bare TUI only)
+    /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/) (bare TUI only)
     #[arg(long, default_value = ".")]
     project: String,
     /// Optional first message to seed the chat with (bare TUI only)
@@ -142,7 +142,7 @@ impl SandboxArgs {
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
-/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
+/// Threads are per-project (`~/.jan/projects/<slug>/threads`), so resuming from a
 /// different working directory simply finds nothing there.
 #[derive(Args)]
 struct ResumeArgs {
@@ -163,22 +163,32 @@ impl ResumeArgs {
     }
 }
 
-/// Per-invocation cost limits for `jan cli agent run`. Both mirror the engine's
-/// own semantics: `0` means unbounded, and an unpassed flag leaves the config
-/// files (or, for turns, nothing at all) in charge.
+/// Per-invocation cost limits for `jan cli agent run`. All three mirror the
+/// engine's own semantics: an unpassed flag leaves the config files (or, for
+/// turns, nothing at all) in charge.
 ///
-/// Only `--max-turns` ends a run. The token ceiling is advisory: passing it
-/// compacts the conversation and records a note, then the run continues.
+/// Two of them stop a run and one does not. `--max-turns` bounds how many turns
+/// it may take, `--max-budget-usd` bounds what it may spend; the token ceiling
+/// is advisory, compacting the conversation and recording a note before the run
+/// continues. A money ceiling is the one a user reaching for a limit usually
+/// means: turns and tokens are both proxies for the number they actually care
+/// about.
 #[derive(Args, Clone, Copy)]
 struct BudgetArgs {
     /// Fail the run after at most N agentic turns; bounds this run only, not
     /// its subagents (0 = unbounded, the default)
     #[arg(long, value_name = "N")]
     max_turns: Option<u64>,
-    /// Advisory token ceiling overriding [budget].max_tokens: triggers
-    /// compaction and a note, but does not stop the run (0 = no ceiling)
+    /// Advisory token ceiling overriding [budget].max_tokens (default: the
+    /// model's context window): triggers compaction and a note, but does not
+    /// stop the run (0 = no ceiling)
     #[arg(long, value_name = "N")]
     max_session_tokens: Option<u64>,
+    /// Stop the run once it has spent this much in USD, overriding
+    /// [budget].max_usd. Priced from the provider's published rates, so a
+    /// model with no published price is refused rather than run uncapped
+    #[arg(long, value_name = "USD")]
+    max_budget_usd: Option<f64>,
 }
 
 /// Same flags for `jan cli agent run`, which has a required positional TASK: a
@@ -226,26 +236,42 @@ enum Commands {
         #[command(subcommand)]
         cmd: AuthCommands,
     },
-    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    /// Read recorded usage and spend from the provider's usage API
     #[command(display_order = 4)]
+    Usage {
+        // Optional so bare `jan usage` answers "what have I spent" with the
+        // account summary. Unlike the TUI's bare `/usage` there is no session
+        // to estimate here -- a one-shot command has run no requests -- so the
+        // overview's local half does not exist and the account total is the
+        // whole answer.
+        #[command(subcommand)]
+        cmd: Option<UsageCommands>,
+        /// Print the provider's response body verbatim instead of a table.
+        /// Reshaping it would mean re-serializing money fields, which is how a
+        /// figure loses digits, so this forwards the bytes as received.
+        #[arg(long, global = true)]
+        json: bool,
+    },
+    /// Manage provider credentials in ~/.jan/config.toml (used by the TUI and CLI)
+    #[command(display_order = 5)]
     Config {
         #[command(subcommand)]
         cmd: AgentConfigCommands,
     },
     /// Manage project-local plugins and their skills
-    #[command(display_order = 5)]
+    #[command(display_order = 6)]
     Plugin {
         #[command(subcommand)]
         cmd: PluginCommands,
     },
     /// Serve Jan's built-in tools to another agent over MCP
-    #[command(display_order = 6)]
+    #[command(display_order = 7)]
     Mcp {
         #[command(subcommand)]
         cmd: McpServeCommands,
     },
     /// Update this binary to the latest build of the channel it was built for
-    #[command(display_order = 7)]
+    #[command(display_order = 8)]
     Update {
         /// Report whether an update exists without installing it
         #[arg(long)]
@@ -284,6 +310,35 @@ enum McpServeCommands {
         /// Bearer token for --transport http; a random one is generated and printed if omitted
         #[arg(long)]
         token: Option<String>,
+    },
+}
+
+/// Reads against the provider's usage API.
+///
+/// Deliberately a sibling of `jan auth` rather than a mode of the agent: these
+/// are account-level questions about money, answered by the server, and none of
+/// them runs a model or touches a project. Every one of them reports figures
+/// the provider recorded -- not the local per-session estimate the TUI's bare
+/// `/usage` prints, which is an estimate and says so.
+#[derive(Subcommand)]
+enum UsageCommands {
+    /// Usage across this account's credentials, not only the key in use
+    Account,
+    /// Daily usage totals
+    Daily,
+    /// Recently recorded requests
+    Requests,
+    /// Current usage-limit status (separate from wallet credit)
+    Limits,
+    /// Inspect one execution by its X-Tokamak-Execution-Id
+    Generation {
+        /// The execution id, from the response header of an inference request
+        id: String,
+    },
+    /// Find every execution tagged with an X-Client-Request-Id
+    Correlate {
+        /// The correlation id sent on the original request
+        client_request_id: String,
     },
 }
 
@@ -389,7 +444,7 @@ impl ProviderArgs {
 enum AgentCommands {
     /// Run the agent loop to completion, or to a --max-turns cap
     Run {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -415,16 +470,30 @@ enum AgentCommands {
         /// JSON event per line as the run proceeds, ending with that object
         #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
         output_format: OutputFormat,
-        /// `stream-json` reads newline-delimited `user`, `permission` and
-        /// `abort` messages on stdin while the run is in flight, and requires
-        /// `--output-format stream-json`; `text` (the default) does not read
-        /// stdin at all
+        /// `stream-json` reads newline-delimited `user`, `permission`,
+        /// `abort` and `tool_result` messages on stdin while the run is in
+        /// flight, and requires `--output-format stream-json`; `text` (the
+        /// default) does not read stdin at all
         #[arg(long, value_enum, default_value_t = InputFormat::Text)]
         input_format: InputFormat,
+        /// JSON file declaring tools this host executes: a list of
+        /// `{"name", "description", "parameters", "capability"}`. The model
+        /// calls them as `host__<name>` (a name outside `[A-Za-z0-9_-]` is
+        /// mapped to a safe one); each call arrives as a `tool_request` on stdout and
+        /// must be answered with a `tool_result` on stdin, so this requires
+        /// `--input-format stream-json`
+        #[arg(long, value_name = "FILE")]
+        host_tools: Option<String>,
+        /// The host approves its own tool calls: Jan raises no
+        /// `permission_request` for any host tool (built-ins are unaffected).
+        /// For a host whose `tool_request` handler is itself the approval
+        /// step; requires `--host-tools`
+        #[arg(long, requires = "host_tools")]
+        host_gate: bool,
     },
     /// Run a single turn (debugging)
     Step {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -442,11 +511,27 @@ enum AgentCommands {
     },
     /// Print resolved project config and available providers as JSON
     Status {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         #[command(flatten)]
         providers: ProviderArgs,
+    },
+    /// Print the protocol's JSON Schema, generated from the types that define
+    /// the channel (see `protocol/schema.json`)
+    Schema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
+    },
+    /// Serve addressable sessions over JSON-RPC on stdin/stdout
+    Rpc,
+    /// Print the RPC request and event schemas, generated from the types that
+    /// define the envelope (see `protocol/rpc-schema.json`)
+    RpcSchema {
+        /// Write to this file instead of stdout
+        #[arg(long)]
+        out: Option<std::path::PathBuf>,
     },
 }
 
@@ -668,7 +753,18 @@ async fn main() {
     // no separate ping to fire here; `JAN_CLI_NO_UPDATE_CHECK` opts out of both.
     // `jan mcp serve` is driven by another program, not a person: nobody reads
     // the notice, and an update fetch on every spawn is a cost the peer pays.
-    if !matches!(command, Commands::Update { .. } | Commands::Mcp { .. }) {
+    // `jan cli agent rpc` is the same deal - the peer owns the process, and a
+    // notice on stdout would land inside the protocol channel.
+    if !matches!(
+        command,
+        Commands::Update { .. }
+            | Commands::Mcp { .. }
+            | Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            }
+    ) {
         app_lib::core::cli::updater::print_update_notice_if_available().await;
     }
 
@@ -682,6 +778,12 @@ async fn main() {
         }
         Commands::Auth { cmd } => {
             if let Err(e) = handle_auth(cmd).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+        }
+        Commands::Usage { cmd, json } => {
+            if let Err(e) = handle_usage(cmd, json).await {
                 eprintln!("Error: {e}");
                 std::process::exit(1);
             }
@@ -896,6 +998,8 @@ async fn handle_agent(cmd: AgentCommands) {
             budget,
             output_format,
             input_format,
+            host_tools,
+            host_gate,
         } => {
             cli_agent_run(
                 &project,
@@ -908,11 +1012,14 @@ async fn handle_agent(cmd: AgentCommands) {
                     worktree: worktree.into_flag(),
                     max_turns: budget.max_turns,
                     max_session_tokens: budget.max_session_tokens,
+                    max_budget_usd: budget.max_budget_usd,
                     ..Default::default()
                 },
                 resume.into_request(),
                 output_format,
                 input_format,
+                host_tools.as_deref(),
+                host_gate,
             )
             .await
         }
@@ -946,11 +1053,88 @@ async fn handle_agent(cmd: AgentCommands) {
                 Err(e) => Err(e),
             }
         }
+        // No project and no provider: the schema comes from the types alone, so
+        // it is the same document on any machine and in any directory.
+        AgentCommands::Schema { out } => app_lib::core::cli::protocol_schema::run(out.as_deref()),
+        AgentCommands::Rpc => app_lib::core::cli::rpc::serve().await,
+        // Like `schema`: no project root and no provider are involved, so the
+        // artifact is the same one on any machine. `--out` is what CI and
+        // `make protocol-rpc-schema` use.
+        AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
     };
     if let Err(e) = result {
         eprintln!("Error: {e}");
-        std::process::exit(1);
+        std::process::exit(exit_code(&e));
     }
+}
+
+/// Classify a failed one-shot run for the shell.
+///
+/// Running out of turns with the model still calling tools is not the same
+/// outcome as a crash or a usage error: the run stopped where the caller asked
+/// it to stop, but it has no final answer, so a pipeline that only reads the
+/// exit code would take an unfinished task for a finished one. `--output-format
+/// json` carries the same distinction as `stop_reason: "error"` with this
+/// message, for consumers that never look at the code.
+fn exit_code(error: &str) -> i32 {
+    const TURN_LIMIT: &str = "-turn limit while the model was still calling tools";
+    if error.starts_with("reached the ") && error.ends_with(TURN_LIMIT) {
+        53
+    } else {
+        1
+    }
+}
+
+/// `jan usage` handler: read recorded spend from the provider's usage API.
+///
+/// Every view goes through one fetch so failures, timeouts and the not-signed-in
+/// case are reported identically regardless of which endpoint was asked for. A
+/// generation lookup is then rendered field by field, because its schema is
+/// documented; the rest are printed as flattened `path  value` pairs, so a
+/// field the server added since this build still shows up instead of being
+/// silently dropped by a struct that does not know about it.
+async fn handle_usage(cmd: Option<UsageCommands>, json: bool) -> Result<(), String> {
+    use app_lib::core::cli::tokamak::usage::{self, Query, UsageError};
+
+    let query = match &cmd {
+        None | Some(UsageCommands::Account) => Query::Summary,
+        Some(UsageCommands::Daily) => Query::Daily,
+        Some(UsageCommands::Requests) => Query::Requests,
+        Some(UsageCommands::Limits) => Query::Limits,
+        Some(UsageCommands::Generation { id }) => Query::Generation(id.clone()),
+        Some(UsageCommands::Correlate { client_request_id }) => {
+            Query::Correlated(client_request_id.clone())
+        }
+    };
+
+    let payload = match usage::fetch(&query).await {
+        Ok(payload) => payload,
+        // A not-found is a real answer to "what did this execution cost", not a
+        // crash, but it is still a failed lookup: exit non-zero so a script
+        // cannot read it as a zero charge.
+        Err(e @ UsageError::NotFound) => return Err(e.to_string()),
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if json {
+        println!("{}", payload.as_str());
+        return Ok(());
+    }
+
+    // The same renderer the TUI readout draws, so the two surfaces cannot
+    // drift: one place decides how a reported charge is displayed. `Fixed`
+    // because nothing is folded here -- a fold is an interactive affordance,
+    // and a piped view that silently dropped rows would be wrong for the
+    // scripts reading it -- and because there is no `m` to press in a pipe, so
+    // the keybinding hint must not print either.
+    for line in app_lib::core::cli::usage_view::reported_usage_lines(
+        &query,
+        &payload,
+        app_lib::core::cli::usage_view::Fold::Fixed,
+    ) {
+        println!("{line}");
+    }
+    Ok(())
 }
 
 /// `jan auth` handler: report sign-in state or sign out.
@@ -1341,6 +1525,21 @@ mod tests {
         let zero = parsed_budget(&["--max-turns", "0", "--max-session-tokens", "0"]);
         assert_eq!(zero.max_turns, Some(0));
         assert_eq!(zero.max_session_tokens, Some(0));
+
+        // The money ceiling parses as a decimal amount, not a token count: a
+        // budget users write as "$2.50" must not be truncated to 2 on the way
+        // in, which is the failure an integer type here would produce.
+        assert_eq!(parsed_budget(&[]).max_budget_usd, None);
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "2.50"]).max_budget_usd,
+            Some(2.50)
+        );
+        // `0` is a real ceiling (stop at the first billed request), so it must
+        // survive as `Some(0.0)` rather than collapsing into "unset".
+        assert_eq!(
+            parsed_budget(&["--max-budget-usd", "0"]).max_budget_usd,
+            Some(0.0)
+        );
     }
 
     /// Parse `jan cli agent run <task> <extra...>` and pull out its input format.
@@ -1377,6 +1576,30 @@ mod tests {
             "yaml"
         ])
         .is_err());
+    }
+
+    /// Parse `jan cli agent run <task> <extra...>` and pull out its host gate.
+    fn parsed_host_gate(extra: &[&str]) -> bool {
+        let mut argv = vec!["jan", "cli", "agent", "run", "task"];
+        argv.extend_from_slice(extra);
+        match Cli::parse_from(argv).command {
+            Some(Commands::Cli {
+                cmd:
+                    CliCommands::Agent {
+                        cmd: AgentCommands::Run { host_gate, .. },
+                    },
+            }) => host_gate,
+            _ => panic!("expected `cli agent run`"),
+        }
+    }
+
+    /// The gate is only the host's when the host has tools to gate: without
+    /// `--host-tools` the flag would silently do nothing, so clap refuses it.
+    #[test]
+    fn host_gate_is_off_by_default_and_requires_host_tools() {
+        assert!(!parsed_host_gate(&["--host-tools", "tools.json"]));
+        assert!(parsed_host_gate(&["--host-tools", "tools.json", "--host-gate"]));
+        assert!(Cli::try_parse_from(["jan", "cli", "agent", "run", "task", "--host-gate"]).is_err());
     }
 
     /// Parse `jan cli agent run <task> <extra...>` and pull out its output format.
@@ -1419,6 +1642,96 @@ mod tests {
             "yaml"
         ])
         .is_err());
+    }
+
+    /// `schema` is the one `cli agent` subcommand with no project and no
+    /// provider: it prints a document derived from the types alone.
+    #[test]
+    fn schema_parses_with_and_without_an_output_path() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "schema", "--out", "protocol/schema.json"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::Schema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent schema --out`");
+        };
+        assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
+    }
+
+    /// `rpc` and `rpc-schema` are the long-lived session transport and its
+    /// generated artifact: neither involves a project or a provider, and
+    /// `rpc-schema --out` is the only flag between them.
+    #[test]
+    fn rpc_subcommands_parse() {
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Cli {
+                cmd: CliCommands::Agent {
+                    cmd: AgentCommands::Rpc
+                }
+            })
+        ));
+
+        let cli = Cli::parse_from(["jan", "cli", "agent", "rpc-schema"]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema`");
+        };
+        assert_eq!(out, None);
+
+        let cli = Cli::parse_from([
+            "jan",
+            "cli",
+            "agent",
+            "rpc-schema",
+            "--out",
+            "protocol/rpc-schema.json",
+        ]);
+        let Some(Commands::Cli {
+            cmd:
+                CliCommands::Agent {
+                    cmd: AgentCommands::RpcSchema { out },
+                },
+        }) = cli.command
+        else {
+            panic!("expected `cli agent rpc-schema --out`");
+        };
+        assert_eq!(
+            out.as_deref(),
+            Some(std::path::Path::new("protocol/rpc-schema.json"))
+        );
+    }
+
+    /// Running out of turns while the model is still calling tools is the one
+    /// failure the shell can read as a limit rather than a crash. The message is
+    /// the only marker it has, so the classifier must match that message and not
+    /// some phrase inside a different one.
+    #[test]
+    fn turn_limit_exhaustion_has_its_own_exit_code() {
+        assert_eq!(exit_code("reached the 8-turn limit while the model was still calling tools"), 53);
+        assert_eq!(exit_code("reached the end of the response stream"), 1);
+        assert_eq!(exit_code("upstream returned 500"), 1);
     }
 
     #[test]
@@ -1553,6 +1866,63 @@ mod tests {
             cli.command,
             Some(Commands::Auth {
                 cmd: AuthCommands::Logout
+            })
+        ));
+    }
+
+    #[test]
+    fn usage_subcommands_parse() {
+        let view = |argv: &[&str]| {
+            let mut full = vec!["jan", "usage"];
+            full.extend_from_slice(argv);
+            match Cli::parse_from(full).command {
+                Some(Commands::Usage { cmd, .. }) => cmd,
+                other => panic!("expected a usage command, got {:?}", other.is_some()),
+            }
+        };
+        assert!(matches!(view(&["account"]), Some(UsageCommands::Account)));
+        assert!(matches!(view(&["daily"]), Some(UsageCommands::Daily)));
+        assert!(matches!(view(&["requests"]), Some(UsageCommands::Requests)));
+        assert!(matches!(view(&["limits"]), Some(UsageCommands::Limits)));
+        match view(&["generation", "exec-1"]) {
+            Some(UsageCommands::Generation { id }) => assert_eq!(id, "exec-1"),
+            _ => panic!("expected a generation lookup"),
+        }
+        match view(&["correlate", "my-app-request-001"]) {
+            Some(UsageCommands::Correlate { client_request_id }) => {
+                assert_eq!(client_request_id, "my-app-request-001");
+            }
+            _ => panic!("expected a correlation lookup"),
+        }
+        // Bare `jan usage` is the account summary: with no session to
+        // estimate, the recorded total is the only answer there is.
+        assert!(view(&[]).is_none(), "the subcommand is optional");
+    }
+
+    /// An id is required, not optional: a bare `jan usage generation` would
+    /// otherwise have to invent one.
+    #[test]
+    fn a_generation_lookup_requires_an_id() {
+        assert!(Cli::try_parse_from(["jan", "usage", "generation"]).is_err());
+        assert!(Cli::try_parse_from(["jan", "usage", "correlate"]).is_err());
+    }
+
+    #[test]
+    fn usage_json_flag_parses_after_the_subcommand() {
+        let cli = Cli::parse_from(["jan", "usage", "account", "--json"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: Some(UsageCommands::Account),
+                json: true
+            })
+        ));
+        let cli = Cli::parse_from(["jan", "usage", "account"]);
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Usage {
+                cmd: Some(UsageCommands::Account),
+                json: false
             })
         ));
     }

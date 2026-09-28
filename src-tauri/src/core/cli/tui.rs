@@ -47,9 +47,11 @@ use super::agent_status::AgentStatusReporter;
 use super::brand;
 use super::journal::{self, DisplayEntry, ReasoningSeg};
 use super::mcp::McpServerEntry;
+use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
 use super::{
-    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
+    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget,
+    SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -704,16 +706,96 @@ enum ToolsState {
     Failed(String),
 }
 
-/// Overlay state for the `/context` readout. Replaces the old idle-only
-/// transcript row: the report now lands here off the render loop, so `/context`
-/// stays responsive while a turn is running and the readout reads as a popup
-/// the user closes with Esc rather than a line committed to the conversation.
-enum ContextView {
-    /// Requested, not yet computed. The off-loop job for it is in flight (or
-    /// queued behind the loop picking up `context_request`).
+/// A docked readout: `/context` and every `/usage` view, which are one kind of
+/// surface -- a question the user asks about the run, answered in place and
+/// dismissed with Esc, never committed to the conversation.
+///
+/// One field on `App` holds one of these, so a second readout *replaces* the
+/// first rather than stacking on it. That exclusivity used to be a comment
+/// ("only one can be open at a time") maintained by two independent `Option`s
+/// that could both be `Some`; here it is the type.
+///
+/// The variants stay distinct because the questions are distinct, and the
+/// difference is the whole point of the feature: `Context` and `Session` are
+/// **local estimates**, `Reported` is **what the provider actually recorded**.
+/// Collapsing them into a bag of lines would make it possible to render a
+/// charge and an estimate identically, which is the one thing these surfaces
+/// must never do.
+enum Readout {
+    /// `/context`: the current window. Requested, not yet computed -- the
+    /// off-loop job is in flight (or queued behind `readout_request`).
+    ContextLoading,
+    /// `/context`: the computed report.
+    Context(Box<ContextReport>),
+    /// Bare `/usage`: this session's local estimate, priced from the
+    /// provider's published rates. Rendered from live `App` state at draw
+    /// time rather than snapshotted here, so a readout left open during a turn
+    /// keeps counting instead of freezing on the totals it opened with.
+    ///
+    /// The flag is whether the model list is expanded past the top few. It
+    /// lives on the readout rather than on `App` so it resets with the dock:
+    /// an expansion is a thing you did to this readout, not a preference.
+    Session { all_models: bool },
+    /// Bare `/usage`: the session estimate and the account's recorded spend
+    /// in one pane, each labelled with its source.
+    ///
+    /// The two halves are never added together and never share a figure --
+    /// that is the whole reason this is one readout with two sections rather
+    /// than one combined number. The session half renders instantly from
+    /// local state; the account half arrives over the network, so it carries
+    /// its own state instead of holding the whole readout on a spinner.
+    Overview {
+        all_models: bool,
+        account: AccountSlot,
+    },
+    /// `/usage <account view>`: requested, not yet fetched.
+    ReportedLoading(super::tokamak::usage::Query),
+    /// `/usage <account view>`: the fetched body, rendered at draw time.
+    ///
+    /// The payload is kept rather than the rendered lines so `m` can fold the
+    /// breakdown without refetching -- re-asking the server for a list the
+    /// user already has would bill a request to expand a table. `error` holds
+    /// a failed read, which has no payload to re-render.
+    Reported {
+        title: String,
+        query: super::tokamak::usage::Query,
+        payload: Box<super::tokamak::usage::Payload>,
+        all_rows: bool,
+    },
+    /// `/usage <account view>`: the read failed, and why.
+    ReportedError { title: String, message: String },
+}
+
+/// The account half of the overview, which is a network read and so has to
+/// be able to say "not yet", "not available" and "not configured" without
+/// taking the session half down with it.
+#[derive(Debug, Clone)]
+enum AccountSlot {
+    /// No Tokamak credential, so there is no account to read. Not an error:
+    /// most providers have no usage API and the session estimate is the whole
+    /// answer for them.
+    NotConfigured,
     Loading,
-    /// The computed report, ready to render.
-    Ready(Box<ContextReport>),
+    Ready(Box<super::tokamak::usage::Payload>),
+    /// The read failed, and why. Shown rather than swallowed: a blank account
+    /// section would read as "you have spent nothing".
+    Failed(String),
+}
+
+impl Readout {
+    /// The dock's title. Names the *source*, not just the command: "session
+    /// estimate" and what the provider recorded are different claims about
+    /// money, and the title is where a user reads which one they are looking
+    /// at.
+    fn title(&self) -> String {
+        match self {
+            Readout::ContextLoading | Readout::Context(_) => "context".to_string(),
+            Readout::Session { .. } => "session estimate".to_string(),
+            Readout::Overview { .. } => "usage".to_string(),
+            Readout::ReportedLoading(query) => query.label().to_string(),
+            Readout::Reported { title, .. } | Readout::ReportedError { title, .. } => title.clone(),
+        }
+    }
 }
 
 /// Off-loop MCP work the detail screen hands to the loop. Everything here
@@ -1485,14 +1567,6 @@ struct Checkpoint {
     sha: String,
 }
 
-/// An image staged by `/image <path>`, sent with the next user message as an
-/// OpenAI `image_url` content part. `name` is the basename shown in the
-/// transcript; `data_url` is the `data:<mime>;base64,...` payload.
-struct PendingImage {
-    name: String,
-    data_url: String,
-}
-
 /// One entry in the file-path hint popup triggered by typing `@`.
 struct PathHintItem {
     /// Display path (relative to project root).
@@ -1778,9 +1852,18 @@ struct App {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     max_tokens: Option<u64>,
-    /// Token-spend ceiling for one message's run; `0` is unbounded. The only
-    /// cap on run length -- there is no turn limit.
+    /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
+    /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
+    /// Which source set `max_session_tokens`. `--max-session-tokens` pins it
+    /// against `/reload config`; a window-derived one follows the model.
+    max_session_tokens_source: SessionBudgetSource,
+    /// `[budget].max_usd`: what one message's run may spend before it stops,
+    /// with the rates to meter it against. `None` -- the default -- leaves the
+    /// session unmetered. Per run, not per session: each message gets the same
+    /// ceiling, because the user set a bound on what a task may cost and an
+    /// interactive session is a sequence of tasks, not one.
+    cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
     /// Repo top-level when the project is a git repo; enables workspace snapshots.
     /// Cleared if git setup fails, permanently disabling snapshots this session.
     repo_root: Option<PathBuf>,
@@ -1837,7 +1920,8 @@ struct App {
     last_esc: Option<Instant>,
     /// User-message index chosen in the rewind picker, carried into the scope step.
     rewind_target: Option<usize>,
-    /// Project `.jan/agent` dir where this TUI's threads are saved/listed.
+    /// The project's store (`~/.jan/projects/<slug>`) where this TUI's threads
+    /// are saved/listed.
     agent_dir: std::path::PathBuf,
     /// OpenAI-shaped conversation history sent with each run.
     history: Vec<serde_json::Value>,
@@ -1981,12 +2065,24 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
-    /// Current `/context` overlay, if one is open. `None` when closed.
-    context_view: Option<ContextView>,
+    /// The open readout (`/context` or any `/usage` view), or `None`. One
+    /// field, so opening either replaces the other instead of stacking two
+    /// popups over each other.
+    readout: Option<Readout>,
     /// Set by `/context` to ask the loop to compute the report off the render
     /// loop (it sizes the tool segment, which takes the MCP server lock a turn
     /// may be holding). Taken once, like `mcp_job_request`.
     context_request: bool,
+    /// The provider's execution id for the most recent request that reported
+    /// one, so `/usage` can name something concrete to look up. `None` when no
+    /// request has reported one -- which is the normal case on the default
+    /// upstream path, where the response headers are unreachable.
+    last_execution_id: Option<String>,
+    /// Set by `/usage <mode>` to ask the loop to perform the read off the
+    /// render loop. These are network calls against the provider's usage API,
+    /// so running one inline would freeze the frame for as long as the request
+    /// takes. Taken once, like `context_request`.
+    reported_usage_request: Option<super::tokamak::usage::Query>,
     /// Active MCP add/edit wizard (docked); owns the keyboard while open.
     mcp_prompt: Option<McpPrompt>,
     /// The `/mcp` detail screen's data, alongside the `McpServer` picker whose
@@ -2052,6 +2148,13 @@ struct App {
     compacting: Option<CompactKind>,
     /// When the in-flight compaction started, for the elapsed counter.
     compact_started: Option<Instant>,
+    /// The running turn is itself compacting (the loop's preflight, overflow
+    /// or budget path), and since when. Display-only: unlike `compacting` it
+    /// gates nothing, because the run that compacts is the one already going.
+    run_compacting: Option<Instant>,
+    /// A mid-run compaction finished, so the next `MessagesUpdated` carries a
+    /// shorter history the gauge must be re-estimated against.
+    pending_compaction_refresh: bool,
     /// The in-flight compaction was triggered by a context-overflow error, so
     /// the errored turn is resumed once it lands.
     retry_after_compact: bool,
@@ -2106,6 +2209,17 @@ struct App {
     /// runs; a match landing between runs starts a turn of its own
     /// (`submit_monitor_notices`).
     monitor_set: Arc<MonitorSet>,
+    /// The session-owned backgrounded-shell registry, shared with every run
+    /// through `OrchestrationArgs::bg_shells`. A command outlives the turn that
+    /// started it, so the model can answer and the user can keep talking while
+    /// it runs; output landing between runs starts a turn of its own
+    /// (`submit_background_notices`). Distinct from `bg_shells`, which is the
+    /// process-wide display snapshot behind the footer chip and `/shells`.
+    shell_set: Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    /// The session-owned background-subagent registry, on the same terms as
+    /// `shell_set`. Children outlive the run that dispatched them, so their
+    /// panels survive a run end and a completion between runs starts a turn.
+    subagent_set: Arc<crate::core::agent::subagent::BackgroundSubagents>,
     /// Committed finished-subagent summary rows, expandable to their full
     /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
     subagent_blocks: Vec<SubagentBlock>,
@@ -2517,6 +2631,8 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
+            max_session_tokens_source: limits.max_session_tokens_source,
+            cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
             project_root,
@@ -2583,8 +2699,10 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
-            context_view: None,
+            readout: None,
             context_request: false,
+            last_execution_id: None,
+            reported_usage_request: None,
             mcp_prompt: None,
             mcp_detail: None,
             agent_detail: None,
@@ -2609,6 +2727,8 @@ impl App {
             compact_request: None,
             compacting: None,
             compact_started: None,
+            run_compacting: None,
+            pending_compaction_refresh: false,
             retry_after_compact: false,
             overflow_retries: 0,
             scrollback: 0,
@@ -2623,6 +2743,10 @@ impl App {
             subagents: Vec::new(),
             monitors: Vec::new(),
             monitor_set: Arc::new(MonitorSet::new()),
+            shell_set: Arc::new(crate::core::agent::bg_shell::BackgroundShells::default()),
+            subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+                crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            )),
             subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             starting: Vec::new(),
@@ -2701,6 +2825,22 @@ impl App {
         self.workspace = workspace;
     }
 
+    /// Run the session on `prompt` in place of Jan's system prompt, or back on
+    /// Jan's with `None`. Only a thread an RPC host wrote carries one; the run
+    /// args are swapped rather than edited because they are shared behind an
+    /// `Arc` with any run already spawned from them.
+    fn set_host_system_prompt(&mut self, prompt: Option<String>) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        if args.host_system_prompt == prompt {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.host_system_prompt = prompt;
+        self.args = Some(Arc::new(next));
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -2716,6 +2856,7 @@ impl App {
         // A fresh session is a root, whatever the one it replaced was, and it
         // owns the checkout this session is working in.
         self.forked_from = None;
+        self.set_host_system_prompt(None);
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -2730,8 +2871,13 @@ impl App {
         self.reasoning_blocks.clear();
         self.expanded_traces.clear();
         self.subagent_blocks.clear();
+        // Aborts the children themselves, not just their panels: the
+        // conversation they would report into is going away.
+        self.stop_subagents();
         self.subagents.clear();
         self.stop_monitors();
+        // Pings for work whose conversation is gone have no turn to join.
+        self.shell_set.take_notices();
         self.expanded.clear();
         self.reveal = None;
         self.assistant_buf.clear();
@@ -3208,7 +3354,18 @@ impl App {
     /// so publishing here would emit an extra intermediate state. A new caller
     /// that does not follow that pattern owns the `publish_agent_status()`.
     fn close_live_background(&mut self) {
-        for panel in std::mem::take(&mut self.subagents) {
+        // Children are session-owned: one still running outlives the run that
+        // dispatched it, so its panel stays docked exactly as a still-watching
+        // monitor does. Only children this run will never hear from again are
+        // summarized as interrupted. `subagent_set` is the authority on what is
+        // still alive -- a panel whose run id it no longer knows is finished or
+        // aborted, whatever the panel last rendered.
+        let live = self.subagent_set.live_run_ids();
+        let panels = std::mem::take(&mut self.subagents);
+        let (still_running, finished): (Vec<_>, Vec<_>) = panels
+            .into_iter()
+            .partition(|panel| live.contains(&panel.run_id));
+        for panel in finished {
             // A later-phase subagent that never started has no run to summarize;
             // drop it rather than report a phantom "interrupted (0 calls)".
             if panel.pending {
@@ -3216,6 +3373,7 @@ impl App {
             }
             self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
         }
+        self.subagents = still_running;
         self.awaiting.clear();
         // Session monitors outlive the run, so the dock keeps whatever is
         // still watching; a run that ended is no longer parked on anything.
@@ -3230,6 +3388,22 @@ impl App {
     fn stop_monitors(&mut self) {
         self.monitor_set.stop_all();
         self.monitors.clear();
+    }
+
+    /// Abort every background child and undock its panel. Cancelling stops the
+    /// whole session's background work, not just the turn in flight: children
+    /// used to die with the run through `AbortOnDrop`, and a session-owned
+    /// registry must not quietly turn Esc into "keep working". Also called when
+    /// the conversation goes away (reset, thread switch), where a later
+    /// completion would have no turn to join.
+    fn stop_subagents(&mut self) {
+        self.subagent_set.abort_all();
+        for panel in std::mem::take(&mut self.subagents) {
+            if panel.pending {
+                continue;
+            }
+            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
+        }
     }
 
     /// Deliver monitor pings that landed while no run was active. Each headline
@@ -3253,6 +3427,37 @@ impl App {
         }
         for notice in &notices {
             crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        self.begin_turn();
+        self.want_start = true;
+        self.persist();
+    }
+
+    /// Deliver backgrounded-shell and subagent pings that landed while no run
+    /// was active, on exactly the terms `submit_monitor_notices` delivers a
+    /// monitor match: headline where the user is looking, text as the same
+    /// `<SYSTEM>` reminder the loop attaches mid-run, then one turn so the
+    /// model reacts. A shell carries a headline (nothing else reports that the
+    /// command ended); a finished subagent does not, since its `SubagentEnd`
+    /// row already did.
+    fn submit_background_notices(&mut self) {
+        let shells = self.shell_set.take_notices();
+        let subagents = self.subagent_set.take_notices();
+        if shells.is_empty() && subagents.is_empty() {
+            return;
+        }
+        for notice in &shells {
+            self.note(&notice.headline);
+        }
+        if self.model.is_empty() {
+            self.note("background update dropped: not signed in, run /login first");
+            return;
+        }
+        for notice in &shells {
+            crate::core::agent::reminder::attach(&mut self.history, &notice.text);
+        }
+        for text in &subagents {
+            crate::core::agent::reminder::attach(&mut self.history, text);
         }
         self.begin_turn();
         self.want_start = true;
@@ -3449,7 +3654,12 @@ impl App {
     /// every keystroke but leaves a cursor blinking in the composer promises a
     /// field that is not there.
     fn blocking_dock(&self) -> Option<&'static str> {
-        if self.login.is_some() {
+        if self.account_login.is_some() {
+            // First in `handle_key` too, and it outranks `login`: this dock owns
+            // the OAuth code being typed or pasted, so a queued ask that
+            // consumed a keystroke here would swallow the secret.
+            Some("finish signing in above")
+        } else if self.login.is_some() {
             Some("sign in in the dock above")
         } else if self.browser_confirm.is_some() {
             Some("answer the question above")
@@ -3457,6 +3667,11 @@ impl App {
             Some("edit the setting above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
             Some("finish the wizard above")
+        } else if self.readout.is_some() {
+            // A readout takes the keyboard while it is docked -- `q`, `m` and
+            // Esc are its keys, so a keystroke meant for it must never land in
+            // the field as text the user then has to delete.
+            Some("Esc or q to close the readout above")
         } else {
             None
         }
@@ -4540,6 +4755,18 @@ impl App {
         if let Some(max) = self.max_tokens {
             body["max_tokens"] = serde_json::json!(max);
         }
+        // The money ceiling and the rates it is metered against. The loop is
+        // not `cli`-gated and cannot read the model catalog, so the prices
+        // resolved at startup are the only ones it sees.
+        if let Some(ceiling) = self.cost_ceiling {
+            body["max_budget_usd"] = serde_json::json!(ceiling.max_usd);
+            body["token_rates"] = serde_json::json!({
+                "prompt_usd": ceiling.rates.prompt_usd,
+                "completion_usd": ceiling.rates.completion_usd,
+                "cache_read_usd": ceiling.rates.cache_read_usd,
+                "cache_write_usd": ceiling.rates.cache_write_usd,
+            });
+        }
         // Live plan-mode toggle: the backend reads this per turn and falls back
         // to the session default when absent. Only forwarded in Plan so normal
         // turns keep an unchanged body.
@@ -4588,16 +4815,23 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+        let host_prompt = self.args.as_ref().and_then(|a| a.host_system_prompt.clone());
         if self.base_snapshot.is_none()
             && self.goal.is_none()
             && !planning
             && self.todos.is_empty()
             && self.forked_from.is_none()
             && self.workspace_record.is_none()
+            && host_prompt.is_none()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
+        // Metadata is replaced whole on save, so a prompt a host wrote the
+        // thread under is carried or it is lost.
+        if let Some(prompt) = host_prompt {
+            meta.insert(super::SYSTEM_PROMPT_KEY.to_string(), serde_json::json!(prompt));
+        }
         if let Some(workspace) = self.workspace_record.as_ref() {
             meta.insert(
                 super::worktree::WORKTREE_KEY.to_string(),
@@ -4774,7 +5008,44 @@ impl App {
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
+        // An unconfigured session budget is sized by the window, so it moves
+        // with it; a flag or `[budget].max_tokens` stays put.
+        if self.max_session_tokens_source.follows_window() {
+            (self.max_session_tokens, self.max_session_tokens_source) =
+                super::resolve_session_budget(None, None, super::known_window(resolved));
+        }
+        self.sync_compaction_budget();
         changed
+    }
+
+    /// Hand the engine the compaction budget the TUI now shows. The loop's
+    /// preflight reads `args.compaction`, a copy taken at startup, so without
+    /// this a model switch or `/reload config` would move the header gauge
+    /// while runs kept compacting against the startup window. `args` is shared
+    /// behind an `Arc`; a cheap clone with the new budget replaces it, and the
+    /// next run spawned from `self.args` picks it up.
+    fn sync_compaction_budget(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let budget = crate::core::agent::compaction::CompactionBudget {
+            context_window: self.context_window,
+            ratio: self.compaction_ratio,
+            reserve_tokens: self.compaction_reserve_tokens,
+            window_pinned: self.configured_context_window.is_some(),
+        };
+        let unchanged = args.compaction.is_some_and(|b| {
+            b.context_window == budget.context_window
+                && b.ratio == budget.ratio
+                && b.reserve_tokens == budget.reserve_tokens
+                && b.window_pinned == budget.window_pinned
+        });
+        if unchanged {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.compaction = Some(budget);
+        self.args = Some(Arc::new(next));
     }
     /// Mark the memoized model -> provider answer as needing re-resolution
     /// while keeping the answer itself. The value survives because
@@ -4987,6 +5258,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.max_parallel_subagents,
             args.ask_requests.is_some(),
             args.todo_registry.is_some(),
+            &args.host_tools,
         )
         .await
         .iter()
@@ -5349,6 +5621,14 @@ impl App {
                 ));
                 self.publish_agent_status();
             }
+            // Host tools belong to a headless run driven by a host process.
+            // The TUI is that host's opposite number -- there is no peer on
+            // stdin to execute a callback -- so it never declares them and
+            // cannot receive this.
+            StreamEvent::ToolRequest { .. }
+            | StreamEvent::ToolRequestCancelled { .. }
+            | StreamEvent::ToolDetails { .. }
+            | StreamEvent::RequestProvenance { .. } => {}
             // The loop auto-answered a timed-out ask; drop its now-dead prompt.
             // A user answer clears the queue in `resolve_front_ask` instead, so
             // this only fires for the timeout path.
@@ -5494,7 +5774,18 @@ impl App {
                 name,
                 event,
             } => self.apply_subagent_event(&run_id, &name, *event),
-            StreamEvent::TurnUsage { usage } => {
+            StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
+                // The provider's handle for the request that just landed, kept
+                // so `/usage` can offer a lookup of what it actually cost
+                // instead of only the estimate. Only overwritten when one was
+                // reported: a path that cannot see the header (the default one)
+                // must not erase an id an earlier request did report.
+                if let Some(id) = execution_id {
+                    self.last_execution_id = Some(id);
+                }
                 // Session totals are per model: `/usage` prices each at its own
                 // published rates, and the current model is the one billed.
                 let key = self.usage_key();
@@ -5531,11 +5822,26 @@ impl App {
                     self.tokens_estimated = false;
                 }
             }
-            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                self.run_compacting = None;
+            }
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+                // A compaction mid-run replaced the history the last `usage`
+                // measured, so the gauge re-estimates instead of showing the
+                // pre-compaction fill until the next response lands.
+                if self.pending_compaction_refresh {
+                    self.pending_compaction_refresh = false;
+                    self.tokens = estimate_token_count(&self.history);
+                    self.invalidate_token_provenance();
+                }
             }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -5620,9 +5926,17 @@ impl App {
             // prefix (a child has its own). `--output-format json` is the
             // surface that folds child usage in, because that figure is a bill
             // rather than a rate.
-            StreamEvent::TurnUsage { usage } => {
+            StreamEvent::TurnUsage {
+                usage,
+                execution_id,
+            } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
+                }
+                // A child's requests are billed to the same account, so its
+                // execution ids are as lookup-worthy as the parent's.
+                if let Some(id) = execution_id {
+                    self.last_execution_id = Some(id);
                 }
                 // A child's tokens are spend on the same account, against the
                 // model the dispatch inherited, so they belong in the session
@@ -5631,6 +5945,19 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
+            // A child's headline (a compaction, a monitor match) is as much the
+            // user's business as the parent's: dropping it made a child's
+            // compaction invisible.
+            StreamEvent::Notice { text } => {
+                self.note(&format!("{name}: {text}"));
+            }
+            // A child's compaction is announced, but the spinner and gauge are
+            // the parent's: the child's history is not the one on screen.
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, Some(name)),
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
             // surfaced in the parent transcript: a subagent panel is a one-line
@@ -5638,6 +5965,50 @@ impl App {
             // go and would push the parent's own live panel off screen. Deliberate
             // -- the child's output still reaches its `ToolResult`.
             _ => {}
+        }
+    }
+
+    /// Show a loop-side compaction: a throbber while the summarizer runs and a
+    /// note when it lands or fails. `child` names the subagent it came from,
+    /// whose compaction gets a note only.
+    fn apply_compaction(
+        &mut self,
+        phase: crate::core::agent::events::CompactionPhase,
+        reason: crate::core::agent::events::CompactionReason,
+        messages: Option<usize>,
+        child: Option<&str>,
+    ) {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let why = match reason {
+            CompactionReason::Preflight => "the prompt neared the context window",
+            CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
+            CompactionReason::SessionBudget => "the session token budget was used up",
+        };
+        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        match phase {
+            CompactionPhase::Started => {
+                if child.is_none() {
+                    self.run_compacting = Some(Instant::now());
+                }
+            }
+            CompactionPhase::Finished => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                    self.pending_compaction_refresh = true;
+                }
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&format!(
+                    "{who}compacted {} messages into a summary: {why}",
+                    messages.unwrap_or(0)
+                ));
+            }
+            CompactionPhase::Failed => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                }
+                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+            }
         }
     }
 
@@ -6040,6 +6411,10 @@ impl App {
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
         self.want_start = false;
+        // Esc/Ctrl-C stops the session's background work too, not just the
+        // turn: children died with the run before they were session-owned, and
+        // cancel must not quietly become "keep working in the background".
+        self.stop_subagents();
         self.close_live_background();
         self.publish_agent_status();
         self.detail = "cancelled".to_string();
@@ -6267,13 +6642,36 @@ fn session_cost(
     priced.then_some((total, unpriced))
 }
 
-/// The `/usage` readout: one row per model this session billed against, then a
-/// total. Kept free of `App` so the arithmetic is testable on its own.
+/// How many models the session readout lists before folding the rest away.
+/// Enough to show where the money went, short enough that the dock stays a
+/// glance rather than a table; the rest are one keystroke away and are still
+/// counted in the total, so folding hides detail and never spend.
+const TOP_MODELS: usize = 3;
+
+/// One model's line in the session readout, kept as data until the whole set
+/// is known: the rows are ranked by cost and the label column is padded to the
+/// widest label actually shown, neither of which can be decided while walking
+/// the map.
+struct UsageRow {
+    label: String,
+    /// `None` is "the provider publishes no price", never zero.
+    cost: Option<f64>,
+    usage: super::model_catalog::TokenUsage,
+}
+
+/// The `/usage` readout: the session's own spend first, then the models that
+/// account for it, ranked by cost with the tail folded behind `m`.
+///
+/// Summary-before-detail rather than a flat list with the total at the bottom:
+/// the question this readout answers is "what has this session cost", and a
+/// list makes the reader add rows up to find out. Kept free of `App` so the
+/// arithmetic is testable on its own.
 fn usage_lines(
     usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
+    all_models: bool,
 ) -> Vec<Vec<Span<'static>>> {
     let catalog = super::model_catalog::load();
-    let mut rows = Vec::new();
+    let mut rows: Vec<UsageRow> = Vec::new();
     let mut totals = super::model_catalog::TokenUsage::default();
     let mut total_cost = 0.0;
     let mut any_priced = false;
@@ -6288,41 +6686,98 @@ fn usage_lines(
             None => any_unpriced = true,
         }
         totals.merge(model_usage);
-        rows.push(vec![
-            Span::styled(format!("{}  ", key.label()), Style::new().cyan()),
-            Span::raw(usage_counts(model_usage)),
+        rows.push(UsageRow {
+            label: key.label(),
+            cost,
+            usage: model_usage.clone(),
+        });
+    }
+    // Ranked by what each model cost, so a truncated list keeps the models
+    // that matter. Unpriced models sort last by token volume rather than being
+    // treated as free: they have no cost to rank by, but hiding the busiest of
+    // them would hide the one most likely to be expensive.
+    rows.sort_by(|a, b| {
+        let tokens = |r: &UsageRow| r.usage.prompt_tokens + r.usage.completion_tokens;
+        match (a.cost, b.cost) {
+            (Some(x), Some(y)) => y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => tokens(b).cmp(&tokens(a)),
+        }
+        .then_with(|| a.label.cmp(&b.label))
+    });
+
+    let indent = || Span::raw("  ");
+    let dim = Style::new().dark_gray();
+    let mut out: Vec<Vec<Span<'static>>> = Vec::new();
+
+    out.push(vec![Span::styled("this session", Style::new().bold())]);
+    let mut summary = vec![indent()];
+    if any_priced {
+        summary.push(Span::styled(
+            format!("~{}  ", format_usd(total_cost)),
+            Style::new().yellow().bold(),
+        ));
+    }
+    summary.push(Span::raw(usage_counts(&totals)));
+    out.push(summary);
+    if any_unpriced && any_priced {
+        out.push(vec![
+            indent(),
+            Span::styled("excludes models with no published price", dim),
+        ]);
+    }
+
+    let shown = if all_models {
+        rows.len()
+    } else {
+        rows.len().min(TOP_MODELS)
+    };
+    let hidden = rows.len() - shown;
+    out.push(Vec::new());
+    out.push(vec![Span::styled(
+        if hidden > 0 { "top models" } else { "models" },
+        Style::new().bold(),
+    )]);
+    let width = rows[..shown]
+        .iter()
+        .map(|r| r.label.chars().count())
+        .max()
+        .unwrap_or(0);
+    for row in &rows[..shown] {
+        out.push(vec![
+            indent(),
             Span::styled(
-                match cost {
-                    Some(c) => format!("  ~{}", format_usd(c)),
+                format!("{:<width$}  ", row.label),
+                Style::new().cyan(),
+            ),
+            Span::styled(
+                match row.cost {
+                    Some(c) => format!("~{}", format_usd(c)),
                     // A model the provider publishes no prices for: say so,
                     // rather than let a total imply it cost nothing.
-                    None => "  (no published price)".to_string(),
+                    None => "(no published price)".to_string(),
                 },
                 Style::new().yellow(),
             ),
+            Span::raw(format!("  {}", usage_counts(&row.usage))),
         ]);
     }
-    if rows.len() > 1 || any_priced {
-        rows.push(vec![
-            Span::styled("total  ", Style::new().bold()),
-            Span::raw(usage_counts(&totals)),
+    if hidden > 0 {
+        out.push(vec![
+            indent(),
             Span::styled(
-                if any_priced {
-                    format!("  ~{}", format_usd(total_cost))
-                } else {
-                    String::new()
-                },
-                Style::new().yellow().bold(),
+                format!(
+                    "+{hidden} more model{}  ·  m to show all",
+                    if hidden == 1 { "" } else { "s" }
+                ),
+                dim,
             ),
         ]);
+    } else if rows.len() > TOP_MODELS {
+        out.push(vec![indent(), Span::styled("m to fold the tail", dim)]);
     }
-    if any_unpriced && any_priced {
-        rows.push(vec![Span::styled(
-            "the total excludes models with no published price",
-            Style::new().dim(),
-        )]);
-    }
-    rows
+    out
 }
 
 /// `N req · 12.3K in (8.1K cached) · 3.4K out`, the shape both the per-model
@@ -6420,7 +6875,7 @@ impl ContextReport {
 /// is slightly below 2.05 but `k * 10.0` lands on exactly 20.5, so the branch
 /// selected decimal output while the renderer produced the self-defeating
 /// `2.0K`. Integer math removes that representation mismatch.
-fn format_tokens(tokens: u64) -> String {
+pub(super) fn format_tokens(tokens: u64) -> String {
     if tokens < 1_000 {
         return tokens.to_string();
     }
@@ -6619,6 +7074,170 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
 
 /// Plain `/context` summary: current usage and autocompaction threshold first,
 /// followed by seven equal-scale category bars.
+/// The session half of a usage readout: the estimate, its model breakdown,
+/// and the provenance line that says it is an estimate.
+///
+/// Shared by `Readout::Session` and the overview's first section so the two
+/// cannot describe the same numbers differently.
+fn session_estimate_lines(app: &App, all_models: bool) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    if app.session_usage.is_empty() {
+        return vec![Line::styled("no usage yet this session".to_string(), dim)];
+    }
+    let mut lines: Vec<Line<'static>> = usage_lines(&app.session_usage, all_models)
+        .into_iter()
+        .map(Line::from)
+        .collect();
+    // The provenance line is not decoration: every figure above it is
+    // priced from a published rate sheet, and a user comparing it with
+    // an invoice has to know which one they are holding.
+    lines.push(Line::styled(
+        "estimated from the provider's published prices - not a bill".to_string(),
+        dim,
+    ));
+    // A capped session names its ceiling. The estimate above is the
+    // whole session's spend while the ceiling applies per run, so this
+    // states the limit rather than implying progress toward it -- the
+    // two numbers do not measure the same thing.
+    if let Some(ceiling) = app.cost_ceiling {
+        lines.push(Line::styled(
+            format!(
+                "each run stops at {} (--max-budget-usd)",
+                format_usd(ceiling.max_usd)
+            ),
+            dim,
+        ));
+    }
+    lines
+}
+
+/// Bare `/usage`: this session's estimate over the account's recorded spend.
+///
+/// Two sections, never one total. They measure different things -- a local
+/// guess at what this process has run up, and what the provider has actually
+/// recorded across every client on the account -- and adding them would
+/// double-count this very session while implying a precision neither has. The
+/// heading of each names its source, and the account half degrades to a
+/// reason rather than a blank when it cannot be read.
+fn overview_lines(
+    app: &App,
+    all_models: bool,
+    account: &AccountSlot,
+    width: usize,
+) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let mut lines = vec![Line::styled(
+        "THIS SESSION (estimated)".to_string(),
+        Style::new().bold(),
+    )];
+    lines.extend(session_estimate_lines(app, all_models));
+
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        "ON YOUR ACCOUNT (recorded by the provider)".to_string(),
+        Style::new().bold(),
+    ));
+    match account {
+        AccountSlot::NotConfigured => lines.push(Line::styled(
+            "no account usage API is configured for this provider".to_string(),
+            dim,
+        )),
+        AccountSlot::Loading => lines.push(Line::raw("reading account usage...")),
+        AccountSlot::Failed(message) => {
+            lines.extend(wrap_text(message, dim, width).into_iter().map(Line::from));
+        }
+        AccountSlot::Ready(payload) => {
+            // The account total only -- the per-model breakdown belongs to
+            // `/usage account`, which is one keystroke away and is where
+            // someone who wants it is already going. An overview that printed
+            // both breakdowns would be two screens of table under a heading
+            // promising a summary.
+            let query = super::tokamak::usage::Query::Summary;
+            let reported = super::usage_view::account_total_lines(payload);
+            match reported {
+                Some(rows) => lines.extend(
+                    rows.iter()
+                        .flat_map(|line| wrap_text(line, Style::new(), width))
+                        .map(Line::from),
+                ),
+                // Unparseable: fall back to the same field walk every other
+                // reported view degrades to, rather than showing nothing.
+                None => lines.extend(
+                    super::usage_view::reported_usage_lines(
+                        &query,
+                        payload,
+                        super::usage_view::Fold::Folded,
+                    )
+                        .iter()
+                        .flat_map(|line| wrap_text(line, Style::new(), width))
+                        .map(Line::from),
+                ),
+            }
+        }
+    }
+
+    lines.push(Line::raw(""));
+    lines.push(Line::styled(
+        "/usage account · daily · requests · limits for the detail".to_string(),
+        dim,
+    ));
+    lines
+}
+
+/// The docked readout's body at `width`.
+///
+/// Takes `App` because the session estimate is rendered from live state rather
+/// than from a snapshot taken when the readout opened: a user who leaves it up
+/// during a turn is watching the run's spend, and a frozen total would be
+/// quietly wrong from the first token that arrived after it.
+fn readout_lines(app: &App, readout: &Readout, width: usize) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    match readout {
+        Readout::ContextLoading => vec![Line::raw("computing context...")],
+        Readout::Context(report) => context_lines(report, width),
+        Readout::Session { all_models } => {
+            let mut lines = session_estimate_lines(app, *all_models);
+            lines.push(Line::styled(
+                match &app.last_execution_id {
+                    // A concrete id beats naming the command: this is the one
+                    // request whose real charge can be looked up right now.
+                    Some(id) => format!("/usage {id} for what the provider recorded"),
+                    None => "/usage account for what the provider actually recorded".to_string(),
+                },
+                dim,
+            ));
+            lines
+        }
+        Readout::Overview {
+            all_models,
+            account,
+        } => overview_lines(app, *all_models, account, width),
+        Readout::ReportedLoading(query) => {
+            vec![Line::raw(format!("reading {}...", query.label()))]
+        }
+        Readout::Reported {
+            query,
+            payload,
+            all_rows,
+            ..
+        } => super::usage_view::reported_usage_lines(
+            query,
+            payload,
+            super::usage_view::Fold::docked(*all_rows),
+        )
+            .iter()
+            // Hard-wrapped rather than clipped: a truncated money figure is a
+            // wrong money figure.
+            .flat_map(|line| wrap_text(line, Style::new(), width))
+            .map(Line::from)
+            .collect(),
+        Readout::ReportedError { message, .. } => wrap_text(message, Style::new(), width)
+            .into_iter()
+            .map(Line::from)
+            .collect(),
+    }
+}
+
 fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
     let max = width.max(1);
     let percents = report.percents();
@@ -8436,6 +9055,31 @@ async fn await_monitor_ping(set: &Arc<MonitorSet>, idle: bool) {
     set.wait_for_notice().await
 }
 
+/// Await a backgrounded-shell ping the TUI must deliver itself, on the same
+/// terms as [`await_monitor_ping`]: only between runs, since a running loop
+/// drains the same registry at the top of each turn.
+async fn await_shell_ping(
+    set: &Arc<crate::core::agent::bg_shell::BackgroundShells>,
+    idle: bool,
+) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
+/// Await a background-subagent ping the TUI must deliver itself, on the same
+/// terms as [`await_monitor_ping`].
+async fn await_subagent_ping(
+    set: &Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    idle: bool,
+) {
+    if !idle || !set.has_pending_work() {
+        return pending().await;
+    }
+    set.wait_for_notice().await
+}
+
 /// Await the next event of the active run, or park forever when idle.
 async fn next_event(current: &mut Option<CurrentRun>) -> RunEvent {
     match current {
@@ -8528,6 +9172,30 @@ async fn await_context(
     *task = None;
     // A panicked job is dropped rather than reported: the overlay stays on
     // its loading state and the user just closes it.
+    joined.ok()
+}
+
+/// Await an in-flight account-usage read, parking forever when none is running
+/// so this can sit in the loop's `select!` unconditionally.
+#[allow(clippy::type_complexity)]
+async fn await_reported_usage(
+    task: &mut Option<
+        tokio::task::JoinHandle<(
+            super::tokamak::usage::Query,
+            Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+        )>,
+    >,
+) -> Option<(
+    super::tokamak::usage::Query,
+    Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+)> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    // A panicked job leaves the overlay on its loading state for the user to
+    // close, same as `await_context`.
     joined.ok()
 }
 
@@ -8842,6 +9510,17 @@ pub async fn run(
     // model's answer ends the run instead of parking on it.
     let monitor_set = Arc::new(MonitorSet::new());
     args.monitors = Some(monitor_set.clone());
+    // Background shells and subagents are session-owned for the same reason:
+    // the model finishing its turn must end the run even with work still
+    // running, so a typed message starts an ordinary turn instead of queueing
+    // behind work that may take minutes. Their completions are delivered as a
+    // fresh turn by `submit_background_notices`.
+    let shell_set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+    args.bg_shells = Some(shell_set.clone());
+    let subagent_set = Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
+        args.max_parallel_subagents,
+    ));
+    args.subagent_bg = Some(subagent_set.clone());
     let session_scratch = args.session_id.clone();
     let args = Arc::new(args);
 
@@ -8900,6 +9579,8 @@ pub async fn run(
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
+    app.shell_set = shell_set;
+    app.subagent_set = subagent_set;
     app.args = Some(args.clone());
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
@@ -8921,6 +9602,9 @@ pub async fn run(
         (false, false) => "--safe: approval needed, but unsandboxed - what you approve runs with your own access (--sandbox to confine)".to_string(),
     };
     app.push_session_banner(!seeded);
+    if let Some(note) = super::take_migration_notice() {
+        app.note(&note);
+    }
     if let Some(note) = workspace_note {
         app.note(&note);
     }
@@ -9131,6 +9815,13 @@ async fn chat_loop<B: Backend>(
     // Cloned out of `app` so the select arm below can await it while other
     // arms borrow `app` mutably.
     let monitor_set = app.monitor_set.clone();
+    let shell_set = app.shell_set.clone();
+    let subagent_set = app.subagent_set.clone();
+    // The durable channel session-owned children report into, read for the
+    // whole session rather than for one run: a child outliving the run that
+    // dispatched it must still reach its panel and emit its closing bracket.
+    let (session_events_tx, mut session_events) = mpsc::unbounded_channel::<StreamEvent>();
+    subagent_set.install_session_events(session_events_tx);
     // Active MCP servers connect in the background; gate the first run on them
     // so the model's tools (collected once per run) are ready.
     let mut mcp_ready = mcp_task.is_none();
@@ -9174,6 +9865,11 @@ async fn chat_loop<B: Backend>(
     // executing an MCP tool call holds it for up to the tool-call timeout), so
     // it must never run on the render loop. One at a time.
     let mut context_task: Option<tokio::task::JoinHandle<ContextReport>> = None;
+    type ReportedUsageResult = (
+        super::tokamak::usage::Query,
+        Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+    );
+    let mut reported_usage_task: Option<tokio::task::JoinHandle<ReportedUsageResult>> = None;
     // The update check is a network round trip, so it runs off the render loop
     // and notes itself whenever it lands rather than delaying the first frame.
     let mut update_task = Some(tokio::spawn(super::updater::available_update()));
@@ -9321,6 +10017,17 @@ async fn chat_loop<B: Backend>(
             let snapshot = app.context_snapshot();
             context_task = Some(tokio::spawn(compute_context_report(snapshot)));
         }
+        // `/usage <view>` asked for an account read. It is a network call, so
+        // it runs off the render loop exactly like `/context`'s report: one at
+        // a time, with the overlay sitting on its loading state until it lands.
+        if reported_usage_task.is_none() {
+            if let Some(query) = app.reported_usage_request.take() {
+                reported_usage_task = Some(tokio::spawn(async move {
+                    let result = super::tokamak::usage::fetch(&query).await;
+                    (query, result)
+                }));
+            }
+        }
         // A key was submitted at the `/login` prompt: verify it off-loop. One at
         // a time - the prompt is read-only while `verifying`.
         if login_task.is_none() {
@@ -9393,7 +10100,9 @@ async fn chat_loop<B: Backend>(
         // flight, and the result replaces `history` wholesale.
         if compact_task.is_none() {
             if let Some(kind) = app.compact_request.take() {
-                let args = args.clone();
+                // `app.args`, not the startup handle: it carries the budget a
+                // model switch or `/reload config` last synced.
+                let args = app.args.clone().unwrap_or_else(|| args.clone());
                 let model = app.model.clone();
                 let history = app.history.clone();
                 compact_base = history.len();
@@ -9432,7 +10141,8 @@ async fn chat_loop<B: Backend>(
                 // The submission itself is one human turn toward the aging
                 // grace period; model roundtrips count via `Step` events.
                 age_closed_todos(app).await;
-                current = Some(spawn_run(args, app.body()));
+                let run_args = app.args.clone().unwrap_or_else(|| args.clone());
+                current = Some(spawn_run(&run_args, app.body()));
             } else if !loading_noted && !mcp_ready {
                 // The base snapshot gates silently; only the MCP connect notes.
                 loading_noted = true;
@@ -9517,6 +10227,12 @@ async fn chat_loop<B: Backend>(
             _ = await_monitor_ping(&monitor_set, current.is_none() && !app.want_start) => {
                 app.submit_monitor_notices();
             }
+            _ = await_shell_ping(&shell_set, current.is_none() && !app.want_start) => {
+                app.submit_background_notices();
+            }
+            _ = await_subagent_ping(&subagent_set, current.is_none() && !app.want_start) => {
+                app.submit_background_notices();
+            }
             branch = await_branch_poll(&mut branch_task) => {
                 app.git_branch = branch;
             }
@@ -9547,6 +10263,9 @@ async fn chat_loop<B: Backend>(
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
                 finish_context_report(app, report);
+            }
+            Some((query, result)) = await_reported_usage(&mut reported_usage_task) => {
+                finish_reported_usage(app, &query, result);
             }
             login_res = await_login(&mut login_task) => {
                 let login_ok = login_res.is_ok();
@@ -9641,6 +10360,13 @@ async fn chat_loop<B: Backend>(
                     RunEvent::Steering(request) => app.steer_run(request),
                 }
                 drain_stream_events(app, &mut current).await;
+            }
+            // Children stream here whether or not a run is open. Applied with
+            // the same handler, so a panel updates and closes identically
+            // between runs; `current` is untouched, since a child's events say
+            // nothing about the run that dispatched it.
+            Some(ev) = session_events.recv() => {
+                apply_stream_event(app, Some(ev), &mut current).await;
             }
         }
     }
@@ -10445,13 +11171,23 @@ async fn handle_key(
     // without cancelling the running turn. Nothing else reaches the input box
     // or the transcript shortcuts (e.g. a bare `q` must not quit) while it is
     // up.
-    if app.context_view.is_some() {
+    if app.readout.is_some() {
         match key.code {
+            // `m` folds a readout's list open and shut -- the session's
+            // models, or an account view's breakdown. Readouts with no tail
+            // fall through to the catch-all and do nothing rather than
+            // closing the dock.
+            KeyCode::Char('m') if !ctrl => match &mut app.readout {
+                Some(Readout::Session { all_models })
+                | Some(Readout::Overview { all_models, .. }) => *all_models = !*all_models,
+                Some(Readout::Reported { all_rows, .. }) => *all_rows = !*all_rows,
+                _ => {}
+            },
             KeyCode::Esc | KeyCode::Char('q') if !ctrl => {
-                app.context_view = None;
+                app.readout = None;
             }
             _ if ctrl_c => {
-                app.context_view = None;
+                app.readout = None;
             }
             _ => {}
         }
@@ -11202,10 +11938,18 @@ struct SlashCommand {
 }
 
 /// Slash popup metadata is intentionally loaded outside the render path.
-/// Plugin installation and removal explicitly refresh this snapshot.
+/// Plugin installation and removal explicitly refresh this snapshot — as does
+/// `/reload`, which diffs a fresh scan against it to report what changed.
 struct SlashCatalog {
     commands: Vec<crate::core::agent::plugin_commands::CommandEntry>,
     skills: Vec<crate::core::agent::skills::SkillMeta>,
+    /// Installed plugin summaries from the same scan, for `/reload plugin`'s
+    /// added/removed/updated report.
+    plugins: Vec<crate::core::agent::plugins::InstalledPlugin>,
+    /// Every discovered skill, both invocation sides — the full disk truth
+    /// `/reload skills` diffs against (the popup list above is only the
+    /// user-invocable subset).
+    all_skills: Vec<crate::core::agent::skills::SkillMeta>,
 }
 
 impl SlashCatalog {
@@ -11215,6 +11959,8 @@ impl SlashCatalog {
             // Keep every user-invocable skill here. The enabled whitelist is
             // re-read below so edits to agent.toml take effect immediately.
             skills: crate::core::agent::skills::user_catalog(root, &[]),
+            plugins: crate::core::agent::plugins::installed(root),
+            all_skills: crate::core::agent::skills::full_catalog(root),
         }
     }
 
@@ -11249,7 +11995,7 @@ impl SlashCatalog {
 
 /// One row of the slash-command popup: a built-in command, an installed
 /// plugin command (`<plugin>/commands/<name>.md`), or an installed project
-/// skill (`.jan/agent/skills/<name>/SKILL.md`) offered by name so `/deploy`
+/// skill (`<store>/skills/<name>/SKILL.md`) offered by name so `/deploy`
 /// behaves like a command the user can tab-complete and run.
 #[derive(Clone)]
 enum SlashMatch {
@@ -11443,8 +12189,8 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/usage",
-        hint: "",
-        description: "Show this session's tokens and estimated cost, per model",
+        hint: "[session|run|account|daily|requests|limits|<execution-id>]",
+        description: "This session's estimated cost and your account's recorded spend",
         alias_of: None,
     },
     SlashCommand {
@@ -11559,6 +12305,18 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]]",
         description: "Manage plugins: install from a git URL or the marketplace, list/remove installed, search the marketplace",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/skills",
+        hint: "",
+        description: "List skills with their scope (project, plugin, user, built-in) and shadowing",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/reload",
+        hint: "[config|plugin|skills|system-prompt]",
+        description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
         alias_of: None,
     },
     SlashCommand {
@@ -11753,7 +12511,7 @@ async fn run_command(
         }
         "compact" => compact_command(app),
         "context" => context_command(app),
-        "usage" => usage_command(app),
+        "usage" => usage_command(app, arg),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
                 app.note("no saved threads found");
@@ -11797,6 +12555,8 @@ async fn run_command(
         "agents" => open_agents_picker(app),
         "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
+        "reload" => reload_command(app, arg),
+        "skills" => skills_command(app),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -11846,34 +12606,166 @@ async fn run_command(
 /// The report is *not* computed here. Sizing the tool segment takes the MCP
 /// server lock, which a turn executing an MCP tool call holds for up to the
 /// tool-call timeout; computing it inline on the key-handling path would
-/// freeze the whole UI. So this only sets the overlay to its loading state and
-/// raises a flag the loop picks up, which computes the report on its own task
-/// and fills the overlay in when it lands. Unlike the old idle-only transcript
-/// row, the readout is a popup the user closes with Esc, so it stays available
+/// freeze the whole UI. So this only opens the readout on its loading state
+/// and raises a flag the loop picks up, which computes the report on its own
+/// task and fills it in when it lands. Unlike the old idle-only transcript
+/// row, the readout is a dock the user closes with Esc, so it stays available
 /// mid-turn without ever blocking the render loop.
 fn context_command(app: &mut App) {
-    app.context_view = Some(ContextView::Loading);
+    app.readout = Some(Readout::ContextLoading);
     app.context_request = true;
 }
 
-/// `/usage`: what this session has actually spent, per model. Unlike
+/// `/usage`: what this session has spent, per model, in the same dock
+/// `/context` uses -- these are one kind of surface (a question about the run,
+/// answered in place and dismissed), so they must not look like two.
+///
+/// Unlike
 /// `/context` -- which describes the *current* window, a single request's worth
 /// -- these are sums across every request, because that is what a provider
 /// bills. Prices come from the provider's own `/models` listing (cached by
 /// [`super::model_catalog`]), so a model it publishes no price for is reported
 /// as such rather than counted as free. Local to the transcript: nothing is
 /// sent upstream, and no account-level spend is available to ask for.
-fn usage_command(app: &mut App) {
-    if app.session_usage.is_empty() {
-        app.note("no usage yet this session");
-        return;
+fn usage_command(app: &mut App, arg: &str) {
+    match parse_usage_mode(arg) {
+        // A glance-and-dismiss answer, not part of the conversation: it opens
+        // the same dock every other readout uses and writes nothing to the
+        // transcript. An empty session still opens it -- "nothing yet" is the
+        // answer to the question that was asked, and answering it somewhere
+        // else would make the command's surface depend on its result.
+        UsageMode::Session => app.readout = Some(Readout::Session { all_models: false }),
+        // Bare `/usage` is "how much am I spending", which has two honest
+        // answers: this session's estimate and the account's recorded total.
+        // The session half draws immediately from local state, so the pane is
+        // never empty while the network read is in flight -- and when there is
+        // no account API to read, the overview is still the estimate plus a
+        // line saying so, rather than an error.
+        UsageMode::Overview => {
+            let configured = super::tokamak::auth_status().signed_in;
+            app.readout = Some(Readout::Overview {
+                all_models: false,
+                account: if configured {
+                    AccountSlot::Loading
+                } else {
+                    AccountSlot::NotConfigured
+                },
+            });
+            if configured {
+                app.reported_usage_request = Some(super::tokamak::usage::Query::Summary);
+            }
+        }
+        UsageMode::Run => {
+            // Every request this session made carries the session's correlation
+            // id, so one lookup returns the whole run's executions -- which is
+            // the authoritative answer to the question bare `/usage` estimates.
+            let correlation = app
+                .args
+                .as_ref()
+                .and_then(|args| args.session_id.as_deref())
+                .and_then(|id| {
+                    crate::core::agent::correlation::session_request_id(Some(id))
+                });
+            match correlation {
+                Some(id) => usage_command(app, &format!("correlate {id}")),
+                None => {
+                    app.note("this run has no session id to correlate");
+                    app.system_detail_text(
+                        "executions are found by the id sent with each request; without a session there is none",
+                    );
+                }
+            }
+        }
+        UsageMode::Account(query) => {
+            // An account read needs a Tokamak key. Saying so here, before any
+            // request, keeps a user on another provider from watching a
+            // spinner resolve into an auth error.
+            if !super::tokamak::auth_status().signed_in {
+                app.note("no account usage API is configured for this provider");
+                app.system_detail_text(
+                    "account spend is read from Tokamak; `/usage` alone still estimates this session",
+                );
+                return;
+            }
+            app.readout = Some(Readout::ReportedLoading(query.clone()));
+            app.reported_usage_request = Some(query);
+        }
+        UsageMode::Unknown(arg) => {
+            app.note(&format!("unknown usage view: {arg}"));
+            app.system_detail_text(USAGE_MODE_HELP);
+        }
     }
-    app.note("session usage");
-    for row in usage_lines(&app.session_usage) {
-        app.system_detail(row);
-    }
-    app.system_detail_text("estimated from the provider's published prices - not a bill");
 }
+
+/// What `/usage` was asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum UsageMode {
+    /// The default: this session's estimate and the account's recorded spend,
+    /// side by side.
+    Overview,
+    /// This session's local estimate alone -- the only view that works
+    /// offline, mid-turn, and for a non-Tokamak provider.
+    Session,
+    /// An authoritative read from the provider's usage API.
+    Account(super::tokamak::usage::Query),
+    /// Every execution this run produced, found by its correlation id.
+    /// Resolved into an [`UsageMode::Account`] lookup once the session id is
+    /// known, which only the caller has.
+    Run,
+    Unknown(String),
+}
+
+const USAGE_MODE_HELP: &str =
+    "/usage (overview) · session · run · account · daily · requests · limits · <execution-id>";
+
+/// Parse the argument to `/usage`.
+///
+/// A bare `/usage` stays the session estimate it has always been -- the one
+/// answer available instantly and without a network -- so this only ever adds
+/// views. An argument that is not a known mode is treated as an execution id
+/// rather than rejected: that is the shape of the thing a user pastes, and an
+/// id that turns out not to exist reports a clean not-found.
+fn parse_usage_mode(arg: &str) -> UsageMode {
+    use super::tokamak::usage::Query;
+    let arg = arg.trim();
+    match arg {
+        "" => UsageMode::Overview,
+        "session" => UsageMode::Session,
+        "run" => UsageMode::Run,
+        "account" | "me" => UsageMode::Account(Query::Summary),
+        "daily" => UsageMode::Account(Query::Daily),
+        "requests" => UsageMode::Account(Query::Requests),
+        "limits" => UsageMode::Account(Query::Limits),
+        other => {
+            // `correlate <id>` is how `/usage run` re-enters this parser once it
+            // has resolved the session's correlation id, and is usable directly
+            // for an id from another run. Matched before the lone-word case
+            // below, or a bare `correlate` would be looked up as an execution
+            // id of that name.
+            if let Some(id) = other
+                .strip_prefix("correlate")
+                .map(str::trim)
+                .filter(|_| other == "correlate" || other.starts_with("correlate "))
+            {
+                return if id.is_empty() {
+                    UsageMode::Unknown(other.to_string())
+                } else {
+                    UsageMode::Account(Query::Correlated(id.to_string()))
+                };
+            }
+            // Anything else is taken as an execution id, but only when it is
+            // plausibly one: a word with no whitespace. A phrase is a typo, and
+            // sending it upstream to be told it does not exist would be a worse
+            // answer than naming the available views.
+            if other.split_whitespace().count() == 1 {
+                UsageMode::Account(Query::Generation(other.to_string()))
+            } else {
+                UsageMode::Unknown(other.to_string())
+            }
+        }
+    }
+}
+
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
 /// later session reads back: the root `JAN.md` (ingested as project context),
@@ -12087,7 +12979,7 @@ struct AgentSettingDef {
 /// looking for a knob: they want the setting, not the file it lives in.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SettingScope {
-    /// This project's `.jan/agent/agent.toml`, under `[agent]` unless the key
+    /// This project's `agent.toml` (in its store), under `[agent]` unless the key
     /// names its own section.
     Project,
     /// The user-wide `~/.jan/config.toml`, at the document root.
@@ -12215,16 +13107,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Enum {
             options: &["read-only", "deny", "allow"],
             default: "read-only",
-        },
-        scope: SettingScope::Project,
-    },
-    AgentSettingDef {
-        key: "skills.inject",
-        label: "skills.inject",
-        desc: "when project skills are injected into the prompt",
-        kind: AgentSettingKind::Enum {
-            options: &["always", "relevance"],
-            default: "always",
         },
         scope: SettingScope::Project,
     },
@@ -13536,7 +14418,7 @@ fn cancel_command(app: &mut App, arg: &str) {
     ));
 }
 
-/// `/plugin` handler: manage plugins installed under `.jan/agent/plugins/`.
+/// `/plugin` handler: manage plugins installed under the project store's `plugins/`.
 ///   - `/plugin` or `/plugin list`   — installed plugins + the skills they ship
 ///   - `/plugin install <spec>`      — git URL (optionally `#ref`) or a name
 ///     from the configured `[plugins] marketplace`
@@ -13702,6 +14584,322 @@ async fn plugin_command(app: &mut App, arg: &str) {
         other => app.note(&format!(
             "unknown /plugin subcommand '{other}' (try list|install|remove|search)"
         )),
+    }
+}
+
+/// One diffable catalog entry for `/reload`: `key` is the stable identity,
+/// `label` the display line, `state` everything whose change marks the entry
+/// as updated (version/description/counts for plugins, description and
+/// invocation flags for skills).
+struct ReloadEntry {
+    key: String,
+    label: String,
+    state: String,
+}
+
+/// Snapshot the installed-plugin summaries for `/reload plugin`'s diff.
+fn reload_plugin_entries(plugins: &[crate::core::agent::plugins::InstalledPlugin]) -> Vec<ReloadEntry> {
+    plugins
+        .iter()
+        .map(|p| ReloadEntry {
+            key: p.name.clone(),
+            label: format!("plugin {} (v{})", p.name, p.version),
+            state: format!(
+                "v{} · {} skill(s) · {} command(s) · {} agent(s) · {}",
+                p.version, p.skills, p.commands, p.agents, p.description
+            ),
+        })
+        .collect()
+}
+
+/// Snapshot the full skill catalog for `/reload skills`'s diff, keyed by
+/// qualified name (`<plugin>:<skill>` for plugin skills).
+fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec<ReloadEntry> {
+    skills
+        .iter()
+        .map(|m| {
+            let name = m
+                .plugin
+                .as_ref()
+                .map_or_else(|| m.name.clone(), |p| format!("{p}:{}", m.name));
+            ReloadEntry {
+                key: name.clone(),
+                label: name,
+                state: format!(
+                    "{} [{} user:{} model:{}]",
+                    m.description,
+                    m.scope.label(),
+                    m.user_invocable,
+                    m.model_invocable
+                ),
+            }
+        })
+        .collect()
+}
+
+/// `/skills`: every skill Jan can see from this project, with its scope and
+/// invocation sides, and each one hidden by a same-named higher-precedence
+/// skill marked with what shadows it. Precedence: project > user > built-in;
+/// plugin skills are qualified `<plugin>:<name>` and never collide.
+fn skills_command(app: &mut App) {
+    let enabled = crate::core::agent::project::enabled_skills(&app.project_root);
+    let rows = crate::core::agent::skills::report(&app.project_root, &enabled);
+    let user_dir = crate::core::agent::skills::user_skills_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_else(|| "(no home directory)".to_string());
+    let active = rows.iter().filter(|r| r.shadowed_by.is_none()).count();
+    app.note(&format!(
+        "◈ skills · {active} active · precedence project > user > built-in · user scope {user_dir}"
+    ));
+    for row in &rows {
+        let mut flags = Vec::new();
+        if !row.user_invocable {
+            flags.push("model-only".to_string());
+        }
+        if !row.model_invocable {
+            flags.push("user-only".to_string());
+        }
+        if !row.enabled {
+            flags.push("disabled".to_string());
+        }
+        if let Some(by) = row.shadowed_by {
+            flags.push(format!("shadowed by {}", by.label()));
+        }
+        let flags = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", flags.join(", "))
+        };
+        app.system_detail_text(&format!(
+            "{:<9} {}{} · {}",
+            row.scope.label(),
+            row.name,
+            flags,
+            row.description
+        ));
+    }
+}
+
+/// Display lines for what a reload changed, one list per kind of change.
+#[derive(Default)]
+struct ReloadDiff {
+    added: Vec<String>,
+    removed: Vec<String>,
+    updated: Vec<String>,
+}
+
+/// Diff two catalog snapshots by identity, returning display lines for
+/// added, removed, and updated entries in scan order.
+fn diff_reload_entries(before: &[ReloadEntry], after: &[ReloadEntry]) -> ReloadDiff {
+    fn keyed(items: &[ReloadEntry]) -> std::collections::BTreeMap<String, &ReloadEntry> {
+        items.iter().map(|e| (e.key.clone(), e)).collect()
+    }
+    let (old, new) = (keyed(before), keyed(after));
+    let mut diff = ReloadDiff::default();
+    for (key, entry) in &new {
+        match old.get(key) {
+            None => diff.added.push(entry.label.clone()),
+            Some(prev) if prev.state != entry.state => diff.updated.push(format!(
+                "{} ({} → {})",
+                entry.label, prev.state, entry.state
+            )),
+            Some(_) => {}
+        }
+    }
+    for (key, entry) in &old {
+        if !new.contains_key(key) {
+            diff.removed.push(entry.label.clone());
+        }
+    }
+    diff
+}
+
+/// `/reload [config|plugin|skills|system-prompt]`: re-read on-disk state into
+/// the running session instead of restarting it. `config` re-applies the
+/// project's `agent.toml` limits (context window, compaction, output cap,
+/// token budget) and reports each value that moved; `plugin`/`skills` re-run
+/// discovery and rebuild the slash catalog, reporting added/removed/changed
+/// entries. The model-facing system prompt (JAN.md instructions, the skills
+/// catalog) is rebuilt from disk on every run, so `system-prompt` re-reads and
+/// reports what the next run picks up. Bare `/reload` does all of them.
+fn reload_command(app: &mut App, arg: &str) {
+    match arg.trim() {
+        "" => {
+            reload_config(app);
+            reload_catalog(app, true, true);
+            reload_system_prompt(app);
+        }
+        "config" => reload_config(app),
+        "plugin" => reload_catalog(app, true, false),
+        "skills" => reload_catalog(app, false, true),
+        "system-prompt" => reload_system_prompt(app),
+        other => app.note(&format!(
+            "unknown /reload target '{other}' (try config | plugin | skills | system-prompt)"
+        )),
+    }
+}
+
+/// Re-run discovery once and report the plugin and/or skill diff. Both
+/// snapshots are taken before the single refresh: one refresh rescans both
+/// catalogs, so diffing skills after a plugin refresh would always come up empty.
+fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
+    let plugins_before = reload_plugin_entries(&app.slash_catalog.plugins);
+    let skills_before = reload_skill_entries(&app.slash_catalog.all_skills);
+    app.refresh_slash_catalog();
+    if plugins {
+        let after = reload_plugin_entries(&app.slash_catalog.plugins);
+        app.note("◈ reload · plugin · re-scanned installed plugins");
+        report_reload_diff(app, diff_reload_entries(&plugins_before, &after));
+    }
+    if skills {
+        let after = reload_skill_entries(&app.slash_catalog.all_skills);
+        app.note("◈ reload · skills · re-scanned project, plugin, and user skills");
+        report_reload_diff(app, diff_reload_entries(&skills_before, &after));
+    }
+}
+
+fn reload_system_prompt(app: &mut App) {
+    // Nothing caches the instructions across runs: the system prompt
+    // (including this block and the skills catalog) is rebuilt from disk at
+    // the start of every run. Re-read now to confirm what the next run picks up.
+    let files = crate::core::agent::context::context_files(&app.project_root);
+    if files.is_empty() {
+        app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+        return;
+    }
+    app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
+    for (path, content) in &files {
+        app.system_detail_text(&format!("  {} ({} bytes)", path.display(), content.len()));
+    }
+}
+
+/// Re-read the project's `agent.toml` and apply the `[agent]`/`[budget]`
+/// limits the session snapshotted at startup, using the same precedence the
+/// startup path does (`prepare_agent_session`): a provider's own
+/// `compaction_ratio` beats the project's, and a `--max-session-tokens` flag
+/// beats `[budget].max_tokens`. The next run spawned gets the new compaction
+/// budget via [`App::sync_compaction_budget`]; a run already in flight keeps
+/// the one it started with.
+///
+/// Not reloaded: the model (switch it with `/model`), `[tools]` permissions
+/// and `[provider]`, which are wired into the session's tools and routes at
+/// startup, and `[budget].max_usd`, whose rates are priced once at startup.
+fn reload_config(app: &mut App) {
+    let cfg = match crate::core::agent::project::load_agent_config(&app.project_root) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            app.note(&format!("◈ reload · config · {e}; kept the current settings"));
+            return;
+        }
+    };
+    let before = reload_config_entries(app);
+    let budget_before = app.max_session_tokens;
+
+    app.configured_context_window = cfg.agent.context_window;
+    // Provider configs sit behind the engine's lock. If a run holds it right
+    // now, keep the current ratio rather than resolve without the provider's
+    // own override and silently pick the wrong one.
+    let configured_ratio = cfg.agent.compaction_ratio;
+    let ratio = match app.args.as_ref().map(|a| a.provider_configs.try_lock()) {
+        Some(Ok(pc)) => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &pc,
+            configured_ratio,
+        )),
+        Some(Err(_)) => None,
+        None => Some(super::resolve_compaction_ratio(
+            &app.model,
+            &HashMap::new(),
+            configured_ratio,
+        )),
+    };
+    let ratio_busy = ratio.is_none();
+    if let Some(ratio) = ratio {
+        app.compaction_ratio = ratio;
+    }
+    app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
+    app.max_tokens = cfg.agent.max_tokens;
+    let pinned = app.max_session_tokens_source == SessionBudgetSource::Flag;
+    if !pinned {
+        // Seeded from the file alone; `refresh_context_window` below fills in
+        // the window-derived default when the file sets none.
+        (app.max_session_tokens, app.max_session_tokens_source) =
+            super::resolve_session_budget(None, cfg.budget.max_tokens, None);
+    }
+    app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
+    // Re-resolves the window and pushes the compaction budget to the engine.
+    app.refresh_context_window();
+
+    let after = reload_config_entries(app);
+    app.note(&format!(
+        "◈ reload · config · re-read {}",
+        crate::core::agent::project::agent_toml_path(&app.project_root).display()
+    ));
+    report_reload_diff(app, diff_reload_entries(&before, &after));
+    if pinned && cfg.budget.max_tokens.is_some_and(|v| v != budget_before) {
+        app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
+    }
+    if !ratio_busy
+        && cfg.agent.compaction_ratio.is_some_and(|r| r != app.compaction_ratio)
+    {
+        app.system_detail_text(
+            "  compaction_ratio from agent.toml ignored: the serving provider sets its own",
+        );
+    }
+    if ratio_busy {
+        app.system_detail_text(
+            "  compaction_ratio kept: provider settings are busy; /reload config again when idle",
+        );
+    }
+    if app.should_auto_compact() {
+        app.compact_request = Some(CompactKind::Auto);
+        app.system_detail_text("  context now over the compaction trigger; compacting");
+    }
+}
+
+/// The reloadable limits as diffable entries, so `/reload config` reports
+/// exactly the values that moved.
+fn reload_config_entries(app: &App) -> Vec<ReloadEntry> {
+    fn entry(key: &str, state: String) -> ReloadEntry {
+        ReloadEntry {
+            key: key.to_string(),
+            label: key.to_string(),
+            state,
+        }
+    }
+    let opt = |v: Option<u64>| v.map_or_else(|| "unset".to_string(), |v| v.to_string());
+    vec![
+        entry(
+            "context_window",
+            format!("{} ({})", app.context_window, app.context_window_source.label()),
+        ),
+        entry("compaction_ratio", app.compaction_ratio.to_string()),
+        entry("compaction_reserve_tokens", opt(app.compaction_reserve_tokens)),
+        entry("max_tokens", opt(app.max_tokens)),
+        entry("budget.max_tokens", app.max_session_tokens.to_string()),
+        entry("send_reasoning", app.send_reasoning.to_string()),
+    ]
+}
+
+/// Print a reload diff, or the unchanged note when the scan found nothing new.
+fn report_reload_diff(app: &mut App, diff: ReloadDiff) {
+    let ReloadDiff {
+        added,
+        removed,
+        updated,
+    } = diff;
+    if added.is_empty() && removed.is_empty() && updated.is_empty() {
+        app.system_detail_text("  no changes since the last scan");
+        return;
+    }
+    for line in added {
+        app.system_detail_text(&format!("  + {line}"));
+    }
+    for line in removed {
+        app.system_detail_text(&format!("  - {line}"));
+    }
+    for line in updated {
+        app.system_detail_text(&format!("  ~ {line}"));
     }
 }
 
@@ -14729,8 +15927,10 @@ fn finish_tokamak_login(app: &mut App, result: Result<super::tokamak::Login, Str
                 models,
                 config_path,
                 default_model,
+                replaced_default,
                 account,
             } = login;
+            let repointed = replaced_default.then(|| default_model.clone()).flatten();
             finish_login(
                 app,
                 Ok(crate::core::cli::auth::LoginResult {
@@ -14742,6 +15942,14 @@ fn finish_tokamak_login(app: &mut App, result: Result<super::tokamak::Login, Str
             );
             if let Some(account) = account {
                 app.note(&format!("signed in to Tokamak as {account}"));
+            }
+            // Said out loud rather than applied quietly: the user picked the
+            // old default at some point, and a model silently swapped under
+            // them is worse than the 404 the swap avoids.
+            if let Some(model) = repointed {
+                app.note(&format!(
+                    "your default model is no longer offered - switched to {model}"
+                ));
             }
             if let Some(warning) = super::tokamak::expiry_warning() {
                 app.note(&warning);
@@ -14849,7 +16057,9 @@ fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult)
     if runnable.iter().any(|(_, model)| *model == app.model) {
         return;
     }
-    if let Some(model) = login.models.first() {
+    // The default the sign-in just settled on, when it wrote one: it is the
+    // provider's own first-listed model, where `models` is merely sorted.
+    if let Some(model) = login.default_model.as_ref().or_else(|| login.models.first()) {
         app.model = model.clone();
         let _ = super::cli_set_project_model(&app.agent_dir, &app.model);
     }
@@ -15082,9 +16292,57 @@ async fn finish_mcp_job(
 /// not reopen a popup they walked away from (mirrors how `finish_mcp_job`
 /// drops a listing whose screen has been left).
 fn finish_context_report(app: &mut App, report: ContextReport) {
-    if app.context_view.is_some() {
-        app.context_view = Some(ContextView::Ready(Box::new(report)));
+    // Only while `/context` is still the readout on screen. Checking the
+    // variant rather than merely "something is open" matters now that one
+    // field holds them all: a user who ran `/context` and then `/usage` before
+    // the report landed must not have the usage view yanked out from under
+    // them by the earlier request finishing.
+    if matches!(app.readout, Some(Readout::ContextLoading)) {
+        app.readout = Some(Readout::Context(Box::new(report)));
     }
+}
+
+/// Fold a finished account-usage read into its overlay. Like
+/// [`finish_context_report`], a result landing after the user closed the
+/// overlay is dropped rather than reopening it.
+///
+/// A failure fills the overlay rather than being swallowed: the user asked a
+/// question about money and "the request did not land" is a real answer, where
+/// an empty popup would read as "nothing was spent".
+fn finish_reported_usage(
+    app: &mut App,
+    query: &super::tokamak::usage::Query,
+    result: Result<super::tokamak::usage::Payload, super::tokamak::usage::UsageError>,
+) {
+    // The overview holds the account read in a slot beside the session
+    // estimate, so a landing result fills that slot rather than replacing the
+    // readout -- replacing it would throw away the half already on screen.
+    if let Some(Readout::Overview { account, .. }) = &mut app.readout {
+        if matches!(account, AccountSlot::Loading) {
+            *account = match result {
+                Ok(payload) => AccountSlot::Ready(Box::new(payload)),
+                Err(e) => AccountSlot::Failed(e.to_string()),
+            };
+        }
+        return;
+    }
+    // Same rule as `finish_context_report`, and for the same reason: a result
+    // only fills the readout that is still waiting for it.
+    if !matches!(app.readout, Some(Readout::ReportedLoading(_))) {
+        return;
+    }
+    app.readout = Some(match result {
+        Ok(payload) => Readout::Reported {
+            title: query.label().to_string(),
+            query: query.clone(),
+            payload: Box::new(payload),
+            all_rows: false,
+        },
+        Err(e) => Readout::ReportedError {
+            title: query.label().to_string(),
+            message: e.to_string(),
+        },
+    });
 }
 
 /// Open the add/edit wizard prefilled from a configured server.
@@ -15319,6 +16577,26 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
             app.note("resumed in plan mode (read only); /plan exit to leave");
         }
     }
+}
+
+/// Reload the system prompt an RPC host wrote a thread under, or return to
+/// Jan's for a thread with none, so the resumed conversation keeps the prompt
+/// its history was produced under.
+fn restore_host_system_prompt(app: &mut App, metadata: Option<&serde_json::Value>) {
+    let prompt = metadata
+        .and_then(|m| m.get(super::SYSTEM_PROMPT_KEY))
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.trim().is_empty())
+        .map(str::to_owned);
+    if prompt.is_some() {
+        // The prompt was written for the host's tools, which a TUI session
+        // does not have; the user should know before the model reaches for them.
+        app.note(
+            "resumed on the host's system prompt from this thread; the host's tools are \
+             not available here. /new returns to Jan's prompt",
+        );
+    }
+    app.set_host_system_prompt(prompt);
 }
 
 /// Reload the canonical todo list for a resumed thread from its persisted
@@ -15824,7 +17102,10 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.reasoning_blocks.clear();
     app.expanded_traces.clear();
     app.subagent_blocks.clear();
+    // The conversation these would report into is being replaced.
+    app.stop_subagents();
     app.stop_monitors();
+    app.shell_set.take_notices();
     app.expanded.clear();
     app.reveal = None;
     app.assistant_buf.clear();
@@ -15836,6 +17117,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     restore_goal(app, thread.get("metadata"));
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
+    restore_host_system_prompt(app, thread.get("metadata"));
     app.forked_from = thread
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
@@ -15908,32 +17190,6 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     if skipped > 0 {
         app.note(&format!("{skipped} unreadable message(s) were skipped"));
     }
-}
-
-/// Largest image accepted from a path or the clipboard, before base64 (which
-/// inflates it by 4/3).
-const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
-
-/// Infer an image MIME type from a file extension. `None` when the extension is
-/// not a known image type.
-fn image_mime_of(path: &str) -> Option<&'static str> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match ext.as_str() {
-        "png" => Some("image/png"),
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "gif" => Some("image/gif"),
-        "webp" => Some("image/webp"),
-        _ => None,
-    }
-}
-
-/// Infer an image MIME type from a file extension, defaulting to PNG.
-fn image_mime(path: &str) -> &'static str {
-    image_mime_of(path).unwrap_or("image/png")
 }
 
 /// Read an image file into a `PendingImage` (base64 data URL + basename).
@@ -16044,26 +17300,6 @@ fn clipboard_image() -> Result<PendingImage, String> {
         name: "clipboard.png".to_string(),
         data_url: format!("data:image/png;base64,{b64}"),
     })
-}
-
-/// Build the OpenAI-shaped user message: a plain string with no images, else a
-/// content-part array (text first, then `image_url` parts) matching the desktop
-/// web-app wire shape.
-fn build_user_message(text: &str, images: &[PendingImage]) -> serde_json::Value {
-    if images.is_empty() {
-        return serde_json::json!({ "role": "user", "content": text });
-    }
-    let mut parts = Vec::with_capacity(images.len() + 1);
-    if !text.is_empty() {
-        parts.push(serde_json::json!({ "type": "text", "text": text }));
-    }
-    for img in images {
-        parts.push(serde_json::json!({
-            "type": "image_url",
-            "image_url": { "url": img.data_url, "detail": "auto" }
-        }));
-    }
-    serde_json::json!({ "role": "user", "content": parts })
 }
 
 /// Split a user message's `content` into display text and one label per attached
@@ -16630,46 +17866,41 @@ fn draw(f: &mut Frame, app: &mut App) {
     }
     f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
-    // The `/context` overlay renders on top of (never instead of) the finished
+    // A readout (`/context`, `/usage`) docks above the input box, where every
+    // other prompt in this TUI lives -- `/login`, `/settings`, `/mcp`, the
+    // provider wizard. It renders on top of (never instead of) the finished
     // frame, so the spinner and streamed output keep animating behind it
-    // mid-turn. A centered bordered popup over the body, titled like the
-    // pickers, with the readout re-laid out by the same `context_lines` the
-    // old transcript row used - the numbers and layout are unchanged, only the
-    // surface (a popup the user closes with Esc) differs. The rect is clamped
-    // to the frame and never indexes a zero-width/zero-height area, so it
-    // stays correct at tiny terminal sizes.
-    if let Some(view) = &app.context_view {
-        let body = chunks[1];
-        // The rect is sized before the content, because the readout's height
-        // depends on the width it is laid out at. Borders cost two columns and
-        // two rows, so the content width is the popup's inner width -- laying
-        // out at the popup's *outer* width would push the rail's right edge
-        // under the border and silently clip it.
-        let outer_w = body.width.saturating_sub(2).max(1);
-        let content_w = outer_w.saturating_sub(2).max(1);
-        let lines: Vec<Line<'static>> = match view {
-            ContextView::Loading => vec![Line::raw("computing context...")],
-            ContextView::Ready(report) => context_lines(report, content_w as usize),
-        };
-        // Two rows for the borders. A frame too short to hold the whole readout
-        // gets as much of it as fits rather than nothing.
-        let height = (lines.len() as u16 + 2).min(body.height);
+    // mid-turn.
+    //
+    // Docked rather than centered because a readout is something you consult
+    // while looking at the conversation, and the bottom is where the eye
+    // already is; a mid-screen box also covers the transcript the numbers are
+    // about. The rect is clamped to the frame and never indexes a
+    // zero-width/zero-height area, so it stays correct at tiny terminal sizes.
+    if let Some(readout) = &app.readout {
+        // Sized before the content, because the readout's height depends on
+        // the width it is laid out at. Borders cost two columns and two rows,
+        // so content is laid out at the *inner* width -- using the outer width
+        // would push the context rail's right edge under the border and
+        // silently clip it.
+        let content_w = chunks[2].width.saturating_sub(2).max(1);
+        let lines = readout_lines(app, readout, content_w as usize);
+        let height = (lines.len() as u16 + 2).min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
-            x: body.x + body.width.saturating_sub(outer_w) / 2,
-            y: body.y + body.height.saturating_sub(height) / 2,
-            width: outer_w,
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
             height,
         };
         let block = Block::default()
             .borders(Borders::ALL)
             .border_style(Style::new().cyan())
             .title(Span::styled(
-                " context ",
+                format!(" {} ", readout.title()),
                 Style::new().on_cyan().black().bold(),
             ));
         let inner = block.inner(rect);
-        // A frame with no room for the popup draws nothing -- and must still
-        // fall through to the prompts below, so this never returns from `draw`.
         if rect.width > 0 && rect.height > 0 {
             f.render_widget(ratatui::widgets::Clear, rect);
             f.render_widget(block, rect);
@@ -18250,6 +19481,8 @@ fn header(app: &App) -> Paragraph<'static> {
 fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.run_compacting.is_some() {
+        ("compacting".to_string(), Style::new().magenta().bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
@@ -18808,6 +20041,18 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ),
         ]))
         .block(block)
+    } else if let Some(started) = app.run_compacting.filter(|_| app.input.is_empty()) {
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!(
+                    "compacting conversation… {}",
+                    format_elapsed(started.elapsed().as_secs())
+                ),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
@@ -19061,7 +20306,8 @@ mod tests {
     use super::{
         age_closed_todos, alt_scroll_restore, alt_scroll_save_off, answer_without_reasoning,
         apply_repaint, apply_resume, apply_stream_event, assistant_is_awaiting_user_answer,
-        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping, brand,
+        assistant_runs, autoscroll_selection, await_branch_poll, await_monitor_ping,
+        await_shell_ping, brand,
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
@@ -19071,14 +20317,14 @@ mod tests {
         message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
         open_tree_picker, pairs_to_str, parse_command, partial_json_field,
         provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
-        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
-        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
+        route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
         with_wave_glyph, without_think_tags, worktree_command, App, CompactKind, ContextReport,
-        ContextSegment, ContextView, CurrentRun, McpField, McpPrompt, MonitorSet, Pending,
+        ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, Worktree, AGENT_SETTINGS,
         ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG,
@@ -19174,7 +20420,9 @@ mod tests {
             compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
+            max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
             max_turns: None,
+            cost_ceiling: None,
         };
         let app = App::new(
             "m".into(),
@@ -19640,7 +20888,7 @@ mod tests {
 
     /// App whose project has one installed skill `<name>/SKILL.md` with the
     /// given frontmatter description, so slash-popup and dispatch tests run
-    /// against a real `.jan/agent/skills/` tree. Returns the temp project
+    /// against a real `<store>/skills/` tree. Returns the temp project
     /// root for cleanup.
     fn skill_test_app(name: &str, description: &str) -> (App, std::path::PathBuf) {
         skill_test_app_fm(name, description, "")
@@ -19658,7 +20906,8 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        let agent_dir = root.join(".jan/agent");
+        std::fs::create_dir_all(&root).unwrap();
+        let agent_dir = crate::core::agent::project::store_root(&root);
         std::fs::create_dir_all(agent_dir.join("skills").join(name)).unwrap();
         std::fs::write(
             agent_dir.join("skills").join(name).join("SKILL.md"),
@@ -19678,7 +20927,9 @@ mod tests {
                     compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
+                    max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
                     max_turns: None,
+                    cost_ceiling: None,
                 },
                 false,
                 agent_dir,
@@ -24071,7 +25322,22 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 6] = [
+        let setups: [DockSetup; 8] = [
+            // The account OAuth dock takes every keystroke and outranks the
+            // API-key one, so it has to block the field as hard as the rest.
+            ("account_login", |app| {
+                app.account_login = Some(super::AccountLoginPrompt::new(
+                    crate::core::cli::auth::account::begin(
+                        crate::core::cli::auth::account::AccountProvider::Claude,
+                    )
+                    .expect("an account login session builds offline"),
+                ))
+            }),
+            // A readout is docked like any other prompt and owns the same
+            // keys, so the field must go inactive for it too.
+            ("readout", |app| {
+                app.readout = Some(super::Readout::Session { all_models: false })
+            }),
             ("login/connecting", |app| {
                 app.login = Some(super::LoginPrompt::connecting())
             }),
@@ -24206,6 +25472,7 @@ mod tests {
                 models: vec!["tokamak-1-preview".into()],
                 config_path: std::path::PathBuf::from("/tmp/config.toml"),
                 default_model: None,
+                replaced_default: false,
                 account: Some("a@b.c".into()),
             }),
         ));
@@ -24501,6 +25768,7 @@ mod tests {
         provider_configs: std::collections::HashMap<String, crate::core::state::ProviderConfig>,
     ) -> std::sync::Arc<super::OrchestrationArgs> {
         std::sync::Arc::new(super::OrchestrationArgs {
+            run_id: None,
             client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: std::sync::Arc::new(tokio::sync::Mutex::new(provider_configs)),
             mcp_servers: std::sync::Arc::new(tokio::sync::Mutex::new(
@@ -24515,9 +25783,15 @@ mod tests {
             permission_requests: std::sync::Arc::new(tokio::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
+            host_tools: crate::core::agent::host_tools::HostToolSet::new(),
+            host_tool_requests: crate::core::agent::host_tools::new_registry(),
+            host_owns_gate: false,
+            host_tool_route: None,
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
+            host_system_prompt: None,
+            project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 4,
             auto_approve: false,
@@ -24525,6 +25799,8 @@ mod tests {
             session_id: None,
             sandbox: None,
             monitors: Some(app.monitor_set.clone()),
+            bg_shells: Some(app.shell_set.clone()),
+            subagent_bg: Some(app.subagent_set.clone()),
             compaction: None,
         })
     }
@@ -28295,6 +29571,7 @@ mod tests {
                 None,
                 &json!({"model": "m", "messages": [{"role": "user", "content": "go"}]}),
                 &tx,
+                None,
             ),
         )
         .await
@@ -29073,6 +30350,7 @@ mod tests {
                 cached_tokens: Some(900),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert_eq!(app.session_cached_tokens, 900);
 
@@ -30533,6 +31811,107 @@ mod tests {
         });
     }
 
+    /// A compaction the running turn makes shows a throbber while the
+    /// summarizer runs, a note saying why when it lands, and re-estimates the
+    /// gauge from the compacted history instead of keeping the old fill.
+    #[test]
+    fn a_mid_run_compaction_shows_progress_and_refreshes_the_gauge() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.tokens = 900_000;
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::SessionBudget,
+            messages: None,
+        });
+        assert!(app.run_compacting.is_some());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("compacting"), "{header}");
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::SessionBudget,
+            messages: Some(12),
+        });
+        assert!(app.run_compacting.is_none());
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("compacted 12 messages into a summary: the session token budget"),
+            "{out}"
+        );
+
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![serde_json::json!({ "role": "user", "content": "short" })],
+        });
+        assert!(app.tokens < 1_000, "gauge re-estimated: {}", app.tokens);
+        assert!(app.tokens_estimated);
+    }
+
+    /// A failed compaction takes its throbber down and says so.
+    #[test]
+    fn a_failed_mid_run_compaction_clears_the_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        for phase in [CompactionPhase::Started, CompactionPhase::Failed] {
+            app.apply(StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::ContextOverflow,
+                messages: None,
+            });
+        }
+        assert!(app.run_compacting.is_none());
+        assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// A child's compaction gets a note but not the parent's throbber: the
+    /// child's history is not the one on screen.
+    #[test]
+    fn a_subagent_compaction_is_noted_without_the_parent_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        for (phase, messages) in [(CompactionPhase::Started, None), (CompactionPhase::Finished, Some(5))] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::Preflight,
+                    messages,
+                },
+            );
+            assert!(app.run_compacting.is_none());
+        }
+        assert!(
+            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            "{}",
+            transcript_text(&app)
+        );
+    }
+
+    /// A child's `Notice` (e.g. "compacted N messages") reaches the parent
+    /// transcript, attributed to the child. It used to fall into the catch-all
+    /// arm, so a subagent's compaction was invisible.
+    #[test]
+    fn subagent_notice_is_shown_in_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::Notice {
+                text: "compacted 12 messages into a summary".into(),
+            },
+        );
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("alpha: compacted 12 messages into a summary"),
+            "{out}"
+        );
+    }
+
     /// Parallel agents collapse into one fixed-height block, each carrying the
     /// numbers that say whether it is progressing or about to blow its context.
     #[test]
@@ -30554,6 +31933,7 @@ mod tests {
                         total_tokens: Some(12_900),
                         ..Default::default()
                     },
+                    execution_id: None,
                 },
             );
             subagent_event(
@@ -31282,6 +32662,7 @@ mod tests {
                     total_tokens: Some(40_500),
                     ..Default::default()
                 },
+                execution_id: None,
             });
         }
         assert_eq!(app.turn_output_tokens, 1_500);
@@ -31537,7 +32918,7 @@ mod tests {
                 ),
             ]);
 
-            let text: Vec<String> = super::usage_lines(&usage)
+            let text: Vec<String> = super::usage_lines(&usage, false)
                 .iter()
                 .map(|row| row.iter().map(|s| s.content.to_string()).collect())
                 .collect();
@@ -31549,9 +32930,14 @@ mod tests {
                 "an unpriced model must say so: {joined}"
             );
             assert!(
-                joined.contains("the total excludes models with no published price"),
+                joined.contains("excludes models with no published price"),
                 "{joined}"
             );
+            // Summary before detail: the session's own total is readable
+            // without adding the model rows up.
+            let session = joined.find("this session").expect("a summary section");
+            let models = joined.find("models\n").expect("a models section");
+            assert!(session < models, "the summary leads: {joined}");
 
             // 60K fresh prompt + 40K cached + 10K completion, at the seeded rates.
             let expected = 60_000.0 * 0.000005 + 40_000.0 * 0.0000005 + 10_000.0 * 0.000025;
@@ -31560,6 +32946,82 @@ mod tests {
             assert!(partial, "the unpriced model makes the total partial");
             assert!(joined.contains(&super::format_usd(expected)), "{joined}");
         });
+    }
+
+    /// A long model list folds to the costliest few, and the fold states how
+    /// many it hid. Folding may hide *detail* only: the summary above it is
+    /// the whole session either way, so no spend disappears with the rows.
+    #[test]
+    fn the_model_list_folds_to_the_costliest_and_says_what_it_hid() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut usage = std::collections::BTreeMap::new();
+            for (i, name) in ["alpha", "bravo", "charlie", "delta", "echo"]
+                .iter()
+                .enumerate()
+            {
+                seed_priced_model("tokamak", name);
+                // Ascending spend, so the map's alphabetical order is not the
+                // ranked order and a naive truncation would keep the wrong
+                // three.
+                usage.insert(
+                    usage_key("tokamak", name),
+                    usage_of(1, 1_000 * (i as u64 + 1), 100, 0),
+                );
+            }
+            let render = |all| {
+                super::usage_lines(&usage, all)
+                    .iter()
+                    .map(|row| row.iter().map(|s| s.content.to_string()).collect())
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            };
+
+            let folded = render(false);
+            assert!(folded.contains("top models"), "{folded}");
+            assert!(folded.contains("+2 more models"), "{folded}");
+            for kept in ["echo", "delta", "charlie"] {
+                assert!(folded.contains(kept), "the costliest stay: {folded}");
+            }
+            for hidden in ["alpha", "bravo"] {
+                assert!(!folded.contains(hidden), "the cheapest fold: {folded}");
+            }
+
+            let expanded = render(true);
+            for name in ["alpha", "bravo", "charlie", "delta", "echo"] {
+                assert!(expanded.contains(name), "{expanded}");
+            }
+            assert!(!expanded.contains("more model"), "{expanded}");
+
+            // The figure that matters is identical either way.
+            let total = super::format_usd(super::session_cost(&usage).expect("priced").0);
+            assert!(folded.contains(&total), "{folded}");
+            assert!(expanded.contains(&total), "{expanded}");
+        });
+    }
+
+    /// `m` toggles the fold, and only on the session readout -- on any other
+    /// readout it must not be mistaken for a close.
+    #[tokio::test]
+    async fn m_toggles_the_model_fold_without_closing_the_readout() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Session { all_models: false });
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::Session { all_models: true })),
+            "m expands"
+        );
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::Session { all_models: false })),
+            "m folds back"
+        );
+
+        app.readout = Some(Readout::ContextLoading);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(Readout::ContextLoading)),
+            "m is inert where there is no tail to fold"
+        );
     }
 
     /// With nothing priced there is no cost line at all, rather than a `$0.00`
@@ -31650,9 +33112,11 @@ mod tests {
         };
         app.apply(StreamEvent::TurnUsage {
             usage: usage(100, 20),
+            execution_id: None,
         });
         app.apply(StreamEvent::TurnUsage {
             usage: usage(300, 40),
+            execution_id: None,
         });
 
         let recorded = app
@@ -31689,13 +33153,19 @@ mod tests {
             cached_tokens: None,
             cache_write_tokens: None,
         };
-        app.apply(StreamEvent::TurnUsage { usage: usage(100) });
+        app.apply(StreamEvent::TurnUsage {
+            usage: usage(100),
+            execution_id: None,
+        });
         start_subagent(&mut app, "r0", "alpha");
         subagent_event(
             &mut app,
             "r0",
             "alpha",
-            StreamEvent::TurnUsage { usage: usage(400) },
+            StreamEvent::TurnUsage {
+                usage: usage(400),
+                execution_id: None,
+            },
         );
 
         let recorded = app.session_usage.values().next().expect("usage recorded");
@@ -31707,12 +33177,444 @@ mod tests {
     }
 
     /// `/usage` with nothing to report says so rather than printing an empty
-    /// table.
+    /// table -- and says it in the readout, not the transcript. Answering an
+    /// empty session somewhere else would make the command's surface depend on
+    /// its result, so a user could not learn where to look.
     #[test]
     fn usage_command_with_no_requests_notes_it() {
         let mut app = test_app();
-        super::usage_command(&mut app);
-        assert!(transcript_text(&app).contains("no usage yet this session"));
+        super::usage_command(&mut app, "session");
+        assert!(
+            matches!(app.readout, Some(Readout::Session { .. })),
+            "an empty session still opens the readout"
+        );
+        assert!(
+            readout_text(&app).contains("no usage yet this session"),
+            "{}",
+            readout_text(&app)
+        );
+        assert!(
+            transcript_text(&app).is_empty(),
+            "a readout is never committed to the conversation: {}",
+            transcript_text(&app)
+        );
+    }
+
+    /// The docked readout's rendered text, which is what the user actually
+    /// reads -- assertions go through the same `readout_lines` the frame draws
+    /// so a test cannot pass on state the renderer would never show.
+    fn readout_text(app: &App) -> String {
+        let Some(readout) = &app.readout else {
+            return String::new();
+        };
+        super::readout_lines(app, readout, 80)
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|s| s.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Bare `/usage` is the overview -- "how much am I spending" has two
+    /// honest answers and the default shows both. `session` still names the
+    /// estimate alone, which is the only view that works offline, mid-turn
+    /// and for a provider with no usage API.
+    #[test]
+    fn bare_usage_is_the_overview_and_session_is_still_reachable() {
+        assert_eq!(super::parse_usage_mode(""), super::UsageMode::Overview);
+        assert_eq!(super::parse_usage_mode("  "), super::UsageMode::Overview);
+        assert_eq!(super::parse_usage_mode("session"), super::UsageMode::Session);
+    }
+
+    /// The overview renders the session estimate immediately, without waiting
+    /// on the network: the half that can be answered locally must never be
+    /// held hostage by the half that cannot.
+    #[test]
+    fn the_overview_shows_the_session_estimate_before_the_account_lands() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100_000),
+                completion_tokens: Some(10_000),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        let text = readout_text(&app);
+        assert!(text.contains("THIS SESSION (estimated)"), "{text}");
+        assert!(text.contains("this session"), "{text}");
+        assert!(text.contains("ON YOUR ACCOUNT"), "{text}");
+        assert!(text.contains("reading account usage..."), "{text}");
+        // The estimate is on screen while the account read is still in flight.
+        assert!(text.contains("not a bill"), "{text}");
+    }
+
+    /// The two figures are labelled by source and never combined. An overview
+    /// that added them would double-count this session inside the account
+    /// total it is sitting next to.
+    #[test]
+    fn the_overview_keeps_the_estimate_and_the_charge_apart() {
+        use crate::core::cli::tokamak::usage::parse_payload_for_test;
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100_000),
+                completion_tokens: Some(10_000),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Ready(Box::new(parse_payload_for_test(ACCOUNT_BODY))),
+        });
+        let text = readout_text(&app);
+
+        // Each half names its source in its own heading.
+        let session_at = text.find("THIS SESSION (estimated)").expect("session heading");
+        let account_at = text
+            .find("ON YOUR ACCOUNT (recorded by the provider)")
+            .expect("account heading");
+        assert!(session_at < account_at, "local first, recorded second: {text}");
+
+        // The account's exact recorded figure, unrounded.
+        assert!(text.contains("$1240.10224445"), "{text}");
+        // The session half is marked as an estimate in its heading and again
+        // in its own provenance line, so neither figure can be mistaken for
+        // the other kind.
+        assert!(text.contains("(estimated)"), "{text}");
+        assert!(text.contains("not a bill"), "{text}");
+        // No combined figure anywhere.
+        assert!(!text.contains("total spend"), "{text}");
+        assert!(text.contains("/usage account"), "points at the detail: {text}");
+    }
+
+    /// A provider with no usage API still gets an overview: the estimate, and
+    /// a line saying why there is no account half. Not an error -- most
+    /// providers have no such API and the estimate is the whole answer.
+    #[test]
+    fn the_overview_without_an_account_api_is_still_the_estimate() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::NotConfigured,
+        });
+        let text = readout_text(&app);
+        assert!(text.contains("THIS SESSION"), "{text}");
+        assert!(
+            text.contains("no account usage API is configured"),
+            "{text}"
+        );
+    }
+
+    /// A failed account read says why, in place. A blank account section would
+    /// read as "you have spent nothing", which is the one thing it must not
+    /// say -- and it must not take the session half down with it.
+    #[test]
+    fn a_failed_account_read_does_not_blank_the_overview() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Err(UsageError::Failed("could not reach the server".to_string())),
+        );
+        assert!(
+            matches!(
+                app.readout,
+                Some(Readout::Overview {
+                    account: super::AccountSlot::Failed(_),
+                    ..
+                })
+            ),
+            "the slot holds the failure, the readout survives"
+        );
+        let text = readout_text(&app);
+        assert!(text.contains("could not reach the server"), "{text}");
+        assert!(text.contains("THIS SESSION"), "the estimate survives: {text}");
+    }
+
+    /// An account result fills the overview's slot rather than replacing the
+    /// whole readout, which would discard the session half already drawn.
+    #[test]
+    fn an_account_result_fills_the_overview_slot() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        let mut app = test_app();
+        app.readout = Some(Readout::Overview {
+            all_models: false,
+            account: super::AccountSlot::Loading,
+        });
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Ok(parse_payload_for_test(ACCOUNT_BODY)),
+        );
+        match &app.readout {
+            Some(Readout::Overview { account, .. }) => {
+                assert!(matches!(account, super::AccountSlot::Ready(_)));
+            }
+            _ => panic!("the overview should have survived the result landing"),
+        }
+        let text = readout_text(&app);
+        assert!(text.contains("$1240.10224445"), "{text}");
+        assert!(text.contains("15049 req"), "{text}");
+        // The overview shows the total, not the whole per-model table --
+        // that belongs to `/usage account`.
+        assert!(!text.contains("top models"), "{text}");
+    }
+
+    #[test]
+    fn usage_modes_map_to_their_documented_endpoints() {
+        use crate::core::cli::tokamak::usage::Query;
+        let account = |arg: &str| match super::parse_usage_mode(arg) {
+            super::UsageMode::Account(q) => q,
+            other => panic!("{arg} should be an account view, got {other:?}"),
+        };
+        assert_eq!(account("account"), Query::Summary);
+        assert_eq!(account("daily"), Query::Daily);
+        assert_eq!(account("requests"), Query::Requests);
+        assert_eq!(account("limits"), Query::Limits);
+    }
+
+    /// `/usage run` asks the one question the session estimate approximates:
+    /// what this run actually cost. It resolves to a correlation lookup, which
+    /// is the only mechanism that works on the default upstream path.
+    #[test]
+    fn the_run_view_resolves_to_a_correlation_lookup() {
+        use crate::core::cli::tokamak::usage::Query;
+        assert_eq!(super::parse_usage_mode("run"), super::UsageMode::Run);
+        assert_eq!(
+            super::parse_usage_mode("correlate jan-session-7"),
+            super::UsageMode::Account(Query::Correlated("jan-session-7".to_string()))
+        );
+        // A correlation with no id would search for everything, and must not
+        // fall through to being looked up as an execution named "correlate".
+        assert!(matches!(
+            super::parse_usage_mode("correlate "),
+            super::UsageMode::Unknown(_)
+        ));
+        assert!(matches!(
+            super::parse_usage_mode("correlate"),
+            super::UsageMode::Unknown(_)
+        ));
+    }
+
+    /// Without a session there is no correlation id on any request, so there is
+    /// nothing to look up and saying so beats an empty result.
+    #[test]
+    fn the_run_view_without_a_session_says_so() {
+        let mut app = test_app();
+        super::usage_command(&mut app, "run");
+        let text = transcript_text(&app);
+        assert!(text.contains("no session id to correlate"), "{text}");
+        assert!(app.reported_usage_request.is_none());
+    }
+
+    /// A pasted execution id is what a user actually types here, so a lone
+    /// unrecognized word is a lookup rather than an error.
+    #[test]
+    fn a_lone_word_is_taken_as_an_execution_id() {
+        use crate::core::cli::tokamak::usage::Query;
+        assert_eq!(
+            super::parse_usage_mode("0b7c1d2e-3f45-6789-abcd-ef0123456789"),
+            super::UsageMode::Account(Query::Generation(
+                "0b7c1d2e-3f45-6789-abcd-ef0123456789".to_string()
+            ))
+        );
+        // A phrase is a typo, not an id; naming the views beats a round trip
+        // that can only come back not-found.
+        assert!(matches!(
+            super::parse_usage_mode("how much did i spend"),
+            super::UsageMode::Unknown(_)
+        ));
+    }
+
+    /// Without a Tokamak key there is no account to read, and the TUI must say
+    /// so locally instead of opening an overlay that can only resolve into an
+    /// auth failure. Critically it is not an error: the session estimate is
+    /// still a valid answer and the note points at it.
+    #[test]
+    fn an_account_view_without_a_key_is_declined_not_attempted() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let mut app = test_app();
+            super::usage_command(&mut app, "account");
+            let text = transcript_text(&app);
+            assert!(
+                text.contains("no account usage API is configured"),
+                "{text}"
+            );
+            assert!(
+                app.reported_usage_request.is_none(),
+                "nothing may be sent upstream without a key"
+            );
+            assert!(app.readout.is_none(), "no readout should open");
+        });
+    }
+
+    /// A view that landed must never be reopened after the user closed it,
+    /// matching `/context`'s overlay contract.
+    #[test]
+    fn a_usage_result_landing_after_close_is_dropped() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.readout = None;
+        super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
+        assert!(app.readout.is_none());
+    }
+
+    /// A failed read fills the overlay with the reason. An empty popup would
+    /// read as "you spent nothing", which is the one thing it must not say.
+    #[test]
+    fn a_failed_read_reports_the_reason_rather_than_an_empty_readout() {
+        use crate::core::cli::tokamak::usage::{Query, UsageError};
+        let mut app = test_app();
+        app.readout = Some(super::Readout::ReportedLoading(Query::Summary));
+        super::finish_reported_usage(&mut app, &Query::Summary, Err(UsageError::NotFound));
+        match &app.readout {
+            Some(super::Readout::ReportedError { message, .. }) => {
+                assert!(message.contains("not found"), "{message}");
+            }
+            _ => panic!("the readout should hold the failure"),
+        }
+        assert!(readout_text(&app).contains("not found"), "{}", readout_text(&app));
+    }
+
+    /// A live account summary, trimmed to six models. Shaped exactly as
+    /// `GET /v1/usage/me` answers, including the empty `provider` fields and
+    /// money as decimal strings.
+    const ACCOUNT_BODY: &str = r#"{
+        "period": {"start_date":"2026-08-23T08:57:21.160234939Z",
+                   "end_date":"2026-09-22T08:57:21.160234939Z"},
+        "total_usage": {"model":"","provider":"","total_prompt_tokens":277414219,
+            "total_completion_tokens":10931093,"total_tokens":1892976850,
+            "request_count":15049,"estimated_cost_usd":"1240.10224445",
+            "cache_read_tokens":1577470525,"cache_creation_tokens":27161013,
+            "cache_savings_usd":"1200.5278263"},
+        "by_model": [
+          {"model":"cheap-model","total_prompt_tokens":56073,
+           "total_completion_tokens":2217,"request_count":29,
+           "estimated_cost_usd":"0.087158","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"anthropic/claude-sonnet-5","total_prompt_tokens":4408975,
+           "total_completion_tokens":1295731,"request_count":1238,
+           "estimated_cost_usd":"46.7142352","cache_read_tokens":105369976,
+           "cache_creation_tokens":1545992,"cache_savings_usd":"189.6659568"},
+          {"model":"anthropic/claude-opus-5","total_prompt_tokens":8639502,
+           "total_completion_tokens":1546976,"request_count":2987,
+           "estimated_cost_usd":"195.67393925","cache_read_tokens":224635971,
+           "cache_creation_tokens":237447,"cache_savings_usd":"1010.8618695"},
+          {"model":"tokamak-1-preview","total_prompt_tokens":263419660,
+           "total_completion_tokens":2879420,"request_count":4884,
+           "estimated_cost_usd":"69.454827","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"claude-opus-4-8","total_prompt_tokens":890009,
+           "total_completion_tokens":120000,"request_count":300,
+           "estimated_cost_usd":"12.5","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"},
+          {"model":"claude-haiku-4-5","total_prompt_tokens":100000,
+           "total_completion_tokens":20000,"request_count":120,
+           "estimated_cost_usd":"3.25","cache_read_tokens":0,
+           "cache_creation_tokens":0,"cache_savings_usd":"0"}
+        ]}"#;
+
+    /// `m` folds an account readout the same way it folds the session one, and
+    /// without refetching -- the payload is held, so expanding a table costs
+    /// no request.
+    #[tokio::test]
+    async fn m_folds_an_account_readout_without_refetching() {
+        use crate::core::cli::tokamak::usage::{parse_payload_for_test, Query};
+        let mut app = test_app();
+        app.readout = Some(super::Readout::ReportedLoading(Query::Summary));
+        super::finish_reported_usage(
+            &mut app,
+            &Query::Summary,
+            Ok(parse_payload_for_test(ACCOUNT_BODY)),
+        );
+        assert!(readout_text(&app).contains("m to show all"));
+        assert!(!readout_text(&app).contains("cheap-model"));
+
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(super::Readout::Reported { all_rows: true, .. })),
+            "m expands"
+        );
+        assert!(readout_text(&app).contains("cheap-model"));
+
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(
+            matches!(app.readout, Some(super::Readout::Reported { all_rows: false, .. })),
+            "m folds back"
+        );
+        // Folding is a view change, not a close.
+        assert!(readout_text(&app).contains("account total"));
+    }
+
+    /// The session readout points at the authoritative view rather than
+    /// leaving the user to believe the estimate is the bill.
+    #[test]
+    fn the_session_readout_points_at_the_account_view() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(100),
+                completion_tokens: Some(10),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        super::usage_command(&mut app, "");
+        let text = readout_text(&app);
+        assert!(text.contains("not a bill"), "{text}");
+        assert!(text.contains("/usage account"), "{text}");
+    }
+
+    /// The session estimate renders from live state, not from a snapshot taken
+    /// when the readout opened. A user who leaves it up during a turn is
+    /// watching the run's spend, so a total frozen at open time would be
+    /// quietly wrong from the first token that arrived after it.
+    #[test]
+    fn the_session_readout_keeps_counting_while_it_is_open() {
+        let mut app = test_app();
+        app.set_model("anthropic/claude-opus-5".to_string());
+        super::usage_command(&mut app, "");
+        assert!(readout_text(&app).contains("no usage yet this session"));
+
+        app.apply(StreamEvent::TurnUsage {
+            usage: crate::core::agent::events::Usage {
+                prompt_tokens: Some(1_000),
+                completion_tokens: Some(50),
+                total_tokens: None,
+                cached_tokens: None,
+                cache_write_tokens: None,
+            },
+            execution_id: None,
+        });
+        let text = readout_text(&app);
+        assert!(
+            text.contains("1 req"),
+            "the open readout must reflect the request that just landed: {text}"
+        );
     }
 
     /// A report with a measured fill and no cache fields, the starting point for
@@ -31847,6 +33749,7 @@ mod tests {
                 cached_tokens: Some(900),
                 ..Default::default()
             },
+            execution_id: None,
         });
         app.begin_turn();
         assert_eq!(app.turn_cached_tokens, 0, "the per-turn sample resets");
@@ -31859,6 +33762,7 @@ mod tests {
                 cached_tokens: Some(0),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert_eq!(app.session_prompt_tokens, 5_000, "both requests billed");
         assert_eq!(app.session_cached_tokens, 900);
@@ -32026,25 +33930,125 @@ mod tests {
         }
     }
 
-    /// The `/context` overlay (not the old transcript row) goes through the
-    /// same frame sizes the rest of the transcript survives. A mid-turn popup
-    /// must never panic on rendering, however narrow or short the terminal.
+    /// Every readout variant goes through the frame sizes the rest of the
+    /// transcript survives. A readout is drawn mid-turn, over a live frame, so
+    /// it must never panic however narrow or short the terminal -- and the
+    /// docked rect is computed by subtraction, which is where an underflow
+    /// would hide.
     #[test]
-    fn tiny_frames_render_the_context_view_without_panicking() {
-        let mut app = test_app();
+    fn tiny_frames_render_every_readout_without_panicking() {
         let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
-        app.context_view = Some(ContextView::Ready(Box::new(report)));
-        for (w, h) in [
-            (1u16, 1u16),
-            (2, 3),
-            (8, 4),
-            (20, 6),
-            (40, 2),
-            (43, 12),
-            (200, 80),
-        ] {
-            render_rows(&mut app, w, h);
+        let variants = || {
+            vec![
+                Readout::ContextLoading,
+                Readout::Context(Box::new(report.clone())),
+                Readout::Session { all_models: false },
+                Readout::Overview {
+                    all_models: true,
+                    account: super::AccountSlot::Ready(Box::new(
+                        crate::core::cli::tokamak::usage::parse_payload_for_test(ACCOUNT_BODY),
+                    )),
+                },
+                Readout::Overview {
+                    all_models: false,
+                    account: super::AccountSlot::Loading,
+                },
+                Readout::Overview {
+                    all_models: false,
+                    account: super::AccountSlot::Failed("could not reach the server".to_string()),
+                },
+                Readout::ReportedLoading(crate::core::cli::tokamak::usage::Query::Summary),
+                Readout::Reported {
+                    title: "account".to_string(),
+                    query: crate::core::cli::tokamak::usage::Query::Summary,
+                    payload: Box::new(
+                        crate::core::cli::tokamak::usage::parse_payload_for_test(ACCOUNT_BODY),
+                    ),
+                    all_rows: true,
+                },
+                Readout::ReportedError {
+                    title: "account".to_string(),
+                    message: "not found".to_string(),
+                },
+            ]
+        };
+        for readout in variants() {
+            let mut app = test_app();
+            app.readout = Some(readout);
+            for (w, h) in [
+                (1u16, 1u16),
+                (2, 3),
+                (8, 4),
+                (20, 6),
+                (40, 2),
+                (43, 12),
+                (200, 80),
+            ] {
+                render_rows(&mut app, w, h);
+            }
         }
+    }
+
+    /// The readout docks above the input box rather than floating mid-screen,
+    /// so it sits where every other prompt in this TUI does and does not cover
+    /// the transcript its numbers are about.
+    #[test]
+    fn the_readout_docks_above_the_input_box() {
+        let mut app = test_app();
+        app.readout = Some(Readout::Reported {
+            title: "account".to_string(),
+            query: crate::core::cli::tokamak::usage::Query::Summary,
+            payload: Box::new(crate::core::cli::tokamak::usage::parse_payload_for_test(
+                r#"{"spend_usd":"1.25"}"#,
+            )),
+            all_rows: false,
+        });
+        let rows = render_rows(&mut app, 60, 24);
+        // Located by the title, not by border glyphs: other chrome draws
+        // horizontal rules too, so a glyph search finds the wrong box.
+        let top = rows
+            .iter()
+            .position(|row| row.contains("account"))
+            .expect("the readout draws its title");
+        // Docked: the box lives in the bottom half, against the input, rather
+        // than centered over the conversation.
+        assert!(
+            top > rows.len() / 2,
+            "the readout should dock at the bottom, found its top border at row {top} of {}",
+            rows.len()
+        );
+    }
+
+    /// One field holds the open readout, so asking for a second one replaces
+    /// the first. Two independent `Option`s could both be `Some` and render
+    /// one popup over another.
+    #[test]
+    fn opening_a_second_readout_replaces_the_first() {
+        let mut app = test_app();
+        super::context_command(&mut app);
+        assert!(matches!(app.readout, Some(Readout::ContextLoading)));
+        super::usage_command(&mut app, "session");
+        assert!(
+            matches!(app.readout, Some(Readout::Session { .. })),
+            "the newer readout wins outright"
+        );
+    }
+
+    /// A slow `/context` computation must not yank away a readout the user
+    /// opened after it. Landing results are matched to the view still waiting
+    /// for them, not merely to "something is open".
+    #[test]
+    fn a_late_context_report_does_not_replace_a_newer_readout() {
+        let mut app = test_app();
+        super::context_command(&mut app);
+        // The user gave up on it and asked for the session estimate instead.
+        super::usage_command(&mut app, "session");
+        let report = context_report(234_000, 35_000, [6_000, 9_000, 2_100, 8_000, 95_000]);
+        super::finish_context_report(&mut app, report);
+        assert!(
+            matches!(app.readout, Some(Readout::Session { .. })),
+            "the stale report must not displace what the user is now reading"
+        );
     }
 
     /// A compaction invalidates the provider's last measurement: the count is
@@ -32069,6 +34073,7 @@ mod tests {
                 total_tokens: Some(90_010),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert!(
             app.context_report().await.fill_reported,
@@ -32094,6 +34099,7 @@ mod tests {
                 total_tokens: Some(120_010),
                 ..Default::default()
             },
+            execution_id: None,
         });
         assert!(app.context_report().await.fill_reported);
         rewind_to(&mut app, 0, false);
@@ -32127,7 +34133,7 @@ mod tests {
         app.status = Status::Running;
         run_command(&mut app, "context", &no_mcp()).await;
         assert!(
-            matches!(app.context_view, Some(ContextView::Loading)),
+            matches!(app.readout, Some(Readout::ContextLoading)),
             "mid-turn /context must open the loading overlay"
         );
         assert!(
@@ -32154,7 +34160,7 @@ mod tests {
     async fn esc_closes_the_context_overlay_without_cancelling_the_turn() {
         let mut app = test_app();
         app.status = Status::Running;
-        app.context_view = Some(ContextView::Loading);
+        app.readout = Some(Readout::ContextLoading);
         app.context_request = true;
         let registry: PermissionRegistry = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
         let mcp_servers = no_mcp();
@@ -32168,7 +34174,7 @@ mod tests {
         )
         .await;
         assert!(
-            app.context_view.is_none(),
+            app.readout.is_none(),
             "Esc must close the context overlay"
         );
         assert_eq!(app.status, Status::Running, "the turn keeps running");
@@ -32177,7 +34183,7 @@ mod tests {
             "closing the overlay must not spawn a run, let alone cancel one"
         );
         // A bare `q` also closes it, outranking the quit shortcut.
-        app.context_view = Some(ContextView::Loading);
+        app.readout = Some(Readout::ContextLoading);
         handle_key(
             &mut app,
             key(KeyCode::Char('q')),
@@ -32186,7 +34192,7 @@ mod tests {
             &mcp_servers,
         )
         .await;
-        assert!(app.context_view.is_none(), "q closes when not ctrl");
+        assert!(app.readout.is_none(), "q closes when not ctrl");
         assert!(
             !app.should_quit,
             "q must not quit while the overlay is open"
@@ -32199,11 +34205,11 @@ mod tests {
     #[tokio::test]
     async fn a_context_result_landing_after_close_is_discarded() {
         let mut app = test_app();
-        app.context_view = None;
+        app.readout = None;
         let report = context_report(128_000, 16_384, [1_000, 2_000, 3_000, 4_000, 5_000]);
         finish_context_report(&mut app, report);
         assert!(
-            app.context_view.is_none(),
+            app.readout.is_none(),
             "a result landing after the overlay closed must not reopen it"
         );
     }
@@ -33276,6 +35282,28 @@ mod tests {
         assert!(restored.message_queue.is_empty());
     }
 
+    /// A thread an RPC host wrote under its own system prompt resumes on that
+    /// prompt, carries it on the next save, and `/new` returns to Jan's.
+    #[test]
+    fn a_host_system_prompt_round_trips_through_thread_metadata() {
+        let mut app = test_app();
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let meta = serde_json::json!({ super::super::SYSTEM_PROMPT_KEY: "You drive the arm." });
+        restore_host_system_prompt(&mut app, Some(&meta));
+        let prompt = |app: &App| app.args.as_ref().and_then(|a| a.host_system_prompt.clone());
+        assert_eq!(prompt(&app).as_deref(), Some("You drive the arm."));
+        let saved = app.thread_metadata().expect("the prompt alone is worth saving");
+        assert_eq!(saved[super::super::SYSTEM_PROMPT_KEY], "You drive the arm.");
+
+        app.reset_session();
+        assert_eq!(prompt(&app), None, "a fresh session is Jan's again");
+        assert!(app.thread_metadata().is_none());
+
+        restore_host_system_prompt(&mut app, Some(&meta));
+        restore_host_system_prompt(&mut app, Some(&serde_json::json!({})));
+        assert_eq!(prompt(&app), None, "a thread without one resumes on Jan's");
+    }
+
     #[test]
     fn normal_mode_omits_run_mode_from_metadata() {
         // Old threads / normal sessions keep clean, backward-compatible metadata.
@@ -34124,6 +36152,7 @@ mod tests {
             project_root: root.to_path_buf(),
             scratch_root: None,
             mask_root: None,
+            hidden_root: None,
             read_roots: Vec::new(),
             write_roots: Vec::new(),
             allow_network: false,
@@ -34228,6 +36257,119 @@ mod tests {
             .await
             .expect("idle: the ping is ours to deliver");
         let busy = tokio::time::timeout(Duration::from_millis(20), await_monitor_ping(&set, false));
+        assert!(
+            busy.await.is_err(),
+            "a run is active, so the loop drains it"
+        );
+    }
+
+    /// The point of making the registries session-owned: when the model has
+    /// finished and only background work is left, the run is over, so a typed
+    /// message starts an ordinary turn instead of queueing behind a command
+    /// that may run for minutes.
+    #[test]
+    fn input_with_background_work_running_starts_a_turn_instead_of_queueing() {
+        use tauri_plugin_agent_tools::tools::ShellBackgrounded;
+
+        let mut app = test_app();
+        app.submit_user("start the build".into());
+        app.shell_set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        // The model answered and the run ended: background work no longer
+        // holds it open, so the session is idle.
+        app.on_done("stop".into(), None);
+        assert_eq!(app.status, Status::Idle, "the run ends under live work");
+        assert!(!app.run_is_live());
+
+        app.want_start = false;
+        app.submit_user("while that runs, what does the readme say?".into());
+
+        assert!(
+            app.message_queue.is_empty(),
+            "an idle agent takes the message directly: {:?}",
+            app.message_queue.len()
+        );
+        assert!(app.want_start, "a normal turn starts");
+        assert_eq!(app.status, Status::Running);
+        assert!(
+            app.shell_set.has_pending_work(),
+            "the command keeps running across the new turn"
+        );
+    }
+
+    /// A backgrounded command finishing between runs delivers like a monitor
+    /// match: headline on screen, text as a `<SYSTEM>` reminder, one new turn.
+    #[test]
+    fn a_background_shell_ping_between_runs_starts_a_turn() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let mut app = test_app();
+        app.history
+            .push(serde_json::json!({ "role": "user", "content": "build it" }));
+        app.history
+            .push(serde_json::json!({ "role": "assistant", "content": "building" }));
+        app.shell_set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: Some("/tmp/build.log".to_string()),
+        });
+        app.shell_set.finish(ShellDone {
+            id: 1,
+            command: "cargo build".to_string(),
+            elapsed_secs: 12,
+            output_path: Some("/tmp/build.log".to_string()),
+            failed: false,
+        });
+
+        app.submit_background_notices();
+
+        assert!(app.want_start, "a ping arms one turn");
+        assert_eq!(app.status, Status::Running);
+        let last = app.history.last().unwrap();
+        assert_eq!(last["role"], "user");
+        assert!(crate::core::agent::reminder::is_reminder_only(
+            &last["content"]
+        ));
+        assert!(last["content"].as_str().unwrap().contains("cargo build"));
+        assert!(
+            transcript_text(&app).contains("cargo build"),
+            "the headline reports the command ended: {}",
+            transcript_text(&app)
+        );
+    }
+
+    /// The loop drains the registry itself while a run is up, so the TUI's
+    /// wait must stay parked then rather than racing it for the same ping.
+    #[tokio::test]
+    async fn await_shell_ping_only_fires_between_runs() {
+        use tauri_plugin_agent_tools::tools::{ShellBackgrounded, ShellDone};
+
+        let set = Arc::new(crate::core::agent::bg_shell::BackgroundShells::default());
+        let parked = tokio::time::timeout(Duration::from_millis(20), await_shell_ping(&set, true));
+        assert!(parked.await.is_err(), "nothing could fire, so it parks");
+
+        set.start(ShellBackgrounded {
+            id: 1,
+            command: "cargo build".to_string(),
+            timeout_secs: 30,
+            output_path: None,
+        });
+        set.finish(ShellDone {
+            id: 1,
+            command: "cargo build".to_string(),
+            elapsed_secs: 1,
+            output_path: None,
+            failed: false,
+        });
+        tokio::time::timeout(Duration::from_secs(5), await_shell_ping(&set, true))
+            .await
+            .expect("idle: the ping is ours to deliver");
+        let busy = tokio::time::timeout(Duration::from_millis(20), await_shell_ping(&set, false));
         assert!(
             busy.await.is_err(),
             "a run is active, so the loop drains it"
@@ -34799,11 +36941,15 @@ mod tests {
     fn slash_prefix_narrows_and_unmatched_hides() {
         let mut app = test_app();
         app.input = "/re".into();
-        // Both `/resume` and `/reasoning` start with `re`; catalog order
-        // (stable sort on equal prefix score) keeps resume first.
+        // `/resume`, `/reasoning`, and `/reload` start with `re`; catalog
+        // order (stable sort on equal prefix score) keeps resume first.
         assert_eq!(
             names(&app),
-            vec!["/resume".to_string(), "/reasoning".to_string()]
+            vec![
+                "/resume".to_string(),
+                "/reasoning".to_string(),
+                "/reload".to_string()
+            ]
         );
         app.input = "/xyz".into();
         assert!(app.slash_matches().is_empty());
@@ -34918,7 +37064,8 @@ mod tests {
     #[test]
     fn slash_popup_uses_startup_catalog_after_files_change() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
-        std::fs::remove_dir_all(root.join(".jan/agent/skills/deploy")).unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::remove_dir_all(store.join("skills/deploy")).unwrap();
         app.input = "/dep".into();
 
         assert_eq!(names(&app), vec!["/deploy".to_string()]);
@@ -34932,7 +37079,7 @@ mod tests {
         // Whitelist a different skill: deploy must vanish from the popup,
         // matching the user-side catalog semantics.
         std::fs::write(
-            root.join(".jan/agent/agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[agent]\n[skills]\nenabled = [\"other\"]\n",
         )
         .unwrap();
@@ -35008,8 +37155,8 @@ mod tests {
 
     /// A plugin with one folder skill under the app's project root.
     fn plugin_skill_in_app(root: &std::path::Path, plugin: &str, name: &str, description: &str) {
-        let dir = root
-            .join(".jan/agent/plugins")
+        let dir = crate::core::agent::project::store_root(root)
+            .join("plugins")
             .join(plugin)
             .join("skills")
             .join(name);
@@ -35023,8 +37170,8 @@ mod tests {
 
     /// A plugin with one command prompt template under the app's project root.
     fn plugin_command_in_app(root: &std::path::Path, plugin: &str, name: &str, content: &str) {
-        let dir = root
-            .join(".jan/agent/plugins")
+        let dir = crate::core::agent::project::store_root(root)
+            .join("plugins")
             .join(plugin)
             .join("commands");
         std::fs::create_dir_all(&dir).unwrap();
@@ -35076,7 +37223,8 @@ mod tests {
         app.input = "/feature".into();
         assert!(names(&app).contains(&"/feature-dev".to_string()));
 
-        std::fs::remove_file(root.join(".jan/agent/plugins/feature-dev/commands/feature-dev.md"))
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::remove_file(store.join("plugins/feature-dev/commands/feature-dev.md"))
             .unwrap();
         app.input = "/fea".into();
         app.reset_slash_hint();
@@ -35299,6 +37447,317 @@ mod tests {
         app.input = "/skill:rel".into();
         assert!(names(&app).contains(&"/skill:release:prepare".to_string()));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin summary manifest on disk, so `/reload plugin` has a version
+    /// to report.
+    fn plugin_manifest_in_app(root: &std::path::Path, plugin: &str, version: &str) {
+        std::fs::write(
+            crate::core::agent::project::store_root(root)
+                .join("plugins")
+                .join(plugin)
+                .join("plugin.toml"),
+            format!("name = \"{plugin}\"\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_plugin_reports_installed_plugins() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        // Nothing installed, nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("re-scanned installed plugins"),
+            "note: {out}"
+        );
+        assert!(
+            out.contains("no changes since the last scan"),
+            "diff: {out}"
+        );
+
+        // Install a plugin payload on disk; the next reload reports it and
+        // the rebuilt catalog serves its command immediately.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .commands
+                .iter()
+                .any(|c| c.plugin == "acme" && c.name == "ship"),
+            "command must be live after reload"
+        );
+
+        // A second reload has an up-to-date snapshot: nothing changed.
+        run_command(&mut app, "reload plugin", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_skills_reports_added_changed_and_removed() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no changes since the last scan"));
+
+        let skills = crate::core::agent::project::store_root(&root).join("skills");
+
+        // Added: a new skill shows up and joins the popup catalog.
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ audit"), "diff: {out}");
+        assert!(
+            app.slash_catalog
+                .skills
+                .iter()
+                .any(|m| m.name == "audit"),
+            "skill must be live after reload"
+        );
+
+        // Changed: an edited description is reported as an update.
+        std::fs::write(
+            skills.join("deploy").join("SKILL.md"),
+            "---\ndescription: How to ship\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("~ deploy (How to deploy."),
+            "diff: {out}"
+        );
+        assert!(out.contains("→ How to ship"), "diff: {out}");
+
+        // Removed: a deleted skill leaves the catalog.
+        std::fs::remove_dir_all(skills.join("audit")).unwrap();
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("- audit"), "diff: {out}");
+        assert!(
+            !app.slash_catalog.skills.iter().any(|m| m.name == "audit"),
+            "removed skill must drop from the catalog"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// janhq/jan-internal#394: `/skills` lists every scope, and a user skill
+    /// hidden by a same-named project skill is shown as shadowed; the popup
+    /// catalog offers user skills and `/reload skills` picks up new ones.
+    #[tokio::test]
+    async fn skills_command_lists_scopes_and_marks_shadowing() {
+        let (mut app, root) = skill_test_app("tui394-deploy", "Project deploy.");
+        let user = crate::core::agent::skills::user_skills_dir().unwrap();
+        for (name, desc) in [("tui394-deploy", "User deploy."), ("tui394-review", "User review.")] {
+            std::fs::create_dir_all(user.join(name)).unwrap();
+            std::fs::write(
+                user.join(name).join("SKILL.md"),
+                format!("---\ndescription: {desc}\n---\n\nBody.\n"),
+            )
+            .unwrap();
+        }
+        run_command(&mut app, "skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("precedence project > user > built-in"), "{out}");
+        assert!(out.contains("project   tui394-deploy · Project deploy."), "{out}");
+        assert!(
+            out.contains("user      tui394-deploy (shadowed by project) · User deploy."),
+            "{out}"
+        );
+        assert!(out.contains("user      tui394-review · User review."), "{out}");
+        assert!(out.contains("built-in  jan"), "{out}");
+
+        // The popup offers the user skill once `/reload skills` rescans.
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("+ tui394-review"));
+        assert!(app.slash_catalog.skills.iter().any(|m| m.name == "tui394-review"));
+        app.input = "/skill:tui394-r".into();
+        assert!(
+            app.slash_matches()
+                .iter()
+                .any(|m| m.name() == "/skill:tui394-review"),
+            "popup offers the user skill"
+        );
+
+        for name in ["tui394-deploy", "tui394-review"] {
+            let _ = std::fs::remove_dir_all(user.join(name));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_system_prompt_reads_jan_md() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("no JAN.md in this project"),
+            "empty project: {}",
+            transcript_text(&app)
+        );
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n\nRun the tests.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("re-read project instructions"), "{out}");
+        assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_bare_covers_every_target() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        for want in [
+            "reload · config",
+            "reload · plugin",
+            "reload · skills",
+            "reload · system-prompt",
+        ] {
+            assert!(out.contains(want), "missing {want}: {out}");
+        }
+
+        // One bare reload reports both a new plugin and a new skill: the
+        // plugin refresh must not swallow the skill diff.
+        plugin_command_in_app(&root, "acme", "ship", "---\ndescription: Ship it\n---\nGo");
+        plugin_manifest_in_app(&root, "acme", "1.0.0");
+        let skills = crate::core::agent::project::store_root(&root).join("skills");
+        std::fs::create_dir_all(skills.join("audit")).unwrap();
+        std::fs::write(
+            skills.join("audit").join("SKILL.md"),
+            "---\ndescription: Audit deps\n---\n\nBody.\n",
+        )
+        .unwrap();
+        run_command(&mut app, "reload", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("+ plugin acme (v1.0.0)"), "plugin diff: {out}");
+        assert!(out.contains("+ audit"), "skill diff: {out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_agent_toml(root: &std::path::Path, body: &str) {
+        let path = crate::core::agent::project::agent_toml_path(root);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[tokio::test]
+    async fn reload_config_applies_agent_toml_limits_live() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        write_agent_toml(
+            &root,
+            "[agent]\ncontext_window = 300000\ncompaction_ratio = 0.7\nmax_tokens = 8192\n\n[budget]\nmax_tokens = 0\n",
+        );
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.context_window, 300_000);
+        assert_eq!(app.configured_context_window, Some(300_000));
+        assert_eq!(
+            app.context_window_source,
+            crate::core::cli::model_capabilities::ContextWindowSource::Configured
+        );
+        assert_eq!(app.compaction_ratio, 0.7);
+        assert_eq!(app.max_tokens, Some(8192));
+        assert_eq!(app.max_session_tokens, 0);
+        assert_eq!(app.body()["max_tokens"], 8192);
+        let out = transcript_text(&app);
+        assert!(out.contains("~ context_window (128000"), "diff: {out}");
+        assert!(out.contains("→ 300000"), "diff: {out}");
+
+        // Unchanged file: nothing to report.
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert!(transcript_text(&app).ends_with("no changes since the last scan"));
+
+        // Removing the override falls back to the catalog/fallback window.
+        write_agent_toml(&root, "[agent]\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.configured_context_window, None);
+        assert_eq!(app.context_window, 128_000);
+        assert_eq!(app.max_tokens, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_keeps_settings_on_a_malformed_file() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        write_agent_toml(&root, "[agent\ncontext_window = 300000\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.context_window, 128_000);
+        assert!(
+            transcript_text(&app).contains("kept the current settings"),
+            "{}",
+            transcript_text(&app)
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_respects_a_pinned_session_budget() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.max_session_tokens = 42;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Flag;
+        write_agent_toml(&root, "[budget]\nmax_tokens = 999\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        assert_eq!(app.max_session_tokens, 42, "--max-session-tokens outranks the file");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_config_hands_the_new_window_to_the_engine() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        let args = test_args(&app, std::collections::HashMap::new());
+        app.args = Some(args.clone());
+        write_agent_toml(&root, "[agent]\ncontext_window = 300000\n");
+        run_command(&mut app, "reload config", &no_mcp()).await;
+        let budget = app
+            .args
+            .as_ref()
+            .and_then(|a| a.compaction)
+            .expect("compaction budget synced to the run args");
+        assert_eq!(budget.context_window, 300_000);
+        assert_eq!(budget.ratio, app.compaction_ratio);
+        // The shared session args are untouched; only new runs see the swap.
+        assert!(!Arc::ptr_eq(app.args.as_ref().unwrap(), &args));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn model_switch_hands_the_new_window_to_the_engine() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        app.configured_context_window = Some(64_000);
+        app.set_model("anthropic/claude-opus-5".to_string());
+        let budget = app.args.as_ref().and_then(|a| a.compaction);
+        assert_eq!(
+            budget.map(|b| b.context_window),
+            Some(app.context_window),
+            "the engine compacts against the window the header shows"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn slash_commands_include_reload() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/reload"));
+    }
+
+    #[tokio::test]
+    async fn reload_unknown_target_notes_usage() {
+        let mut app = test_app();
+        run_command(&mut app, "reload bogus", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("unknown /reload target 'bogus'"),
+            "{}",
+            transcript_text(&app)
+        );
     }
 
     #[tokio::test]
@@ -35978,6 +38437,29 @@ mod tests {
             Some(CompactKind::Auto),
             "a smaller-window switch must queue target compaction"
         );
+    }
+
+    /// An unconfigured session budget is sized by the model's window and
+    /// follows a model switch; the old fixed 128K compacted 1M-window models at
+    /// an eighth of their capacity. A `[budget].max_tokens` value stays put.
+    #[test]
+    fn default_session_budget_follows_the_model_window() {
+        let mut app = test_app();
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.context_window, 1_000_000);
+        assert_eq!(app.max_session_tokens, 1_000_000);
+        assert_eq!(
+            app.max_session_tokens_source,
+            crate::core::cli::SessionBudgetSource::ContextWindow
+        );
+
+        app.set_model("claude-sonnet-4-5".to_string());
+        assert_eq!(app.max_session_tokens, 200_000);
+
+        app.max_session_tokens = 50_000;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Config;
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.max_session_tokens, 50_000, "a configured budget is not resized");
     }
 
     #[test]

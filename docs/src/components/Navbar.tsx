@@ -3,40 +3,46 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { cn } from '@/lib/utils'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
-import { FiDownload } from 'react-icons/fi'
 import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
 import { ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
-import DocSearch from './DocSearch'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
+import { useDownloadLink } from '@/hooks/useDownloadLink'
 
-const MENU_ITEMS = [
+type MenuItem = {
+  name: string
+  href: string
+  external?: boolean
+  children?: { name: string; href: string; external?: boolean }[]
+}
+
+const MENU_ITEMS: MenuItem[] = [
   {
     name: 'Jan',
     href: '/docs/desktop/quickstart',
     children: [
-      { name: 'Jan Desktop', href: '/docs/desktop/quickstart' },
+      {
+        name: 'Jan Desktop',
+        href: '/docs/desktop/quickstart',
+      },
       { name: 'Jan Agent', href: '/docs/agent/quickstart' },
     ],
   },
-  { name: 'Tokamak', href: 'https://tokamak.sh', external: true },
   { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
   {
     name: 'Company',
     href: '#',
     children: [
-      { name: 'Changelog', href: '/changelog' },
       { name: 'Blog', href: '/blog' },
-      { name: 'About Us', href: '/handbook/who/who-we-are' },
-      { name: 'Careers', href: 'https://jobs.ashbyhq.com/menlo', external: true },
-      { name: 'Handbook', href: '/handbook' },
+      { name: 'Careers', href: 'https://menlo.ai/careers', external: true },
     ],
   },
 ]
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const router = useRouter()
+  const downloadHref = useDownloadLink()
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const currentPath = router.asPath
@@ -75,7 +81,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
       className={cn(
         'h-[100px] w-full top-0 z-50 transition-all duration-300 border-b lg:px-6 left-0',
         isLanding ? 'fixed' : 'sticky !border-opacity-100 !top-0',
-        isScrolled || noScroll
+        !isLanding || isScrolled || noScroll
           ? 'bg-white text-black h-[60px] border-border'
           : 'bg-transparent text-white h-[60px] border-gray-100 border-opacity-10 top-4'
       )}
@@ -143,16 +149,9 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 </li>
               )
             })}
-            {/* Landing page keeps the navbar transparent over artwork, where a
-                filled input would read as a stray form field. */}
-            {!isLanding && (
-              <li>
-                <DocSearch />
-              </li>
-            )}
             <li>
               <a
-                href="https://github.com/janhq/jan/releases/latest"
+                href={downloadHref}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -190,20 +189,20 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaXTwitter className="size-5" />
                 </a>
                 <a
-                  href="https://linkedin.com/company/opensuperintelligence"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg flex items-center justify-center"
-                >
-                  <FaLinkedinIn className="size-5" />
-                </a>
-                <a
                   href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-lg flex items-center justify-center"
                 >
                   <FaGithub className="size-5" />
+                </a>
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaLinkedinIn className="size-5" />
                 </a>
               </div>
             </li>
@@ -212,24 +211,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
 
         {/* Mobile Download Button and Hamburger */}
         <div className="lg:hidden flex items-center gap-3">
-          <a
-            href="https://github.com/janhq/jan/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button
-              size="sm"
-              className={cn(
-                !isLanding &&
-                  '!bg-black !text-white !hover:bg-black !hover:text-white',
-                isScrolled || noScroll
-                  ? 'bg-black text-white hover:bg-gray-800'
-                  : 'bg-white text-black hover:bg-gray-100'
-              )}
-            >
-              Download
-            </Button>
-          </a>
           <button
             className="flex flex-col items-center justify-center w-8 h-8"
             onClick={toggleMobileMenu}
@@ -274,7 +255,10 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             <div className="p-6">
               {/* Header with close button */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-black">Jan</h2>
+                <div className="flex items-center gap-2">
+                  <img src={LogoJanSVG.src} alt="Jan" className="w-6 h-6" />
+                  <span className="text-2xl font-bold text-black">Jan</span>
+                </div>
                 <button
                   className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -282,15 +266,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   ×
                 </button>
-              </div>
-
-              {/* Nextra's own sidebar search is unreachable here: our custom
-                  hamburger drives this modal, not Nextra's sidebar state. */}
-              <div className="mb-6">
-                <DocSearch
-                  variant="panel"
-                  onNavigate={() => setIsMobileMenuOpen(false)}
-                />
               </div>
 
               {/* Menu Items */}
@@ -358,14 +333,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaXTwitter className="size-5" />
                 </a>
                 <a
-                  href="https://linkedin.com/company/opensuperintelligence"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-black rounded-lg flex items-center justify-center"
-                >
-                  <FaLinkedinIn className="size-5" />
-                </a>
-                <a
                   href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -373,25 +340,14 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   <FaGithub className="size-5" />
                 </a>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                <Button
-                  variant="playful-green"
-                  size="xl"
-                  className="w-full lg:w-auto text-left justify-start"
-                  asChild
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-black rounded-lg flex items-center justify-center"
                 >
-                  <a
-                    href="https://github.com/janhq/jan/releases/latest"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <FiDownload className="size-6 mr-2" />
-                    Download Jan
-                  </a>
-                </Button>
+                  <FaLinkedinIn className="size-5" />
+                </a>
               </div>
             </div>
           </div>

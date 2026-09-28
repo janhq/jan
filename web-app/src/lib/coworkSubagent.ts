@@ -847,6 +847,16 @@ export type DispatchPlanCallbacks = {
     result: SubagentResult,
     savedPath: string | null
   ) => void
+  /** The run's abort signal, if the caller has one.
+   *
+   * Consulted between phases: a cancelled run starts no further phase, because
+   * the children of the phase after this one would be dispatched only to be
+   * cancelled on arrival -- promoted in the UI as though they had worked, and
+   * then announced by a terminal notice for a plan nobody is waiting for. A
+   * phase already running is left alone; its children read the same signal
+   * themselves (`runSubagent`). Mirrors the Rust driver, which stops when the
+   * registry it dispatches into has been torn down. */
+  signal?: AbortSignal
 }
 
 /** One finished child of a phase: what `runDispatchPlan` returns for the final
@@ -874,6 +884,9 @@ function hasRealAnswer(result: SubagentResult): boolean {
  * proceeds; this never throws (so the caller can release its plan-hold in a
  * `finally`). Each subagent is keyed `${callId}-${name}` for the store.
  *
+ * A cancelled run (`cb.signal`) stops the plan where it stands: no later phase is
+ * dispatched, no final phase is reported, and the caller rings no notice for it.
+ *
  * Returns the final phase's outcomes so a multi-phase caller can ring the
  * doorbell once with a consolidated notice (see `planCompletionNotice`).
  */
@@ -885,6 +898,11 @@ export async function runDispatchPlan(
   let inputs: { name: string; output: string }[] = []
   let finalPhase: PlanChildOutcome[] = []
   for (const phase of plan.phases) {
+    // The run is gone: the phases still ahead are dead work, and there is no
+    // final phase to report. Returning nothing is what stops a caller from
+    // announcing a plan that never finished. Checked before the first phase too,
+    // so a plan dispatched into an already-cancelled run starts nothing at all.
+    if (cb.signal?.aborted) return []
     const outcomes = await Promise.all(
       phase.subagents.map(async (req): Promise<PlanChildOutcome> => {
         const id = `${callId}-${req.name}`

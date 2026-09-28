@@ -6,15 +6,23 @@ mod agent_status;
 pub mod auth;
 pub mod brand;
 pub mod browser;
+#[cfg(test)]
+mod contract_conformance;
 pub mod device_auth;
 pub mod journal;
 pub mod login;
 pub mod mcp;
 /// `jan mcp serve`: the other direction, Jan's toolset served over MCP.
 pub mod mcp_serve;
-mod model_capabilities;
+pub(crate) mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;
+/// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
+pub mod protocol_schema;
+/// `jan cli agent rpc`: persistent, session-scoped JSON-RPC transport.
+pub mod rpc;
+/// `jan cli agent rpc-schema`: the RPC request and event schemas.
+pub mod rpc_schema;
 pub mod run_report;
 pub mod providers;
 mod secret_input;
@@ -23,6 +31,9 @@ pub mod telemetry;
 pub mod terminal_setup;
 pub mod tokamak;
 mod tui;
+/// The user-message wire shape, shared by the TUI and the headless channel.
+mod user_message;
+pub mod usage_view;
 pub mod updater;
 pub mod worktree;
 
@@ -42,7 +53,7 @@ use crate::core::threads::{
 // ── Thread operations ──────────────────────────────────────────────────────
 
 /// List thread metadata under `<base>/threads/`. `base` is the Jan data folder
-/// (desktop store) or a project's `.jan/agent` dir (TUI store).
+/// (desktop store) or a project's store `~/.jan/projects/<slug>` (TUI store).
 pub fn list_threads_in(base: &std::path::Path) -> Result<Vec<serde_json::Value>, String> {
     use std::fs;
 
@@ -368,7 +379,7 @@ pub fn cli_save_thread(
 
 /// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
 /// so it is remembered on the next session (agent.toml wins over the desktop
-/// default in the model-resolution order). `agent_dir` is `<project>/.jan/agent`.
+/// default in the model-resolution order). `agent_dir` is the project's store.
 pub fn cli_set_project_model(agent_dir: &std::path::Path, model: &str) -> Result<(), String> {
     set_model_in_agent_toml(&agent_dir.join("agent.toml"), model)
 }
@@ -456,6 +467,11 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
 /// desktop reader and the mobile store need no migration and an existing store
 /// (where every thread is a root) renders as today's flat list.
 pub const FORKED_FROM_KEY: &str = "forked_from";
+
+/// Key in a thread's `metadata` holding an RPC host's `systemPrompt`. Saved so
+/// a thread reopened elsewhere (the TUI's `/resume`) keeps running on the
+/// prompt it was written under instead of falling back to Jan's.
+pub const SYSTEM_PROMPT_KEY: &str = "system_prompt";
 
 /// True for a `user` message the user actually authored. Hidden reminders ride
 /// in on the `user` role but are not turns: a rewind target, a fork point, a
@@ -736,10 +752,11 @@ use crate::core::agent::r#loop::{
 use tauri_plugin_agent_tools::workspace;
 use crate::core::cli::providers::{load_provider_configs, ProviderOverrides};
 use crate::core::cli::run_report::{
-    ndjson_line, Init, OutputFormat, PermissionDecisionRecord, RunReport,
+    ndjson_line, Init, InputContentParts, OutputFormat, PermissionDecisionRecord, RunReport,
 };
 use crate::core::cli::stream_input::{
     parse_input_line, InputErrorRecord, InputFormat, InputMessage, StreamInput, INPUT_KINDS,
+    MAX_ECHO_BYTES, MAX_LINE_BYTES,
 };
 use crate::core::mcp::models::McpSettings;
 use std::collections::HashMap;
@@ -747,10 +764,9 @@ use std::io::Write as _;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
-/// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
-/// is unset. `0` disables the ceiling entirely. Counted marginally by
-/// `SessionBudget`, so it tracks real new spend, not the context replayed on
-/// every turn.
+/// Token-spend ceiling for one agent run when neither `--max-session-tokens` nor
+/// `agent.toml [budget].max_tokens` is set and the model's context window is
+/// unknown. `0` disables the ceiling entirely.
 ///
 /// Advisory, not a bound: crossing it compacts the history and records a note,
 /// then the run carries on (see `body_session_budget`). `--max-turns` and
@@ -758,28 +774,135 @@ use tokio::sync::{mpsc, Mutex};
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Where the session token ceiling in effect came from, so `agent status` can
-/// say which source won.
-///
-/// `agent status` takes no budget flag and so always passes `None`, making
-/// `"flag"` unreachable from the binary today. It is kept because the argument
-/// mirrors `resolve_session_budget` below: a status surface that does accept
-/// the flag (or any caller reporting an in-flight run's ceiling) would
-/// otherwise report `agent.toml` for a value the flag had overridden.
-fn session_budget_source(flag: Option<u64>, configured: Option<u64>) -> &'static str {
-    match (flag, configured) {
-        (Some(_), _) => "flag",
-        (None, Some(_)) => "agent.toml",
-        (None, None) => "default",
+/// say which source won and the TUI knows whether a model switch moves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionBudgetSource {
+    /// `--max-session-tokens`, per invocation; outranks the file.
+    Flag,
+    /// `agent.toml [budget].max_tokens`.
+    Config,
+    /// The resolved context window of the model serving the run.
+    ContextWindow,
+    /// `DEFAULT_MAX_SESSION_TOKENS`: no window was known.
+    Default,
+}
+
+impl SessionBudgetSource {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            SessionBudgetSource::Flag => "flag",
+            SessionBudgetSource::Config => "agent.toml",
+            SessionBudgetSource::ContextWindow => "context_window",
+            SessionBudgetSource::Default => "default",
+        }
+    }
+
+    /// Whether the ceiling follows the model: only an unpinned, unconfigured
+    /// ceiling is re-derived when the model or its window changes.
+    pub(crate) fn follows_window(self) -> bool {
+        matches!(
+            self,
+            SessionBudgetSource::ContextWindow | SessionBudgetSource::Default
+        )
     }
 }
 
 /// Session token ceiling for one run. Precedence is the per-invocation
 /// `--max-session-tokens` flag, then `agent.toml [budget].max_tokens`, then
-/// `DEFAULT_MAX_SESSION_TOKENS` - the same flag/config/default shape the
-/// sandbox setting resolves with. `0` from either source means unbounded and is
-/// carried through as-is (see `body_session_budget`).
-fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
-    flag.or(configured).unwrap_or(DEFAULT_MAX_SESSION_TOKENS)
+/// the model's context window, then `DEFAULT_MAX_SESSION_TOKENS`. `0` from
+/// either explicit source means unbounded and is carried through as-is (see
+/// `body_session_budget`).
+///
+/// The window is the default because the ceiling compacts when crossed: a
+/// fixed 128K would compact a 1M-window model at an eighth of its capacity,
+/// long before the window-based trigger would.
+pub(crate) fn resolve_session_budget(
+    flag: Option<u64>,
+    configured: Option<u64>,
+    context_window: Option<u64>,
+) -> (u64, SessionBudgetSource) {
+    match (flag, configured, context_window.filter(|w| *w > 0)) {
+        (Some(v), _, _) => (v, SessionBudgetSource::Flag),
+        (None, Some(v), _) => (v, SessionBudgetSource::Config),
+        (None, None, Some(w)) => (w, SessionBudgetSource::ContextWindow),
+        (None, None, None) => (DEFAULT_MAX_SESSION_TOKENS, SessionBudgetSource::Default),
+    }
+}
+
+/// The context window to size a default session budget by: `None` for the
+/// conservative fallback, which is a guess and not the model's window.
+pub(crate) fn known_window(
+    resolved: crate::core::cli::model_capabilities::ResolvedContextWindow,
+) -> Option<u64> {
+    (resolved.source != crate::core::cli::model_capabilities::ContextWindowSource::Fallback)
+        .then_some(resolved.tokens)
+}
+
+/// The compaction ratio for `model`. A provider that names its own ratio wins
+/// over the project's: context windows differ by an order of magnitude across
+/// providers, so one ratio cannot be right for all of them. Resolved through
+/// the same selection the upstream resolution makes, so the ratio always
+/// describes the route that will actually serve this request.
+pub(crate) fn resolve_compaction_ratio(
+    model: &str,
+    provider_configs: &HashMap<String, crate::core::state::ProviderConfig>,
+    configured: Option<f64>,
+) -> f64 {
+    crate::core::agent::upstream::pick_provider_for_model(model, provider_configs)
+        .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
+        .or(configured)
+        .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO)
+}
+
+/// The money ceiling for a run, priced against the model actually being billed.
+///
+/// Precedence matches the token budget: `--max-budget-usd`, then
+/// `[budget].max_usd`, then none. Unlike that one, this can fail. A ceiling is
+/// only meaningful if the run can be priced, and the price comes from the
+/// provider's last `/models` listing, so three things go wrong in ways the user
+/// has to be told about rather than have guessed at:
+///
+/// - **the model publishes no prices.** Refused. The alternative is to run
+///   uncapped, and a user who asked to spend at most $2 has to end up either
+///   capped or stopped -- never billed without a limit because a listing was
+///   thin. This is also why an unpriced model cannot be worked around by
+///   assuming a rate: an invented price produces an invented ceiling.
+/// - **a negative limit.** Refused as a typo. `0` is allowed and honest: it
+///   stops at the first billed request.
+/// - **no ceiling asked for.** The common case, and not an error: the run is
+///   unmetered, exactly as before this flag existed.
+///
+/// Refusing at startup rather than at the first request is the point: a run
+/// that cannot be capped must not do paid work before saying so.
+fn resolve_cost_ceiling(
+    flag: Option<f64>,
+    configured: Option<f64>,
+    provider: Option<&str>,
+    model: &str,
+) -> Result<Option<crate::core::agent::session::CostCeiling>, String> {
+    let Some(max_usd) = flag.or(configured) else {
+        return Ok(None);
+    };
+    if !max_usd.is_finite() || max_usd < 0.0 {
+        return Err(format!(
+            "a cost ceiling must be a non-negative amount in USD, not {max_usd}"
+        ));
+    }
+    let rates = model_catalog::load()
+        .get(provider, model)
+        .and_then(|info| info.rates())
+        .ok_or_else(|| {
+            format!(
+                "cannot cap spend for {model}: this provider publishes no prices for it, so \
+                 there is nothing to meter a ${max_usd} ceiling against. Remove the limit to \
+                 run uncapped, or switch to a model the provider prices (`/model` in the TUI \
+                 refreshes the listing)."
+            )
+        })?;
+    Ok(Some(crate::core::agent::session::CostCeiling {
+        rates,
+        max_usd,
+    }))
 }
 
 /// Resolve the `--project` flag (default `"."`) to an absolute path. The raw
@@ -787,10 +910,27 @@ fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
 /// working-directory block, so a bare "." must become the real cwd rather than
 /// being sent to the model as-is. Falls back to the raw (possibly relative)
 /// path if canonicalization fails (e.g. the directory doesn't exist yet).
+///
+/// Every CLI entry point resolves its project here, so this is also where a
+/// legacy `<project>/.jan` is moved into the project's store: before anything
+/// reads it, and only when the workspace still has one. The notice is kept for
+/// the surface to show (see [`take_migration_notice`]).
 fn resolve_project_root(project: &str) -> PathBuf {
-    PathBuf::from(project)
+    let root = PathBuf::from(project)
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(project))
+        .unwrap_or_else(|_| PathBuf::from(project));
+    if let Some(note) = crate::core::agent::project::migrate_legacy_store(&root) {
+        log::info!("Agent: {note}");
+        *MIGRATION_NOTICE.lock().unwrap_or_else(|e| e.into_inner()) = Some(note);
+    }
+    root
+}
+
+static MIGRATION_NOTICE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The launch migration's one-line report, handed out once.
+pub(crate) fn take_migration_notice() -> Option<String> {
+    MIGRATION_NOTICE.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
 /// Resolved-config + provider snapshot for `jan cli agent status`.
@@ -868,6 +1008,18 @@ pub fn cli_agent_status(
             })
             .collect();
 
+    // The default ceiling follows the configured model's window, so status
+    // resolves that window the way a run would.
+    let status_window = cfg.agent.model.as_deref().and_then(|model| {
+        let provider = crate::core::cli::providers::provider_for_model(model, &provider_configs);
+        known_window(crate::core::cli::model_capabilities::resolve_context_window(
+            model,
+            cfg.agent.context_window,
+            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), model),
+        ))
+    });
+    let session_budget = resolve_session_budget(None, cfg.budget.max_tokens, status_window);
+
     Ok(serde_json::json!({
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
@@ -875,8 +1027,12 @@ pub fn cli_agent_status(
         // The effective ceiling with the config files resolved. A
         // `--max-session-tokens` flag is per-invocation and so, like
         // `--sandbox` below, cannot be reflected in a config dump.
-        "max_session_tokens": resolve_session_budget(None, cfg.budget.max_tokens),
-        "max_session_tokens_source": session_budget_source(None, cfg.budget.max_tokens),
+        "max_session_tokens": session_budget.0,
+        "max_session_tokens_source": session_budget.1.as_str(),
+        // The configured money ceiling, or null when the project sets none.
+        // Reported unpriced: whether it can actually be enforced depends on the
+        // model a run resolves, which a config dump has not resolved.
+        "max_budget_usd": cfg.budget.max_usd,
         "tools": {
             "default": cfg.tools.default,
             "allow": cfg.tools.allow,
@@ -1014,6 +1170,8 @@ pub async fn cli_agent_run(
     resume: Option<ResumeRequest>,
     format: OutputFormat,
     input_format: InputFormat,
+    host_tools: Option<&str>,
+    host_gate: bool,
 ) -> Result<(), String> {
     run_agent_loop(
         project,
@@ -1025,6 +1183,8 @@ pub async fn cli_agent_run(
         resume,
         format,
         input_format,
+        host_tools,
+        host_gate,
     )
     .await
 }
@@ -1048,6 +1208,10 @@ pub async fn cli_agent_step(
         None,
         OutputFormat::Text,
         InputFormat::Text,
+        // `step` is a debugging path with no client on stdin, so there is
+        // nothing that could execute a host tool.
+        None,
+        false,
     )
     .await
 }
@@ -1060,6 +1224,8 @@ fn build_cli_orchestration_args(
     mcp_servers: crate::core::state::SharedMcpServers,
     mcp_settings: McpSettings,
     permission_requests: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolSet,
+    host_tool_requests: crate::core::agent::host_tools::HostToolRegistry,
     auto_approve: bool,
     plan: bool,
     max_parallel_subagents: u32,
@@ -1074,9 +1240,15 @@ fn build_cli_orchestration_args(
         permissions,
         project_root: Some(project_root),
         permission_requests,
+        host_tools,
+        host_tool_requests,
+        host_owns_gate: false,
+        host_tool_route: None,
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        host_system_prompt: None,
+        project_memory: true,
         subagents_enabled: true,
         max_parallel_subagents,
         auto_approve,
@@ -1090,9 +1262,15 @@ fn build_cli_orchestration_args(
         // reuses `args` across turns and wipes it when the interactive session
         // ends.
         session_id: Some(uuid::Uuid::new_v4().to_string()),
+        // The top-level run is not a child: no dispatch gave it an id.
+        run_id: None,
         // Run-owned here, so a headless run parks on its watchers: nobody is
         // there to talk to meanwhile. The TUI installs its session set itself.
         monitors: None,
+        // Run-owned for the same reason: a headless run has no one to start a
+        // later turn, so it must park until the command reports back.
+        bg_shells: None,
+        subagent_bg: None,
         // `--sandbox` only when passed; unset falls through to the project's
         // `[tools].sandbox` and then the user's global `sandbox`.
         sandbox,
@@ -1154,17 +1332,27 @@ pub(crate) struct SessionLimits {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
-    /// `--max-session-tokens`, else `[budget].max_tokens`, else the default:
-    /// marginal token-spend ceiling for one run. `0` is no ceiling.
+    /// `--max-session-tokens`, else `[budget].max_tokens`, else the model's
+    /// context window, else the default: marginal token-spend ceiling for one
+    /// run. `0` is no ceiling.
     ///
     /// Advisory: crossing it triggers compaction and a recorded note, it does
     /// not end the run. `max_turns` is the hard bound.
     pub max_session_tokens: u64,
+    /// Which source set `max_session_tokens`. A flag outranks
+    /// `[budget].max_tokens`, so `/reload config` must leave a pinned value
+    /// alone; a window-derived one follows a model switch.
+    pub max_session_tokens_source: SessionBudgetSource,
     /// `--max-turns`: hard cap on agentic turns for this run, and the only
     /// setting that terminates one. `None` omits the field from the request
     /// body, which the engine reads as unbounded; `0` means unbounded too (see
     /// `body_turn_cap`).
     pub max_turns: Option<u64>,
+    /// `--max-budget-usd`, else `[budget].max_usd`: the run's money ceiling and
+    /// the rates to meter it against, resolved once at startup by
+    /// `resolve_cost_ceiling` (which refuses a model with no published price).
+    /// `None` leaves the run unmetered, which is the default.
+    pub cost_ceiling: Option<crate::core::agent::session::CostCeiling>,
 }
 
 /// Resolved engine handle for a chat session: the args are built once and the
@@ -1233,6 +1421,18 @@ fn request_body(
     if let Some(turns) = limits.max_turns {
         body["max_turns"] = serde_json::json!(turns);
     }
+    // The ceiling travels with the rates it is metered against: the loop is not
+    // `cli`-gated and cannot read the model catalog, so prices resolved here
+    // are the only ones it will ever see (`body_cost_ceiling`).
+    if let Some(ceiling) = limits.cost_ceiling {
+        body["max_budget_usd"] = serde_json::json!(ceiling.max_usd);
+        body["token_rates"] = serde_json::json!({
+            "prompt_usd": ceiling.rates.prompt_usd,
+            "completion_usd": ceiling.rates.completion_usd,
+            "cache_read_usd": ceiling.rates.cache_read_usd,
+            "cache_write_usd": ceiling.rates.cache_write_usd,
+        });
+    }
     // Reasoning resend policy: the request-level flag the loop reads to
     // decide whether prior assistant `reasoning_content` goes back out.
     body["send_reasoning"] = serde_json::json!(send_reasoning);
@@ -1273,9 +1473,14 @@ pub struct SessionFlags {
     /// is unbounded as well.
     pub max_turns: Option<u64>,
     /// `--max-session-tokens`: advisory session token ceiling, outranking
-    /// `[budget].max_tokens`. `None` (not passed) defers to that, then to
-    /// `DEFAULT_MAX_SESSION_TOKENS`.
+    /// `[budget].max_tokens`. `None` (not passed) defers to that, then to the
+    /// model's context window, then to `DEFAULT_MAX_SESSION_TOKENS`.
     pub max_session_tokens: Option<u64>,
+    /// `--max-budget-usd`: hard USD ceiling for the run, outranking
+    /// `[budget].max_usd`. `None` (not passed) defers to that, then leaves the
+    /// run unmetered. A run that asks for one but cannot be priced is refused
+    /// (see `resolve_cost_ceiling`).
+    pub max_budget_usd: Option<f64>,
 }
 
 /// The desktop app's currently-selected model, adopted only when signed in to
@@ -1533,16 +1738,8 @@ fn prepare_agent_session(
         .as_ref()
         .map(|w| w.path.clone())
         .unwrap_or_else(|| project_root.clone());
-    // A provider that names its own ratio wins over the project's: context
-    // windows differ by an order of magnitude across providers, so one ratio
-    // cannot be right for all of them. Resolved through the same selection the
-    // upstream resolution makes, so the ratio always describes the route that
-    // will actually serve this request.
     let compaction_ratio =
-        crate::core::agent::upstream::pick_provider_for_model(&model, &provider_configs)
-            .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
-            .or(cfg.agent.compaction_ratio)
-            .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO);
+        resolve_compaction_ratio(&model, &provider_configs, cfg.agent.compaction_ratio);
 
     let mut args = build_cli_orchestration_args(
         tool_root,
@@ -1551,6 +1748,13 @@ fn prepare_agent_session(
         mcp_servers.clone(),
         mcp_settings,
         permission_requests.clone(),
+        // Host tools are declared per *run*, by a client on stdin, so the
+        // session is built without them and the duplex headless path installs
+        // the declared set before orchestration starts. The TUI leaves this
+        // empty, and `run_subagent` clears it for a child, so neither emits a
+        // `tool_request` -- only a run with a client that can answer one does.
+        crate::core::agent::host_tools::HostToolSet::new(),
+        crate::core::agent::host_tools::new_registry(),
         flags.auto_approve,
         flags.plan,
         max_parallel_subagents,
@@ -1572,7 +1776,26 @@ fn prepare_agent_session(
         context_window: resolved_window.tokens,
         ratio: compaction_ratio,
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
+        window_pinned: cfg.agent.context_window.is_some(),
     });
+
+    let session_budget = resolve_session_budget(
+        flags.max_session_tokens,
+        cfg.budget.max_tokens,
+        known_window(resolved_window),
+    );
+
+    // Resolved before the session is built: a run that asked for a ceiling it
+    // cannot be priced against is refused here, before any paid request.
+    // Priced against `serving_provider`, the provider that will actually be
+    // billed, rather than whichever one the catalog finds first -- the same
+    // model can carry different rates on two of them.
+    let cost_ceiling = resolve_cost_ceiling(
+        flags.max_budget_usd,
+        cfg.budget.max_usd,
+        serving_provider.as_deref(),
+        &model,
+    )?;
 
     Ok(AgentSession {
         args,
@@ -1586,11 +1809,10 @@ fn prepare_agent_session(
             compaction_ratio,
             compaction_reserve_tokens: cfg.agent.compaction_reserve_tokens,
             max_tokens: cfg.agent.max_tokens,
-            max_session_tokens: resolve_session_budget(
-                flags.max_session_tokens,
-                cfg.budget.max_tokens,
-            ),
+            max_session_tokens: session_budget.0,
+            max_session_tokens_source: session_budget.1,
             max_turns: flags.max_turns,
+            cost_ceiling,
         },
         show_reasoning: cfg.agent.show_reasoning.unwrap_or(false),
         stream_reasoning: crate::core::agent::global_config::stream_reasoning_enabled(),
@@ -1657,6 +1879,9 @@ fn prepare_agent_run(
         resume.as_ref(),
     )?;
     let project_root = resolve_project_root(project);
+    if let Some(note) = take_migration_notice() {
+        eprintln!("({note})");
+    }
     if let Some(note) = session.workspace_note.as_deref() {
         eprintln!("({note})");
     }
@@ -1734,6 +1959,20 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
+/// Read a host's tool declarations from the file `--host-tools` names.
+///
+/// Every failure is the host's to fix and is reported with the path, since a
+/// host that mistyped one is otherwise left guessing which of its tools the run
+/// disagreed with.
+fn load_host_tools(path: &str) -> Result<crate::core::agent::host_tools::HostToolSet, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read --host-tools file '{path}': {e}"))?;
+    let decls: Vec<crate::core::agent::host_tools::HostToolDecl> = serde_json::from_str(&raw)
+        .map_err(|e| format!("--host-tools file '{path}' is not a list of tool declarations: {e}"))?;
+    crate::core::agent::host_tools::HostToolSet::declare(decls)
+        .map_err(|e| format!("--host-tools file '{path}': {e}"))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_agent_loop(
     project: &str,
@@ -1745,6 +1984,8 @@ async fn run_agent_loop(
     resume: Option<ResumeRequest>,
     format: OutputFormat,
     input_format: InputFormat,
+    host_tools: Option<&str>,
+    host_gate: bool,
 ) -> Result<(), String> {
     // A duplex run switches off both of the CLI's own answer paths, so the
     // client is the only thing that can resolve a permission request -- and it
@@ -1753,14 +1994,61 @@ async fn run_agent_loop(
     // pairing leaves a gated call unanswerable. Rejected rather than silently
     // upgraded: a caller parsing plain text should not have the format changed
     // under it.
-    if input_format.is_stream_json() && !format.is_stream_json() {
-        return Err(
-            "--input-format stream-json requires --output-format stream-json (the client answers \
-             permission requests, so it must be reading them)"
-                .to_string(),
-        );
-    }
     let started = std::time::Instant::now();
+    // Every refusal below is a setup failure like any other, so it is reported
+    // the way `prepare_agent_run`'s is: one `result` record with
+    // `error.code: "setup_error"`. Returning early instead would leave a
+    // machine consumer an empty stdout and a human string on stderr, which is
+    // the one thing this channel promises never to do -- and a mistyped
+    // `--host-tools` path is the first failure a host is likely to hit.
+    let setup = (|| {
+        if input_format.is_stream_json() && !format.is_stream_json() {
+            return Err(
+                "--input-format stream-json requires --output-format stream-json (the client \
+                 answers permission requests, so it must be reading them)"
+                    .to_string(),
+            );
+        }
+        // Declared before anything is spent: a malformed or unacceptable tool
+        // set is the host's own mistake, and finding out at the first call --
+        // mid-task, after paid requests -- is worse than refusing to start.
+        // Handing the gate to a host that declared no tools would be a no-op
+        // the caller probably did not mean; say so rather than ignore it.
+        if host_gate && host_tools.is_none() {
+            return Err("--host-gate requires --host-tools".to_string());
+        }
+        match host_tools {
+            Some(path) => {
+                if !input_format.is_stream_json() {
+                    return Err(
+                        "--host-tools requires --input-format stream-json (a host tool call is \
+                         answered with a tool_result message on stdin)"
+                            .to_string(),
+                    );
+                }
+                load_host_tools(path)
+            }
+            None => Ok(crate::core::agent::host_tools::HostToolSet::new()),
+        }
+    })();
+    let host_tools = match setup {
+        Ok(host_tools) => host_tools,
+        Err(e) => {
+            if format.is_machine() {
+                print_report(
+                    format,
+                    RunReport::setup_failure(&e).finish(
+                        None,
+                        None,
+                        "",
+                        started.elapsed().as_millis(),
+                        None,
+                    ),
+                );
+            }
+            return Err(e);
+        }
+    };
     let prepared = prepare_agent_run(
         project,
         task,
@@ -1773,7 +2061,7 @@ async fn run_agent_loop(
     // A setup failure never reaches the event stream, so a JSON consumer would
     // otherwise get an empty stdout and have to parse the human error off stderr.
     let PreparedRun {
-        args,
+        mut args,
         body,
         provider,
         permission_requests,
@@ -1797,6 +2085,13 @@ async fn run_agent_loop(
             return Err(e);
         }
     };
+    // Installed after the session is built, since host tools are declared per
+    // run rather than per project: the same session config serves a run with
+    // them and one without.
+    args.host_tools = host_tools;
+    // `--host-gate`: the host's own callback is the approval step, so Jan
+    // raises no `permission_request` for a host tool of any class.
+    args.host_owns_gate = host_gate;
 
     // Block until active MCP servers connect, so tools (collected once per run)
     // are present on the first turn.
@@ -1831,6 +2126,11 @@ async fn run_agent_loop(
         .thread_id
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    // The run's own id becomes the session id, so the one a client is handed,
+    // the one its requests are correlated under, and the one a provenance
+    // record names are the same id: three spellings of a session would only
+    // ever be a way to lose the thread between them.
+    args.session_id = Some(session_id.clone());
 
     // The handshake, before anything else can reach stdout. Printed here rather
     // than from the printer task for exactly that reason: nothing has been
@@ -1845,12 +2145,23 @@ async fn run_agent_loop(
     let input = input_format
         .is_stream_json()
         .then(|| Arc::new(StreamInput::default()));
+    // Created before the reader so it can report the host requests it releases
+    // on the same channel as the run's events: the printer then orders those
+    // records before the final result, which it prints only once every sender
+    // (the reader's included) has dropped.
+    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     let reader = input.as_ref().map(|input| {
-        spawn_input_reader(Arc::clone(input), Arc::clone(&permission_requests), format)
+        spawn_input_reader(
+            Arc::clone(input),
+            Arc::clone(&permission_requests),
+            Arc::clone(&args.host_tool_requests),
+            tx.clone(),
+            format,
+        )
     });
     let client = input.clone();
+    let host_tool_requests = Arc::clone(&args.host_tool_requests);
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<StreamEvent>();
     // The report is folded in both formats from the same stream the printer
     // reads, so the JSON envelope can never disagree with the text output.
     let printer = tokio::spawn(async move {
@@ -1869,6 +2180,26 @@ async fn run_agent_loop(
             // only while it is still reading. Once stdin has closed, the CLI
             // takes its own path back, which on a pipe is an auto-deny.
             let duplex = client.as_ref().is_some_and(|c| !c.client_gone());
+            // Only the client can answer a host tool call. If it has already
+            // left, the call is failed here: `strand_all` fired when stdin
+            // closed, so nothing else will ever release this one and the turn
+            // would park forever.
+            if let StreamEvent::ToolRequest { request_id, .. } = &ev {
+                if !duplex {
+                    // The request is already on stdout, so its withdrawal is
+                    // too; printed here because this task is the stream's order.
+                    if crate::core::agent::host_tools::strand(&host_tool_requests, request_id)
+                        .await
+                    {
+                        let cancelled = request_cancelled(request_id, CANCEL_CLIENT_GONE);
+                        report.observe(&cancelled);
+                        if format.is_stream_json() {
+                            print_json_line(&cancelled);
+                        }
+                    }
+                    continue;
+                }
+            }
             match format {
                 OutputFormat::Text => print_event(ev, &permission_requests, duplex).await,
                 OutputFormat::Json => {
@@ -1895,6 +2226,12 @@ async fn run_agent_loop(
     };
     if let Some(reader) = reader {
         reader.abort();
+    }
+    // A request still registered now belongs to a call the run dropped (it
+    // failed or stopped mid-batch); nothing will await its answer, so the host
+    // is told to stop working on it before the result record closes the stream.
+    for id in crate::core::agent::host_tools::cancel_all(&args.host_tool_requests).await {
+        let _ = tx.send(request_cancelled(&id, CANCEL_ABORTED));
     }
     let aborted = outcome.is_none();
     let result = outcome.unwrap_or_else(|| Err(ABORTED_BY_CLIENT.to_string()));
@@ -1974,7 +2311,7 @@ async fn init_record(
     model: &str,
     input_format: InputFormat,
 ) -> Init {
-    let tools = crate::core::agent::r#loop::context_advertised_tools(
+    let tools: Vec<String> = crate::core::agent::r#loop::context_advertised_tools(
         &args.mcp_servers,
         &args.mcp_settings,
         &args.permissions,
@@ -1984,11 +2321,29 @@ async fn init_record(
         args.max_parallel_subagents,
         args.ask_requests.is_some(),
         args.todo_registry.is_some(),
+        &args.host_tools,
     )
     .await
     .iter()
     .filter_map(tool_name)
     .collect();
+    // Only the host tools' schemas are echoed, not every advertised tool's: the
+    // host is comparing these against what it sent, and a built-in's schema is
+    // this process's own business.
+    //
+    // Filtered to what `tools` actually advertises rather than to everything
+    // declared. A deny list, an allowlist or Plan mode can withhold a host tool,
+    // and a host that saw its schema echoed anyway would conclude the tool was
+    // live and wait for a call that is never coming. Echoing the advertised set
+    // lets it detect the suppression instead.
+    let tool_specs = args
+        .host_tools
+        .schemas()
+        .into_iter()
+        .filter(|spec| {
+            tool_name(spec).is_some_and(|name| tools.iter().any(|t| t == &name))
+        })
+        .collect();
     // The project root the run's tools are confined to, as the run itself sees
     // it. A caller that built these args without one gets `null`: any path
     // substituted here would claim a confinement the run does not have.
@@ -2004,7 +2359,20 @@ async fn init_record(
     } else {
         Vec::new()
     };
-    Init::new(session_id, model, cwd, tools, input_kinds)
+    // The caps go with the kinds: a client that can send an image should learn
+    // the limits from the handshake rather than by having a message rejected.
+    let input_content_parts = input_format
+        .is_stream_json()
+        .then(InputContentParts::current);
+    Init::new(
+        session_id,
+        model,
+        cwd,
+        tools,
+        tool_specs,
+        input_kinds,
+        input_content_parts,
+    )
 }
 
 /// A rendered tool schema's name, out of the OpenAI `{"type":"function",
@@ -2042,6 +2410,14 @@ async fn run_steered(
     let outcome = tokio::select! {
         result = run_orchestration_steered(tx, body, args, Some(&steering_tx)) => Some(result),
         _ = input.aborted() => {
+            // A host still holding a request must be told to drop it: the run
+            // it would answer is gone. Released here, not by the reader, so
+            // the records land before `done` and cannot race the reader's
+            // shutdown; `cancel_all` rather than `strand_all` so a child still
+            // awaiting one is told it was cancelled, not that the host left.
+            for id in crate::core::agent::host_tools::cancel_all(&args.host_tool_requests).await {
+                let _ = tx.send(request_cancelled(&id, CANCEL_ABORTED));
+            }
             // The loop emits its own terminal event; an abort pre-empts it, so
             // the report is given one here or it would read as a clean stop.
             let _ = tx.send(StreamEvent::Done {
@@ -2055,6 +2431,18 @@ async fn run_steered(
     outcome
 }
 
+/// `tool_request_cancelled` reasons this surface raises: the client stopped the
+/// run, or it can no longer answer (stdin closed).
+const CANCEL_ABORTED: &str = "aborted";
+const CANCEL_CLIENT_GONE: &str = "client_gone";
+
+fn request_cancelled(request_id: &str, reason: &str) -> StreamEvent {
+    StreamEvent::ToolRequestCancelled {
+        request_id: request_id.to_string(),
+        reason: reason.to_string(),
+    }
+}
+
 /// What a client line asks the reader to do next.
 #[derive(Debug, PartialEq, Eq)]
 enum InputFlow {
@@ -2066,17 +2454,28 @@ enum InputFlow {
     Stop,
 }
 
+/// The registries a client line can resolve against.
+struct InputTargets<'a> {
+    permissions: &'a PermissionRegistry,
+    host_tools: &'a crate::core::agent::host_tools::HostToolRegistry,
+}
+
 /// Apply one client line. `Err` is the message reported back to the client; it
 /// is never fatal, since this is a peer process's output and one malformed line
 /// must not cost the work already done.
 async fn apply_input_line(
     line: &str,
     input: &StreamInput,
-    registry: &PermissionRegistry,
+    targets: &InputTargets<'_>,
 ) -> Result<InputFlow, String> {
+    let registry = targets.permissions;
     match parse_input_line(line)? {
         InputMessage::User(text) => {
             input.queue_user(text);
+            Ok(InputFlow::Continue)
+        }
+        InputMessage::UserParts(parts) => {
+            input.queue_user_parts(parts);
             Ok(InputFlow::Continue)
         }
         InputMessage::Abort => {
@@ -2097,7 +2496,25 @@ async fn apply_input_line(
             let _ = sender.send(decision);
             Ok(InputFlow::Decided(request_id, decision))
         }
+        InputMessage::ToolResult { request_id, result } => {
+            // Same single-use rule as a permission decision, and the same
+            // reason: the run has already fed this answer to the model, so a
+            // second one cannot be applied and must be reported rather than
+            // silently dropped.
+            crate::core::agent::host_tools::respond(targets.host_tools, &request_id, Ok(result))
+                .await?;
+            Ok(InputFlow::Continue)
+        }
     }
+}
+
+/// One line from the client, bounded.
+struct ClientLine {
+    text: String,
+    /// True when the line went past [`MAX_LINE_BYTES`] and was cut: `text` is
+    /// then the echo-sized prefix, and the line is rejected without being
+    /// parsed.
+    oversized: bool,
 }
 
 /// Client lines, read on a detached OS thread.
@@ -2106,11 +2523,15 @@ async fn apply_input_line(
 /// which shutdown waits for, so a client that keeps stdin open -- which is what
 /// a duplex client does for the whole run -- leaves the process alive after its
 /// terminal record has been printed. A plain thread dies with the process.
-fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
+///
+/// The read is bounded rather than line-at-a-time: a line is only as long as
+/// the client says it is, and `BufRead::lines` would hold whatever arrives in
+/// memory before the cap could be applied to it.
+fn stdin_lines() -> mpsc::UnboundedReceiver<ClientLine> {
     let (tx, rx) = mpsc::unbounded_channel();
     std::thread::spawn(move || {
-        use std::io::BufRead as _;
-        for line in std::io::stdin().lock().lines().map_while(Result::ok) {
+        let mut reader = std::io::stdin().lock();
+        while let Ok(Some(line)) = read_bounded_line(&mut reader) {
             if tx.send(line).is_err() {
                 return;
             }
@@ -2119,31 +2540,103 @@ fn stdin_lines() -> mpsc::UnboundedReceiver<String> {
     rx
 }
 
+/// Read one line, keeping at most [`MAX_LINE_BYTES`] of it and discarding the
+/// rest rather than growing to hold it.
+///
+/// A line over the cap keeps only its first [`MAX_ECHO_BYTES`]: it can never be
+/// parsed, so the only use its bytes have left is the echo in `input_error`.
+/// Cutting there can split a character, which is why the kept bytes go through
+/// `from_utf8_lossy` -- the echo is for a human, and a line that is over the cap
+/// is already being refused.
+fn read_bounded_line<R: std::io::BufRead>(
+    reader: &mut R,
+) -> std::io::Result<Option<ClientLine>> {
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut oversized = false;
+    let mut saw_any = false;
+    loop {
+        let available = match reader.fill_buf()? {
+            [] => break,
+            buf => buf,
+        };
+        saw_any = true;
+        let newline = available.iter().position(|b| *b == b'\n');
+        let take = newline.map_or(available.len(), |i| i + 1);
+        if !oversized {
+            let room = MAX_LINE_BYTES.saturating_sub(bytes.len());
+            if take <= room {
+                bytes.extend_from_slice(&available[..take]);
+            } else {
+                bytes.truncate(MAX_ECHO_BYTES.min(bytes.len()));
+                oversized = true;
+            }
+        }
+        reader.consume(take);
+        if newline.is_some() {
+            break;
+        }
+    }
+    if !saw_any {
+        return Ok(None);
+    }
+    while matches!(bytes.last(), Some(b'\n') | Some(b'\r')) {
+        bytes.pop();
+    }
+    Ok(Some(ClientLine {
+        text: String::from_utf8_lossy(&bytes).into_owned(),
+        oversized,
+    }))
+}
+
 /// Consume client messages until `abort` or end of input.
 ///
 /// End of input is not an abort: a client that has said everything it means to
 /// say may close the pipe and still want its answer. It *is* the end of the
-/// only thing that can answer a permission request, though, so the exit is
-/// latched and anything already waiting is released -- see
-/// [`strand_pending_permissions`].
+/// only thing that can answer a permission request or run a host tool, though,
+/// so the exit is latched and anything already waiting is released -- see
+/// [`strand_pending_permissions`] and
+/// [`crate::core::agent::host_tools::strand_all`]. Each released host request
+/// is reported on `events` as `tool_request_cancelled`.
+///
+/// An `abort` leaves the host requests alone: the run's abort path withdraws
+/// them itself, as `aborted` rather than `client_gone`.
 async fn read_input_lines(
-    mut lines: mpsc::UnboundedReceiver<String>,
+    mut lines: mpsc::UnboundedReceiver<ClientLine>,
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolRegistry,
+    events: mpsc::UnboundedSender<StreamEvent>,
     format: OutputFormat,
 ) {
+    let targets = InputTargets {
+        permissions: &registry,
+        host_tools: &host_tools,
+    };
+    let mut aborted = false;
     while let Some(line) = lines.recv().await {
+        if line.oversized {
+            report_input_error(
+                format,
+                &format!("line is over the {MAX_LINE_BYTES} byte cap"),
+                &line.text,
+            );
+            continue;
+        }
+        let line = line.text;
         if line.trim().is_empty() {
             continue;
         }
-        match apply_input_line(&line, &input, &registry).await {
+        match apply_input_line(&line, &input, &targets).await {
             Ok(InputFlow::Continue) => {}
             Ok(InputFlow::Decided(request_id, decision)) => {
                 if format.is_stream_json() {
                     print_json_line(&PermissionDecisionRecord::new(&request_id, decision));
                 }
             }
-            Ok(InputFlow::Stop) => break,
+            Ok(InputFlow::Stop) => {
+                aborted = true;
+                break;
+            }
             Err(message) => report_input_error(format, &message, &line),
         }
     }
@@ -2151,6 +2644,14 @@ async fn read_input_lines(
     // otherwise be recorded as the client's to answer and find no reader.
     input.mark_client_gone();
     strand_pending_permissions(&registry, format).await;
+    if aborted {
+        return;
+    }
+    // A host tool call cannot be answered by anyone else, so a parked turn is
+    // released with a typed failure rather than waiting on a dead pipe.
+    for id in crate::core::agent::host_tools::strand_all(&host_tools).await {
+        let _ = events.send(request_cancelled(&id, CANCEL_CLIENT_GONE));
+    }
 }
 
 /// Name the follow-ups the run ended before reaching. Queued turns are joined
@@ -2159,7 +2660,10 @@ async fn read_input_lines(
 /// the text is what the client needs to decide whether to send it again.
 fn report_dropped_follow_ups(input: &StreamInput, format: OutputFormat) {
     for turn in input.take_queued() {
-        let text = turn["content"].as_str().unwrap_or_default().to_string();
+        // The text, whether it arrived as a string or as content parts: an
+        // image-only follow-up reads as empty here, which is all this report
+        // needs to say about it.
+        let text = crate::core::cli::user_message::text_of_content(&turn["content"]);
         report_input_error(format, "run ended before this follow-up was read", &text);
     }
 }
@@ -2188,9 +2692,18 @@ async fn strand_pending_permissions(registry: &PermissionRegistry, format: Outpu
 fn spawn_input_reader(
     input: Arc<StreamInput>,
     registry: PermissionRegistry,
+    host_tools: crate::core::agent::host_tools::HostToolRegistry,
+    events: mpsc::UnboundedSender<StreamEvent>,
     format: OutputFormat,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(read_input_lines(stdin_lines(), input, registry, format))
+    tokio::spawn(read_input_lines(
+        stdin_lines(),
+        input,
+        registry,
+        host_tools,
+        events,
+        format,
+    ))
 }
 
 /// Tell the client its line was rejected, on whichever stream it is reading.
@@ -2308,20 +2821,36 @@ pub async fn cli_agent_ui(
         },
         resume.as_ref(),
     )?;
-    // TUI threads persist under the project's .jan/agent dir, separate from the
-    // desktop store, so continuing here never mutates desktop threads.
+    // TUI threads persist in the project's store, separate from the desktop
+    // store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
     tui::run(session, agent_dir, project_root, task, images, resume).await
 }
 
-/// Where the TUI persists a project's threads (`<project>/.jan/agent`).
+/// Where the TUI persists a project's threads: the project's store,
+/// `~/.jan/projects/<slug>` (see `project::store_root`).
 pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
-    project_root.join(".jan").join("agent")
+    crate::core::agent::project::store_root(project_root)
 }
 
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
+/// One headless line for a compaction event: `started (session_budget)`.
+fn describe_compaction(
+    phase: crate::core::agent::events::CompactionPhase,
+    reason: crate::core::agent::events::CompactionReason,
+    messages: Option<usize>,
+) -> String {
+    let wire = |v: serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let phase = wire(serde_json::json!(phase));
+    let reason = wire(serde_json::json!(reason));
+    match messages {
+        Some(n) => format!("{phase} ({reason}): {n} messages summarized"),
+        None => format!("{phase} ({reason})"),
+    }
+}
+
 async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: bool) {
     if crate::core::cli::auth::account::take_claude_alias_engaged() {
         eprintln!(
@@ -2342,6 +2871,10 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             eprint!("\x1b[2m{delta}\x1b[0m");
             let _ = std::io::stderr().flush();
         }
+        // Provenance is machine-facing: it is an identity record for an
+        // experiment harness, not something to draw. The stream-json writer
+        // serializes the event itself, so nothing is lost by not printing it.
+        StreamEvent::RequestProvenance { .. } => {}
         // Reasoning is progress, not answer: dimmed on stderr so piping stdout
         // yields only the real completion.
         StreamEvent::Reasoning { text } => {
@@ -2394,20 +2927,35 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
         // The snapshot backs a live panel the headless printer has no room
         // for; `Notice` already reports each match as it lands.
         StreamEvent::Monitors { .. } => {}
         StreamEvent::Parked => {
             eprintln!("\x1b[2m[parked] waiting on background work\x1b[0m")
         }
-        StreamEvent::Subagent { name, event, .. } => {
-            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
-                eprintln!(
-                    "\x1b[2m[subagent:{name}] {}\x1b[0m",
-                    crate::core::agent::events::describe_tool_call(&tool, &args)
-                );
+        StreamEvent::Subagent { name, event, .. } => match *event {
+            StreamEvent::ToolCall { name: tool, args, .. } => eprintln!(
+                "\x1b[2m[subagent:{name}] {}\x1b[0m",
+                crate::core::agent::events::describe_tool_call(&tool, &args)
+            ),
+            StreamEvent::Notice { text } => {
+                eprintln!("\x1b[2m[subagent:{name}] [notice] {text}\x1b[0m")
             }
-        }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => eprintln!(
+                "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
+                describe_compaction(phase, reason, messages)
+            ),
+            _ => {}
+        },
         StreamEvent::Done { stop_reason, usage } => {
             let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
             eprintln!("\n\x1b[2m[done] stop_reason={stop_reason} tokens={tokens}\x1b[0m");
@@ -2451,6 +2999,23 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
                 let _ = sender.send(decision);
             }
         }
+        // Only a host process can answer this, and only over the duplex
+        // channel; a text-format run cannot declare host tools at all (the
+        // flag requires stream-json both ways), so this is diagnostics only.
+        StreamEvent::ToolRequest {
+            request_id,
+            tool_name,
+            ..
+        } => {
+            eprintln!(
+                "\x1b[33m[host tool] '{tool_name}' - awaiting '{request_id}' on stdin\x1b[0m"
+            );
+        }
+        StreamEvent::ToolRequestCancelled { request_id, reason } => {
+            eprintln!("\x1b[2m[host tool] '{request_id}' cancelled ({reason})\x1b[0m");
+        }
+        // Structured data for a host's own display; text output has none.
+        StreamEvent::ToolDetails { .. } => {}
     }
 }
 
@@ -2511,13 +3076,20 @@ mod tests {
         ];
         let (lines_tx, lines) = mpsc::unbounded_channel();
         for line in script {
-            lines_tx.send(line.to_string()).expect("reader is alive");
+            lines_tx
+                .send(ClientLine {
+                    text: line.to_string(),
+                    oversized: false,
+                })
+                .expect("reader is alive");
         }
         drop(lines_tx);
         read_input_lines(
             lines,
             Arc::clone(&input),
             Arc::clone(&registry),
+            crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
             OutputFormat::Json,
         )
         .await;
@@ -2546,17 +3118,58 @@ mod tests {
         registry.lock().await.insert("perm-1".to_string(), tx);
         let line = r#"{"type":"permission","request_id":"perm-1","decision":"deny"}"#;
 
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let targets = InputTargets {
+            permissions: &registry,
+            host_tools: &host_tools,
+        };
         assert_eq!(
-            apply_input_line(line, &input, &registry).await,
+            apply_input_line(line, &input, &targets).await,
             Ok(InputFlow::Decided(
                 "perm-1".to_string(),
                 PermissionDecision::Deny
             ))
         );
-        let err = apply_input_line(line, &input, &registry)
+        let err = apply_input_line(line, &input, &targets)
             .await
             .expect_err("nothing is pending any more");
         assert!(err.contains("no permission request 'perm-1'"), "{err}");
+    }
+
+    /// The same single-use rule for a host tool answer, and the same reason:
+    /// the first result has already been fed to the model.
+    #[tokio::test]
+    async fn a_second_tool_result_for_one_request_is_rejected() {
+        let input = StreamInput::default();
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        // The id comes from the registry: the counter is process-wide, so a
+        // literal would depend on which tests ran first.
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let targets = InputTargets {
+            permissions: &registry,
+            host_tools: &host_tools,
+        };
+        let line = format!(r#"{{"type":"tool_result","request_id":"{id}","content":"moved"}}"#);
+        let line = line.as_str();
+
+        assert_eq!(
+            apply_input_line(line, &input, &targets).await,
+            Ok(InputFlow::Continue)
+        );
+        assert_eq!(
+            answer.await.expect("the run's tool wait is answered"),
+            Ok(crate::core::agent::host_tools::HostToolResult {
+                content: "moved".to_string(),
+                parts: None,
+                details: None,
+                is_error: false,
+            })
+        );
+        let err = apply_input_line(line, &input, &targets)
+            .await
+            .expect_err("nothing is pending any more");
+        assert!(err.contains(&format!("no host tool request '{id}'")), "{err}");
     }
 
     /// The wedge this guards: with a client on stdin the CLI answers nothing
@@ -2573,12 +3186,14 @@ mod tests {
             .insert("perm-1".to_string(), answer_tx);
 
         // No lines at all: the client opened the pipe and closed it again.
-        let (lines_tx, lines) = mpsc::unbounded_channel::<String>();
+        let (lines_tx, lines) = mpsc::unbounded_channel::<ClientLine>();
         drop(lines_tx);
         read_input_lines(
             lines,
             Arc::clone(&input),
             Arc::clone(&registry),
+            crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
             OutputFormat::StreamJson,
         )
         .await;
@@ -2594,14 +3209,154 @@ mod tests {
         );
     }
 
-    /// The other half of the same wedge: a request raised *after* the pipe
-    /// closed. The latch is what sends the printer back to its own answer path.
+    /// The same wedge for a host tool, where it is sharper: only the client can
+    /// answer a `tool_request`, so a pipe that closes mid-call would park the
+    /// turn forever rather than merely losing a decision default.
     #[tokio::test]
-    async fn a_request_raised_after_the_client_left_is_not_left_to_the_client() {
+    async fn a_pending_host_tool_call_is_released_when_the_client_leaves() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+
+        let (lines_tx, lines) = mpsc::unbounded_channel::<ClientLine>();
+        drop(lines_tx);
+        let (events_tx, mut events) = mpsc::unbounded_channel();
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::clone(&registry),
+            Arc::clone(&host_tools),
+            events_tx,
+            OutputFormat::StreamJson,
+        )
+        .await;
+
+        assert_eq!(
+            answer.await.expect("the wait is settled, not dropped"),
+            Err(crate::core::agent::host_tools::HostToolError::ClientGone)
+        );
+        assert!(host_tools.lock().await.is_empty());
+        // The host is told, on the run's own stream, which request it lost.
+        assert_eq!(
+            serde_json::to_value(events.recv().await.expect("a record")).unwrap(),
+            serde_json::json!({
+                "type": "tool_request_cancelled",
+                "request_id": id,
+                "reason": "client_gone"
+            })
+        );
+        assert!(events.recv().await.is_none(), "one record per released request");
+    }
+
+    /// An `abort` stops the reader but leaves host requests to the run's abort
+    /// path, which withdraws them as `aborted`; releasing them here as well
+    /// would report the same request twice under two reasons.
+    #[tokio::test]
+    async fn an_abort_leaves_host_requests_to_the_run() {
+        let input = Arc::new(StreamInput::default());
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (id, _answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let (lines_tx, lines) = mpsc::unbounded_channel();
+        lines_tx
+            .send(ClientLine {
+                text: r#"{"type":"abort"}"#.to_string(),
+                oversized: false,
+            })
+            .expect("reader is alive");
+        drop(lines_tx);
+        let (events_tx, mut events) = mpsc::unbounded_channel();
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            Arc::new(Mutex::new(HashMap::new())),
+            Arc::clone(&host_tools),
+            events_tx,
+            OutputFormat::StreamJson,
+        )
+        .await;
+        assert!(events.recv().await.is_none());
+        assert!(host_tools.lock().await.contains_key(&id));
+        // What the abort path then does: the host is told, and a reply the
+        // host was already writing is refused as no longer pending.
+        let released = crate::core::agent::host_tools::cancel_all(&host_tools).await;
+        assert_eq!(released, vec![id.clone()]);
+        let late = format!(r#"{{"type":"tool_result","request_id":"{id}","content":"late"}}"#);
+        let targets = InputTargets {
+            permissions: &Arc::new(Mutex::new(HashMap::new())),
+            host_tools: &host_tools,
+        };
+        let err = apply_input_line(&late, &input, &targets)
+            .await
+            .expect_err("nothing pending");
+        assert!(err.contains("is pending (answered, cancelled, or never issued)"), "{err}");
+    }
+
+    /// An over-cap tool result is refused as a line, and the request is still
+    /// pending: the host can shrink the image and answer again.
+    #[tokio::test]
+    async fn an_over_cap_tool_result_leaves_the_request_pending() {
         let input = StreamInput::default();
-        assert!(!input.client_gone());
+        let host_tools = crate::core::agent::host_tools::new_registry();
+        let (id, answer) = crate::core::agent::host_tools::register(&host_tools).await;
+        let permissions: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let targets = InputTargets {
+            permissions: &permissions,
+            host_tools: &host_tools,
+        };
+        let big = "A".repeat((stream_input::MAX_IMAGE_BYTES + 3) / 3 * 4);
+        let line = serde_json::json!({
+            "type": "tool_result",
+            "request_id": id,
+            "content": [{ "type": "image_url",
+                          "image_url": { "url": format!("data:image/png;base64,{big}") } }]
+        })
+        .to_string();
+        let err = apply_input_line(&line, &input, &targets)
+            .await
+            .expect_err("over the cap");
+        assert!(err.contains("byte cap"), "{err}");
+        assert!(host_tools.lock().await.contains_key(&id), "still pending");
+        let retry = serde_json::json!({
+            "type": "tool_result",
+            "request_id": id,
+            "content": [{ "type": "text", "text": "smaller" }],
+            "details": { "retry": 1 }
+        })
+        .to_string();
+        assert_eq!(
+            apply_input_line(&retry, &input, &targets).await,
+            Ok(InputFlow::Continue)
+        );
+        let result = answer.await.expect("delivered").expect("answered");
+        assert_eq!(result.content, "smaller");
+        assert_eq!(result.details, Some(serde_json::json!({ "retry": 1 })));
+    }
+
+    /// The other half of the same wedge, and the sharper half: a request raised
+    /// *after* the pipe closed. `strand_all` has already run by then, so unless
+    /// the printer fails this call itself the turn parks on a reply no one is
+    /// left to send. Asserts the release, not merely that the latch flipped.
+    #[tokio::test]
+    async fn a_request_raised_after_the_client_left_is_failed_not_parked() {
+        let input = StreamInput::default();
+        let host_tools = crate::core::agent::host_tools::new_registry();
+
+        // The client leaves, and the reader drains what was pending.
         input.mark_client_gone();
+        crate::core::agent::host_tools::strand_all(&host_tools).await;
+
+        // Only now does the model call a host tool.
+        let (request_id, answer) =
+            crate::core::agent::host_tools::register(&host_tools).await;
         assert!(input.client_gone());
+        crate::core::agent::host_tools::strand(&host_tools, &request_id).await;
+
+        assert_eq!(
+            answer.await.expect("the wait is settled, not dropped"),
+            Err(crate::core::agent::host_tools::HostToolError::ClientGone)
+        );
+        assert!(host_tools.lock().await.is_empty());
     }
 
     /// `--input-format stream-json` with any other output format leaves the
@@ -2619,6 +3374,8 @@ mod tests {
                 None,
                 format,
                 InputFormat::StreamJson,
+                None,
+                false,
             )
             .await
             .expect_err("the pairing is required");
@@ -2627,6 +3384,78 @@ mod tests {
                 "{err}"
             );
         }
+    }
+
+    /// A content-part follow-up reaches the queue as the client wrote it: the
+    /// same parts `upstream.rs` hands the provider, not a re-encoding of them.
+    #[tokio::test]
+    async fn a_content_part_follow_up_is_queued_verbatim() {
+        let input = Arc::new(StreamInput::default());
+        let registry: PermissionRegistry = Arc::new(Mutex::new(HashMap::new()));
+        let parts = serde_json::json!([
+            { "type": "text", "text": "what is in this shot?" },
+            { "type": "image_url",
+              "image_url": { "url": "data:image/png;base64,QUJD", "detail": "high" } }
+        ]);
+        let line = serde_json::json!({ "type": "user", "content": parts }).to_string();
+        let (lines_tx, lines) = mpsc::unbounded_channel();
+        lines_tx
+            .send(ClientLine {
+                text: line,
+                oversized: false,
+            })
+            .expect("reader is alive");
+        drop(lines_tx);
+        read_input_lines(
+            lines,
+            Arc::clone(&input),
+            registry,
+            crate::core::agent::host_tools::new_registry(),
+            mpsc::unbounded_channel().0,
+            OutputFormat::Json,
+        )
+        .await;
+
+        let queued = input.take_queued();
+        assert_eq!(queued.len(), 1, "the follow-up is queued as one turn");
+        assert_eq!(queued[0]["role"], "user");
+        assert_eq!(queued[0]["content"], parts);
+    }
+
+    /// A line over the cap is refused without being parsed, and what the reader
+    /// keeps of it is bounded: the cap exists so the bytes are not carried on.
+    #[test]
+    fn a_line_over_the_cap_is_refused_and_its_echo_bounded() {
+        let mut bytes = vec![b'x'; MAX_LINE_BYTES + 1024];
+        bytes.push(b'\n');
+        bytes.extend_from_slice(br#"{"type":"user","text":"after"}"#);
+        let mut reader = std::io::BufReader::new(std::io::Cursor::new(bytes));
+
+        let first = read_bounded_line(&mut reader).unwrap().expect("a line");
+        assert!(first.oversized);
+        assert_eq!(first.text.len(), MAX_ECHO_BYTES, "the echo, not the line");
+        // Resynchronised on the next line rather than treating the overflow as
+        // the end of input.
+        let second = read_bounded_line(&mut reader)
+            .unwrap()
+            .expect("the line after the overflow");
+        assert!(!second.oversized);
+        assert_eq!(second.text, r#"{"type":"user","text":"after"}"#);
+        assert!(read_bounded_line(&mut reader).unwrap().is_none());
+    }
+
+    /// The rejected echo the client sees is the bounded one, so a client that
+    /// matches on `input_error.line` still can.
+    #[test]
+    fn an_over_cap_line_is_reported_with_a_truncated_echo() {
+        let line = "x".repeat(MAX_ECHO_BYTES * 3);
+        let record = serde_json::to_value(InputErrorRecord::new("line is over the cap", &line))
+            .expect("a JSON record");
+        assert_eq!(
+            record["line"].as_str().expect("a string").len(),
+            MAX_ECHO_BYTES
+        );
+        assert_eq!(record["line_truncated"], serde_json::json!(true));
     }
 
     /// A queued follow-up the run never reached is reported rather than
@@ -3633,23 +4462,106 @@ mod tests {
     }
 
     /// `--max-session-tokens` outranks `[budget].max_tokens`, which outranks
-    /// the built-in default; `0` from either source survives as the unbounded
-    /// marker `body_session_budget` expects rather than falling through.
+    /// the model's window, which outranks the built-in default; `0` from
+    /// either explicit source survives as the unbounded marker
+    /// `body_session_budget` expects rather than falling through.
     #[test]
-    fn session_budget_precedence_is_flag_then_config_then_default() {
+    fn session_budget_precedence_is_flag_then_config_then_window_then_default() {
+        use SessionBudgetSource::*;
         assert_eq!(
-            resolve_session_budget(None, None),
-            DEFAULT_MAX_SESSION_TOKENS
+            resolve_session_budget(None, None, None),
+            (DEFAULT_MAX_SESSION_TOKENS, Default)
         );
-        assert_eq!(resolve_session_budget(None, Some(50_000)), 50_000);
-        assert_eq!(resolve_session_budget(Some(20_000), Some(50_000)), 20_000);
-        assert_eq!(resolve_session_budget(Some(20_000), None), 20_000);
-        assert_eq!(resolve_session_budget(Some(0), Some(50_000)), 0);
-        assert_eq!(resolve_session_budget(None, Some(0)), 0);
+        assert_eq!(
+            resolve_session_budget(None, None, Some(1_000_000)),
+            (1_000_000, ContextWindow)
+        );
+        assert_eq!(
+            resolve_session_budget(None, None, Some(0)),
+            (DEFAULT_MAX_SESSION_TOKENS, Default)
+        );
+        let w = Some(1_000_000);
+        assert_eq!(resolve_session_budget(None, Some(50_000), w), (50_000, Config));
+        assert_eq!(resolve_session_budget(Some(20_000), Some(50_000), None), (20_000, Flag));
+        assert_eq!(resolve_session_budget(Some(20_000), None, w), (20_000, Flag));
+        assert_eq!(resolve_session_budget(Some(0), Some(50_000), None), (0, Flag));
+        assert_eq!(resolve_session_budget(None, Some(0), w), (0, Config));
 
-        assert_eq!(session_budget_source(None, None), "default");
-        assert_eq!(session_budget_source(None, Some(50_000)), "agent.toml");
-        assert_eq!(session_budget_source(Some(0), Some(50_000)), "flag");
+        assert_eq!(Default.as_str(), "default");
+        assert_eq!(Config.as_str(), "agent.toml");
+        assert_eq!(Flag.as_str(), "flag");
+        assert_eq!(ContextWindow.as_str(), "context_window");
+    }
+
+    /// A 1M-window model must not be compacted at 128K by the session budget:
+    /// the budget defaults to the window. The fallback window is a guess, not
+    /// the model's, so it leaves the budget on the built-in default.
+    #[test]
+    fn default_session_budget_follows_a_known_window_only() {
+        use crate::core::cli::model_capabilities::resolve_context_window;
+        let big = resolve_context_window("claude-sonnet-4-6", None, None);
+        assert_eq!(known_window(big), Some(1_000_000));
+        assert_eq!(
+            resolve_session_budget(None, None, known_window(big)).0,
+            1_000_000
+        );
+        let unknown = resolve_context_window("private-gateway-model", None, None);
+        assert_eq!(known_window(unknown), None);
+        assert_eq!(
+            resolve_session_budget(None, None, known_window(unknown)),
+            (DEFAULT_MAX_SESSION_TOKENS, SessionBudgetSource::Default)
+        );
+    }
+
+    /// The money ceiling resolves flag > config > none, and a run that asks
+    /// for one it cannot price is **refused** rather than run uncapped -- the
+    /// one outcome a cost ceiling must never produce. Asking for none is not
+    /// an error: that is the default, and it leaves the run unmetered.
+    ///
+    /// The refusal cases are asserted against an unpriced model because that is
+    /// the failure that matters: these tests do not write a model catalog, so
+    /// every lookup here misses, which is exactly the state a user on a plain
+    /// OpenAI-compatible endpoint is in.
+    #[test]
+    fn a_cost_ceiling_is_refused_rather_than_run_uncapped() {
+        // A model id no listing can plausibly carry, so the lookup misses no
+        // matter what the developer running these tests has cached in
+        // `~/.jan/model_catalog.json` -- which is the state every user of a
+        // plain OpenAI-compatible endpoint is in anyway.
+        let unpriced = "no-such-model/never-published-a-price";
+
+        // No ceiling asked for: unmetered, and never a price lookup.
+        assert_eq!(resolve_cost_ceiling(None, None, None, unpriced), Ok(None));
+
+        // Asked for, but the model publishes no prices.
+        let refused = resolve_cost_ceiling(Some(2.0), None, None, unpriced)
+            .expect_err("an unpriceable ceiling must not silently run uncapped");
+        assert!(
+            refused.contains("publishes no prices"),
+            "the message has to say why: {refused}"
+        );
+        // The config source is refused on the same terms as the flag: a
+        // ceiling that came from agent.toml is no more enforceable.
+        assert!(resolve_cost_ceiling(None, Some(2.0), None, unpriced).is_err());
+        // Precedence, read off the amount the refusal quotes: the flag's $2
+        // is the ceiling in force, not the config's $9.
+        let precedence = resolve_cost_ceiling(Some(2.0), Some(9.0), None, unpriced)
+            .expect_err("still unpriceable");
+        assert!(
+            precedence.contains("$2") && !precedence.contains("$9"),
+            "the flag outranks the config: {precedence}"
+        );
+
+        // A negative limit is a typo, not a request to spend nothing.
+        let negative = resolve_cost_ceiling(Some(-1.0), None, None, unpriced)
+            .expect_err("a negative ceiling is rejected");
+        assert!(negative.contains("non-negative"), "{negative}");
+        assert!(resolve_cost_ceiling(Some(f64::NAN), None, None, unpriced).is_err());
+
+        // `0` is honest and must not be confused with "unset": it means stop
+        // at the first billed request. It still needs prices, so an unpriced
+        // model refuses rather than quietly passing the zero through.
+        assert!(resolve_cost_ceiling(Some(0.0), None, None, unpriced).is_err());
     }
 
     fn limits_with(max_turns: Option<u64>, max_session_tokens: u64) -> SessionLimits {
@@ -3661,7 +4573,9 @@ mod tests {
             compaction_reserve_tokens: None,
             max_tokens: None,
             max_session_tokens,
+            max_session_tokens_source: SessionBudgetSource::Default,
             max_turns,
+            cost_ceiling: None,
         }
     }
 
