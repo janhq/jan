@@ -5350,9 +5350,10 @@ impl App {
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
-        // Whatever the parent run sends next -- a token, a tool call, the
-        // terminal error -- means the wait for a resend is over. A child's
-        // events say nothing about the parent's request.
+        // Whatever the parent run sends next -- a token, a tool call -- means
+        // the wait for a resend is over. A child's events say nothing about
+        // the parent's request. The terminal events never come through here;
+        // `apply_stream_event` clears it for those.
         if !matches!(ev, StreamEvent::Retry { .. } | StreamEvent::Subagent { .. }) {
             self.retrying = None;
         }
@@ -8080,6 +8081,18 @@ struct StartingPreview {
 }
 
 /// A tool call announced by the model whose arguments are still arriving.
+struct StartingCall {
+    id: String,
+    name: String,
+    /// Raw JSON arguments accumulated so far -- a truncated prefix of the
+    /// object the model is emitting, not valid JSON until the call completes.
+    args: String,
+    preview: StartingPreview,
+    /// `args.len()` when `preview` was derived. The buffer is append-only, so
+    /// an unchanged length means unchanged content and the cache holds.
+    preview_at: Option<usize>,
+}
+
 /// The input row while a resend is pending: a countdown until it goes out,
 /// then the attempt itself, which can take as long as a connect timeout.
 fn retry_wait_label(wait: &RetryWait, now: Instant) -> String {
@@ -8102,18 +8115,6 @@ struct RetryWait {
     /// When the resend goes out, for the countdown.
     at: Instant,
     reason: String,
-}
-
-struct StartingCall {
-    id: String,
-    name: String,
-    /// Raw JSON arguments accumulated so far -- a truncated prefix of the
-    /// object the model is emitting, not valid JSON until the call completes.
-    args: String,
-    preview: StartingPreview,
-    /// `args.len()` when `preview` was derived. The buffer is append-only, so
-    /// an unchanged length means unchanged content and the cache holds.
-    preview_at: Option<usize>,
 }
 
 impl StartingCall {
@@ -9795,6 +9796,15 @@ async fn apply_stream_event(
     current: &mut Option<CurrentRun>,
 ) {
     note_claude_alias_if_engaged(app);
+    // `Done`, `Error` and a closed stream end the run without passing through
+    // `App::apply`, so they would otherwise leave `[retrying]` over an idle
+    // session once the retries run out.
+    if matches!(
+        ev,
+        None | Some(StreamEvent::Done { .. } | StreamEvent::Error { .. })
+    ) {
+        app.retrying = None;
+    }
     match ev {
         Some(StreamEvent::Done { stop_reason, usage }) => {
             app.on_done(stop_reason, usage);
@@ -31969,6 +31979,35 @@ mod tests {
         assert!(app.retrying.is_none());
         let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
         assert!(header.contains("ready"), "{header}");
+    }
+
+    /// Every way a run ends after a retry takes the countdown down: running
+    /// out of retries (`Error`), a late success (`Done`), and a stream that
+    /// closes without a terminal event. These never reach `App::apply`, so
+    /// they are driven through the loop's `apply_stream_event`.
+    #[tokio::test]
+    async fn a_run_ending_during_a_retry_clears_it() {
+        let terminals = [
+            Some(StreamEvent::Error {
+                code: "upstream".into(),
+                message: "connection refused".into(),
+            }),
+            Some(StreamEvent::Done { stop_reason: "stop".into(), usage: None }),
+            None,
+        ];
+        for end in terminals {
+            let label = format!("{end:?}");
+            let mut app = test_app();
+            app.status = Status::Running;
+            let mut current = None;
+            apply_stream_event(&mut app, Some(retry(10)), &mut current).await;
+            assert!(app.retrying.is_some(), "{label}");
+            apply_stream_event(&mut app, end, &mut current).await;
+            assert!(app.retrying.is_none(), "{label}");
+            let header: String =
+                header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+            assert!(!header.contains("retrying"), "{label}: {header}");
+        }
     }
 
     /// The countdown turns into the attempt itself once the wait is over,
