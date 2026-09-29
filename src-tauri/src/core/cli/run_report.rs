@@ -14,7 +14,7 @@
 //! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
 //! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `compaction`,
-//! `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
+//! `retry`, `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
 //! `todo_update`, `turn_usage`, `done`, `error`, `permission_request`,
 //! `tool_request`, `tool_request_cancelled`, `tool_details`,
 //! `request_provenance`. Four tags are

@@ -2932,6 +2932,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             reason,
             messages,
         } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
+        StreamEvent::Retry {
+            attempt,
+            max_attempts,
+            delay_ms,
+            reason,
+        } => eprintln!(
+            "\x1b[2m[retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
+        ),
         // The snapshot backs a live panel the headless printer has no room
         // for; `Notice` already reports each match as it lands.
         StreamEvent::Monitors { .. } => {}
@@ -2953,6 +2961,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
                 describe_compaction(phase, reason, messages)
+            ),
+            StreamEvent::Retry {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            } => eprintln!(
+                "\x1b[2m[subagent:{name}] [retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
             ),
             _ => {}
         },
