@@ -24,6 +24,7 @@ Everything else is per-user state under `~/.jan/`, created on first use.
 |-- config.toml              # CLI provider configuration and credentials
 |-- MEMORY.md                # generated index: user notes + projects with memory
 |-- memory/                  # user-wide notes (`user:<name>`), every project
+|-- skills/                  # user-wide skills, every project (project skills shadow them)
 `-- projects/
     `-- <name>-<hash>/       # one per project directory (git worktrees share it)
         |-- project.json     # which directory this store belongs to
@@ -39,7 +40,10 @@ Everything else is per-user state under `~/.jan/`, created on first use.
 ```
 
 `agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections.
-A simple skill can be `skills/<name>.md`. Run `jan cli agent status --project .` to scaffold
+A simple skill can be `skills/<name>.md`. Skill precedence is project > user (`~/.jan/skills`) >
+built-in `jan`. Plugin skills are always named `<plugin>:<name>`. `/skills` lists each skill's scope
+and marks shadowed ones, and `skill_write` with `scope: "user"` writes a user skill. Symlinked
+skill folders are followed. Run `jan cli agent status --project .` to scaffold
 the store. A project that still has a `.jan/` folder from an older Jan is moved into
 `~/.jan/projects/` automatically the next time Jan starts in it.
 `memory_cross_project = false` in `config.toml` hides other projects' memory from the agent.

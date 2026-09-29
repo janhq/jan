@@ -13,10 +13,11 @@
 //! consumer matches on are the snake_case variant names: `token`, `reasoning`,
 //! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
-//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
-//! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`, `tool_request`,
-//! `tool_request_cancelled`, `tool_details`, `request_provenance`. Four tags are
+//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `compaction`,
+//! `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
+//! `todo_update`, `turn_usage`, `done`, `error`, `permission_request`,
+//! `tool_request`, `tool_request_cancelled`, `tool_details`,
+//! `request_provenance`. Four tags are
 //! minted by
 //! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
 //! `input_error`. `init` is the handshake a client reads before any other record
