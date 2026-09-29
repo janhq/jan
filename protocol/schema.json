@@ -39,7 +39,6 @@
       ]
     },
     "StreamEvent": {
-      "description": "`Deserialize` as well as `Serialize`: a consumer validates what it received\nagainst these shapes, and `JsonSchema` is what `jan cli agent schema`\npublishes them as -- a consumer generates its own types from\n`protocol/schema.json` rather than copying this declaration. The wire has to\nsurvive a round trip, not just a write, so `#[serde(tag = \"type\")]` keeps the\ntag on both sides.",
       "oneOf": [
         {
           "description": "A streamed content delta from the model.",
@@ -366,6 +365,70 @@
           "required": [
             "type",
             "text"
+          ]
+        },
+        {
+          "description": "The loop is summarizing part of the conversation to make room. Sent as\n`Started` before the summarizer call and `Finished` or `Failed` after\nit, so a consumer can show progress for what is otherwise a silent\nround trip. `reason` says which path asked. `messages` is how many were\nfolded into the summary, `None` except on `Finished`. Display-only and\nnever journaled; the compacted history itself arrives as\n`MessagesUpdated`.",
+          "type": "object",
+          "properties": {
+            "phase": {
+              "$ref": "#/$defs/CompactionPhase"
+            },
+            "reason": {
+              "$ref": "#/$defs/CompactionReason"
+            },
+            "messages": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "compaction"
+            }
+          },
+          "required": [
+            "type",
+            "phase",
+            "reason"
+          ]
+        },
+        {
+          "description": "The upstream request failed before anything streamed and is about to be\nsent again after `delay_ms`. `attempt` is the 1-based attempt that\nfollows the wait, out of `max_attempts`; `reason` is the failure that\nprompted it. Sent once per retry so a consumer can say \"retrying\" rather\nthan show a spinner that looks like a slow model. Display-only and never\njournaled; the turn continues with the next event or ends in `Error`.",
+          "type": "object",
+          "properties": {
+            "attempt": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "max_attempts": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "delay_ms": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "reason": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "retry"
+            }
+          },
+          "required": [
+            "type",
+            "attempt",
+            "max_attempts",
+            "delay_ms",
+            "reason"
           ]
         },
         {
@@ -769,6 +832,43 @@
       "required": [
         "name",
         "phase"
+      ]
+    },
+    "CompactionPhase": {
+      "description": "`Deserialize` as well as `Serialize`: a consumer validates what it received\nagainst these shapes, and `JsonSchema` is what `jan cli agent schema`\npublishes them as -- a consumer generates its own types from\n`protocol/schema.json` rather than copying this declaration. The wire has to\nsurvive a round trip, not just a write, so `#[serde(tag = \"type\")]` keeps the\ntag on both sides.\nWhere a [`StreamEvent::Compaction`] is in its round trip.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "started",
+            "finished"
+          ]
+        },
+        {
+          "description": "The summarizer call failed or had nothing to fold; the history is\nunchanged.",
+          "type": "string",
+          "const": "failed"
+        }
+      ]
+    },
+    "CompactionReason": {
+      "description": "Which path asked for a [`StreamEvent::Compaction`].",
+      "oneOf": [
+        {
+          "description": "The request about to be sent was over the window's trigger.",
+          "type": "string",
+          "const": "preflight"
+        },
+        {
+          "description": "The provider rejected a request as too long for its window.",
+          "type": "string",
+          "const": "context_overflow"
+        },
+        {
+          "description": "The run used up its session token budget.",
+          "type": "string",
+          "const": "session_budget"
+        }
       ]
     },
     "MonitorSnapshot": {

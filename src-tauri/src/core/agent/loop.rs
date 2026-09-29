@@ -16,7 +16,7 @@ use tauri_plugin_llamacpp::state::LlamacppState;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::core::agent::context::ComposedPrompt;
-use crate::core::agent::events::{StreamEvent, Usage};
+use crate::core::agent::events::{CompactionPhase, CompactionReason, StreamEvent, Usage};
 use crate::core::agent::prompt::{Composer, Placement, PromptPolicy};
 use crate::core::agent::session::SessionBudget;
 use crate::core::agent::transcript::{Projection, Transcript};
@@ -931,6 +931,16 @@ impl CompositeToolInvoker {
             Some(home) => ctx.with_memory_home(home, self.cross_project),
             None => ctx,
         };
+        // The model's skill tools resolve through the same layering as the
+        // system-prompt catalog (project, plugin, user, built-in), and
+        // `skill_write` `scope:"user"` lands in `~/.jan/skills` (the same
+        // `~/.jan` as the user memory scope).
+        let ctx = ctx
+            .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                &self.project_root,
+                &self.enabled_skills,
+            ))
+            .with_skill_user_root(self.memory_home.as_deref());
         ctx.with_network(self.allow_network)
         .with_home_readonly(self.allow_home_read)
         .with_sandbox(self.sandbox)
@@ -2172,6 +2182,10 @@ impl ToolInvoker for CompositeToolInvoker {
                         None => ctx,
                     };
                     let ctx = ctx
+                        .with_skill_source(crate::core::agent::skills::CoreSkillSource::shared(
+                            &root, &enabled,
+                        ))
+                        .with_skill_user_root(memory_home.as_deref())
                         .with_network(allow_network)
                         .with_home_readonly(allow_home_read)
                         .with_sandbox(sandbox)
@@ -2882,6 +2896,31 @@ async fn todo_prompt_addendum(
     has_todos.then_some(crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM)
 }
 
+/// The per-turn guidance block for this run, if any. Plan mode's is kept even
+/// under a host prompt: a TUI `/resume` of a host-prompted thread can run in
+/// Plan mode, and without the warning the model only learns of it from
+/// refusals. It sits in the tail, so the host's cached prefix is unaffected.
+/// Todo guidance is Jan's own prose and is withheld like every other block.
+async fn turn_addendum(
+    run_mode: crate::core::agent::plan::RunMode,
+    jan_owns_prompt: bool,
+    eager_todo_plan: bool,
+    todo_registry: &Option<crate::core::agent::todo::TodoRegistry>,
+) -> Option<(Composer, &'static str)> {
+    if run_mode == crate::core::agent::plan::RunMode::Plan {
+        return Some((
+            Composer::PlanAddendum,
+            crate::core::agent::plan::plan_mode_prompt_addendum(),
+        ));
+    }
+    if !jan_owns_prompt {
+        return None;
+    }
+    todo_prompt_addendum(eager_todo_plan, todo_registry)
+        .await
+        .map(|addendum| (Composer::TodoAddendum, addendum))
+}
+
 /// True when this turn should be forced to stage a plan: a `/goal` run whose
 /// list is still empty. Forcing is deliberately limited to goal mode -- an
 /// unattended loop needs a plan to work against, while an ordinary turn is the
@@ -3012,11 +3051,11 @@ async fn orchestrate_inner(
             &prompt_policy,
         )?,
     };
-    let jan_prompt = host_system_prompt.is_none();
+    let jan_owns_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
     // Always tell the model today's date, including isolated child runs.
-    if jan_prompt {
+    if jan_owns_prompt {
         volatile_parts.push((
             Composer::Date,
             format!(
@@ -3028,14 +3067,15 @@ async fn orchestrate_inner(
     // Which checkout the work applies to. Per-turn rather than part of the
     // environment block above, because anything that switches branch -- the
     // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref().filter(|_| jan_prompt) {
+    if let Some(root) = project_root.as_deref().filter(|_| jan_owns_prompt) {
         volatile_parts.push((Composer::GitState, git_state_block(root)));
     }
     // Normal parent runs recall project memory for the current query before it
-    // is indexed. Child runs keep their isolated history and skip memory, and
-    // so does a host-prompted run: recall is a block Jan would write into it.
-    let use_memory = *project_memory && system_prompt_override.is_none() && jan_prompt;
-    if use_memory {
+    // is indexed. Child runs keep their isolated history and skip memory. A
+    // host-prompted run still indexes its answers but is never sent recall:
+    // that is a block Jan would write into a prompt the host owns.
+    let use_memory = *project_memory && system_prompt_override.is_none();
+    if use_memory && jan_owns_prompt {
         if let Some(root) = project_root {
             if let Some(query) = latest_user_text(&conversation_messages) {
                 if let Some(mem) = crate::core::agent::memory::retrieve_block(root, &query) {
@@ -3058,17 +3098,10 @@ async fn orchestrate_inner(
     let eager_todo_plan = run_mode != crate::core::agent::plan::RunMode::Plan
         && system_prompt_override.is_none()
         && should_force_goal_todo_plan(goal_mode, todo_registry).await;
-    // Under a host prompt Plan mode is still enforced by the gate; only its
-    // prose is withheld, like every other block Jan writes.
-    if jan_prompt {
-        if run_mode == crate::core::agent::plan::RunMode::Plan {
-            volatile_parts.push((
-                Composer::PlanAddendum,
-                crate::core::agent::plan::plan_mode_prompt_addendum().to_string(),
-            ));
-        } else if let Some(addendum) = todo_prompt_addendum(eager_todo_plan, todo_registry).await {
-            volatile_parts.push((Composer::TodoAddendum, addendum.to_string()));
-        }
+    if let Some((composer, addendum)) =
+        turn_addendum(run_mode, jan_owns_prompt, eager_todo_plan, todo_registry).await
+    {
+        volatile_parts.push((composer, addendum.to_string()));
     }
 
     // One tail message, built from every block the policy kept below the cache
@@ -3470,8 +3503,9 @@ async fn orchestrate_inner(
                 },
             )
             .await;
-        // The same gate as the recall: an ephemeral session or a child run
-        // leaves no answer behind for a later session to recall.
+        // The recall's gate minus the prompt-ownership half: an ephemeral
+        // session or a child run leaves no answer behind for a later session
+        // to recall, while a host-prompted run does.
         if use_memory {
             if let Ok(completion) = &result {
                 if let Some(answer) = extract_choice_message(completion).and_then(|m| {
@@ -3920,21 +3954,45 @@ fn record_assistant_turn(transcript: &mut Transcript, message: &serde_json::Valu
 /// into `budget` here. A turn can compact several times (the preflight plus the
 /// overflow retries), and spend the budget never saw would make `/usage` and
 /// the money ceiling agree with each other while both undercounted.
+///
+/// Every in-run compaction goes through here, so this is where it is reported:
+/// `Compaction { Started }` before the summarizer call and `Finished` or
+/// `Failed` after it. A plan with nothing to drop sends nothing, since no
+/// summarizer call was made.
 async fn compact(
     transcript: &mut Transcript,
     keep_recent: usize,
     model_id: &str,
     model: &dyn ModelInvoker,
     budget: &mut SessionBudget,
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    reason: CompactionReason,
 ) -> Result<Option<usize>, String> {
     let Some(plan) = transcript.compaction_plan(keep_recent) else {
         return Ok(None);
     };
     let summarized = plan.summarize.len();
+    let report = |phase, messages| {
+        let _ = events.send(StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        });
+    };
+    report(CompactionPhase::Started, None);
     let (summary, usage) =
-        crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model).await?;
+        match crate::core::agent::compaction::summarize_span(&plan.summarize, model_id, model)
+            .await
+        {
+            Ok(done) => done,
+            Err(error) => {
+                report(CompactionPhase::Failed, None);
+                return Err(error);
+            }
+        };
     budget.record_side_request(&usage);
     transcript.record_compaction(summary, plan.covers);
+    report(CompactionPhase::Finished, Some(summarized));
     Ok(Some(summarized))
 }
 
@@ -4106,6 +4164,8 @@ async fn run_turn_cycle(
                                 model_id,
                                 model,
                                 budget,
+                                events,
+                                CompactionReason::Preflight,
                             )
                             .await?
                             {
@@ -4122,16 +4182,9 @@ async fn run_turn_cycle(
                                 let _ = events.send(StreamEvent::MessagesUpdated {
                                     messages: client_history(&transcript, send_reasoning),
                                 });
-                                // The one legitimate cache break in a session,
-                                // and the only way the user can tell it apart
-                                // from a stall: say it happened, and why.
-                                let _ = events.send(StreamEvent::Notice {
-                                    text: format!(
-                                        "compacted {dropped} messages into a summary before sending \
-                                         ({estimate} tokens against a {} token budget)",
-                                        window.trigger_tokens()
-                                    ),
-                                });
+                                // Announced by `compact` itself, which is
+                                // how the user tells this cache break apart
+                                // from a stall.
                                 continue;
                             }
                         }
@@ -4153,9 +4206,17 @@ async fn run_turn_cycle(
                         // Nothing safe left to drop: the request is smaller than the
                         // window only in the provider's own maths.
                         let dropped =
-                            compact(&mut transcript, keep_recent, model_id, model, budget)
-                                .await?
-                                .ok_or(e)?;
+                            compact(
+                                &mut transcript,
+                                keep_recent,
+                                model_id,
+                                model,
+                                budget,
+                                events,
+                                CompactionReason::ContextOverflow,
+                            )
+                            .await?
+                            .ok_or(e)?;
                         log::info!(
                             "agent: context overflow, compacted {dropped} messages into a \
                              summary (attempt {})",
@@ -4333,6 +4394,8 @@ async fn run_turn_cycle(
                     model_id,
                     model,
                     budget,
+                    events,
+                    CompactionReason::SessionBudget,
                 )
                 .await
                 {
@@ -5112,6 +5175,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn plan_guidance_reaches_a_host_prompted_turn_but_todo_guidance_does_not() {
+        use crate::core::agent::plan::RunMode;
+        let staged = Some(staged_todo_registry());
+        for jan_owns_prompt in [true, false] {
+            assert_eq!(
+                turn_addendum(RunMode::Plan, jan_owns_prompt, false, &staged).await,
+                Some((
+                    Composer::PlanAddendum,
+                    crate::core::agent::plan::plan_mode_prompt_addendum()
+                )),
+                "jan_owns_prompt={jan_owns_prompt}"
+            );
+        }
+        assert_eq!(
+            turn_addendum(RunMode::Normal, true, false, &staged).await,
+            Some((
+                Composer::TodoAddendum,
+                crate::core::agent::context::TODO_UPKEEP_PROMPT_ADDENDUM
+            ))
+        );
+        assert_eq!(turn_addendum(RunMode::Normal, false, false, &staged).await, None);
+    }
+
+    #[tokio::test]
     async fn todo_addendum_is_upkeep_only_outside_goal_mode() {
         let staged = Some(staged_todo_registry());
         assert_eq!(
@@ -5558,6 +5645,7 @@ mod tests {
                 context_window: 1_000,
                 ratio: 0.5,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -5592,15 +5680,21 @@ mod tests {
         }
 
         drop(tx);
-        let mut notices = Vec::new();
+        let mut phases = Vec::new();
         while let Some(ev) = rx.recv().await {
-            if let StreamEvent::Notice { text } = ev {
-                notices.push(text);
+            if let StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::Preflight,
+                ..
+            } = ev
+            {
+                phases.push(phase);
             }
         }
-        assert!(
-            notices.iter().any(|n| n.contains("before sending")),
-            "a prefix break the user did not ask for has to be announced: {notices:?}"
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "a prefix break the user did not ask for has to be announced"
         );
     }
 
@@ -5635,6 +5729,7 @@ mod tests {
                 context_window: 128_000,
                 ratio: crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO,
                 reserve_tokens: None,
+                window_pinned: false,
             }),
         )
         .await
@@ -6927,7 +7022,16 @@ mod tests {
         ));
         assert!(!budget.over_cost_ceiling(), "nothing spent yet");
 
-        let dropped = compact(&mut transcript, 4, "m", &model, &mut budget)
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let dropped = compact(
+            &mut transcript,
+            4,
+            "m",
+            &model,
+            &mut budget,
+            &tx,
+            CompactionReason::Preflight,
+        )
             .await
             .expect("the summarizer answered")
             .expect("a long history has a span to compact");
@@ -7000,7 +7104,9 @@ mod tests {
     async fn an_exhausted_budget_is_announced_once_and_the_run_continues() {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut over_budget = tool_call_completion();
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let done = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
@@ -7111,7 +7217,9 @@ mod tests {
         let mut over_budget = json!({
             "choices": [{ "message": { "content": "all done" }, "finish_reason": "stop" }]
         });
-        over_budget["usage"] = json!({ "total_tokens": 100 });
+        // The replayed prompt is the baseline; the 100-token reply is the spend.
+        over_budget["usage"] =
+            json!({ "prompt_tokens": 900, "completion_tokens": 100, "total_tokens": 1_000 });
         let summary = json!({
             "choices": [{ "message": { "content": "SUMMARY OF THE EARLIER WORK" } }]
         });
@@ -7148,14 +7256,34 @@ mod tests {
             "one turn, plus the summarizer call compaction makes"
         );
 
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        // The user is told: the TUI runs with logging off, so without an event
+        // this compaction is invisible.
+        let phases: Vec<CompactionPhase> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::SessionBudget,
+                    ..
+                } => Some(*phase),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            phases,
+            [CompactionPhase::Started, CompactionPhase::Finished],
+            "the budget compaction is announced, start and end"
+        );
         // The published history is the compacted one: shorter, and carrying the
         // summary in place of the dropped middle.
-        let published = std::iter::from_fn(|| rx.try_recv().ok())
-            .filter_map(|ev| match ev {
+        let published = events
+            .into_iter()
+            .rev()
+            .find_map(|ev| match ev {
                 StreamEvent::MessagesUpdated { messages } => Some(messages),
                 _ => None,
             })
-            .last()
             .expect("a MessagesUpdated is published");
         assert!(
             published.len() < original_len,
@@ -7247,7 +7375,7 @@ mod tests {
 
     #[tokio::test]
     async fn turn_cycle_compacts_and_retries_on_context_overflow() {
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
         // 1) main request overflows, 2) summarizer succeeds, 3) retry succeeds.
         let overflow = Err(format!(
             "[{}] Upstream returned HTTP 400: context_length_exceeded",
@@ -7295,6 +7423,17 @@ mod tests {
 
         assert_eq!(result["choices"][0]["message"]["content"], "final");
         assert!(tool.calls.lock().unwrap().is_empty());
+        assert!(
+            std::iter::from_fn(|| rx.try_recv().ok()).any(|ev| matches!(
+                ev,
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Finished,
+                    reason: CompactionReason::ContextOverflow,
+                    messages: Some(_),
+                }
+            )),
+            "the overflow compaction is announced"
+        );
     }
 
     /// A strict endpoint rejects the DeepSeek `reasoning_content` extension
@@ -7538,15 +7677,23 @@ mod tests {
         );
         drop(tx);
         let mut published = false;
+        let mut failed = false;
         while let Ok(ev) = rx.try_recv() {
-            if let StreamEvent::MessagesUpdated { .. } = ev {
-                published = true;
+            match ev {
+                StreamEvent::MessagesUpdated { .. } => published = true,
+                // The throbber a `Started` put up has to come down again.
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Failed,
+                    ..
+                } => failed = true,
+                _ => {}
             }
         }
         assert!(
             !published,
             "no fabricated compacted history may be published"
         );
+        assert!(failed, "a summarizer failure ends the compaction as Failed");
     }
 
     #[tokio::test]
@@ -7918,6 +8065,47 @@ mod tests {
             command: command.to_string(),
             timeout_secs: None,
         }
+    }
+
+    /// janhq/jan-internal#394: the CLI's `skill_list`/`skill_read` resolve
+    /// through the same layering as the prompt catalog, so a plugin skill the
+    /// prompt advertises is readable (it used to read only `<store>/skills`),
+    /// on both the concurrent read path and the serial one.
+    #[tokio::test]
+    async fn the_cli_skill_tools_read_plugin_skills() {
+        let root = std::env::temp_dir().join(format!(
+            "jan_loop_plugin_skill_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::UNIX_EPOCH.elapsed().unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = crate::core::agent::skills::plugins_dir(&root).join("rel/skills/prepare");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "---\ndescription: prep\n---\nplugin body\n")
+            .unwrap();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let invoker = build_prompting_invoker(root.clone(), tx, PermissionRegistry::default());
+        let call = |id: &str, name: &str, args: &str| {
+            json!({"id": id, "type": "function", "function": {"name": name, "arguments": args}})
+        };
+        let out = invoker
+            .invoke(&[
+                call("l", "skill_list", "{}"),
+                call("r", "skill_read", r#"{"name":"rel:prepare"}"#),
+            ])
+            .await
+            .unwrap();
+        assert!(out[0].content.contains("rel:prepare — prep"), "{}", out[0].content);
+        assert_eq!(out[1].content, "plugin body");
+        // Through the non-concurrent context too (the one writes use).
+        let (text, _) = tauri_plugin_agent_tools::tools::handlers::execute_builtin(
+            tauri_plugin_agent_tools::tools::lookup("skill_read").unwrap(),
+            &json!({"name": "prepare"}),
+            &invoker.tool_context(),
+        )
+        .await;
+        assert_eq!(text, "plugin body");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The acceptance requirement that a hook denial is indistinguishable from

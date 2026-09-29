@@ -171,12 +171,21 @@ compaction_ratio = 0.6
 The check runs on the request itself, before it is dispatched, so the break lands at a point the
 session chose rather than after a provider rejects an oversized prompt and the run retries. When it
 runs, the session history is replaced with the compacted version, the transcript is told, and the
-console says so:
+console says so. While the summary is being written, the header and input row show `compacting`,
+and the note that follows says why it happened:
 
 ```
 auto-compacted 84 -> 31 messages (ctx 96K/128K)
-compacted 84 messages into a summary before sending (104K tokens against a 102K token budget)
+compacted 84 messages into a summary: the prompt neared the context window
 ```
+
+A run also compacts when it uses up its [session token budget](#budgets), and after a provider
+rejects a prompt as too long (see [Context overflow](#context-overflow)). Both report the same
+way, and so does a subagent's compaction, prefixed with its name.
+
+Headless and RPC clients get a `compaction` event: `phase` is `started`, then `finished` (with
+`messages`, the number summarized) or `failed`, and `reason` is `preflight`, `context_overflow` or
+`session_budget`.
 
 ## Compacting on purpose
 
@@ -215,7 +224,7 @@ Separately from the context window, a project can bound how far one run goes:
 
 ```toml
 [budget]
-# max_tokens = 128000  # token-spend ceiling per run; 0 disables the cap
+# max_tokens = 128000  # token-spend ceiling per run; defaults to the model's context window; 0 disables the cap
 ```
 
 That's a stop point for the run as a whole, not a per-request limit. There is no turn cap - the
