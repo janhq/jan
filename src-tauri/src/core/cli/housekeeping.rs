@@ -229,6 +229,97 @@ mod tests {
     }
 
     #[test]
+    fn the_policy_defaults_apply_when_the_config_is_silent() {
+        let p = Policy::from_config(None, None);
+        assert_eq!(p.retention_days, DEFAULT_RETENTION_DAYS);
+        assert_eq!(p.max_threads, DEFAULT_MAX_THREADS);
+        let p = Policy::from_config(Some(7), Some(0));
+        assert_eq!((p.retention_days, p.max_threads), (7, 0));
+    }
+
+    /// A chain of forks: keeping the newest keeps its parent, which in turn
+    /// keeps the grandparent, however old they are.
+    #[test]
+    fn a_kept_fork_chain_spares_every_ancestor() {
+        let mut threads = floor();
+        let fork_of = |id: &str, age: f64, parent: &str| {
+            let mut f = t(id, age);
+            f["metadata"] = json!({ super::super::FORKED_FROM_KEY: { "thread_id": parent } });
+            f
+        };
+        threads.push(t("root", 500.0));
+        threads.push(fork_of("mid", 400.0, "root"));
+        threads.push(fork_of("leaf", 1.0, "mid"));
+        assert!(plan(&threads, NOW, policy(90, 0), &none()).is_empty());
+    }
+
+    /// An old fork nobody keeps does not hold its parent alive either.
+    #[test]
+    fn an_old_fork_and_its_old_parent_both_go() {
+        let mut threads = floor();
+        threads.push(t("parent", 500.0));
+        let mut fork = t("fork", 400.0);
+        fork["metadata"] = json!({ super::super::FORKED_FROM_KEY: { "thread_id": "parent" } });
+        threads.push(fork);
+        let mut gone = plan(&threads, NOW, policy(90, 0), &none());
+        gone.sort();
+        assert_eq!(gone, vec!["fork", "parent"]);
+    }
+
+    #[test]
+    fn age_and_cap_combine_and_a_protected_thread_beats_both() {
+        let mut threads = floor();
+        threads.push(t("fresh-extra", 1.0));
+        threads.push(t("old-protected", 300.0));
+        threads.push(t("old", 200.0));
+        let protect: HashSet<String> = ["old-protected".to_string()].into();
+        // Cap of 11 would drop everything past the floor plus one; age would drop
+        // both old ones. Only the protected one is spared.
+        assert_eq!(plan(&threads, NOW, policy(90, 11), &protect), vec!["old"]);
+    }
+
+    #[test]
+    fn a_thread_without_an_id_is_never_planned_for_removal() {
+        let mut threads = floor();
+        threads.push(json!({ "updated": NOW - 900.0 * DAY }));
+        assert!(plan(&threads, NOW, policy(1, 1), &none()).is_empty());
+    }
+
+    /// A thread with no `updated` reads as recency 0, i.e. ancient. It is old
+    /// by that measure and goes once beyond the floor -- but a missing stamp on
+    /// one of the newest never costs it its floor protection.
+    #[test]
+    fn a_stampless_thread_is_treated_as_oldest() {
+        let mut threads = floor();
+        threads.push(json!({ "id": "stampless", "metadata": {} }));
+        assert_eq!(plan(&threads, NOW, policy(90, 0), &none()), vec!["stampless"]);
+    }
+
+    #[test]
+    fn a_missing_store_prunes_nothing() {
+        let base = std::env::temp_dir().join("jan-housekeeping-no-such-store");
+        assert_eq!(run(&base, policy(1, 1), &none()), 0);
+    }
+
+    #[test]
+    fn an_unreadable_thread_metadata_file_is_left_alone() {
+        let base = std::env::temp_dir().join(format!(
+            "jan-housekeeping-corrupt-{}",
+            std::process::id()
+        ));
+        let dir = crate::core::threads::utils::get_thread_dir(&base, "broken");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(crate::core::threads::constants::THREADS_FILE),
+            "{ not json",
+        )
+        .unwrap();
+        assert_eq!(run(&base, policy(1, 1), &none()), 0);
+        assert!(dir.exists(), "a corrupt thread is not ours to guess about");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn run_removes_only_what_the_plan_names() {
         let base = std::env::temp_dir().join(format!(
             "jan-housekeeping-{}-{}",

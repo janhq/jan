@@ -10921,6 +10921,137 @@ mod tests {
         assert!(out.contains("reported as they start"), "{out}");
     }
 
+    /// An invoker whose subagent context shares `bg`, so a test can register a
+    /// live child in the registry and drive the model-facing tool calls at it.
+    #[cfg(feature = "cli")]
+    fn invoker_with_registry(
+        root: std::path::PathBuf,
+        bg: Arc<crate::core::agent::subagent::BackgroundSubagents>,
+    ) -> CompositeToolInvoker {
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx, Arc::new(Mutex::new(HashMap::new())));
+        invoker.subagents = Some(SubagentContext {
+            parent_args: crate::core::agent::subagent::tests::max_par_args(&root),
+            model_id: "stub".to_string(),
+            max_session_tokens: None,
+            cost_ceiling: None,
+            send_reasoning: true,
+            tool_ceiling: None,
+            known_tools: Vec::new(),
+            bg_generation: bg.generation(),
+            bg,
+        });
+        invoker
+    }
+
+    /// The whole model-facing path: `stop_subagent {name}` reaches the registry
+    /// entry the dispatch created and stops it, and `message_subagent {name}`
+    /// reaches its inbox.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn stop_and_message_subagent_calls_reach_a_live_child_by_name() {
+        let root = std::env::temp_dir().join(format!("jan-stop-tool-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        let inbox = crate::core::agent::subagent::tests::register_live_child(&bg, "sub-w-1", "w");
+        let invoker = invoker_with_registry(root.clone(), bg.clone());
+
+        let steered = invoker
+            .handle_subagent_tool(
+                "message_subagent",
+                &json!({ "name": "w", "message": "narrow it" }),
+            )
+            .await;
+        assert!(steered.contains("Queued"), "{steered}");
+        assert_eq!(inbox.drain().len(), 1);
+
+        let stopped = invoker
+            .handle_subagent_tool("stop_subagent", &json!({ "name": "w" }))
+            .await;
+        assert!(stopped.contains("Stopped"), "{stopped}");
+        assert!(
+            crate::core::agent::subagent::tests::child_is_finished(&bg, "sub-w-1"),
+            "the registry entry is marked finished"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn stop_subagent_on_a_bad_call_is_an_error_string_not_a_panic() {
+        let root = std::env::temp_dir().join(format!("jan-stop-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let bg = Arc::new(crate::core::agent::subagent::BackgroundSubagents::default());
+        let invoker = invoker_with_registry(root.clone(), bg);
+        let missing = invoker.handle_subagent_tool("stop_subagent", &json!({})).await;
+        assert!(missing.starts_with("ERROR:"), "{missing}");
+        let unknown = invoker
+            .handle_subagent_tool("stop_subagent", &json!({ "name": "ghost" }))
+            .await;
+        assert!(unknown.starts_with("ERROR:") && unknown.contains("ghost"), "{unknown}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The advertise gate: both steering tools ride the dispatch gate, so a
+    /// child (which cannot dispatch) never sees `stop_subagent`, and a denied
+    /// one is withheld.
+    #[test]
+    fn stop_subagent_is_advertised_with_dispatch_and_never_to_a_child() {
+        let parent = advertised_for(true, false);
+        assert!(parent.iter().any(|n| n == "stop_subagent"));
+        let child = advertised_for(false, true);
+        assert!(!child.iter().any(|n| n == "stop_subagent"));
+    }
+
+    #[test]
+    fn a_denied_stop_subagent_is_not_advertised() {
+        use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+        let root = std::env::temp_dir().join(format!("jan-advertise-deny-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut tools = Vec::new();
+        advertise_local_tools(
+            &mut tools,
+            None,
+            &ToolPermissions::new(
+                PermissionDefault::Allow,
+                &[],
+                &["stop_subagent".to_string()],
+                &[],
+            ),
+            Some(root.as_path()),
+            crate::core::agent::plan::RunMode::Normal,
+            true,
+            crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
+            false,
+            false,
+            #[cfg(feature = "cli")]
+            &crate::core::agent::host_tools::HostToolSet::new(),
+            false,
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let names = tool_names(&tools);
+        assert!(!names.iter().any(|n| n == "stop_subagent"));
+        assert!(names.iter().any(|n| n == "message_subagent"), "only the denied one goes");
+    }
+
+    /// The dispatch reply teaches the by-name verbs, not the run_id one.
+    #[test]
+    fn the_dispatch_reply_points_at_steering_and_stopping_by_name() {
+        use crate::core::agent::subagent::{DispatchedChild, DispatchedPlan};
+        let out = format_dispatched_plan(&DispatchedPlan {
+            phase_count: 1,
+            total_subagents: 1,
+            first_phase: vec![DispatchedChild {
+                name: "w".to_string(),
+                run_id: "sub-w-1".to_string(),
+            }],
+            blackboard_dir: None,
+        });
+        assert!(out.contains("stop_subagent"), "{out}");
+        assert!(out.contains("by name"), "{out}");
+    }
+
     /// `message_parent` is a child-only capability: a top-level run that somehow
     /// names it is refused rather than panicking on the missing link.
     #[test]

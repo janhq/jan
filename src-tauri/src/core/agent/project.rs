@@ -991,6 +991,45 @@ mod tests {
 
     #[cfg(feature = "cli")]
     #[test]
+    fn thread_retention_keys_parse_and_default_to_none() {
+        let root = unique_root("thread_retention");
+        // The store sits in the shared per-pid test home, not under `root`, so a
+        // leftover from an earlier run with the same pid must not leak in.
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None, "template leaves it unset");
+        assert_eq!(cfg.agent.max_threads, None);
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "thread_retention_days", Some(toml_edit::value(30))).expect("write");
+        set_agent_key(&path, "max_threads", Some(toml_edit::value(0))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, Some(30));
+        assert_eq!(cfg.agent.max_threads, Some(0), "0 is a real value: it disables the cap");
+        set_agent_key(&path, "thread_retention_days", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None);
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffolded agent.toml documents both knobs, so a user finds them
+    /// without reading source.
+    #[test]
+    fn the_scaffolded_agent_toml_documents_the_housekeeping_keys() {
+        let root = unique_root("template_keys");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let written = std::fs::read_to_string(agent_toml_path(&root)).unwrap();
+        assert!(written.contains("# thread_retention_days = 90"), "{written}");
+        assert!(written.contains("# max_threads = 500"), "{written}");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
     fn show_reasoning_parses_and_defaults_to_false() {
         let root = unique_root("show_reasoning");
         ensure_project(&root).expect("scaffold");

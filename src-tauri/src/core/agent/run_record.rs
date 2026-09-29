@@ -536,6 +536,121 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// `finish` consumes the recorder and then it drops: the drop must see the
+    /// record already closed, or every clean run would be rewritten `stopped`.
+    #[test]
+    fn a_finished_recorder_stays_finished_after_it_drops() {
+        let dir = tmp("finish-drop");
+        let r = Recorder::start(&dir, "w", "sub-w-1", "p");
+        r.finish(&Ok("answer".to_string()));
+        let v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(transcript_path(&dir, "w")).unwrap()).unwrap();
+        assert_eq!(v["status"], "finished");
+        assert_eq!(v["output"], "answer");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_recorder_stays_failed_after_it_drops() {
+        let dir = tmp("fail-drop");
+        let r = Recorder::start(&dir, "w", "sub-w-1", "p");
+        r.finish(&Err("upstream 500".to_string()));
+        let v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(transcript_path(&dir, "w")).unwrap()).unwrap();
+        assert_eq!(v["status"], "failed");
+        assert_eq!(v["error"], "upstream 500");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_tool_call_is_recorded_from_the_completed_event_not_the_stream_deltas() {
+        let mut t = Transcript::new("a", "sub-a-1", "p");
+        t.apply(&StreamEvent::ToolCallStarted { id: "1".into(), name: "read".into() });
+        t.apply(&StreamEvent::ToolCallArgsDelta { id: "1".into(), delta: "{\"pa".into() });
+        t.apply(&StreamEvent::ToolOutputDelta { id: "1".into(), delta: "x".into() });
+        assert!(t.transcript.is_empty(), "partial JSON is never recorded");
+    }
+
+    #[test]
+    fn clip_never_splits_a_multibyte_character() {
+        // A 3-byte char straddling the limit forces the boundary walk-back.
+        let text = format!("{}{}", "a".repeat(RESULT_MAX_BYTES - 1), "\u{20ac}\u{20ac}");
+        let clipped = clip(&text);
+        assert!(clipped.is_char_boundary(clipped.len()));
+        assert!(clipped.contains("[truncated at"));
+        assert!(!clipped.starts_with(&text));
+    }
+
+    #[test]
+    fn a_result_at_exactly_the_limit_is_kept_whole() {
+        let text = "b".repeat(RESULT_MAX_BYTES);
+        assert_eq!(clip(&text), text);
+    }
+
+    #[test]
+    fn history_with_unparsable_tool_arguments_keeps_the_call_with_null_args() {
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "go" }),
+            serde_json::json!({
+                "role": "assistant", "content": "",
+                "tool_calls": [{ "id": "c", "function": { "name": "edit", "arguments": "{\"pa" } }]
+            }),
+        ];
+        let t = Transcript::from_history("t", &history);
+        assert_eq!(
+            t.transcript,
+            vec![Entry::ToolCall {
+                id: "c".into(),
+                name: "edit".into(),
+                args: serde_json::Value::Null,
+            }]
+        );
+        assert!(t.output.is_none(), "empty assistant text is not an output");
+    }
+
+    #[test]
+    fn history_image_parts_contribute_no_text_and_text_parts_join() {
+        let history = vec![serde_json::json!({
+            "role": "user",
+            "content": [
+                { "type": "text", "text": "look" },
+                { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAAA" } },
+                { "type": "text", "text": "here" }
+            ]
+        })];
+        let t = Transcript::from_history("t", &history);
+        assert_eq!(t.prompt, "look\nhere");
+        assert!(!t.prompt.contains("base64"));
+    }
+
+    #[test]
+    fn an_empty_history_is_an_empty_finished_record() {
+        let t = Transcript::from_history("t", &[]);
+        assert_eq!(t.prompt, "");
+        assert!(t.transcript.is_empty() && t.output.is_none());
+        assert_eq!(t.name, "main");
+        assert_eq!(t.run_id, "t");
+    }
+
+    #[test]
+    fn a_leftover_temp_file_does_not_block_the_next_write() {
+        let dir = tmp("stale-tmp");
+        let path = transcript_path(&dir, "w");
+        std::fs::write(path.with_extension("json.tmp"), "junk from a crash").unwrap();
+        write_atomic(&path, &Transcript::new("w", "sub-w-1", "p")).unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("sub-w-1"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_directory_at_the_target_is_refused() {
+        let dir = tmp("dir-target");
+        let path = transcript_path(&dir, "w");
+        std::fs::create_dir(&path).unwrap();
+        assert!(write_atomic(&path, &Transcript::new("w", "sub-w-1", "p")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[cfg(unix)]
     #[test]
     fn a_planted_symlink_is_not_written_through() {

@@ -2849,7 +2849,7 @@ pub fn subagent_dir_for(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::sync::atomic::{AtomicU32, Ordering};
     use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
@@ -3624,6 +3624,7 @@ mod tests {
         assert!(is_subagent_tool("create_subagent"));
         assert!(is_subagent_tool("list_subagents"));
         assert!(is_subagent_tool("message_subagent"));
+        assert!(is_subagent_tool("stop_subagent"));
         // Handled on the child side, where there is no subagent registry at all.
         assert!(!is_subagent_tool(MESSAGE_PARENT_TOOL));
         assert!(!is_subagent_tool("read"));
@@ -3906,7 +3907,7 @@ mod tests {
     /// children fail fast instead of hanging), a real project root holding the
     /// subagent def, subagents enabled, cap 1.
     #[cfg(feature = "cli")]
-    fn max_par_args(root: &std::path::Path) -> crate::core::agent::r#loop::OrchestrationArgs {
+    pub(crate) fn max_par_args(root: &std::path::Path) -> crate::core::agent::r#loop::OrchestrationArgs {
         use crate::core::agent::r#loop::OrchestrationArgs;
         use crate::core::mcp::models::McpSettings;
         use crate::core::state::ProviderConfig;
@@ -3946,6 +3947,109 @@ mod tests {
             sandbox: None,
             compaction: None,
         }
+    }
+
+    /// Register a live, never-finishing child under `run_id`/`name` and hand back
+    /// its inbox: the seam other modules' tests use to drive tool calls at a real
+    /// registry entry without running a model.
+    #[cfg(feature = "cli")]
+    pub(crate) fn register_live_child(
+        bg: &Arc<BackgroundSubagents>,
+        run_id: &str,
+        name: &str,
+    ) -> Arc<ChildInbox> {
+        let (entry, inbox) = live_entry(run_id, name);
+        bg.inner.lock().unwrap().insert(run_id.to_string(), entry);
+        inbox
+    }
+
+    #[cfg(feature = "cli")]
+    pub(crate) fn child_is_finished(bg: &Arc<BackgroundSubagents>, run_id: &str) -> bool {
+        bg.inner.lock().unwrap()[run_id]
+            .finished
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// A dispatched child leaves `<scratch>/subagents/<name>-transcript.json`
+    /// behind, carrying the task it was given as `prompt` and a terminal status.
+    /// With no provider configured the child fails fast, which is exactly the
+    /// case a record must still close: the failure is what the parent reads.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_dispatched_child_leaves_a_closed_transcript_in_the_scratch() {
+        let root = unique_root("transcript-file");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let scratch = unique_root("transcript-scratch");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let run_id = spawn_subagent(
+            &bg.scope(),
+            &args,
+            req("reviewer", None),
+            &parent_run(),
+            &events_tx,
+            Some(&scratch),
+            true,
+        )
+        .unwrap()
+        .run_id;
+        let _ = await_subagent(&bg, &run_id).await;
+
+        let path = crate::core::agent::run_record::transcript_path(
+            &scratch.join(tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR),
+            "reviewer",
+        );
+        let doc: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("transcript exists")).unwrap();
+        assert_eq!(doc["name"], "reviewer");
+        assert_eq!(doc["run_id"], run_id.as_str());
+        assert_eq!(doc["prompt"], req("reviewer", None).description.as_str());
+        assert_ne!(doc["status"], "running", "the record is closed: {doc}");
+        assert!(
+            doc["error"].is_string() || doc["output"].is_string(),
+            "a closed record says how it ended: {doc}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// A run with no scratch has nowhere sanctioned to write, and must not
+    /// invent a location: dispatching still works and nothing is written.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_child_with_no_scratch_writes_no_transcript() {
+        let root = unique_root("transcript-none");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let run_id = dispatch_reviewer(&bg, &args, &events_tx);
+        let _ = await_subagent(&bg, &run_id).await;
+        assert!(!root.join("subagents").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Stopping a child cuts its task off before it can close its own record, so
+    /// the record must not be left saying `running`. This is the drop path: the
+    /// recorder lives in the child's task, and aborting the task drops it.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn aborting_a_child_task_closes_its_record_as_stopped() {
+        use crate::core::agent::run_record::{transcript_path, Recorder};
+        let dir = unique_root("transcript-abort");
+        let recorder = Recorder::start(&dir, "w", "sub-w-1", "task");
+        let handle = tokio::spawn(async move {
+            let _held = recorder;
+            std::future::pending::<()>().await;
+        });
+        tokio::task::yield_now().await;
+        handle.abort();
+        let _ = handle.await;
+        let doc: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(transcript_path(&dir, "w")).unwrap()).unwrap();
+        assert_eq!(doc["status"], "stopped", "{doc}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// One queue-test dispatch, with no scratch: these assert admission order,
@@ -5140,6 +5244,190 @@ mod tests {
         assert_eq!(ia.drain().len(), 0);
         assert_eq!(ib.drain().len(), 1);
         assert_eq!(ic.drain().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn message_by_exact_run_id_beats_name_resolution() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (a, ia) = live_entry("sub-w-1", "w");
+        let (b, ib) = live_entry("sub-w-2", "w");
+        {
+            let mut g = bg.inner.lock().unwrap();
+            g.insert("sub-w-1".into(), a);
+            g.insert("sub-w-2".into(), b);
+        }
+        message_subagent(&bg, "sub-w-1", "the older one").unwrap();
+        assert_eq!(ia.drain().len(), 1);
+        assert_eq!(ib.drain().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn message_to_an_unknown_name_names_it_in_the_error() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let err = message_subagent(&bg, "ghost", "hello").unwrap_err();
+        assert!(err.to_string().contains("ghost"), "{err}");
+    }
+
+    /// Only finished runs of a name exist: nothing is live to address by name,
+    /// so the parent is told plainly rather than a stale run being messaged.
+    #[tokio::test]
+    async fn message_by_name_ignores_finished_runs() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (a, ia) = live_entry("sub-w-1", "w");
+        a.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        bg.inner.lock().unwrap().insert("sub-w-1".into(), a);
+        assert!(message_subagent(&bg, "w", "late").is_err());
+        assert_eq!(ia.drain().len(), 0);
+    }
+
+    #[test]
+    fn stop_and_message_take_a_name_not_a_run_id() {
+        let stop = stop_subagent_tool_schema();
+        let params = &stop["function"]["parameters"];
+        assert_eq!(params["required"], serde_json::json!(["name"]));
+        assert!(params["properties"].get("run_id").is_none());
+        let msg = message_subagent_tool_schema();
+        let params = &msg["function"]["parameters"];
+        assert_eq!(params["required"], serde_json::json!(["name", "message"]));
+        assert!(params["properties"].get("run_id").is_none());
+    }
+
+    #[test]
+    fn parse_stop_args_requires_a_nonblank_name() {
+        assert_eq!(
+            parse_stop_args(&serde_json::json!({ "name": "worker" })).unwrap(),
+            "worker"
+        );
+        assert!(parse_stop_args(&serde_json::json!({})).is_err());
+        assert!(parse_stop_args(&serde_json::json!({ "name": "  " })).is_err());
+        // The old key is not silently accepted: a stale caller learns at once.
+        assert!(parse_stop_args(&serde_json::json!({ "run_id": "sub-x-1" })).is_err());
+    }
+
+    #[test]
+    fn parse_message_args_reads_name_and_message() {
+        let (name, message) =
+            parse_message_args(&serde_json::json!({ "name": "w", "message": "hi" })).unwrap();
+        assert_eq!((name.as_str(), message.as_str()), ("w", "hi"));
+        assert!(parse_message_args(&serde_json::json!({ "run_id": "w", "message": "hi" })).is_err());
+        assert!(parse_message_args(&serde_json::json!({ "name": "w" })).is_err());
+    }
+
+    /// A host-only session may delegate, and a child it dispatched must be
+    /// steerable and stoppable from that same session.
+    #[test]
+    fn a_delegating_host_only_session_may_steer_and_stop() {
+        assert!(DELEGATE_ONLY_TOOLS.contains(&"message_subagent"));
+        assert!(DELEGATE_ONLY_TOOLS.contains(&"stop_subagent"));
+        assert!(!DELEGATE_ONLY_TOOLS.contains(&"create_subagent"), "writes a definition");
+        assert!(!DELEGATE_ONLY_TOOLS.contains(&"await_subagent"), "never advertised");
+    }
+
+    #[tokio::test]
+    async fn stop_resolves_the_newest_live_run_of_a_name() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (a, _ia) = live_entry("sub-w-1", "w");
+        let (b, _ib) = live_entry("sub-w-2", "w");
+        {
+            let mut g = bg.inner.lock().unwrap();
+            g.insert("sub-w-1".into(), a);
+            g.insert("sub-w-2".into(), b);
+        }
+        stop_subagent(&bg, "w").unwrap();
+        let g = bg.inner.lock().unwrap();
+        let done = |id: &str| g[id].finished.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(done("sub-w-2"), "the newest is the one stopped");
+        assert!(!done("sub-w-1"), "the older live run is left running");
+    }
+
+    #[tokio::test]
+    async fn stop_by_exact_run_id_beats_name_resolution() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (a, _ia) = live_entry("sub-w-1", "w");
+        let (b, _ib) = live_entry("sub-w-2", "w");
+        {
+            let mut g = bg.inner.lock().unwrap();
+            g.insert("sub-w-1".into(), a);
+            g.insert("sub-w-2".into(), b);
+        }
+        stop_subagent(&bg, "sub-w-1").unwrap();
+        let g = bg.inner.lock().unwrap();
+        assert!(g["sub-w-1"].finished.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(!g["sub-w-2"].finished.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn stop_of_an_unknown_name_is_an_error_naming_it() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let err = stop_subagent(&bg, "ghost").unwrap_err();
+        assert!(err.to_string().contains("ghost"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn stop_aborts_the_task_and_closes_its_start_bracket_with_a_reason() {
+        use crate::core::agent::events::StreamEvent;
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (mut entry, _inbox) = live_entry("sub-w-1", "w");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        entry.events = tx;
+        let handle = tokio::runtime::Handle::current().spawn(std::future::pending::<()>());
+        entry.abort = handle.abort_handle();
+        bg.inner.lock().unwrap().insert("sub-w-1".into(), entry);
+        stop_subagent(&bg, "w").unwrap();
+        let ended = rx.try_recv().expect("an end event is sent");
+        match ended {
+            StreamEvent::SubagentEnd { run_id, name, error } => {
+                assert_eq!((run_id.as_str(), name.as_str()), ("sub-w-1", "w"));
+                assert!(error.unwrap().contains("stopped"), "reason is on screen");
+            }
+            other => panic!("expected SubagentEnd, got {other:?}"),
+        }
+        assert!(handle.await.unwrap_err().is_cancelled(), "the task was aborted");
+    }
+
+    /// The counters a child holds are released exactly once: stopping it and then
+    /// tearing the session down must not drive `running` below zero.
+    #[tokio::test]
+    async fn stop_then_teardown_releases_the_counters_once() {
+        use std::sync::atomic::Ordering;
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (entry, _inbox) = live_entry("sub-w-1", "w");
+        bg.running.fetch_add(1, Ordering::SeqCst);
+        bg.inner.lock().unwrap().insert("sub-w-1".into(), entry);
+        stop_subagent(&bg, "w").unwrap();
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0);
+        bg.abort_all();
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0, "no double release");
+    }
+
+    /// A stopped child is a finished one to the phase barrier, so stopping a
+    /// member of a phase lets the plan carry on instead of stalling or being
+    /// read as a teardown that cancels every later phase.
+    #[tokio::test]
+    async fn a_stopped_child_does_not_tear_down_the_phase_barrier() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (entry, _inbox) = live_entry("sub-w-1", "w");
+        bg.inner.lock().unwrap().insert("sub-w-1".into(), entry);
+        let generation = bg.generation();
+        stop_subagent(&bg, "w").unwrap();
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            bg.await_phase(&["sub-w-1".to_string()], generation),
+        )
+        .await
+        .expect("the barrier does not hang on a stopped child");
+        assert_eq!(gate, PhaseGate::Finished);
+    }
+
+    #[tokio::test]
+    async fn stopping_a_finished_child_is_a_no_op_reply_not_an_error() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (entry, _inbox) = live_entry("sub-w-1", "w");
+        entry.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        bg.inner.lock().unwrap().insert("sub-w-1".into(), entry);
+        // By exact id, since a finished run is not a live match for its name.
+        let reply = stop_subagent(&bg, "sub-w-1").unwrap();
+        assert!(reply.contains("already finished"), "{reply}");
     }
 
     #[tokio::test]
