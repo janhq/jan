@@ -127,7 +127,9 @@ an image goes on the provider request depends on the provider's API (see
 [tool result images](./cli#tool-result-images)). `details` is for the host's display only: Jan
 emits it as `item/tool_details`, never sends it to the model, and does not persist it with the
 thread. A reply for a request that is no longer pending (already answered, cancelled, or never
-issued) fails with `-32602` and `data: {"kind": "not_pending"}`.
+issued) fails with `-32602` and `data: {"kind": "not_pending"}`. So does a `permission/respond`
+whose `requestId` is not pending in the running turn's session, including one another session
+was issued.
 
 `turn/interrupt` withdraws every request the host still holds. For each one Jan sends
 `item/tool_request_cancelled` with `reason: "interrupted"`, and all of them arrive before the
