@@ -966,6 +966,10 @@ pub(crate) fn take_migration_notice() -> Option<String> {
 /// - `session-header`: inference sends `X-Session-Id`.
 /// - `session-scoped-providers`: a session-scoped provider's models and prices
 ///   stay in memory, and its sign-in cannot be changed from inside the session.
+/// - `mcp-env-scrub`: stdio MCP servers do not inherit `JAN_API_KEY`,
+///   `JAN_CUSTOM_HEADERS`, the explicit provider's `<PROVIDER>_API_KEY`, or
+///   (while Jan exports telemetry) the OTLP header variables; the shell tool's
+///   pass-through never copies a `*HEADERS*` or `*AUTHORIZATION*` variable.
 pub const CAPABILITIES: &[&str] = &[
     "provider-overrides",
     "session-overrides",
@@ -973,6 +977,7 @@ pub const CAPABILITIES: &[&str] = &[
     "user-agent",
     "session-header",
     "session-scoped-providers",
+    "mcp-env-scrub",
 ];
 
 /// [`CAPABILITIES`], then telemetry's, in that order.
@@ -4785,6 +4790,7 @@ mod tests {
                 "user-agent",
                 "session-header",
                 "session-scoped-providers",
+                "mcp-env-scrub",
             ]
             .iter()
             .map(|c| serde_json::json!(c))
