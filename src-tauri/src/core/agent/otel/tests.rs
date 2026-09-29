@@ -331,14 +331,26 @@ fn session_id_can_be_kept_off_metric_points() {
 /// A tokio listener standing in for a collector: records `(path, body)` of
 /// every POST, answers 200 or, when `stall`, never answers at all.
 async fn collector(stall: bool) -> (String, Arc<Mutex<Vec<(String, Vec<u8>)>>>) {
+    collector_refusing(stall, 0).await
+}
+
+/// [`collector`] whose first `refuse` POSTs are answered `503` with
+/// `Retry-After: 0`, the way a collector that cannot persist a batch answers.
+async fn collector_refusing(
+    stall: bool,
+    refuse: usize,
+) -> (String, Arc<Mutex<Vec<(String, Vec<u8>)>>>) {
+    use std::sync::atomic::AtomicUsize;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&seen);
+    let refused = Arc::new(AtomicUsize::new(0));
     tokio::spawn(async move {
         while let Ok((mut stream, _)) = listener.accept().await {
             let sink = Arc::clone(&sink);
+            let refused = Arc::clone(&refused);
             tokio::spawn(async move {
                 if stall {
                     tokio::time::sleep(Duration::from_secs(3600)).await;
@@ -365,9 +377,12 @@ async fn collector(stall: bool) -> (String, Arc<Mutex<Vec<(String, Vec<u8>)>>>) 
                     }
                     let path = head.split_whitespace().nth(1).unwrap_or("").to_string();
                     sink.lock().unwrap().push((path, buf[end + 4..end + 4 + length].to_vec()));
-                    let _ = stream
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
-                        .await;
+                    let answer: &[u8] = if refused.fetch_add(1, Ordering::SeqCst) < refuse {
+                        b"HTTP/1.1 503 Service Unavailable\r\nRetry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    } else {
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    };
+                    let _ = stream.write_all(answer).await;
                     return;
                 }
             });
@@ -478,7 +493,236 @@ async fn a_dead_collector_is_not_the_runs_problem() {
     };
     let t = Telemetry::start(cfg_for(&format!("http://127.0.0.1:{port}"), "http/json"), None, "0");
     scripted_run(&t);
+    let started = std::time::Instant::now();
     t.shutdown(Duration::from_secs(2)).await;
+    // No collector is listening, so the exit must not wait on one: no retry,
+    // no sleep. Not timed on Windows, where a connect to a closed port is
+    // itself retried before it fails, so the exports alone took ~1s in CI.
+    if cfg!(not(windows)) {
+        assert!(started.elapsed() < RETRY_DELAY, "{:?}", started.elapsed());
+    }
+}
+
+#[tokio::test]
+async fn a_batch_the_collector_asks_to_retry_is_sent_again_once() {
+    let posts = |seen: &[(String, Vec<u8>)], path: &str| {
+        seen.iter()
+            .filter(|(p, _)| p == path)
+            .map(|(_, b)| b.clone())
+            .collect::<Vec<_>>()
+    };
+    // The run's end exports logs, then metrics. One 503 + Retry-After: 0
+    // hits the logs batch, and its retry lands.
+    let (url, seen) = collector_refusing(false, 1).await;
+    let t = Telemetry::start(cfg_for(&url, "http/json"), None, "0.0.0-test");
+    scripted_run(&t);
+    t.shutdown(Duration::from_secs(5)).await;
+    let seen = seen.lock().unwrap().clone();
+    let logs = posts(&seen, "/v1/logs");
+    assert_eq!(logs.len(), 2, "{seen:?}");
+    assert_eq!(logs[0], logs[1], "the retry resends the same batch");
+    assert_eq!(posts(&seen, "/v1/metrics").len(), 1, "{seen:?}");
+
+    // Refused again on the retry, the batch is dropped: there is no third try.
+    let (url, seen) = collector_refusing(false, 2).await;
+    let t = Telemetry::start(cfg_for(&url, "http/json"), None, "0.0.0-test");
+    scripted_run(&t);
+    t.shutdown(Duration::from_secs(5)).await;
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(posts(&seen, "/v1/logs").len(), 2, "{seen:?}");
+    assert_eq!(posts(&seen, "/v1/metrics").len(), 1, "{seen:?}");
+}
+
+#[test]
+fn only_otlps_retryable_statuses_are_retried_and_within_the_cap() {
+    assert_eq!(retry_delay(503, Some("5")), Some(Duration::from_secs(5)));
+    assert_eq!(retry_delay(429, None), Some(RETRY_DELAY));
+    assert_eq!(
+        retry_delay(502, Some("Wed, 21 Oct 2015 07:28:00 GMT")),
+        Some(RETRY_DELAY)
+    );
+    assert_eq!(retry_delay(504, Some("0")), Some(Duration::ZERO));
+    assert_eq!(
+        retry_delay(503, Some("3600")),
+        None,
+        "longer than the cap: dropped, not retried early"
+    );
+    for status in [400, 401, 404, 413, 500] {
+        assert_eq!(retry_delay(status, Some("1")), None, "{status}");
+    }
+}
+
+fn cfg_temporality(value: &'static str) -> Config {
+    let env = move |key: &str| match key {
+        config::ENABLE_ENV => Some("1".to_string()),
+        "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE" => Some(value.to_string()),
+        _ => None,
+    };
+    config::resolve(&env, None, None).unwrap()
+}
+
+fn feed(state: &mut State, cfg: &Config, events: &[StreamEvent]) {
+    for event in events {
+        if let Some(signal) = classify(cfg, event, None) {
+            state.apply(Instant::now(), 2, signal);
+        }
+    }
+}
+
+fn start_run(state: &mut State, session: &str) {
+    state.apply(
+        Instant::now(),
+        1,
+        Signal::RunStart {
+            session: Some(session.into()),
+            run_id: None,
+            prompt: Some((1, None)),
+        },
+    );
+}
+
+/// `(value, start, time)` of the point of `name` whose attributes include `want`.
+fn point_in(
+    metrics: &[Metric],
+    name: &str,
+    want: &[(&str, &str)],
+) -> Option<(PointValue, u64, u64)> {
+    metrics
+        .iter()
+        .find(|m| m.name == name)?
+        .points
+        .iter()
+        .find_map(|p| {
+            want.iter()
+                .all(|(k, v)| {
+                    p.attrs
+                        .iter()
+                        .any(|(pk, pv)| pk == k && *pv == AnyValue::Str(v.to_string()))
+                })
+                .then_some((p.value, p.start_unix_nano, p.time_unix_nano))
+        })
+}
+
+#[test]
+fn delta_exports_only_what_accrued_since_the_last_export() {
+    let cfg = Arc::new(cfg_temporality("delta"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    start_run(&mut state, "sess-1");
+    feed(
+        &mut state,
+        &cfg,
+        &[provenance(None, "sess-1"), usage(10, 1, 0, 0)],
+    );
+    let first = state.metrics(100, 2);
+    assert!(first.iter().all(|m| m.temporality == Temporality::Delta));
+    let input = [("type", "input"), ("session.id", "sess-1")];
+    assert_eq!(
+        point_in(&first, "jan_agent.token.usage", &input).map(|p| p.0),
+        Some(PointValue::Int(10))
+    );
+    assert_eq!(
+        point_in(&first, "jan_agent.telemetry.dropped", &[]).map(|p| p.0),
+        Some(PointValue::Int(2))
+    );
+    state.exported(100, 2);
+
+    // Nothing accrued and nothing more was dropped: nothing to send.
+    assert!(state.metrics(150, 2).is_empty());
+
+    feed(
+        &mut state,
+        &cfg,
+        &[provenance(None, "sess-1"), usage(5, 0, 0, 0)],
+    );
+    let second = state.metrics(200, 3);
+    // Only this window's tokens, over this window, and no re-send of the
+    // series that did not move (output, the session and prompt counts).
+    assert_eq!(
+        point_in(&second, "jan_agent.token.usage", &input),
+        Some((PointValue::Int(5), 100, 200))
+    );
+    assert_eq!(
+        point_in(&second, "jan_agent.token.usage", &[("type", "output")]),
+        None
+    );
+    assert!(second
+        .iter()
+        .all(|m| m.name != "jan_agent.session.count" && m.name != "jan_agent.prompt.count"));
+    assert_eq!(
+        point_in(&second, "jan_agent.telemetry.dropped", &[]).map(|p| p.0),
+        Some(PointValue::Int(1))
+    );
+}
+
+#[test]
+fn cumulative_stays_the_running_total() {
+    let cfg = Arc::new(cfg_temporality("cumulative"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    start_run(&mut state, "sess-1");
+    feed(
+        &mut state,
+        &cfg,
+        &[provenance(None, "sess-1"), usage(10, 1, 0, 0)],
+    );
+    state.exported(100, 0);
+    feed(
+        &mut state,
+        &cfg,
+        &[provenance(None, "sess-1"), usage(5, 0, 0, 0)],
+    );
+    let metrics = state.metrics(200, 0);
+    assert!(metrics
+        .iter()
+        .all(|m| m.temporality == Temporality::Cumulative));
+    let (value, start, _) =
+        point_in(&metrics, "jan_agent.token.usage", &[("type", "input")]).unwrap();
+    assert_eq!(value, PointValue::Int(15));
+    assert_eq!(
+        start, state.start_nanos,
+        "a cumulative point starts when the exporter did"
+    );
+    assert!(
+        point_in(&metrics, "jan_agent.token.usage", &[("type", "output")]).is_some(),
+        "unchanged series are re-sent"
+    );
+}
+
+#[test]
+fn a_closed_sessions_cumulative_series_go_once_their_final_values_are_out() {
+    let cfg = Arc::new(cfg_temporality("cumulative"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    for session in ["sess-a", "sess-b"] {
+        start_run(&mut state, session);
+        feed(
+            &mut state,
+            &cfg,
+            &[provenance(None, session), usage(10, 1, 0, 0)],
+        );
+    }
+    state.apply(
+        Instant::now(),
+        3,
+        Signal::SessionClosed {
+            session: "sess-a".into(),
+        },
+    );
+    let has = |metrics: &[Metric], s: &str| {
+        point_in(
+            metrics,
+            "jan_agent.token.usage",
+            &[("type", "input"), ("session.id", s)],
+        )
+        .is_some()
+    };
+    let last = state.metrics(100, 0);
+    assert!(
+        has(&last, "sess-a"),
+        "the export after the close still carries its final totals"
+    );
+    state.exported(100, 0);
+    let after = state.metrics(200, 0);
+    assert!(!has(&after, "sess-a"));
+    assert!(has(&after, "sess-b"), "a live session's series stay");
 }
 
 #[test]

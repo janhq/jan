@@ -2723,6 +2723,23 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
     }
 }
 
+/// The prompt a run was started with: [`latest_user_text`], but only when that
+/// user message is still the conversation's last word, reminders aside. A run
+/// that continues or resumes a conversation ending in an assistant or tool
+/// message was handed no new prompt, so telemetry must not count one.
+fn new_user_prompt(messages: &[serde_json::Value]) -> Option<String> {
+    let last = messages.iter().rev().find(|m| {
+        !(m.get("role").and_then(|v| v.as_str()) == Some("user")
+            && crate::core::agent::reminder::is_reminder_only(
+                m.get("content").unwrap_or(&serde_json::Value::Null),
+            ))
+    })?;
+    if last.get("role").and_then(|v| v.as_str()) != Some("user") {
+        return None;
+    }
+    latest_user_text(messages)
+}
+
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
 /// definition prompt) replaces the assistant identity when set, but the
 /// project-context and tool-use guidance from `compose_system_prompt` is still
@@ -3155,6 +3172,9 @@ async fn orchestrate_inner(
     // is the whole prompt -- still placed below the history, so the arrangement
     // does not depend on which half happens to be empty.
     let submitted_prompt = latest_user_text(&conversation_messages);
+    // What telemetry counts as a prompt: narrower than `submitted_prompt`,
+    // which `UserPromptSubmit` below still fires with.
+    let new_prompt = new_user_prompt(&conversation_messages);
     let mut transcript =
         crate::core::agent::transcript::Transcript::from_history(conversation_messages);
     if let Some(composed) = stable_system.as_ref().filter(|c| !c.prefix.is_empty()) {
@@ -3447,7 +3467,7 @@ async fn orchestrate_inner(
         let _telemetry_run = crate::core::agent::otel::RunScope::begin(
             session_id.as_deref(),
             run_id.as_deref(),
-            submitted_prompt.as_deref(),
+            new_prompt.as_deref(),
         );
         tools
             .fire_hooks(
@@ -4772,6 +4792,37 @@ mod tests {
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
+
+    /// Telemetry's `user_prompt` count: a run continuing or resuming a
+    /// conversation that ends in the model's or a tool's turn was handed no
+    /// new prompt, even though an earlier user message is still in history.
+    #[test]
+    fn only_a_trailing_user_message_is_a_new_prompt() {
+        let reminder =
+            json!({"role": "user", "content": crate::core::agent::reminder::wrap("note")});
+        let asked = json!({"role": "user", "content": "fix the bug"});
+        let answered = json!({"role": "assistant", "content": "done"});
+        let tool = json!({"role": "tool", "tool_call_id": "c1", "content": "ok"});
+        let text = |messages: &[serde_json::Value]| new_user_prompt(messages);
+        assert_eq!(text(std::slice::from_ref(&asked)).as_deref(), Some("fix the bug"));
+        assert_eq!(
+            text(&[asked.clone(), reminder.clone()]).as_deref(),
+            Some("fix the bug"),
+            "a trailing reminder is not a turn"
+        );
+        assert_eq!(
+            text(&[asked.clone(), answered.clone()]),
+            None,
+            "continue after an answer"
+        );
+        assert_eq!(
+            text(&[asked.clone(), answered, tool.clone()]),
+            None,
+            "resume with a tool result"
+        );
+        assert_eq!(text(&[asked, tool, reminder]), None);
+        assert_eq!(text(&[]), None);
+    }
 
     /// The cache-prefix contract from #340: across turns the system prompt at
     /// message 0 and the tool schema must be byte-identical, so a provider can

@@ -1,5 +1,6 @@
-//! OTLP wire encoding for the three signals this exporter sends: cumulative
-//! monotonic sums (metrics), event log records (logs) and spans (traces).
+//! OTLP wire encoding for the three signals this exporter sends: monotonic
+//! sums, delta or cumulative (metrics), event log records (logs) and spans
+//! (traces).
 //!
 //! Hand-rolled rather than generated: the subset is small and stable (OTLP v1
 //! is frozen for these messages), and carrying `prost` + the generated proto
@@ -24,7 +25,7 @@ pub enum AnyValue {
 
 pub type Attrs = Vec<(String, AnyValue)>;
 
-/// One point of a cumulative, monotonic sum.
+/// One point of a monotonic sum: the total over `start..time`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Point {
     pub attrs: Attrs,
@@ -39,12 +40,22 @@ pub enum PointValue {
     Double(f64),
 }
 
-/// A counter, exported as an OTLP `Sum` (cumulative, monotonic).
+/// OTLP `AggregationTemporality`. The values are the wire enum's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Temporality {
+    /// Each point is what accrued since the previous export.
+    Delta = 1,
+    /// Each point is the running total since the exporter started.
+    Cumulative = 2,
+}
+
+/// A counter, exported as an OTLP monotonic `Sum`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Metric {
     pub name: String,
     pub description: String,
     pub unit: String,
+    pub temporality: Temporality,
     pub points: Vec<Point>,
 }
 
@@ -138,8 +149,11 @@ pub fn metrics_json(origin: &Origin, metrics: &[Metric]) -> Vec<u8> {
                 "name": m.name,
                 "description": m.description,
                 "unit": m.unit,
-                // 2 = AGGREGATION_TEMPORALITY_CUMULATIVE
-                "sum": { "dataPoints": points, "aggregationTemporality": 2, "isMonotonic": true },
+                "sum": {
+                    "dataPoints": points,
+                    "aggregationTemporality": m.temporality as u8,
+                    "isMonotonic": true,
+                },
             })
         })
         .collect();
@@ -307,7 +321,7 @@ pub fn metrics_proto(origin: &Origin, metrics: &[Metric]) -> Vec<u8> {
             attrs_pb(&mut point, 7, &p.attrs);
             pb_bytes(&mut sum, 1, &point);
         }
-        pb_varint(&mut sum, 2, 2);
+        pb_varint(&mut sum, 2, m.temporality as u64);
         pb_varint(&mut sum, 3, 1);
         let mut metric = Vec::new();
         pb_str(&mut metric, 1, &m.name);
@@ -402,11 +416,12 @@ mod tests {
         }
     }
 
-    fn counter() -> Metric {
+    fn counter(temporality: Temporality) -> Metric {
         Metric {
             name: "jan_agent.token.usage".into(),
             description: "tokens".into(),
             unit: "tokens".into(),
+            temporality,
             points: vec![Point {
                 attrs: vec![("type".into(), AnyValue::Str("input".into()))],
                 start_unix_nano: 1,
@@ -470,8 +485,8 @@ mod tests {
     }
 
     #[test]
-    fn metrics_protobuf_nests_a_cumulative_sum_under_its_resource() {
-        let bytes = metrics_proto(&origin(), &[counter()]);
+    fn metrics_protobuf_nests_a_monotonic_sum_under_its_resource() {
+        let bytes = metrics_proto(&origin(), &[counter(Temporality::Cumulative)]);
         let resource_metrics = only(&bytes, 1);
         let scope_metrics = only(&resource_metrics, 2);
         let metric = only(&scope_metrics, 2);
@@ -479,6 +494,9 @@ mod tests {
         let sum = only(&metric, 7);
         assert_eq!(only(&sum, 2)[0], 2, "cumulative");
         assert_eq!(only(&sum, 3)[0], 1, "monotonic");
+        let delta = metrics_proto(&origin(), &[counter(Temporality::Delta)]);
+        let delta_sum = only(&only(&only(&only(&delta, 1), 2), 2), 7);
+        assert_eq!(only(&delta_sum, 2)[0], 1, "delta");
         let point = only(&sum, 1);
         assert_eq!(i64::from_le_bytes(only(&point, 6).try_into().unwrap()), 42);
         let resource = only(&resource_metrics, 1);
@@ -504,7 +522,11 @@ mod tests {
 
     #[test]
     fn json_follows_the_otlp_json_mapping() {
-        let v: Value = serde_json::from_slice(&metrics_json(&origin(), &[counter()])).unwrap();
+        let v: Value = serde_json::from_slice(&metrics_json(
+            &origin(),
+            &[counter(Temporality::Cumulative)],
+        ))
+        .unwrap();
         let metric = &v["resourceMetrics"][0]["scopeMetrics"][0]["metrics"][0];
         assert_eq!(metric["name"], "jan_agent.token.usage");
         assert_eq!(metric["sum"]["aggregationTemporality"], 2);
