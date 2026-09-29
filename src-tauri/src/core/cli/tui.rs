@@ -30753,7 +30753,7 @@ mod tests {
                 None,
                 &json!({"model": "m", "messages": [{"role": "user", "content": "go"}]}),
                 &tx,
-                None,
+                &[],
             ),
         )
         .await

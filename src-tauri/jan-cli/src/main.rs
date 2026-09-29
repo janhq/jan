@@ -710,6 +710,12 @@ async fn main() {
     }))
     .init();
 
+    // Inference requests name this client, so a gateway can tell Jan Agent's
+    // traffic from the desktop's, which sends none. Set before anything sends.
+    app_lib::core::agent::request_headers::set_user_agent(app_lib::core::cli::telemetry::user_agent(
+        app_lib::core::cli::updater::build_version(),
+    ));
+
     // Inject the logo at runtime so we can use ANSI styling.
     let logo = make_logo();
     let matches = Cli::command()

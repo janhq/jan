@@ -415,6 +415,9 @@ async fn request_identity(
     }
 }
 
+/// No default headers on purpose, `User-Agent` included: that one rides each
+/// request's header list ([`crate::core::agent::request_headers`]), which both
+/// send paths share, so the two cannot drift apart.
 fn converter_http_client() -> reqwest::Client {
     static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
     CLIENT.clone()
@@ -432,13 +435,30 @@ impl ModelInvoker for HttpModelInvoker {
         // the body must carry the bare model id - providers like OpenCode GO
         // reject a provider-qualified id with "model not supported".
         let mut normalized = request.clone();
+        // The serving provider's custom headers, looked up through the same
+        // routing order the upstream was resolved by, so every invoker -- the
+        // turn, compaction, `/goal`, side calls, subagents -- sends the headers
+        // of the provider it is actually talking to.
+        let mut custom_headers = Vec::new();
         if let Some(model) = normalized.get("model").and_then(|m| m.as_str()) {
             let pc = self.provider_configs.lock().await;
+            if let Some(config) = crate::core::agent::upstream::pick_provider_for_model(model, &pc)
+                .and_then(|provider| pc.get(&provider))
+            {
+                custom_headers = config.custom_headers.clone();
+            }
             let bare = crate::core::agent::upstream::strip_provider_prefix(model, &pc);
             if bare != model {
                 normalized["model"] = serde_json::json!(bare);
             }
         }
+        let extra_headers = crate::core::agent::request_headers::extras(
+            &custom_headers,
+            crate::core::agent::request_headers::owned(
+                crate::core::agent::request_headers::user_agent(),
+                self.client_request_id.as_deref(),
+            ),
+        );
         // Emitted before the request goes out, so a harness that records
         // provenance sees the request even when the call then fails. It goes to
         // the run's stream rather than to `events`: a side call passes a private
@@ -460,7 +480,7 @@ impl ModelInvoker for HttpModelInvoker {
                 converter.as_ref(),
                 &normalized,
                 events,
-                self.client_request_id.as_deref(),
+                &extra_headers,
             )
             .await
         } else {
@@ -472,7 +492,7 @@ impl ModelInvoker for HttpModelInvoker {
                 None,
                 &normalized,
                 events,
-                self.client_request_id.as_deref(),
+                &extra_headers,
             )
             .await
         }
@@ -5206,6 +5226,101 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, StreamEvent::RequestProvenance { .. })),
             "the private sink keeps only the side call's own text: {private:?}"
+        );
+    }
+
+    /// The invoker sends the custom headers of the provider that serves the
+    /// request's model -- looked up the way the upstream was resolved, so a
+    /// `provider/model` id finds its provider -- plus Jan's session headers, and
+    /// never a second `Authorization`. This is also the desktop's path: the
+    /// headers it registers for a provider now reach the wire.
+    #[tokio::test]
+    async fn the_serving_providers_headers_reach_the_default_path() {
+        use std::io::{BufRead, BufReader, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            let Ok((mut stream, _)) = listener.accept() else { return };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut headers = String::new();
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                headers.push_str(&line);
+            }
+            let _ = seen_tx.send(headers);
+            let answer = concat!(
+                "data: {\"id\":\"s\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\",",
+                "\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n",
+                "data: [DONE]\n\n",
+            );
+            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len());
+        });
+
+        let mut configs = HashMap::new();
+        configs.insert(
+            "gateway".to_string(),
+            ProviderConfig {
+                provider: "gateway".into(),
+                base_url: Some(url.trim_end_matches("/chat/completions").to_string()),
+                api_key: Some("real-key".into()),
+                api_keys: vec!["real-key".into()],
+                custom_headers: vec![
+                    crate::core::state::ProviderCustomHeader {
+                        header: "X-Client-Name".into(),
+                        value: "jan-agent".into(),
+                    },
+                    crate::core::state::ProviderCustomHeader {
+                        header: "authorization".into(),
+                        value: "Bearer smuggled".into(),
+                    },
+                ],
+                ..Default::default()
+            },
+        );
+        let (run, _run_events) = mpsc::unbounded_channel();
+        let invoker = HttpModelInvoker {
+            client: crate::core::agent::upstream::agent_http_client(),
+            upstream_url: url,
+            api_keys: vec!["real-key".into()],
+            provider_configs: Arc::new(Mutex::new(configs)),
+            converter: None,
+            converter_client: converter_http_client(),
+            client_request_id: crate::core::agent::correlation::session_request_id(Some(
+                "sess-9",
+            )),
+            session_id: Some("sess-9".to_string()),
+            provenance: RequestIdentityOwned::default(),
+            provenance_events: Some(run),
+        };
+        let (tx, _rx) = mpsc::unbounded_channel();
+        invoker
+            .invoke(
+                &json!({"model":"gateway/m","messages":[{"role":"user","content":"hi"}]}),
+                &tx,
+            )
+            .await
+            .expect("the stub answers");
+
+        let seen = seen_rx
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the request reached the stub")
+            .to_ascii_lowercase();
+        assert!(seen.contains("\r\nx-client-name: jan-agent\r\n"), "{seen}");
+        assert!(seen.contains("\r\nx-client-request-id: jan-sess-9\r\n"), "{seen}");
+        assert!(seen.contains("\r\nx-session-id: sess-9\r\n"), "{seen}");
+        assert_eq!(seen.matches("\r\nauthorization: ").count(), 1, "{seen}");
+        assert!(seen.contains("\r\nauthorization: bearer real-key\r\n"), "{seen}");
+        assert!(
+            !seen.contains("\r\nuser-agent:"),
+            "a library build sets no User-Agent; only the jan binary does: {seen}"
         );
     }
 
