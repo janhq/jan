@@ -21,6 +21,7 @@ export const EVENT_TAGS = Object.freeze([
   "subagent",
   "notice",
   "compaction",
+  "retry",
   "monitors",
   "parked",
   "messages_updated",
