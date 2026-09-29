@@ -26790,7 +26790,6 @@ mod tests {
             monitors: Some(app.monitor_set.clone()),
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
-            parent_link: None,
             compaction: None,
         })
     }

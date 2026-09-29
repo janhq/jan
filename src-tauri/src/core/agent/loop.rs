@@ -167,15 +167,6 @@ pub(crate) struct OrchestrationArgs {
     /// cancel and on session reset). Never inherited by a child run, which
     /// cannot dispatch grandchildren anyway.
     pub subagent_bg: Option<std::sync::Arc<crate::core::agent::subagent::BackgroundSubagents>>,
-    /// Set only on a child run: how it speaks back to the agent that dispatched
-    /// it, mid-run, through `message_parent`. The inverse direction (parent to
-    /// child) rides the steering channel instead, since the child's loop already
-    /// has the safe boundary to apply it at.
-    ///
-    /// Deliberately separate from `subagent_bg`, which a child clears so it
-    /// cannot dispatch grandchildren: this is the one subagent capability a
-    /// child has, and it grants nothing else.
-    pub parent_link: Option<crate::core::agent::subagent::ParentLink>,
     /// When this run compacts ahead of dispatching: the route's context window,
     /// the share of it a prompt may fill, and any explicitly configured reserve.
     ///
@@ -642,10 +633,6 @@ struct CompositeToolInvoker {
     /// same terms as `bg_shells_outlive_run`. A session-owned set is also left
     /// out of the run's `AbortOnDrop` teardown and its end-of-run `join_all`.
     subagent_bg_outlive_run: bool,
-    /// Set only when this run is itself a subagent: the channel its
-    /// `message_parent` calls report through. `None` for a top-level run, where
-    /// the tool is neither advertised nor executable.
-    parent_link: Option<crate::core::agent::subagent::ParentLink>,
 }
 
 /// Default for the sandboxed shell's network namespace, used when
@@ -1300,26 +1287,6 @@ impl CompositeToolInvoker {
         self.sandbox.then_some(self.scratch_root.as_path())
     }
 
-    /// Execute a child run's `message_parent` call. Synchronous by design: the
-    /// message is queued on the parent's notice channel and the child carries on
-    /// -- nothing here waits for the parent to read it.
-    fn handle_message_parent(&self, args: &serde_json::Value) -> String {
-        let Some(link) = &self.parent_link else {
-            return "ERROR: this run has no parent agent to message".to_string();
-        };
-        let Some(message) = args
-            .get("message")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.trim().is_empty())
-        else {
-            return "ERROR: missing required argument 'message'".to_string();
-        };
-        match crate::core::agent::subagent::message_parent(link, message) {
-            Ok(s) => s,
-            Err(e) => format!("ERROR: {e}"),
-        }
-    }
-
     /// Execute one subagent tool call, returning the model-facing result string
     /// (an `ERROR:`-prefixed message on failure, matching the tool-result
     /// convention). The registry is loaded fresh from disk each call so a
@@ -1888,21 +1855,6 @@ impl ToolInvoker for CompositeToolInvoker {
                     .unwrap_or(serde_json::Value::Object(Default::default()));
                 let content = self.handle_ask_tool(&args).await;
                 out.push(ToolOutcome::plain(id, content));
-                continue;
-            }
-            if name == crate::core::agent::subagent::MESSAGE_PARENT_TOOL {
-                let id = tc
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let args: serde_json::Value = tc
-                    .get("function")
-                    .and_then(|f| f.get("arguments"))
-                    .and_then(|v| v.as_str())
-                    .and_then(|value| serde_json::from_str(value).ok())
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                out.push(ToolOutcome::plain(id, self.handle_message_parent(&args)));
                 continue;
             }
             if name == "todo" {
@@ -2480,8 +2432,6 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // into, so background work must be settled before the run returns.
         bg_shells: None,
         subagent_bg: None,
-        // A server-side proxy run is top-level: nothing dispatched it.
-        parent_link: None,
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
@@ -2617,7 +2567,6 @@ fn advertise_local_tools(
     ask_enabled: bool,
     todo_enabled: bool,
     #[cfg(feature = "cli")] host_tools: &crate::core::agent::host_tools::HostToolSet,
-    has_parent: bool,
 ) {
     let planning = run_mode == crate::core::agent::plan::RunMode::Plan;
     if project_root.is_some() {
@@ -2751,17 +2700,6 @@ fn advertise_local_tools(
             }
             openai_tools.push(tool.schema());
         }
-    }
-    // A child run's one link back to the agent that dispatched it. Advertised
-    // on the mirror-image gate to the subagent tools above: exactly the runs
-    // that cannot dispatch (`subagents_enabled == false`, i.e. children) have a
-    // parent to talk to. Like `ask`, it needs no project.
-    let parent_tool = crate::core::agent::subagent::MESSAGE_PARENT_TOOL;
-    if has_parent
-        && !permissions.is_denied(parent_tool)
-        && allowed_names.is_none_or(|allowed| allowed.contains(parent_tool))
-    {
-        openai_tools.push(crate::core::agent::subagent::message_parent_tool_schema());
     }
 }
 
@@ -2965,9 +2903,6 @@ pub(crate) async fn context_advertised_tools(
         ask_enabled,
         todo_enabled,
         host_tools,
-        // The `/context` view sizes an interactive session's own run, which is
-        // top-level by construction and so has no parent to message.
-        false,
     );
     tools
 }
@@ -3115,9 +3050,6 @@ async fn orchestrate_inner(
         monitors: session_monitors,
         bg_shells: session_bg_shells,
         subagent_bg: session_subagent_bg,
-        // Read through `args` where it is needed (tool advertisement, the
-        // invoker), so this stays a plain destructure of the rest.
-        parent_link: _,
         sandbox,
         compaction,
     } = args;
@@ -3376,7 +3308,6 @@ async fn orchestrate_inner(
         todo_registry.is_some(),
         #[cfg(feature = "cli")]
         host_tools,
-        args.parent_link.is_some(),
     );
 
     let (upstream_url, session_api_keys) = resolve_upstream_for_model(
@@ -3528,7 +3459,6 @@ async fn orchestrate_inner(
             host_tool_route: host_tool_route.clone(),
             hook_notices_queue: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             bg_shells: session_bg_shells.clone().unwrap_or_default(),
-            parent_link: args.parent_link.clone(),
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
@@ -8179,7 +8109,6 @@ mod tests {
             ),
             monitors_outlive_run: false,
             bg_shells_outlive_run: false,
-            parent_link: None,
             subagent_bg_outlive_run: false,
             auto_approve: false,
             run_mode: crate::core::agent::plan::RunMode::Normal,
@@ -8851,7 +8780,6 @@ mod tests {
             false,
             false,
             &set,
-            false,
         );
         let names: Vec<&str> = tools
             .iter()
@@ -10796,12 +10724,12 @@ mod tests {
     // ---- subagent messaging advertisement --------------------------------
 
     /// The names `advertise_local_tools` produces for a run with the given
-    /// dispatch/parent shape, in a throwaway project dir.
-    fn advertised_for(subagents_enabled: bool, has_parent: bool) -> Vec<String> {
+    /// dispatch shape, in a throwaway project dir.
+    fn advertised_for(subagents_enabled: bool) -> Vec<String> {
         let root = std::env::temp_dir().join(format!(
             "jan-advertise-{}-{}",
             std::process::id(),
-            subagents_enabled as u8 * 2 + has_parent as u8
+            subagents_enabled as u8
         ));
         std::fs::create_dir_all(&root).unwrap();
         let mut tools = Vec::new();
@@ -10817,7 +10745,6 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
-            has_parent,
         );
         let _ = std::fs::remove_dir_all(&root);
         tools
@@ -10826,25 +10753,19 @@ mod tests {
             .collect()
     }
 
-    /// A parent can steer a child; the reverse channel is not its to call.
+    /// A dispatching run is offered the steering tool beside dispatch.
     #[test]
-    fn a_dispatching_run_is_offered_message_subagent_but_not_message_parent() {
-        let names = advertised_for(true, false);
+    fn a_dispatching_run_is_offered_message_subagent() {
+        let names = advertised_for(true);
         assert!(names.iter().any(|n| n == "message_subagent"));
         assert!(names.iter().any(|n| n == "dispatch_subagent"));
-        assert!(!names
-            .iter()
-            .any(|n| n == crate::core::agent::subagent::MESSAGE_PARENT_TOOL));
     }
 
     /// The scope boundary: messaging must not become a second level of fan-out.
-    /// A child gets the reply channel and nothing that dispatches or steers.
+    /// A child gets nothing that dispatches or steers.
     #[test]
-    fn a_child_run_is_offered_message_parent_but_cannot_dispatch_or_steer() {
-        let names = advertised_for(false, true);
-        assert!(names
-            .iter()
-            .any(|n| n == crate::core::agent::subagent::MESSAGE_PARENT_TOOL));
+    fn a_child_run_cannot_dispatch_or_steer() {
+        let names = advertised_for(false);
         assert!(!names.iter().any(|n| n == "message_subagent"));
         assert!(!names.iter().any(|n| n == "dispatch_subagent"));
     }
@@ -10868,7 +10789,6 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
-            false,
         );
         let _ = std::fs::remove_dir_all(&root);
         assert!(!tools
@@ -10998,9 +10918,9 @@ mod tests {
     /// one is withheld.
     #[test]
     fn stop_subagent_is_advertised_with_dispatch_and_never_to_a_child() {
-        let parent = advertised_for(true, false);
+        let parent = advertised_for(true);
         assert!(parent.iter().any(|n| n == "stop_subagent"));
-        let child = advertised_for(false, true);
+        let child = advertised_for(false);
         assert!(!child.iter().any(|n| n == "stop_subagent"));
     }
 
@@ -11027,7 +10947,6 @@ mod tests {
             false,
             #[cfg(feature = "cli")]
             &crate::core::agent::host_tools::HostToolSet::new(),
-            false,
         );
         let _ = std::fs::remove_dir_all(&root);
         let names = tool_names(&tools);
@@ -11051,25 +10970,6 @@ mod tests {
         assert!(out.contains("stop_subagent"), "{out}");
         assert!(out.contains("by name"), "{out}");
     }
-
-    /// `message_parent` is a child-only capability: a top-level run that somehow
-    /// names it is refused rather than panicking on the missing link.
-    #[test]
-    fn message_parent_without_a_parent_is_refused() {
-        let root = std::env::temp_dir().join(format!("jan-msg-parent-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        let (tx, _rx) = mpsc::unbounded_channel();
-        let invoker = build_prompting_invoker(
-            root.clone(),
-            tx,
-            Arc::new(Mutex::new(HashMap::new())),
-        );
-        let out = invoker.handle_message_parent(&serde_json::json!({ "message": "hi" }));
-        let _ = std::fs::remove_dir_all(&root);
-        assert!(out.starts_with("ERROR:"), "{out}");
-        assert!(out.contains("no parent"), "{out}");
-    }
-
 
     /// The end-to-end claim of parent-to-child steering, exercised over the same
     /// loop a child runs in and the same postman `run_subagent` installs: a
@@ -11155,8 +11055,7 @@ mod tests {
             // The steered message sits after the tool result, not in place of it.
             assert_eq!(roles, ["user", "assistant", "tool", "user"]);
             let steered = messages.last().unwrap()["content"].as_str().unwrap();
-            assert!(steered.contains("actually, check loop.rs"), "{steered}");
-            assert!(steered.contains("orchestrating agent"), "{steered}");
+            assert_eq!(steered, "actually, check loop.rs", "a plain user turn");
         }
         assert!(
             inbox.drain().is_empty(),
