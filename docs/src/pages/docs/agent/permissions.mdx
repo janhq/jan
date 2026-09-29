@@ -53,7 +53,7 @@ above.
 
 ## Project policy
 
-`.jan/agent/agent.toml` sets what a project exposes:
+The project's `agent.toml` (in `~/.jan/projects/<slug>/`) sets what a project exposes:
 
 ```toml
 [tools]
@@ -90,6 +90,13 @@ directory, and reaches the network only if allowed. Reads are looser: the CLI ke
 so `git` and `ssh` credential helpers work (`[tools].allow_home_read`, set it to `false` to close
 that), while the desktop masks it entirely.
 
+While the sandbox is on, Jan's own home, `~/.jan`, is hidden from every tool and from the shell,
+even when you run `jan` from your home directory. It holds `config.toml` (provider keys and hooks)
+and each project's `agent.toml`, memory and threads, so no approval can open it: file tools refuse
+the path, `ls`, `find` and `grep` leave it out, and the shell sees an empty directory. The agent
+still reaches memory and skills through its `memory_*` and `skill_*` tools. A git worktree Jan
+created under `~/.jan/worktrees/` stays reachable, because it is the project being worked on.
+
 Whether it is on depends on the surface:
 
 | Surface | Sandbox | Can it be changed? |
@@ -118,7 +125,7 @@ jan --no-sandbox                 # this session only, overriding a setting below
 ```
 
 ```toml
-# .jan/agent/agent.toml - for everyone who checks this project out
+# ~/.jan/projects/<slug>/agent.toml - every session in this project
 [tools]
 sandbox = true
 ```
@@ -152,7 +159,7 @@ rely on (a proxy setting, `git` config, a toolchain home) will not see it.
 Two keys widen it, without giving up the default:
 
 ```toml
-# .jan/agent/agent.toml (per project) or ~/.jan/config.toml (all projects)
+# ~/.jan/projects/<slug>/agent.toml (per project) or ~/.jan/config.toml (all projects)
 [tools]
 # Host variables the shell may inherit. Exact names or a "*" wildcard.
 env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
@@ -178,7 +185,7 @@ command has whatever network access you do. The two surfaces default differently
 | Surface | How to set network access | Default |
 | --- | --- | --- |
 | Desktop chat agent | The chat-screen tools toggle (`agent_tools`). Per session, in the UI | Off |
-| `jan cli` code-screen agent | `[tools].allow_network` in `.jan/agent/agent.toml` | On |
+| `jan cli` code-screen agent | `[tools].allow_network` in the project's `agent.toml` | On |
 
 The split is deliberate. The desktop chat agent is ephemeral, so it stays offline unless you opt in.
 The CLI is a coding agent in your own project, where one that cannot `curl`, `git fetch`, or install
@@ -202,7 +209,7 @@ Approval prompts are opt-in: by default every call above is auto-approved. Start
 `jan --safe` to be asked instead. See [run modes](/docs/agent/run-modes).
 
 <Callout type="info">
-Auto-approval only removes the prompt. The `.jan/agent/` restriction, the path checks, and
-`[tools] deny` all still apply, as does the shell sandbox where it is on - but on the CLI it is off
-by default, so auto-approved shell commands run with your own access unless you turn it on.
+Auto-approval only removes the prompt. The path checks and `[tools] deny` all still apply, as does
+the shell sandbox where it is on - but on the CLI it is off by default, so auto-approved shell
+commands run with your own access unless you turn it on.
 </Callout>

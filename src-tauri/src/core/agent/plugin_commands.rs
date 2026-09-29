@@ -385,19 +385,19 @@ mod tests {
         let cmd_dir = plugins_dir(&root).join("release").join("commands");
         std::fs::create_dir_all(&cmd_dir).unwrap();
         std::fs::write(cmd_dir.join("prepare.md"), "body").unwrap();
-        std::fs::create_dir_all(root.join(".jan").join("agent")).unwrap();
+        std::fs::create_dir_all(crate::core::agent::project::store_root(&root)).unwrap();
 
         // With the command disabled (not in the whitelist), invocation errors,
         // matching the skill path.
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"some-other\"]\n",
         )
         .unwrap();
         assert!(build_message(&root, "prepare", "").is_err());
         // A command enabled by name resolves.
         std::fs::write(
-            root.join(".jan").join("agent").join("agent.toml"),
+            crate::core::agent::project::store_root(&root).join("agent.toml"),
             "[skills]\nenabled = [\"prepare\"]\n",
         )
         .unwrap();

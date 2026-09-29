@@ -836,6 +836,16 @@ pub(crate) async fn stream_chat_completions(
                                 delay.as_millis(),
                                 attempt + 2
                             );
+                            // The TUI mutes the log, so the warning above never
+                            // reaches the user; the event is what they see.
+                            let _ = events.send(StreamEvent::Retry {
+                                attempt: attempt + 2,
+                                max_attempts: MAX_ATTEMPTS,
+                                delay_ms: delay.as_millis() as u64,
+                                // genai's errors span lines (Cause/Status/Body);
+                                // a status row has one.
+                                reason: last_err.split_whitespace().collect::<Vec<_>>().join(" "),
+                            });
                             tokio::time::sleep(delay).await;
                         }
                     }
@@ -1609,6 +1619,52 @@ mod tests {
             })
             .collect();
         assert_eq!(tokens, vec!["hi".to_string()], "streamed once, not twice");
+        server.await.expect("server");
+    }
+
+    /// The TUI mutes the log facade, so a retry announced only through
+    /// `log::warn!` left the user watching a spinner for up to the whole retry
+    /// budget. Each retry has to reach the consumer as an event, before the
+    /// backoff sleep, naming the attempt about to run and why.
+    #[tokio::test]
+    async fn each_retry_is_announced_before_the_backoff() {
+        let (url, server) = serve(vec![
+            Some(status_response(503, "Service Unavailable", r#"{"error":"busy"}"#)),
+            None,
+            Some(sse_response(&[
+                r#"{"choices":[{"delta":{"content":"hi"}}]}"#,
+                r#"{"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            ])),
+        ])
+        .await;
+
+        let (tx, mut rx) = sink();
+        run(&url, &[], &tx).await.expect("the retries carry the turn");
+
+        drop(tx);
+        let events: Vec<StreamEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+        let retries: Vec<(u32, u32, u64, String)> = events
+            .iter()
+            .filter_map(|ev| match ev {
+                StreamEvent::Retry {
+                    attempt,
+                    max_attempts,
+                    delay_ms,
+                    reason,
+                } => Some((*attempt, *max_attempts, *delay_ms, reason.clone())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(retries.len(), 2, "one event per retry: {events:?}");
+        assert_eq!((retries[0].0, retries[0].1), (2, MAX_ATTEMPTS));
+        assert_eq!((retries[1].0, retries[1].1), (3, MAX_ATTEMPTS));
+        assert_eq!(retries[0].2, BASE_RETRY_DELAY.as_millis() as u64);
+        assert_eq!(retries[1].2, 2 * BASE_RETRY_DELAY.as_millis() as u64);
+        assert!(retries[0].3.contains("503"), "{}", retries[0].3);
+        assert!(!retries[0].3.contains('\n'), "a one-line reason: {}", retries[0].3);
+        let first_token = events.iter().position(|e| matches!(e, StreamEvent::Token { .. }));
+        let last_retry = events.iter().rposition(|e| matches!(e, StreamEvent::Retry { .. }));
+        assert!(first_token > last_retry, "the retries precede the answer: {events:?}");
         server.await.expect("server");
     }
 

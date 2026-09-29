@@ -22,7 +22,7 @@ so nothing here is a new execution primitive.
 
 ## A first hook
 
-`.jan/agent/agent.toml`:
+The project's `agent.toml` (in `~/.jan/projects/<slug>/`):
 
 ```toml
 [[hooks]]
@@ -62,7 +62,7 @@ Three sources, merged least specific first:
 
 1. an installed plugin's `<plugin>/hooks/hooks.json` - shipped by a third party
 2. `~/.jan/config.toml` `[[hooks]]` - this user, every project
-3. `<project>/.jan/agent/agent.toml` `[[hooks]]` - this project
+3. `~/.jan/projects/<slug>/agent.toml` `[[hooks]]` - this project
 
 They all run. Merge order is run order, so the project's hook runs last and its `context` answer
 lands nearest the call. The set is resolved once per run, so a hook file edited mid-run cannot
@@ -176,14 +176,14 @@ And one that feeds the model a fact at the start of every turn:
 
 ```bash
 #!/usr/bin/env bash
-# .jan/agent/hooks/branch.sh
+# scripts/branch.sh
 printf '{"context":"current branch: %s"}' "$(git rev-parse --abbrev-ref HEAD)"
 ```
 
 ```toml
 [[hooks]]
 event = "UserPromptSubmit"
-command = "./.jan/agent/hooks/branch.sh"
+command = "./scripts/branch.sh"
 ```
 
 `context` from `PreCompact` and `SessionEnd` is logged rather than delivered: a compaction is not a
@@ -308,14 +308,14 @@ jan cli agent status --project ~/code/app
     "matcher": "bash",
     "command": "./hooks/audit.sh",
     "timeout_secs": 10,
-    "source": "/home/you/code/app/.jan/agent/plugins/auditor/hooks/hooks.json"
+    "source": "/home/you/.jan/projects/app-1a2b3c4d/plugins/auditor/hooks/hooks.json"
   },
   {
     "event": "PostToolUse",
     "matcher": "edit",
     "command": "cargo fmt --quiet",
     "timeout_secs": 60,
-    "source": "/home/you/code/app/.jan/agent/agent.toml"
+    "source": "/home/you/.jan/projects/app-1a2b3c4d/agent.toml"
   }
 ],
 "plugin_tools": [
@@ -324,7 +324,7 @@ jan cli agent status --project ~/code/app
     "plugin": "release-tools",
     "description": "Render the changelog between two tags",
     "command": "./bin/changelog.sh",
-    "source": "/home/you/code/app/.jan/agent/plugins/release-tools"
+    "source": "/home/you/.jan/projects/app-1a2b3c4d/plugins/release-tools"
   }
 ]
 ```

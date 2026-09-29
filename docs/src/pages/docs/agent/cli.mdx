@@ -31,7 +31,7 @@ jan <COMMAND>
 
 | Flag | Description |
 | --- | --- |
-| `--project <PATH>` | Project root containing `.jan/agent/agent.toml`. Defaults to `.` |
+| `--project <PATH>` | Project root; its `agent.toml` lives in `~/.jan/projects/<slug>/`. Defaults to `.` |
 | `--task <TEXT>` | Seed the session with a first message |
 | `--model <ID>` | Model id, overriding `[agent].model` |
 | `--image <PATH>` | Attach an image to the first message. Repeatable |
@@ -62,8 +62,8 @@ jan --worktree                          # work in a dedicated checkout, not your
 
 <Callout type="warning">
 Tool calls are auto-approved by default, and shell commands are **not** sandboxed by default - an
-approved command runs with your own access. The hard denies never lift: `.jan/agent/` internals,
-anything in `[tools] deny`, and everything plan mode blocks. `--safe` adds the interactive approval
+approved command runs with your own access. The hard denies never lift:
+anything in `[tools] deny` and everything plan mode blocks. `--safe` adds the interactive approval
 prompt; `--sandbox` adds OS confinement (bubblewrap, Seatbelt, or AppContainer). See
 [tool permissions](/docs/agent/permissions#the-shell-sandbox).
 </Callout>
@@ -230,6 +230,50 @@ channel's - a provider without vision answers with its own error.
 `decision` is `allow_once`, `allow_always`, or `deny`, and each `request_id` is answerable once. A
 line that parses as none of these is reported as an `input_error` record and skipped, so one bad
 line cannot end a healthy run.
+
+#### Request provenance
+
+Every outbound provider request emits a `request_provenance` record immediately before it goes out,
+so a harness that records runs can tell **what was sent** without being handed the prompt. The
+record is identity, not content:
+
+```json
+{"type":"request_provenance","session_id":"3f7a91c2","provider":"anthropic","model":"claude-sonnet-5","api_type":"anthropic","request_sha256":"9f2c...","body_bytes":9011,"tools_sha256":"1ab4...","images":[{"sha256":"77de...","mime_type":"image/png","bytes":41234,"tool_call_id":"call_7"}]}
+```
+
+| Field | Notes |
+| --- | --- |
+| `run_id` | The run that made the request. Absent for the main run, set to the subagent's own id for a child's turns |
+| `session_id` | The session the request belongs to, as the `init` record names it. The correlation id the request itself carries is derived from it |
+| `provider`, `model`, `api_type` | The configured provider the model resolved to, the bare model id the upstream receives, and the wire API the body is built for (`anthropic`, `google`, `openai-responses`; absent when the body is chat/completions) |
+| `request_sha256` | SHA-256 of the request body as Jan built it, as canonical JSON: every object's keys sorted, recursively, so re-encoding the same members in another order gives the same digest. The whole request's identity, so two runs are comparable even when something this record does not itemize changed |
+| `body_bytes` | The canonical body's serialized length, measured before the provider adapter serializes it its own way. Key order does not change it, so it describes the built body either way |
+| `tools_sha256` | SHA-256 of the `tools` array as sent, canonical JSON in the same sense. Absent when the request carries no non-empty tool list. The tool array can change while the model id does not, which is why it is hashed separately from the body |
+| `images` | One entry per image in the body, in order. Absent when there are none |
+
+`images` hashes each image over its **decoded** bytes, so a host can hash the same frame it captured
+and match it: `sha256` is that digest, `mime_type` and `bytes` describe the image, and
+`tool_call_id` names the host tool call whose result carried it (`null` for an image the user
+attached).
+
+Emitted for subagent turns as well as the main run's, and for the side calls a run makes (a
+compaction summary, a `/goal` evaluation inside a turn), since those are real requests with real
+spend. A record rides the stream of the run that made the request.
+
+On the RPC surface a record travels with the run it belongs to: `item/request_provenance` for a
+request the main run made, and for a child's request the `request_provenance` record nested in
+`item/subagent` (`{run_id, name, event}`), because a child's own events are wrapped rather than
+raised at the top level - `run_id` names the child on either surface. A request made with no run in
+flight -- the TUI's `/compact`, a `/goal` evaluation between turns -- has no run stream to ride and
+is not reported.
+
+The record deliberately carries no prompt, completion, header, or credential -- `request_sha256` is
+how the two sides agree they are talking about the same request. The digest covers the body Jan
+built, before the provider's adapter serializes it into that provider's own shape and appends the
+transport fields it owns (`stream`, `stream_options`), so it is stable for a given run and
+comparable across runs against the same provider -- and a harness that records what the provider
+received can recompute it by sorting keys and dropping those two fields. Two runs on different wire
+APIs differ by construction: the tool array each provider is sent is not the same shape.
 
 #### Host tools
 
@@ -413,7 +457,7 @@ jan cli agent rpc-schema   # generated request/event schemas on stdout
 One client flow:
 
 ```text
-initialize {protocolVersion:1,clientInfo:{name,version}} -> version and serverInfo
+initialize {protocolVersion:1,clientInfo:{name,version}}   -> version, serverInfo, input_content_parts
 initialized                                                -> notification
 session/start {cwd,model?,ephemeral?}                      -> {sessionId}
 turn/start {sessionId,input:"Hello"}                       -> {turnId} immediately
@@ -421,9 +465,11 @@ item/<stream-json tag>                                     -> {sessionId,turnId,
 turn/completed                                             -> {sessionId,turnId,stopReason,error?}
 ```
 
+The `initialize` result carries the same `input_content_parts` object `init` does - the MIME types and the image, message and line caps a content-part array is held to - so a client that sends an image learns the limits from the handshake rather than by having a message rejected.
+
 The `item/*` payload contains the existing `StreamEvent` object unchanged. A client can also call `session/list`, `session/resume`, `session/fork`, `session/archive`, `turn/steer`, `turn/interrupt` and `permission/respond {requestId,decision}`. Session ids address this **process**, not another RPC process. `turn/interrupt` closes the turn with one `turn/completed` carrying `stopReason: "interrupted"`, and puts that record on the wire before it answers the request. A client that closes stdin ends the process, and the turn that is still running is closed with `stopReason: "interrupted"` before it exits. An outstanding permission request is never granted - closing the channel is not an approval, and the gate's fallback for a request that is dropped without an answer is denial. Only one turn is active per process; a second `turn/start` returns `-32001` with `data.retryable: true` rather than silently queueing it, and so does a `turn/start` arriving while the output queue has no room left for the terminal record - the turn is refused instead of accepted and then lost. `turn/completed.stopReason` is the turn's outcome (`completed`, `error`, `interrupted`), not the upstream finish reason: that one is the `stop_reason` inside `item/done`. Transport errors (`-32700` malformed JSON, `-32600` invalid request, `-32601` unknown method, `-32602` bad params) differ from an agent failure reported by `turn/completed` with `stopReason: "error"`.
 
-Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence. Host tools are declared on `session/start` (`tools`, `builtins`) and answered with `tool/respond`; see [Protocol](./protocol#rpc-host-tools). The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
+Input frames are capped at 16 MiB and the writer queue holds at most 1025 records. If a client stops reading, the queue stops growing and the turn ends with a terminal overload outcome rather than the run accumulating deltas without bound; the process stays alive while the writer is blocked on the full stdout pipe, and that outcome is delivered as soon as the client reads again. The server exits when stdin closes, or when a later record finds the client gone. `--max-turns` is a one-shot flag rather than a session setting: an RPC turn runs until it finishes or a client sends `turn/interrupt`. `ephemeral: true` skips thread persistence and automatic memory recall: the session neither indexes its answers nor has earlier answers recalled into its prompt. Memory notes written with `memory_write` still apply. Host tools are declared on `session/start` (`tools`, `builtins`) and answered with `tool/respond`; see [Protocol](./protocol#rpc-host-tools). The `schema` command below documents the older `stream-json` channel, while `rpc-schema` describes this RPC envelope, accepted requests and event types. RPC clients use `turn/completed`, not the process exit code, to classify an individual turn.
 
 ### `schema`
 
@@ -491,7 +537,7 @@ this document and `protocol/schema.json` in one job and fails on a diff.
 ## `jan plugin`
 
 Manage project-local plugins without the interactive console. Plugin commands use
-`.jan/agent/plugins/` under `--project` (default `.`) and print JSON for list, install, and search.
+the `plugins/` folder of the project's store (`~/.jan/projects/<slug>/`) for `--project` (default `.`) and print JSON for list, install, and search.
 
 ```bash
 jan plugin list
@@ -666,7 +712,7 @@ See [MCP](/docs/agent/mcp).
 ## `jan mcp serve`
 
 The other direction: serve Jan's own built-in tools to another MCP client. One project root, fixed
-at startup; a path argument that escapes it is refused, and so is the project's hidden `.jan` state.
+at startup; a path argument that escapes it is refused.
 
 ```bash
 jan mcp serve --project .                   # stdio, for a client that spawns it as a child

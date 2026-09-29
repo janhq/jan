@@ -131,10 +131,10 @@ jan mcp serve --transport http         # loopback Streamable HTTP; prints its UR
 
 The served tools run against **one project root**, fixed when the server starts, with the same path
 confinement and sandbox re-checks an in-agent call gets. A path argument that escapes that root is
-refused, and so is anything inside the project's hidden `.jan` state.
+refused.
 
 The default set touches no project file: file reading, search, the web tools, and the memory and
-skill tools. Those last two do write, but only into the agent's own store under `.jan/agent` and
+skill tools. Those last two do write, but only into the agent's own store under `~/.jan/projects/<slug>` and
 only by sanitized name, so they can never reach a file in your project. Note that a skill written
 this way is an instruction Jan's own agent may later read, so a peer you would not trust to write
 instructions should be narrowed with `--tool`.

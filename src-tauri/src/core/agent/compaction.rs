@@ -81,12 +81,39 @@ pub(crate) struct CompactionBudget {
     pub(crate) ratio: f64,
     /// An explicit `[agent].compaction_reserve_tokens`, which wins over `ratio`.
     pub(crate) reserve_tokens: Option<u64>,
+    /// `context_window` is an explicit `[agent].context_window`, which holds
+    /// for every model. Otherwise it was resolved for this run's model, and a
+    /// subagent on a different model must re-resolve its own.
+    pub(crate) window_pinned: bool,
 }
 
 impl CompactionBudget {
     /// Prompt tokens at which this run compacts ahead of dispatching.
     pub(crate) fn trigger_tokens(&self) -> u64 {
         trigger_tokens(self.context_window, self.ratio, self.reserve_tokens)
+    }
+
+    /// This budget for a run on `model` under a dispatcher running
+    /// `parent_model`, with `resolve` sizing a window for a model. Kept when
+    /// the model is the same, the window was configured (which holds for
+    /// every model), or `resolve` cannot size one; otherwise the window is
+    /// the resolved one. Ratio and reserve are the project's and carry over.
+    pub(crate) fn for_model(
+        self,
+        model: &str,
+        parent_model: &str,
+        resolve: impl FnOnce(&str) -> Option<u64>,
+    ) -> Self {
+        if model == parent_model || self.window_pinned {
+            return self;
+        }
+        match resolve(model) {
+            Some(context_window) => Self {
+                context_window,
+                ..self
+            },
+            None => self,
+        }
     }
 }
 
@@ -101,13 +128,24 @@ pub(crate) fn estimate_request_tokens(request: &Value) -> u64 {
     (json_text_len(request) as u64 / 4).max(1)
 }
 
-/// Total length of every string in `value`, at any depth. Walks the value
-/// instead of serializing it: this runs on the first dispatch of every turn,
-/// and the request is already the largest allocation in the loop.
+/// What one image part is assumed to cost. Providers bill an image by its
+/// resolution, not by the length of its base64: Anthropic caps a resized image
+/// near 1.6K tokens, and OpenAI and Gemini typically charge less for the same
+/// frame. Counting the data URL as text scored one three-camera observation at
+/// ~560K tokens and compacted before nearly every request.
+const IMAGE_PART_TOKENS: usize = 1_600;
+
+/// Total length of every string in `value`, at any depth, with each
+/// `image_url` part counted as [`IMAGE_PART_TOKENS`] rather than its payload.
+/// Walks the value instead of serializing it: this runs on the first dispatch
+/// of every turn, and the request is already the largest allocation in the loop.
 fn json_text_len(value: &Value) -> usize {
     match value {
         Value::String(text) => text.len(),
         Value::Array(items) => items.iter().map(json_text_len).sum(),
+        Value::Object(fields) if fields.get("type").and_then(Value::as_str) == Some("image_url") => {
+            IMAGE_PART_TOKENS * 4
+        }
         Value::Object(fields) => fields.values().map(json_text_len).sum(),
         _ => 0,
     }
@@ -469,6 +507,30 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
+
+    /// A budget re-sized for another model takes that model's window and
+    /// keeps the project's ratio; the same model, or a configured window,
+    /// keeps the budget as it was.
+    #[test]
+    fn a_budget_for_another_model_takes_that_models_window() {
+        let parent = CompactionBudget {
+            context_window: 1_000_000,
+            ratio: 0.7,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let child = parent.for_model("small", "big", |_| Some(200_000));
+        assert_eq!(child.context_window, 200_000);
+        assert_eq!(child.ratio, 0.7);
+        assert_eq!(parent.for_model("big", "big", |_| Some(1)).context_window, 1_000_000);
+        let pinned = CompactionBudget {
+            window_pinned: true,
+            ..parent
+        };
+        assert_eq!(pinned.for_model("small", "big", |_| Some(1)).context_window, 1_000_000);
+        // A build that cannot size a window keeps the one it has.
+        assert_eq!(parent.for_model("small", "big", |_| None).context_window, 1_000_000);
+    }
 
     /// The `PreCompact` call site: the hook runs, and it is told how much
     /// conversation is about to be summarized away -- the one fact a hook that
@@ -966,6 +1028,29 @@ mod tests {
         assert!(
             estimate_request_tokens(&with_schemas) > estimate_request_tokens(&bare) + 1_000,
             "tool schemas must count toward the preflight estimate"
+        );
+    }
+
+    #[test]
+    fn an_image_part_costs_a_fixed_estimate_not_its_base64_length() {
+        // Three ~750 KB camera frames: as text, ~560K tokens, far past a 128K
+        // window's trigger; as images, a few thousand.
+        let frame = |_| json!({
+            "type": "image_url",
+            "image_url": { "url": format!("data:image/png;base64,{}", "A".repeat(750_000)) },
+        });
+        let observation = json!({
+            "model": "m",
+            "messages": [
+                { "role": "user", "content": "look" },
+                { "role": "tool", "tool_call_id": "c1", "content": (0..3).map(frame).collect::<Vec<_>>() },
+            ],
+        });
+        let estimate = estimate_request_tokens(&observation);
+        assert!(estimate >= 3 * IMAGE_PART_TOKENS as u64, "images still count: {estimate}");
+        assert!(
+            estimate < trigger_tokens(128_000, DEFAULT_COMPACTION_RATIO, None),
+            "one observation must not trigger compaction: {estimate}"
         );
     }
 }

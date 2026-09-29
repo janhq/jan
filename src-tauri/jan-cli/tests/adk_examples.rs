@@ -1,6 +1,6 @@
-//! The Agent SDK cookbook's runnable source, run.
+//! The ADK cookbook's runnable source, run.
 //!
-//! Every file under `examples/agent-sdk/` is executed with its own interpreter
+//! Every file under `examples/adk/` is executed with its own interpreter
 //! (`node`, `python3`) against the real `jan` binary, which talks to a scripted
 //! stub provider on a loopback port. So a recipe that stops working -- a record
 //! renamed, a message shape changed, a flag removed -- fails here instead of in
@@ -9,7 +9,7 @@
 //! that the example printed something.
 //!
 //! The docs pages quote these files. A fenced block whose meta names
-//! `filename="examples/agent-sdk/..."` must be a verbatim excerpt of that file,
+//! `filename="examples/adk/..."` must be a verbatim excerpt of that file,
 //! so a page cannot drift from the source this test runs.
 
 use std::io::{Read, Write};
@@ -134,7 +134,7 @@ struct Scratch {
 
 impl Scratch {
     fn new(name: &str, stub: &Stub) -> Self {
-        let root = std::env::temp_dir().join(format!("jan-sdk-{name}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("jan-adk-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join("home")).expect("scratch home");
         let scratch = Self { root };
@@ -178,7 +178,7 @@ impl Scratch {
     /// that stops answering the run (a renamed record it no longer matches)
     /// would otherwise leave both processes waiting on each other forever.
     fn example(&self, file: &str) -> Output {
-        let path = repo_root().join("examples/agent-sdk").join(file);
+        let path = repo_root().join("examples/adk").join(file);
         let interpreter = if file.ends_with(".py") {
             "python3"
         } else {
@@ -322,7 +322,7 @@ fn the_docs_quote_the_examples_verbatim() {
                 .split("filename=\"")
                 .nth(1)
                 .and_then(|s| s.split('"').next())
-                .and_then(|f| f.strip_prefix("examples/agent-sdk/"))
+                .and_then(|f| f.strip_prefix("examples/adk/"))
             else {
                 continue;
             };
@@ -330,7 +330,7 @@ fn the_docs_quote_the_examples_verbatim() {
                 .by_ref()
                 .take_while(|l| l.trim_start() != "```")
                 .collect();
-            let source = std::fs::read_to_string(root.join("examples/agent-sdk").join(file))
+            let source = std::fs::read_to_string(root.join("examples/adk").join(file))
                 .unwrap_or_else(|e| {
                     panic!(
                         "{} quotes {file}, which cannot be read: {e}",
@@ -357,12 +357,12 @@ fn the_docs_quote_the_examples_verbatim() {
     for file in EXAMPLES {
         assert!(
             quoted.contains(file),
-            "no docs page quotes examples/agent-sdk/{file}"
+            "no docs page quotes examples/adk/{file}"
         );
     }
 }
 
-/// The examples the tests above run. A file added under `examples/agent-sdk/`
+/// The examples the tests above run. A file added under `examples/adk/`
 /// without a test here would be published untested, so the directory must
 /// hold exactly these.
 const EXAMPLES: [&str; 4] = [
@@ -374,7 +374,7 @@ const EXAMPLES: [&str; 4] = [
 
 #[test]
 fn every_example_is_run() {
-    let root = repo_root().join("examples/agent-sdk");
+    let root = repo_root().join("examples/adk");
     let mut found = Vec::new();
     let mut dirs = vec![root.clone()];
     while let Some(dir) = dirs.pop() {
@@ -398,7 +398,7 @@ fn every_example_is_run() {
     found.sort();
     assert_eq!(
         found, EXAMPLES,
-        "every file under examples/agent-sdk/ needs a test that runs it"
+        "every file under examples/adk/ needs a test that runs it"
     );
 }
 

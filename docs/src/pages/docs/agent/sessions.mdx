@@ -9,7 +9,7 @@ import { Callout } from 'nextra/components'
 # Sessions
 
 A session is one conversation with the agent. Sessions are saved per project, under
-`.jan/agent/threads`, so a project's history stays with the project.
+`~/.jan/projects/<slug>/threads`, outside the repository.
 
 Because they're per project, resuming from a different directory finds nothing - that's expected,
 not a bug.
@@ -100,7 +100,7 @@ jan --no-worktree         # override a persistent setting
 Persistently:
 
 ```toml
-# .jan/agent/agent.toml - for everyone who checks this project out
+# ~/.jan/projects/<slug>/agent.toml - every session in this project
 [agent]
 worktree = true
 ```
@@ -177,7 +177,8 @@ jan cli threads delete <ID>
 
 ## What's stored
 
-Under `<project>/.jan/agent/`:
+Under the project's store, `~/.jan/projects/<slug>/` (see
+[Project Config](/docs/agent/project-config)):
 
 | Path | Contents |
 | --- | --- |
@@ -185,5 +186,5 @@ Under `<project>/.jan/agent/`:
 | `memory/` | Durable facts, see [Memory](/docs/agent/memory) |
 | `skills/` | Reusable procedures, see [Skills](/docs/agent/skills) |
 
-Add `threads/` to `.gitignore` - those are personal transcripts. `agent.toml`, `AGENT.md`, and
-`skills/` are worth committing.
+None of it lives in your repository, so there is nothing to gitignore. The only file Jan keeps in
+the project is `JAN.md`.
