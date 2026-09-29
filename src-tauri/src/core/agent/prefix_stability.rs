@@ -178,20 +178,34 @@ impl Project {
             COUNTER.fetch_add(1, Ordering::SeqCst)
         ));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join(".jan/agent/skills")).unwrap();
-        std::fs::create_dir_all(root.join(".jan/agent/memory")).unwrap();
+        std::fs::create_dir_all(&root).unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::create_dir_all(store.join("skills")).unwrap();
+        std::fs::create_dir_all(store.join("memory")).unwrap();
         std::fs::write(
             root.join("JAN.md"),
             "# Project\n\nPrefix-stability fixture.\n",
         )
         .unwrap();
         std::fs::write(
-            root.join(".jan/agent/skills/example.md"),
+            store.join("skills/example.md"),
             "---\nname: example\ndescription: An example skill\n---\n\nSkill body.\n",
         )
         .unwrap();
+        // A user-scope skill (`~/.jan/skills`, janhq/jan-internal#394): the
+        // catalog layers it in, and it must be as byte-stable as a project one.
+        // The test home is shared by the whole process, so the skill lives as
+        // long as any fixture does and no longer.
+        LIVE_FIXTURES.fetch_add(1, Ordering::SeqCst);
+        let user = crate::core::agent::skills::user_skills_dir().unwrap();
+        std::fs::create_dir_all(user.join("user-example")).unwrap();
         std::fs::write(
-            root.join(".jan/agent/memory/note.md"),
+            user.join("user-example/SKILL.md"),
+            "---\nname: user-example\ndescription: A user-wide example skill\n---\n\nUser body.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            store.join("memory/note.md"),
             "A durable fact about the fixture project.\n\nLonger detail.\n",
         )
         .unwrap();
@@ -203,8 +217,17 @@ impl Project {
     }
 }
 
+/// Live [`Project`] fixtures, so the shared user-scope skill is removed when
+/// the last one drops.
+static LIVE_FIXTURES: AtomicU32 = AtomicU32::new(0);
+
 impl Drop for Project {
     fn drop(&mut self) {
+        if LIVE_FIXTURES.fetch_sub(1, Ordering::SeqCst) == 1 {
+            if let Some(user) = crate::core::agent::skills::user_skills_dir() {
+                let _ = std::fs::remove_dir_all(user.join("user-example"));
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
@@ -377,6 +400,7 @@ fn the_fixture_reaches_every_prefix_composer() {
         "<project_context>",
         "# Available Skills",
         "## Skill: example",
+        "## Skill: user-example",
         "# Available Memories",
         "- `note` - A durable fact about the fixture project.",
     ] {

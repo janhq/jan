@@ -22,6 +22,29 @@ pub const PROTOCOL_VERSION: u32 = 1;
 /// `protocol/schema.json` rather than copying this declaration. The wire has to
 /// survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the
 /// tag on both sides.
+/// Where a [`StreamEvent::Compaction`] is in its round trip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionPhase {
+    Started,
+    Finished,
+    /// The summarizer call failed or had nothing to fold; the history is
+    /// unchanged.
+    Failed,
+}
+
+/// Which path asked for a [`StreamEvent::Compaction`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompactionReason {
+    /// The request about to be sent was over the window's trigger.
+    Preflight,
+    /// The provider rejected a request as too long for its window.
+    ContextOverflow,
+    /// The run used up its session token budget.
+    SessionBudget,
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEvent {
@@ -149,6 +172,19 @@ pub enum StreamEvent {
     /// transcript reads in the order the model saw things. Display-only and
     /// transient, like notes: it is never journaled.
     Notice { text: String },
+    /// The loop is summarizing part of the conversation to make room. Sent as
+    /// `Started` before the summarizer call and `Finished` or `Failed` after
+    /// it, so a consumer can show progress for what is otherwise a silent
+    /// round trip. `reason` says which path asked. `messages` is how many were
+    /// folded into the summary, `None` except on `Finished`. Display-only and
+    /// never journaled; the compacted history itself arrives as
+    /// `MessagesUpdated`.
+    Compaction {
+        phase: CompactionPhase,
+        reason: CompactionReason,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        messages: Option<usize>,
+    },
     /// The run's active file monitors, as a whole replacing the previous set.
     /// Emitted whenever the set changes (a `monitor` start or stop, a condition
     /// matching, a monitor finishing), so a consumer keeps a live view without
@@ -270,6 +306,73 @@ pub enum StreamEvent {
         id: String,
         details: serde_json::Value,
     },
+    /// What the run is about to send a provider, emitted immediately before
+    /// each request goes out -- the hook an experiment harness needs to hold two
+    /// runs comparable (pi's `onPayload` is the shape Robot Studio already
+    /// records).
+    ///
+    /// Every outbound request gets one, including the side calls a turn makes
+    /// (compaction, a session title) and every child run's own requests; the
+    /// hashes describe the body Jan built for the adapter, so two runs can be
+    /// compared field by field. Nothing here is model input or output: it never
+    /// joins the transcript, and a consumer may render it, store it or ignore
+    /// it.
+    RequestProvenance {
+        /// Which run made the request: `None` for the main run, the child's
+        /// run id for a subagent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        run_id: Option<String>,
+        /// The session the request belongs to, as the run's handshake names it
+        /// (the correlation id the request carries is derived from it).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        /// The configured provider the model resolved to.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider: Option<String>,
+        /// The model id the upstream receives, without a `<provider>/` prefix.
+        model: String,
+        /// The wire API the request is built for (`anthropic`, `google`,
+        /// `openai-responses`), absent for chat/completions.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        api_type: Option<String>,
+        /// SHA-256 of the request body as Jan built it, as canonical JSON:
+        /// every object's keys sorted, recursively, so re-encoding the same
+        /// members in another order gives the same digest. It is the value that
+        /// makes two runs comparable even when a field this record does not
+        /// itemize has changed.
+        ///
+        /// The body hashed is the one Jan built, before the provider adapter
+        /// appends its transport fields (`stream`, `stream_options`), so it is
+        /// not byte-for-byte what the provider received: a harness recomputes it
+        /// by sorting keys and dropping those two fields.
+        request_sha256: String,
+        /// The canonical body's serialized length. Key order does not change it,
+        /// so it describes the built body either way.
+        body_bytes: u64,
+        /// SHA-256 of the `tools` array as sent, canonical JSON in the same
+        /// sense, able to change while the model id does not.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tools_sha256: Option<String>,
+        /// Every image in the body, in order, hashed over its decoded bytes so
+        /// the host can hash the same frame it captured.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        images: Vec<ProvenanceImage>,
+    },
+}
+
+/// One image in an outbound request, as [`StreamEvent::RequestProvenance`]
+/// reports it: identity, not content.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct ProvenanceImage {
+    /// SHA-256 over the image's decoded bytes.
+    pub sha256: String,
+    pub mime_type: String,
+    /// Decoded length in bytes.
+    pub bytes: u64,
+    /// The host tool call whose result carried it, when one did. `None` for an
+    /// image the user attached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// A subagent in a not-yet-started phase of a phased dispatch: its name (unique
@@ -282,16 +385,16 @@ pub struct PendingSubagent {
     pub phase: u32,
 }
 
-/// If `path` targets a file in the agent's skill or memory workspace, return the
-/// kind (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
+/// If `path` targets a file in a project's skill or memory store
+/// (`~/.jan/projects/<slug>/{skills,memory}/...`), return the kind
+/// (`"skill"`/`"memory"`) and the item name (file stem). None otherwise.
 fn classify_agent_path(path: &str) -> Option<(&'static str, String)> {
+    const PROJECTS: &str = ".jan/projects/";
     let norm = path.replace('\\', "/");
-    for (needle, kind) in [
-        (".jan/agent/skills/", "skill"),
-        (".jan/agent/memory/", "memory"),
-    ] {
-        if let Some(idx) = norm.find(needle) {
-            let rest = &norm[idx + needle.len()..];
+    let after = &norm[norm.find(PROJECTS)? + PROJECTS.len()..];
+    let (_slug, inside) = after.split_once('/')?;
+    for (prefix, kind) in [("skills/", "skill"), ("memory/", "memory")] {
+        if let Some(rest) = inside.strip_prefix(prefix) {
             if rest.is_empty() || rest.ends_with('/') {
                 return Some((kind, String::new()));
             }
@@ -505,6 +608,14 @@ pub(crate) mod tests {
                 },
             ),
             (
+                "Compaction",
+                StreamEvent::Compaction {
+                    phase: CompactionPhase::Finished,
+                    reason: CompactionReason::SessionBudget,
+                    messages: Some(12),
+                },
+            ),
+            (
                 "Monitors",
                 StreamEvent::Monitors {
                     monitors: vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
@@ -572,6 +683,25 @@ pub(crate) mod tests {
                         cache_write_tokens: None,
                     },
                     execution_id: None,
+                },
+            ),
+            (
+                "RequestProvenance",
+                StreamEvent::RequestProvenance {
+                    run_id: Some("run-1".into()),
+                    session_id: Some("session-9".into()),
+                    provider: Some("anthropic".into()),
+                    model: "claude-sonnet-5".into(),
+                    api_type: Some("anthropic".into()),
+                    request_sha256: "0".repeat(64),
+                    body_bytes: 41,
+                    tools_sha256: Some("1".repeat(64)),
+                    images: vec![ProvenanceImage {
+                        sha256: "2".repeat(64),
+                        mime_type: "image/png".into(),
+                        bytes: 3,
+                        tool_call_id: Some("call_7".into()),
+                    }],
                 },
             ),
             (
@@ -647,6 +777,7 @@ pub(crate) mod tests {
             | StreamEvent::SubagentPlan { .. }
             | StreamEvent::Subagent { .. }
             | StreamEvent::Notice { .. }
+            | StreamEvent::Compaction { .. }
             | StreamEvent::Monitors { .. }
             | StreamEvent::Parked
             | StreamEvent::MessagesUpdated { .. }
@@ -659,7 +790,8 @@ pub(crate) mod tests {
             | StreamEvent::PermissionRequest { .. }
             | StreamEvent::ToolRequest { .. }
             | StreamEvent::ToolRequestCancelled { .. }
-            | StreamEvent::ToolDetails { .. } => {}
+            | StreamEvent::ToolDetails { .. }
+            | StreamEvent::RequestProvenance { .. } => {}
         }
     }
 
@@ -751,11 +883,11 @@ pub(crate) mod tests {
     #[test]
     fn describe_labels_fallback_path_ops() {
         assert_eq!(
-            describe_tool_call("read", &json!({"path": ".jan/agent/skills/deploy.md"})),
+            describe_tool_call("read", &json!({"path": "/home/u/.jan/projects/app-1/skills/deploy.md"})),
             "Reading skill: deploy"
         );
         assert_eq!(
-            describe_tool_call("write", &json!({"path": ".jan/agent/memory/decisions.md"})),
+            describe_tool_call("write", &json!({"path": "/home/u/.jan/projects/app-1/memory/decisions.md"})),
             "Updating memory: decisions"
         );
     }

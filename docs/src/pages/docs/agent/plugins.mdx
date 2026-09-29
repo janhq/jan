@@ -17,7 +17,7 @@ runs commands later, once a session uses it.
 ## Where they live
 
 ```
-<project>/.jan/agent/plugins/
+~/.jan/projects/<slug>/plugins/
 └── release-tools/
     ├── plugin.toml              # optional TOML metadata
     ├── .claude-plugin/
@@ -75,6 +75,10 @@ The plugin is cloned (`--depth 1`), validated to contain a plugin manifest, `ski
 Reinstalling an existing plugin is refused (remove it first). Specs with shell metacharacters are
 rejected outright - a plugin name is a name, not a command.
 
+A plugin installed or edited outside the running session (another terminal, `git pull`, a hand
+edit) is picked up with `/reload plugin`, which re-scans and reports what was added, removed, or
+changed without restarting.
+
 ## Invoking plugin skills
 
 Plugin skills are qualified with their plugin name: `release-tools:prepare`.
@@ -127,7 +131,7 @@ metadata is handled honestly:
   [Subagents](/docs/agent/subagents#tool-permissions))
 
 Plugin agents are read-only: `create_subagent` refuses the plugin scope, and a subagent defined in
-`.jan/agent/subagents/` shadows a plugin agent of the same name.
+the project's `subagents/` shadows a plugin agent of the same name.
 
 ## Managing
 

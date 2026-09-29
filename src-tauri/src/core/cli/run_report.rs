@@ -13,10 +13,12 @@
 //! consumer matches on are the snake_case variant names: `token`, `reasoning`,
 //! `step`, `tool_call_started`, `tool_call_args_delta`, `tool_call`,
 //! `tool_output_delta`, `tool_result`, `subagent_start`, `subagent_queued`,
-//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `monitors`,
-//! `parked`, `messages_updated`, `ask_request`, `ask_resolved`, `todo_update`,
-//! `turn_usage`, `done`, `error`, `permission_request`, `tool_request`,
-//! `tool_request_cancelled`, `tool_details`. Four tags are minted by
+//! `subagent_end`, `subagent_plan`, `subagent`, `notice`, `compaction`,
+//! `monitors`, `parked`, `messages_updated`, `ask_request`, `ask_resolved`,
+//! `todo_update`, `turn_usage`, `done`, `error`, `permission_request`,
+//! `tool_request`, `tool_request_cancelled`, `tool_details`,
+//! `request_provenance`. Four tags are
+//! minted by
 //! the CLI rather than by the loop: `init`, `permission_decision`, `result` and
 //! `input_error`. `init` is the handshake a client reads before any other record
 //! (see [`Init`]); `permission_decision` reports how this CLI answered a gated
@@ -312,7 +314,7 @@ pub(crate) struct Init {
 /// to discover by being rejected. Each is the cap the parser enforces: this is
 /// the same constant, not a copy of it.
 #[derive(serde::Serialize, schemars::JsonSchema)]
-pub(crate) struct InputContentParts {
+pub struct InputContentParts {
     /// The image types an `image_url` part may name, as MIME types.
     mime_types: Vec<&'static str>,
     /// Most decoded bytes one image may carry.
@@ -329,7 +331,10 @@ pub(crate) struct InputContentParts {
 }
 
 impl InputContentParts {
-    pub(crate) fn current() -> Self {
+    /// The caps as the parser enforces them. Public so a client-facing test can
+    /// compare the handshake against this one value rather than against a copy
+    /// of the numbers.
+    pub fn current() -> Self {
         use super::stream_input;
         Self {
             mime_types: super::user_message::IMAGE_MIME_TYPES.to_vec(),

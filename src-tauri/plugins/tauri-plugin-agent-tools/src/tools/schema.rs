@@ -113,7 +113,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_list",
-                "description": "List the names of your project memory notes (durable facts stored across sessions). No arguments.",
+                "description": "List your memory notes (durable facts stored across sessions): this project's, then your user-wide ones as `user:<name>`. No arguments.",
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
@@ -121,11 +121,11 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_read",
-                "description": "Read one of your project memory notes by name.",
+                "description": "Read a memory note by name. `name` is this project's note, `user:name` a user-wide note, `project:<slug>` another project's index and `project:<slug>/name` one of its notes.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension)." }
+                        "name": { "type": "string", "description": "Note name (without the .md extension), optionally scoped with `user:` or `project:<slug>/`." }
                     },
                     "required": ["name"]
                 }
@@ -135,11 +135,11 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "memory_write",
-                "description": "Create or overwrite a project memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short.",
+                "description": "Create or overwrite a memory note. Use for durable, non-obvious facts (decisions, conventions, preferences). Keep it short. Plain `name` is this project's; `user:name` applies to every project (personal preferences, cross-project conventions).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note." },
+                        "name": { "type": "string", "description": "Note name (without the .md extension); one topic per note. Prefix `user:` for a user-wide note." },
                         "content": { "type": "string", "description": "Full Markdown content of the note." }
                     },
                     "required": ["name", "content"]
@@ -150,7 +150,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "skill_list",
-                "description": "List the project skills (reusable procedures) with a one-line description of each. No arguments.",
+                "description": "List the available skills (reusable procedures) with a one-line description of each. No arguments.",
                 "parameters": { "type": "object", "properties": {}, "required": [] }
             }
         }),
@@ -172,12 +172,13 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "skill_write",
-                "description": "Create or update a project skill (a reusable procedure for this project). Keep it concise.",
+                "description": "Create or update a skill (a reusable procedure). Keep it concise.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "name": { "type": "string", "description": "Skill name (without the .md extension); becomes the skill title." },
-                        "content": { "type": "string", "description": "Full Markdown content of the skill." }
+                        "content": { "type": "string", "description": "Full Markdown content of the skill." },
+                        "scope": { "type": "string", "enum": ["project", "user"], "description": "Where to store it: `project` (default) for this project only, `user` for every project." }
                     },
                     "required": ["name", "content"]
                 }
@@ -321,6 +322,26 @@ mod tests {
             BUILTIN_TOOLS.iter().map(|t| t.name.to_string()).collect();
         expected.sort();
         assert_eq!(names, expected);
+    }
+
+    /// `skill_write` gains an optional `scope` (janhq/jan-internal#394):
+    /// additive, so `required` is unchanged and a caller that omits it keeps
+    /// writing to the project. The schema must also serialize to the same
+    /// bytes every time, since the tool array sits in the cached prefix.
+    #[test]
+    fn skill_write_scope_is_optional_and_the_schema_is_deterministic() {
+        let schemas = builtin_tool_schemas();
+        let write = schemas
+            .iter()
+            .find(|s| s["function"]["name"] == "skill_write")
+            .expect("skill_write advertised");
+        let params = &write["function"]["parameters"];
+        assert_eq!(params["required"], json!(["name", "content"]));
+        assert_eq!(params["properties"]["scope"]["type"], "string");
+        assert_eq!(params["properties"]["scope"]["enum"], json!(["project", "user"]));
+        let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
+        let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
+        assert_eq!(once, twice);
     }
 
     /// The search schemas name the arguments the handlers actually read; a

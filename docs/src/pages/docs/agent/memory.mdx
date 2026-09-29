@@ -20,7 +20,8 @@ Good memory entries look like:
 ## How it works
 
 The agent writes memory itself when it learns something durable, and reads it back into the system
-prompt on later runs. It's scoped per project.
+prompt on later runs. It's scoped per project, with a separate user scope for notes that apply
+everywhere (see [Scopes](#scopes)).
 
 Three tools drive it, and only the write prompts for approval:
 
@@ -34,8 +35,44 @@ Because writes prompt, nothing enters memory without you seeing it.
 
 ## Where it lives
 
-Under `<project>/.jan/agent/memory/`, as files. You can read them, edit them, delete them, or commit
-them. Nothing is hidden in an opaque store.
+As plain markdown files in your Jan home, outside the repository. You can read them, edit them, or
+delete them. Nothing is hidden in an opaque store.
+
+```
+~/.jan/
+|-- MEMORY.md                  # root index: user notes + one line per project with memory
+|-- memory/<name>.md           # user-wide notes, every project
+`-- projects/<slug>/
+    |-- MEMORY.md              # index of this project's notes
+    `-- memory/<name>.md       # this project's notes
+```
+
+Each `MEMORY.md` is generated: it is rebuilt on every `memory_write` and delete, so don't edit it by
+hand - your changes would be overwritten. See [Project Config](/docs/agent/project-config) for how
+`<slug>` is chosen.
+
+## Scopes
+
+Memory names are scoped:
+
+| Name | Refers to | Writable |
+| --- | --- | --- |
+| `name` | A note in this project | Yes |
+| `user:name` | A user-wide note in `~/.jan/memory/`, for preferences that apply to every project | Yes |
+| `project:<slug>` | Another project's `MEMORY.md` index | No |
+| `project:<slug>/name` | One note from another project | No |
+
+`memory_read` accepts all four. `memory_write` to another project is refused, so a session can only
+change its own project's notes and your user notes.
+
+The system prompt's **Available Memories** block lists this project's notes, your user notes, and
+pointers to other projects that have memory, which the agent opens with `project:<slug>` only when
+relevant. To keep other projects out of the prompt and refuse `project:` reads, set this in
+`~/.jan/config.toml`:
+
+```toml
+memory_cross_project = false   # default: true
+```
 
 Retrieval is backed by the same store Jan Desktop uses for memory, so a fact learned in one is
 available in the other.
@@ -54,14 +91,14 @@ README is noise; a note about the thing that surprised someone is worth keeping.
 If the agent has stored something wrong, delete the file. There's no special command for it - they
 are just files.
 
-## Memory and AGENT.md
+## Memory and JAN.md
 
 They overlap, and the distinction is who writes them:
 
 | | Written by | Best for |
 | --- | --- | --- |
-| `AGENT.md` | You | Rules you want followed every time |
+| `JAN.md` | You | Rules you want followed every time |
 | Memory | The agent | Facts it discovered and shouldn't have to rediscover |
 
 If you find yourself correcting the same thing repeatedly, promote it into
-[`AGENT.md`](/docs/agent/project-config#agentmd) where it's guaranteed to be in the prompt.
+[`JAN.md`](/docs/agent/project-config#janmd) where it's guaranteed to be in the prompt.

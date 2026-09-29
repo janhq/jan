@@ -57,7 +57,7 @@ to opt out of both.",
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
-    /// Project root containing .jan/agent/agent.toml (bare TUI only)
+    /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/) (bare TUI only)
     #[arg(long, default_value = ".")]
     project: String,
     /// Optional first message to seed the chat with (bare TUI only)
@@ -142,7 +142,7 @@ impl SandboxArgs {
 }
 
 /// Session-resume selection, shared by the bare TUI and `jan cli agent run`.
-/// Threads are per-project (`<project>/.jan/agent/threads`), so resuming from a
+/// Threads are per-project (`~/.jan/projects/<slug>/threads`), so resuming from a
 /// different working directory simply finds nothing there.
 #[derive(Args)]
 struct ResumeArgs {
@@ -179,8 +179,9 @@ struct BudgetArgs {
     /// its subagents (0 = unbounded, the default)
     #[arg(long, value_name = "N")]
     max_turns: Option<u64>,
-    /// Advisory token ceiling overriding [budget].max_tokens: triggers
-    /// compaction and a note, but does not stop the run (0 = no ceiling)
+    /// Advisory token ceiling overriding [budget].max_tokens (default: the
+    /// model's context window): triggers compaction and a note, but does not
+    /// stop the run (0 = no ceiling)
     #[arg(long, value_name = "N")]
     max_session_tokens: Option<u64>,
     /// Stop the run once it has spent this much in USD, overriding
@@ -443,7 +444,7 @@ impl ProviderArgs {
 enum AgentCommands {
     /// Run the agent loop to completion, or to a --max-turns cap
     Run {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -492,7 +493,7 @@ enum AgentCommands {
     },
     /// Run a single turn (debugging)
     Step {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         /// The task/prompt for the agent
@@ -510,7 +511,7 @@ enum AgentCommands {
     },
     /// Print resolved project config and available providers as JSON
     Status {
-        /// Project root containing .jan/agent/agent.toml
+        /// Project root (its agent.toml lives in ~/.jan/projects/<slug>/)
         #[arg(long, default_value = ".")]
         project: String,
         #[command(flatten)]

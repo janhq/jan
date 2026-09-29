@@ -108,8 +108,8 @@ costs you only its final answer.
 Definitions are TOML files, merged from two scopes:
 
 ```
-~/.jan/agent/subagents/<name>.toml          # user scope, available everywhere
-<project>/.jan/agent/subagents/<name>.toml  # project scope, shareable via git
+~/.jan/agent/subagents/<name>.toml            # user scope, available everywhere
+~/.jan/projects/<slug>/subagents/<name>.toml  # project scope, this project only
 ```
 
 The two are merged, and the project scope shadows the user scope by name - so a project can
@@ -138,8 +138,8 @@ Create a subagent called "reviewer" that reviews diffs for correctness
 and never edits files.
 ```
 
-That writes to the project scope by default, so it can be committed and shared. Ask for the user
-scope to keep it to yourself.
+That writes to the project scope by default, so it applies only in this project. Ask for the user
+scope to use it everywhere.
 
 Once saved, refer to it by name and it picks up its stored prompt and permissions.
 

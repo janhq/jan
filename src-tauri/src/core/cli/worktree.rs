@@ -13,7 +13,7 @@
 //! is looking at, which must be their decision rather than ours.
 //!
 //! The checkout lives under `~/.jan/worktrees/<repo-slug>/<id>`, outside the
-//! repository. Inside it (`<project>/.jan/agent/worktrees/...`) the agent's own
+//! repository. Inside it (`<project>/worktrees/...`) the agent's own
 //! `find`/`grep`/`bash` would walk into a second copy of the tree whenever a
 //! session ran in the main checkout, and `git clean` would delete it.
 //!
@@ -56,27 +56,11 @@ pub fn worktrees_root() -> Result<PathBuf, String> {
     Ok(crate::core::agent::global_config::global_jan_dir()?.join("worktrees"))
 }
 
-/// FNV-1a, so the slug for a path is the same in every build. `DefaultHasher`
-/// is explicitly not stable across Rust releases, and a session must find its
-/// checkout again after a toolchain upgrade.
-fn path_hash(path: &Path) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in path.to_string_lossy().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{hash:016x}")[..8].to_string()
-}
-
 /// Directory name for a repository: its own name plus a hash of its path, so two
-/// checkouts of the same project do not share a worktree directory.
+/// checkouts of the same project do not share a worktree directory. The same
+/// slug keys the project's store under `~/.jan/projects`.
 pub fn repo_slug(repo: &Path) -> String {
-    let name = repo
-        .file_name()
-        .and_then(|n| n.to_str())
-        .filter(|n| !n.is_empty())
-        .unwrap_or("repo");
-    format!("{name}-{}", path_hash(repo))
+    tauri_plugin_agent_tools::workspace::path_slug(repo)
 }
 
 /// Branch a session's worktree is checked out on. Namespaced under `jan/agent/`
