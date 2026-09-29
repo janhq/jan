@@ -1,3 +1,24 @@
+# New rules go at the top of this file: the platform stops applying it part way
+# down. Observed 2026-09-25 - in production every rule from /docs/desktop/mac
+# down to the end of the file is inert, while the same line placed above that
+# point serves its redirect. This is not a documented rule, byte or line limit:
+# adding rules here does not displace the ones that work. Repairing the rest of
+# the file is a separate change.
+#
+# Jan ADK: the SDK pages moved under /docs/agent/adk.
+/docs/agent/sdk                                 /docs/agent/adk 302
+/docs/agent/sdk/                                /docs/agent/adk/ 302
+/docs/agent/sdk-nightly                         /docs/agent/adk-nightly 302
+/docs/agent/sdk-nightly/                        /docs/agent/adk-nightly/ 302
+/docs/agent/sdk-ts                              /docs/agent/adk-ts 302
+/docs/agent/sdk-ts/                             /docs/agent/adk-ts/ 302
+/docs/agent/sdk-python                          /docs/agent/adk-python 302
+/docs/agent/sdk-python/                         /docs/agent/adk-python/ 302
+/docs/agent/sdk-tools                           /docs/agent/adk-tools 302
+/docs/agent/sdk-tools/                          /docs/agent/adk-tools/ 302
+/docs/agent/sdk-runtime                         /docs/agent/adk-runtime 302
+/docs/agent/sdk-runtime/                        /docs/agent/adk-runtime/ 302
+
 /about                                          /handbook 302
 /about/                                         /handbook 302
 /about/community                                /handbook 302

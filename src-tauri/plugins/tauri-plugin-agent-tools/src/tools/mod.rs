@@ -84,6 +84,23 @@ pub struct ToolContext<'a> {
     /// every surface with no folder attached. Skill *writes* and all memory ops
     /// still target `store_root`; only skill reads consult this overlay.
     pub skill_project_root: Option<&'a Path>,
+    /// A richer skill resolver supplied by the host (the CLI's layering of
+    /// project, plugin, user and built-in skills). When set, `skill_list`/`skill_read` go
+    /// through it instead of the plain layered store scan, so every surface the
+    /// host builds sees the same catalog its system prompt advertises. `None`
+    /// keeps the store-only behaviour (the desktop).
+    pub skill_source: Option<SkillSource>,
+    /// The user-wide skill store root (`~/.jan`; skills land in its `skills/`),
+    /// the target of `skill_write` with `scope: "user"`. `None` on surfaces
+    /// with no user scope, where that scope is refused.
+    pub skill_user_root: Option<&'a Path>,
+    /// `~/.jan`, reached by the `memory_*` tools as the `user:` scope and as
+    /// the parent of other projects' stores. `None` (the desktop) confines
+    /// memory to `store_root`.
+    pub memory_home: Option<&'a Path>,
+    /// Whether other projects' memory is listed in the prompt and readable as
+    /// `project:<slug>`. Only meaningful with `memory_home`.
+    pub cross_project: bool,
     pub enabled_skills: &'a [String],
     pub allow_network: bool,
     /// When set, `write`/`edit` re-canonicalize the target and refuse a path
@@ -95,6 +112,10 @@ pub struct ToolContext<'a> {
     /// where it sits outside the workspace (the desktop). `None` on the CLI,
     /// where the project itself is the workspace.
     pub mask_root: Option<&'a Path>,
+    /// The Jan home, hidden from `ls`/`find`/`grep` walks and the sandboxed
+    /// shell. Set with [`Self::with_hidden_root`] from
+    /// [`crate::workspace::hidden_root`]; the gate refuses direct paths to it.
+    pub hidden_root: Option<&'a Path>,
     /// Expose `$HOME` to the sandboxed shell read-only (the CLI) instead of
     /// hiding it (the desktop). Passed through to the `bash` sandbox policy.
     pub home_readonly: bool,
@@ -189,10 +210,15 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("project_root", &self.project_root)
             .field("store_root", &self.store_root)
             .field("skill_project_root", &self.skill_project_root)
+            .field("skill_source", &self.skill_source.is_some())
+            .field("skill_user_root", &self.skill_user_root)
+            .field("memory_home", &self.memory_home)
+            .field("cross_project", &self.cross_project)
             .field("enabled_skills", &self.enabled_skills)
             .field("allow_network", &self.allow_network)
             .field("confine_writes", &self.confine_writes)
             .field("mask_root", &self.mask_root)
+            .field("hidden_root", &self.hidden_root)
             .field("home_readonly", &self.home_readonly)
             .field("scratch_root", &self.scratch_root)
             .field("sandbox", &self.sandbox)
@@ -211,6 +237,19 @@ impl std::fmt::Debug for ToolContext<'_> {
             .finish()
     }
 }
+
+/// A host-side skill resolver for the model's `skill_list`/`skill_read`.
+/// Implementations apply their own enabled whitelist and invocation-side
+/// filtering: `catalog` returns only model-invocable, enabled skills as
+/// `(name, description)` pairs in a stable order, and `read` returns the body
+/// (frontmatter stripped) of one such skill or an `ERROR: ...` string.
+pub trait SkillProvider: Send + Sync {
+    fn catalog(&self) -> Vec<(String, String)>;
+    fn read(&self, name: &str) -> Result<String, String>;
+}
+
+/// Shared handle to a [`SkillProvider`]; cheap to clone into every context.
+pub type SkillSource = std::sync::Arc<dyn SkillProvider>;
 
 /// A tool's live-output channel: called with each chunk as it arrives, in order.
 /// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
@@ -324,10 +363,15 @@ impl<'a> ToolContext<'a> {
             project_root,
             store_root,
             skill_project_root: None,
+            skill_source: None,
+            skill_user_root: None,
+            memory_home: None,
+            cross_project: false,
             enabled_skills,
             allow_network: false,
             confine_writes: false,
             mask_root: None,
+            hidden_root: None,
             home_readonly: false,
             scratch_root: None,
             sandbox: true,
@@ -399,6 +443,37 @@ impl<'a> ToolContext<'a> {
         self
     }
 
+    /// Resolve `skill_list`/`skill_read` through `source`. See
+    /// [`Self::skill_source`].
+    pub fn with_skill_source(mut self, source: SkillSource) -> Self {
+        self.skill_source = Some(source);
+        self
+    }
+
+    /// Enable `skill_write`'s `scope: "user"`, writing under `root/skills`.
+    /// See [`Self::skill_user_root`].
+    pub fn with_skill_user_root(mut self, root: Option<&'a Path>) -> Self {
+        self.skill_user_root = root;
+        self
+    }
+
+    /// Give the `memory_*` tools the user scope and, when `cross_project`, the
+    /// other projects under `home`. See [`crate::memory::Scopes`].
+    pub fn with_memory_home(mut self, home: &'a Path, cross_project: bool) -> Self {
+        self.memory_home = Some(home);
+        self.cross_project = cross_project;
+        self
+    }
+
+    /// The memory scopes this context's `memory_*` tools resolve names in.
+    pub fn memory_scopes(&self) -> crate::memory::Scopes<'a> {
+        crate::memory::Scopes {
+            store: self.store_root,
+            home: self.memory_home,
+            cross_project: self.cross_project,
+        }
+    }
+
     /// Skill stores in precedence order for discovery and `skill_read`: the
     /// project overlay (when attached) on top of the permanent store.
     pub fn skill_roots(&self) -> Vec<&Path> {
@@ -455,6 +530,12 @@ impl<'a> ToolContext<'a> {
 
     pub fn with_mask_root(mut self, mask_root: &'a Path) -> Self {
         self.mask_root = Some(mask_root);
+        self
+    }
+
+    /// Hide the Jan home from walks and the shell. See [`Self::hidden_root`].
+    pub fn with_hidden_root(mut self, hidden_root: Option<&'a Path>) -> Self {
+        self.hidden_root = hidden_root;
         self
     }
 
@@ -556,7 +637,7 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         capability: Capability::Exec,
         path_args: &[],
     },
-    // Dedicated skill/memory tools. They operate on `.jan/agent/{skills,memory}/`
+    // Dedicated skill/memory tools. They operate on the store's `{skills,memory}/`
     // by name (never a path), so they are always workspace-scoped and never
     // prompt. `path_args` is empty: there is no path to sandbox-check.
     BuiltinTool {
@@ -604,7 +685,7 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
     },
 ];
 
-/// Tools that act only on the agent's own `.jan/agent/{skills,memory}/`
+/// Tools that act only on the agent's own store `{skills,memory}/`
 /// workspace. They are auto-allowed by the gate (no prompt), since a sanitized
 /// name can never escape the workspace. `deny` in agent.toml still overrides.
 pub fn is_workspace_tool(name: &str) -> bool {

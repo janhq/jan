@@ -588,6 +588,69 @@ pub(crate) async fn resolve_upstream_for_model(
     #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
     #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
 ) -> Result<(String, Vec<String>), String> {
+    upstream_for(
+        model_id,
+        provider_configs,
+        Credentials::Fetch,
+        #[cfg(not(feature = "cli"))]
+        llama_state,
+        #[cfg(not(feature = "cli"))]
+        mlx_sessions,
+    )
+    .await
+}
+
+/// Why no upstream can serve `model_id`, or `None` when one can.
+///
+/// The servability half of [`resolve_upstream_for_model`], resolved without a
+/// credential. Fetching one can mean an OAuth token refreshed over the network
+/// for a registered account, and an auth failure is no statement about whether
+/// a model's name is servable: a caller that only has to validate the name asks
+/// this, and the request that follows resolves for real and reports a
+/// credential failure as its own.
+#[cfg(feature = "cli")]
+pub(crate) async fn unservable_model(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Option<String> {
+    upstream_for(
+        model_id,
+        provider_configs,
+        Credentials::Skip,
+        #[cfg(not(feature = "cli"))]
+        llama_state,
+        #[cfg(not(feature = "cli"))]
+        mlx_sessions,
+    )
+    .await
+    .err()
+}
+
+/// Whether resolving an upstream fetches the credential the request will carry.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Credentials {
+    /// Fetch it, refreshing an account token that has expired.
+    Fetch,
+    /// Resolve the upstream without it, for a caller that only needs to know
+    /// whether the model is servable. The `cli` build is where such a caller
+    /// exists: the desktop has no validation-only entry point.
+    #[cfg(feature = "cli")]
+    Skip,
+}
+
+async fn upstream_for(
+    model_id: &str,
+    provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    credentials: Credentials,
+    #[cfg(not(feature = "cli"))] llama_state: Arc<LlamacppState>,
+    #[cfg(not(feature = "cli"))] mlx_sessions: Arc<Mutex<HashMap<i32, MlxBackendSession>>>,
+) -> Result<(String, Vec<String>), String> {
+    // Every desktop path resolves the credential, so the switch is only read by
+    // the `cli` branch below.
+    #[cfg(not(feature = "cli"))]
+    let _ = credentials;
     let destination_path = "/chat/completions";
 
     let pc = provider_configs.lock().await;
@@ -611,22 +674,25 @@ pub(crate) async fn resolve_upstream_for_model(
                 // concern; the desktop resolves credentials through its own
                 // proxy path and falls back to the bearer key chain here.
                 #[cfg(feature = "cli")]
-                let (api_url, api_keys) = {
-                    let account_token =
-                        crate::core::cli::auth::account::access_token(&provider_cfg.provider)
-                            .await?;
-                    let api_url = if provider_cfg.provider == "openai"
-                        && account_token.is_some()
-                        && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
-                    {
-                        "https://chatgpt.com/backend-api".to_string()
-                    } else {
-                        api_url
-                    };
-                    let api_keys = account_token
-                        .map(|token| vec![token])
-                        .unwrap_or_else(|| provider_cfg.bearer_key_chain());
-                    (api_url, api_keys)
+                let (api_url, api_keys) = match credentials {
+                    Credentials::Fetch => {
+                        let account_token =
+                            crate::core::cli::auth::account::access_token(&provider_cfg.provider)
+                                .await?;
+                        let api_url = if provider_cfg.provider == "openai"
+                            && account_token.is_some()
+                            && api_url.trim_end_matches('/') == "https://api.openai.com/v1"
+                        {
+                            "https://chatgpt.com/backend-api".to_string()
+                        } else {
+                            api_url
+                        };
+                        let api_keys = account_token
+                            .map(|token| vec![token])
+                            .unwrap_or_else(|| provider_cfg.bearer_key_chain());
+                        (api_url, api_keys)
+                    }
+                    Credentials::Skip => (api_url, provider_cfg.bearer_key_chain()),
                 };
                 #[cfg(not(feature = "cli"))]
                 let api_keys = provider_cfg.bearer_key_chain();
@@ -2598,6 +2664,50 @@ mod tests {
             Some(v) => std::env::set_var("HTTPS_PROXY", v),
             None => std::env::remove_var("HTTPS_PROXY"),
         }
+    }
+
+    /// Whether a model is servable is decided without fetching a credential: a
+    /// stored record nothing can read fails the request's own resolution, and
+    /// must not decide this.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn servability_is_decided_without_the_credential() {
+        // The env redirect lives in the helper, which holds the store lock in a
+        // struct field: a bare guard bound here would be held across the awaits
+        // below, which clippy refuses and which the lock is not for.
+        let _secrets = TempSecretStore::new();
+        // Unreadable on purpose: fetching it fails inside the store, before any
+        // network call, which is what keeps this test offline.
+        crate::core::server::provider_secrets::store_secret_record("auth:anthropic", "{ not json")
+            .unwrap();
+
+        let configs = Arc::new(Mutex::new(HashMap::from([(
+            "anthropic".to_string(),
+            ProviderConfig {
+                provider: "anthropic".into(),
+                base_url: Some("https://api.anthropic.com/v1".into()),
+                models: vec!["claude-sonnet-5".into()],
+                ..Default::default()
+            },
+        )])));
+
+        // Servable: the name is served by a reachable provider, and nothing
+        // about the credential took part in saying so.
+        assert_eq!(
+            unservable_model("claude-sonnet-5", Arc::clone(&configs)).await,
+            None
+        );
+        // The request's own resolution does fetch it, and fails on it: the
+        // failure the validation above must not turn into "invalid model".
+        let failure = resolve_upstream_for_model("claude-sonnet-5", configs)
+            .await
+            .expect_err("the credential is unreadable");
+        assert!(failure.contains("unreadable"), "{failure}");
+        // A name no provider serves is still refused, credential or not.
+        assert_eq!(
+            unservable_model("claude-sonnet-99", Arc::new(Mutex::new(HashMap::new()))).await,
+            Some("No upstream session found for model 'claude-sonnet-99'".to_string())
+        );
     }
 
     /// A model served both by a Jan desktop API server (reachable over HTTP) and

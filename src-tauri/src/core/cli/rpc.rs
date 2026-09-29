@@ -1,5 +1,6 @@
 //! Session-scoped JSON-RPC over LF-delimited stdio. Stdout contains only protocol records.
 use std::collections::HashMap;
+use std::future::Future;
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
@@ -32,6 +33,24 @@ struct Session {
     /// `false` restricts every turn to the host tools, through the same
     /// per-request `allowed_tools` allowlist an API caller uses.
     builtins: bool,
+    /// Whether the turn may delegate. Mirrored into the agent's
+    /// `subagents_enabled`; kept here because a rebuilt agent starts from the
+    /// project default and has to be told again.
+    subagents: bool,
+}
+
+/// The allowlist a host-only session's turns run under, or `None` for a
+/// session with built-ins. A child inherits it as its ceiling, so this is also
+/// what keeps a delegate from reaching Jan's shell or files.
+fn session_allowlist(session: &Session) -> Option<Vec<String>> {
+    (!session.builtins).then(|| {
+        let mut names = Vec::new();
+        if session.subagents {
+            names.extend(crate::core::agent::subagent::DELEGATE_ONLY_TOOLS.map(str::to_owned));
+        }
+        names.extend(host_names(&session.agent.args.host_tools));
+        names
+    })
 }
 
 struct ActiveTurn {
@@ -128,8 +147,8 @@ async fn tools_view(session: &Session) -> Value {
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
         .collect();
-    if !session.builtins {
-        tools.retain(|name| args.host_tools.is_host_tool(name));
+    if let Some(allowed) = session_allowlist(session) {
+        tools.retain(|name| allowed.contains(name));
     }
     let specs: Vec<Value> = args
         .host_tools
@@ -269,16 +288,47 @@ fn output_lines(mut rx: mpsc::Receiver<Value>) -> std::thread::JoinHandle<()> {
     })
 }
 
+/// Everything the engine already emitted, in order. Waits for room rather than
+/// failing on a full queue: the queue is drained by the dispatcher, whose own
+/// bounded writer queue is what ends a turn for a client that stopped reading.
 async fn forward_events(
     source: &mut mpsc::UnboundedReceiver<StreamEvent>,
     events: &mpsc::Sender<TurnMessage>,
 ) -> Result<(), String> {
     while let Some(event) = source.recv().await {
         events
-            .try_send(TurnMessage::Event(event))
-            .map_err(|_| "RPC event queue overloaded or closed".to_owned())?;
+            .send(TurnMessage::Event(event))
+            .await
+            .map_err(|_| "RPC event queue closed".to_owned())?;
     }
     Ok(())
+}
+
+/// Run `engine` while relaying the events it emits into `rx`, in order.
+///
+/// A burst larger than `events` is a model streaming fast, not a client that
+/// stopped reading, so a full queue waits for the dispatcher rather than ending
+/// the turn; the engine is not polled meanwhile. The dispatcher's bounded writer
+/// queue is what ends a turn nobody is reading.
+async fn pump_turn(
+    engine: impl Future<Output = Result<Value, String>>,
+    rx: &mut mpsc::UnboundedReceiver<StreamEvent>,
+    events: &mpsc::Sender<TurnMessage>,
+) -> Result<Value, String> {
+    tokio::pin!(engine);
+    loop {
+        tokio::select! {
+            run = &mut engine => return run,
+            event = rx.recv() => match event {
+                Some(event) => {
+                    if events.send(TurnMessage::Event(event)).await.is_err() {
+                        return Err("RPC event queue closed".to_owned());
+                    }
+                }
+                None => return Err("RPC event stream closed".to_owned()),
+            },
+        }
+    }
 }
 
 fn start_turn(
@@ -295,8 +345,8 @@ fn start_turn(
         .map_err(|_| "RPC output queue is full; retry after draining notifications".to_owned())?;
     session.history.push(json!({"role":"user","content":input}));
     let mut body = session.agent.body(json!(session.history));
-    if !session.builtins {
-        body["allowed_tools"] = json!(host_names(&session.agent.args.host_tools));
+    if let Some(allowed) = session_allowlist(session) {
+        body["allowed_tools"] = json!(allowed);
     }
     let args = session.agent.args.clone();
     let (events, receiver) = mpsc::channel(64);
@@ -311,28 +361,14 @@ fn start_turn(
     });
     let runner = tokio::spawn(async move {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let mut result = {
-            let engine = run_orchestration_steered(&tx, &body, &args, Some(&steering_tx));
-            tokio::pin!(engine);
-            loop {
-                tokio::select! {
-                    run = &mut engine => break run,
-                    event = rx.recv() => {
-                        match event {
-                            Some(event) => {
-                                if events.try_send(TurnMessage::Event(event)).is_err() {
-                                    break Err("RPC event queue overloaded or closed".to_owned());
-                                }
-                            }
-                            None => break Err("RPC event stream closed".to_owned()),
-                        }
-                    }
-                }
-            }
-        };
-        // The run is complete, so stop producing events and drain only what
-        // the engine already emitted. A full bounded queue is an overload,
-        // not permission to buffer the remaining deltas without a bound.
+        let mut result = pump_turn(
+            run_orchestration_steered(&tx, &body, &args, Some(&steering_tx)),
+            &mut rx,
+            &events,
+        )
+        .await;
+        // The run is complete, so stop producing events and deliver what the
+        // engine already emitted.
         drop(tx);
         if let Err(message) = forward_events(&mut rx, &events).await {
             result = Err(message);
@@ -353,6 +389,11 @@ fn start_turn(
 
 /// A new agent for `source`'s project, on `model` or the one it has, carrying
 /// its host tools and gate. History and registry are the caller's to decide.
+///
+/// The rebuilt agent keeps the session's own id: a model change replaces the
+/// agent, not the session, and a run that reported a different session after
+/// `session/model/set` would rename something the client is still holding.
+/// `session/fork` names its new session itself, after this returns.
 fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession, String> {
     let project = source
         .agent
@@ -367,8 +408,12 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
         SessionFlags { require_model: true, ..Default::default() },
         None,
     )?;
+    agent.args.session_id = Some(source.id.clone());
     agent.args.host_tools = source.agent.args.host_tools.clone();
     agent.args.host_owns_gate = source.agent.args.host_owns_gate;
+    agent.args.project_memory = source.agent.args.project_memory;
+    agent.args.subagents_enabled = source.subagents;
+    agent.args.host_system_prompt = source.agent.args.host_system_prompt.clone();
     Ok(agent)
 }
 
@@ -418,7 +463,9 @@ fn finish_turn(
                     Some(&session.id),
                     &session.agent.model,
                     &session.history,
-                    None,
+                    session.agent.args.host_system_prompt.as_ref().map(|prompt| {
+                        json!({ super::SYSTEM_PROMPT_KEY: prompt })
+                    }),
                 ) {
                     error_message = Some(format!("could not save session: {message}"));
                 }
@@ -477,7 +524,18 @@ pub async fn serve() -> Result<(), String> {
                     let reply = match serde_json::from_value::<InitializeParams>(params.clone()) {
                         Ok(init) if init.protocol_version == PROTOCOL_VERSION && !init.client_info.name.is_empty() && !init.client_info.version.is_empty() => {
                             negotiated = true;
-                            response(&id, json!({"protocolVersion":PROTOCOL_VERSION,"serverInfo":{"name":"jan","version":env!("CARGO_PKG_VERSION")},"capabilities":{"session":true,"turn":true}}))
+                            // The caps a content-part array is held to -- a `turn/start`
+                            // input's and a `tool/respond` content's, the same limits
+                            // `init` advertises to a stream-json client. A client that
+                            // sends an image is sending bytes into a channel with no
+                            // backpressure, so it learns the limits from the handshake
+                            // rather than by having a message rejected.
+                            response(&id, json!({
+                                "protocolVersion": PROTOCOL_VERSION,
+                                "serverInfo": {"name":"jan","version":env!("CARGO_PKG_VERSION")},
+                                "capabilities": {"session":true,"turn":true},
+                                "input_content_parts": super::run_report::InputContentParts::current(),
+                            }))
                         }
                         _ => error(&id, -32602, "Unsupported protocol version or malformed clientInfo"),
                     };
@@ -497,6 +555,10 @@ pub async fn serve() -> Result<(), String> {
                         match serde_json::from_value::<SessionStartParams>(params.clone()) {
                             Err(_) => error(&id, -32602, "session/start requires cwd and supported options"),
                             Ok(start) if !std::path::Path::new(&start.cwd).is_dir() => error(&id, -32602, "cwd is not a directory"),
+                            // A blank prompt is almost certainly a host bug (an unset
+                            // template), and sending it would run a model with no
+                            // instructions at all rather than with Jan's.
+                            Ok(start) if start.system_prompt.as_deref().is_some_and(|p| p.trim().is_empty()) => error(&id, -32602, "systemPrompt must not be blank; omit it to use Jan's"),
                             // Declared before the session is built: a tool set the
                             // host got wrong is refused before anything is spent.
                             Ok(start) => match declare_tools(start.tools) {
@@ -505,8 +567,19 @@ pub async fn serve() -> Result<(), String> {
                                     Ok(mut agent) => {
                                         agent.args.host_tools = host_tools;
                                         agent.args.host_owns_gate = start.permissions == PermissionOwner::Host;
+                                        // "Not saved" covers project memory too: an ephemeral
+                                        // session's answers must not reach a later session.
+                                        agent.args.project_memory = !start.ephemeral;
+                                        let subagents = start.subagents.unwrap_or(start.builtins);
+                                        agent.args.subagents_enabled = subagents;
+                                        agent.args.host_system_prompt = start.system_prompt;
                                         let sid = uuid::Uuid::new_v4().to_string();
-                                        let session = Session { agent, history: Vec::new(), id: sid.clone(), turns: 0, ephemeral: start.ephemeral, builtins: start.builtins };
+                                        // The run reports the session by the id this client holds, not
+                                        // by the private one the agent was built with: provenance and the
+                                        // correlation id are the client's handle on the session, and an id
+                                        // nothing else can name is not a handle.
+                                        agent.args.session_id = Some(sid.clone());
+                                        let session = Session { agent, history: Vec::new(), id: sid.clone(), turns: 0, ephemeral: start.ephemeral, builtins: start.builtins, subagents };
                                         let mut result = tools_view(&session).await;
                                         result["sessionId"] = json!(sid);
                                         result["model"] = json!(session.agent.model);
@@ -544,17 +617,47 @@ pub async fn serve() -> Result<(), String> {
                         Ok(set) if active.as_ref().is_some_and(|t| t.session_id == set.session_id) => turn_active(&id),
                         Ok(set) if set.model.trim().is_empty() => error(&id, -32602, "model must not be empty"),
                         Ok(set) => {
-                            let session = sessions.get_mut(&set.session_id).expect("checked");
-                            match rebuild_agent(session, Some(set.model)) {
-                                Ok(agent) => {
-                                    // The same registry: nothing is pending between
-                                    // turns, and keeping it keeps one per session.
-                                    let registry = Arc::clone(&session.agent.args.host_tool_requests);
-                                    session.agent = agent;
-                                    session.agent.args.host_tool_requests = registry;
-                                    response(&id, json!({"model":session.agent.model}))
+                            // Refuse a model no configured provider serves. The
+                            // turn would fail closed on it too -- nothing goes
+                            // out on the session's behalf -- but this is the
+                            // point at which a client can still be told, and the
+                            // session must not be left pinned to a model that
+                            // cannot serve it, which the next turn would report
+                            // as a failure of the client's own input.
+                            //
+                            // Servability, not the upstream itself: resolving
+                            // the upstream fetches its credential -- an OAuth
+                            // token, refreshed over the network when expired --
+                            // and an auth failure is not this method's to report
+                            // as `-32602`. The next turn resolves for real.
+                            let provider_configs = sessions
+                                .get(&set.session_id)
+                                .expect("checked")
+                                .agent
+                                .args
+                                .provider_configs
+                                .clone();
+                            match crate::core::agent::upstream::unservable_model(
+                                &set.model,
+                                provider_configs,
+                            )
+                            .await
+                            {
+                                Some(message) => error(&id, -32602, &message),
+                                None => {
+                                    let session = sessions.get_mut(&set.session_id).expect("checked");
+                                    match rebuild_agent(session, Some(set.model)) {
+                                        Ok(agent) => {
+                                            // The same registry: nothing is pending between
+                                            // turns, and keeping it keeps one per session.
+                                            let registry = Arc::clone(&session.agent.args.host_tool_requests);
+                                            session.agent = agent;
+                                            session.agent.args.host_tool_requests = registry;
+                                            response(&id, json!({"model":session.agent.model}))
+                                        }
+                                        Err(message) => error(&id, -32602, &message),
+                                    }
                                 }
-                                Err(message) => error(&id, -32602, &message),
                             }
                         }
                     },
@@ -616,12 +719,15 @@ pub async fn serve() -> Result<(), String> {
                             // A fresh registry (from the rebuild): the fork is its
                             // own session, and a reply must never cross into it.
                             match rebuild_agent(source, None) {
-                                Ok(agent) => {
+                                Ok(mut agent) => {
                                     let fork = uuid::Uuid::new_v4().to_string();
+                                    // The fork is its own session, so it reports its own id.
+                                    agent.args.session_id = Some(fork.clone());
                                     let history = source.history.clone();
                                     let ephemeral = source.ephemeral;
                                     let builtins = source.builtins;
-                                    sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral, builtins });
+                                    let subagents = source.subagents;
+                                    sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral, builtins, subagents });
                                     response(&id, json!({"sessionId":fork}))
                                 }
                                 Err(message) => error(&id, -32602, &message),
@@ -777,19 +883,52 @@ mod tests {
     use super::*;
     use crate::core::cli::stream_input::{MAX_IMAGES, MAX_IMAGE_BYTES};
 
-    #[tokio::test]
-    async fn event_forwarder_stops_receiving_when_its_bounded_queue_is_full() {
-        let (upstream, mut source) = mpsc::unbounded_channel();
-        let (downstream, _blocked) = mpsc::channel(1);
-        downstream
-            .send(TurnMessage::Event(StreamEvent::Parked))
-            .await
-            .unwrap();
-        let forward = tokio::spawn(async move { forward_events(&mut source, &downstream).await });
+    /// What the runner does: pump while the engine runs, then drain the rest.
+    async fn relay(
+        burst: usize,
+        events: mpsc::Sender<TurnMessage>,
+    ) -> Result<Value, String> {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        // Bursts of 50 with a yield between them: some are relayed while the
+        // engine is still running, the last is drained after it returns.
+        let engine = async {
+            for i in 0..burst {
+                tx.send(StreamEvent::Token { text: i.to_string() }).unwrap();
+                if i % 50 == 49 {
+                    tokio::task::yield_now().await;
+                }
+            }
+            Ok(json!("done"))
+        };
+        let result = pump_turn(engine, &mut rx, &events).await;
+        drop(tx);
+        forward_events(&mut rx, &events).await?;
+        result
+    }
 
-        upstream.send(StreamEvent::Parked).unwrap();
-        assert!(forward.await.unwrap().unwrap_err().contains("overloaded"));
-        assert!(upstream.send(StreamEvent::Parked).is_err(), "events should stop at the bounded boundary");
+    #[tokio::test]
+    async fn a_burst_larger_than_the_turn_queue_reaches_a_slow_reader_in_order() {
+        let (events, mut receiver) = mpsc::channel(4);
+        let reader = tokio::spawn(async move {
+            let mut seen = Vec::new();
+            while let Some(message) = receiver.recv().await {
+                if let TurnMessage::Event(StreamEvent::Token { text }) = message {
+                    seen.push(text);
+                }
+                tokio::task::yield_now().await;
+            }
+            seen
+        });
+        assert_eq!(relay(200, events).await.unwrap(), json!("done"));
+        let expected: Vec<String> = (0..200).map(|i| i.to_string()).collect();
+        assert_eq!(reader.await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn a_dispatcher_that_dropped_the_turn_ends_it() {
+        let (events, receiver) = mpsc::channel(1);
+        drop(receiver);
+        assert!(relay(3, events).await.unwrap_err().contains("closed"));
     }
 
     fn image(decoded: usize) -> Value {

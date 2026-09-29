@@ -1,8 +1,8 @@
 //! Subagent definitions and their two-scope registry. A subagent is a named,
 //! reusable system prompt + default tool allowlist that the main agent can
 //! dispatch a nested, isolated run against (see `dispatch_subagent`). Definitions
-//! live as `<scope>/.jan/agent/subagents/<name>.toml`, merged from the user scope
-//! (`~/.jan/agent/subagents/`) and the project scope (`<project>/.jan/agent/
+//! live as `<scope>/subagents/<name>.toml`, merged from the user scope
+//! (`~/.jan/agent/subagents/`) and the project scope (`~/.jan/projects/<slug>/
 //! subagents/`); the project scope shadows the user scope by name.
 
 use std::path::{Path, PathBuf};
@@ -18,7 +18,8 @@ use tauri_plugin_agent_tools::tools::spill::{
 use tauri_plugin_agent_tools::workspace;
 
 /// Directory name holding `<name>.toml` definitions, under both a project's
-/// `.jan/agent/` and the desktop's permanent store.
+/// store (`~/.jan/projects/<slug>/`), `~/.jan/agent/` and the desktop's
+/// permanent store.
 const SUBAGENTS: &str = "subagents";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,9 +80,9 @@ pub fn user_subagents_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".jan").join("agent").join(SUBAGENTS))
 }
 
-/// `<project_root>/.jan/agent/subagents/`.
+/// `<store_root>/subagents/`, in the project's store (see `project::store_root`).
 pub fn project_subagents_dir(project_root: &Path) -> PathBuf {
-    project_root.join(".jan").join("agent").join(SUBAGENTS)
+    crate::core::agent::project::store_root(project_root).join(SUBAGENTS)
 }
 
 /// The desktop's single subagent directory:
@@ -495,6 +496,95 @@ pub fn intersect_allowed_tools(
     }
 }
 
+/// Hold a resolved child tool set to the parent's `ceiling`.
+///
+/// With no ceiling the resolved set stands. Under one, a child that asked for
+/// nothing inherits the ceiling itself (the parent's whole set, never Jan's
+/// whole set), and a child that asked for tools keeps those the ceiling
+/// contains. A requested name matches either exactly or as the bare name a host
+/// declared, since that is the name the host's prompt and the model use for
+/// it: `robot_arm_move` resolves to `host__robot_arm_move`. A dispatch has
+/// already qualified its names in [`resolve_dispatch`]; doing it again here is
+/// a no-op on wire names and keeps this function correct on its own.
+///
+/// Fails closed on a list that keeps nothing -- the child would otherwise run
+/// with no tools, the silent "skill tools only" child -- naming what the parent
+/// may hand out so the model can retry. The forced skill tools a child is
+/// normally given are dropped here unless the ceiling holds them.
+fn capped_tools(
+    resolved: Option<Vec<String>>,
+    parent: &ParentRun,
+    child: &str,
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Result<Option<Vec<String>>, SubagentError> {
+    let resolved = resolved.map(|tools| qualify_host_names(tools, &parent.known_tools, parent_args));
+    let Some(ceiling) = parent.tool_ceiling.as_deref() else {
+        return Ok(resolved);
+    };
+    let Some(requested) = resolved else {
+        return Ok(Some(ceiling.to_vec()));
+    };
+    let mut kept: Vec<String> = Vec::new();
+    for tool in &requested {
+        if ceiling.contains(tool) && !kept.contains(tool) {
+            kept.push(tool.clone());
+        }
+    }
+    if kept.is_empty() {
+        return Err(SubagentError::PermissionDenied(format!(
+            "none of the tools asked for subagent '{child}' ({}) is available to it; this \
+             session can give a subagent: {}. Omit allowed_tools to give it all of them.",
+            requested.join(", "),
+            ceiling.join(", ")
+        )));
+    }
+    Ok(Some(kept))
+}
+
+/// Rewrite each tool a host declared from the name it declared (`observe`,
+/// `arm.move`) to the wire name the child is offered it under. Looked up in the
+/// declarations rather than prefixed: a dotted name maps to a hashed wire name
+/// only the declaration still knows. Every other name passes through.
+///
+/// A name that is already a wire name -- one of the parent's `known` tools, or
+/// a host tool's qualified name -- is kept as is. The bare-name lookup is only
+/// the fallback, so a host that declared `host__observe` or an MCP or plugin
+/// tool's name cannot redirect a child that asked for that exact tool.
+#[cfg(feature = "cli")]
+fn qualify_host_names(
+    tools: Vec<String>,
+    known: &[String],
+    parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    let host_tools = parent_args.host_tools.all();
+    let mut out: Vec<String> = Vec::with_capacity(tools.len());
+    for tool in tools {
+        let is_wire = known.contains(&tool) || parent_args.host_tools.is_host_tool(&tool);
+        let wire = if is_wire {
+            tool
+        } else {
+            host_tools
+                .iter()
+                .find(|host| host.name == tool)
+                .map_or(tool, |host| host.qualified_name.clone())
+        };
+        if !out.contains(&wire) {
+            out.push(wire);
+        }
+    }
+    out
+}
+
+/// No host tools outside the headless build, so there is nothing to rewrite.
+#[cfg(not(feature = "cli"))]
+fn qualify_host_names(
+    tools: Vec<String>,
+    _known: &[String],
+    _parent_args: &crate::core::agent::r#loop::OrchestrationArgs,
+) -> Vec<String> {
+    tools
+}
+
 /// One subagent within a phased dispatch. When `name` matches a saved definition
 /// that definition's role and tools are used (and `allowed_tools` further narrows
 /// it); otherwise the subagent runs as a focused general-purpose agent defined by
@@ -534,17 +624,24 @@ struct ResolvedDispatch {
 
 /// Resolve a dispatch request against the registry and parent permissions,
 /// without running anything. Errors on an unknown name or a permission conflict.
+///
+/// `qualify` maps each tool name to the wire name it stands for before any
+/// comparison, so a definition listing `host__observe` and a call asking for
+/// the host's bare `observe` agree on the same tool.
 fn resolve_dispatch(
     registry: &SubagentRegistry,
     req: &SubagentRequest,
     parent: &ToolPermissions,
+    qualify: impl Fn(Vec<String>) -> Vec<String>,
 ) -> Result<ResolvedDispatch, SubagentError> {
+    let requested = req.allowed_tools.clone().map(&qualify);
     match registry.get(&req.name).cloned() {
-        Some(definition) => {
+        Some(mut definition) => {
+            definition.allowed_tools = definition.allowed_tools.map(&qualify);
             // Registered definition: the call-site allowlist further narrows it.
             let allowed_tools = intersect_allowed_tools(
                 definition.allowed_tools.as_deref(),
-                req.allowed_tools.as_deref(),
+                requested.as_deref(),
                 parent,
             )?;
             Ok(ResolvedDispatch {
@@ -560,7 +657,7 @@ fn resolve_dispatch(
                 name: req.name.clone(),
                 description: req.description.clone(),
                 system_prompt: ephemeral_subagent_prompt(&req.name),
-                allowed_tools: req.allowed_tools.clone(),
+                allowed_tools: requested,
                 model: None,
                 scope: SubagentScope::Project,
             };
@@ -944,6 +1041,42 @@ impl BackgroundSubagents {
         self.wake.notify_waiters();
     }
 
+    /// Abort one registered child by `run_id`, the way [`Self::abort_all`] aborts
+    /// all of them: the task is cancelled, the counters it held are released, and
+    /// its `SubagentStart` bracket is closed so consumers never see one left open.
+    /// Any ping it had queued is dropped -- nobody is waiting for that child now.
+    ///
+    /// Used when a plan dies after starting some of its children: they were
+    /// dispatched silent (`notify_on_finish = false`), so leaving them behind
+    /// means they run on unowned, spending tokens for a plan that already
+    /// failed, and nothing ever names them. A session-owned registry never tears
+    /// them down at all, and a run-scoped one only does so when the whole run
+    /// ends, which is not the same moment. Returns whether the child was still
+    /// registered.
+    pub(crate) fn abort_child(&self, run_id: &str) -> bool {
+        use crate::core::agent::events::StreamEvent;
+        let Some(entry) = self.inner.lock().unwrap().remove(run_id) else {
+            return false;
+        };
+        entry.abort.abort();
+        // Exactly once, whether the child finished or is cut off here: see
+        // `ChildSlot::release`.
+        entry.slot.release(self);
+        // A child that already finished emitted its own end event.
+        if !entry.finished.load(Ordering::SeqCst) {
+            let _ = entry.events.send(StreamEvent::SubagentEnd {
+                run_id: entry.run_id,
+                name: entry.name,
+                error: None,
+            });
+        }
+        self.notices.lock().unwrap().retain(|n| n.run_id != run_id);
+        // A waiter parked on this id would otherwise stay parked on a child that
+        // will never finish again.
+        self.wake.notify_waiters();
+        true
+    }
+
     /// The run ids of children still registered, i.e. dispatched and not yet
     /// finished or aborted. A session-owned registry is the authority on which
     /// live panels survive a run end: what the run streamed says only what it
@@ -1136,6 +1269,19 @@ pub(crate) struct ParentRun {
     /// child of budget mid-task fails the run the user asked for. The parent's
     /// own ceiling still stops the run once those charges land on it.
     pub(crate) cost_remaining: Option<crate::core::agent::session::CostCeiling>,
+    /// The parent's own per-request allowlist, or `None` when it runs with no
+    /// allowlist. A child can never be offered more than its parent was: a
+    /// host-only RPC session sets one so its delegates cannot reach the shell,
+    /// files or web the session itself was never given. The forced skill
+    /// tools are no exception here, since they are Jan's and the session
+    /// excluded Jan's tools.
+    pub(crate) tool_ceiling: Option<Vec<String>>,
+    /// Every non-host tool name the parent could reach: all MCP and plugin
+    /// tools before plan mode, an allowlist or a deny rule filtered them, plus
+    /// what it was offered. A child asking for one of these by its exact name
+    /// means that tool, never a host tool declared under the same bare name --
+    /// even when the parent's filter then keeps the child from getting it.
+    pub(crate) known_tools: Vec<String>,
 }
 
 /// The model a dispatch will actually be billed for: the definition's own when
@@ -1147,6 +1293,34 @@ fn child_model(resolved: &ResolvedDispatch, parent: &ParentRun) -> String {
         .model
         .clone()
         .unwrap_or_else(|| parent.model.clone())
+}
+
+/// The context window `model` resolves to, the way the CLI resolves a run's
+/// (provider listing first, then the catalog). `None` for a model neither
+/// knows: the 128K fallback is a guess, and the parent's window is a better
+/// one than that for a child the catalog cannot place.
+#[cfg(feature = "cli")]
+fn model_window(
+    model: &str,
+    provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    use crate::core::cli::model_capabilities::{
+        reported_window, resolve_context_window, ContextWindowSource,
+    };
+    let provider = crate::core::agent::upstream::pick_provider_for_model(model, provider_configs);
+    let resolved =
+        resolve_context_window(model, None, reported_window(provider.as_deref(), model));
+    (resolved.source != ContextWindowSource::Fallback).then_some(resolved.tokens)
+}
+
+/// No model catalog outside the `cli` build, so no window can be sized here;
+/// a child keeps the budget it inherited.
+#[cfg(not(feature = "cli"))]
+fn model_window(
+    _model: &str,
+    _provider_configs: &std::collections::HashMap<String, crate::core::state::ProviderConfig>,
+) -> Option<u64> {
+    None
 }
 
 /// The per-token rates a model is published at, or `None` when it cannot be
@@ -1276,6 +1450,10 @@ async fn run_subagent(
     let name = resolved.definition.name.clone();
     let mut child_args = parent_args;
     child_args.system_prompt_override = Some(resolved.definition.system_prompt.clone());
+    // The host wrote its prompt for the conversation it drives, not for a
+    // delegate with a task of its own; left in place it would also replace the
+    // definition's prompt set just above.
+    child_args.host_system_prompt = None;
     child_args.subagents_enabled = false;
     // A subagent's own interactive question (if any) belongs to its parent's
     // conversation, not a client waiting on this child's ask_requests -- and
@@ -1307,8 +1485,20 @@ async fn run_subagent(
     {
         child_args.host_tool_route = Some((events.clone(), run_id.clone()));
     }
+    // Every build gets the child's own id, not just the headless one: a
+    // provenance record has to name the run that made the request.
+    child_args.run_id = Some(run_id.clone());
 
     let body = child_body(&resolved, &description, &parent);
+    // The parent's compaction budget describes the parent's model. A child on
+    // another model compacts against its own window, or a 200K child of a 1M
+    // parent would only compact after the provider rejected it.
+    if let Some(budget) = child_args.compaction {
+        let pc = child_args.provider_configs.lock().await;
+        let model = child_model(&resolved, &parent);
+        child_args.compaction =
+            Some(budget.for_model(&model, &parent.model, |m| model_window(m, &pc)));
+    }
 
     let _ = events.send(StreamEvent::SubagentStart {
         run_id: run_id.clone(),
@@ -1397,13 +1587,25 @@ pub(crate) fn spawn_subagent(
         .as_ref()
         .ok_or_else(|| SubagentError::Upstream("subagents require an active project".to_string()))?;
     let registry = SubagentRegistry::load(project_root);
-    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions)?;
+    let resolved = resolve_dispatch(&registry, &req, &parent_args.permissions, |tools| {
+        qualify_host_names(tools, &parent.known_tools, parent_args)
+    })?;
     // Re-priced before anything is spawned: a child whose own model cannot be
     // metered under this ceiling fails the dispatch here rather than running on
     // the parent's prices.
     let parent = &ParentRun {
         cost_remaining: child_cost_ceiling(&child_model(&resolved, parent), parent)?,
         ..parent.clone()
+    };
+
+    let resolved = ResolvedDispatch {
+        allowed_tools: capped_tools(
+            resolved.allowed_tools,
+            parent,
+            &req.name,
+            parent_args,
+        )?,
+        ..resolved
     };
 
     let name = resolved.definition.name.clone();
@@ -1635,7 +1837,15 @@ pub(crate) fn spawn_dispatch_plan(
     let registry = SubagentRegistry::load(project_root);
     for phase in &plan.phases {
         for req in &phase.subagents {
-            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions)?;
+            let resolved = resolve_dispatch(&registry, req, &parent_args.permissions, |tools| {
+                qualify_host_names(tools, &parent.known_tools, parent_args)
+            })?;
+            capped_tools(
+                resolved.allowed_tools.clone(),
+                parent,
+                &req.name,
+                parent_args,
+            )?;
             // Priced up front for the same reason the permission check is: a
             // later phase naming an unpriceable model must fail the whole plan
             // now, not after the earlier phases have already been billed.
@@ -1684,6 +1894,16 @@ pub(crate) fn spawn_dispatch_plan(
         match spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi) {
             Ok(d) => first_ids.push(d.run_id),
             Err(e) => {
+                // The plan resolves and prices every child up front so an `Err`
+                // here is meant to fail the dispatch atomically, before any child
+                // starts. Once one has, that promise needs keeping: the children
+                // this loop already registered are silent and owned by nobody
+                // (`end_plan` only releases the plan hold), so abort them before
+                // the error leaves -- and only then release the hold, so the plan
+                // owes nothing the moment it reports its failure.
+                for run_id in &first_ids {
+                    bg.abort_child(run_id);
+                }
                 if multi {
                     bg.end_plan();
                 }
@@ -1964,11 +2184,22 @@ pub(crate) async fn await_subagent(
 /// The model-callable subagent tools, handled by the loop's tool invoker ahead
 /// of the built-in fs/exec gate and the MCP fallback.
 pub fn is_subagent_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "dispatch_subagent" | "await_subagent" | "create_subagent" | "list_subagents"
-    )
+    SUBAGENT_TOOLS.contains(&name)
 }
+
+/// Every subagent tool name, the one list [`is_subagent_tool`] and
+/// [`DELEGATE_ONLY_TOOLS`] are drawn from.
+const SUBAGENT_TOOLS: [&str; 4] = [
+    "dispatch_subagent",
+    "await_subagent",
+    "create_subagent",
+    "list_subagents",
+];
+
+/// The subagent tools a session limited to its host's tools is offered when it
+/// may delegate: dispatching and listing, not `create_subagent`, which writes a
+/// definition into the project, nor `await_subagent`, which is never advertised.
+pub const DELEGATE_ONLY_TOOLS: [&str; 2] = [SUBAGENT_TOOLS[0], SUBAGENT_TOOLS[3]];
 
 /// One-line "name [scope]: description" per definition; shadowed user-scope
 /// entries are listed alongside their project-scope shadows.
@@ -2258,6 +2489,43 @@ mod tests {
     use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// A child on another model compacts against its own window, not the
+    /// parent's: a 200K child of a 1M parent would otherwise sail past its
+    /// window. Same model, or a configured window, keeps the parent's budget.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_on_another_model_compacts_against_its_own_window() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let parent = crate::core::agent::compaction::CompactionBudget {
+                context_window: 1_000_000,
+                ratio: 0.7,
+                reserve_tokens: None,
+                window_pinned: false,
+            };
+            let pc = std::collections::HashMap::new();
+            let window = |m: &str| model_window(m, &pc);
+            let child = parent.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(child.context_window, 200_000);
+            assert_eq!(child.ratio, 0.7, "the project's ratio carries over");
+
+            let same = parent.for_model("claude-sonnet-4-6", "claude-sonnet-4-6", window);
+            assert_eq!(same.context_window, 1_000_000);
+
+            let pinned = crate::core::agent::compaction::CompactionBudget {
+                window_pinned: true,
+                ..parent
+            };
+            let kept = pinned.for_model("claude-sonnet-4-5", "claude-sonnet-4-6", window);
+            assert_eq!(kept.context_window, 1_000_000, "a configured window holds");
+
+            let unknown = parent.for_model("some-unlisted-model", "claude-sonnet-4-6", window);
+            assert_eq!(
+                unknown.context_window, 1_000_000,
+                "an unknown child model keeps the parent's window, not the 128K guess"
+            );
+        });
+    }
 
     fn unique_root(tag: &str) -> PathBuf {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
@@ -2645,7 +2913,19 @@ mod tests {
             budget_remaining: None,
             send_reasoning: true,
             cost_remaining: None,
+            tool_ceiling: None,
+            known_tools: Vec::new(),
         }
+    }
+
+    /// `resolve_dispatch` with no host-name qualification, for tests whose
+    /// tools are all built-ins.
+    fn resolve_dispatch_plain(
+        reg: &SubagentRegistry,
+        req: &SubagentRequest,
+        p: &ToolPermissions,
+    ) -> Result<ResolvedDispatch, SubagentError> {
+        resolve_dispatch(reg, req, p, |t| t)
     }
 
     /// A capped parent's children are capped too. Subagents are where a run's
@@ -2655,7 +2935,7 @@ mod tests {
     fn child_body_inherits_the_parents_cost_ceiling() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
 
         let uncapped = child_body(&resolved, "task", &parent_run());
         assert!(
@@ -2741,7 +3021,7 @@ mod tests {
     fn child_body_forwards_the_parents_send_reasoning_opt_out() {
         let reg = registry_with("reviewer", None);
         let p = ToolPermissions::allow_all();
-        let resolved = resolve_dispatch(&reg, &req("reviewer", None), &p).expect("resolves");
+        let resolved = resolve_dispatch_plain(&reg, &req("reviewer", None), &p).expect("resolves");
         let on = child_body(&resolved, "task", &parent_run());
         assert!(
             on.get("send_reasoning").is_none(),
@@ -2769,7 +3049,7 @@ mod tests {
             description: "task".to_string(),
             allowed_tools: Some(vec!["read".to_string()]),
         };
-        let resolved = resolve_dispatch(&reg, &request, &p).unwrap();
+        let resolved = resolve_dispatch_plain(&reg, &request, &p).unwrap();
         assert_eq!(resolved.definition.name, "one-off");
         assert!(resolved.definition.system_prompt.contains("one-off"));
         assert_eq!(
@@ -2859,7 +3139,7 @@ mod tests {
         );
         let p = ToolPermissions::allow_all();
         let resolved =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["read".to_string()])), &p).unwrap();
         assert_eq!(
             resolved.allowed_tools,
             Some(vec![
@@ -2871,12 +3151,27 @@ mod tests {
         assert_eq!(resolved.definition.system_prompt, "sp");
     }
 
+    /// A saved definition written against wire names and a call using the
+    /// host's bare name mean the same tool: names are qualified before the
+    /// definition's list narrows the call's, not after.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_bare_host_name_matches_a_definition_listing_its_wire_name() {
+        let reg = registry_with("reviewer", Some(vec!["host__observe".to_string()]));
+        let args = host_parent();
+        let qualify = |tools| qualify_host_names(tools, &[], &args);
+        let request = req("reviewer", Some(vec!["observe".to_string()]));
+        let resolved = resolve_dispatch(&reg, &request, &ToolPermissions::allow_all(), qualify)
+            .expect("observe is the definition's host__observe");
+        assert_eq!(resolved.allowed_tools.unwrap()[0], "host__observe");
+    }
+
     #[test]
     fn resolve_rejects_tool_outside_definition() {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 
@@ -3124,6 +3419,119 @@ mod tests {
 
     // ── max-parallel admission (semaphore queue) ───────────────────────────
 
+    /// A parent whose host declared `observe` and the dotted `arm.move`.
+    #[cfg(feature = "cli")]
+    fn host_parent() -> crate::core::agent::r#loop::OrchestrationArgs {
+        let root = unique_root("capped-tools");
+        let mut args = max_par_args(&root);
+        args.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "arm.move"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        args
+    }
+
+    #[cfg(feature = "cli")]
+    fn names(tools: &[&str]) -> Vec<String> {
+        tools.iter().map(|t| (*t).to_string()).collect()
+    }
+
+    /// A dispatching run with `ceiling` and `known` tools, the rest defaulted.
+    #[cfg(feature = "cli")]
+    fn run_with(ceiling: Option<&[&str]>, known: &[&str]) -> ParentRun {
+        ParentRun {
+            tool_ceiling: ceiling.map(names),
+            known_tools: names(known),
+            ..parent_run()
+        }
+    }
+
+    /// The model names a host tool the way the host's prompt does. Under no
+    /// ceiling (a session with built-ins) that name used to reach the child's
+    /// allowlist unchanged, match nothing, and leave it only the skill tools.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_declared_host_name_resolves_to_its_wire_name() {
+        let args = host_parent();
+        let arm = args.host_tools.all()[1].qualified_name.clone();
+        assert_ne!(arm, "host__arm.move", "a dotted name is mapped");
+        let out = capped_tools(
+            Some(names(&["observe", "arm.move", "host__observe", "skill_read"])),
+            &run_with(None, &[]),
+            "probe",
+            &args,
+        )
+        .unwrap();
+        assert_eq!(out, Some(vec!["host__observe".to_string(), arm, "skill_read".to_string()]));
+    }
+
+    /// A name the parent knows keeps its meaning, even when a host also
+    /// declared that string as a bare name: `host__observe` stays the tool the
+    /// host called `observe` (not the one it called `host__observe`), and a
+    /// host tool called `search` does not take over the MCP tool `search` --
+    /// even under a ceiling that filtered `search` out, where the child is
+    /// then refused it rather than handed the host's.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn an_exact_wire_name_wins_over_a_colliding_bare_name() {
+        let root = unique_root("capped-tools-collide");
+        let mut args = max_par_args(&root);
+        args.host_tools = crate::core::agent::host_tools::HostToolSet::declare(
+            ["observe", "host__observe", "search"]
+                .map(|name| serde_json::from_value(serde_json::json!({ "name": name })).unwrap())
+                .into(),
+        )
+        .unwrap();
+        // `search` is an MCP tool, on the wire under its bare name.
+        let known = ["search"];
+        let out = capped_tools(
+            Some(names(&["host__observe", "search", "observe"])),
+            &run_with(None, &known),
+            "probe",
+            &args,
+        )
+        .unwrap();
+        assert_eq!(out, Some(names(&["host__observe", "search"])));
+
+        // The parent's filter dropped `search` (plan mode, an allowlist, a
+        // deny rule): the host's `search` still does not stand in for it.
+        let ceiling = ["host__observe", "host__host__observe", "host__search"];
+        let err = capped_tools(Some(names(&["search"])), &run_with(Some(&ceiling), &known), "probe", &args)
+            .unwrap_err();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)), "{err}");
+    }
+
+    /// Under a ceiling a child is never offered more than its parent: no
+    /// allowlist inherits the ceiling, not Jan's whole set, and a list is
+    /// narrowed to it, forced skill tools included.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_child_is_held_to_the_parents_ceiling() {
+        let args = host_parent();
+        let ceiling = ["dispatch_subagent", "host__observe"];
+        let run = run_with(Some(&ceiling), &[]);
+        assert_eq!(capped_tools(None, &run, "probe", &args).unwrap(), Some(names(&ceiling)));
+        assert_eq!(
+            capped_tools(Some(names(&["observe", "bash", "skill_list"])), &run, "probe", &args).unwrap(),
+            Some(names(&["host__observe"]))
+        );
+    }
+
+    /// A list that keeps nothing fails the dispatch, naming what the parent
+    /// may hand out, instead of starting a child with no tools at all.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn a_list_the_ceiling_keeps_nothing_of_is_refused() {
+        let args = host_parent();
+        let run = run_with(Some(&["host__observe"]), &[]);
+        let err = capped_tools(Some(names(&["bash"])), &run, "probe", &args).unwrap_err();
+        let message = err.to_string();
+        assert!(matches!(err, SubagentError::PermissionDenied(_)), "{message}");
+        assert!(message.contains("host__observe") && message.contains("probe"), "{message}");
+    }
+
     /// Minimal run args for queue tests: empty providers (so dispatched
     /// children fail fast instead of hanging), a real project root holding the
     /// subagent def, subagents enabled, cap 1.
@@ -3136,6 +3544,7 @@ mod tests {
         use std::sync::Arc;
         use tauri_plugin_agent_tools::permissions::ToolPermissions;
         OrchestrationArgs {
+            run_id: None,
             client: crate::core::agent::upstream::agent_http_client(),
             provider_configs: Arc::new(tokio::sync::Mutex::new(
                 HashMap::<String, ProviderConfig>::new(),
@@ -3153,6 +3562,8 @@ mod tests {
             ask_requests: None,
             todo_registry: None,
             system_prompt_override: None,
+            host_system_prompt: None,
+            project_memory: true,
             subagents_enabled: true,
             max_parallel_subagents: 1,
             auto_approve: false,
@@ -3842,6 +4253,64 @@ mod tests {
             bg.inner.lock().unwrap().is_empty(),
             "abort_all drains queued dispatches too"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F3: a first-phase spawn failure aborts the children that phase already
+    /// started. They were dispatched silent, so anything left behind runs on
+    /// unowned, spending tokens for a plan that already failed, and only a
+    /// whole-run teardown would ever name them -- a session-owned registry never
+    /// does. `abort_child` is what that error path calls per started child.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn aborting_one_started_child_leaves_nothing_owed() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("abort_one");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Hold the only slot, so the child parks on the semaphore: registered
+        // and owed, but never running -- nothing can finish it out from under
+        // the assertions below.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let scope = DispatchScope {
+            bg: bg.clone(),
+            generation: bg.generation(),
+        };
+        // Silent, exactly how a multi-phase plan's first phase dispatches.
+        let d = spawn_subagent(
+            &scope,
+            &args,
+            req("reviewer", None),
+            &parent_run(),
+            &events_tx,
+            None,
+            false,
+        )
+        .expect("the child registers");
+
+        assert_eq!(bg.running.load(Ordering::SeqCst), 1, "the child is owed");
+        assert!(bg.abort_child(&d.run_id), "the child was still registered");
+        assert!(!bg.abort_child(&d.run_id), "a second abort is a no-op");
+
+        assert!(bg.live_run_ids().is_empty(), "nothing is live afterwards");
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0, "counters released");
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "queue slot released");
+        assert!(bg.take_notices().is_empty(), "a silent child queues no ping");
+        assert!(
+            bg.inner.lock().unwrap().is_empty(),
+            "the registry no longer holds it"
+        );
+        let ended = std::iter::from_fn(|| events_rx.try_recv().ok()).any(|ev| {
+            matches!(
+                ev,
+                StreamEvent::SubagentEnd { ref run_id, .. } if *run_id == d.run_id
+            )
+        });
+        assert!(ended, "the aborted child's start bracket is closed");
         let _ = std::fs::remove_dir_all(&root);
     }
 
