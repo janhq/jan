@@ -423,20 +423,43 @@ struct ProviderArgs {
     /// API key for the target provider (else JAN_API_KEY / <PROVIDER>_API_KEY)
     #[arg(long)]
     api_key: Option<String>,
+    /// Base URL for the --provider named, e.g. a gateway (else JAN_BASE_URL)
+    #[arg(
+        long,
+        value_name = "URL",
+        requires = "provider",
+        value_parser = app_lib::core::cli::providers::parse_base_url
+    )]
+    base_url: Option<String>,
 }
 
 impl ProviderArgs {
+    /// Resolve the flags and their environment fallbacks, and record the result
+    /// as this process's session overrides, so every later rebuild of the
+    /// provider map (a TUI reload, the `/model` probe) keeps them.
     fn into_overrides(self) -> ProviderOverrides {
         // Default the target provider to the desktop app's current selection so
         // env-key fallback (<PROVIDER>_API_KEY) works without an explicit flag.
+        // Only an explicit --provider scopes a base URL or headers, though:
+        // redirecting whatever Desktop last had selected would be a surprise.
+        let explicit_provider = self.provider.is_some();
         let provider = self
             .provider
             .or_else(|| app_lib::core::cli::providers::desktop_selection().provider);
+        let base_url_source = self
+            .base_url
+            .is_some()
+            .then_some(app_lib::core::cli::providers::OverrideSource::Flag);
         ProviderOverrides {
             provider,
             api_key: self.api_key,
+            base_url: self.base_url,
+            explicit_provider,
+            base_url_source,
+            ..Default::default()
         }
         .with_env()
+        .install()
     }
 }
 
@@ -1202,7 +1225,7 @@ async fn handle_auth(cmd: AuthCommands) -> Result<(), String> {
                 tokamak::Logout::ClearedOnly => println!(
                     "Signed out of Tokamak locally. The key could not be revoked upstream - \
                      remove it at {}",
-                    tokamak::API_KEYS_URL
+                    tokamak::api_keys_url()
                 ),
                 tokamak::Logout::NothingToDo => println!("Not signed in to Tokamak."),
             }
@@ -1302,7 +1325,7 @@ async fn handle_models(cmd: ModelsCommands) {
         ModelsCommands::List { provider, project } => {
             let configs = match load_provider_configs(
                 Some(std::path::Path::new(&project)),
-                &ProviderOverrides::default().with_env(),
+                &ProviderOverrides::session(),
             ) {
                 Ok(c) => c,
                 Err(e) => {
@@ -1310,7 +1333,7 @@ async fn handle_models(cmd: ModelsCommands) {
                     std::process::exit(1);
                 }
             };
-            let catalog = app_lib::core::cli::model_catalog::load();
+            let catalog = app_lib::core::cli::model_catalog::effective();
             let mut output: Vec<serde_json::Value> = configs
                 .values()
                 .filter(|c| app_lib::core::cli::providers::is_cli_reachable(c))
@@ -2109,5 +2132,61 @@ mod tests {
         );
         assert!(!output.contains("long description"));
         assert!(!output.contains("example.com"));
+    }
+
+    /// `--base-url` sits beside `--provider` / `--api-key` on the TUI and on
+    /// `run` / `step`, scopes to an explicitly named provider only (so it
+    /// requires one), and never takes a plaintext remote URL.
+    #[test]
+    fn base_url_parses_beside_provider_and_requires_it() {
+        let cli = Cli::parse_from([
+            "jan",
+            "--provider",
+            "tokamak",
+            "--base-url",
+            "https://api-stag.tokamak.sh/v1/",
+        ]);
+        assert_eq!(
+            cli.providers.base_url.as_deref(),
+            Some("https://api-stag.tokamak.sh/v1"),
+            "normalized: the trailing slash is dropped"
+        );
+        for sub in ["run", "step"] {
+            let cli = Cli::parse_from([
+                "jan",
+                "cli",
+                "agent",
+                sub,
+                "task",
+                "--provider",
+                "gw",
+                "--base-url",
+                "http://localhost:8080/v1",
+            ]);
+            let providers = match cli.command {
+                Some(Commands::Cli {
+                    cmd:
+                        CliCommands::Agent {
+                            cmd:
+                                AgentCommands::Run { providers, .. }
+                                | AgentCommands::Step { providers, .. },
+                        },
+                }) => providers,
+                _ => panic!("expected `cli agent {sub}`"),
+            };
+            assert_eq!(providers.base_url.as_deref(), Some("http://localhost:8080/v1"));
+        }
+        assert!(
+            Cli::try_parse_from(["jan", "--base-url", "https://gw.example/v1"]).is_err(),
+            "no --provider to scope it to"
+        );
+        assert!(Cli::try_parse_from([
+            "jan",
+            "--provider",
+            "gw",
+            "--base-url",
+            "http://gw.example/v1"
+        ])
+        .is_err());
     }
 }

@@ -164,15 +164,42 @@ pub(crate) fn api_root(base_url: &str) -> String {
     }
 }
 
-/// Origin of the *web* app, which serves the authorize page. Tokamak splits the
-/// two (API at `api.tokamak.sh`, web at `tokamak.sh`), so a plain `api.`
-/// subdomain is dropped; anything else is assumed to serve both.
-fn web_root(base_url: &str) -> String {
+/// Env var naming the web app's origin outright, for a deployment whose web
+/// host cannot be derived from the API host -- a local stack serving the API on
+/// `localhost:8080` and the web app on `localhost:3001`.
+pub const WEB_URL_ENV: &str = "TOKAMAK_WEB_URL";
+
+/// Origin of the *web* app, which serves the authorize page and the API-keys
+/// page: `$TOKAMAK_WEB_URL` when set, else derived from `base_url` (see
+/// [`derive_web_root`]).
+pub(crate) fn web_root(base_url: &str) -> String {
+    resolve_web_root(base_url, std::env::var(WEB_URL_ENV).ok().as_deref())
+}
+
+/// Split from [`web_root`] so the precedence is testable without mutating the
+/// process environment.
+fn resolve_web_root(base_url: &str, from_env: Option<&str>) -> String {
+    from_env
+        .map(|v| v.trim().trim_end_matches('/'))
+        .filter(|v| !v.is_empty())
+        .map_or_else(|| derive_web_root(base_url), str::to_string)
+}
+
+/// The web origin for an API base. Tokamak splits the two -- API at
+/// `api.tokamak.sh`, web at `tokamak.sh`; and per band, API at
+/// `api-<band>.tokamak.sh`, web at `<band>.tokamak.sh` -- so an `api.` or
+/// `api-` first label is dropped; anything else is assumed to serve both.
+fn derive_web_root(base_url: &str) -> String {
     let Some(mut url) = origin_of(base_url) else {
         return base_url.trim_end_matches('/').to_string();
     };
-    if let Some(host) = url.host_str().and_then(|h| h.strip_prefix("api.")) {
-        let host = host.to_string();
+    let web_host = url.host_str().and_then(|h| {
+        h.strip_prefix("api.")
+            .or_else(|| h.strip_prefix("api-"))
+            .filter(|rest| !rest.is_empty())
+            .map(str::to_string)
+    });
+    if let Some(host) = web_host {
         if url.set_host(Some(&host)).is_err() {
             return url.as_str().trim_end_matches('/').to_string();
         }
@@ -742,11 +769,52 @@ mod tests {
     /// base -- `tokamak.sh/cli/authorize`, never `tokamak.sh/v1/cli/authorize`.
     #[test]
     fn web_root_drops_the_api_subdomain_and_the_path() {
-        assert_eq!(web_root("https://api.tokamak.sh/v1"), "https://tokamak.sh");
-        assert_eq!(web_root("https://tokamak.sh/v1"), "https://tokamak.sh");
         assert_eq!(
-            web_root("http://localhost:8080/v1"),
+            derive_web_root("https://api.tokamak.sh/v1"),
+            "https://tokamak.sh"
+        );
+        assert_eq!(
+            derive_web_root("https://tokamak.sh/v1"),
+            "https://tokamak.sh"
+        );
+        assert_eq!(
+            derive_web_root("http://localhost:8080/v1"),
             "http://localhost:8080"
+        );
+    }
+
+    /// A band's API lives at `api-<band>.`, its web app at `<band>.`: sign-in on
+    /// a non-production band must land on that band's web app, not on a host
+    /// that does not exist.
+    #[test]
+    fn web_root_maps_a_band_api_host_to_its_web_host() {
+        assert_eq!(
+            derive_web_root("https://api-stag.tokamak.sh/v1"),
+            "https://stag.tokamak.sh"
+        );
+        assert_eq!(
+            derive_web_root("https://api-dev.tokamak.sh"),
+            "https://dev.tokamak.sh"
+        );
+        // Only the first label is the API marker.
+        assert_eq!(
+            derive_web_root("https://gateway.api-stag.example/v1"),
+            "https://gateway.api-stag.example"
+        );
+    }
+
+    /// A local stack's web app is on another port entirely, which nothing can
+    /// derive: `TOKAMAK_WEB_URL` names it.
+    #[test]
+    fn the_web_url_override_wins() {
+        assert_eq!(
+            resolve_web_root("http://localhost:8080/v1", Some("http://localhost:3001/")),
+            "http://localhost:3001"
+        );
+        assert_eq!(
+            resolve_web_root("https://api-stag.tokamak.sh/v1", Some("  ")),
+            "https://stag.tokamak.sh",
+            "a blank override is no override"
         );
     }
 

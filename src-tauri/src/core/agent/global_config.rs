@@ -74,6 +74,7 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
 # models = ["my-model"]
+# headers = { "X-Team" = "infra" }  # sent with every request to this provider
 "#;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -224,6 +225,11 @@ struct GlobalProviderEntry {
     /// guessing an identity endpoint's response shape).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     account: Option<String>,
+    /// Extra request headers sent with every request to this provider, inference
+    /// and `/models` listing alike: `headers = { "X-Team" = "infra" }`. A
+    /// session's `JAN_CUSTOM_HEADERS` beats a header of the same name here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
@@ -288,7 +294,14 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
                     api_key: entry.api_key,
                     api_keys,
                     base_url: entry.base_url,
-                    custom_headers: Vec::new(),
+                    custom_headers: entry
+                        .headers
+                        .into_iter()
+                        .map(|(header, value)| crate::core::state::ProviderCustomHeader {
+                            header,
+                            value,
+                        })
+                        .collect(),
                     models: entry.models,
                     api_type: entry.api_type,
                     // `~/.jan/config.toml` describes the desktop app's

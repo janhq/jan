@@ -220,7 +220,7 @@ StreamEvent::TurnUsage {
                 // prices, rather than reported as zero.
                 estimated_cost_usd: self
                     .usage
-                    .cost_usd(super::model_catalog::load().get(provider, model)),
+                    .cost_usd(super::model_catalog::effective().get(provider, model)),
                 execution_ids: (!self.execution_ids.is_empty())
                     .then(|| self.execution_ids.clone()),
             },

@@ -1318,7 +1318,7 @@ fn model_window(
 /// `None`, which is the correct direction here (a refusal, not a guess).
 #[cfg(feature = "cli")]
 fn published_rates(model: &str) -> Option<crate::core::agent::session::TokenRates> {
-    crate::core::cli::model_catalog::load()
+    crate::core::cli::model_catalog::effective()
         .get(None, model)
         .and_then(|info| info.rates())
 }

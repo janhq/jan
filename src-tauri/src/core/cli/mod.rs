@@ -25,6 +25,7 @@ pub mod rpc;
 pub mod rpc_schema;
 pub mod run_report;
 pub mod providers;
+pub(crate) mod session_provider;
 mod secret_input;
 pub mod stream_input;
 pub mod telemetry;
@@ -773,6 +774,24 @@ use tokio::sync::{mpsc, Mutex};
 /// cancellation are what actually stop a runaway loop.
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
+/// How long `run` and `step` wait for the session-scoped provider's startup
+/// model listing: a cost ceiling is priced at startup from it. The TUI waits
+/// this long too when a ceiling is configured.
+const SESSION_PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// How long the TUI waits for that listing otherwise: its first frame waits on
+/// it, and a slow endpoint's listing is picked up by the first `/model` anyway.
+const TUI_SESSION_PROBE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A provider id as the user knows it, for the startup listing's lines.
+fn provider_label(provider: &str) -> String {
+    if provider == tokamak::PROVIDER {
+        "Tokamak".to_string()
+    } else {
+        provider.to_string()
+    }
+}
+
 /// Where the session token ceiling in effect came from, so `agent status` can
 /// say which source won and the TUI knows whether a model switch moves it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -888,7 +907,7 @@ fn resolve_cost_ceiling(
             "a cost ceiling must be a non-negative amount in USD, not {max_usd}"
         ));
     }
-    let rates = model_catalog::load()
+    let rates = model_catalog::effective()
         .get(provider, model)
         .and_then(|info| info.rates())
         .ok_or_else(|| {
@@ -933,6 +952,36 @@ pub(crate) fn take_migration_notice() -> Option<String> {
     MIGRATION_NOTICE.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
+/// What this build supports that a caller (a launcher) must be able to check
+/// before relying on it, as `jan cli agent status` reports it. Only features
+/// this build implements; telemetry's own follow in
+/// [`crate::core::agent::otel::CAPABILITIES`].
+///
+/// - `provider-overrides`: `--base-url` / `JAN_BASE_URL` for an explicit
+///   `--provider`, and its `<PROVIDER>_API_KEY`.
+/// - `session-overrides`: those overrides survive the whole session (reloads,
+///   the `/model` probe) -- the TUI, `run` and `step`; RPC takes none.
+/// - `custom-headers`: `JAN_CUSTOM_HEADERS` and `[providers.<id>].headers`.
+/// - `user-agent`: inference sends `User-Agent: Jan-Agent/<version> (<os>; <arch>)`.
+/// - `session-header`: inference sends `X-Session-Id`.
+/// - `session-scoped-providers`: a session-scoped provider's models and prices
+///   stay in memory, and its sign-in cannot be changed from inside the session.
+pub const CAPABILITIES: &[&str] = &[
+    "provider-overrides",
+    "session-overrides",
+    "custom-headers",
+    "user-agent",
+    "session-header",
+    "session-scoped-providers",
+];
+
+/// [`CAPABILITIES`], then telemetry's, in that order.
+fn capabilities() -> Vec<&'static str> {
+    let mut all = CAPABILITIES.to_vec();
+    all.extend(crate::core::agent::otel::CAPABILITIES);
+    all
+}
+
 /// Resolved-config + provider snapshot for `jan cli agent status`.
 pub fn cli_agent_status(
     project: &str,
@@ -941,7 +990,8 @@ pub fn cli_agent_status(
     let project_root = resolve_project_root(project);
     ensure_project(&project_root)?;
     let cfg = load_agent_config(&project_root)?;
-    let provider_configs = load_provider_configs(Some(&project_root), overrides)?;
+    let (provider_configs, base_url_sources) =
+        providers::load_provider_configs_with_sources(Some(&project_root), overrides)?;
 
     // Resolved once, and reported for every registered composer: "which of my
     // contributors is writing into the cached prefix" is one command, not an
@@ -964,7 +1014,8 @@ pub fn cli_agent_status(
         .collect();
 
     // Only providers this build can reach: local-engine entries inherited from
-    // the desktop store have no upstream here (see `is_cli_reachable`).
+    // the desktop store have no upstream here (see `is_cli_reachable`). Header
+    // *names* only, never their values, which can carry a credential.
     let mut providers: Vec<serde_json::Value> = provider_configs
         .values()
         .filter(|c| crate::core::cli::providers::is_cli_reachable(c))
@@ -974,6 +1025,12 @@ pub fn cli_agent_status(
                 "base_url": c.base_url,
                 "has_api_key": crate::core::cli::providers::has_credential(c),
                 "models": c.models.len(),
+                "header_names": crate::core::agent::request_headers::reportable_names(
+                    &c.custom_headers
+                ),
+                "base_url_source": base_url_sources
+                    .get(&c.provider)
+                    .map(|source| source.as_str()),
             })
         })
         .collect();
@@ -1021,6 +1078,7 @@ pub fn cli_agent_status(
     let session_budget = resolve_session_budget(None, cfg.budget.max_tokens, status_window);
 
     Ok(serde_json::json!({
+        "capabilities": capabilities(),
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
         "model": cfg.agent.model,
@@ -1392,6 +1450,9 @@ pub(crate) struct AgentSession {
     /// `Some` only when one was asked for and the session fell back to the
     /// project directory.
     pub workspace_note: Option<String>,
+    /// Whether `--model` named `model`. A resumed thread then keeps it instead
+    /// of switching to the model it was saved with.
+    pub model_pinned: bool,
 }
 
 /// The request body for one turn, as a free function of the parts that shape
@@ -1636,9 +1697,15 @@ fn prepare_agent_session(
         cfg.telemetry.enabled,
         crate::core::agent::global_config::telemetry_setting(),
         || {
+            // The disk catalog once, and the session overlay on every call: a
+            // session-scoped provider's prices can arrive after this is built
+            // (a slow startup probe filled by the first `/model` or Ctrl-R).
             let catalog = crate::core::cli::model_catalog::load();
             Some(Box::new(move |provider: Option<&str>, model: &str| {
-                catalog.get(provider, model).and_then(|info| info.rates())
+                catalog
+                    .with_session_overlay()
+                    .get(provider, model)
+                    .and_then(|info| info.rates())
             }))
         },
         crate::core::cli::updater::build_version(),
@@ -1658,6 +1725,7 @@ fn prepare_agent_session(
     // the notice instead. An explicit --model, agent.toml, or ~/.jan default is
     // unaffected: all three outrank this.
     let explicit = model_override.is_some() || overrides.api_key.is_some();
+    let model_pinned = model_override.is_some();
     let model = model_override
         .or_else(|| cfg.agent.model.clone())
         .or_else(|| crate::core::agent::global_config::default_model().ok().flatten())
@@ -1835,6 +1903,7 @@ fn prepare_agent_session(
         mcp_task,
         workspace,
         workspace_note,
+        model_pinned,
     })
 }
 
@@ -2063,6 +2132,19 @@ async fn run_agent_loop(
             return Err(e);
         }
     };
+    // A session-scoped provider's models and prices exist only in memory: list
+    // them before the run resolves its cost ceiling (`--max-budget-usd` is
+    // priced at startup) and its telemetry pricer. A failure is not fatal -- a
+    // `provider/model` id still routes by its prefix -- but it is said.
+    if let Some((provider, Err(e))) = providers::probe_session_provider(
+        Some(&resolve_project_root(project)),
+        &overrides,
+        SESSION_PROBE_WAIT,
+    )
+    .await
+    {
+        eprintln!("(could not list {} models: {e})", provider_label(&provider));
+    }
     let prepared = prepare_agent_run(
         project,
         task,
@@ -2822,6 +2904,32 @@ pub async fn cli_agent_ui(
     // Bypassed by an explicit --api-key/env key.
     if overrides.api_key.is_none() {
         login::reject_headless_without_provider(Some(&project_root))?;
+    }
+    // A session-scoped provider's models and prices exist only in memory, so
+    // they are listed before the session resolves its pricer and cost ceiling.
+    // Briefly, since the first frame waits on it -- unless a ceiling is set,
+    // which cannot be priced without the listing and would refuse to start.
+    let ceiling_configured = flags.max_budget_usd.is_some()
+        || crate::core::agent::project::load_agent_config(&project_root)
+            .ok()
+            .and_then(|cfg| cfg.budget.max_usd)
+            .is_some();
+    let wait = if ceiling_configured {
+        SESSION_PROBE_WAIT
+    } else {
+        TUI_SESSION_PROBE_WAIT
+    };
+    if let Some(provider) = overrides.session_scoped_provider() {
+        // Before the alternate screen, which would hide anything printed later.
+        eprintln!("fetching {} models...", provider_label(provider));
+    }
+    if let Some((provider, Err(e))) =
+        providers::probe_session_provider(Some(&project_root), &overrides, wait).await
+    {
+        session_provider::set_startup_notice(format!(
+            "could not list {} models ({e}); /model retries",
+            provider_label(&provider)
+        ));
     }
     // Fresh install with a terminal attached: launch with no model rather than
     // forcing sign-in here. The TUI shows a one-line notice and `/login` (or
@@ -4637,5 +4745,80 @@ mod tests {
         let zero = request_body("m", &limits_with(Some(0), 0), true, messages);
         assert_eq!(zero["max_turns"], 0);
         assert_eq!(zero["max_session_tokens"], 0);
+    }
+
+    /// The contract a launcher checks before relying on any of this: the
+    /// capability tokens in a fixed order, and per provider the header *names*
+    /// (never values) and where its base URL came from. Existing fields keep
+    /// their shape.
+    #[test]
+    fn agent_status_reports_capabilities_header_names_and_base_url_sources() {
+        let overrides = ProviderOverrides {
+            provider: Some("tokamak".into()),
+            api_key: Some("tk-session".into()),
+            base_url: Some("http://127.0.0.1:9/v1".into()),
+            base_url_source: Some(crate::core::cli::providers::OverrideSource::Env),
+            headers: vec![
+                ("X-Client-Name".into(), "jan-agent".into()),
+                ("X-Tokamak-Launch-Id".into(), "abc".into()),
+            ],
+            explicit_provider: true,
+        };
+        crate::core::cli::session_provider::with_session(overrides.clone(), |_| {
+            crate::core::agent::global_config::set_provider(
+                "openai",
+                crate::core::agent::global_config::ProviderUpdate {
+                    api_key: Some("sk".into()),
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec!["gpt-x".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let status = cli_agent_status(dir.path().to_str().unwrap(), &overrides).expect("status");
+
+            let mut expected: Vec<serde_json::Value> = [
+                "provider-overrides",
+                "session-overrides",
+                "custom-headers",
+                "user-agent",
+                "session-header",
+                "session-scoped-providers",
+            ]
+            .iter()
+            .map(|c| serde_json::json!(c))
+            .collect();
+            expected.extend(
+                crate::core::agent::otel::CAPABILITIES
+                    .iter()
+                    .map(|c| serde_json::json!(c)),
+            );
+            assert_eq!(status["capabilities"], serde_json::Value::Array(expected));
+
+            let providers = status["providers"].as_array().expect("providers");
+            let tokamak = providers
+                .iter()
+                .find(|p| p["provider"] == "tokamak")
+                .expect("tokamak listed");
+            assert_eq!(tokamak["base_url"], "http://127.0.0.1:9/v1");
+            assert_eq!(tokamak["base_url_source"], "env");
+            assert_eq!(tokamak["has_api_key"], true);
+            assert_eq!(tokamak["models"], 0);
+            assert_eq!(
+                tokamak["header_names"],
+                serde_json::json!(["X-Client-Name", "X-Tokamak-Launch-Id"])
+            );
+            let openai = providers
+                .iter()
+                .find(|p| p["provider"] == "openai")
+                .expect("openai listed");
+            assert_eq!(openai["base_url_source"], "config");
+            assert_eq!(openai["header_names"], serde_json::json!([]));
+            assert_eq!(openai["models"], 1);
+
+            let text = status.to_string();
+            assert!(!text.contains("tk-session") && !text.contains("\"abc\""), "no secrets or header values: {text}");
+        });
     }
 }
