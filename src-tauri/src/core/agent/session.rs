@@ -77,6 +77,8 @@ pub(crate) struct SessionBudget {
     spent_tokens: u64,
     last_total: u64,
     last_prompt: Option<u64>,
+    /// The previous request's completion, which the next prompt replays.
+    last_completion: u64,
     /// `None` leaves money unmetered, which is the default: without published
     /// prices there is no honest number to meter against.
     ceiling: Option<CostCeiling>,
@@ -90,6 +92,7 @@ impl SessionBudget {
             spent_tokens: 0,
             last_total: 0,
             last_prompt: None,
+            last_completion: 0,
             ceiling: None,
             spent_usd: 0.0,
         }
@@ -103,37 +106,45 @@ impl SessionBudget {
 
     /// Fold a completion's usage into the running total, returning the new total.
     ///
-    /// Counts new completion tokens and positive prompt-token growth rather than
-    /// replayed prompt history. The first request uses its reported total as the
-    /// baseline. When providers omit prompt or completion fields, the total-token
-    /// delta remains the fallback.
+    /// Counts the new tokens a request added to the conversation, never the
+    /// history it replays:
+    ///
+    /// - **Completion tokens**, always.
+    /// - **Prompt growth beyond what is already counted.** The previous
+    ///   request's completion is resent inside this one's prompt, and was
+    ///   charged when it was generated, so growth is measured against
+    ///   `last_prompt + last_completion`. What remains is new input: tool
+    ///   results, a user message, a steering note.
+    /// - **Nothing for a run's first prompt.** A run starts by replaying the
+    ///   thread it resumes; charging that would exhaust the budget on turn 1 of
+    ///   every run on a long thread. The first request sets the baseline.
+    ///
+    /// When a provider omits the prompt/completion split, the growth of
+    /// `total_tokens` stands in (it already includes the new completion), and a
+    /// first total-only request likewise only sets the baseline.
     pub(crate) fn record(&mut self, usage: &Option<Usage>) -> u64 {
         let Some(usage) = usage.as_ref() else {
             return self.spent_tokens;
         };
 
-        let delta = match usage.total_tokens {
-            Some(total) => {
-                let delta = match (
-                    usage.prompt_tokens,
-                    self.last_prompt,
-                    usage.completion_tokens,
-                ) {
-                    (Some(prompt), Some(last_prompt), Some(completion)) => {
-                        completion.saturating_add(prompt.saturating_sub(last_prompt))
-                    }
-                    (Some(_), None, _) => total,
-                    (_, Some(_), Some(completion)) => {
-                        completion.max(total.saturating_sub(self.last_total))
-                    }
-                    _ => total.saturating_sub(self.last_total),
-                };
-                self.last_total = total;
-                delta
+        let first = self.last_prompt.is_none() && self.last_total == 0;
+        let delta = match (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens) {
+            (Some(prompt), Some(completion), _) => {
+                let already = self.last_prompt.map(|p| p.saturating_add(self.last_completion));
+                let growth = already.map_or(0, |already| prompt.saturating_sub(already));
+                completion.saturating_add(growth)
             }
-            None => usage.completion_tokens.unwrap_or(0),
+            (_, completion, Some(total)) => {
+                let growth = if first { 0 } else { total.saturating_sub(self.last_total) };
+                completion.map_or(growth, |c| c.max(growth))
+            }
+            (_, Some(completion), None) => completion,
+            _ => 0,
         };
-
+        if let Some(total) = usage.total_tokens {
+            self.last_total = total;
+        }
+        self.last_completion = usage.completion_tokens.unwrap_or(0);
         self.last_prompt = usage.prompt_tokens.or(self.last_prompt);
         self.spent_tokens = self.spent_tokens.saturating_add(delta);
         // Money is charged on the request as billed -- the whole prompt, every
@@ -234,55 +245,78 @@ mod tests {
         })
     }
 
+    /// A run starts by replaying the thread it resumes. That history was
+    /// charged by the runs that wrote it, so a resumed 500K thread must not
+    /// exhaust a budget on its first request -- the bug that compacted long
+    /// threads at the start of every run.
+    #[test]
+    fn a_runs_first_prompt_is_the_baseline_not_spend() {
+        let mut b = SessionBudget::new(Some(10_000));
+        b.record(&usage_with_parts(500_000, 1_000, 501_000));
+        assert_eq!(b.spent(), 1_000, "only the new completion counts");
+        assert!(!b.exhausted());
+    }
+
+    /// A reply is charged once, when generated. The next prompt resends it,
+    /// so prompt growth is measured past it: only the new input (a tool
+    /// result here) counts, not the reply a second time.
+    #[test]
+    fn a_replayed_completion_is_not_charged_twice() {
+        let mut b = SessionBudget::new(None);
+        b.record(&usage_with_parts(10_000, 2_000, 12_000));
+        // Prompt = 10K history + 2K reply + 300 tool result.
+        b.record(&usage_with_parts(12_300, 500, 12_800));
+        assert_eq!(b.spent(), 2_000 + 300 + 500);
+    }
+
     #[test]
     fn compaction_still_charges_completion_tokens() {
-        let mut b = SessionBudget::new(Some(1_100));
+        let mut b = SessionBudget::new(Some(200));
         b.record(&usage_with_parts(900, 100, 1_000));
         assert!(!b.exhausted());
 
         // The compacted prompt is smaller, but this request still consumed
         // another 100 completion tokens and must exhaust the session budget.
         b.record(&usage_with_parts(400, 100, 500));
-        assert_eq!(b.spent(), 1_100);
+        assert_eq!(b.spent(), 200);
         assert!(b.exhausted());
     }
 
     #[test]
     fn no_ceiling_is_never_exhausted() {
         let mut b = SessionBudget::new(None);
-        assert_eq!(b.record(&usage(Some(1_000_000))), 1_000_000);
+        b.record(&usage_with_parts(0, 1_000_000, 1_000_000));
+        assert_eq!(b.spent(), 1_000_000);
         assert!(!b.exhausted());
     }
 
+    /// A provider that reports only `total_tokens`: its growth stands in for
+    /// spend, and the first total is the baseline like a first prompt is.
     #[test]
-    fn accumulates_marginal_spend_and_exhausts_at_or_over_ceiling() {
+    fn total_only_usage_accumulates_growth_and_exhausts_at_the_ceiling() {
         let mut b = SessionBudget::new(Some(100));
-        // First request counts its full total, since there is no baseline yet.
         b.record(&usage(Some(60)));
-        assert!(!b.exhausted());
-        // Context grew by only a little between requests, so only the marginal
-        // increase counts — the replayed prior history must not be double-charged.
+        assert_eq!(b.spent(), 0, "the first total is the replayed baseline");
         b.record(&usage(Some(64)));
-        assert_eq!(b.spent(), 64);
+        assert_eq!(b.spent(), 4);
         assert!(!b.exhausted());
-        // A big single-request increase (e.g. a large new completion) trips it.
         b.record(&usage(Some(200)));
-        assert_eq!(b.spent(), 200);
+        assert_eq!(b.spent(), 140);
         assert!(b.exhausted());
     }
 
     #[test]
     fn compaction_does_not_refund_or_double_charge_spend() {
-        let mut b = SessionBudget::new(Some(100));
+        let mut b = SessionBudget::new(Some(40));
         b.record(&usage(Some(60)));
         b.record(&usage(Some(90)));
-        assert_eq!(b.spent(), 90);
+        assert_eq!(b.spent(), 30);
         // Compaction shrinks the replay below the last total; must not refund, and
         // later small growth is counted from the compacted baseline.
         b.record(&usage(Some(70)));
-        assert_eq!(b.spent(), 90);
+        assert_eq!(b.spent(), 30);
         b.record(&usage(Some(80)));
-        assert_eq!(b.spent(), 100);
+        assert_eq!(b.spent(), 40);
         assert!(b.exhausted());
     }
 
@@ -320,11 +354,11 @@ mod tests {
             (spent - (30_300.0 * 1e-6 + 300.0 * 10e-6)).abs() < 1e-9,
             "every request pays for its whole prompt: {spent}"
         );
-        // Marginal token spend over the same three turns is a third of the 30K
-        // tokens actually billed: the baseline plus 100 new completion and 100
-        // prompt-growth tokens a turn. The two ceilings measure different
+        // Marginal token spend over the same three turns is only the 300 new
+        // completion tokens (each next prompt grew by exactly the reply it
+        // replays) against 30K billed. The two ceilings measure different
         // things, which is why money could not simply be priced off `spent()`.
-        assert_eq!(b.spent(), 10_500);
+        assert_eq!(b.spent(), 300);
     }
 
     /// An unmetered run reports `None`, not `0.0`. "This run tracks no money"
@@ -373,10 +407,11 @@ mod tests {
         // the conversation's own last prompt (100K), not the summarizer's 20K:
         // a side request replays a different prompt entirely, so letting it set
         // that baseline would make the next turn's growth arbitrary.
-        b.record(&usage_with_parts(100_100, 200, 100_300));
+        // 100K history + the 10K reply + 100 new input tokens.
+        b.record(&usage_with_parts(110_100, 200, 110_300));
         assert_eq!(
             b.spent(),
-            110_000 + 500 + 300,
+            10_000 + 500 + 100 + 200,
             "the turn after a side request grows by 100 prompt + 200 completion"
         );
     }

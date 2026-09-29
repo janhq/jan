@@ -45,9 +45,24 @@ pub struct SessionStartParams {
     #[schemars(with = "Vec<HostToolDeclSchema>")]
     pub tools: Vec<serde_json::Value>,
     /// `false` advertises only the host tools: no built-ins, MCP, plugin,
-    /// `ask`, `todo`, subagent or monitor tools.
+    /// `ask`, `todo` or monitor tools. `subagents: true` adds back only
+    /// `dispatch_subagent` and `list_subagents`.
     #[serde(default = "builtins_default")]
     pub builtins: bool,
+    /// Whether the session may delegate to subagents; defaults to `builtins`.
+    /// With `builtins: false` it adds only `dispatch_subagent` and
+    /// `list_subagents`, and every child is held to the session's host tools.
+    /// `false` withholds subagent tools even from a session with built-ins.
+    #[serde(default)]
+    pub subagents: Option<bool>,
+    /// The session's whole system prompt, sent byte for byte in place of the
+    /// one Jan composes: no Jan identity, guides, environment, date, git state
+    /// or recalled project memory. Its answers are still indexed for later
+    /// sessions unless it is `ephemeral`. Jan may still append runtime notices
+    /// to the conversation.
+    /// Children keep their own prompts.
+    #[serde(default)]
+    pub system_prompt: Option<String>,
     #[serde(default)]
     pub permissions: PermissionOwner,
 }

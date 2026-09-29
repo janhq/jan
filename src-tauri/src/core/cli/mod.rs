@@ -14,7 +14,7 @@ pub mod login;
 pub mod mcp;
 /// `jan mcp serve`: the other direction, Jan's toolset served over MCP.
 pub mod mcp_serve;
-mod model_capabilities;
+pub(crate) mod model_capabilities;
 pub mod model_catalog;
 mod path_refs;
 /// `jan cli agent schema`: the protocol's JSON Schema, generated from the types.
@@ -468,6 +468,11 @@ pub(crate) fn rebuild_wire_history(messages: &[serde_json::Value]) -> Vec<serde_
 /// (where every thread is a root) renders as today's flat list.
 pub const FORKED_FROM_KEY: &str = "forked_from";
 
+/// Key in a thread's `metadata` holding an RPC host's `systemPrompt`. Saved so
+/// a thread reopened elsewhere (the TUI's `/resume`) keeps running on the
+/// prompt it was written under instead of falling back to Jan's.
+pub const SYSTEM_PROMPT_KEY: &str = "system_prompt";
+
 /// True for a `user` message the user actually authored. Hidden reminders ride
 /// in on the `user` role but are not turns: a rewind target, a fork point, a
 /// recall entry or a checkpoint key built from one would be a row the user never
@@ -759,10 +764,9 @@ use std::io::Write as _;
 use tauri_plugin_agent_tools::tools::gate::PermissionDecision;
 use tokio::sync::{mpsc, Mutex};
 
-/// Token-spend ceiling for one agent run when `agent.toml [budget].max_tokens`
-/// is unset. `0` disables the ceiling entirely. Counted marginally by
-/// `SessionBudget`, so it tracks real new spend, not the context replayed on
-/// every turn.
+/// Token-spend ceiling for one agent run when neither `--max-session-tokens` nor
+/// `agent.toml [budget].max_tokens` is set and the model's context window is
+/// unknown. `0` disables the ceiling entirely.
 ///
 /// Advisory, not a bound: crossing it compacts the history and records a note,
 /// then the run carries on (see `body_session_budget`). `--max-turns` and
@@ -770,28 +774,84 @@ use tokio::sync::{mpsc, Mutex};
 const DEFAULT_MAX_SESSION_TOKENS: u64 = 128_000;
 
 /// Where the session token ceiling in effect came from, so `agent status` can
-/// say which source won.
-///
-/// `agent status` takes no budget flag and so always passes `None`, making
-/// `"flag"` unreachable from the binary today. It is kept because the argument
-/// mirrors `resolve_session_budget` below: a status surface that does accept
-/// the flag (or any caller reporting an in-flight run's ceiling) would
-/// otherwise report `agent.toml` for a value the flag had overridden.
-fn session_budget_source(flag: Option<u64>, configured: Option<u64>) -> &'static str {
-    match (flag, configured) {
-        (Some(_), _) => "flag",
-        (None, Some(_)) => "agent.toml",
-        (None, None) => "default",
+/// say which source won and the TUI knows whether a model switch moves it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionBudgetSource {
+    /// `--max-session-tokens`, per invocation; outranks the file.
+    Flag,
+    /// `agent.toml [budget].max_tokens`.
+    Config,
+    /// The resolved context window of the model serving the run.
+    ContextWindow,
+    /// `DEFAULT_MAX_SESSION_TOKENS`: no window was known.
+    Default,
+}
+
+impl SessionBudgetSource {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            SessionBudgetSource::Flag => "flag",
+            SessionBudgetSource::Config => "agent.toml",
+            SessionBudgetSource::ContextWindow => "context_window",
+            SessionBudgetSource::Default => "default",
+        }
+    }
+
+    /// Whether the ceiling follows the model: only an unpinned, unconfigured
+    /// ceiling is re-derived when the model or its window changes.
+    pub(crate) fn follows_window(self) -> bool {
+        matches!(
+            self,
+            SessionBudgetSource::ContextWindow | SessionBudgetSource::Default
+        )
     }
 }
 
 /// Session token ceiling for one run. Precedence is the per-invocation
 /// `--max-session-tokens` flag, then `agent.toml [budget].max_tokens`, then
-/// `DEFAULT_MAX_SESSION_TOKENS` - the same flag/config/default shape the
-/// sandbox setting resolves with. `0` from either source means unbounded and is
-/// carried through as-is (see `body_session_budget`).
-fn resolve_session_budget(flag: Option<u64>, configured: Option<u64>) -> u64 {
-    flag.or(configured).unwrap_or(DEFAULT_MAX_SESSION_TOKENS)
+/// the model's context window, then `DEFAULT_MAX_SESSION_TOKENS`. `0` from
+/// either explicit source means unbounded and is carried through as-is (see
+/// `body_session_budget`).
+///
+/// The window is the default because the ceiling compacts when crossed: a
+/// fixed 128K would compact a 1M-window model at an eighth of its capacity,
+/// long before the window-based trigger would.
+pub(crate) fn resolve_session_budget(
+    flag: Option<u64>,
+    configured: Option<u64>,
+    context_window: Option<u64>,
+) -> (u64, SessionBudgetSource) {
+    match (flag, configured, context_window.filter(|w| *w > 0)) {
+        (Some(v), _, _) => (v, SessionBudgetSource::Flag),
+        (None, Some(v), _) => (v, SessionBudgetSource::Config),
+        (None, None, Some(w)) => (w, SessionBudgetSource::ContextWindow),
+        (None, None, None) => (DEFAULT_MAX_SESSION_TOKENS, SessionBudgetSource::Default),
+    }
+}
+
+/// The context window to size a default session budget by: `None` for the
+/// conservative fallback, which is a guess and not the model's window.
+pub(crate) fn known_window(
+    resolved: crate::core::cli::model_capabilities::ResolvedContextWindow,
+) -> Option<u64> {
+    (resolved.source != crate::core::cli::model_capabilities::ContextWindowSource::Fallback)
+        .then_some(resolved.tokens)
+}
+
+/// The compaction ratio for `model`. A provider that names its own ratio wins
+/// over the project's: context windows differ by an order of magnitude across
+/// providers, so one ratio cannot be right for all of them. Resolved through
+/// the same selection the upstream resolution makes, so the ratio always
+/// describes the route that will actually serve this request.
+pub(crate) fn resolve_compaction_ratio(
+    model: &str,
+    provider_configs: &HashMap<String, crate::core::state::ProviderConfig>,
+    configured: Option<f64>,
+) -> f64 {
+    crate::core::agent::upstream::pick_provider_for_model(model, provider_configs)
+        .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
+        .or(configured)
+        .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO)
 }
 
 /// The money ceiling for a run, priced against the model actually being billed.
@@ -948,6 +1008,18 @@ pub fn cli_agent_status(
             })
             .collect();
 
+    // The default ceiling follows the configured model's window, so status
+    // resolves that window the way a run would.
+    let status_window = cfg.agent.model.as_deref().and_then(|model| {
+        let provider = crate::core::cli::providers::provider_for_model(model, &provider_configs);
+        known_window(crate::core::cli::model_capabilities::resolve_context_window(
+            model,
+            cfg.agent.context_window,
+            crate::core::cli::model_capabilities::reported_window(provider.as_deref(), model),
+        ))
+    });
+    let session_budget = resolve_session_budget(None, cfg.budget.max_tokens, status_window);
+
     Ok(serde_json::json!({
         "project": project_root.to_string_lossy(),
         "data_folder": resolve_jan_data_folder().to_string_lossy(),
@@ -955,8 +1027,8 @@ pub fn cli_agent_status(
         // The effective ceiling with the config files resolved. A
         // `--max-session-tokens` flag is per-invocation and so, like
         // `--sandbox` below, cannot be reflected in a config dump.
-        "max_session_tokens": resolve_session_budget(None, cfg.budget.max_tokens),
-        "max_session_tokens_source": session_budget_source(None, cfg.budget.max_tokens),
+        "max_session_tokens": session_budget.0,
+        "max_session_tokens_source": session_budget.1.as_str(),
         // The configured money ceiling, or null when the project sets none.
         // Reported unpriced: whether it can actually be enforced depends on the
         // model a run resolves, which a config dump has not resolved.
@@ -1175,6 +1247,7 @@ fn build_cli_orchestration_args(
         ask_requests: None,
         todo_registry: None,
         system_prompt_override: None,
+        host_system_prompt: None,
         project_memory: true,
         subagents_enabled: true,
         max_parallel_subagents,
@@ -1259,12 +1332,17 @@ pub(crate) struct SessionLimits {
     /// Per-request output cap forwarded to the model as OpenAI `max_tokens`.
     /// `None` omits the field (model default).
     pub max_tokens: Option<u64>,
-    /// `--max-session-tokens`, else `[budget].max_tokens`, else the default:
-    /// marginal token-spend ceiling for one run. `0` is no ceiling.
+    /// `--max-session-tokens`, else `[budget].max_tokens`, else the model's
+    /// context window, else the default: marginal token-spend ceiling for one
+    /// run. `0` is no ceiling.
     ///
     /// Advisory: crossing it triggers compaction and a recorded note, it does
     /// not end the run. `max_turns` is the hard bound.
     pub max_session_tokens: u64,
+    /// Which source set `max_session_tokens`. A flag outranks
+    /// `[budget].max_tokens`, so `/reload config` must leave a pinned value
+    /// alone; a window-derived one follows a model switch.
+    pub max_session_tokens_source: SessionBudgetSource,
     /// `--max-turns`: hard cap on agentic turns for this run, and the only
     /// setting that terminates one. `None` omits the field from the request
     /// body, which the engine reads as unbounded; `0` means unbounded too (see
@@ -1395,8 +1473,8 @@ pub struct SessionFlags {
     /// is unbounded as well.
     pub max_turns: Option<u64>,
     /// `--max-session-tokens`: advisory session token ceiling, outranking
-    /// `[budget].max_tokens`. `None` (not passed) defers to that, then to
-    /// `DEFAULT_MAX_SESSION_TOKENS`.
+    /// `[budget].max_tokens`. `None` (not passed) defers to that, then to the
+    /// model's context window, then to `DEFAULT_MAX_SESSION_TOKENS`.
     pub max_session_tokens: Option<u64>,
     /// `--max-budget-usd`: hard USD ceiling for the run, outranking
     /// `[budget].max_usd`. `None` (not passed) defers to that, then leaves the
@@ -1660,16 +1738,8 @@ fn prepare_agent_session(
         .as_ref()
         .map(|w| w.path.clone())
         .unwrap_or_else(|| project_root.clone());
-    // A provider that names its own ratio wins over the project's: context
-    // windows differ by an order of magnitude across providers, so one ratio
-    // cannot be right for all of them. Resolved through the same selection the
-    // upstream resolution makes, so the ratio always describes the route that
-    // will actually serve this request.
     let compaction_ratio =
-        crate::core::agent::upstream::pick_provider_for_model(&model, &provider_configs)
-            .and_then(|name| provider_configs.get(&name)?.compaction_ratio)
-            .or(cfg.agent.compaction_ratio)
-            .unwrap_or(crate::core::agent::compaction::DEFAULT_COMPACTION_RATIO);
+        resolve_compaction_ratio(&model, &provider_configs, cfg.agent.compaction_ratio);
 
     let mut args = build_cli_orchestration_args(
         tool_root,
@@ -1706,7 +1776,14 @@ fn prepare_agent_session(
         context_window: resolved_window.tokens,
         ratio: compaction_ratio,
         reserve_tokens: cfg.agent.compaction_reserve_tokens,
+        window_pinned: cfg.agent.context_window.is_some(),
     });
+
+    let session_budget = resolve_session_budget(
+        flags.max_session_tokens,
+        cfg.budget.max_tokens,
+        known_window(resolved_window),
+    );
 
     // Resolved before the session is built: a run that asked for a ceiling it
     // cannot be priced against is refused here, before any paid request.
@@ -1732,10 +1809,8 @@ fn prepare_agent_session(
             compaction_ratio,
             compaction_reserve_tokens: cfg.agent.compaction_reserve_tokens,
             max_tokens: cfg.agent.max_tokens,
-            max_session_tokens: resolve_session_budget(
-                flags.max_session_tokens,
-                cfg.budget.max_tokens,
-            ),
+            max_session_tokens: session_budget.0,
+            max_session_tokens_source: session_budget.1,
             max_turns: flags.max_turns,
             cost_ceiling,
         },
@@ -2761,6 +2836,21 @@ pub fn agent_dir_for(project_root: &std::path::Path) -> PathBuf {
 /// Render one `StreamEvent` for the terminal. Content tokens go to stdout so a
 /// run can be piped; progress/diagnostics go to stderr. `PermissionRequest` is
 /// resolved via the terminal (deny when non-interactive).
+/// One headless line for a compaction event: `started (session_budget)`.
+fn describe_compaction(
+    phase: crate::core::agent::events::CompactionPhase,
+    reason: crate::core::agent::events::CompactionReason,
+    messages: Option<usize>,
+) -> String {
+    let wire = |v: serde_json::Value| v.as_str().unwrap_or_default().to_string();
+    let phase = wire(serde_json::json!(phase));
+    let reason = wire(serde_json::json!(reason));
+    match messages {
+        Some(n) => format!("{phase} ({reason}): {n} messages summarized"),
+        None => format!("{phase} ({reason})"),
+    }
+}
+
 async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: bool) {
     if crate::core::cli::auth::account::take_claude_alias_engaged() {
         eprintln!(
@@ -2837,20 +2927,35 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
         StreamEvent::Notice { text } => {
             eprintln!("\x1b[2m[notice] {text}\x1b[0m")
         }
+        StreamEvent::Compaction {
+            phase,
+            reason,
+            messages,
+        } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
         // The snapshot backs a live panel the headless printer has no room
         // for; `Notice` already reports each match as it lands.
         StreamEvent::Monitors { .. } => {}
         StreamEvent::Parked => {
             eprintln!("\x1b[2m[parked] waiting on background work\x1b[0m")
         }
-        StreamEvent::Subagent { name, event, .. } => {
-            if let StreamEvent::ToolCall { name: tool, args, .. } = *event {
-                eprintln!(
-                    "\x1b[2m[subagent:{name}] {}\x1b[0m",
-                    crate::core::agent::events::describe_tool_call(&tool, &args)
-                );
+        StreamEvent::Subagent { name, event, .. } => match *event {
+            StreamEvent::ToolCall { name: tool, args, .. } => eprintln!(
+                "\x1b[2m[subagent:{name}] {}\x1b[0m",
+                crate::core::agent::events::describe_tool_call(&tool, &args)
+            ),
+            StreamEvent::Notice { text } => {
+                eprintln!("\x1b[2m[subagent:{name}] [notice] {text}\x1b[0m")
             }
-        }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => eprintln!(
+                "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
+                describe_compaction(phase, reason, messages)
+            ),
+            _ => {}
+        },
         StreamEvent::Done { stop_reason, usage } => {
             let tokens = usage.and_then(|u| u.total_tokens).unwrap_or(0);
             eprintln!("\n\x1b[2m[done] stop_reason={stop_reason} tokens={tokens}\x1b[0m");
@@ -4357,23 +4462,55 @@ mod tests {
     }
 
     /// `--max-session-tokens` outranks `[budget].max_tokens`, which outranks
-    /// the built-in default; `0` from either source survives as the unbounded
-    /// marker `body_session_budget` expects rather than falling through.
+    /// the model's window, which outranks the built-in default; `0` from
+    /// either explicit source survives as the unbounded marker
+    /// `body_session_budget` expects rather than falling through.
     #[test]
-    fn session_budget_precedence_is_flag_then_config_then_default() {
+    fn session_budget_precedence_is_flag_then_config_then_window_then_default() {
+        use SessionBudgetSource::*;
         assert_eq!(
-            resolve_session_budget(None, None),
-            DEFAULT_MAX_SESSION_TOKENS
+            resolve_session_budget(None, None, None),
+            (DEFAULT_MAX_SESSION_TOKENS, Default)
         );
-        assert_eq!(resolve_session_budget(None, Some(50_000)), 50_000);
-        assert_eq!(resolve_session_budget(Some(20_000), Some(50_000)), 20_000);
-        assert_eq!(resolve_session_budget(Some(20_000), None), 20_000);
-        assert_eq!(resolve_session_budget(Some(0), Some(50_000)), 0);
-        assert_eq!(resolve_session_budget(None, Some(0)), 0);
+        assert_eq!(
+            resolve_session_budget(None, None, Some(1_000_000)),
+            (1_000_000, ContextWindow)
+        );
+        assert_eq!(
+            resolve_session_budget(None, None, Some(0)),
+            (DEFAULT_MAX_SESSION_TOKENS, Default)
+        );
+        let w = Some(1_000_000);
+        assert_eq!(resolve_session_budget(None, Some(50_000), w), (50_000, Config));
+        assert_eq!(resolve_session_budget(Some(20_000), Some(50_000), None), (20_000, Flag));
+        assert_eq!(resolve_session_budget(Some(20_000), None, w), (20_000, Flag));
+        assert_eq!(resolve_session_budget(Some(0), Some(50_000), None), (0, Flag));
+        assert_eq!(resolve_session_budget(None, Some(0), w), (0, Config));
 
-        assert_eq!(session_budget_source(None, None), "default");
-        assert_eq!(session_budget_source(None, Some(50_000)), "agent.toml");
-        assert_eq!(session_budget_source(Some(0), Some(50_000)), "flag");
+        assert_eq!(Default.as_str(), "default");
+        assert_eq!(Config.as_str(), "agent.toml");
+        assert_eq!(Flag.as_str(), "flag");
+        assert_eq!(ContextWindow.as_str(), "context_window");
+    }
+
+    /// A 1M-window model must not be compacted at 128K by the session budget:
+    /// the budget defaults to the window. The fallback window is a guess, not
+    /// the model's, so it leaves the budget on the built-in default.
+    #[test]
+    fn default_session_budget_follows_a_known_window_only() {
+        use crate::core::cli::model_capabilities::resolve_context_window;
+        let big = resolve_context_window("claude-sonnet-4-6", None, None);
+        assert_eq!(known_window(big), Some(1_000_000));
+        assert_eq!(
+            resolve_session_budget(None, None, known_window(big)).0,
+            1_000_000
+        );
+        let unknown = resolve_context_window("private-gateway-model", None, None);
+        assert_eq!(known_window(unknown), None);
+        assert_eq!(
+            resolve_session_budget(None, None, known_window(unknown)),
+            (DEFAULT_MAX_SESSION_TOKENS, SessionBudgetSource::Default)
+        );
     }
 
     /// The money ceiling resolves flag > config > none, and a run that asks
@@ -4436,6 +4573,7 @@ mod tests {
             compaction_reserve_tokens: None,
             max_tokens: None,
             max_session_tokens,
+            max_session_tokens_source: SessionBudgetSource::Default,
             max_turns,
             cost_ceiling: None,
         }

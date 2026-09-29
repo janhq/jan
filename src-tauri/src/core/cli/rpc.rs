@@ -33,6 +33,24 @@ struct Session {
     /// `false` restricts every turn to the host tools, through the same
     /// per-request `allowed_tools` allowlist an API caller uses.
     builtins: bool,
+    /// Whether the turn may delegate. Mirrored into the agent's
+    /// `subagents_enabled`; kept here because a rebuilt agent starts from the
+    /// project default and has to be told again.
+    subagents: bool,
+}
+
+/// The allowlist a host-only session's turns run under, or `None` for a
+/// session with built-ins. A child inherits it as its ceiling, so this is also
+/// what keeps a delegate from reaching Jan's shell or files.
+fn session_allowlist(session: &Session) -> Option<Vec<String>> {
+    (!session.builtins).then(|| {
+        let mut names = Vec::new();
+        if session.subagents {
+            names.extend(crate::core::agent::subagent::DELEGATE_ONLY_TOOLS.map(str::to_owned));
+        }
+        names.extend(host_names(&session.agent.args.host_tools));
+        names
+    })
 }
 
 struct ActiveTurn {
@@ -129,8 +147,8 @@ async fn tools_view(session: &Session) -> Value {
         .iter()
         .filter_map(|tool| tool["function"]["name"].as_str().map(str::to_owned))
         .collect();
-    if !session.builtins {
-        tools.retain(|name| args.host_tools.is_host_tool(name));
+    if let Some(allowed) = session_allowlist(session) {
+        tools.retain(|name| allowed.contains(name));
     }
     let specs: Vec<Value> = args
         .host_tools
@@ -327,8 +345,8 @@ fn start_turn(
         .map_err(|_| "RPC output queue is full; retry after draining notifications".to_owned())?;
     session.history.push(json!({"role":"user","content":input}));
     let mut body = session.agent.body(json!(session.history));
-    if !session.builtins {
-        body["allowed_tools"] = json!(host_names(&session.agent.args.host_tools));
+    if let Some(allowed) = session_allowlist(session) {
+        body["allowed_tools"] = json!(allowed);
     }
     let args = session.agent.args.clone();
     let (events, receiver) = mpsc::channel(64);
@@ -394,6 +412,8 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
     agent.args.host_tools = source.agent.args.host_tools.clone();
     agent.args.host_owns_gate = source.agent.args.host_owns_gate;
     agent.args.project_memory = source.agent.args.project_memory;
+    agent.args.subagents_enabled = source.subagents;
+    agent.args.host_system_prompt = source.agent.args.host_system_prompt.clone();
     Ok(agent)
 }
 
@@ -443,7 +463,9 @@ fn finish_turn(
                     Some(&session.id),
                     &session.agent.model,
                     &session.history,
-                    None,
+                    session.agent.args.host_system_prompt.as_ref().map(|prompt| {
+                        json!({ super::SYSTEM_PROMPT_KEY: prompt })
+                    }),
                 ) {
                     error_message = Some(format!("could not save session: {message}"));
                 }
@@ -533,6 +555,10 @@ pub async fn serve() -> Result<(), String> {
                         match serde_json::from_value::<SessionStartParams>(params.clone()) {
                             Err(_) => error(&id, -32602, "session/start requires cwd and supported options"),
                             Ok(start) if !std::path::Path::new(&start.cwd).is_dir() => error(&id, -32602, "cwd is not a directory"),
+                            // A blank prompt is almost certainly a host bug (an unset
+                            // template), and sending it would run a model with no
+                            // instructions at all rather than with Jan's.
+                            Ok(start) if start.system_prompt.as_deref().is_some_and(|p| p.trim().is_empty()) => error(&id, -32602, "systemPrompt must not be blank; omit it to use Jan's"),
                             // Declared before the session is built: a tool set the
                             // host got wrong is refused before anything is spent.
                             Ok(start) => match declare_tools(start.tools) {
@@ -544,13 +570,16 @@ pub async fn serve() -> Result<(), String> {
                                         // "Not saved" covers project memory too: an ephemeral
                                         // session's answers must not reach a later session.
                                         agent.args.project_memory = !start.ephemeral;
+                                        let subagents = start.subagents.unwrap_or(start.builtins);
+                                        agent.args.subagents_enabled = subagents;
+                                        agent.args.host_system_prompt = start.system_prompt;
                                         let sid = uuid::Uuid::new_v4().to_string();
                                         // The run reports the session by the id this client holds, not
                                         // by the private one the agent was built with: provenance and the
                                         // correlation id are the client's handle on the session, and an id
                                         // nothing else can name is not a handle.
                                         agent.args.session_id = Some(sid.clone());
-                                        let session = Session { agent, history: Vec::new(), id: sid.clone(), turns: 0, ephemeral: start.ephemeral, builtins: start.builtins };
+                                        let session = Session { agent, history: Vec::new(), id: sid.clone(), turns: 0, ephemeral: start.ephemeral, builtins: start.builtins, subagents };
                                         let mut result = tools_view(&session).await;
                                         result["sessionId"] = json!(sid);
                                         result["model"] = json!(session.agent.model);
@@ -697,7 +726,8 @@ pub async fn serve() -> Result<(), String> {
                                     let history = source.history.clone();
                                     let ephemeral = source.ephemeral;
                                     let builtins = source.builtins;
-                                    sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral, builtins });
+                                    let subagents = source.subagents;
+                                    sessions.insert(fork.clone(), Session { agent, history, id: fork.clone(), turns: 0, ephemeral, builtins, subagents });
                                     response(&id, json!({"sessionId":fork}))
                                 }
                                 Err(message) => error(&id, -32602, &message),

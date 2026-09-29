@@ -43,6 +43,7 @@ EVENT_TAGS: tuple[str, ...] = (
     "subagent_plan",
     "subagent",
     "notice",
+    "compaction",
     "monitors",
     "parked",
     "messages_updated",
@@ -92,6 +93,7 @@ EventTag = Literal[
     "subagent_plan",
     "subagent",
     "notice",
+    "compaction",
     "monitors",
     "parked",
     "messages_updated",
@@ -118,6 +120,12 @@ class AskRequest(TypedDict):
 class ClientInfo(TypedDict):
     name: str
     version: str
+
+# `Deserialize` as well as `Serialize`: a consumer validates what it received against these shapes, and `JsonSchema` is what `jan cli agent schema` publishes them as -- a consumer generates its own types from `protocol/schema.json` rather than copying this declaration. The wire has to survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the tag on both sides. Where a [`StreamEvent::Compaction`] is in its round trip.
+CompactionPhase = Union[Literal["started", "finished"], Literal["failed"]]
+
+# Which path asked for a [`StreamEvent::Compaction`].
+CompactionReason = Union[Literal["preflight"], Literal["context_overflow"], Literal["session_budget"]]
 
 # What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default.
 HostCapability = Union[Literal["read"], Literal["actuator"]]
@@ -214,8 +222,12 @@ class SessionStartParams(TypedDict):
     ephemeral: NotRequired[bool]
     # Host tools this session may call. Kept as raw values until declaration so a malformed entry is reported as `invalid_tools` with the reason, rather than as a generic params error that names nothing.
     tools: NotRequired[list[HostToolDeclSchema]]
-    # `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo`, subagent or monitor tools.
+    # `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`.
     builtins: NotRequired[bool]
+    # Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins.
+    subagents: NotRequired[Union[bool, None]]
+    # The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or recalled project memory. Its answers are still indexed for later sessions unless it is `ephemeral`. Jan may still append runtime notices to the conversation. Children keep their own prompts.
+    systemPrompt: NotRequired[Union[str, None]]
     permissions: NotRequired[PermissionOwner]
 
 class SessionIdParams(TypedDict):
@@ -370,6 +382,14 @@ class NoticeEvent(TypedDict):
     text: str
     type: Literal["notice"]
 
+class CompactionEvent(TypedDict):
+    """`item/compaction`"""
+
+    phase: CompactionPhase
+    reason: CompactionReason
+    messages: NotRequired[Union[int, None]]
+    type: Literal["compaction"]
+
 class MonitorsEvent(TypedDict):
     """`item/monitors`"""
 
@@ -508,6 +528,7 @@ StreamEvent = Union[
     SubagentPlanEvent,
     SubagentEvent,
     NoticeEvent,
+    CompactionEvent,
     MonitorsEvent,
     ParkedEvent,
     MessagesUpdatedEvent,

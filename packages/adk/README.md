@@ -108,7 +108,7 @@ handler that runs it here:
 ```js
 const session = await runtime.createSession({
   model: 'gpt-4o-mini',
-  builtins: false, // only the tools below, no shell/editor/subagent tools
+  builtins: false, // only the tools below, no shell/editor tools
   permissions: 'host', // this process runs and gates these tools itself
   tools: [
     {
@@ -185,6 +185,10 @@ for await (const event of turn) {
 An unanswered request parks the turn: nothing moves until it is answered, the
 turn is interrupted, or the runtime is closed. A `read` tool is never prompted
 for, in either mode.
+
+With `builtins: false`, `subagents: true` still lets the model delegate: each
+subagent is held to these host tools, and its calls arrive here with its
+`run_id`. `systemPrompt` replaces Jan's whole system prompt with yours.
 
 ## Process ownership
 

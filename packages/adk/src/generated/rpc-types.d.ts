@@ -38,6 +38,7 @@ export type EventTag =
   | "subagent_plan"
   | "subagent"
   | "notice"
+  | "compaction"
   | "monitors"
   | "parked"
   | "messages_updated"
@@ -67,6 +68,12 @@ export interface ClientInfo {
   "name": string
   "version": string
 }
+
+/** `Deserialize` as well as `Serialize`: a consumer validates what it received against these shapes, and `JsonSchema` is what `jan cli agent schema` publishes them as -- a consumer generates its own types from `protocol/schema.json` rather than copying this declaration. The wire has to survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the tag on both sides. Where a [`StreamEvent::Compaction`] is in its round trip. */
+export type CompactionPhase = "started" | "finished" | "failed"
+
+/** Which path asked for a [`StreamEvent::Compaction`]. */
+export type CompactionReason = "preflight" | "context_overflow" | "session_budget"
 
 /** What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default. */
 export type HostCapability = "read" | "actuator"
@@ -171,8 +178,12 @@ export interface SessionStartParams {
   "ephemeral"?: boolean
   /** Host tools this session may call. Kept as raw values until declaration so a malformed entry is reported as `invalid_tools` with the reason, rather than as a generic params error that names nothing. */
   "tools"?: HostToolDeclSchema[]
-  /** `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo`, subagent or monitor tools. */
+  /** `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`. */
   "builtins"?: boolean
+  /** Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins. */
+  "subagents"?: boolean | null
+  /** The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or recalled project memory. Its answers are still indexed for later sessions unless it is `ephemeral`. Jan may still append runtime notices to the conversation. Children keep their own prompts. */
+  "systemPrompt"?: string | null
   "permissions"?: PermissionOwner
 }
 
@@ -341,6 +352,14 @@ export interface NoticeEvent {
   "type": "notice"
 }
 
+/** The loop is summarizing part of the conversation to make room. Sent as `Started` before the summarizer call and `Finished` or `Failed` after it, so a consumer can show progress for what is otherwise a silent round trip. `reason` says which path asked. `messages` is how many were folded into the summary, `None` except on `Finished`. Display-only and never journaled; the compacted history itself arrives as `MessagesUpdated`. */
+export interface CompactionEvent {
+  "phase": CompactionPhase
+  "reason": CompactionReason
+  "messages"?: number | null
+  "type": "compaction"
+}
+
 /** The run's active file monitors, as a whole replacing the previous set. Emitted whenever the set changes (a `monitor` start or stop, a condition matching, a monitor finishing), so a consumer keeps a live view without bookkeeping of its own. Display-only and never journaled. Not forwarded from a child: a child's monitors are its own. */
 export interface MonitorsEvent {
   "monitors": MonitorSnapshot[]
@@ -479,6 +498,7 @@ export type StreamEvent =
   | SubagentPlanEvent
   | SubagentEvent
   | NoticeEvent
+  | CompactionEvent
   | MonitorsEvent
   | ParkedEvent
   | MessagesUpdatedEvent
@@ -510,6 +530,7 @@ export interface EventByTag {
   "subagent_plan": SubagentPlanEvent
   "subagent": SubagentEvent
   "notice": NoticeEvent
+  "compaction": CompactionEvent
   "monitors": MonitorsEvent
   "parked": ParkedEvent
   "messages_updated": MessagesUpdatedEvent

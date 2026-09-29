@@ -205,10 +205,19 @@ class JanRuntime:
         model: Optional[str] = None,
         ephemeral: Optional[bool] = None,
         builtins: Optional[bool] = None,
+        subagents: Optional[bool] = None,
+        system_prompt: Optional[str] = None,
         permissions: Optional[str] = None,
         tools: Sequence[HostTool] = (),
     ) -> JanSession:
         """Start a session. ``tools`` are host tools this session may call.
+
+        ``subagents`` lets the model delegate (default: same as ``builtins``);
+        with ``builtins=False`` every child is limited to these host tools.
+        ``system_prompt`` is sent exactly as given in place of Jan's prompt;
+        no project memory is recalled into it (answers are still indexed
+        unless ``ephemeral``), and Jan may still append runtime notices to the
+        conversation.
 
         ``permissions`` says who gates a host tool call: ``"host"`` when this
         process runs and gates its own tools, so the runtime never prompts for
@@ -223,6 +232,10 @@ class JanRuntime:
             params["ephemeral"] = ephemeral
         if builtins is not None:
             params["builtins"] = builtins
+        if subagents is not None:
+            params["subagents"] = subagents
+        if system_prompt is not None:
+            params["systemPrompt"] = system_prompt
         if permissions is not None and permissions != "jan":
             params["permissions"] = permissions
         if tools:
