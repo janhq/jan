@@ -23,9 +23,9 @@ export interface EngineInfo {
 
 /** Mirrors `engine::commands::EngineVersion`. */
 export interface EngineVersion {
-  /** llama.cpp's own version, e.g. "0.4.1". */
+  /** llama.cpp's own version, e.g. "0.5.0". */
   version: string
-  /** Upstream build tag the source was taken from, e.g. "b10964". */
+  /** Upstream build tag the source was taken from, e.g. "b11146". */
   tag: string
   /** The tag's build number, as a string. */
   build_number: string
