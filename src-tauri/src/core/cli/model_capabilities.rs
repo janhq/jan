@@ -58,19 +58,32 @@ fn strip_provider_qualifier(mut model_id: &str) -> &str {
     model_id
 }
 
+/// The `(major, minor)` generation at the front of a Claude version suffix:
+/// `4-6` -> (4, 6), `5` -> (5, 0), `4-5-20250929` -> (4, 5). A trailing date
+/// snapshot is not a minor version, so an 8-digit segment ends the parse.
+fn claude_generation(version: &str) -> (u32, u32) {
+    let mut parts = version.split('-').map(|p| {
+        if p.len() >= 8 { None } else { p.parse::<u32>().ok() }
+    });
+    let major = parts.next().flatten().unwrap_or(0);
+    let minor = parts.next().flatten().unwrap_or(0);
+    (major, minor)
+}
+
 /// Look up the catalog window for a bare model id (provider qualifier already
 /// stripped). `None` means the id matches no known family -> fallback.
 fn catalog_window(model_id: &str) -> Option<u64> {
-    // Claude family: the two newest releases get 1M, everything else claude 200K.
-    if model_id.starts_with("claude-") {
-        let is_new = ["haiku", "sonnet", "opus"]
-            .iter()
-            .any(|family| {
-                let prefix = format!("claude-{family}-4-6");
-                let prefix7 = format!("claude-{family}-4-7");
-                model_id.starts_with(&prefix) || model_id.starts_with(&prefix7)
+    // Claude family, per Anthropic's models overview: Sonnet 4.6, Opus 4.6
+    // and every later Opus/Sonnet generation, and the Fable and Mythos lines,
+    // are 1M by default (no beta header). Everything else, Haiku included, is
+    // 200K. Matched by generation so a new point release is not 200K by default.
+    if let Some(rest) = model_id.strip_prefix("claude-") {
+        let one_million = ["fable-", "mythos-"].iter().any(|f| rest.starts_with(f))
+            || ["opus-", "sonnet-"].iter().any(|family| {
+                rest.strip_prefix(family)
+                    .is_some_and(|version| claude_generation(version) >= (4, 6))
             });
-        return Some(if is_new { 1_000_000 } else { 200_000 });
+        return Some(if one_million { 1_000_000 } else { 200_000 });
     }
 
     // Codex variants are matched before the base gpt-5.x rows they contain.
@@ -85,6 +98,10 @@ fn catalog_window(model_id: &str) -> Option<u64> {
     }
     if model_id == "gpt-5.4" || model_id == "gpt-5.5" {
         return Some(1_050_000);
+    }
+    // gpt-4.1 and its mini/nano variants (and their dated snapshots).
+    if model_id.starts_with("gpt-4.1") {
+        return Some(1_047_576);
     }
     if model_id == "gpt-4" || model_id == "gpt-4o" || model_id == "gpt-4o-mini" {
         return Some(128_000);
@@ -177,6 +194,14 @@ mod tests {
             400_000
         );
         assert_eq!(
+            resolve_context_window("gpt-4.1", None, None).tokens,
+            1_047_576
+        );
+        assert_eq!(
+            resolve_context_window("gpt-4.1-mini-2025-04-14", None, None).tokens,
+            1_047_576
+        );
+        assert_eq!(
             resolve_context_window("gpt-5.2-codex", None, None).tokens,
             272_000
         );
@@ -184,6 +209,37 @@ mod tests {
             resolve_context_window("gemini-3-pro", None, None).tokens,
             1_000_000
         );
+    }
+
+    /// Anthropic's current lineup: Sonnet/Opus 4.6 and later, Fable and Mythos
+    /// are 1M by default; older generations and every Haiku are 200K. A dated
+    /// snapshot suffix must not read as a minor version.
+    #[test]
+    fn claude_windows_follow_the_generation() {
+        let window = |m: &str| resolve_context_window(m, None, None).tokens;
+        for m in [
+            "claude-sonnet-4-6",
+            "claude-opus-4-7",
+            "claude-opus-4-8",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-fable-5-1",
+            "claude-mythos-5",
+        ] {
+            assert_eq!(window(m), 1_000_000, "{m}");
+        }
+        for m in [
+            "claude-sonnet-4-5",
+            "claude-sonnet-4-5-20250929",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-1",
+            "claude-opus-4-5",
+            "claude-haiku-4-5",
+            "claude-haiku-4-6",
+            "claude-3-7-sonnet-latest",
+        ] {
+            assert_eq!(window(m), 200_000, "{m}");
+        }
     }
 
     #[test]
@@ -239,6 +295,26 @@ mod tests {
             resolve_context_window("claude-sonnet-4-5", None, Some(0)).source,
             ContextWindowSource::Catalog
         );
+    }
+
+    /// Tokamak reports each model's window in its `/models` listing, and that
+    /// figure is authoritative: the Claude catalog rows only fill in when the
+    /// listing said nothing, so a catalog change can never override it.
+    #[test]
+    fn tokamak_reported_window_beats_the_claude_catalog() {
+        for (model, reported) in [
+            ("tokamak/anthropic/claude-opus-5", 400_000),
+            ("tokamak/anthropic/claude-sonnet-4-5", 1_000_000),
+        ] {
+            assert_eq!(
+                resolve_context_window(model, None, Some(reported)),
+                ResolvedContextWindow {
+                    tokens: reported,
+                    source: ContextWindowSource::Provider,
+                },
+                "{model}"
+            );
+        }
     }
 
     #[test]

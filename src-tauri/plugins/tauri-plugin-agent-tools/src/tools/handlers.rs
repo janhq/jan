@@ -471,13 +471,20 @@ fn render_write_diff(prior: Option<&str>, content: &str) -> String {
 /// `skill_list` tool: catalog of `name — description` lines for ENABLED skills
 /// only (disabled skills must stay invisible to the model). Empty if none.
 fn skill_list(ctx: &ToolContext<'_>) -> String {
-    skills::catalog_layered(&ctx.skill_roots(), ctx.enabled_skills)
-        .iter()
-        .map(|m| {
-            if m.description.is_empty() {
-                m.name.clone()
+    let entries: Vec<(String, String)> = match &ctx.skill_source {
+        Some(source) => source.catalog(),
+        None => skills::catalog_layered(&ctx.skill_roots(), ctx.enabled_skills)
+            .into_iter()
+            .map(|m| (m.name, m.description))
+            .collect(),
+    };
+    entries
+        .into_iter()
+        .map(|(name, description)| {
+            if description.is_empty() {
+                name
             } else {
-                format!("{} — {}", m.name, m.description)
+                format!("{name} — {description}")
             }
         })
         .collect::<Vec<_>>()
@@ -491,6 +498,9 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     let Some(name) = arg_str(args, "name") else {
         return "ERROR: missing required argument 'name'".to_string();
     };
+    if let Some(source) = &ctx.skill_source {
+        return source.read(name).unwrap_or_else(|e| e);
+    }
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' not found");
     }
@@ -506,6 +516,8 @@ fn skill_read(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
 }
 
 /// `skill_write` tool: create/update a skill (new ones as `<name>/SKILL.md`).
+/// `scope` picks the store: `project` (the default, `store_root`) or `user`
+/// (`skill_user_root`, i.e. `~/.jan/skills`, visible from every project).
 /// The `[skills].enabled` whitelist is honored for writes too: a disabled skill
 /// is treated as read-only so the model cannot silently overwrite (or resurrect)
 /// a skill the user has turned off or locked out of the catalog.
@@ -519,8 +531,18 @@ fn skill_write(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     if !skills::is_enabled(ctx.enabled_skills, name) {
         return format!("ERROR: skill '{name}' is disabled and read-only");
     }
-    match skills::write(ctx.store_root, name, content) {
-        Ok(()) => format!("Wrote skill '{name}'"),
+    let (store, label) = match arg_str(args, "scope").unwrap_or("project") {
+        "project" => (ctx.store_root, "skill"),
+        "user" => match ctx.skill_user_root {
+            Some(root) => (root, "user skill"),
+            None => return "ERROR: scope 'user' is not available here".to_string(),
+        },
+        other => {
+            return format!("ERROR: invalid scope '{other}' (expected \"project\" or \"user\")")
+        }
+    };
+    match skills::write(store, name, content) {
+        Ok(()) => format!("Wrote {label} '{name}'"),
         Err(e) => e,
     }
 }
@@ -3573,6 +3595,87 @@ mod tests {
         // skill_list surfaces the catalog line.
         let l = execute_builtin(lookup("skill_list").unwrap(), &json!({}), &root).await;
         assert!(l.contains("deploy"), "unexpected list: {l}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn skill_write_scope_picks_the_project_or_user_store() {
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let home = root.join("home-jan");
+        let ctx = ToolContext::new(&root, &store, &[]).with_skill_user_root(Some(&home));
+        let write = |args: serde_json::Value| {
+            let ctx = ctx.clone();
+            async move { super::execute_builtin(lookup("skill_write").unwrap(), &args, &ctx).await.0 }
+        };
+
+        // No scope: the project store, as before.
+        let out = write(json!({"name": "a", "content": "x"})).await;
+        assert_eq!(out, "Wrote skill 'a'");
+        assert!(store.join("skills/a/SKILL.md").is_file());
+        assert!(!home.join("skills/a").exists());
+
+        // scope: "project" is the same thing, spelled out.
+        write(json!({"name": "b", "content": "x", "scope": "project"})).await;
+        assert!(store.join("skills/b/SKILL.md").is_file());
+
+        // scope: "user" writes to `<jan home>/skills`.
+        let out = write(json!({"name": "c", "content": "x", "scope": "user"})).await;
+        assert_eq!(out, "Wrote user skill 'c'");
+        assert!(home.join("skills/c/SKILL.md").is_file());
+        assert!(!store.join("skills/c").exists());
+
+        // An unknown scope is refused, not silently defaulted.
+        let out = write(json!({"name": "d", "content": "x", "scope": "global"})).await;
+        assert!(out.starts_with("ERROR: invalid scope"), "{out}");
+
+        // A surface with no user root refuses the user scope.
+        let bare = ToolContext::new(&root, &store, &[]);
+        let out = super::execute_builtin(
+            lookup("skill_write").unwrap(),
+            &json!({"name": "e", "content": "x", "scope": "user"}),
+            &bare,
+        )
+        .await
+        .0;
+        assert!(out.starts_with("ERROR: scope 'user'"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn a_skill_source_overrides_list_and_read() {
+        struct Fixed;
+        impl crate::tools::SkillProvider for Fixed {
+            fn catalog(&self) -> Vec<(String, String)> {
+                vec![("p:one".into(), "first".into()), ("two".into(), String::new())]
+            }
+            fn read(&self, name: &str) -> Result<String, String> {
+                (name == "p:one")
+                    .then(|| "body one".to_string())
+                    .ok_or_else(|| format!("ERROR: skill '{name}' not found"))
+            }
+        }
+        let root = unique_root();
+        let store = crate::workspace::project_store(&root);
+        let ctx =
+            ToolContext::new(&root, &store, &[]).with_skill_source(std::sync::Arc::new(Fixed));
+        let list = super::execute_builtin(lookup("skill_list").unwrap(), &json!({}), &ctx)
+            .await
+            .0;
+        assert_eq!(list, "p:one — first\ntwo");
+        let read = super::execute_builtin(
+            lookup("skill_read").unwrap(),
+            &json!({"name": "p:one"}),
+            &ctx,
+        )
+        .await
+        .0;
+        assert_eq!(read, "body one");
+        let missing =
+            super::execute_builtin(lookup("skill_read").unwrap(), &json!({"name": "x"}), &ctx)
+                .await
+                .0;
+        assert!(missing.starts_with("ERROR"), "{missing}");
         let _ = std::fs::remove_dir_all(&root);
     }
 

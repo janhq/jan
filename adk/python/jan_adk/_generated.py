@@ -43,6 +43,7 @@ EVENT_TAGS: tuple[str, ...] = (
     "subagent_plan",
     "subagent",
     "notice",
+    "compaction",
     "monitors",
     "parked",
     "messages_updated",
@@ -92,6 +93,7 @@ EventTag = Literal[
     "subagent_plan",
     "subagent",
     "notice",
+    "compaction",
     "monitors",
     "parked",
     "messages_updated",
@@ -118,6 +120,12 @@ class AskRequest(TypedDict):
 class ClientInfo(TypedDict):
     name: str
     version: str
+
+# `Deserialize` as well as `Serialize`: a consumer validates what it received against these shapes, and `JsonSchema` is what `jan cli agent schema` publishes them as -- a consumer generates its own types from `protocol/schema.json` rather than copying this declaration. The wire has to survive a round trip, not just a write, so `#[serde(tag = "type")]` keeps the tag on both sides. Where a [`StreamEvent::Compaction`] is in its round trip.
+CompactionPhase = Union[Literal["started", "finished"], Literal["failed"]]
+
+# Which path asked for a [`StreamEvent::Compaction`].
+CompactionReason = Union[Literal["preflight"], Literal["context_overflow"], Literal["session_budget"]]
 
 # What a host says a tool does, which decides how the loop treats it. Absent means opaque: prompted unless `auto_approve`, sequential, withheld in Plan mode -- the plugin/MCP default.
 HostCapability = Union[Literal["read"], Literal["actuator"]]
@@ -374,6 +382,14 @@ class NoticeEvent(TypedDict):
     text: str
     type: Literal["notice"]
 
+class CompactionEvent(TypedDict):
+    """`item/compaction`"""
+
+    phase: CompactionPhase
+    reason: CompactionReason
+    messages: NotRequired[Union[int, None]]
+    type: Literal["compaction"]
+
 class MonitorsEvent(TypedDict):
     """`item/monitors`"""
 
@@ -512,6 +528,7 @@ StreamEvent = Union[
     SubagentPlanEvent,
     SubagentEvent,
     NoticeEvent,
+    CompactionEvent,
     MonitorsEvent,
     ParkedEvent,
     MessagesUpdatedEvent,

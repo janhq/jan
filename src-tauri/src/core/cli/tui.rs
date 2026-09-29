@@ -50,7 +50,8 @@ use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
 use super::{
-    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
+    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget,
+    SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -1942,9 +1943,9 @@ struct App {
     /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
     /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
-    /// `--max-session-tokens` pinned `max_session_tokens`, so `/reload config`
-    /// does not replace it with `[budget].max_tokens`.
-    max_session_tokens_pinned: bool,
+    /// Which source set `max_session_tokens`. `--max-session-tokens` pins it
+    /// against `/reload config`; a window-derived one follows the model.
+    max_session_tokens_source: SessionBudgetSource,
     /// `[budget].max_usd`: what one message's run may spend before it stops,
     /// with the rates to meter it against. `None` -- the default -- leaves the
     /// session unmetered. Per run, not per session: each message gets the same
@@ -2242,6 +2243,13 @@ struct App {
     compacting: Option<CompactKind>,
     /// When the in-flight compaction started, for the elapsed counter.
     compact_started: Option<Instant>,
+    /// The running turn is itself compacting (the loop's preflight, overflow
+    /// or budget path), and since when. Display-only: unlike `compacting` it
+    /// gates nothing, because the run that compacts is the one already going.
+    run_compacting: Option<Instant>,
+    /// A mid-run compaction finished, so the next `MessagesUpdated` carries a
+    /// shorter history the gauge must be re-estimated against.
+    pending_compaction_refresh: bool,
     /// The in-flight compaction was triggered by a context-overflow error, so
     /// the errored turn is resumed once it lands.
     retry_after_compact: bool,
@@ -2718,7 +2726,7 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
-            max_session_tokens_pinned: limits.max_session_tokens_pinned,
+            max_session_tokens_source: limits.max_session_tokens_source,
             cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
@@ -2818,6 +2826,8 @@ impl App {
             compact_request: None,
             compacting: None,
             compact_started: None,
+            run_compacting: None,
+            pending_compaction_refresh: false,
             retry_after_compact: false,
             overflow_retries: 0,
             scrollback: 0,
@@ -5097,6 +5107,12 @@ impl App {
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
+        // An unconfigured session budget is sized by the window, so it moves
+        // with it; a flag or `[budget].max_tokens` stays put.
+        if self.max_session_tokens_source.follows_window() {
+            (self.max_session_tokens, self.max_session_tokens_source) =
+                super::resolve_session_budget(None, None, super::known_window(resolved));
+        }
         self.sync_compaction_budget();
         changed
     }
@@ -5115,11 +5131,13 @@ impl App {
             context_window: self.context_window,
             ratio: self.compaction_ratio,
             reserve_tokens: self.compaction_reserve_tokens,
+            window_pinned: self.configured_context_window.is_some(),
         };
         let unchanged = args.compaction.is_some_and(|b| {
             b.context_window == budget.context_window
                 && b.ratio == budget.ratio
                 && b.reserve_tokens == budget.reserve_tokens
+                && b.window_pinned == budget.window_pinned
         });
         if unchanged {
             return;
@@ -5903,11 +5921,26 @@ impl App {
                     self.tokens_estimated = false;
                 }
             }
-            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                self.run_compacting = None;
+            }
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+                // A compaction mid-run replaced the history the last `usage`
+                // measured, so the gauge re-estimates instead of showing the
+                // pre-compaction fill until the next response lands.
+                if self.pending_compaction_refresh {
+                    self.pending_compaction_refresh = false;
+                    self.tokens = estimate_token_count(&self.history);
+                    self.invalidate_token_provenance();
+                }
             }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -6011,6 +6044,19 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
+            // A child's headline (a compaction, a monitor match) is as much the
+            // user's business as the parent's: dropping it made a child's
+            // compaction invisible.
+            StreamEvent::Notice { text } => {
+                self.note(&format!("{name}: {text}"));
+            }
+            // A child's compaction is announced, but the spinner and gauge are
+            // the parent's: the child's history is not the one on screen.
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, Some(name)),
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
             // surfaced in the parent transcript: a subagent panel is a one-line
@@ -6018,6 +6064,50 @@ impl App {
             // go and would push the parent's own live panel off screen. Deliberate
             // -- the child's output still reaches its `ToolResult`.
             _ => {}
+        }
+    }
+
+    /// Show a loop-side compaction: a throbber while the summarizer runs and a
+    /// note when it lands or fails. `child` names the subagent it came from,
+    /// whose compaction gets a note only.
+    fn apply_compaction(
+        &mut self,
+        phase: crate::core::agent::events::CompactionPhase,
+        reason: crate::core::agent::events::CompactionReason,
+        messages: Option<usize>,
+        child: Option<&str>,
+    ) {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let why = match reason {
+            CompactionReason::Preflight => "the prompt neared the context window",
+            CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
+            CompactionReason::SessionBudget => "the session token budget was used up",
+        };
+        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        match phase {
+            CompactionPhase::Started => {
+                if child.is_none() {
+                    self.run_compacting = Some(Instant::now());
+                }
+            }
+            CompactionPhase::Finished => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                    self.pending_compaction_refresh = true;
+                }
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&format!(
+                    "{who}compacted {} messages into a summary: {why}",
+                    messages.unwrap_or(0)
+                ));
+            }
+            CompactionPhase::Failed => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                }
+                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+            }
         }
     }
 
@@ -12631,6 +12721,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/skills",
+        hint: "",
+        description: "List skills with their scope (project, plugin, user, built-in) and shadowing",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/reload",
         hint: "[config|plugin|skills|system-prompt]",
         description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
@@ -12873,6 +12969,7 @@ async fn run_command(
         "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "reload" => reload_command(app, arg),
+        "skills" => skills_command(app),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -13423,16 +13520,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Enum {
             options: &["read-only", "deny", "allow"],
             default: "read-only",
-        },
-        scope: SettingScope::Project,
-    },
-    AgentSettingDef {
-        key: "skills.inject",
-        label: "skills.inject",
-        desc: "when project skills are injected into the prompt",
-        kind: AgentSettingKind::Enum {
-            options: &["always", "relevance"],
-            default: "always",
         },
         scope: SettingScope::Project,
     },
@@ -14976,12 +15063,58 @@ fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec
                 key: name.clone(),
                 label: name,
                 state: format!(
-                    "{} [user:{} model:{}]",
-                    m.description, m.user_invocable, m.model_invocable
+                    "{} [{} user:{} model:{}]",
+                    m.description,
+                    m.scope.label(),
+                    m.user_invocable,
+                    m.model_invocable
                 ),
             }
         })
         .collect()
+}
+
+/// `/skills`: every skill Jan can see from this project, with its scope and
+/// invocation sides, and each one hidden by a same-named higher-precedence
+/// skill marked with what shadows it. Precedence: project > user > built-in;
+/// plugin skills are qualified `<plugin>:<name>` and never collide.
+fn skills_command(app: &mut App) {
+    let enabled = crate::core::agent::project::enabled_skills(&app.project_root);
+    let rows = crate::core::agent::skills::report(&app.project_root, &enabled);
+    let user_dir = crate::core::agent::skills::user_skills_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_else(|| "(no home directory)".to_string());
+    let active = rows.iter().filter(|r| r.shadowed_by.is_none()).count();
+    app.note(&format!(
+        "◈ skills · {active} active · precedence project > user > built-in · user scope {user_dir}"
+    ));
+    for row in &rows {
+        let mut flags = Vec::new();
+        if !row.user_invocable {
+            flags.push("model-only".to_string());
+        }
+        if !row.model_invocable {
+            flags.push("user-only".to_string());
+        }
+        if !row.enabled {
+            flags.push("disabled".to_string());
+        }
+        if let Some(by) = row.shadowed_by {
+            flags.push(format!("shadowed by {}", by.label()));
+        }
+        let flags = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", flags.join(", "))
+        };
+        app.system_detail_text(&format!(
+            "{:<9} {}{} · {}",
+            row.scope.label(),
+            row.name,
+            flags,
+            row.description
+        ));
+    }
 }
 
 /// Display lines for what a reload changed, one list per kind of change.
@@ -15057,7 +15190,7 @@ fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
     }
     if skills {
         let after = reload_skill_entries(&app.slash_catalog.all_skills);
-        app.note("◈ reload · skills · re-scanned project and plugin skills");
+        app.note("◈ reload · skills · re-scanned project, plugin, and user skills");
         report_reload_diff(app, diff_reload_entries(&skills_before, &after));
     }
 }
@@ -15123,8 +15256,12 @@ fn reload_config(app: &mut App) {
     }
     app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
     app.max_tokens = cfg.agent.max_tokens;
-    if !app.max_session_tokens_pinned {
-        app.max_session_tokens = super::resolve_session_budget(None, cfg.budget.max_tokens);
+    let pinned = app.max_session_tokens_source == SessionBudgetSource::Flag;
+    if !pinned {
+        // Seeded from the file alone; `refresh_context_window` below fills in
+        // the window-derived default when the file sets none.
+        (app.max_session_tokens, app.max_session_tokens_source) =
+            super::resolve_session_budget(None, cfg.budget.max_tokens, None);
     }
     app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
     // Re-resolves the window and pushes the compaction budget to the engine.
@@ -15136,9 +15273,7 @@ fn reload_config(app: &mut App) {
         crate::core::agent::project::agent_toml_path(&app.project_root).display()
     ));
     report_reload_diff(app, diff_reload_entries(&before, &after));
-    if app.max_session_tokens_pinned
-        && super::resolve_session_budget(None, cfg.budget.max_tokens) != budget_before
-    {
+    if pinned && cfg.budget.max_tokens.is_some_and(|v| v != budget_before) {
         app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
     }
     if !ratio_busy
@@ -19932,6 +20067,8 @@ fn header(app: &App) -> Paragraph<'static> {
 fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.run_compacting.is_some() {
+        ("compacting".to_string(), Style::new().magenta().bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
@@ -20490,6 +20627,18 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ),
         ]))
         .block(block)
+    } else if let Some(started) = app.run_compacting.filter(|_| app.input.is_empty()) {
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!(
+                    "compacting conversation… {}",
+                    format_elapsed(started.elapsed().as_secs())
+                ),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
@@ -20858,7 +21007,7 @@ mod tests {
             compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
-            max_session_tokens_pinned: false,
+            max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
             max_turns: None,
             cost_ceiling: None,
         };
@@ -21365,7 +21514,7 @@ mod tests {
                     compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
-                    max_session_tokens_pinned: false,
+                    max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
                     max_turns: None,
                     cost_ceiling: None,
                 },
@@ -32249,6 +32398,107 @@ mod tests {
         });
     }
 
+    /// A compaction the running turn makes shows a throbber while the
+    /// summarizer runs, a note saying why when it lands, and re-estimates the
+    /// gauge from the compacted history instead of keeping the old fill.
+    #[test]
+    fn a_mid_run_compaction_shows_progress_and_refreshes_the_gauge() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.tokens = 900_000;
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::SessionBudget,
+            messages: None,
+        });
+        assert!(app.run_compacting.is_some());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("compacting"), "{header}");
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::SessionBudget,
+            messages: Some(12),
+        });
+        assert!(app.run_compacting.is_none());
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("compacted 12 messages into a summary: the session token budget"),
+            "{out}"
+        );
+
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![serde_json::json!({ "role": "user", "content": "short" })],
+        });
+        assert!(app.tokens < 1_000, "gauge re-estimated: {}", app.tokens);
+        assert!(app.tokens_estimated);
+    }
+
+    /// A failed compaction takes its throbber down and says so.
+    #[test]
+    fn a_failed_mid_run_compaction_clears_the_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        for phase in [CompactionPhase::Started, CompactionPhase::Failed] {
+            app.apply(StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::ContextOverflow,
+                messages: None,
+            });
+        }
+        assert!(app.run_compacting.is_none());
+        assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// A child's compaction gets a note but not the parent's throbber: the
+    /// child's history is not the one on screen.
+    #[test]
+    fn a_subagent_compaction_is_noted_without_the_parent_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        for (phase, messages) in [(CompactionPhase::Started, None), (CompactionPhase::Finished, Some(5))] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::Preflight,
+                    messages,
+                },
+            );
+            assert!(app.run_compacting.is_none());
+        }
+        assert!(
+            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            "{}",
+            transcript_text(&app)
+        );
+    }
+
+    /// A child's `Notice` (e.g. "compacted N messages") reaches the parent
+    /// transcript, attributed to the child. It used to fall into the catch-all
+    /// arm, so a subagent's compaction was invisible.
+    #[test]
+    fn subagent_notice_is_shown_in_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::Notice {
+                text: "compacted 12 messages into a summary".into(),
+            },
+        );
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("alpha: compacted 12 messages into a summary"),
+            "{out}"
+        );
+    }
+
     /// Parallel agents collapse into one fixed-height block, each carrying the
     /// numbers that say whether it is progressing or about to blow its context.
     #[test]
@@ -37887,6 +38137,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// janhq/jan-internal#394: `/skills` lists every scope, and a user skill
+    /// hidden by a same-named project skill is shown as shadowed; the popup
+    /// catalog offers user skills and `/reload skills` picks up new ones.
+    #[tokio::test]
+    async fn skills_command_lists_scopes_and_marks_shadowing() {
+        let (mut app, root) = skill_test_app("tui394-deploy", "Project deploy.");
+        let user = crate::core::agent::skills::user_skills_dir().unwrap();
+        for (name, desc) in [("tui394-deploy", "User deploy."), ("tui394-review", "User review.")] {
+            std::fs::create_dir_all(user.join(name)).unwrap();
+            std::fs::write(
+                user.join(name).join("SKILL.md"),
+                format!("---\ndescription: {desc}\n---\n\nBody.\n"),
+            )
+            .unwrap();
+        }
+        run_command(&mut app, "skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("precedence project > user > built-in"), "{out}");
+        assert!(out.contains("project   tui394-deploy · Project deploy."), "{out}");
+        assert!(
+            out.contains("user      tui394-deploy (shadowed by project) · User deploy."),
+            "{out}"
+        );
+        assert!(out.contains("user      tui394-review · User review."), "{out}");
+        assert!(out.contains("built-in  jan"), "{out}");
+
+        // The popup offers the user skill once `/reload skills` rescans.
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("+ tui394-review"));
+        assert!(app.slash_catalog.skills.iter().any(|m| m.name == "tui394-review"));
+        app.input = "/skill:tui394-r".into();
+        assert!(
+            app.slash_matches()
+                .iter()
+                .any(|m| m.name() == "/skill:tui394-review"),
+            "popup offers the user skill"
+        );
+
+        for name in ["tui394-deploy", "tui394-review"] {
+            let _ = std::fs::remove_dir_all(user.join(name));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn reload_system_prompt_reads_jan_md() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
@@ -37996,7 +38290,7 @@ mod tests {
     async fn reload_config_respects_a_pinned_session_budget() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         app.max_session_tokens = 42;
-        app.max_session_tokens_pinned = true;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Flag;
         write_agent_toml(&root, "[budget]\nmax_tokens = 999\n");
         run_command(&mut app, "reload config", &no_mcp()).await;
         assert_eq!(app.max_session_tokens, 42, "--max-session-tokens outranks the file");
@@ -38972,6 +39266,29 @@ mod tests {
             Some(CompactKind::Auto),
             "a smaller-window switch must queue target compaction"
         );
+    }
+
+    /// An unconfigured session budget is sized by the model's window and
+    /// follows a model switch; the old fixed 128K compacted 1M-window models at
+    /// an eighth of their capacity. A `[budget].max_tokens` value stays put.
+    #[test]
+    fn default_session_budget_follows_the_model_window() {
+        let mut app = test_app();
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.context_window, 1_000_000);
+        assert_eq!(app.max_session_tokens, 1_000_000);
+        assert_eq!(
+            app.max_session_tokens_source,
+            crate::core::cli::SessionBudgetSource::ContextWindow
+        );
+
+        app.set_model("claude-sonnet-4-5".to_string());
+        assert_eq!(app.max_session_tokens, 200_000);
+
+        app.max_session_tokens = 50_000;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Config;
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.max_session_tokens, 50_000, "a configured budget is not resized");
     }
 
     #[test]

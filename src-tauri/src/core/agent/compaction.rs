@@ -81,12 +81,39 @@ pub(crate) struct CompactionBudget {
     pub(crate) ratio: f64,
     /// An explicit `[agent].compaction_reserve_tokens`, which wins over `ratio`.
     pub(crate) reserve_tokens: Option<u64>,
+    /// `context_window` is an explicit `[agent].context_window`, which holds
+    /// for every model. Otherwise it was resolved for this run's model, and a
+    /// subagent on a different model must re-resolve its own.
+    pub(crate) window_pinned: bool,
 }
 
 impl CompactionBudget {
     /// Prompt tokens at which this run compacts ahead of dispatching.
     pub(crate) fn trigger_tokens(&self) -> u64 {
         trigger_tokens(self.context_window, self.ratio, self.reserve_tokens)
+    }
+
+    /// This budget for a run on `model` under a dispatcher running
+    /// `parent_model`, with `resolve` sizing a window for a model. Kept when
+    /// the model is the same, the window was configured (which holds for
+    /// every model), or `resolve` cannot size one; otherwise the window is
+    /// the resolved one. Ratio and reserve are the project's and carry over.
+    pub(crate) fn for_model(
+        self,
+        model: &str,
+        parent_model: &str,
+        resolve: impl FnOnce(&str) -> Option<u64>,
+    ) -> Self {
+        if model == parent_model || self.window_pinned {
+            return self;
+        }
+        match resolve(model) {
+            Some(context_window) => Self {
+                context_window,
+                ..self
+            },
+            None => self,
+        }
     }
 }
 
@@ -480,6 +507,30 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::sync::Mutex as StdMutex;
+
+    /// A budget re-sized for another model takes that model's window and
+    /// keeps the project's ratio; the same model, or a configured window,
+    /// keeps the budget as it was.
+    #[test]
+    fn a_budget_for_another_model_takes_that_models_window() {
+        let parent = CompactionBudget {
+            context_window: 1_000_000,
+            ratio: 0.7,
+            reserve_tokens: None,
+            window_pinned: false,
+        };
+        let child = parent.for_model("small", "big", |_| Some(200_000));
+        assert_eq!(child.context_window, 200_000);
+        assert_eq!(child.ratio, 0.7);
+        assert_eq!(parent.for_model("big", "big", |_| Some(1)).context_window, 1_000_000);
+        let pinned = CompactionBudget {
+            window_pinned: true,
+            ..parent
+        };
+        assert_eq!(pinned.for_model("small", "big", |_| Some(1)).context_window, 1_000_000);
+        // A build that cannot size a window keeps the one it has.
+        assert_eq!(parent.for_model("small", "big", |_| None).context_window, 1_000_000);
+    }
 
     /// The `PreCompact` call site: the hook runs, and it is told how much
     /// conversation is about to be summarized away -- the one fact a hook that

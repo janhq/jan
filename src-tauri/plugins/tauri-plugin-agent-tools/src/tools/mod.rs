@@ -84,6 +84,16 @@ pub struct ToolContext<'a> {
     /// every surface with no folder attached. Skill *writes* and all memory ops
     /// still target `store_root`; only skill reads consult this overlay.
     pub skill_project_root: Option<&'a Path>,
+    /// A richer skill resolver supplied by the host (the CLI's layering of
+    /// project, plugin, user and built-in skills). When set, `skill_list`/`skill_read` go
+    /// through it instead of the plain layered store scan, so every surface the
+    /// host builds sees the same catalog its system prompt advertises. `None`
+    /// keeps the store-only behaviour (the desktop).
+    pub skill_source: Option<SkillSource>,
+    /// The user-wide skill store root (`~/.jan`; skills land in its `skills/`),
+    /// the target of `skill_write` with `scope: "user"`. `None` on surfaces
+    /// with no user scope, where that scope is refused.
+    pub skill_user_root: Option<&'a Path>,
     /// `~/.jan`, reached by the `memory_*` tools as the `user:` scope and as
     /// the parent of other projects' stores. `None` (the desktop) confines
     /// memory to `store_root`.
@@ -200,6 +210,8 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("project_root", &self.project_root)
             .field("store_root", &self.store_root)
             .field("skill_project_root", &self.skill_project_root)
+            .field("skill_source", &self.skill_source.is_some())
+            .field("skill_user_root", &self.skill_user_root)
             .field("memory_home", &self.memory_home)
             .field("cross_project", &self.cross_project)
             .field("enabled_skills", &self.enabled_skills)
@@ -225,6 +237,19 @@ impl std::fmt::Debug for ToolContext<'_> {
             .finish()
     }
 }
+
+/// A host-side skill resolver for the model's `skill_list`/`skill_read`.
+/// Implementations apply their own enabled whitelist and invocation-side
+/// filtering: `catalog` returns only model-invocable, enabled skills as
+/// `(name, description)` pairs in a stable order, and `read` returns the body
+/// (frontmatter stripped) of one such skill or an `ERROR: ...` string.
+pub trait SkillProvider: Send + Sync {
+    fn catalog(&self) -> Vec<(String, String)>;
+    fn read(&self, name: &str) -> Result<String, String>;
+}
+
+/// Shared handle to a [`SkillProvider`]; cheap to clone into every context.
+pub type SkillSource = std::sync::Arc<dyn SkillProvider>;
 
 /// A tool's live-output channel: called with each chunk as it arrives, in order.
 /// Chunks are raw fragments, not lines -- a caller that wants lines buffers them.
@@ -338,6 +363,8 @@ impl<'a> ToolContext<'a> {
             project_root,
             store_root,
             skill_project_root: None,
+            skill_source: None,
+            skill_user_root: None,
             memory_home: None,
             cross_project: false,
             enabled_skills,
@@ -413,6 +440,20 @@ impl<'a> ToolContext<'a> {
     /// See [`Self::skill_project_root`].
     pub fn with_skill_project_root(mut self, root: &'a Path) -> Self {
         self.skill_project_root = Some(root);
+        self
+    }
+
+    /// Resolve `skill_list`/`skill_read` through `source`. See
+    /// [`Self::skill_source`].
+    pub fn with_skill_source(mut self, source: SkillSource) -> Self {
+        self.skill_source = Some(source);
+        self
+    }
+
+    /// Enable `skill_write`'s `scope: "user"`, writing under `root/skills`.
+    /// See [`Self::skill_user_root`].
+    pub fn with_skill_user_root(mut self, root: Option<&'a Path>) -> Self {
+        self.skill_user_root = root;
         self
     }
 

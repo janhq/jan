@@ -481,7 +481,6 @@
   "events": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "StreamEvent",
-    "description": "`Deserialize` as well as `Serialize`: a consumer validates what it received\nagainst these shapes, and `JsonSchema` is what `jan cli agent schema`\npublishes them as -- a consumer generates its own types from\n`protocol/schema.json` rather than copying this declaration. The wire has to\nsurvive a round trip, not just a write, so `#[serde(tag = \"type\")]` keeps the\ntag on both sides.",
     "oneOf": [
       {
         "description": "A streamed content delta from the model.",
@@ -808,6 +807,35 @@
         "required": [
           "type",
           "text"
+        ]
+      },
+      {
+        "description": "The loop is summarizing part of the conversation to make room. Sent as\n`Started` before the summarizer call and `Finished` or `Failed` after\nit, so a consumer can show progress for what is otherwise a silent\nround trip. `reason` says which path asked. `messages` is how many were\nfolded into the summary, `None` except on `Finished`. Display-only and\nnever journaled; the compacted history itself arrives as\n`MessagesUpdated`.",
+        "type": "object",
+        "properties": {
+          "phase": {
+            "$ref": "#/$defs/CompactionPhase"
+          },
+          "reason": {
+            "$ref": "#/$defs/CompactionReason"
+          },
+          "messages": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string",
+            "const": "compaction"
+          }
+        },
+        "required": [
+          "type",
+          "phase",
+          "reason"
         ]
       },
       {
@@ -1211,6 +1239,43 @@
         "required": [
           "name",
           "phase"
+        ]
+      },
+      "CompactionPhase": {
+        "description": "`Deserialize` as well as `Serialize`: a consumer validates what it received\nagainst these shapes, and `JsonSchema` is what `jan cli agent schema`\npublishes them as -- a consumer generates its own types from\n`protocol/schema.json` rather than copying this declaration. The wire has to\nsurvive a round trip, not just a write, so `#[serde(tag = \"type\")]` keeps the\ntag on both sides.\nWhere a [`StreamEvent::Compaction`] is in its round trip.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "started",
+              "finished"
+            ]
+          },
+          {
+            "description": "The summarizer call failed or had nothing to fold; the history is\nunchanged.",
+            "type": "string",
+            "const": "failed"
+          }
+        ]
+      },
+      "CompactionReason": {
+        "description": "Which path asked for a [`StreamEvent::Compaction`].",
+        "oneOf": [
+          {
+            "description": "The request about to be sent was over the window's trigger.",
+            "type": "string",
+            "const": "preflight"
+          },
+          {
+            "description": "The provider rejected a request as too long for its window.",
+            "type": "string",
+            "const": "context_overflow"
+          },
+          {
+            "description": "The run used up its session token budget.",
+            "type": "string",
+            "const": "session_budget"
+          }
         ]
       },
       "MonitorSnapshot": {
