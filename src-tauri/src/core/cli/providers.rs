@@ -90,7 +90,7 @@ impl ProviderOverrides {
         }
         if self.api_key.is_none() {
             if let Some(provider) = &self.provider {
-                let var = format!("{}_API_KEY", provider.to_ascii_uppercase());
+                let var = provider_key_env(provider);
                 if let Some(k) = env(&var).filter(|k| !k.is_empty()) {
                     self.api_key = Some(k);
                 }
@@ -164,6 +164,12 @@ impl ProviderOverrides {
     pub fn explicit_provider_name(&self) -> Option<&str> {
         self.provider.as_deref().filter(|_| self.explicit_provider)
     }
+}
+
+/// The environment variable that carries `provider`'s key for an explicit
+/// `--provider` (`ANTHROPIC_API_KEY`, `TOKAMAK_API_KEY`, ...).
+pub(crate) fn provider_key_env(provider: &str) -> String {
+    format!("{}_API_KEY", provider.to_ascii_uppercase())
 }
 
 fn warn_once_unscoped() {

@@ -38,6 +38,16 @@ If a connected server later fails to list its tools - a timeout, a transient err
 its last known tools instead of dropping it for that turn. The toolset stays the same across the
 hiccup, and so does the prefix your provider is caching.
 
+## A stdio server's environment
+
+A stdio server inherits Jan's environment, minus the credentials Jan was given for its own gateway:
+`JAN_API_KEY`, `JAN_CUSTOM_HEADERS`, the `--provider`'s own `<PROVIDER>_API_KEY` (for example
+`TOKAMAK_API_KEY` under `jan --provider tokamak`), and, while Jan exports
+[telemetry](/docs/agent/telemetry), the `OTEL_EXPORTER_OTLP_*HEADERS` variables. Everything else is
+inherited as before, so a server that reads `GITHUB_TOKEN`, or the key of a provider you did not
+name with `--provider`, keeps working. To hand a server one of the removed variables, set it in the
+server's own `env`, which is applied last.
+
 ## Managing servers
 
 ### In the console

@@ -171,9 +171,11 @@ RUST_LOG = "info"
 
 - `env_passthrough` copies the named host variables in if they are set. The two scopes merge: the
   global list and the project list both apply.
-- A **secret-looking** name (containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, or
-  `CREDENTIAL`, case-insensitive) is never copied by a wildcard - so a broad `GIT_*` cannot leak a
-  `GIT_TOKEN`. To pass one deliberately, name it in `env_set`, which is not filtered.
+- A **secret-looking** name (containing `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`,
+  `CREDENTIAL`, `HEADERS` or `AUTHORIZATION`, case-insensitive) is never copied by a wildcard - so a
+  broad `GIT_*` cannot leak a `GIT_TOKEN`, and `OTEL_*` cannot copy `OTEL_EXPORTER_OTLP_HEADERS`,
+  which holds an API key when a launcher configures telemetry. To pass one deliberately, name it in
+  `env_set`, which is not filtered.
 - `env_set` wins over `env_passthrough` and over the global value for the same key. Under the
   sandbox, `TMPDIR`/`TMP`/`TEMP` are always pointed at the run's scratch directory regardless.
 
