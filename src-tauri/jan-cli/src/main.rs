@@ -179,8 +179,9 @@ struct BudgetArgs {
     /// its subagents (0 = unbounded, the default)
     #[arg(long, value_name = "N")]
     max_turns: Option<u64>,
-    /// Advisory token ceiling overriding [budget].max_tokens: triggers
-    /// compaction and a note, but does not stop the run (0 = no ceiling)
+    /// Advisory token ceiling overriding [budget].max_tokens (default: the
+    /// model's context window): triggers compaction and a note, but does not
+    /// stop the run (0 = no ceiling)
     #[arg(long, value_name = "N")]
     max_session_tokens: Option<u64>,
     /// Stop the run once it has spent this much in USD, overriding

@@ -50,7 +50,8 @@ use super::mcp::McpServerEntry;
 use super::user_message::{build_user_message, image_mime, image_mime_of, PendingImage, MAX_IMAGE_BYTES};
 use super::worktree::Worktree;
 use super::{
-    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget, SessionLimits,
+    is_user_turn, sort_threads_recent, AgentSession, ResumeRequest, ResumeTarget,
+    SessionBudgetSource, SessionLimits,
 };
 use crate::core::agent::compaction::{estimate_token_count, trigger_tokens};
 use crate::core::agent::events::{describe_tool_call, StreamEvent, Usage};
@@ -1389,6 +1390,10 @@ enum RowKind {
         /// Path of the edited file, for diff syntax highlighting.
         lang: Option<String>,
     },
+    /// A standalone call row with its result drawn beneath it, in the call's
+    /// slot. A batch emits every call before any result, so appending the
+    /// result would strand it below the rows of later calls in the batch.
+    Resolved { call: Box<RowKind>, result: Box<RowKind> },
 }
 
 impl From<RowKind> for Row {
@@ -1433,7 +1438,7 @@ impl Row {
         {
             return;
         }
-        let lines = self.render(width);
+        let lines = self.kind.render(width);
         let height = wrapped_height(lines.clone(), width);
         *self.cache.borrow_mut() = Some(RowRender {
             width,
@@ -1442,8 +1447,19 @@ impl Row {
         });
     }
 
-    fn render(&self, width: u16) -> Vec<Line<'static>> {
+    /// Whether this row is the blank separator `gap` inserts. Only a literal
+    /// blank line qualifies; a source-backed row always renders content.
+    fn is_blank(&self) -> bool {
         match &self.kind {
+            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
+            _ => false,
+        }
+    }
+}
+
+impl RowKind {
+    fn render(&self, width: u16) -> Vec<Line<'static>> {
+        match self {
             RowKind::Line(line) => vec![line.clone()],
             RowKind::Markdown(text) => format_markdown_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
@@ -1511,15 +1527,11 @@ impl Row {
                 }
                 out
             }
-        }
-    }
-
-    /// Whether this row is the blank separator `gap` inserts. Only a literal
-    /// blank line qualifies; a source-backed row always renders content.
-    fn is_blank(&self) -> bool {
-        match &self.kind {
-            RowKind::Line(line) => line.spans.iter().all(|s| s.content.trim().is_empty()),
-            _ => false,
+            RowKind::Resolved { call, result } => {
+                let mut out = call.render(width);
+                out.extend(result.render(width));
+                out
+            }
         }
     }
 }
@@ -1854,9 +1866,9 @@ struct App {
     /// Token-spend ceiling for one message's run; `0` is unbounded. Advisory:
     /// crossing it compacts and files a note rather than stopping the run.
     max_session_tokens: u64,
-    /// `--max-session-tokens` pinned `max_session_tokens`, so `/reload config`
-    /// does not replace it with `[budget].max_tokens`.
-    max_session_tokens_pinned: bool,
+    /// Which source set `max_session_tokens`. `--max-session-tokens` pins it
+    /// against `/reload config`; a window-derived one follows the model.
+    max_session_tokens_source: SessionBudgetSource,
     /// `[budget].max_usd`: what one message's run may spend before it stops,
     /// with the rates to meter it against. `None` -- the default -- leaves the
     /// session unmetered. Per run, not per session: each message gets the same
@@ -2147,6 +2159,18 @@ struct App {
     compacting: Option<CompactKind>,
     /// When the in-flight compaction started, for the elapsed counter.
     compact_started: Option<Instant>,
+    /// The running turn is itself compacting (the loop's preflight, overflow
+    /// or budget path), and since when. Display-only: unlike `compacting` it
+    /// gates nothing, because the run that compacts is the one already going.
+    run_compacting: Option<Instant>,
+    /// The running turn's upstream request failed before anything streamed and
+    /// the loop is waiting to resend it. Display-only, like `run_compacting`;
+    /// cleared by the next event of the parent run, since any of them means the
+    /// wait is over.
+    retrying: Option<RetryWait>,
+    /// A mid-run compaction finished, so the next `MessagesUpdated` carries a
+    /// shorter history the gauge must be re-estimated against.
+    pending_compaction_refresh: bool,
     /// The in-flight compaction was triggered by a context-overflow error, so
     /// the errored turn is resumed once it lands.
     retry_after_compact: bool,
@@ -2623,7 +2647,7 @@ impl App {
             compaction_reserve_tokens: limits.compaction_reserve_tokens,
             max_tokens: limits.max_tokens,
             max_session_tokens: limits.max_session_tokens,
-            max_session_tokens_pinned: limits.max_session_tokens_pinned,
+            max_session_tokens_source: limits.max_session_tokens_source,
             cost_ceiling: limits.cost_ceiling,
             repo_root,
             git_branch: git::current_branch(&project_root),
@@ -2719,6 +2743,9 @@ impl App {
             compact_request: None,
             compacting: None,
             compact_started: None,
+            run_compacting: None,
+            retrying: None,
+            pending_compaction_refresh: false,
             retry_after_compact: false,
             overflow_retries: 0,
             scrollback: 0,
@@ -2815,6 +2842,22 @@ impl App {
         self.workspace = workspace;
     }
 
+    /// Run the session on `prompt` in place of Jan's system prompt, or back on
+    /// Jan's with `None`. Only a thread an RPC host wrote carries one; the run
+    /// args are swapped rather than edited because they are shared behind an
+    /// `Arc` with any run already spawned from them.
+    fn set_host_system_prompt(&mut self, prompt: Option<String>) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        if args.host_system_prompt == prompt {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.host_system_prompt = prompt;
+        self.args = Some(Arc::new(next));
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -2830,6 +2873,7 @@ impl App {
         // A fresh session is a root, whatever the one it replaced was, and it
         // owns the checkout this session is working in.
         self.forked_from = None;
+        self.set_host_system_prompt(None);
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -3514,29 +3558,41 @@ impl App {
     /// Rewrite a standalone tool row to its resolved form once its result lands:
     /// past-tense label plus an outcome tag, matching how a tool group's row
     /// resolves. Without this a finished `edit` keeps reading as "Editing X".
-    /// Returns whether the row was found and rewritten.
-    fn resolve_pending_row(&mut self, id: &str, is_error: bool) -> bool {
+    /// `result` (the diff panel or error text) is drawn in the same slot: the
+    /// batch's later calls may already have rows below this one, so appending
+    /// it would strand the diff under an unrelated command. Returns `result`
+    /// back when there is no pending row to attach it to.
+    fn resolve_pending_row(
+        &mut self,
+        id: &str,
+        is_error: bool,
+        result: RowKind,
+    ) -> Option<RowKind> {
         let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
-            return false;
+            return Some(result);
         };
         let row = self.pending_rows.remove(pos);
         if row.idx >= self.transcript.len() {
-            return false;
+            return Some(result);
         }
         let (tag, tag_style) = if is_error {
             ("✗", Style::new().red())
         } else {
             ("✓", Style::new().green())
         };
-        self.transcript[row.idx] = RowKind::Tool {
+        let call = RowKind::Tool {
             tag: tag.to_string(),
             tag_style,
             label: row.done,
             label_style: Style::new().dim(),
             reserve: TOOL_ROW_RESERVE,
+        };
+        self.transcript[row.idx] = RowKind::Resolved {
+            call: Box::new(call),
+            result: Box::new(result),
         }
         .into();
-        true
+        None
     }
 
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
@@ -4788,16 +4844,23 @@ impl App {
         // Persist metadata when snapshots, a goal, or plan mode are present; each
         // must survive restart/resume even in a non-git project (no snapshots).
         let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
+        let host_prompt = self.args.as_ref().and_then(|a| a.host_system_prompt.clone());
         if self.base_snapshot.is_none()
             && self.goal.is_none()
             && !planning
             && self.todos.is_empty()
             && self.forked_from.is_none()
             && self.workspace_record.is_none()
+            && host_prompt.is_none()
         {
             return None;
         }
         let mut meta = serde_json::Map::new();
+        // Metadata is replaced whole on save, so a prompt a host wrote the
+        // thread under is carried or it is lost.
+        if let Some(prompt) = host_prompt {
+            meta.insert(super::SYSTEM_PROMPT_KEY.to_string(), serde_json::json!(prompt));
+        }
         if let Some(workspace) = self.workspace_record.as_ref() {
             meta.insert(
                 super::worktree::WORKTREE_KEY.to_string(),
@@ -4974,6 +5037,12 @@ impl App {
         let changed = resolved.tokens != self.context_window;
         self.context_window = resolved.tokens;
         self.context_window_source = resolved.source;
+        // An unconfigured session budget is sized by the window, so it moves
+        // with it; a flag or `[budget].max_tokens` stays put.
+        if self.max_session_tokens_source.follows_window() {
+            (self.max_session_tokens, self.max_session_tokens_source) =
+                super::resolve_session_budget(None, None, super::known_window(resolved));
+        }
         self.sync_compaction_budget();
         changed
     }
@@ -4992,11 +5061,13 @@ impl App {
             context_window: self.context_window,
             ratio: self.compaction_ratio,
             reserve_tokens: self.compaction_reserve_tokens,
+            window_pinned: self.configured_context_window.is_some(),
         };
         let unchanged = args.compaction.is_some_and(|b| {
             b.context_window == budget.context_window
                 && b.ratio == budget.ratio
                 && b.reserve_tokens == budget.reserve_tokens
+                && b.window_pinned == budget.window_pinned
         });
         if unchanged {
             return;
@@ -5302,6 +5373,13 @@ impl App {
     /// Non-terminal stream events. `Done`/`Error` are handled by the loop since
     /// they mutate history and the run handle.
     fn apply(&mut self, ev: StreamEvent) {
+        // Whatever the parent run sends next -- a token, a tool call -- means
+        // the wait for a resend is over. A child's events say nothing about
+        // the parent's request. The terminal events never come through here;
+        // `apply_stream_event` clears it for those.
+        if !matches!(ev, StreamEvent::Retry { .. } | StreamEvent::Subagent { .. }) {
+            self.retrying = None;
+        }
         match ev {
             StreamEvent::Token { text } => {
                 self.assistant_buf.push_str(&text);
@@ -5483,7 +5561,6 @@ impl App {
                 // in-flight command label and the live buffer are both dead weight.
                 self.bash_commands.remove(&id);
                 self.live_output.remove(&id);
-                let resolved = self.resolve_pending_row(&id, is_error);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
                 // open. Set unconditionally, before the grouped-call early return
@@ -5526,19 +5603,26 @@ impl App {
                     .is_some()
                     .then(|| self.diff_paths.remove(&id))
                     .flatten();
-                // The resolved call row above already names the tool and file in
-                // past tense, so a successful "Applied N edit(s) to X" only
-                // repeats it; the diff is the informative part. Errors keep their
-                // text -- the row says nothing about why the call failed.
-                let content = (!(resolved && !is_error && diff.is_some())).then_some(content);
-                self.gap(Kind::Tool);
-                self.push_row(RowKind::Result {
+                // The resolved call row already names the tool and file in past
+                // tense, so a successful "Applied N edit(s) to X" only repeats
+                // it; the diff is the informative part. Errors keep their text
+                // -- the row says nothing about why the call failed.
+                let has_row = self
+                    .pending_rows
+                    .iter()
+                    .any(|row| row.id == id && row.idx < self.transcript.len());
+                let content = (!(has_row && !is_error && diff.is_some())).then_some(content);
+                let result = RowKind::Result {
                     tag,
                     tag_style,
                     content,
                     diff,
                     lang,
-                });
+                };
+                if let Some(result) = self.resolve_pending_row(&id, is_error, result) {
+                    self.gap(Kind::Tool);
+                    self.push_row(result);
+                }
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -5720,6 +5804,26 @@ impl App {
                 self.note(&text);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
+            // The live countdown carries every attempt; the transcript notes
+            // only the first, so a flaky link leaves one line, not ten.
+            StreamEvent::Retry {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            } => {
+                if attempt == 2 {
+                    self.finalize_tool_group();
+                    self.flush_assistant();
+                    self.note(&format!("{reason}; retrying"));
+                }
+                self.retrying = Some(RetryWait {
+                    attempt,
+                    max_attempts,
+                    at: Instant::now() + Duration::from_millis(delay_ms),
+                    reason,
+                });
+            }
             // The model is done and the loop waits on background work it
             // dispatched. Nothing is generating, so present as idle (see
             // `Status::Parked`) while the run stays open.
@@ -5780,11 +5884,26 @@ impl App {
                     self.tokens_estimated = false;
                 }
             }
-            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {}
+            StreamEvent::Done { .. } | StreamEvent::Error { .. } => {
+                self.run_compacting = None;
+            }
             StreamEvent::MessagesUpdated { messages } => {
                 self.history = messages;
                 self.persist();
+                // A compaction mid-run replaced the history the last `usage`
+                // measured, so the gauge re-estimates instead of showing the
+                // pre-compaction fill until the next response lands.
+                if self.pending_compaction_refresh {
+                    self.pending_compaction_refresh = false;
+                    self.tokens = estimate_token_count(&self.history);
+                    self.invalidate_token_provenance();
+                }
             }
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, None),
             StreamEvent::TodoUpdate { list } => {
                 self.todos = list;
                 // A snapshot only arrives on a successful mutation; its absence
@@ -5888,6 +6007,28 @@ impl App {
                 let key = self.usage_key();
                 self.session_usage.entry(key).or_default().add(&usage);
             }
+            // A child's headline (a compaction, a monitor match) is as much the
+            // user's business as the parent's: dropping it made a child's
+            // compaction invisible.
+            StreamEvent::Notice { text } => {
+                self.note(&format!("{name}: {text}"));
+            }
+            // The live countdown belongs to the parent's request; a child's
+            // retry gets the same one-line note the parent's first retry does.
+            StreamEvent::Retry {
+                attempt: 2,
+                reason,
+                ..
+            } => {
+                self.note(&format!("{name}: {reason}; retrying"));
+            }
+            // A child's compaction is announced, but the spinner and gauge are
+            // the parent's: the child's history is not the one on screen.
+            StreamEvent::Compaction {
+                phase,
+                reason,
+                messages,
+            } => self.apply_compaction(phase, reason, messages, Some(name)),
             // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
             // and any nested bracket are internal to the child run and not
             // surfaced in the parent transcript: a subagent panel is a one-line
@@ -5895,6 +6036,50 @@ impl App {
             // go and would push the parent's own live panel off screen. Deliberate
             // -- the child's output still reaches its `ToolResult`.
             _ => {}
+        }
+    }
+
+    /// Show a loop-side compaction: a throbber while the summarizer runs and a
+    /// note when it lands or fails. `child` names the subagent it came from,
+    /// whose compaction gets a note only.
+    fn apply_compaction(
+        &mut self,
+        phase: crate::core::agent::events::CompactionPhase,
+        reason: crate::core::agent::events::CompactionReason,
+        messages: Option<usize>,
+        child: Option<&str>,
+    ) {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let why = match reason {
+            CompactionReason::Preflight => "the prompt neared the context window",
+            CompactionReason::ContextOverflow => "the provider rejected the prompt as too long",
+            CompactionReason::SessionBudget => "the session token budget was used up",
+        };
+        let who = child.map(|c| format!("{c}: ")).unwrap_or_default();
+        match phase {
+            CompactionPhase::Started => {
+                if child.is_none() {
+                    self.run_compacting = Some(Instant::now());
+                }
+            }
+            CompactionPhase::Finished => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                    self.pending_compaction_refresh = true;
+                }
+                self.finalize_tool_group();
+                self.flush_assistant();
+                self.note(&format!(
+                    "{who}compacted {} messages into a summary: {why}",
+                    messages.unwrap_or(0)
+                ));
+            }
+            CompactionPhase::Failed => {
+                if child.is_none() {
+                    self.run_compacting = None;
+                }
+                self.note(&format!("{who}compaction failed ({why}); history unchanged"));
+            }
         }
     }
 
@@ -6293,6 +6478,9 @@ impl App {
         }
         self.status = Status::Idle;
         self.run_started = None;
+        // A cancel sends no further event to clear it, so an interrupted wait
+        // would otherwise leave `[retrying]` over an idle session.
+        self.retrying = None;
         // Drop any run queued but not yet spawned (still gated on model/MCP/
         // snapshot readiness); otherwise the loop starts it once ready and the
         // cancel is silently undone.
@@ -7932,6 +8120,30 @@ struct StartingCall {
     /// `args.len()` when `preview` was derived. The buffer is append-only, so
     /// an unchanged length means unchanged content and the cache holds.
     preview_at: Option<usize>,
+}
+
+/// The input row while a resend is pending: a countdown until it goes out,
+/// then the attempt itself, which can take as long as a connect timeout.
+fn retry_wait_label(wait: &RetryWait, now: Instant) -> String {
+    let left = wait.at.saturating_duration_since(now);
+    let when = if left.is_zero() {
+        "retrying".to_string()
+    } else {
+        format!("retrying in {}s", left.as_secs_f32().ceil() as u64)
+    };
+    format!(
+        "{when} (attempt {}/{})… {}",
+        wait.attempt, wait.max_attempts, wait.reason
+    )
+}
+
+/// A pending resend of a failed upstream request, from `StreamEvent::Retry`.
+struct RetryWait {
+    attempt: u32,
+    max_attempts: u32,
+    /// When the resend goes out, for the countdown.
+    at: Instant,
+    reason: String,
 }
 
 impl StartingCall {
@@ -9615,6 +9827,15 @@ async fn apply_stream_event(
     note_claude_alias_if_engaged(app);
     if let Some(ev) = &ev {
         crate::core::agent::otel::observe(ev);
+    }
+    // `Done`, `Error` and a closed stream end the run without passing through
+    // `App::apply`, so they would otherwise leave `[retrying]` over an idle
+    // session once the retries run out.
+    if matches!(
+        ev,
+        None | Some(StreamEvent::Done { .. } | StreamEvent::Error { .. })
+    ) {
+        app.retrying = None;
     }
     match ev {
         Some(StreamEvent::Done { stop_reason, usage }) => {
@@ -12197,6 +12418,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/skills",
+        hint: "",
+        description: "List skills with their scope (project, plugin, user, built-in) and shadowing",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/reload",
         hint: "[config|plugin|skills|system-prompt]",
         description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
@@ -12439,6 +12666,7 @@ async fn run_command(
         "shells" | "jobs" => open_background_shells_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "reload" => reload_command(app, arg),
+        "skills" => skills_command(app),
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
@@ -12989,16 +13217,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         kind: AgentSettingKind::Enum {
             options: &["read-only", "deny", "allow"],
             default: "read-only",
-        },
-        scope: SettingScope::Project,
-    },
-    AgentSettingDef {
-        key: "skills.inject",
-        label: "skills.inject",
-        desc: "when project skills are injected into the prompt",
-        kind: AgentSettingKind::Enum {
-            options: &["always", "relevance"],
-            default: "always",
         },
         scope: SettingScope::Project,
     },
@@ -14518,12 +14736,58 @@ fn reload_skill_entries(skills: &[crate::core::agent::skills::SkillMeta]) -> Vec
                 key: name.clone(),
                 label: name,
                 state: format!(
-                    "{} [user:{} model:{}]",
-                    m.description, m.user_invocable, m.model_invocable
+                    "{} [{} user:{} model:{}]",
+                    m.description,
+                    m.scope.label(),
+                    m.user_invocable,
+                    m.model_invocable
                 ),
             }
         })
         .collect()
+}
+
+/// `/skills`: every skill Jan can see from this project, with its scope and
+/// invocation sides, and each one hidden by a same-named higher-precedence
+/// skill marked with what shadows it. Precedence: project > user > built-in;
+/// plugin skills are qualified `<plugin>:<name>` and never collide.
+fn skills_command(app: &mut App) {
+    let enabled = crate::core::agent::project::enabled_skills(&app.project_root);
+    let rows = crate::core::agent::skills::report(&app.project_root, &enabled);
+    let user_dir = crate::core::agent::skills::user_skills_dir()
+        .map(|d| d.display().to_string())
+        .unwrap_or_else(|| "(no home directory)".to_string());
+    let active = rows.iter().filter(|r| r.shadowed_by.is_none()).count();
+    app.note(&format!(
+        "◈ skills · {active} active · precedence project > user > built-in · user scope {user_dir}"
+    ));
+    for row in &rows {
+        let mut flags = Vec::new();
+        if !row.user_invocable {
+            flags.push("model-only".to_string());
+        }
+        if !row.model_invocable {
+            flags.push("user-only".to_string());
+        }
+        if !row.enabled {
+            flags.push("disabled".to_string());
+        }
+        if let Some(by) = row.shadowed_by {
+            flags.push(format!("shadowed by {}", by.label()));
+        }
+        let flags = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", flags.join(", "))
+        };
+        app.system_detail_text(&format!(
+            "{:<9} {}{} · {}",
+            row.scope.label(),
+            row.name,
+            flags,
+            row.description
+        ));
+    }
 }
 
 /// Display lines for what a reload changed, one list per kind of change.
@@ -14599,7 +14863,7 @@ fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
     }
     if skills {
         let after = reload_skill_entries(&app.slash_catalog.all_skills);
-        app.note("◈ reload · skills · re-scanned project and plugin skills");
+        app.note("◈ reload · skills · re-scanned project, plugin, and user skills");
         report_reload_diff(app, diff_reload_entries(&skills_before, &after));
     }
 }
@@ -14665,8 +14929,12 @@ fn reload_config(app: &mut App) {
     }
     app.compaction_reserve_tokens = cfg.agent.compaction_reserve_tokens;
     app.max_tokens = cfg.agent.max_tokens;
-    if !app.max_session_tokens_pinned {
-        app.max_session_tokens = super::resolve_session_budget(None, cfg.budget.max_tokens);
+    let pinned = app.max_session_tokens_source == SessionBudgetSource::Flag;
+    if !pinned {
+        // Seeded from the file alone; `refresh_context_window` below fills in
+        // the window-derived default when the file sets none.
+        (app.max_session_tokens, app.max_session_tokens_source) =
+            super::resolve_session_budget(None, cfg.budget.max_tokens, None);
     }
     app.send_reasoning = cfg.agent.send_reasoning.unwrap_or(true);
     // Re-resolves the window and pushes the compaction budget to the engine.
@@ -14678,9 +14946,7 @@ fn reload_config(app: &mut App) {
         crate::core::agent::project::agent_toml_path(&app.project_root).display()
     ));
     report_reload_diff(app, diff_reload_entries(&before, &after));
-    if app.max_session_tokens_pinned
-        && super::resolve_session_budget(None, cfg.budget.max_tokens) != budget_before
-    {
+    if pinned && cfg.budget.max_tokens.is_some_and(|v| v != budget_before) {
         app.system_detail_text("  budget.max_tokens ignored: --max-session-tokens was passed");
     }
     if !ratio_busy
@@ -16423,6 +16689,26 @@ fn restore_run_mode(app: &mut App, metadata: Option<&serde_json::Value>) {
     }
 }
 
+/// Reload the system prompt an RPC host wrote a thread under, or return to
+/// Jan's for a thread with none, so the resumed conversation keeps the prompt
+/// its history was produced under.
+fn restore_host_system_prompt(app: &mut App, metadata: Option<&serde_json::Value>) {
+    let prompt = metadata
+        .and_then(|m| m.get(super::SYSTEM_PROMPT_KEY))
+        .and_then(|v| v.as_str())
+        .filter(|p| !p.trim().is_empty())
+        .map(str::to_owned);
+    if prompt.is_some() {
+        // The prompt was written for the host's tools, which a TUI session
+        // does not have; the user should know before the model reaches for them.
+        app.note(
+            "resumed on the host's system prompt from this thread; the host's tools are \
+             not available here. /new returns to Jan's prompt",
+        );
+    }
+    app.set_host_system_prompt(prompt);
+}
+
 /// Reload the canonical todo list for a resumed thread from its persisted
 /// metadata into the TUI projection. The caller also mirrors it into the shared
 /// registry so the model's next `todo` op operates on the reconstructed state.
@@ -16941,6 +17227,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     restore_goal(app, thread.get("metadata"));
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
+    restore_host_system_prompt(app, thread.get("metadata"));
     app.forked_from = thread
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
@@ -19304,6 +19591,10 @@ fn header(app: &App) -> Paragraph<'static> {
 fn header_spans(app: &App) -> Vec<Span<'static>> {
     let (status, style): (String, Style) = if let Some(kind) = app.compacting {
         (kind.label().to_string(), Style::new().magenta().bold())
+    } else if app.run_compacting.is_some() {
+        ("compacting".to_string(), Style::new().magenta().bold())
+    } else if app.retrying.is_some() {
+        ("retrying".to_string(), Style::new().yellow().bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
@@ -19862,6 +20153,26 @@ fn input_box(app: &App) -> Paragraph<'static> {
             ),
         ]))
         .block(block)
+    } else if let Some(started) = app.run_compacting.filter(|_| app.input.is_empty()) {
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
+            Span::styled(
+                format!(
+                    "compacting conversation… {}",
+                    format_elapsed(started.elapsed().as_secs())
+                ),
+                Style::new().dim().italic(),
+            ),
+        ]))
+        .block(block)
+    } else if let Some(wait) = app.retrying.as_ref().filter(|_| app.input.is_empty()) {
+        // Without this the row reads "working" through up to the whole retry
+        // budget, indistinguishable from a slow model.
+        Paragraph::new(Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
+            Span::styled(retry_wait_label(wait, Instant::now()), Style::new().dim().italic()),
+        ]))
+        .block(block)
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
     } else if app.status == Status::Running && app.input.is_empty() {
@@ -20126,8 +20437,8 @@ mod tests {
         message_text, note_update, open_config_screen, open_fork_picker, open_rewind_picker,
         open_tree_picker, pairs_to_str, parse_command, partial_json_field,
         provider_label_for_model, rebuild_recall, replay_display_log, restore_goal,
-        restore_run_mode, restore_todos, resume_hint, rewind_to, route_paste_event, row_width,
-        run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
+        restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
+        route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
@@ -20143,7 +20454,8 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, collapse_runs, open_agents_picker, trailing_repeat, SubagentPanel,
+        cache_summary_lines, collapse_runs, open_agents_picker, retry_wait_label, trailing_repeat,
+        RetryWait, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -20229,7 +20541,7 @@ mod tests {
             compaction_reserve_tokens: Some(16_384),
             max_tokens: None,
             max_session_tokens: 128_000,
-            max_session_tokens_pinned: false,
+            max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
             max_turns: None,
             cost_ceiling: None,
         };
@@ -20736,7 +21048,7 @@ mod tests {
                     compaction_reserve_tokens: Some(16_384),
                     max_tokens: None,
                     max_session_tokens: 128_000,
-                    max_session_tokens_pinned: false,
+                    max_session_tokens_source: crate::core::cli::SessionBudgetSource::Default,
                     max_turns: None,
                     cost_ceiling: None,
                 },
@@ -21074,6 +21386,49 @@ mod tests {
         assert!(
             rows.iter().any(|r| r.contains('┌')),
             "diff panel lost: {rows:?}"
+        );
+    }
+
+    /// A batch emits every call before any result, so an edit's diff lands after
+    /// later calls in the same batch already have rows. The diff must still sit
+    /// under its own "Edited" row, not under whatever was drawn last.
+    #[test]
+    fn batched_edit_diff_stays_under_its_call_row() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "e1".into(),
+            name: "edit".into(),
+            args: json!({"path": "src/run_report.rs"}),
+        });
+        app.apply(StreamEvent::ToolCall {
+            id: "b1".into(),
+            name: "bash".into(),
+            args: json!({"command": "cargo check"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "e1".into(),
+            content: "Applied 1 edit(s) to src/run_report.rs".into(),
+            is_error: false,
+            diff: Some("@@ edit 1/1 @@\n-old_line\n+new_line".into()),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "b1".into(),
+            content: "[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        });
+        let rows = render_rows(&mut app, 100, 40);
+        let pos = |needle: &str| {
+            rows.iter()
+                .position(|r| r.contains(needle))
+                .unwrap_or_else(|| panic!("{needle:?} missing: {rows:?}"))
+        };
+        let edited = pos("Edited run_report.rs");
+        let diff = pos("new_line");
+        let bash = pos("cargo check");
+        assert!(
+            edited < diff && diff < bash,
+            "diff rendered away from its edit row: {rows:?}"
         );
     }
 
@@ -30059,8 +30414,9 @@ mod tests {
             is_error: false,
             diff: Some("- old\n+ new".into()),
         });
-        // Call row preserved; result row + boxed diff appended below it.
-        assert!(app.transcript.len() > before);
+        // The diff folds into the call's own slot rather than being appended,
+        // so later calls in the same batch can never land between them.
+        assert_eq!(app.transcript.len(), before);
         let joined: String = app
             .transcript
             .iter()
@@ -31618,6 +31974,214 @@ mod tests {
             name: name.into(),
             event: Box::new(event),
         });
+    }
+
+    /// A compaction the running turn makes shows a throbber while the
+    /// summarizer runs, a note saying why when it lands, and re-estimates the
+    /// gauge from the compacted history instead of keeping the old fill.
+    #[test]
+    fn a_mid_run_compaction_shows_progress_and_refreshes_the_gauge() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        app.tokens = 900_000;
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Started,
+            reason: CompactionReason::SessionBudget,
+            messages: None,
+        });
+        assert!(app.run_compacting.is_some());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("compacting"), "{header}");
+
+        app.apply(StreamEvent::Compaction {
+            phase: CompactionPhase::Finished,
+            reason: CompactionReason::SessionBudget,
+            messages: Some(12),
+        });
+        assert!(app.run_compacting.is_none());
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("compacted 12 messages into a summary: the session token budget"),
+            "{out}"
+        );
+
+        app.apply(StreamEvent::MessagesUpdated {
+            messages: vec![serde_json::json!({ "role": "user", "content": "short" })],
+        });
+        assert!(app.tokens < 1_000, "gauge re-estimated: {}", app.tokens);
+        assert!(app.tokens_estimated);
+    }
+
+    fn retry(attempt: u32) -> StreamEvent {
+        StreamEvent::Retry {
+            attempt,
+            max_attempts: 10,
+            delay_ms: 2_000,
+            reason: "Upstream request failed: connection refused".into(),
+        }
+    }
+
+    /// A retry is visible while it waits: the header says `retrying`, the input
+    /// row counts down with the attempt and the reason, and the transcript notes
+    /// the first retry only. The next event of the run clears it.
+    #[test]
+    fn a_retry_is_shown_live_and_cleared_by_the_next_event() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(retry(2));
+        app.apply(retry(3));
+
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("retrying"), "{header}");
+        let out = render_rows(&mut app, 120, 20).join("\n");
+        assert!(out.contains("retrying in 2s (attempt 3/10)"), "{out}");
+        assert!(out.contains("connection refused"), "{out}");
+        let notes = transcript_text(&app);
+        assert_eq!(notes.matches("retrying").count(), 1, "one note per failure: {notes}");
+
+        app.apply(StreamEvent::Token { text: "hi".into() });
+        assert!(app.retrying.is_none());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(!header.contains("retrying"), "{header}");
+    }
+
+    /// Cancelling during the wait takes the countdown down with the run.
+    #[test]
+    fn cancelling_during_a_retry_clears_it() {
+        let mut app = test_app();
+        app.status = Status::Running;
+        app.apply(retry(2));
+        app.cancel_run();
+        assert!(app.retrying.is_none());
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(header.contains("ready"), "{header}");
+    }
+
+    /// Every way a run ends after a retry takes the countdown down: running
+    /// out of retries (`Error`), a late success (`Done`), and a stream that
+    /// closes without a terminal event. These never reach `App::apply`, so
+    /// they are driven through the loop's `apply_stream_event`.
+    #[tokio::test]
+    async fn a_run_ending_during_a_retry_clears_it() {
+        let terminals = [
+            Some(StreamEvent::Error {
+                code: "upstream".into(),
+                message: "connection refused".into(),
+            }),
+            Some(StreamEvent::Done { stop_reason: "stop".into(), usage: None }),
+            None,
+        ];
+        for end in terminals {
+            let label = format!("{end:?}");
+            let mut app = test_app();
+            app.status = Status::Running;
+            let mut current = None;
+            apply_stream_event(&mut app, Some(retry(10)), &mut current).await;
+            assert!(app.retrying.is_some(), "{label}");
+            apply_stream_event(&mut app, end, &mut current).await;
+            assert!(app.retrying.is_none(), "{label}");
+            let header: String =
+                header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+            assert!(!header.contains("retrying"), "{label}: {header}");
+        }
+    }
+
+    /// The countdown turns into the attempt itself once the wait is over,
+    /// rather than sitting on "in 0s" through a connect timeout.
+    #[test]
+    fn a_retry_past_its_wait_reads_as_in_flight() {
+        let at = Instant::now();
+        let wait = RetryWait {
+            attempt: 4,
+            max_attempts: 10,
+            at,
+            reason: "boom".into(),
+        };
+        assert_eq!(retry_wait_label(&wait, at), "retrying (attempt 4/10)… boom");
+        assert_eq!(
+            retry_wait_label(&wait, at - Duration::from_millis(1_500)),
+            "retrying in 2s (attempt 4/10)… boom"
+        );
+    }
+
+    /// A child's retry is noted under its name but leaves the parent's status
+    /// alone, and a child's events do not clear a parent retry.
+    #[test]
+    fn a_subagent_retry_is_noted_without_the_parent_countdown() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r1", "scout");
+        subagent_event(&mut app, "r1", "scout", retry(2));
+        assert!(app.retrying.is_none());
+        assert!(transcript_text(&app).contains("scout: Upstream request failed"));
+
+        app.apply(retry(2));
+        subagent_event(&mut app, "r1", "scout", StreamEvent::Token { text: "x".into() });
+        assert!(app.retrying.is_some(), "a child's token is not the parent's resend");
+    }
+
+    /// A failed compaction takes its throbber down and says so.
+    #[test]
+    fn a_failed_mid_run_compaction_clears_the_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        for phase in [CompactionPhase::Started, CompactionPhase::Failed] {
+            app.apply(StreamEvent::Compaction {
+                phase,
+                reason: CompactionReason::ContextOverflow,
+                messages: None,
+            });
+        }
+        assert!(app.run_compacting.is_none());
+        assert!(transcript_text(&app).contains("compaction failed"));
+    }
+
+    /// A child's compaction gets a note but not the parent's throbber: the
+    /// child's history is not the one on screen.
+    #[test]
+    fn a_subagent_compaction_is_noted_without_the_parent_throbber() {
+        use crate::core::agent::events::{CompactionPhase, CompactionReason};
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        for (phase, messages) in [(CompactionPhase::Started, None), (CompactionPhase::Finished, Some(5))] {
+            subagent_event(
+                &mut app,
+                "r0",
+                "alpha",
+                StreamEvent::Compaction {
+                    phase,
+                    reason: CompactionReason::Preflight,
+                    messages,
+                },
+            );
+            assert!(app.run_compacting.is_none());
+        }
+        assert!(
+            transcript_text(&app).contains("alpha: compacted 5 messages"),
+            "{}",
+            transcript_text(&app)
+        );
+    }
+
+    /// A child's `Notice` (e.g. "compacted N messages") reaches the parent
+    /// transcript, attributed to the child. It used to fall into the catch-all
+    /// arm, so a subagent's compaction was invisible.
+    #[test]
+    fn subagent_notice_is_shown_in_the_transcript() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::Notice {
+                text: "compacted 12 messages into a summary".into(),
+            },
+        );
+        let out = transcript_text(&app);
+        assert!(
+            out.contains("alpha: compacted 12 messages into a summary"),
+            "{out}"
+        );
     }
 
     /// Parallel agents collapse into one fixed-height block, each carrying the
@@ -34990,6 +35554,28 @@ mod tests {
         assert!(restored.message_queue.is_empty());
     }
 
+    /// A thread an RPC host wrote under its own system prompt resumes on that
+    /// prompt, carries it on the next save, and `/new` returns to Jan's.
+    #[test]
+    fn a_host_system_prompt_round_trips_through_thread_metadata() {
+        let mut app = test_app();
+        app.args = Some(test_args(&app, std::collections::HashMap::new()));
+        let meta = serde_json::json!({ super::super::SYSTEM_PROMPT_KEY: "You drive the arm." });
+        restore_host_system_prompt(&mut app, Some(&meta));
+        let prompt = |app: &App| app.args.as_ref().and_then(|a| a.host_system_prompt.clone());
+        assert_eq!(prompt(&app).as_deref(), Some("You drive the arm."));
+        let saved = app.thread_metadata().expect("the prompt alone is worth saving");
+        assert_eq!(saved[super::super::SYSTEM_PROMPT_KEY], "You drive the arm.");
+
+        app.reset_session();
+        assert_eq!(prompt(&app), None, "a fresh session is Jan's again");
+        assert!(app.thread_metadata().is_none());
+
+        restore_host_system_prompt(&mut app, Some(&meta));
+        restore_host_system_prompt(&mut app, Some(&serde_json::json!({})));
+        assert_eq!(prompt(&app), None, "a thread without one resumes on Jan's");
+    }
+
     #[test]
     fn normal_mode_omits_run_mode_from_metadata() {
         // Old threads / normal sessions keep clean, backward-compatible metadata.
@@ -37236,6 +37822,50 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// janhq/jan-internal#394: `/skills` lists every scope, and a user skill
+    /// hidden by a same-named project skill is shown as shadowed; the popup
+    /// catalog offers user skills and `/reload skills` picks up new ones.
+    #[tokio::test]
+    async fn skills_command_lists_scopes_and_marks_shadowing() {
+        let (mut app, root) = skill_test_app("tui394-deploy", "Project deploy.");
+        let user = crate::core::agent::skills::user_skills_dir().unwrap();
+        for (name, desc) in [("tui394-deploy", "User deploy."), ("tui394-review", "User review.")] {
+            std::fs::create_dir_all(user.join(name)).unwrap();
+            std::fs::write(
+                user.join(name).join("SKILL.md"),
+                format!("---\ndescription: {desc}\n---\n\nBody.\n"),
+            )
+            .unwrap();
+        }
+        run_command(&mut app, "skills", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("precedence project > user > built-in"), "{out}");
+        assert!(out.contains("project   tui394-deploy · Project deploy."), "{out}");
+        assert!(
+            out.contains("user      tui394-deploy (shadowed by project) · User deploy."),
+            "{out}"
+        );
+        assert!(out.contains("user      tui394-review · User review."), "{out}");
+        assert!(out.contains("built-in  jan"), "{out}");
+
+        // The popup offers the user skill once `/reload skills` rescans.
+        run_command(&mut app, "reload skills", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("+ tui394-review"));
+        assert!(app.slash_catalog.skills.iter().any(|m| m.name == "tui394-review"));
+        app.input = "/skill:tui394-r".into();
+        assert!(
+            app.slash_matches()
+                .iter()
+                .any(|m| m.name() == "/skill:tui394-review"),
+            "popup offers the user skill"
+        );
+
+        for name in ["tui394-deploy", "tui394-review"] {
+            let _ = std::fs::remove_dir_all(user.join(name));
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[tokio::test]
     async fn reload_system_prompt_reads_jan_md() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
@@ -37345,7 +37975,7 @@ mod tests {
     async fn reload_config_respects_a_pinned_session_budget() {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         app.max_session_tokens = 42;
-        app.max_session_tokens_pinned = true;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Flag;
         write_agent_toml(&root, "[budget]\nmax_tokens = 999\n");
         run_command(&mut app, "reload config", &no_mcp()).await;
         assert_eq!(app.max_session_tokens, 42, "--max-session-tokens outranks the file");
@@ -38079,6 +38709,29 @@ mod tests {
             Some(CompactKind::Auto),
             "a smaller-window switch must queue target compaction"
         );
+    }
+
+    /// An unconfigured session budget is sized by the model's window and
+    /// follows a model switch; the old fixed 128K compacted 1M-window models at
+    /// an eighth of their capacity. A `[budget].max_tokens` value stays put.
+    #[test]
+    fn default_session_budget_follows_the_model_window() {
+        let mut app = test_app();
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.context_window, 1_000_000);
+        assert_eq!(app.max_session_tokens, 1_000_000);
+        assert_eq!(
+            app.max_session_tokens_source,
+            crate::core::cli::SessionBudgetSource::ContextWindow
+        );
+
+        app.set_model("claude-sonnet-4-5".to_string());
+        assert_eq!(app.max_session_tokens, 200_000);
+
+        app.max_session_tokens = 50_000;
+        app.max_session_tokens_source = crate::core::cli::SessionBudgetSource::Config;
+        app.set_model("claude-sonnet-4-6".to_string());
+        assert_eq!(app.max_session_tokens, 50_000, "a configured budget is not resized");
     }
 
     #[test]

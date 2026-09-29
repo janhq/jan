@@ -21,9 +21,12 @@ but NOT its full instructions. When a skill's purpose matches the task, call
 - `skill_read` (name) - load a skill's full instructions. Do this before
   applying a skill; the catalog only shows its purpose. The same
   `disable-model-invocation: true` rule applies: such skills read as not found.
-- `skill_write` (name, content) - create a new skill or update an existing one
-  (same name overwrites). Use a short, descriptive name; keep the skill concise.
-  Start the skill with a one-line description so the catalog can summarize it.
+- `skill_write` (name, content, scope?) - create a new skill or update an
+  existing one (same name overwrites). Use a short, descriptive name; keep the
+  skill concise. Start the skill with a one-line description so the catalog can
+  summarize it. Skills go to this project by default; pass `scope: "user"` only
+  for a procedure that is useful in every project (a same-named project skill
+  shadows a user one).
 
 Create or update a skill when you discover a procedure worth reusing on later
 runs. Refine an existing skill instead of duplicating it.

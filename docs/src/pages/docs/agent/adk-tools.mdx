@@ -140,6 +140,32 @@ A `read` tool such as the clock is not prompted. For an `actuator`:
 `builtins: false` / `builtins=False` keeps this example limited to your declared tools. It is not
 an operating-system sandbox for your callback: that function still has your process's access.
 
+## Delegate and bring your own prompt
+
+Two more session options suit an app that drives Jan with only its own tools:
+
+- **`subagents: true` / `subagents=True`** lets the model delegate with `dispatch_subagent` and
+  `list_subagents`, even with `builtins: false`. Every subagent is limited to your session's
+  host tools (no shell, files or web), and its calls reach your handlers like the parent's,
+  with the subagent's `run_id` on the request. Subagents are off by default when `builtins` is
+  off.
+- **`systemPrompt` / `system_prompt=`** replaces Jan's whole system prompt with yours, byte for
+  byte. Jan adds no identity, guides, environment, date or recalled memory, though it may still
+  append runtime notices (such as a finished subagent) to the conversation. Subagents keep their
+  own prompts. The session's answers are still saved to project memory for later sessions;
+  only `ephemeral` turns that off, and it also stops the thread being saved.
+
+```js
+const session = await runtime.createSession({
+  builtins: false,
+  subagents: true,
+  systemPrompt: 'You control a robot arm. Delegate camera checks to a subagent.',
+  tools: [/* your host tools */],
+})
+```
+
+See [`session/start`](/docs/agent/protocol) for the exact rules.
+
 ## Change tools or stop a callback
 
 Between turns, use `session.setTools(...)` / `session.set_tools(...)` to replace the host tool set.

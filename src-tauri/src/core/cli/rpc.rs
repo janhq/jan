@@ -39,11 +39,6 @@ struct Session {
     subagents: bool,
 }
 
-/// The subagent tools a host-only session is offered when it may delegate:
-/// dispatching and listing, not `create_subagent`, which writes a definition
-/// into the project.
-const HOST_ONLY_SUBAGENT_TOOLS: [&str; 2] = ["dispatch_subagent", "list_subagents"];
-
 /// The allowlist a host-only session's turns run under, or `None` for a
 /// session with built-ins. A child inherits it as its ceiling, so this is also
 /// what keeps a delegate from reaching Jan's shell or files.
@@ -51,7 +46,7 @@ fn session_allowlist(session: &Session) -> Option<Vec<String>> {
     (!session.builtins).then(|| {
         let mut names = Vec::new();
         if session.subagents {
-            names.extend(HOST_ONLY_SUBAGENT_TOOLS.map(str::to_owned));
+            names.extend(crate::core::agent::subagent::DELEGATE_ONLY_TOOLS.map(str::to_owned));
         }
         names.extend(host_names(&session.agent.args.host_tools));
         names
@@ -468,7 +463,9 @@ fn finish_turn(
                     Some(&session.id),
                     &session.agent.model,
                     &session.history,
-                    None,
+                    session.agent.args.host_system_prompt.as_ref().map(|prompt| {
+                        json!({ super::SYSTEM_PROMPT_KEY: prompt })
+                    }),
                 ) {
                     error_message = Some(format!("could not save session: {message}"));
                 }

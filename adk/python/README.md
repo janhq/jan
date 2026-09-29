@@ -190,6 +190,10 @@ An unanswered request parks the turn: nothing moves until it is answered, the
 turn is interrupted, or the runtime is closed. A `read` tool is never prompted
 for, in either mode.
 
+With `builtins=False`, `subagents=True` still lets the model delegate: each
+subagent is held to these host tools, and its calls arrive here with its
+`run_id`. `system_prompt=` replaces Jan's whole system prompt with yours.
+
 ## Process ownership
 
 ```python
