@@ -40,7 +40,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::core::agent::events::{StreamEvent, Usage};
 use crate::core::agent::session::TokenRates;
 use config::{Config, Target};
-use encode::{AnyValue, Attrs, LogRecord, Metric, Origin, Point, PointValue, Span};
+use encode::{AnyValue, Attrs, LogRecord, Metric, Origin, Point, PointValue, Span, Temporality};
 
 /// Signals that can wait for the worker. Generous: a busy turn emits a few
 /// dozen, and the worker drains continuously.
@@ -55,6 +55,11 @@ const SPAN_BATCH: usize = 512;
 const CONTENT_CAP: usize = 4096;
 /// Cap on an error message carried by `api_error`.
 const ERROR_CAP: usize = 512;
+/// The wait before retrying an export the collector asked to be retried,
+/// when it did not say how long.
+const RETRY_DELAY: Duration = Duration::from_secs(1);
+/// The longest `Retry-After` honoured; a longer one drops the batch instead.
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 /// Per-token prices for `(provider, model)`, when the catalog knows them.
 pub type Pricer = Box<dyn Fn(Option<&str>, &str) -> Option<TokenRates> + Send + Sync>;
@@ -90,6 +95,11 @@ pub enum Signal {
     Event {
         child: Option<Child>,
         event: EventSignal,
+    },
+    /// A session is gone for good (an RPC `session/archive`): nothing more
+    /// will be reported under its id.
+    SessionClosed {
+        session: String,
     },
     Flush,
 }
@@ -414,11 +424,85 @@ pub fn compaction(message_count: usize) {
     }
 }
 
+/// A session will report nothing more (an RPC `session/archive`), so its
+/// metric series can stop being exported once their last values are out.
+pub fn session_closed(session: &str) {
+    if let Some(t) = global() {
+        t.send(Signal::SessionClosed {
+            session: session.to_string(),
+        });
+    }
+}
+
 /// Export whatever is buffered and stop, bounded by [`SHUTDOWN_TIMEOUT`].
 pub async fn shutdown() {
     if let Some(t) = global() {
         t.shutdown(SHUTDOWN_TIMEOUT).await;
     }
+}
+
+/// Run `work`, but if the process is told to stop first (SIGINT or SIGTERM;
+/// Ctrl-C on Windows), drop it and export what telemetry has buffered before
+/// dying of that signal. Dropping the work is what reports an interrupted
+/// run: its [`RunScope`] sends the run's end and active time on drop. With
+/// telemetry off the process dies at once, as it would without this.
+pub async fn flush_on_termination<F: std::future::Future>(work: F) -> F::Output {
+    // Boxed so the work can be dropped before the flush, not after it.
+    let mut work = Box::pin(work);
+    tokio::select! {
+        output = &mut work => output,
+        signal = termination() => {
+            if global().is_some() {
+                drop(work);
+                shutdown().await;
+            }
+            die_of(signal)
+        }
+    }
+}
+
+/// The stop signal that arrived: its number.
+#[cfg(unix)]
+async fn termination() -> i32 {
+    use tokio::signal::unix::{signal, SignalKind};
+    let (Ok(mut interrupt), Ok(mut terminate)) = (
+        signal(SignalKind::interrupt()),
+        signal(SignalKind::terminate()),
+    ) else {
+        // No handler could be installed: the default action still applies.
+        return std::future::pending().await;
+    };
+    tokio::select! {
+        _ = interrupt.recv() => libc::SIGINT,
+        _ = terminate.recv() => libc::SIGTERM,
+    }
+}
+
+#[cfg(windows)]
+async fn termination() -> i32 {
+    if tokio::signal::ctrl_c().await.is_err() {
+        return std::future::pending().await;
+    }
+    0
+}
+
+/// Exit the way the signal's default action would have: re-raised with the
+/// default disposition, so a parent still sees a death by that signal.
+#[cfg(unix)]
+fn die_of(signal: i32) -> ! {
+    // SAFETY: restoring the default disposition installs no handler code, and
+    // the raise that follows ends the process.
+    unsafe {
+        libc::signal(signal, libc::SIG_DFL);
+        libc::raise(signal);
+    }
+    std::process::exit(128 + signal)
+}
+
+/// `STATUS_CONTROL_C_EXIT`, what a console process ended by Ctrl-C exits with.
+#[cfg(windows)]
+fn die_of(_: i32) -> ! {
+    std::process::exit(0xC000_013A_u32 as i32)
 }
 
 /// Brackets one orchestration run: reports its start (and the prompt that
@@ -538,7 +622,17 @@ pub struct State {
     cfg: Arc<Config>,
     pricer: Option<Pricer>,
     start_nanos: u64,
+    /// Cumulative: the running totals since `start_nanos`. Delta: what accrued
+    /// since the last export, which [`State::exported`] clears.
     counters: BTreeMap<SeriesKey, f64>,
+    /// When the last metrics export was taken: a delta point's start.
+    last_export_nanos: u64,
+    /// The dropped-signal total the last export reported, so a delta point
+    /// carries only what was dropped since.
+    dropped_reported: u64,
+    /// Sessions closed since the last export, whose cumulative series are
+    /// evicted once that export carried their final values.
+    closed_sessions: HashSet<String>,
     logs: Vec<LogRecord>,
     sessions_seen: HashSet<String>,
     /// The session each run (`None` = the main run) last reported, from its
@@ -590,11 +684,15 @@ fn metric_attr(key: &str, value: impl Into<String>) -> (String, String) {
 
 impl State {
     pub fn new(cfg: Arc<Config>, pricer: Option<Pricer>) -> Self {
+        let now = wall_nanos();
         Self {
             cfg,
             pricer,
-            start_nanos: wall_nanos(),
+            start_nanos: now,
             counters: BTreeMap::new(),
+            last_export_nanos: now,
+            dropped_reported: 0,
+            closed_sessions: HashSet::new(),
             logs: Vec::new(),
             sessions_seen: HashSet::new(),
             run_session: HashMap::new(),
@@ -825,7 +923,24 @@ impl State {
                 );
             }
             Signal::Event { child, event } => self.apply_event(at, wall, child, event),
+            Signal::SessionClosed { session } => self.close_session(session),
             Signal::Flush => {}
+        }
+    }
+
+    /// Forget a closed session. Its per-session bookkeeping goes now; its
+    /// cumulative series go after the next export, which carries their final
+    /// values. Delta needs no eviction: an export already clears every series.
+    fn close_session(&mut self, session: String) {
+        self.sessions_seen.remove(&session);
+        self.prompt_ids.remove(&session);
+        self.interaction_seq.remove(&session);
+        self.run_session.retain(|_, s| *s != session);
+        if self.main_session.as_ref() == Some(&session) {
+            self.main_session = None;
+        }
+        if self.cfg.temporality == Temporality::Cumulative {
+            self.closed_sessions.insert(session);
         }
     }
 
@@ -1068,8 +1183,19 @@ impl State {
         self.logs.len()
     }
 
-    /// Every series so far, cumulative since the exporter started.
+    /// The series to export at `now`: every running total since the exporter
+    /// started (cumulative), or only what changed since the last export
+    /// (delta). `dropped` is the process's running total of dropped signals.
+    /// Pure: [`State::exported`] records that this snapshot went out.
     pub fn metrics(&self, now: u64, dropped: u64) -> Vec<Metric> {
+        let temporality = self.cfg.temporality;
+        let (start, dropped) = match temporality {
+            Temporality::Cumulative => (self.start_nanos, dropped),
+            Temporality::Delta => (
+                self.last_export_nanos,
+                dropped.saturating_sub(self.dropped_reported),
+            ),
+        };
         let mut by_name: BTreeMap<&'static str, Vec<Point>> = BTreeMap::new();
         let dropped_key = ("jan_agent.telemetry.dropped", Vec::new());
         let dropped_entry = (dropped > 0).then_some((&dropped_key, dropped as f64));
@@ -1085,7 +1211,7 @@ impl State {
                     .iter()
                     .map(|(k, v)| (k.clone(), AnyValue::Str(v.clone())))
                     .collect(),
-                start_unix_nano: self.start_nanos,
+                start_unix_nano: start,
                 time_unix_nano: now,
                 value: if is_double {
                     PointValue::Double(value)
@@ -1103,10 +1229,36 @@ impl State {
                     name: name.to_string(),
                     description: description.to_string(),
                     unit: unit.to_string(),
+                    temporality,
                     points,
                 }
             })
             .collect()
+    }
+
+    /// The snapshot [`State::metrics`] took at `now` was handed to the
+    /// exporter. Delta starts the next window here, empty; cumulative drops
+    /// the series of sessions closed since the last export, whose final
+    /// values that snapshot carried, so a long-lived host's series stay
+    /// bounded by its live sessions.
+    pub fn exported(&mut self, now: u64, dropped: u64) {
+        match self.cfg.temporality {
+            Temporality::Delta => {
+                self.counters.clear();
+                self.last_export_nanos = now;
+                self.dropped_reported = dropped;
+            }
+            Temporality::Cumulative => {
+                let closed = std::mem::take(&mut self.closed_sessions);
+                if !closed.is_empty() {
+                    self.counters.retain(|(_, attrs), _| {
+                        !attrs
+                            .iter()
+                            .any(|(k, v)| k == "session.id" && closed.contains(v))
+                    });
+                }
+            }
+        }
     }
 }
 
@@ -1209,15 +1361,21 @@ impl Worker {
     }
 
     async fn export_metrics(&mut self) {
-        let Some(target) = self.cfg.metrics.clone() else { return };
+        let Some(target) = self.cfg.metrics.clone() else {
+            // Nothing will read these series, so keep them bounded all the same.
+            self.state.exported(wall_nanos(), 0);
+            return;
+        };
         if !self.metrics_dirty {
             return;
         }
-        let metrics = self.state.metrics(wall_nanos(), self.dropped.load(Ordering::Relaxed));
+        let (now, dropped) = (wall_nanos(), self.dropped.load(Ordering::Relaxed));
+        let metrics = self.state.metrics(now, dropped);
         if metrics.is_empty() {
             return;
         }
         self.metrics_dirty = false;
+        self.state.exported(now, dropped);
         let body = target.protocol.encode(
             || encode::metrics_json(&self.origin, &metrics),
             || encode::metrics_proto(&self.origin, &metrics),
@@ -1254,8 +1412,11 @@ impl Worker {
         self.post(&target, body, "traces").await;
     }
 
-    /// One POST. Failures are the collector's problem, not the run's: logged
-    /// at debug (never the URL's headers) and otherwise ignored.
+    /// One export, retried once when the collector answers with one of OTLP's
+    /// retryable statuses (429/502/503/504). A refused connection is not
+    /// retried: no collector is listening, and waiting on one would only hold
+    /// up the process's exit. Failures are the collector's problem, not the
+    /// run's: logged at debug (never the URL's headers) and otherwise ignored.
     async fn post(&self, target: &Target, body: Vec<u8>, signal: &str) {
         let mut request = self
             .client
@@ -1265,14 +1426,48 @@ impl Worker {
         for (k, v) in &target.headers {
             request = request.header(k.as_str(), v.as_str());
         }
-        match request.send().await {
+        // A byte body clones by reference count, so the retry copies nothing.
+        let retry = request.try_clone();
+        let delay = match request.send().await {
+            Ok(response) if response.status().is_success() => return,
+            Ok(response) => {
+                let status = response.status();
+                let retry_after =
+                    response.headers().get(reqwest::header::RETRY_AFTER).and_then(|v| v.to_str().ok());
+                let delay = retry_delay(status.as_u16(), retry_after);
+                log::debug!("telemetry: {signal} export rejected: HTTP {status}");
+                delay
+            }
+            Err(e) => {
+                log::debug!("telemetry: {signal} export failed: {}", e.without_url());
+                None
+            }
+        };
+        let (Some(delay), Some(retry)) = (delay, retry) else { return };
+        tokio::time::sleep(delay).await;
+        match retry.send().await {
             Ok(response) if response.status().is_success() => {}
             Ok(response) => {
-                log::debug!("telemetry: {signal} export rejected: HTTP {}", response.status())
+                log::debug!("telemetry: {signal} export rejected on retry, dropped: HTTP {}", response.status())
             }
-            Err(e) => log::debug!("telemetry: {signal} export failed: {}", e.without_url()),
+            Err(e) => log::debug!("telemetry: {signal} export failed on retry, dropped: {}", e.without_url()),
         }
     }
+}
+
+/// How long to wait before the one retry of a rejected export, or `None` for
+/// no retry: the status is not one OTLP calls retryable, or the collector
+/// asked for a longer wait than [`MAX_RETRY_DELAY`] -- retrying sooner than it
+/// asked would only be refused again, and a longer wait would stall every
+/// other export behind this one.
+fn retry_delay(status: u16, retry_after: Option<&str>) -> Option<Duration> {
+    if !matches!(status, 429 | 502 | 503 | 504) {
+        return None;
+    }
+    // Seconds, the form collectors send. An HTTP-date is rare enough here to
+    // fall back to the default wait rather than parse.
+    let delay = retry_after.and_then(|v| v.trim().parse::<u64>().ok()).map(Duration::from_secs).unwrap_or(RETRY_DELAY);
+    (delay <= MAX_RETRY_DELAY).then_some(delay)
 }
 
 #[cfg(test)]

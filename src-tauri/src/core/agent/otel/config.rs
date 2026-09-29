@@ -12,6 +12,8 @@
 
 use std::time::Duration;
 
+use super::encode::Temporality;
+
 /// Wire encoding for an OTLP/HTTP export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Protocol {
@@ -68,6 +70,9 @@ pub struct Config {
     /// `OTEL_METRICS_INCLUDE_SESSION_ID` (default on): tag metric points with
     /// `session.id`. Off keeps a backend's series count bounded.
     pub metrics_session_id: bool,
+    /// `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`: cumulative (the
+    /// spec's default) or delta, which a backend that sums points needs.
+    pub temporality: Temporality,
     /// Human-readable problems with the configuration, for the caller to log.
     pub warnings: Vec<String>,
 }
@@ -198,6 +203,22 @@ pub fn resolve(
                 .unwrap_or(default),
         )
     };
+    // Every metric here is a monotonic counter, so `lowmemory` -- delta for
+    // synchronous counters, per the spec -- is delta too.
+    let temporality = match get("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE")
+        .map(|v| v.to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("cumulative") => Temporality::Cumulative,
+        Some("delta" | "lowmemory") => Temporality::Delta,
+        Some(other) => {
+            warnings.push(format!(
+                "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE={other} is not supported \
+                 (only cumulative, delta and lowmemory); using cumulative"
+            ));
+            Temporality::Cumulative
+        }
+    };
     let gate = |key: &str| get(key).as_deref().and_then(parse_flag).unwrap_or(false);
     Some(Config {
         metrics,
@@ -215,6 +236,7 @@ pub fn resolve(
             .as_deref()
             .and_then(parse_flag)
             .unwrap_or(true),
+        temporality,
         warnings,
     })
 }
@@ -309,6 +331,7 @@ mod tests {
         assert_eq!(c.metric_interval, Duration::from_secs(60));
         assert!(!c.log_user_prompts && !c.log_tool_details);
         assert!(c.metrics_session_id);
+        assert_eq!(c.temporality, Temporality::Cumulative);
         assert!(c.warnings.is_empty());
     }
 
@@ -355,6 +378,39 @@ mod tests {
         assert_eq!(c.metric_interval, Duration::from_secs(1));
         assert!(c.log_user_prompts && !c.log_tool_details);
         assert!(!c.metrics_session_id);
+    }
+
+    #[test]
+    fn the_temporality_preference_picks_delta_or_cumulative() {
+        let pick = |value: &str| {
+            let c = resolve(
+                &env(&[
+                    (ENABLE_ENV, "1"),
+                    ("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", value),
+                ]),
+                None,
+                None,
+            )
+            .unwrap();
+            (c.temporality, c.warnings.len())
+        };
+        assert_eq!(pick("delta"), (Temporality::Delta, 0));
+        assert_eq!(
+            pick("DELTA"),
+            (Temporality::Delta, 0),
+            "case-insensitive, as the spec says"
+        );
+        assert_eq!(
+            pick("lowmemory"),
+            (Temporality::Delta, 0),
+            "delta for counters"
+        );
+        assert_eq!(pick("cumulative"), (Temporality::Cumulative, 0));
+        assert_eq!(
+            pick("sometimes"),
+            (Temporality::Cumulative, 1),
+            "unknown warns and keeps the default"
+        );
     }
 
     #[test]

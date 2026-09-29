@@ -740,7 +740,11 @@ pub async fn serve() -> Result<(), String> {
                         Ok(SessionIdParams { session_id: sid }) if active.as_ref().is_some_and(|t| t.session_id == sid) => {
                             error(&id, -32001, "session busy")
                         }
-                        Ok(SessionIdParams { session_id: sid }) if sessions.remove(&sid).is_some() => response(&id, json!({})),
+                        Ok(SessionIdParams { session_id: sid }) if sessions.remove(&sid).is_some() => {
+                            // Its metric series stop growing a long-lived host's export.
+                            crate::core::agent::otel::session_closed(&sid);
+                            response(&id, json!({}))
+                        }
                         Ok(_) => error(&id, -32602, "unknown sessionId"),
                     },
                     "turn/start" => {
