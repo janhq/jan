@@ -989,7 +989,20 @@ async fn handle_cli(cmd: CliCommands) {
 // ── Agent handlers ───────────────────────────────────────────────────────
 
 async fn handle_agent(cmd: AgentCommands) {
-    let result = match cmd {
+    // A Ctrl-C or SIGTERM would otherwise end the process with the run's last
+    // records still in the exporter's queue.
+    let result = app_lib::core::agent::otel::flush_on_termination(run_agent(cmd)).await;
+    // Before the exit below, which would skip it: the last run's records are
+    // still in the exporter's queue. Bounded, and a no-op unless telemetry is on.
+    app_lib::core::agent::otel::shutdown().await;
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(exit_code(&e));
+    }
+}
+
+async fn run_agent(cmd: AgentCommands) -> Result<(), String> {
+    match cmd {
         AgentCommands::Run {
             project,
             task,
@@ -1065,13 +1078,6 @@ async fn handle_agent(cmd: AgentCommands) {
         // artifact is the same one on any machine. `--out` is what CI and
         // `make protocol-rpc-schema` use.
         AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
-    };
-    // Before the exit below, which would skip it: the last run's records are
-    // still in the exporter's queue. Bounded, and a no-op unless telemetry is on.
-    app_lib::core::agent::otel::shutdown().await;
-    if let Err(e) = result {
-        eprintln!("Error: {e}");
-        std::process::exit(exit_code(&e));
     }
 }
 
