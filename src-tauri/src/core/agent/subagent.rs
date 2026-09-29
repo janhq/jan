@@ -818,13 +818,46 @@ pub(crate) fn message_parent(link: &ParentLink, text: &str) -> Result<String, Su
     ))
 }
 
-/// Deliver one parent message to a live child, addressed by `run_id` or -- while
-/// exactly one live child answers to it -- by the name the dispatch gave it.
+/// Find the child a parent addressed. Subagents belong to the session's own
+/// registry, so a name is resolved there and nowhere else: the newest live
+/// (unfinished) child answering to it wins, since a name can be re-dispatched
+/// once its earlier run is done. An exact `run_id` always wins over a name, which
+/// keeps ids usable for the rare case of two live children sharing one.
+fn resolve_target<'a>(
+    entries: &'a std::collections::HashMap<String, BackgroundEntry>,
+    target: &str,
+) -> Result<&'a BackgroundEntry, SubagentError> {
+    use std::sync::atomic::Ordering;
+    if let Some(entry) = entries.get(target) {
+        return Ok(entry);
+    }
+    // Ids are `sub-<name>-<seq>` with a process-wide counter, so the numeric
+    // tail orders runs by dispatch time.
+    let seq = |e: &&BackgroundEntry| {
+        e.run_id
+            .rsplit('-')
+            .next()
+            .and_then(|n| n.parse::<u64>().ok())
+            .unwrap_or(0)
+    };
+    entries
+        .values()
+        .filter(|e| e.name == target && !e.finished.load(Ordering::SeqCst))
+        .max_by_key(seq)
+        .ok_or_else(|| {
+            SubagentError::Upstream(format!(
+                "no subagent named '{target}' is running in this session"
+            ))
+        })
+}
+
+/// Deliver one parent message to a live child, addressed by the name the
+/// dispatch gave it (see [`resolve_target`]) or its `run_id`.
 ///
 /// Never blocks: the message is queued on the child's inbox and picked up at its
 /// next turn boundary, after any tool call in flight has landed. A child that
 /// has already finished is reported as such rather than erroring, since the
-/// parent's next move (dispatch a follow-up) differs from the bad-id case.
+/// parent's next move (dispatch a follow-up) differs from the bad-name case.
 pub(crate) fn message_subagent(
     bg: &Arc<BackgroundSubagents>,
     target: &str,
@@ -833,25 +866,7 @@ pub(crate) fn message_subagent(
     use std::sync::atomic::Ordering;
     let (run_id, name, finished, inbox) = {
         let guard = bg.inner.lock().unwrap();
-        let entry = match guard.get(target) {
-            Some(entry) => entry,
-            None => {
-                let mut matches = guard
-                    .values()
-                    .filter(|e| e.name == target && !e.finished.load(Ordering::SeqCst));
-                let first = matches.next().ok_or_else(|| {
-                    SubagentError::Upstream(format!(
-                        "no subagent '{target}' is running; pass a run_id from dispatch_subagent"
-                    ))
-                })?;
-                if matches.next().is_some() {
-                    return Err(SubagentError::Upstream(format!(
-                        "several running subagents are named '{target}'; address one by its run_id"
-                    )));
-                }
-                first
-            }
-        };
+        let entry = resolve_target(&guard, target)?;
         (
             entry.run_id.clone(),
             entry.name.clone(),
@@ -871,6 +886,41 @@ pub(crate) fn message_subagent(
          any tool call already in flight. {depth} message(s) pending for it. Keep working -- \
          nothing waits on this."
     ))
+}
+
+/// Stop a live child by name (or `run_id`). Unlike [`BackgroundSubagents::abort_child`]
+/// the entry stays registered, marked finished: a phase driver parked on this
+/// child reads "gone from the registry" as a teardown and would drop the rest of
+/// the plan, whereas a stopped child is simply a finished one.
+pub(crate) fn stop_subagent(
+    bg: &Arc<BackgroundSubagents>,
+    target: &str,
+) -> Result<String, SubagentError> {
+    use crate::core::agent::events::StreamEvent;
+    use std::sync::atomic::Ordering;
+    let guard = bg.inner.lock().unwrap();
+    let entry = resolve_target(&guard, target)?;
+    if entry.finished.swap(true, Ordering::SeqCst) {
+        return Ok(format!(
+            "Subagent '{}' ({}) had already finished; nothing to stop.",
+            entry.name, entry.run_id
+        ));
+    }
+    entry.abort.abort();
+    entry.slot.release(bg);
+    let _ = entry.events.send(StreamEvent::SubagentEnd {
+        run_id: entry.run_id.clone(),
+        name: entry.name.clone(),
+        error: Some("stopped by the parent agent".to_string()),
+    });
+    let text = format!(
+        "Stopped subagent '{}' ({}). It produces no answer; dispatch a new one if the work \
+         is still needed.",
+        entry.name, entry.run_id
+    );
+    drop(guard);
+    bg.wake.notify_waiters();
+    Ok(text)
 }
 
 /// One in-flight background subagent: the channel that will carry its final
@@ -1600,6 +1650,7 @@ async fn run_subagent(
     run_id: String,
     inbox: Arc<ChildInbox>,
     parent_link: ParentLink,
+    transcript_dir: Option<PathBuf>,
 ) -> Result<String, SubagentError> {
     use crate::core::agent::events::StreamEvent;
     use crate::core::agent::r#loop::run_orchestration_steered;
@@ -1671,8 +1722,17 @@ async fn run_subagent(
     let parent_events = events.clone();
     let fwd_run_id = run_id.clone();
     let fwd_name = name.clone();
+    // Recorded from the child's own event stream, before the forwarder filters
+    // it for the parent: the transcript keeps what the child did, not what the
+    // parent's screen shows of it.
+    let mut recorder = transcript_dir
+        .as_deref()
+        .map(|dir| crate::core::agent::run_record::Recorder::start(dir, &name, &run_id, &description));
     let forwarder = tokio::spawn(async move {
         while let Some(ev) = child_rx.recv().await {
+            if let Some(rec) = recorder.as_mut() {
+                rec.record(&ev);
+            }
             match &ev {
                 _ if forward_to_parent(&ev) => {
                     let _ = parent_events.send(StreamEvent::Subagent {
@@ -1684,6 +1744,7 @@ async fn run_subagent(
                 _ => {}
             }
         }
+        recorder
     });
 
     // The child's steering channel, answered from its registry-owned inbox.
@@ -1703,13 +1764,16 @@ async fn run_subagent(
     let result = run_orchestration_steered(&child_tx, &body, &child_args, Some(&steering_tx)).await;
     drop(child_tx);
     drop(steering_tx);
-    let _ = forwarder.await;
+    let recorder = forwarder.await.ok().flatten();
     let _ = postman.await;
 
     let outcome = match result {
         Ok(completion) => Ok(final_assistant_text(&completion)),
         Err(message) => Err(SubagentError::Upstream(message)),
     };
+    if let Some(recorder) = recorder {
+        recorder.finish(&outcome.clone().map_err(|e| e.to_string()));
+    }
     let _ = events.send(StreamEvent::SubagentEnd {
         run_id,
         name,
@@ -1837,6 +1901,13 @@ pub(crate) fn spawn_subagent(
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let finished_task = finished.clone();
     let notice_path = display_path.clone();
+    // Reserved here, not in the child, so a queued child's file already exists.
+    let transcript_dir = scratch.and_then(|s| {
+        tauri_plugin_agent_tools::tools::spill::validated_subdir(
+            s,
+            tauri_plugin_agent_tools::tools::spill::SUBAGENT_DIR,
+        )
+    });
     let slot = ChildSlot::new();
     let slot_task = slot.clone();
     // A permit taken here means this child never joined the waitlist: record it
@@ -1885,6 +1956,7 @@ pub(crate) fn spawn_subagent(
             run_id_task.clone(),
             task_inbox,
             parent_link,
+            transcript_dir,
         )
         .await;
         if let Some((_, path)) = &result_file {
@@ -2401,18 +2473,24 @@ pub fn is_subagent_tool(name: &str) -> bool {
 
 /// Every subagent tool name, the one list [`is_subagent_tool`] and
 /// [`DELEGATE_ONLY_TOOLS`] are drawn from.
-const SUBAGENT_TOOLS: [&str; 5] = [
+const SUBAGENT_TOOLS: [&str; 6] = [
     "dispatch_subagent",
     "await_subagent",
     "create_subagent",
     "list_subagents",
     "message_subagent",
+    "stop_subagent",
 ];
 
 /// The subagent tools a session limited to its host's tools is offered when it
-/// may delegate: dispatching, listing and messaging, not `create_subagent`, which writes a
+/// may delegate: dispatching, listing, messaging and stopping, not `create_subagent`, which writes a
 /// definition into the project, nor `await_subagent`, which is never advertised.
-pub const DELEGATE_ONLY_TOOLS: [&str; 3] = [SUBAGENT_TOOLS[0], SUBAGENT_TOOLS[3], SUBAGENT_TOOLS[4]];
+pub const DELEGATE_ONLY_TOOLS: [&str; 4] = [
+    SUBAGENT_TOOLS[0],
+    SUBAGENT_TOOLS[3],
+    SUBAGENT_TOOLS[4],
+    SUBAGENT_TOOLS[5],
+];
 
 /// The child-side tool, handled on its own: a child has no subagent registry
 /// (it cannot dispatch), so it never reaches [`is_subagent_tool`]'s handler.
@@ -2437,6 +2515,30 @@ pub fn message_parent_tool_schema() -> serde_json::Value {
     })
 }
 
+/// Schema for the parent-side stop tool, advertised beside `message_subagent`
+/// on the same unconditional gate (see there for why).
+pub fn stop_subagent_tool_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": "stop_subagent",
+            "description": "Stop a running subagent by name, for example one that is on the wrong track or whose work is no longer needed. Its work in progress is discarded and it writes no answer. Returns immediately. Prefer message_subagent to redirect a child that is merely off course.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "The name you gave this subagent in dispatch_subagent. If the name was dispatched more than once, the newest still-running one is stopped." }
+                },
+                "required": ["name"]
+            }
+        }
+    })
+}
+
+/// Parse a `stop_subagent` argument object, returning the target name.
+pub fn parse_stop_args(args: &serde_json::Value) -> Result<String, SubagentError> {
+    required_str(args, "name")
+}
+
 /// Schema for the parent-to-child message tool. Advertised alongside
 /// `dispatch_subagent`, and only while some child is live (there is nothing to
 /// address otherwise) -- the same discipline `await_subagent` advertisement uses.
@@ -2449,10 +2551,10 @@ pub fn message_subagent_tool_schema() -> serde_json::Value {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "run_id": { "type": "string", "description": "The run_id dispatch_subagent reported for this child. Its name works too while only one running child answers to it." },
+                    "name": { "type": "string", "description": "The name you gave this subagent in dispatch_subagent. If the name was dispatched more than once, the newest still-running one is addressed." },
                     "message": { "type": "string", "description": "What to tell the subagent. Be specific: it sees your message, not this conversation." }
                 },
-                "required": ["run_id", "message"]
+                "required": ["name", "message"]
             }
         }
     })
@@ -2548,6 +2650,7 @@ pub fn subagent_tool_schemas(
             }
         }),
         message_subagent_tool_schema(),
+        stop_subagent_tool_schema(),
         json!({
             "type": "function",
             "function": {
@@ -2686,7 +2789,7 @@ pub fn parse_await_args(args: &serde_json::Value) -> Result<String, SubagentErro
 
 /// Parse a `message_subagent` tool-call argument object into (target, message).
 pub fn parse_message_args(args: &serde_json::Value) -> Result<(String, String), SubagentError> {
-    Ok((required_str(args, "run_id")?, required_str(args, "message")?))
+    Ok((required_str(args, "name")?, required_str(args, "message")?))
 }
 
 /// Parse a `create_subagent` tool-call argument object into a definition plus
@@ -3930,8 +4033,10 @@ mod tests {
         for message in inbox.drain() {
             let object = message.as_object().unwrap();
             assert_eq!(object["role"], "user");
+            let mut keys: Vec<&String> = object.keys().collect();
+            keys.sort();
             assert_eq!(
-                object.keys().collect::<Vec<_>>(),
+                keys,
                 vec!["content", "role"],
                 "a delivered message carries text and nothing else"
             );
@@ -4694,7 +4799,8 @@ mod tests {
     #[test]
     fn schemas_list_available_names_in_dispatch_description() {
         let reg = registry_with("reviewer", None);
-        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);        assert_eq!(schemas.len(), 5);
+        let schemas = subagent_tool_schemas(&reg, DEFAULT_MAX_PARALLEL_SUBAGENTS);
+        assert_eq!(schemas.len(), 6);
         let names: Vec<&str> = schemas
             .iter()
             .map(|s| s["function"]["name"].as_str().unwrap())
@@ -4705,6 +4811,7 @@ mod tests {
                 "dispatch_subagent",
                 "await_subagent",
                 "message_subagent",
+                "stop_subagent",
                 "create_subagent",
                 "list_subagents"
             ]
@@ -5013,20 +5120,40 @@ mod tests {
         assert_eq!(inbox.drain().len(), 1);
     }
 
-    /// `name` is unique only within one dispatch, so two live children can share
-    /// one. Guessing which was meant would steer the wrong run: refuse instead.
+    /// A name can be re-dispatched once its earlier run is done, and a child
+    /// stuck past its own end could still be listed: the newest live run wins,
+    /// and a finished one is never chosen over a live one.
     #[tokio::test]
-    async fn an_ambiguous_name_is_refused_rather_than_guessed() {
+    async fn a_name_resolves_to_the_newest_live_run() {
         let bg = Arc::new(BackgroundSubagents::default());
-        let (a, _ia) = live_entry("sub-explorer-1", "explorer");
-        let (b, _ib) = live_entry("sub-explorer-2", "explorer");
+        let (a, ia) = live_entry("sub-explorer-1", "explorer");
+        let (b, ib) = live_entry("sub-explorer-2", "explorer");
+        let (c, ic) = live_entry("sub-explorer-3", "explorer");
+        c.finished.store(true, std::sync::atomic::Ordering::SeqCst);
         {
             let mut guard = bg.inner.lock().unwrap();
             guard.insert("sub-explorer-1".to_string(), a);
             guard.insert("sub-explorer-2".to_string(), b);
+            guard.insert("sub-explorer-3".to_string(), c);
         }
-        let err = message_subagent(&bg, "explorer", "which one?").unwrap_err();
-        assert!(err.to_string().contains("run_id"), "{err}");
+        message_subagent(&bg, "explorer", "which one?").unwrap();
+        assert_eq!(ia.drain().len(), 0);
+        assert_eq!(ib.drain().len(), 1);
+        assert_eq!(ic.drain().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn stop_marks_the_child_finished_and_keeps_it_registered() {
+        let bg = Arc::new(BackgroundSubagents::default());
+        let (a, _ia) = live_entry("sub-worker-1", "worker");
+        bg.inner.lock().unwrap().insert("sub-worker-1".to_string(), a);
+        let reply = stop_subagent(&bg, "worker").unwrap();
+        assert!(reply.contains("Stopped"), "{reply}");
+        let guard = bg.inner.lock().unwrap();
+        let entry = guard.get("sub-worker-1").expect("still registered");
+        assert!(entry.finished.load(std::sync::atomic::Ordering::SeqCst));
+        drop(guard);
+        assert!(stop_subagent(&bg, "worker").is_err(), "no live child is left to stop");
     }
 
     /// A finished child is a different situation from a bad id: the parent's

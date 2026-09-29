@@ -226,6 +226,15 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Saved threads untouched for this many days are pruned at session start
+    /// (default 90; 0 disables). The newest few, the resumed thread, forks'
+    /// parents and worktree-owning threads are always kept.
+    #[serde(default)]
+    pub thread_retention_days: Option<u32>,
+    /// Most saved threads a project keeps (default 500; 0 disables); the oldest
+    /// past it are pruned at session start, subject to the same exemptions.
+    #[serde(default)]
+    pub max_threads: Option<u32>,
     /// Expand `<think>` reasoning blocks in the TUI transcript instead of
     /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
     /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
@@ -302,6 +311,8 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
+# max_threads = 500  # keep at most this many saved threads; 0 disables
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 # send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 #                        # (a provider that rejects the field is detected and stripped automatically)

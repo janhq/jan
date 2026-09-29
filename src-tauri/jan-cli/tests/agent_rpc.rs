@@ -1381,7 +1381,8 @@ fn system_text(request: &serde_json::Value) -> Option<String> {
 }
 
 /// A session with only host tools can still delegate. The parent is offered
-/// dispatch and nothing else of Jan's; the child is held to the parent's host
+/// dispatch and the tools to list, steer and stop what it dispatched, and
+/// nothing else of Jan's; the child is held to the parent's host
 /// tools -- no shell, files, web or skills -- even though the model names the
 /// tool by the bare name the host declared; and the child's call reaches the
 /// host attributed to the child.
@@ -1415,7 +1416,13 @@ fn a_host_only_session_delegates_to_a_child_held_to_its_host_tools() {
     }}));
     assert_eq!(
         started["result"]["tools"],
-        serde_json::json!(["dispatch_subagent", "list_subagents", "host__robot_arm_move"]),
+        serde_json::json!([
+            "dispatch_subagent",
+            "message_subagent",
+            "stop_subagent",
+            "list_subagents",
+            "host__robot_arm_move"
+        ]),
         "{started}"
     );
     let session_id = started["result"]["sessionId"].as_str().unwrap().to_owned();

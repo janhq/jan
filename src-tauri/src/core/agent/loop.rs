@@ -905,8 +905,8 @@ fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> S
         )
     };
     format!(
-        "{head}\n{where_answers} Use a run_id above to steer one with message_subagent while it \
-         runs. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
+        "{head}\n{where_answers} Steer one by name with message_subagent, or stop it with \
+         stop_subagent. These tasks are the subagents' now -- do not do them yourself; you'll be pinged as \
          each finishes."
     )
 }
@@ -1373,6 +1373,16 @@ impl CompositeToolInvoker {
                         Err(e) => return format!("ERROR: {e}"),
                     };
                 match crate::core::agent::subagent::message_subagent(&ctx.bg, &target, &message) {
+                    Ok(s) => s,
+                    Err(e) => format!("ERROR: {e}"),
+                }
+            }
+            "stop_subagent" => {
+                let target = match crate::core::agent::subagent::parse_stop_args(args) {
+                    Ok(v) => v,
+                    Err(e) => return format!("ERROR: {e}"),
+                };
+                match crate::core::agent::subagent::stop_subagent(&ctx.bg, &target) {
                     Ok(s) => s,
                     Err(e) => format!("ERROR: {e}"),
                 }

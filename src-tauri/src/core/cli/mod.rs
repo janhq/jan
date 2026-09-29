@@ -9,6 +9,7 @@ pub mod browser;
 #[cfg(test)]
 mod contract_conformance;
 pub mod device_auth;
+pub mod housekeeping;
 pub mod journal;
 pub mod login;
 pub mod mcp;
@@ -342,6 +343,15 @@ pub fn cli_save_thread(
         })
         .collect();
     write_messages_to_file(&messages, &get_messages_path(base, &id))?;
+    // Best effort, like the display journal: the record is a convenience for a
+    // reader, and failing to write it must not fail the save of the thread.
+    let record = crate::core::agent::run_record::Transcript::from_history(&id, history);
+    if let Err(e) = crate::core::agent::run_record::write_atomic(
+        &get_thread_dir(base, &id).join(THREAD_TRANSCRIPT_FILE),
+        &record,
+    ) {
+        log::warn!("thread {id}: could not write {THREAD_TRANSCRIPT_FILE}: {e}");
+    }
 
     let existing: Option<serde_json::Value> =
         std::fs::read_to_string(get_thread_metadata_path(base, &id))
@@ -376,6 +386,10 @@ pub fn cli_save_thread(
     update_thread_metadata(base, &id, &thread)?;
     Ok(id)
 }
+
+/// A thread's record in the shared `prompt` / `transcript[]` / `output` shape,
+/// next to its `messages.jsonl`. See `agent::run_record`.
+pub const THREAD_TRANSCRIPT_FILE: &str = "transcript.json";
 
 /// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
 /// so it is remembered on the next session (agent.toml wins over the desktop
@@ -2841,7 +2855,30 @@ pub async fn cli_agent_ui(
     // TUI threads persist in the project's store, separate from the desktop
     // store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
+    prune_threads(&agent_dir, &project_root, resume.as_ref());
     tui::run(session, agent_dir, project_root, task, images, resume).await
+}
+
+/// Drop stale threads from the project's store (see [`housekeeping`]). Reads the
+/// limits from `agent.toml` and never touches the thread this session resumes.
+fn prune_threads(
+    agent_dir: &std::path::Path,
+    project_root: &std::path::Path,
+    resume: Option<&ResumeRequest>,
+) {
+    let Ok(cfg) = load_agent_config(project_root) else {
+        return;
+    };
+    let policy = housekeeping::Policy::from_config(
+        cfg.agent.thread_retention_days,
+        cfg.agent.max_threads,
+    );
+    let protect: std::collections::HashSet<String> = resume
+        .and_then(|r| find_resume_thread(agent_dir, &r.target).ok())
+        .and_then(|t| t.get("id").and_then(|v| v.as_str()).map(str::to_string))
+        .into_iter()
+        .collect();
+    housekeeping::run(agent_dir, policy, &protect);
 }
 
 /// Where the TUI persists a project's threads: the project's store,
