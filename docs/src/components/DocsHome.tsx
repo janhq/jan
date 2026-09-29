@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
-import { Computer, Search, Rocket, Bot, type LucideIcon } from 'lucide-react'
+import { Computer, Rocket, Bot, type LucideIcon } from 'lucide-react'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
+import DocSearch from './DocSearch'
 
 type Section = {
   icon: LucideIcon
@@ -61,16 +62,7 @@ const DocsHome = () => {
           References for Jan Desktop and Jan Agent.
         </p>
 
-        <button
-          type="button"
-          className="mt-8 w-full max-w-xl mx-auto flex items-center gap-3 rounded-2xl border border-black/10 dark:border-white/10 bg-black/[0.03] dark:bg-white/[0.06] px-4 py-3.5 text-black/40 dark:text-white/40 hover:border-black/25 dark:hover:border-white/25 hover:bg-black/[0.05] transition-all"
-        >
-          <Search className="size-4 shrink-0" />
-          <span className="flex-1 text-left text-sm">Search docs...</span>
-          <kbd className="text-[11px] font-medium px-1.5 py-0.5 rounded-md border border-black/15 dark:border-white/15 bg-white dark:bg-white/10">
-            ⌘K
-          </kbd>
-        </button>
+        <DocSearch variant="hero" className="mt-8 max-w-xl mx-auto" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-5 mt-16 lg:mt-20 max-w-3xl mx-auto px-4">
