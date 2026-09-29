@@ -552,8 +552,8 @@ impl Picker {
             PickerKind::PluginSetup => " Type to search   Up/Down select   Enter set up   Esc cancel",
             PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
-            PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
-            PickerKind::AgentDetail => " Esc back",
+            PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
+            PickerKind::AgentDetail => " m message   x stop   Esc back",
             PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
         }
     }
@@ -2172,6 +2172,8 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// `/agents` message dock: text the user is writing to one running child.
+    agent_message: Option<AgentMessagePrompt>,
     /// `/vibe-setting`'s side call mapping the request onto settings, while it
     /// runs. Awaited by the chat loop; off the render loop like `/context`.
     vibe_task: Option<JoinHandle<Result<String, String>>>,
@@ -2647,6 +2649,38 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
+    /// What the child has said and done, in order, for the `/agents` detail
+    /// view: the same prose and tool rows the main transcript shows, kept per
+    /// child because a child's stream never reaches the parent's transcript.
+    log: Vec<ChildLogEntry>,
+}
+
+/// One entry of a child's `/agents` log.
+enum ChildLogEntry {
+    /// Answer prose, extended in place as tokens stream.
+    Prose(String),
+    /// A message the user sent it from `/agents`.
+    Steer(String),
+    /// A completed call; `result` fills in when its `ToolResult` lands.
+    Call {
+        id: String,
+        label: String,
+        result: Option<(String, bool)>,
+    },
+}
+
+/// Longest log a child panel keeps. The detail view only ever shows the tail,
+/// and a child that streams for an hour must not grow the TUI without bound.
+const CHILD_LOG_MAX: usize = 400;
+
+impl SubagentPanel {
+    fn push_log(&mut self, entry: ChildLogEntry) {
+        self.log.push(entry);
+        if self.log.len() > CHILD_LOG_MAX {
+            let excess = self.log.len() - CHILD_LOG_MAX;
+            self.log.drain(..excess);
+        }
+    }
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -2817,6 +2851,7 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
+            agent_message: None,
             vibe_task: None,
             vibe_confirm: None,
             readout: None,
@@ -3802,6 +3837,8 @@ impl App {
             Some("answer the question above")
         } else if self.settings_prompt.is_some() {
             Some("edit the setting above")
+        } else if self.agent_message.is_some() {
+            Some("finish the message to the subagent above")
         } else if self.vibe_confirm.is_some() {
             Some("answer the proposal above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
@@ -5826,6 +5863,7 @@ impl App {
                         waiting: 0,
                         pending: true,
                         phase: Some(p.phase),
+                        log: Vec::new(),
                     });
                 }
             }
@@ -5862,6 +5900,7 @@ impl App {
                         waiting: 0,
                         pending: false,
                         phase: None,
+                        log: Vec::new(),
                     });
                 }
             }
@@ -5902,6 +5941,7 @@ impl App {
                         waiting,
                         pending: false,
                         phase: None,
+                        log: Vec::new(),
                     });
                 }
             }
@@ -6063,6 +6103,37 @@ impl App {
                     // Full history retained for expansion; the panel renders only
                     // the last SUBAGENT_WINDOW.
                     panel.calls.push(label);
+                    panel.push_log(ChildLogEntry::Call {
+                        id,
+                        label: tool_finished(&tool, &args),
+                        result: None,
+                    });
+                }
+            }
+            // Prose and results feed only the `/agents` detail log: the parent
+            // transcript still shows a child as its one-line panel.
+            StreamEvent::Token { text } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    match panel.log.last_mut() {
+                        Some(ChildLogEntry::Prose(prose)) => prose.push_str(&text),
+                        _ => panel.push_log(ChildLogEntry::Prose(text)),
+                    }
+                }
+            }
+            StreamEvent::ToolResult {
+                id,
+                content,
+                is_error,
+                ..
+            } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    let call = panel.log.iter_mut().rev().find_map(|e| match e {
+                        ChildLogEntry::Call { id: cid, result, .. } if *cid == id => Some(result),
+                        _ => None,
+                    });
+                    if let Some(result) = call {
+                        *result = Some((content, is_error));
+                    }
                 }
             }
             // A child's arguments stream just like the parent's, and for a big
@@ -6158,12 +6229,11 @@ impl App {
                 reason,
                 messages,
             } => self.apply_compaction(phase, reason, messages, Some(name)),
-            // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
-            // and any nested bracket are internal to the child run and not
-            // surfaced in the parent transcript: a subagent panel is a one-line
-            // activity summary, so a child's shell output would have nowhere to
-            // go and would push the parent's own live panel off screen. Deliberate
-            // -- the child's output still reaches its `ToolResult`.
+            // A child's live tool output (`ToolOutputDelta`) and any nested
+            // bracket stay out of the parent transcript: a subagent panel is a
+            // one-line activity summary, and a child's shell output would push
+            // the parent's own live panel off screen. Its prose and results are
+            // kept above, for `/agents` only.
             _ => {}
         }
     }
@@ -8022,13 +8092,24 @@ fn collapse_command(cmd: &str) -> String {
 /// The name of the first subagent in a phased `dispatch_subagent` call. The
 /// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
 /// names the first, mirroring the web card (`firstPlannedSubagent`).
-fn first_dispatched_subagent_name(args: &serde_json::Value) -> &str {
-    args.get("subagents")
+/// The dispatch row's subject: the one child's name, or `N subagents: a, b, c`
+/// for a fan-out. Every name is listed, since once the live dock has scrolled
+/// away this row is the only on-screen account of what was dispatched.
+fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
+    let names: Vec<&str> = args
+        .get("subagents")
         .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|s| s.get("name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.get("name").and_then(|v| v.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    match names.as_slice() {
+        [] => format!("{verb} subagent"),
+        [one] => format!("{verb} subagent: {one}"),
+        many => format!("{verb} {} subagents: {}", many.len(), many.join(", ")),
+    }
 }
 
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
@@ -8056,9 +8137,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
-        "dispatch_subagent" => {
-            format!("Dispatching subagent: {}", first_dispatched_subagent_name(args))
-        }
+        "dispatch_subagent" => dispatched_subagents_label("Dispatching", args),
+        "message_subagent" => format!("Messaging subagent: {}", s("name")),
+        "stop_subagent" => format!("Stopping subagent: {}", s("name")),
         "await_subagent" => format!(
             "Awaiting subagent: {}",
             subagent_name_from_run_id(s("run_id"))
@@ -8215,9 +8296,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
-        "dispatch_subagent" => {
-            format!("Dispatched subagent: {}", first_dispatched_subagent_name(args))
-        }
+        "dispatch_subagent" => dispatched_subagents_label("Dispatched", args),
+        "message_subagent" => format!("Messaged subagent: {}", s("name")),
+        "stop_subagent" => format!("Stopped subagent: {}", s("name")),
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
@@ -11052,6 +11133,8 @@ fn route_paste_event(app: &mut App, event: Event) {
         picker.refresh_search();
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
+    } else if let Some(prompt) = app.agent_message.as_mut() {
+        prompt.input.push_str(&text);
     } else if let Some(proposal) = app.vibe_confirm.as_mut() {
         proposal.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -11775,6 +11858,11 @@ async fn handle_key(
         handle_settings_key(app, key, ctrl);
         return;
     }
+    // So does the `/agents` message dock, drawn over the inspector it came from.
+    if app.agent_message.is_some() {
+        handle_agent_message_key(app, key, ctrl);
+        return;
+    }
     // So does `/vibe-setting`'s confirm dock: nothing is written without it.
     if app.vibe_confirm.is_some() {
         vibe_setting::handle_key(app, key, ctrl);
@@ -11930,6 +12018,39 @@ async fn handle_key(
                 }
                 picker.kind = PickerKind::AgentDetail;
                 app.agent_detail = Some(run_id);
+            }
+            // `/agents`: `m` writes to the selected child (or the one drilled
+            // into), `x` stops it. Both reach the same registry calls the parent
+            // agent's `message_subagent` / `stop_subagent` tools make.
+            KeyCode::Char('m') | KeyCode::Char('x')
+                if !ctrl
+                    && matches!(picker.kind, PickerKind::Agents | PickerKind::AgentDetail) =>
+            {
+                let run_id = if picker.kind == PickerKind::AgentDetail {
+                    app.agent_detail.clone().unwrap_or_default()
+                } else {
+                    picker
+                        .items
+                        .get(picker.selected)
+                        .map(|i| i.value.clone())
+                        .unwrap_or_default()
+                };
+                let Some(name) = app
+                    .subagents
+                    .iter()
+                    .find(|p| p.run_id == run_id && !run_id.is_empty())
+                    .map(|p| p.name.clone())
+                else {
+                    return;
+                };
+                if key.code == KeyCode::Char('m') {
+                    app.agent_message = Some(AgentMessagePrompt::new(&run_id, &name));
+                } else {
+                    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &run_id) {
+                        Ok(_) => app.note(&format!("stopped subagent {name}")),
+                        Err(e) => app.note(&format!("could not stop subagent {name}: {e}")),
+                    }
+                }
             }
             KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
                 let connect = picker.items[picker.selected].value == "connect";
@@ -13874,6 +13995,132 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
 ];
+
+/// Docked message field for one running subagent, opened from `/agents`. What
+/// it sends goes through `subagent::message_subagent`, the call the parent
+/// agent's own `message_subagent` tool makes, so the child cannot tell (and
+/// need not care) which of the two steered it.
+struct AgentMessagePrompt {
+    run_id: String,
+    name: String,
+    input: String,
+    error: Option<String>,
+}
+
+impl AgentMessagePrompt {
+    fn new(run_id: &str, name: &str) -> Self {
+        Self {
+            run_id: run_id.to_string(),
+            name: name.to_string(),
+            input: String::new(),
+            error: None,
+        }
+    }
+}
+
+/// Keyboard for the `/agents` message dock: chars/backspace edit, Enter queues
+/// the message on the child's inbox and closes, Esc closes without sending.
+/// Either way the inspector underneath stays open where the user left it.
+fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')) {
+        app.agent_message = None;
+        return;
+    }
+    let Some(prompt) = app.agent_message.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let text = prompt.input.trim().to_string();
+            if text.is_empty() {
+                prompt.error = Some("type a message first (Esc to cancel)".to_string());
+                return;
+            }
+            // By run id: the user picked this exact child, and a re-dispatched
+            // name must not redirect the message to a newer one.
+            match crate::core::agent::subagent::message_subagent(
+                &app.subagent_set,
+                &prompt.run_id,
+                &text,
+            ) {
+                Ok(_) => {
+                    let (run_id, name) = (prompt.run_id.clone(), prompt.name.clone());
+                    app.agent_message = None;
+                    if let Some(panel) = app.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                        panel.push_log(ChildLogEntry::Steer(text));
+                    }
+                    app.note(&format!(
+                        "message queued for subagent {name}; it reads it at its next step"
+                    ));
+                }
+                Err(e) => prompt.error = Some(e.to_string()),
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
+/// The message dock's contents at `width`.
+fn agent_message_lines(prompt: &AgentMessagePrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_text(
+        "Delivered at the subagent's next step, after any tool call in flight, as a \
+         message from you.",
+        dim,
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
+    if let Some(error) = &prompt.error {
+        lines.extend(wrap_text(error, Style::new().red(), max).into_iter().map(Line::from));
+    }
+    lines.extend(field_lines(
+        vec![Span::styled("message: ", Style::new().bold())],
+        &prompt.input,
+        Style::new(),
+        max,
+    ));
+    lines.push(Line::styled("Enter send \u{b7} Esc cancel".to_string(), dim));
+    lines
+}
+
+/// Where the message dock sits: grown upward from the input row into `body`,
+/// sized to its contents, the way the other docks are placed.
+fn agent_message_rect(
+    prompt: &AgentMessagePrompt,
+    body: ratatui::layout::Rect,
+    input: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let height = (agent_message_lines(prompt, input.width.saturating_sub(2)).len() as u16 + 2)
+        .min(body.height);
+    ratatui::layout::Rect {
+        x: input.x,
+        y: input.y.saturating_sub(height).max(body.y),
+        width: input.width,
+        height,
+    }
+}
+
+fn draw_agent_message(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AgentMessagePrompt) {
+    use ratatui::widgets::Clear;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" message subagent: {} ", prompt.name),
+            Style::new().on_cyan().black().bold(),
+        ));
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(agent_message_lines(prompt, inner.width)), inner);
+}
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
 /// error, Enter saves / Esc cancels / cleared field unsets.
@@ -16049,21 +16296,8 @@ fn panel_activity_summary(panel: &SubagentPanel) -> String {
     }
 }
 
-/// Group consecutive identical labels into `(label, count)` runs, preserving
-/// order, so a repeated call renders once as `label ×N` instead of N rows.
-fn collapse_runs(calls: &[String]) -> Vec<(String, usize)> {
-    let mut out: Vec<(String, usize)> = Vec::new();
-    for c in calls {
-        match out.last_mut() {
-            Some(run) if &run.0 == c => run.1 += 1,
-            _ => out.push((c.clone(), 1)),
-        }
-    }
-    out
-}
-
 /// The `/agents` detail body for the subagent `run_id`: header, stats, dispatch
-/// brief, and the tail of its collapsed call history that fits in `height`. An
+/// brief, and the tail of its activity log (see [`child_log_lines`]) that fits in `height`. An
 /// agent that has finished (its panel gone) shows a short "finished" note, since
 /// the inspector reads live panels only.
 fn agent_detail_lines(
@@ -16098,39 +16332,85 @@ fn agent_detail_lines(
         );
     }
     out.push(Line::from(""));
-    out.push(Line::styled("recent calls".to_string(), dim));
-    if panel.calls.is_empty() {
-        out.push(Line::styled("  (no tool calls yet)".to_string(), dim));
+    let body = child_log_lines(panel, width);
+    if body.is_empty() {
+        out.push(Line::styled("(no activity yet)".to_string(), dim));
         return out;
     }
-    let runs = collapse_runs(&panel.calls);
-    // Reserve the rows already used plus one for a possible "+N earlier" head,
-    // then show the tail so the most recent calls are the ones that survive.
+    // The tail, so the newest activity is what survives a small box; one row is
+    // held back for the "+N earlier" head whenever anything is cut.
     let budget = (height as usize).saturating_sub(out.len()).max(1);
-    let (hidden, shown) = if runs.len() <= budget {
-        (0, &runs[..])
+    if body.len() <= budget {
+        out.extend(body);
     } else {
-        let start = runs.len() - budget.saturating_sub(1);
-        (start, &runs[start..])
-    };
-    if hidden > 0 {
-        out.push(Line::styled(format!("  +{hidden} earlier"), dim));
+        let keep = budget.saturating_sub(1);
+        let hidden = body.len() - keep;
+        out.push(Line::styled(format!("+{hidden} earlier lines"), dim));
+        out.extend(body.into_iter().skip(hidden));
     }
-    for (label, n) in shown {
-        let text = if *n > 1 {
-            format!("{label} ×{n}")
-        } else {
-            label.clone()
-        };
-        let style = if *n >= STUCK_REPEAT_THRESHOLD {
-            Style::new().red()
-        } else {
-            Style::new().dim()
-        };
-        out.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(truncate(&text, max), style),
-        ]));
+    out
+}
+
+/// A child's log rendered like the main transcript: prose as markdown, each
+/// call as a tool row with its outcome tag and a one-line result summary, and
+/// the user's own steering messages as user lines.
+fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = (width.max(8) as usize).saturating_sub(2);
+    let repeats = trailing_repeat(&panel.calls);
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for entry in &panel.log {
+        match entry {
+            ChildLogEntry::Prose(text) => {
+                let text = strip_system_xml_tags(text);
+                if text.trim().is_empty() {
+                    continue;
+                }
+                out.extend(format_markdown_lines(text.trim(), width));
+            }
+            ChildLogEntry::Steer(text) => {
+                out.extend(
+                    wrap_text(&format!("> {text}"), Style::new().bold().magenta(), max)
+                        .into_iter()
+                        .map(Line::from),
+                );
+            }
+            ChildLogEntry::Call { label, result, .. } => {
+                let (tag, tag_style) = match result {
+                    None => ("\u{25b8}", Style::new().cyan()),
+                    Some((_, true)) => ("\u{2717}", Style::new().red()),
+                    Some((_, false)) => ("\u{2713}", Style::new().green()),
+                };
+                out.extend(tool_row_lines(
+                    tag,
+                    tag_style,
+                    label,
+                    Style::new().dim(),
+                    TOOL_ROW_RESERVE,
+                    width,
+                    None,
+                ));
+                if let Some((content, is_error)) = result {
+                    let summary = summarize_result(content, max.saturating_sub(4));
+                    if !summary.is_empty() {
+                        let style = if *is_error { Style::new().red() } else { dim };
+                        out.push(Line::from(vec![
+                            Span::styled("\u{2502}   ", dim),
+                            Span::styled(summary, style),
+                        ]));
+                    }
+                }
+            }
+        }
+    }
+    // A spin is still worth flagging in red: the log alone reads as busy.
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        if let Some(last) = panel.calls.last() {
+            out.push(Line::styled(
+                format!("repeating: {last} \u{d7}{repeats}"),
+                Style::new().red(),
+            ));
+        }
     }
     out
 }
@@ -18309,6 +18589,10 @@ fn draw(f: &mut Frame, app: &mut App) {
         if let Some(confirm) = &app.browser_confirm {
             draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
         }
+        // Likewise the `/agents` message dock, opened over the inspector.
+        if let Some(prompt) = &app.agent_message {
+            draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
+        }
         return;
     }
 
@@ -18773,6 +19057,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_settings_prompt(f, rect, prompt, &toml_path);
+    } else if let Some(prompt) = &app.agent_message {
+        draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
     } else if let Some(prompt) = &app.mcp_prompt {
         let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
             .min(chunks[1].height);
@@ -21271,7 +21557,7 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, collapse_runs, open_agents_picker, retry_wait_label, trailing_repeat,
+        cache_summary_lines, open_agents_picker, retry_wait_label, trailing_repeat,
         RetryWait, SubagentPanel,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
@@ -21386,6 +21672,7 @@ mod tests {
             waiting: 0,
             pending: false,
             phase: None,
+            log: Vec::new(),
         }
     }
 
@@ -21412,15 +21699,6 @@ mod tests {
     }
 
     #[test]
-    fn collapse_runs_groups_consecutive_calls() {
-        let calls: Vec<String> = ["a", "a", "b", "a"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(
-            collapse_runs(&calls),
-            vec![("a".into(), 2), ("b".into(), 1), ("a".into(), 1)]
-        );
-    }
-
-    #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
         let items = agent_picker_items(&[]);
         assert_eq!(items.len(), 1);
@@ -21444,7 +21722,7 @@ mod tests {
         let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
-        assert!(text.contains("×5"), "call run collapsed in the detail: {text}");
+        assert!(text.contains("×5"), "a spin is flagged in the detail: {text}");
     }
 
     #[test]
@@ -21519,6 +21797,213 @@ mod tests {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
         assert!(app.agent_detail.is_none(), "Esc cleared the drilled-in id");
+    }
+
+    /// A started child plus a few of its events, as the live stream delivers them.
+    fn app_with_child_activity() -> TestApp {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: Some("count things".to_string()),
+        });
+        let child = |event: StreamEvent| StreamEvent::Subagent {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            event: Box::new(event),
+        };
+        app.apply(child(StreamEvent::Token { text: "Let me run ".into() }));
+        app.apply(child(StreamEvent::Token { text: "the command.".into() }));
+        app.apply(child(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 20 && echo counted" }),
+        }));
+        app.apply(child(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "counted\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        }));
+        app.apply(child(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "/nope/missing.txt" }),
+        }));
+        app.apply(child(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "ERROR: no such file".into(),
+            is_error: true,
+            diff: None,
+        }));
+        app.apply(child(StreamEvent::Token { text: "All done.".into() }));
+        app
+    }
+
+    /// The detail view reads like the main transcript: the child's prose, and
+    /// each tool call with its outcome tag and a summary of its result, in the
+    /// order they happened.
+    #[test]
+    fn agent_detail_shows_the_childs_prose_and_tool_calls() {
+        let app = app_with_child_activity();
+        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let order = [
+            "Let me run the command.",
+            "✓ Ran: sleep 20 && echo counted",
+            "counted",
+            "✗ Read missing.txt",
+            "ERROR: no such file",
+            "All done.",
+        ];
+        let mut at = 0;
+        for want in order {
+            let found = text[at..].find(want).unwrap_or_else(|| {
+                panic!("{want:?} missing or out of order in:\n{text}")
+            });
+            at += found + want.len();
+        }
+    }
+
+    /// A long-running child keeps its newest activity on screen: the detail
+    /// shows the tail of the log and says how much scrolled off above it.
+    #[test]
+    fn agent_detail_keeps_the_newest_activity_in_view() {
+        let mut app = app_with_child_activity();
+        for n in 0..40 {
+            app.apply(StreamEvent::Subagent {
+                run_id: "sub-counter-1".to_string(),
+                name: "counter".to_string(),
+                event: Box::new(StreamEvent::ToolCall {
+                    id: format!("n{n}"),
+                    name: "bash".into(),
+                    args: json!({ "command": format!("echo step-{n}") }),
+                }),
+            });
+        }
+        let lines = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 20);
+        assert!(lines.len() <= 20, "fits the box: {}", lines.len());
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("step-39"), "newest call shown: {text}");
+        assert!(!text.contains("step-0\n"), "oldest scrolled off: {text}");
+        assert!(text.contains("earlier"), "says what scrolled off: {text}");
+    }
+
+    /// `m` on a child's detail opens a message dock; Enter queues the text on
+    /// the child's inbox through the same `message_subagent` the parent agent
+    /// uses, so it lands as a plain user turn at the child's next boundary.
+    #[tokio::test]
+    async fn agents_detail_m_steers_the_child_like_the_parent_does() {
+        let mut app = test_app();
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: Some("count".to_string()),
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(app.agent_message.is_some(), "m opens the message dock");
+        assert!(app.blocking_dock().is_some(), "the dock owns the keyboard");
+
+        type_key_chars(&mut app, "also say BANANA").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.agent_message.is_none(), "Enter sends and closes the dock");
+        assert_eq!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::AgentDetail),
+            "the user is left where they were"
+        );
+        assert_eq!(
+            inbox.drain(),
+            vec![json!({ "role": "user", "content": "also say BANANA" })],
+            "queued exactly as a parent message is"
+        );
+        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("also say BANANA"), "the message shows in its log: {text}");
+    }
+
+    /// The dock opens over the `/agents` inspector, whose draw path returns
+    /// before the ordinary dock chain: it must still be on screen, or the user
+    /// types into a field they cannot see.
+    #[tokio::test]
+    async fn agents_message_dock_is_drawn_over_the_inspector() {
+        let mut app = test_app();
+        crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "hello").await;
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("message subagent: counter"), "{screen}");
+        assert!(screen.contains("message: hello"), "{screen}");
+    }
+
+    /// Esc abandons a message without sending it, back on the detail screen.
+    #[tokio::test]
+    async fn agents_message_dock_esc_sends_nothing() {
+        let mut app = test_app();
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "never mind").await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.agent_message.is_none());
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+        assert!(inbox.drain().is_empty());
+    }
+
+    /// `x` on the list stops the selected child through `stop_subagent`.
+    #[tokio::test]
+    async fn agents_x_stops_the_selected_child() {
+        let mut app = test_app();
+        crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-waster-1",
+            "waster",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-waster-1".to_string(),
+            name: "waster".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(crate::core::agent::subagent::tests::child_is_finished(
+            &app.subagent_set,
+            "sub-waster-1"
+        ));
     }
 
     /// When more agents are running than the dock can show, the overflow row
@@ -24795,6 +25280,35 @@ mod tests {
         );
     }
 
+    /// A fan-out names every child, not just the first: the row is the only
+    /// on-screen account of what was dispatched once the dock scrolls away.
+    #[test]
+    fn a_multi_dispatch_row_names_every_subagent() {
+        let dispatch = json!({ "subagents": [
+            { "name": "counter", "task": "x" },
+            { "name": "waster", "task": "y" },
+            { "name": "reader", "task": "z" },
+        ] });
+        assert_eq!(
+            tool_activity("dispatch_subagent", &dispatch),
+            "Dispatching 3 subagents: counter, waster, reader"
+        );
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched 3 subagents: counter, waster, reader"
+        );
+    }
+
+    #[test]
+    fn steering_tool_rows_name_their_target() {
+        let msg = json!({ "name": "counter", "message": "also say BANANA" });
+        assert_eq!(tool_activity("message_subagent", &msg), "Messaging subagent: counter");
+        assert_eq!(tool_finished("message_subagent", &msg), "Messaged subagent: counter");
+        let stop = json!({ "name": "waster" });
+        assert_eq!(tool_activity("stop_subagent", &stop), "Stopping subagent: waster");
+        assert_eq!(tool_finished("stop_subagent", &stop), "Stopped subagent: waster");
+    }
+
     #[test]
     fn awaiting_throbber_renders_below_assistant_prose() {
         use ratatui::{backend::TestBackend, Terminal};
@@ -26303,7 +26817,7 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 9] = [
+        let setups: [DockSetup; 10] = [
             // The account OAuth dock takes every keystroke and outranks the
             // API-key one, so it has to block the field as hard as the rest.
             ("account_login", |app| {
@@ -26340,6 +26854,9 @@ mod tests {
             }),
             ("mcp_prompt", |app| {
                 app.mcp_prompt = Some(blank_mcp_prompt())
+            }),
+            ("agent_message", |app| {
+                app.agent_message = Some(super::AgentMessagePrompt::new("sub-a-1", "a"))
             }),
             ("provider_prompt", |app| {
                 app.provider_prompt = Some(super::ProviderPrompt::new())
