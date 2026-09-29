@@ -30,6 +30,11 @@ pub(crate) struct AgentToml {
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+    /// `[telemetry]`: opt-in OTLP export. Wins over the global setting.
+    /// CLI-only: the desktop doesn't export telemetry yet.
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub telemetry: crate::core::agent::global_config::TelemetrySection,
     #[serde(default)]
     pub context: ContextSection,
     /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
@@ -833,6 +838,17 @@ mod tests {
         ensure_project(&root).expect("ensure again");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("deny"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn telemetry_section_is_optional_and_parsed() {
+        let root = unique_root("telemetry");
+        ensure_project(&root).expect("scaffold");
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, None);
+        std::fs::write(agent_toml_path(&root), "[telemetry]\nenabled = false\n").unwrap();
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, Some(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 

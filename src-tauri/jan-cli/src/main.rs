@@ -725,7 +725,7 @@ async fn main() {
         // TUI runs the same check itself and notes it in the transcript.
         // The usage ping is likewise deferred to the TUI's own background task.
         let overrides = cli.providers.into_overrides();
-        if let Err(e) = cli_agent_ui(
+        let result = cli_agent_ui(
             &cli.project,
             cli.task,
             cli.model,
@@ -740,8 +740,11 @@ async fn main() {
             },
             cli.resume.into_request(),
         )
-        .await
-        {
+        .await;
+        // `process::exit` skips destructors, so the bounded final export runs
+        // before it. A no-op unless telemetry is on.
+        app_lib::core::agent::otel::shutdown().await;
+        if let Err(e) = result {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
@@ -798,6 +801,7 @@ async fn main() {
         Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
         Commands::Update { check, force } => handle_update(check, force).await,
     }
+    app_lib::core::agent::otel::shutdown().await;
 }
 
 // ── MCP server handler ─────────────────────────────────────────────────────
@@ -1062,6 +1066,9 @@ async fn handle_agent(cmd: AgentCommands) {
         // `make protocol-rpc-schema` use.
         AgentCommands::RpcSchema { out } => app_lib::core::cli::rpc_schema::run(out.as_deref()),
     };
+    // Before the exit below, which would skip it: the last run's records are
+    // still in the exporter's queue. Bounded, and a no-op unless telemetry is on.
+    app_lib::core::agent::otel::shutdown().await;
     if let Err(e) = result {
         eprintln!("Error: {e}");
         std::process::exit(exit_code(&e));

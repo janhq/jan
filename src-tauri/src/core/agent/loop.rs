@@ -1343,7 +1343,7 @@ impl CompositeToolInvoker {
                     match self.prompt_subagent_create(&def.name).await {
                         PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
                         PermissionDecision::Deny => {
-                            return "ERROR: user-scope subagent creation denied by user".to_string()
+                            return format!("ERROR: user-scope subagent creation {DENIED_BY_USER}")
                         }
                     }
                 }
@@ -1427,7 +1427,7 @@ impl CompositeToolInvoker {
                     match self.prompt_monitor_start(&spec).await {
                         PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
                         PermissionDecision::Deny => {
-                            return "ERROR: monitor start denied by user".to_string()
+                            return format!("ERROR: monitor start {DENIED_BY_USER}")
                         }
                     }
                 }
@@ -1621,11 +1621,20 @@ impl CompositeToolInvoker {
     }
 }
 
+/// Refusal phrases the loop puts in a tool result it produced without running
+/// the tool. Shared with `otel::refusal_of`, so telemetry classifies refusals
+/// from the same constants the messages are built from.
+pub(crate) const DENIED_BY_USER: &str = "denied by user";
+pub(crate) const DENIED_BY_POLICY: &str = "denied by project policy";
+pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
+pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
+pub(crate) const HOOK_DENIED: &str = "denied: ";
+
 /// Message for a tool blocked by the project's own deny list, naming the
 /// exact config file so the block is actionable, not mysterious.
 fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     format!(
-        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        "ERROR: tool '{name}' {DENIED_BY_POLICY} (see [tools] deny in {})",
         crate::core::agent::project::agent_toml_path(project_root).display()
     )
 }
@@ -1634,7 +1643,7 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
 /// policy the user edits, so it points at the dedicated tools instead.
 fn hidden_path_msg(name: &str) -> String {
     format!(
-        "ERROR: tool '{name}' refused: the Jan home (~/.jan) holds the agent's own \
+        "ERROR: tool '{name}' {HIDDEN_PATH_REFUSED} (~/.jan) holds the agent's own \
          configuration and state and is hidden from every tool -- do not try to reach it \
          another way. Skills and memory are available through the skill_*/memory_* tools."
     )
@@ -1658,11 +1667,11 @@ fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path)
 /// to teach either of them. The hook's reason is what distinguishes it, which
 /// is the part the user wrote to be read.
 fn hook_denied_msg(name: &str, reason: &str) -> String {
-    format!("ERROR: tool '{name}' denied: {reason}")
+    format!("ERROR: tool '{name}' {HOOK_DENIED}{reason}")
 }
 
 fn plan_mode_read_only_msg(name: &str) -> String {
-    format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
+    format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
 
 #[async_trait]
@@ -1931,7 +1940,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -1993,7 +2002,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -2098,7 +2107,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -2284,7 +2293,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             .await
                         }
                         PermissionDecision::Deny => {
-                            (format!("ERROR: tool '{name}' denied by user"), None, None)
+                            (format!("ERROR: tool '{name}' {DENIED_BY_USER}"), None, None)
                         }
                     }
                 }
@@ -3431,6 +3440,15 @@ async fn orchestrate_inner(
         // hooks fire back to back on the same state.
         let request_message_count =
             projected_message_count(&transcript, volatile_projection.as_deref(), send_reasoning);
+        // Telemetry's bracket around the same span the hooks bracket: the run
+        // (and the prompt that started it) now, its end and active time when
+        // this is dropped -- on cancellation too. Inert unless the exporter is
+        // on, and it never touches the request.
+        let _telemetry_run = crate::core::agent::otel::RunScope::begin(
+            session_id.as_deref(),
+            run_id.as_deref(),
+            submitted_prompt.as_deref(),
+        );
         tools
             .fire_hooks(
                 tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,

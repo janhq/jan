@@ -10000,6 +10000,9 @@ async fn apply_stream_event(
     current: &mut Option<CurrentRun>,
 ) {
     note_claude_alias_if_engaged(app);
+    if let Some(ev) = &ev {
+        crate::core::agent::otel::observe(ev);
+    }
     // `Done`, `Error` and a closed stream end the run without passing through
     // `App::apply`, so they would otherwise leave `[retrying]` over an idle
     // session once the retries run out.

@@ -288,6 +288,9 @@ pub(crate) async fn fire_pre_compact(
     ctx: &tauri_plugin_agent_tools::tools::ToolContext<'_>,
     message_count: usize,
 ) {
+    // Every compaction path passes through here, so this is telemetry's one
+    // compaction count too. Inert unless the exporter is on.
+    crate::core::agent::otel::compaction(message_count);
     if hooks.is_empty() {
         return;
     }
