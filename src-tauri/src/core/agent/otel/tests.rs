@@ -1153,3 +1153,128 @@ fn every_claude_code_signal_has_a_jan_equivalent_or_a_reason() {
         }
     }
 }
+
+#[test]
+fn a_turn_carries_its_runs_session() {
+    let state = fold(
+        cfg_with(false, false),
+        None,
+        &[provenance(None, "sess-1"), StreamEvent::Step { index: 1, max: 0 }],
+    );
+    assert_eq!(
+        point(&state, "jan_agent.turn.count", &[("agent", "main"), ("session.id", "sess-1")]),
+        Some(PointValue::Int(1))
+    );
+}
+
+#[test]
+fn delta_drops_wait_for_a_session_to_carry_them() {
+    let cfg = Arc::new(cfg_temporality("delta"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    // Dropped before any run started: no session to put them in, so they
+    // are held rather than sent as the one point without a session.
+    assert!(state.metrics(100, 4).is_empty());
+    let _ = state.exported(100, 4);
+    start_run(&mut state, "sess-1");
+    let metrics = state.metrics(200, 4);
+    assert_eq!(
+        point_in(&metrics, "jan_agent.telemetry.dropped", &[("session.id", "sess-1")]).map(|p| p.0),
+        Some(PointValue::Int(4)),
+        "the held drops go out with the first session"
+    );
+    let _ = state.exported(200, 4);
+    assert!(state.metrics(300, 4).iter().all(|m| m.name != "jan_agent.telemetry.dropped"));
+}
+
+#[test]
+fn a_failed_delta_export_puts_its_window_back() {
+    let cfg = Arc::new(cfg_temporality("delta"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    let started = state.last_export_nanos;
+    start_run(&mut state, "sess-1");
+    feed(&mut state, &cfg, &[provenance(None, "sess-1"), usage(10, 1, 0, 0)]);
+    let input = [("type", "input"), ("session.id", "sess-1")];
+    assert_eq!(point_in(&state.metrics(100, 2), "jan_agent.token.usage", &input).map(|p| p.0), Some(PointValue::Int(10)));
+    let taken = state.exported(100, 2);
+    // More accrues while the export is in flight, then the export fails.
+    feed(&mut state, &cfg, &[provenance(None, "sess-1"), usage(5, 0, 0, 0)]);
+    state.export_failed(taken);
+    let retry = state.metrics(200, 2);
+    assert_eq!(
+        point_in(&retry, "jan_agent.token.usage", &input),
+        Some((PointValue::Int(15), started, 200)),
+        "the failed window and what accrued since, over the whole span"
+    );
+    assert_eq!(
+        point_in(&retry, "jan_agent.telemetry.dropped", &[]).map(|p| p.0),
+        Some(PointValue::Int(2)),
+        "drops the failed export carried are reported again"
+    );
+    assert!(retry.iter().any(|m| m.name == "jan_agent.session.count"), "nothing the failed window held is lost");
+}
+
+#[test]
+fn a_failed_cumulative_export_keeps_a_closed_sessions_final_values() {
+    let cfg = Arc::new(cfg_temporality("cumulative"));
+    let mut state = State::new(Arc::clone(&cfg), None);
+    start_run(&mut state, "sess-a");
+    feed(&mut state, &cfg, &[provenance(None, "sess-a"), usage(10, 1, 0, 0)]);
+    state.apply(Instant::now(), 3, Signal::SessionClosed { session: "sess-a".into() });
+    let has_a = |metrics: &[Metric]| {
+        point_in(metrics, "jan_agent.token.usage", &[("type", "input"), ("session.id", "sess-a")]).is_some()
+    };
+    let taken = state.exported(100, 0);
+    assert!(!has_a(&state.metrics(150, 0)), "evicted once handed to an export");
+    state.export_failed(taken);
+    assert!(has_a(&state.metrics(200, 0)), "back until an export actually carries it");
+    let _ = state.exported(200, 0);
+    assert!(!has_a(&state.metrics(300, 0)));
+}
+
+fn cfg_delta_for(url: &str) -> Config {
+    let url = url.to_string();
+    let env = move |key: &str| match key {
+        config::ENABLE_ENV => Some("1".to_string()),
+        "OTEL_EXPORTER_OTLP_ENDPOINT" => Some(url.clone()),
+        "OTEL_EXPORTER_OTLP_PROTOCOL" => Some("http/json".to_string()),
+        "OTEL_EXPORTER_OTLP_TIMEOUT" => Some("500".to_string()),
+        "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE" => Some("delta".to_string()),
+        _ => None,
+    };
+    config::resolve(&env, None, None).unwrap()
+}
+
+#[tokio::test]
+async fn a_delta_window_whose_export_failed_goes_out_with_the_next() {
+    // The first run's logs and metrics are both refused, retry included
+    // (four 503s); the second run's exports land.
+    let (url, seen) = collector_refusing(false, 4).await;
+    let t = Telemetry::start(cfg_delta_for(&url), None, "0.0.0-test");
+    scripted_run(&t);
+    scripted_run(&t);
+    t.shutdown(Duration::from_secs(5)).await;
+    let seen = seen.lock().unwrap().clone();
+    let metrics: Vec<Value> = seen
+        .iter()
+        .filter(|(p, _)| p == "/v1/metrics")
+        .map(|(_, b)| serde_json::from_slice(b).unwrap())
+        .collect();
+    let input_tokens = |body: &Value| -> Option<i64> {
+        body["resourceMetrics"][0]["scopeMetrics"][0]["metrics"]
+            .as_array()?
+            .iter()
+            .find(|m| m["name"] == "jan_agent.token.usage")?["sum"]["dataPoints"]
+            .as_array()?
+            .iter()
+            .find(|p| p["attributes"].to_string().contains("\"input\""))?["asInt"]
+            .as_str()?
+            .parse()
+            .ok()
+    };
+    let landed = metrics.last().expect("a metrics POST landed");
+    assert_eq!(
+        input_tokens(landed),
+        Some(18),
+        "the refused window (9) and the next (9) arrive together: {metrics:?}"
+    );
+}
