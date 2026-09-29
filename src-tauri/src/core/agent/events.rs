@@ -185,6 +185,18 @@ pub enum StreamEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         messages: Option<usize>,
     },
+    /// The upstream request failed before anything streamed and is about to be
+    /// sent again after `delay_ms`. `attempt` is the 1-based attempt that
+    /// follows the wait, out of `max_attempts`; `reason` is the failure that
+    /// prompted it. Sent once per retry so a consumer can say "retrying" rather
+    /// than show a spinner that looks like a slow model. Display-only and never
+    /// journaled; the turn continues with the next event or ends in `Error`.
+    Retry {
+        attempt: u32,
+        max_attempts: u32,
+        delay_ms: u64,
+        reason: String,
+    },
     /// The run's active file monitors, as a whole replacing the previous set.
     /// Emitted whenever the set changes (a `monitor` start or stop, a condition
     /// matching, a monitor finishing), so a consumer keeps a live view without
@@ -616,6 +628,15 @@ pub(crate) mod tests {
                 },
             ),
             (
+                "Retry",
+                StreamEvent::Retry {
+                    attempt: 2,
+                    max_attempts: 10,
+                    delay_ms: 250,
+                    reason: "Upstream returned HTTP 503: busy".into(),
+                },
+            ),
+            (
                 "Monitors",
                 StreamEvent::Monitors {
                     monitors: vec![tauri_plugin_agent_tools::tools::monitor::MonitorSnapshot {
@@ -778,6 +799,7 @@ pub(crate) mod tests {
             | StreamEvent::Subagent { .. }
             | StreamEvent::Notice { .. }
             | StreamEvent::Compaction { .. }
+            | StreamEvent::Retry { .. }
             | StreamEvent::Monitors { .. }
             | StreamEvent::Parked
             | StreamEvent::MessagesUpdated { .. }
