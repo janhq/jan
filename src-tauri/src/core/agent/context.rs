@@ -33,63 +33,142 @@ notice reaches you as a `<SYSTEM>` note that resumes the conversation, so nothin
 stopping. Do not idle, poll a file in a loop, or narrate waiting: say what you started, then either \
 get on with unrelated work or finish the turn.";
 
-/// The one instructions file Jan reads, discovered by walking from the project
-/// root up to the filesystem root. Another agent's file (`AGENTS.md`,
-/// `CLAUDE.md`) is deliberately not ingested: only what a user wrote for Jan --
-/// by hand or through `/init` -- becomes authoritative project context.
-const CONTEXT_FILE_NAME: &str = "JAN.md";
+/// The instructions file Jan reads first in every directory of the walk from
+/// the project root up to the filesystem root. When a directory has a
+/// non-empty one it wins outright: nothing else in that directory is read.
+///
+/// `JAN.md` is the *legacy* name: `/init` now writes `AGENTS.md` (#9083), but a
+/// `JAN.md` the user already has keeps winning, so an existing project loads
+/// exactly the bytes it loaded before and its prompt cache stays warm. Other
+/// directories fall back to the names in `[context].fallback_files` (default
+/// `AGENTS.md`; `CLAUDE.md` is opt-in), tried in order, one file per directory.
+/// `[]` restores JAN.md-only exactly.
+pub(crate) const CONTEXT_FILE_NAME: &str = "JAN.md";
 
-/// Read every non-empty `JAN.md` from the project root up to the filesystem
-/// root, nearest-first. Shared by the system-prompt builder and the CLI's
-/// `/reload system-prompt` report (which needs paths and sizes, not the
-/// wrapped block).
-pub(crate) fn context_files(project_root: &Path) -> Vec<(std::path::PathBuf, String)> {
-    let mut files: Vec<(std::path::PathBuf, String)> = Vec::new();
+/// The instructions file `/init` writes for a new project (#9083).
+#[cfg(feature = "cli")]
+pub(crate) const DEFAULT_INSTRUCTIONS_FILE: &str = "AGENTS.md";
+
+/// How a surface labels a loaded instructions file by its name: `JAN.md` is
+/// the legacy name, `CLAUDE.md` an opt-in fallback, and `AGENTS.md` -- the
+/// default -- needs no label.
+#[cfg(feature = "cli")]
+pub(crate) fn instructions_file_label(path: &Path) -> Option<&'static str> {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some(CONTEXT_FILE_NAME) => Some("legacy JAN.md"),
+        Some(DEFAULT_INSTRUCTIONS_FILE) | None => None,
+        Some(_) => Some("fallback"),
+    }
+}
+
+/// One instructions file the walk picked: where it is, what it says, and
+/// whether it is a fallback (not `JAN.md`), so a surface can say so.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ContextFile {
+    pub path: std::path::PathBuf,
+    pub content: String,
+    pub fallback: bool,
+}
+
+/// Walk from `project_root` to the filesystem root and pick at most one
+/// instructions file per directory: a non-empty `JAN.md`, else the first
+/// non-empty name in `fallback_files`. A file whose canonical path was already
+/// picked (a `sub/AGENTS.md -> ../JAN.md` symlink) is skipped, so the same text
+/// is never loaded twice. Returned farthest-first, so the nearest -- most
+/// specific -- instructions come last and take precedence.
+///
+/// Deterministic for a given tree and config: the order is the walk's, never a
+/// directory listing's.
+pub(crate) fn discover_context_files(
+    project_root: &Path,
+    fallback_files: &[String],
+) -> Vec<ContextFile> {
+    let mut files: Vec<ContextFile> = Vec::new();
+    let mut seen: std::collections::HashSet<std::path::PathBuf> = Default::default();
     let mut dir = Some(project_root);
     while let Some(current) = dir {
-        let path = current.join(CONTEXT_FILE_NAME);
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if !content.trim().is_empty() {
-                files.push((path, content));
+        let candidates = std::iter::once((CONTEXT_FILE_NAME, false))
+            .chain(fallback_files.iter().map(|name| (name.as_str(), true)));
+        for (name, fallback) in candidates {
+            let path = current.join(name);
+            let Ok(content) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            if content.trim().is_empty() {
+                continue;
             }
+            // This directory is decided by the first usable file, even when it
+            // turns out to be a duplicate: a JAN.md that links to an ancestor's
+            // file must not let this directory's AGENTS.md in behind it.
+            let canonical = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if seen.insert(canonical) {
+                files.push(ContextFile {
+                    path,
+                    content,
+                    fallback,
+                });
+            }
+            break;
         }
         dir = current.parent();
     }
-    // Ancestors are collected nearest-first; reverse so the nearest (most
-    // specific) instructions appear last and take precedence.
+    // Collected nearest-first; reverse so the nearest appears last.
     files.reverse();
     files
 }
 
-/// Ingest `JAN.md` from the project root and its ancestors, wrapped in a
-/// `<project_context>` block so the model treats them as authoritative project
-/// instructions. Returns None when none exist.
-pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
-    let files = context_files(project_root);
+/// The instructions files this project loads under its resolved
+/// `[context].fallback_files`, farthest-first. What `/context` and the startup
+/// note report, and what [`load_context_files`] renders: one rule for all three.
+pub(crate) fn project_context_files(project_root: &Path) -> Vec<ContextFile> {
+    let fallback = crate::core::agent::project::context_fallback_files(project_root);
+    discover_context_files(project_root, &fallback)
+}
+
+/// Render picked instruction files as the `<project_context>` block, or None
+/// when there are none. Each file keeps its own `<project_instructions path=...>`
+/// tag, so the model sees which file -- `JAN.md` or a fallback -- it got.
+fn render_context_files(files: &[ContextFile]) -> Option<String> {
     if files.is_empty() {
         return None;
     }
     let mut block = String::from(
         "<project_context>\n\nProject-specific instructions and guidelines:\n\n",
     );
-    for (path, content) in files {
+    for file in files {
         block.push_str(&format!(
             "<project_instructions path=\"{}\">\n{}\n</project_instructions>\n\n",
-            path.display(),
-            content.trim()
+            file.path.display(),
+            file.content.trim()
         ));
     }
     block.push_str("</project_context>");
     Some(block)
 }
 
+/// Ingest the project's instructions -- `JAN.md`, or a configured fallback where
+/// a directory has none -- from the project root and its ancestors, wrapped in a
+/// `<project_context>` block so the model treats them as authoritative project
+/// instructions. Returns None when none exist.
+pub(crate) fn load_context_files(project_root: &Path) -> Option<String> {
+    render_context_files(&project_context_files(project_root))
+}
+
 /// Whether this project has usable instructions, by the same rule the system
-/// prompt uses: a non-empty `JAN.md` at the root or in any ancestor. Drives the
-/// `/init` invitation on the CLI splash, so an ancestor's file (a monorepo root)
-/// correctly counts as already onboarded.
-#[cfg(feature = "cli")]
+/// prompt uses: a non-empty `JAN.md` (or fallback) at the root or in any
+/// ancestor, so an ancestor's file (a monorepo root) counts as already
+/// onboarded. The startup note reads [`project_context_files`] directly, since
+/// it also names a fallback; this is the yes/no its tests pin.
+#[cfg(all(test, feature = "cli"))]
 pub(crate) fn has_context_file(project_root: &Path) -> bool {
-    load_context_files(project_root).is_some()
+    !project_context_files(project_root).is_empty()
+}
+
+/// Whether `project_root` itself (not an ancestor) has a non-empty `name`.
+/// `/init` uses it to decide between writing a file and reviewing one.
+#[cfg(feature = "cli")]
+pub(crate) fn has_own_file(project_root: &Path, name: &str) -> bool {
+    std::fs::read_to_string(project_root.join(name)).is_ok_and(|content| !content.trim().is_empty())
 }
 
 /// Built-in guide teaching the model the skills/memory file conventions. Always
@@ -608,6 +687,160 @@ mod tests {
         // Context files precede the skills catalog position and follow the guide.
         assert!(prompt.contains("NESTED_RULES"));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn agents_only() -> Vec<String> {
+        vec!["AGENTS.md".to_string()]
+    }
+
+    /// #9079: a directory with no JAN.md falls back to AGENTS.md, and the tag
+    /// names the file so the model can tell which one it got.
+    #[test]
+    fn agents_md_is_read_where_there_is_no_jan_md() {
+        let root = scratch_project("agentsfallback");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].fallback);
+        assert!(files[0].path.ends_with("AGENTS.md"));
+        let block = render_context_files(&files).expect("block");
+        assert!(block.contains("AGENTS_RULES"));
+        assert!(block.contains("AGENTS.md\">"), "{block}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// One file per directory: a repo with both loads exactly what it loaded
+    /// before the fallback existed.
+    #[test]
+    fn jan_md_wins_over_agents_md_in_the_same_directory() {
+        let root = scratch_project("janwins");
+        std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+        let all = vec!["AGENTS.md".to_string(), "CLAUDE.md".to_string()];
+        let block = render_context_files(&discover_context_files(&root, &all)).unwrap();
+        let jan_only = render_context_files(&discover_context_files(&root, &[])).unwrap();
+        assert_eq!(block, jan_only, "JAN.md must shadow every fallback");
+        assert!(!block.contains("AGENTS_RULES") && !block.contains("CLAUDE_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty JAN.md does not count, the same rule as before: the directory
+    /// falls through to its AGENTS.md.
+    #[test]
+    fn an_empty_jan_md_falls_through_to_the_fallback() {
+        let root = scratch_project("emptyjan");
+        std::fs::write(root.join("JAN.md"), "  \n").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].content.contains("AGENTS_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `[]` is today's behaviour exactly, and CLAUDE.md is read only when listed.
+    #[test]
+    fn fallback_list_controls_what_is_read() {
+        let root = scratch_project("fallbacklist");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+        assert!(discover_context_files(&root, &[]).is_empty());
+        let agents = discover_context_files(&root, &agents_only());
+        assert!(agents[0].content.contains("AGENTS_RULES"));
+        let claude = discover_context_files(&root, &["CLAUDE.md".to_string()]);
+        assert!(claude[0].content.contains("CLAUDE_RULES"));
+        // Order is precedence within a directory.
+        let both = vec!["CLAUDE.md".to_string(), "AGENTS.md".to_string()];
+        let files = discover_context_files(&root, &both);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].content.contains("CLAUDE_RULES"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Mixed monorepo: the root's JAN.md and a package's AGENTS.md both load,
+    /// nearest last, each tagged with its own path.
+    #[test]
+    fn fallback_is_decided_per_directory() {
+        let root = scratch_project("perdir");
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("JAN.md"), "ROOT_JAN").unwrap();
+        std::fs::write(root.join("AGENTS.md"), "ROOT_AGENTS").unwrap();
+        std::fs::write(nested.join("AGENTS.md"), "PKG_AGENTS").unwrap();
+        let files = discover_context_files(&nested, &agents_only());
+        let texts: Vec<&str> = files.iter().map(|f| f.content.as_str()).collect();
+        assert_eq!(texts, ["ROOT_JAN", "PKG_AGENTS"]);
+        assert_eq!(
+            files.iter().map(|f| f.fallback).collect::<Vec<_>>(),
+            [false, true]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The common `JAN.md -> AGENTS.md` symlink loads once, as JAN.md.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_jan_md_loads_its_target_once() {
+        let root = scratch_project("symlink");
+        std::fs::write(root.join("AGENTS.md"), "SHARED_RULES").unwrap();
+        std::os::unix::fs::symlink("AGENTS.md", root.join("JAN.md")).unwrap();
+        let files = discover_context_files(&root, &agents_only());
+        assert_eq!(files.len(), 1);
+        assert!(!files[0].fallback);
+        let block = render_context_files(&files).unwrap();
+        assert_eq!(block.matches("SHARED_RULES").count(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A package whose AGENTS.md links to the root's file must not load the
+    /// same text a second time.
+    #[cfg(unix)]
+    #[test]
+    fn a_file_already_loaded_by_canonical_path_is_skipped() {
+        let root = scratch_project("canonical");
+        let nested = root.join("pkg");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(root.join("AGENTS.md"), "SHARED_RULES").unwrap();
+        std::os::unix::fs::symlink("../AGENTS.md", nested.join("AGENTS.md")).unwrap();
+        let files = discover_context_files(&nested, &agents_only());
+        assert_eq!(files.len(), 1, "{files:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A project's `agent.toml` `[context]` is what `load_context_files` honours:
+    /// `[]` turns the fallback off, and a name Jan does not know is ignored.
+    #[test]
+    fn agent_toml_context_section_configures_the_fallback() {
+        let root = scratch_project("agenttoml");
+        std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+        std::fs::write(root.join("README.md"), "README_TEXT").unwrap();
+        let store = crate::core::agent::project::store_root(&root);
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::write(store.join("agent.toml"), "[context]\nfallback_files = []\n").unwrap();
+        assert!(load_context_files(&root).is_none());
+        std::fs::write(
+            store.join("agent.toml"),
+            "[context]\nfallback_files = [\"README.md\", \"AGENTS.md\"]\n",
+        )
+        .unwrap();
+        let block = load_context_files(&root).expect("AGENTS.md via agent.toml");
+        assert!(block.contains("AGENTS_RULES"));
+        assert!(!block.contains("README_TEXT"), "unknown names are never read");
+        let _ = std::fs::remove_dir_all(&store);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Unset everywhere: AGENTS.md is on, CLAUDE.md is not.
+    #[test]
+    fn the_default_fallback_is_agents_md_only() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root = scratch_project("defaultfallback");
+            assert_eq!(
+                crate::core::agent::project::context_fallback_files(&root),
+                ["AGENTS.md"]
+            );
+            let _ = std::fs::remove_dir_all(&root);
+        });
     }
 
     #[test]

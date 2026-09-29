@@ -3743,6 +3743,38 @@ pub(crate) async fn evaluate_goal(
     condition: &str,
     messages: &[serde_json::Value],
 ) -> Result<crate::core::agent::goal::GoalVerdict, String> {
+    let model = side_call_invoker(args, smol_model_id).await?;
+    crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
+}
+
+/// One stateless, tool-free completion outside the run: `request` is sent as
+/// is and the reply's text content returned. For CLI side calls that must not
+/// touch the session's history or prompt -- `/vibe-setting` maps a sentence to
+/// settings this way, so the conversation's cached prefix is never involved.
+#[cfg(feature = "cli")]
+pub(crate) async fn side_completion(
+    args: &OrchestrationArgs,
+    model_id: &str,
+    request: &serde_json::Value,
+) -> Result<String, String> {
+    let model = side_call_invoker(args, model_id).await?;
+    // Nothing streams to the user: a dropped receiver keeps the tokens internal.
+    let (sink, _rx) = mpsc::unbounded_channel();
+    let completion = model.invoke(request, &sink).await?;
+    Ok(crate::core::agent::upstream::extract_choice_message(&completion)
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string())
+}
+
+/// The invoker a between-turns side call uses: `model_id`'s upstream, billed to
+/// this session, with no run stream to report provenance on.
+#[cfg(feature = "cli")]
+async fn side_call_invoker(
+    args: &OrchestrationArgs,
+    smol_model_id: &str,
+) -> Result<HttpModelInvoker, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         smol_model_id,
         args.provider_configs.clone(),
@@ -3778,7 +3810,7 @@ pub(crate) async fn evaluate_goal(
         // Between turns, like `/compact`: no run stream exists to carry it.
         provenance_events: None,
     };
-    crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
+    Ok(model)
 }
 
 /// Summary of still-open (pending/in-progress) todos, or `None` when there is

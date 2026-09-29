@@ -37,6 +37,7 @@ use tokio::task::JoinHandle;
 mod highlight;
 mod markdown;
 mod theme;
+mod vibe_setting;
 
 use markdown::{
     format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
@@ -2076,6 +2077,12 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// `/vibe-setting`'s side call mapping the request onto settings, while it
+    /// runs. Awaited by the chat loop; off the render loop like `/context`.
+    vibe_task: Option<JoinHandle<Result<String, String>>>,
+    /// `/vibe-setting`'s proposed diff, docked for a yes/no. Owns the keyboard
+    /// while open; nothing is written until it is confirmed.
+    vibe_confirm: Option<vibe_setting::VibeProposal>,
     /// The open readout (`/context` or any `/usage` view), or `None`. One
     /// field, so opening either replaces the other instead of stacking two
     /// popups over each other.
@@ -2715,6 +2722,8 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
+            vibe_task: None,
+            vibe_confirm: None,
             readout: None,
             context_request: false,
             last_execution_id: None,
@@ -3694,6 +3703,8 @@ impl App {
             Some("answer the question above")
         } else if self.settings_prompt.is_some() {
             Some("edit the setting above")
+        } else if self.vibe_confirm.is_some() {
+            Some("answer the proposal above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
             Some("finish the wizard above")
         } else if self.readout.is_some() {
@@ -3928,20 +3939,33 @@ impl App {
         self.slash_matches_cache.replace(None);
     }
 
+    /// Whether a docked prompt owns the keyboard and the space above the input,
+    /// so the slash popup must not open: a pending permission request (drawn
+    /// first, and its Up/Down/Enter/Esc answer it) or a pending `ask`.
+    fn slash_popup_blocked(&self) -> bool {
+        !self.pending_queue.is_empty() || !self.ask_queue.is_empty()
+    }
+
     fn refresh_slash_catalog(&mut self) {
         self.slash_catalog = SlashCatalog::load(&self.project_root);
         self.slash_matches_cache.replace(None);
     }
 
     /// Slash commands and installed project skills whose name prefixes the
-    /// current buffer, or empty when the popup should not show: not idle,
-    /// buffer isn't a bare `/name` token (no whitespace yet), the popup was
-    /// Esc-dismissed, or nothing matches. Skills honor the `[skills].enabled`
+    /// current buffer, or empty when the popup should not show: a permission
+    /// prompt or `ask` owns the keys and the dock, the buffer isn't a bare
+    /// `/name` token (no whitespace yet), the popup was Esc-dismissed, or
+    /// nothing matches.
+    ///
+    /// Shown while a run is live as well as idle (janhq/jan-internal#395): Enter
+    /// runs a typed `/command` in any state, so hiding the popup mid-run only
+    /// hid what could be run. Esc on the open popup dismisses it; only the next
+    /// Esc, with the popup gone, cancels the run. Skills honor the `[skills].enabled`
     /// whitelist and the `user-invocable` frontmatter flag: the popup offers
     /// exactly what the human may fire, which is a subset of what the model
     /// sees via `skill_list`.
     fn slash_matches(&self) -> Vec<SlashMatch> {
-        if !self.accepts_input()
+        if self.slash_popup_blocked()
             || self.slash_dismissed
             || !self.input.starts_with('/')
             || self.input.chars().any(char::is_whitespace)
@@ -5258,6 +5282,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
     // the two would make the same non-ASCII text count differently depending
     // on which segment it landed in.
     let (mut prompt_bytes, mut context_bytes, mut skills_bytes) = (0usize, 0usize, 0usize);
+    let mut instruction_files: Vec<(String, bool)> = Vec::new();
     if let (Some(args), Some(root)) = (args, root.as_deref()) {
         let full = crate::core::agent::r#loop::context_system_prompt_preview(
             args.system_prompt_override.as_deref(),
@@ -5269,6 +5294,10 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         .unwrap_or_default();
         context_bytes =
             crate::core::agent::context::load_context_files(root).map_or(0, |s| s.len());
+        instruction_files = crate::core::agent::context::project_context_files(root)
+            .into_iter()
+            .map(|file| (file.path.display().to_string(), file.fallback))
+            .collect();
         skills_bytes = crate::core::agent::context::load_skills(root).map_or(0, |s| s.len())
             + crate::core::agent::context::load_memory_catalog(root).map_or(0, |s| s.len());
         prompt_bytes = full.len().saturating_sub(context_bytes + skills_bytes);
@@ -5366,6 +5395,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
         session_prompt_tokens: snapshot.session_prompt_tokens,
         session_cached_tokens: snapshot.session_cached_tokens,
         session_cache_write_tokens: snapshot.session_cache_write_tokens,
+        instruction_files,
     }
 }
 
@@ -6923,6 +6953,10 @@ struct ContextReport {
     session_prompt_tokens: u64,
     session_cached_tokens: u64,
     session_cache_write_tokens: u64,
+    /// The instructions files the project context loaded, farthest first, each
+    /// with whether it is not a `JAN.md` (#9079). `/context` labels each by
+    /// name (legacy `JAN.md`, `CLAUDE.md` fallback), so the choice is never silent.
+    instruction_files: Vec<(String, bool)>,
 }
 
 impl ContextReport {
@@ -7144,6 +7178,26 @@ fn cost_summary_line(report: &ContextReport) -> Option<String> {
         "Session cost (estimated): ~{}{suffix} - /usage for the breakdown",
         format_usd(total)
     ))
+}
+
+/// Which instructions files the project context holds, for `/context`: a blank
+/// separator, a heading, then one path per file, a legacy JAN.md or a CLAUDE.md
+/// fallback labelled as such.
+/// Empty when none loaded, so a project without instructions shows nothing.
+fn instruction_file_lines(report: &ContextReport) -> Vec<String> {
+    if report.instruction_files.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![String::new(), "Project instructions".to_string()];
+    for (path, _) in &report.instruction_files {
+        let label =
+            crate::core::agent::context::instructions_file_label(std::path::Path::new(path));
+        lines.push(match label {
+            Some(label) => format!("  {path} ({label})"),
+            None => format!("  {path}"),
+        });
+    }
+    lines
 }
 
 /// Plain `/context` summary: current usage and autocompaction threshold first,
@@ -7368,6 +7422,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
                 format_tokens(segment.tokens),
             ))]);
         }
+        for text in instruction_file_lines(report) {
+            rows.push(vec![Span::styled(text, Style::new().dim())]);
+        }
         return rows
             .into_iter()
             .map(|spans| Line::from(clip_spans(spans, max)))
@@ -7494,6 +7551,9 @@ fn context_lines(report: &ContextReport, width: usize) -> Vec<Line<'static>> {
             Span::styled(empty, Style::new().dark_gray()),
             Span::raw(suffix),
         ]);
+    }
+    for text in instruction_file_lines(report) {
+        rows.push(vec![Span::styled(text, Style::new().dim())]);
     }
 
     rows.into_iter()
@@ -9227,6 +9287,19 @@ fn spawn_snapshot(
     })
 }
 
+/// Await `/vibe-setting`'s side call, parking forever when none is running so
+/// this can sit in the loop's `select!` unconditionally.
+async fn await_vibe(
+    task: &mut Option<JoinHandle<Result<String, String>>>,
+) -> Option<Result<String, String>> {
+    let joined = match task.as_mut() {
+        Some(h) => h.await,
+        None => return pending().await,
+    };
+    *task = None;
+    Some(joined.unwrap_or_else(|e| Err(format!("vibe-setting task failed: {e}"))))
+}
+
 /// Await the in-flight snapshot task once, clearing the slot. Same cancel-safe
 /// borrow as `await_mcp`; pends forever when idle.
 async fn await_snapshot(
@@ -9713,10 +9786,10 @@ pub async fn run(
         // middle of a run.
         app.note(&warning);
     }
-    // Only when there is nothing to load: a project that already has JAN.md needs
-    // no invitation, and the splash hint covers re-running /init deliberately.
-    if !crate::core::agent::context::has_context_file(&app.project_root) {
-        app.note("no JAN.md here — run /init to study this project and write one");
+    // An invitation when there is nothing to load, a label when a legacy JAN.md
+    // or a CLAUDE.md is what loaded; an AGENTS.md project hears nothing.
+    if let Some(note) = project_instructions_note(&app.project_root) {
+        app.note(&note);
     }
     // A modified key the terminal is dropping looks like a bug in the composer,
     // so say so once, and only where a config file proves it is unconfigured
@@ -10366,6 +10439,9 @@ async fn chat_loop<B: Backend>(
             Some(done) = await_mcp_job(&mut mcp_job) => {
                 finish_mcp_job(app, done, mcp_servers, &mut mcp_job).await;
             }
+            Some(reply) = await_vibe(&mut app.vibe_task) => {
+                vibe_setting::finish(app, reply);
+            }
             Some(report) = await_context(&mut context_task) => {
                 // Only apply a report the user is still looking at: a result
                 // landing after the overlay was closed must not reopen it.
@@ -10863,6 +10939,8 @@ fn route_paste_event(app: &mut App, event: Event) {
         prompt.paste(&text);
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
+    } else if let Some(proposal) = app.vibe_confirm.as_mut() {
+        proposal.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
         prompt.paste(&text);
     } else if let Some(prompt) = app.provider_prompt.as_mut() {
@@ -11304,6 +11382,11 @@ async fn handle_key(
     // The `/settings` edit dock owns the keyboard while open, same as `/login`.
     if app.settings_prompt.is_some() {
         handle_settings_key(app, key, ctrl);
+        return;
+    }
+    // So does `/vibe-setting`'s confirm dock: nothing is written without it.
+    if app.vibe_confirm.is_some() {
+        vibe_setting::handle_key(app, key, ctrl);
         return;
     }
 
@@ -11794,8 +11877,11 @@ async fn handle_key(
         return;
     }
 
-    // Slash-command hint popup: while typing a `/command` name (idle, no space
-    // yet) with at least one match, it owns Up/Down/Tab/Esc and Enter-to-accept.
+    // Slash-command hint popup: while typing a `/command` name (no space yet)
+    // with at least one match, it owns Up/Down/Tab/Esc and Enter-to-accept --
+    // idle or mid-run. It sits ahead of the Esc-cancels-the-run arm below, so
+    // during a run the first Esc closes the popup and only a second one
+    // cancels. Ctrl-C is handled above and still cancels at once.
     // Enter on a fully-typed command falls through to run it; typed chars fall
     // through to normal editing (which re-filters the popup live).
     if !app.slash_matches().is_empty() {
@@ -12285,7 +12371,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/init",
         hint: "",
-        description: "Study the project, then write JAN.md, skills, and memory",
+        description: "Study the project, then write AGENTS.md, skills, and memory",
         alias_of: None,
     },
     SlashCommand {
@@ -12423,7 +12509,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/reload",
         hint: "[config|plugin|skills|system-prompt]",
-        description: "Re-read agent.toml, skills, plugins and JAN.md without restarting (bare: all)",
+        description: "Re-read agent.toml, skills, plugins and AGENTS.md without restarting (bare: all)",
         alias_of: None,
     },
     SlashCommand {
@@ -12446,14 +12532,20 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     },
     SlashCommand {
         name: "/config",
-        hint: "",
-        description: "View provider config (~/.jan/config.toml)",
+        hint: "[what you want]",
+        description: "View provider config (~/.jan/config.toml); with words, same as /vibe-setting",
         alias_of: None,
     },
     SlashCommand {
         name: "/settings",
-        hint: "[max_parallel_subagents N]",
-        description: "Edit agent.toml and ~/.jan settings (menu); most apply next run",
+        hint: "[what you want]",
+        description: "Edit agent.toml and ~/.jan settings (menu); with words, same as /vibe-setting",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/vibe-setting",
+        hint: "<what you want>",
+        description: "Describe what you want; review and confirm the settings it changes",
         alias_of: None,
     },
     SlashCommand {
@@ -12667,9 +12759,11 @@ async fn run_command(
         "login" => login_command(app, arg),
         "logout" => logout_command(app, arg),
         "update" => update_command(app),
-        "config" => open_config_screen(app),
+        "config" if arg.trim().is_empty() => open_config_screen(app),
+        "config" => vibe_setting::command(app, arg),
         "terminal-setup" => terminal_setup_command(app),
         "settings" => settings_command(app, arg),
+        "vibe-setting" => vibe_setting::command(app, arg),
         "goal" => goal_command(app, arg),
         "init" => init_command(app),
         "plan" => plan_command(app, arg),
@@ -12875,25 +12969,98 @@ fn parse_usage_mode(arg: &str) -> UsageMode {
 
 
 /// The `/init` prompt. Onboarding a project means producing the three things a
-/// later session reads back: the root `JAN.md` (ingested as project context),
-/// skills for repeatable workflows, and memory for durable facts. Phrased as a
-/// task for the model rather than executed here -- only the model can read the
-/// project and judge what is worth writing down.
-const INIT_PROMPT: &str = "Onboard yourself to this project so future sessions start informed.\n\n\
+/// later session reads back: the root instructions file (ingested as project
+/// context), skills for repeatable workflows, and memory for durable facts.
+/// Phrased as a task for the model rather than executed here -- only the model
+/// can read the project and judge what is worth writing down. `{file}` is the
+/// file [`init_plan`] chose.
+fn init_prompt(file: &str) -> String {
+    format!(
+        "Onboard yourself to this project so future sessions start informed.\n\n\
 1. Study the project first. Read the README and any contributor docs, map the directory layout, and \
 find the real build, test, lint, and type-check commands (from the manifests and CI config, not from \
 guesswork). Note the conventions the code actually follows.\n\n\
-2. Write `JAN.md` in the project root. It is the only instructions file loaded into your system \
-prompt, and it is loaded every session, so it must earn its tokens: the commands to build/test/lint, \
-the architecture a newcomer cannot infer from the tree, and the conventions worth enforcing. Skip \
-anything obvious from a directory listing, and do not pad it. If `JAN.md` already exists, read it and \
-correct what has drifted instead of rewriting it wholesale.\n\n\
+2. Write `{file}` in the project root. It is loaded into your system prompt every session, so it \
+must earn its tokens: the commands to build/test/lint, the architecture a newcomer cannot infer from \
+the tree, and the conventions worth enforcing. Skip anything obvious from a directory listing, and \
+do not pad it. If `{file}` already exists, read it and correct what has drifted instead of rewriting \
+it wholesale.\n\n\
 3. Write skills with `skill_write` for the project's repeatable procedures -- releasing, running \
 migrations, adding a module, debugging a subsystem -- one skill per procedure, only where a real \
 multi-step recipe exists. Do not invent skills to fill space.\n\n\
 4. Record durable project facts with `memory_write`: decisions, constraints, and gotchas that are \
 true beyond this session and not already stated in the code.\n\n\
-Then report what you wrote and why, briefly.";
+Then report what you wrote and why, briefly."
+    )
+}
+
+/// The startup note about project instructions: an invitation to `/init` when
+/// there are none, and a plain statement when a loaded file is not the default
+/// `AGENTS.md` -- a legacy `JAN.md` or an opt-in `CLAUDE.md` -- so which file
+/// the prompt holds is never silent (#9079). `None` when every loaded file is
+/// an `AGENTS.md`: nothing to say.
+fn project_instructions_note(project_root: &std::path::Path) -> Option<String> {
+    use crate::core::agent::context::{instructions_file_label, project_context_files};
+    let files = project_context_files(project_root);
+    if files.is_empty() {
+        return Some(
+            "no AGENTS.md here — run /init to study this project and write one".to_string(),
+        );
+    }
+    let labelled: Vec<String> = files
+        .iter()
+        .filter_map(|file| {
+            instructions_file_label(&file.path)
+                .map(|label| format!("{} ({label})", file.path.display()))
+        })
+        .collect();
+    if labelled.is_empty() {
+        return None;
+    }
+    Some(format!("project instructions from {}", labelled.join(", ")))
+}
+
+/// What `/init` does in this project root: which file it writes or reviews,
+/// whether that file already exists, and which other agent's file (if any) it
+/// starts from.
+#[derive(Debug, PartialEq, Eq)]
+struct InitPlan {
+    file: &'static str,
+    existing: bool,
+    seed: Option<&'static str>,
+}
+
+/// Choose `/init`'s target (#9083). `AGENTS.md` is the default. A root that
+/// already has a legacy `JAN.md` keeps it: `JAN.md` wins over `AGENTS.md` in the
+/// same folder, so an `AGENTS.md` written next to it would never load. A project
+/// whose `[context].fallback_files` leaves `AGENTS.md` out gets `JAN.md`, the
+/// one name that is always read. A `CLAUDE.md` seeds a new file.
+fn init_plan(project_root: &std::path::Path) -> InitPlan {
+    use crate::core::agent::context::{
+        has_own_file, CONTEXT_FILE_NAME, DEFAULT_INSTRUCTIONS_FILE,
+    };
+    let agents_read = crate::core::agent::project::context_fallback_files(project_root)
+        .iter()
+        .any(|name| name == DEFAULT_INSTRUCTIONS_FILE);
+    let file = if has_own_file(project_root, CONTEXT_FILE_NAME) || !agents_read {
+        CONTEXT_FILE_NAME
+    } else {
+        DEFAULT_INSTRUCTIONS_FILE
+    };
+    let existing = has_own_file(project_root, file);
+    let seed = (!existing)
+        .then(|| {
+            [DEFAULT_INSTRUCTIONS_FILE, "CLAUDE.md"]
+                .into_iter()
+                .find(|name| *name != file && has_own_file(project_root, name))
+        })
+        .flatten();
+    InitPlan {
+        file,
+        existing,
+        seed,
+    }
+}
 
 /// `/init`: hand the model the onboarding task as a user turn, so it runs with
 /// the normal toolset, permission gate, and transcript. The prompt body itself
@@ -12906,13 +13073,48 @@ fn init_command(app: &mut App) {
         app.note("/init is only available once the run has finished");
         return;
     }
-    let existing = crate::core::agent::context::has_context_file(&app.project_root);
-    app.note(if existing {
-        "◈ init · reviewing JAN.md, skills, and memory for this project"
-    } else {
-        "◈ init · studying the project to write JAN.md, skills, and memory"
-    });
-    app.submit_user_hidden(INIT_PROMPT.to_string());
+    let plan = init_plan(&app.project_root);
+    let file = plan.file;
+    match (plan.seed, plan.existing) {
+        (_, true) => app.note(&format!(
+            "◈ init · reviewing {file}, skills, and memory for this project"
+        )),
+        (Some(seed), false) => app.note(&format!(
+            "◈ init · writing {file} from this project's {seed}, plus skills and memory"
+        )),
+        (None, false) => app.note(&format!(
+            "◈ init · studying the project to write {file}, skills, and memory"
+        )),
+    }
+    let mut prompt = init_prompt(file);
+    if let Some(seed) = plan.seed {
+        prompt.push_str("\n\n");
+        prompt.push_str(&init_seed_paragraph(file, seed));
+    }
+    if file == crate::core::agent::context::CONTEXT_FILE_NAME && plan.existing {
+        prompt.push_str("\n\n");
+        prompt.push_str(INIT_LEGACY_PARAGRAPH);
+    }
+    app.submit_user_hidden(prompt);
+}
+
+/// The `/init` addendum for a project whose own file is the legacy `JAN.md`:
+/// keep editing it in place, and leave the rename to the user.
+const INIT_LEGACY_PARAGRAPH: &str = "`JAN.md` is Jan's legacy instructions file; new projects use \
+`AGENTS.md`, which other coding agents read too. Keep editing `JAN.md` in place -- it wins over an \
+`AGENTS.md` in the same folder -- and do not rename it yourself. In your report, mention that the \
+user can rename it to `AGENTS.md` if they want one file shared by every agent.";
+
+/// The `/init` addendum for a project that already keeps instructions for
+/// another agent: build on them rather than writing from scratch, and drop what
+/// was aimed at that agent -- the concern #8642 raised about ingesting it as is.
+fn init_seed_paragraph(file: &str, seed: &str) -> String {
+    format!(
+        "This project has no `{file}` but has `{seed}`, written for another coding agent. Read it \
+first and use it as the starting point for `{file}`: keep the commands, architecture, and \
+conventions that hold for any agent, and drop or rewrite anything aimed at that specific agent (its \
+tool names, its CLI commands, its config files). Leave `{seed}` itself unchanged."
+    )
 }
 
 /// Manually compact the conversation: summarize older turns, keeping the recent
@@ -13785,8 +13987,16 @@ fn apply_live_unset(def: &AgentSettingDef) -> bool {
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
-    let Some((key, value)) = arg.split_once(char::is_whitespace) else {
+    if arg.is_empty() {
         return open_settings_screen(app);
+    }
+    // `/settings max_parallel_subagents N` keeps its direct write; any other
+    // words are a plain-language request for the `/vibe-setting` flow.
+    let Some((key, value)) = arg
+        .split_once(char::is_whitespace)
+        .filter(|(key, _)| *key == "max_parallel_subagents")
+    else {
+        return vibe_setting::command(app, arg);
     };
     match key {
         "max_parallel_subagents" => {
@@ -13808,9 +14018,7 @@ fn settings_command(app: &mut App, arg: &str) {
                 Err(e) => app.note(&format!("failed to write {}: {e}", toml_path.display())),
             }
         }
-        other => app.note(&format!(
-            "unknown setting '/settings {other}' (bare /settings opens the menu)"
-        )),
+        _ => unreachable!("only max_parallel_subagents reaches the direct write"),
     }
 }
 
@@ -13912,6 +14120,83 @@ fn grapheme_prefix(s: &str, n: usize) -> String {
     s.graphemes(true).take(n).collect()
 }
 
+/// Parse what was typed for a `/settings` row into the TOML item to write, the
+/// one validator every settings writer shares (`/settings` and `/vibe-setting`).
+/// `Ok(None)` is an unset -- the key is removed so its default applies -- except
+/// for a `Glyph`, where an empty field is the written "off" value. `Err` is the
+/// message to show, naming the valid range.
+fn parse_setting_input(
+    def: &AgentSettingDef,
+    input: &str,
+) -> Result<Option<toml_edit::Item>, String> {
+    let trimmed = input.trim();
+    match def.kind {
+        AgentSettingKind::Int { default, min } => {
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            match trimmed.parse::<u64>() {
+                Ok(n) if n >= min => Ok(Some(toml_edit::value(n as i64))),
+                Ok(_) => Err(format!(
+                    "must be at least {min} (default: {})",
+                    default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".into())
+                )),
+                Err(_) => Err(format!("'{input}' is not an integer")),
+            }
+        }
+        AgentSettingKind::Float { default, min, max } => {
+            if trimmed.is_empty() {
+                return Ok(None);
+            }
+            match trimmed.parse::<f64>() {
+                Ok(n) if n >= min && n <= max => Ok(Some(toml_edit::value(n))),
+                Ok(_) => Err(format!(
+                    "must be between {min} and {max} (default: {})",
+                    default
+                        .map(|d| d.to_string())
+                        .unwrap_or_else(|| "unset".into())
+                )),
+                Err(_) => Err(format!("'{input}' is not a number")),
+            }
+        }
+        AgentSettingKind::Glyph { .. } => {
+            // Not trimmed to empty-means-unset like `Text`: a cleared field
+            // writes `""`, which is the off switch. `x` on the row is how you
+            // get back to the default.
+            if let Some(err) = crate::core::agent::global_config::wave_error(trimmed) {
+                return Err(err);
+            }
+            Ok(Some(toml_edit::value(trimmed.to_string())))
+        }
+        AgentSettingKind::Text { .. } => {
+            Ok((!trimmed.is_empty()).then(|| toml_edit::value(trimmed.to_string())))
+        }
+        AgentSettingKind::Enum { options, default } => {
+            if trimmed.is_empty() {
+                Ok(None)
+            } else if options.contains(&trimmed) {
+                Ok(Some(toml_edit::value(trimmed.to_string())))
+            } else {
+                Err(format!(
+                    "must be one of: {} (default: {default})",
+                    options.join(" | ")
+                ))
+            }
+        }
+        AgentSettingKind::Bool { default } => {
+            if trimmed.is_empty() {
+                Ok(None)
+            } else if let Ok(b) = trimmed.parse::<bool>() {
+                Ok(Some(toml_edit::value(b)))
+            } else {
+                Err(format!("must be true or false (default: {default})"))
+            }
+        }
+    }
+}
+
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
 /// Enter validates and writes (an empty field clears the key, except for a
 /// `Glyph`, where it writes the off value), Esc cancels. Mirrors
@@ -13929,90 +14214,11 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     match key.code {
         KeyCode::Enter => {
             let toml_path = app.agent_dir.join("agent.toml");
-            let value: Option<toml_edit::Item> = match prompt.def().kind {
-                AgentSettingKind::Int { default, min } => {
-                    if prompt.input.trim().is_empty() {
-                        None
-                    } else {
-                        match prompt.input.trim().parse::<u64>() {
-                            Ok(n) if n >= min => Some(toml_edit::value(n as i64)),
-                            Ok(_) => {
-                                prompt.error = Some(format!(
-                                    "must be at least {min} (default: {})",
-                                    default
-                                        .map(|d| d.to_string())
-                                        .unwrap_or_else(|| "unset".into())
-                                ));
-                                return;
-                            }
-                            Err(_) => {
-                                prompt.error =
-                                    Some(format!("'{}' is not an integer", prompt.input));
-                                return;
-                            }
-                        }
-                    }
-                }
-                AgentSettingKind::Float { default, min, max } => {
-                    if prompt.input.trim().is_empty() {
-                        None
-                    } else {
-                        match prompt.input.trim().parse::<f64>() {
-                            Ok(n) if n >= min && n <= max => Some(toml_edit::value(n)),
-                            Ok(_) => {
-                                prompt.error = Some(format!(
-                                    "must be between {min} and {max} (default: {})",
-                                    default
-                                        .map(|d| d.to_string())
-                                        .unwrap_or_else(|| "unset".into())
-                                ));
-                                return;
-                            }
-                            Err(_) => {
-                                prompt.error =
-                                    Some(format!("'{}' is not a number", prompt.input));
-                                return;
-                            }
-                        }
-                    }
-                }
-                AgentSettingKind::Glyph { .. } => {
-                    // Not trimmed to empty-means-unset like `Text`: a cleared
-                    // field writes `""`, which is the off switch. `x` on the
-                    // row is how you get back to the default.
-                    let input = prompt.input.trim();
-                    if let Some(err) = crate::core::agent::global_config::wave_error(input) {
-                        prompt.error = Some(err);
-                        return;
-                    }
-                    Some(toml_edit::value(input.to_string()))
-                }
-                AgentSettingKind::Text { .. } => (!prompt.input.trim().is_empty())
-                    .then(|| toml_edit::value(prompt.input.trim().to_string())),
-                AgentSettingKind::Enum { options, default } => {
-                    let input = prompt.input.trim();
-                    if input.is_empty() {
-                        None
-                    } else if options.contains(&input) {
-                        Some(toml_edit::value(input.to_string()))
-                    } else {
-                        prompt.error = Some(format!(
-                            "must be one of: {} (default: {default})",
-                            options.join(" | ")
-                        ));
-                        return;
-                    }
-                }
-                AgentSettingKind::Bool { default } => {
-                    let input = prompt.input.trim();
-                    if input.is_empty() {
-                        None
-                    } else if let Ok(b) = input.parse::<bool>() {
-                        Some(toml_edit::value(b))
-                    } else {
-                        prompt.error = Some(format!("must be true or false (default: {default})"));
-                        return;
-                    }
+            let value = match parse_setting_input(prompt.def(), &prompt.input) {
+                Ok(value) => value,
+                Err(error) => {
+                    prompt.error = Some(error);
+                    return;
                 }
             };
             match write_setting(prompt.def(), &toml_path, value) {
@@ -14868,15 +15074,26 @@ fn reload_catalog(app: &mut App, plugins: bool, skills: bool) {
 fn reload_system_prompt(app: &mut App) {
     // Nothing caches the instructions across runs: the system prompt
     // (including this block and the skills catalog) is rebuilt from disk at
-    // the start of every run. Re-read now to confirm what the next run picks up.
-    let files = crate::core::agent::context::context_files(&app.project_root);
+    // the start of every run. Re-read now to confirm what the next run picks up,
+    // through the same discovery the prompt uses: JAN.md per directory, else a
+    // `[context].fallback_files` entry (#9079), with that list re-resolved too.
+    let files = crate::core::agent::context::project_context_files(&app.project_root);
     if files.is_empty() {
-        app.note("◈ reload · system-prompt · no JAN.md in this project or its ancestors");
+        app.note(
+            "◈ reload · system-prompt · no AGENTS.md or JAN.md in this project or its ancestors",
+        );
         return;
     }
     app.note("◈ reload · system-prompt · re-read project instructions (applies next run)");
-    for (path, content) in &files {
-        app.system_detail_text(&format!("  {} ({} bytes)", path.display(), content.len()));
+    for file in &files {
+        let tag = crate::core::agent::context::instructions_file_label(&file.path)
+            .map(|label| format!(", {label}"))
+            .unwrap_or_default();
+        app.system_detail_text(&format!(
+            "  {} ({} bytes{tag})",
+            file.path.display(),
+            file.content.len()
+        ));
     }
 }
 
@@ -18043,6 +18260,19 @@ fn draw(f: &mut Frame, app: &mut App) {
         draw_login(f, rect, prompt);
     } else if let Some(confirm) = &app.browser_confirm {
         draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
+    } else if let Some(proposal) = &app.vibe_confirm {
+        let height = (vibe_setting::lines(proposal, chunks[2].width.saturating_sub(2)).len()
+            as u16
+            + 2)
+        .min(chunks[1].height);
+        let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
+        let rect = ratatui::layout::Rect {
+            x: chunks[2].x,
+            y,
+            width: chunks[2].width,
+            height,
+        };
+        vibe_setting::draw(f, rect, proposal);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
         let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
@@ -25483,7 +25713,7 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 8] = [
+        let setups: [DockSetup; 9] = [
             // The account OAuth dock takes every keystroke and outranks the
             // API-key one, so it has to block the field as hard as the rest.
             ("account_login", |app| {
@@ -25523,6 +25753,13 @@ mod tests {
             }),
             ("provider_prompt", |app| {
                 app.provider_prompt = Some(super::ProviderPrompt::new())
+            }),
+            ("vibe_confirm", |app| {
+                super::vibe_setting::finish(
+                    app,
+                    Ok(r#"{"changes": [{"key": "max_tokens", "new_value": 512}]}"#.into()),
+                );
+                assert!(app.vibe_confirm.is_some());
             }),
         ];
         for (name, open) in setups {
@@ -25669,7 +25906,8 @@ mod tests {
         super::init_command(&mut app);
         assert!(app.want_start, "/init must start a turn");
         let sent = app.history.last().expect("user message").to_string();
-        assert!(sent.contains("JAN.md"), "{sent}");
+        assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
+        assert!(!sent.contains("JAN.md"), "a new project never hears of JAN.md: {sent}");
         assert!(sent.contains("skill_write"), "{sent}");
         assert!(sent.contains("memory_write"), "{sent}");
         let _ = std::fs::remove_dir_all(&app.agent_dir);
@@ -26335,9 +26573,35 @@ mod tests {
 
         super::settings_command(&mut app, "max_parallel_subagents lots");
         assert!(transcript_text(&app).contains("is not an integer"));
-        super::settings_command(&mut app, "warp_drive 5");
-        assert!(transcript_text(&app).contains("unknown setting"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// `/settings <words>` and `/config <words>` are `/vibe-setting`: they
+    /// reach its guards (here, no signed-in model) instead of the menu or an
+    /// "unknown setting" error. Bare forms keep opening their screens.
+    #[tokio::test]
+    async fn settings_and_config_with_words_route_to_vibe_setting() {
+        for line in ["settings stop compacting so often", "config show me its thinking", "settings warp_drive 5"] {
+            let mut app = test_app();
+            app.model.clear();
+            run_command(&mut app, line, &no_mcp()).await;
+            let text = transcript_text(&app);
+            assert!(text.contains("not signed in"), "{line}: {text}");
+            assert!(!text.contains("unknown setting"), "{line}: {text}");
+            assert!(app.picker.is_none(), "{line} must not open the menu");
+        }
+        let mut app = test_app();
+        run_command(&mut app, "settings", &no_mcp()).await;
+        assert!(app.picker.is_some(), "bare /settings still opens the menu");
+    }
+
+    #[test]
+    fn settings_and_config_advertise_the_vibe_form() {
+        for name in ["/settings", "/config"] {
+            let row = SLASH_COMMANDS.iter().find(|c| c.name == name).unwrap();
+            assert_eq!(row.hint, "[what you want]", "{name}");
+            assert!(row.description.contains("/vibe-setting"), "{name}");
+        }
     }
 
     #[test]
@@ -26359,6 +26623,173 @@ mod tests {
         assert!(doc.contains("max_parallel_subagents = 3"), "{doc}");
         assert!(transcript_text(&app).contains("max_parallel_subagents = 3 written"));
         let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    // ── /vibe-setting (#9078) ────────────────────────────────────────────
+
+    /// A project agent.toml under a scratch HOME, so a global key written by a
+    /// test never reaches the developer's ~/.jan.
+    fn vibe_app(body: &str) -> TestApp {
+        let app = test_app();
+        std::fs::create_dir_all(&app.agent_dir).unwrap();
+        std::fs::write(app.agent_dir.join("agent.toml"), body).unwrap();
+        app
+    }
+
+    fn vibe_reply(app: &mut App, reply: &str) {
+        super::vibe_setting::finish(app, Ok(reply.to_string()));
+    }
+
+    /// The confirm path: the diff docks, nothing is written until `y`, then the
+    /// writes go through the /settings writer and the note says when they apply.
+    #[test]
+    fn vibe_setting_writes_only_after_confirmation() {
+        crate::core::agent::global_config::with_temp_home(|home| {
+            let mut app = vibe_app("# keep me\n[agent]\ncontext_window = 128000\n");
+            let toml_path = app.agent_dir.join("agent.toml");
+            vibe_reply(
+                &mut app,
+                r#"{"changes": [
+                  {"key": "context_window", "scope": "project", "new_value": 1000000, "reason": "1M window"},
+                  {"key": "show_reasoning", "scope": "project", "new_value": true},
+                  {"key": "wave", "scope": "global", "new_value": "~"}
+                ]}"#,
+            );
+            assert!(app.vibe_confirm.is_some(), "the diff docks");
+            assert!(app.blocking_dock().is_some(), "and owns the field");
+            let before = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(!before.contains("1000000"), "nothing written yet: {before}");
+            let screen = render_rows(&mut app, 100, 30).join("\n");
+            assert!(screen.contains("128000 -> 1000000"), "{screen}");
+            assert!(screen.contains("~/.jan/config.toml"), "{screen}");
+            assert!(screen.contains("Apply? [y/N]"), "{screen}");
+
+            super::vibe_setting::handle_key(&mut app, key(KeyCode::Char('y')), false);
+            assert!(app.vibe_confirm.is_none());
+            let doc = std::fs::read_to_string(&toml_path).unwrap();
+            assert!(doc.contains("context_window = 1000000"), "{doc}");
+            assert!(doc.contains("# keep me"), "format-preserving: {doc}");
+            assert!(doc.contains("show_reasoning = true"), "{doc}");
+            let global = std::fs::read_to_string(home.join(".jan/config.toml")).unwrap();
+            assert!(global.contains("wave = \"~\""), "{global}");
+            let note = transcript_text(&app);
+            assert!(note.contains("wrote 3 setting(s)"), "{note}");
+            let flat = note.split_whitespace().collect::<Vec<_>>().join(" ");
+            assert!(flat.contains("wave in effect now"), "{flat}");
+            assert!(flat.contains("run /reload config to apply context_window"), "{flat}");
+            assert!(flat.contains("show_reasoning applies when jan restarts"), "{flat}");
+            // A side call, not a turn: the conversation -- and so the cached
+            // request prefix -- is exactly what it was before the command.
+            assert!(app.history.is_empty(), "{:?}", app.history);
+            assert!(!app.want_start);
+            super::set_wave_glyph(None);
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        });
+    }
+
+    /// The note's `/reload config` bucket is exactly what `/reload config`
+    /// re-applies, and every such key is a `/settings` row.
+    #[test]
+    fn vibe_setting_reload_keys_match_reload_config() {
+        let (app, root) = skill_test_app("deploy", "How to deploy.");
+        let mut reloaded: Vec<String> =
+            super::reload_config_entries(&app).into_iter().map(|e| e.key).collect();
+        let mut listed: Vec<String> = super::vibe_setting::RELOAD_CONFIG_KEYS
+            .iter()
+            .map(|k| k.to_string())
+            .collect();
+        reloaded.sort();
+        listed.sort();
+        assert_eq!(listed, reloaded);
+        for key in super::vibe_setting::RELOAD_CONFIG_KEYS {
+            assert!(super::AGENT_SETTINGS.iter().any(|d| d.key == *key), "{key}");
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The refuse path: Enter (the default, N) or Esc drops the proposal and
+    /// writes nothing.
+    #[test]
+    fn vibe_setting_declined_writes_nothing() {
+        for answer in [KeyCode::Enter, KeyCode::Char('n'), KeyCode::Esc] {
+            let mut app = vibe_app("[agent]\n");
+            let toml_path = app.agent_dir.join("agent.toml");
+            vibe_reply(
+                &mut app,
+                r#"{"changes": [{"key": "max_parallel_subagents", "new_value": 3}]}"#,
+            );
+            assert!(app.vibe_confirm.is_some());
+            super::vibe_setting::handle_key(&mut app, key(answer), false);
+            assert!(app.vibe_confirm.is_none(), "{answer:?} closes the dock");
+            assert_eq!(std::fs::read_to_string(&toml_path).unwrap(), "[agent]\n");
+            assert!(transcript_text(&app).contains("nothing written"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+        }
+    }
+
+    /// Widening tool permissions needs `yes` typed out: a stray `y` is not it.
+    #[test]
+    fn vibe_setting_widening_permissions_needs_a_typed_yes() {
+        let mut app = vibe_app("[tools]\ndefault = \"read-only\"\n");
+        let toml_path = app.agent_dir.join("agent.toml");
+        vibe_reply(
+            &mut app,
+            r#"{"changes": [{"key": "tools.default", "new_value": "allow", "reason": "stop asking"}]}"#,
+        );
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("widens tool permissions"), "{screen}");
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Char('y')), false);
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.vibe_confirm.is_some(), "`y` alone does not apply it");
+        assert!(std::fs::read_to_string(&toml_path).unwrap().contains("read-only"));
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Backspace), false);
+        for ch in "yes".chars() {
+            super::vibe_setting::handle_key(&mut app, key(KeyCode::Char(ch)), false);
+        }
+        super::vibe_setting::handle_key(&mut app, key(KeyCode::Enter), false);
+        assert!(app.vibe_confirm.is_none());
+        let doc = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(doc.contains("default = \"allow\""), "{doc}");
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// An ambiguous request asks back; a failed or non-JSON reply writes nothing.
+    #[test]
+    fn vibe_setting_asks_back_and_survives_bad_replies() {
+        let mut app = vibe_app("[agent]\n");
+        vibe_reply(
+            &mut app,
+            r#"{"changes": [], "question": "Faster as in a smaller model, or shorter replies?"}"#,
+        );
+        assert!(app.vibe_confirm.is_none());
+        assert!(transcript_text(&app).contains("smaller model"));
+        vibe_reply(&mut app, "I changed it for you!");
+        super::vibe_setting::finish(&mut app, Err("HTTP 500".into()));
+        assert!(app.vibe_confirm.is_none());
+        let text = transcript_text(&app);
+        assert!(text.contains("vibe-setting failed: the model did not answer with JSON"), "{text}");
+        assert!(text.contains("vibe-setting failed: HTTP 500"), "{text}");
+        assert_eq!(
+            std::fs::read_to_string(app.agent_dir.join("agent.toml")).unwrap(),
+            "[agent]\n"
+        );
+        let _ = std::fs::remove_dir_all(&app.agent_dir);
+    }
+
+    /// The command refuses what it cannot do instead of queueing it.
+    #[test]
+    fn vibe_setting_command_guards() {
+        let mut app = test_app();
+        super::vibe_setting::command(&mut app, "  ");
+        assert!(transcript_text(&app).contains("usage: /vibe-setting"));
+        app.status = Status::Running;
+        super::vibe_setting::command(&mut app, "cheaper runs");
+        assert!(transcript_text(&app).contains("only available once the run has finished"));
+        app.status = Status::Idle;
+        super::vibe_setting::command(&mut app, "cheaper runs");
+        assert!(transcript_text(&app).contains("no active session"));
+        assert!(app.vibe_task.is_none());
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/vibe-setting"));
     }
 
     #[test]
@@ -33124,6 +33555,7 @@ mod tests {
             session_prompt_tokens: 0,
             session_cached_tokens: 0,
             session_cache_write_tokens: 0,
+            instruction_files: Vec::new(),
         }
     }
 
@@ -37261,12 +37693,51 @@ mod tests {
         assert!(app.slash_matches().is_empty());
     }
 
+    /// janhq/jan-internal#395: Enter runs a `/command` mid-run, so the popup
+    /// that discovers and completes one shows mid-run too, and filters live.
     #[test]
-    fn slash_hidden_while_running() {
+    fn slash_shown_while_running() {
         let mut app = test_app();
-        app.input = "/".into();
         app.status = super::Status::Running;
+        app.input = "/".into();
+        let all = app.slash_matches().len();
+        assert!(all > 1, "the full list while running");
+        app.input = "/co".into();
+        let filtered = names(&app);
+        assert!(!filtered.is_empty() && filtered.len() < all, "{filtered:?}");
+        assert!(filtered.iter().any(|n| n == "/compact"), "{filtered:?}");
+        app.status = super::Status::Parked;
+        assert!(!app.slash_matches().is_empty(), "a parked run shows it too");
+    }
+
+    /// The permission dialog owns the keys and the dock the popup would use.
+    #[test]
+    fn slash_hidden_while_a_permission_prompt_is_pending() {
+        let mut app = test_app();
+        app.status = super::Status::Running;
+        app.input = "/".into();
+        app.pending_queue.push_back(pending(false));
         assert!(app.slash_matches().is_empty());
+        app.pending_queue.clear();
+        assert!(!app.slash_matches().is_empty());
+    }
+
+    /// With the popup open mid-run, Esc closes it and leaves the run alone; the
+    /// next Esc, with nothing left to close, is what cancels.
+    #[tokio::test]
+    async fn esc_closes_the_slash_popup_before_cancelling_a_run() {
+        let mut app = test_app();
+        app.submit_user("work".into());
+        app.want_start = false;
+        app.status = super::Status::Running;
+        type_key_chars(&mut app, "/co").await;
+        assert!(!app.slash_matches().is_empty(), "the popup must be open");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.slash_matches().is_empty(), "Esc closes the popup");
+        assert_eq!(app.status, super::Status::Running, "and does not cancel");
+        assert_eq!(app.input, "/co", "the typed command stays");
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert_ne!(app.status, super::Status::Running, "the second Esc cancels");
     }
 
     #[test]
@@ -37868,7 +38339,7 @@ mod tests {
         let (mut app, root) = skill_test_app("deploy", "How to deploy.");
         run_command(&mut app, "reload system-prompt", &no_mcp()).await;
         assert!(
-            transcript_text(&app).contains("no JAN.md in this project"),
+            transcript_text(&app).contains("no AGENTS.md or JAN.md"),
             "empty project: {}",
             transcript_text(&app)
         );
@@ -37878,6 +38349,26 @@ mod tests {
         let out = transcript_text(&app);
         assert!(out.contains("re-read project instructions"), "{out}");
         assert!(out.contains("JAN.md"), "{out}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// #9079 x #9077: `/reload system-prompt` goes through the same discovery,
+    /// so a project with only AGENTS.md reports it, and a legacy JAN.md added
+    /// later shadows it and is labelled.
+    #[tokio::test]
+    async fn reload_system_prompt_reads_agents_md_fallback() {
+        let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+        std::fs::write(root.join("AGENTS.md"), "# Agents\n\nUse make.\n").unwrap();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        assert!(out.contains("AGENTS.md (") && !out.contains("fallback"), "{out}");
+
+        std::fs::write(root.join("JAN.md"), "# Rules\n").unwrap();
+        let before = transcript_text(&app).len();
+        run_command(&mut app, "reload system-prompt", &no_mcp()).await;
+        let out = transcript_text(&app);
+        let tail = &out[before..];
+        assert!(tail.contains("legacy JAN.md") && !tail.contains("AGENTS.md"), "{tail}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -39172,6 +39663,129 @@ mod tests {
             "an ancestor's JAN.md already onboards this project"
         );
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// #9079/#9083: no instructions invites `/init`; an AGENTS.md says nothing;
+    /// a legacy JAN.md (which shadows it) is named as such.
+    #[test]
+    fn startup_note_names_an_agents_md_fallback() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_fallback_note_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            let none = super::project_instructions_note(&root).expect("an invitation");
+            assert!(none.contains("/init") && none.contains("AGENTS.md"), "{none}");
+            std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+            assert_eq!(
+                super::project_instructions_note(&root),
+                None,
+                "AGENTS.md is the default: nothing to say"
+            );
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            let legacy = super::project_instructions_note(&root).expect("a legacy note");
+            assert!(legacy.contains("JAN.md (legacy JAN.md)"), "{legacy}");
+            let _ = std::fs::remove_dir_all(&root);
+        });
+    }
+
+    /// `/context` lists the files the project context holds, labelling a legacy
+    /// JAN.md and a CLAUDE.md fallback.
+    #[test]
+    fn context_view_lists_instruction_files_and_marks_a_fallback() {
+        let mut report = context_report(128_000, 16_000, [100, 100, 100, 100, 100]);
+        assert!(!context_text(&report).contains("Project instructions"));
+        report.instruction_files = vec![
+            ("/repo/JAN.md".into(), false),
+            ("/repo/pkg/AGENTS.md".into(), true),
+        ];
+        for width in [80usize, 30] {
+            let text = context_lines(&report, width)
+                .iter()
+                .map(line_text)
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert!(text.contains("Project instructions"), "{text}");
+            assert!(text.contains("/repo/JAN.md"), "{text}");
+            assert!(text.contains("AGENTS.md"), "{text}");
+        }
+        let text = context_text(&report);
+        assert!(text.contains("/repo/JAN.md (legacy JAN.md)"), "{text}");
+        assert!(!text.contains("AGENTS.md ("), "AGENTS.md is unlabelled: {text}");
+        report.instruction_files = vec![("/repo/CLAUDE.md".into(), true)];
+        assert!(context_text(&report).contains("CLAUDE.md (fallback)"));
+    }
+
+    /// #9083: `/init` writes AGENTS.md by default, reviews one that exists,
+    /// starts from a CLAUDE.md, keeps a legacy JAN.md, and falls back to JAN.md
+    /// when `[context].fallback_files` would not read AGENTS.md.
+    #[test]
+    fn init_plan_defaults_to_agents_md_and_keeps_a_legacy_jan_md() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_init_plan_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            let plan = |file, existing, seed| super::InitPlan {
+                file,
+                existing,
+                seed,
+            };
+            assert_eq!(super::init_plan(&root), plan("AGENTS.md", false, None));
+            std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+            assert_eq!(
+                super::init_plan(&root),
+                plan("AGENTS.md", false, Some("CLAUDE.md"))
+            );
+            std::fs::write(root.join("AGENTS.md"), "AGENTS_RULES").unwrap();
+            assert_eq!(super::init_plan(&root), plan("AGENTS.md", true, None));
+            // A legacy JAN.md shadows AGENTS.md, so /init edits it, not AGENTS.md.
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            assert_eq!(super::init_plan(&root), plan("JAN.md", true, None));
+            // `fallback_files = []` reads JAN.md only: /init writes that.
+            std::fs::remove_file(root.join("JAN.md")).unwrap();
+            let store = crate::core::agent::project::store_root(&root);
+            std::fs::create_dir_all(&store).unwrap();
+            std::fs::write(store.join("agent.toml"), "[context]\nfallback_files = []\n").unwrap();
+            assert_eq!(
+                super::init_plan(&root),
+                plan("JAN.md", false, Some("AGENTS.md"))
+            );
+            let _ = std::fs::remove_dir_all(&store);
+            let _ = std::fs::remove_dir_all(&root);
+        });
+    }
+
+    /// `/init` in a project with CLAUDE.md builds AGENTS.md on it; one with a
+    /// legacy JAN.md keeps editing it and is told about the rename.
+    #[test]
+    fn init_prompt_names_the_planned_file() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let root =
+                std::env::temp_dir().join(format!("jan_init_seed_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&root);
+            std::fs::create_dir_all(&root).unwrap();
+            std::fs::write(root.join("CLAUDE.md"), "CLAUDE_RULES").unwrap();
+            let mut app = test_app();
+            app.project_root = root.clone();
+            super::init_command(&mut app);
+            let sent = app.history.last().expect("user message").to_string();
+            assert!(sent.contains("Write `AGENTS.md`"), "{sent}");
+            assert!(sent.contains("has `CLAUDE.md`"), "{sent}");
+            assert!(transcript_text(&app).contains("writing AGENTS.md from this project's CLAUDE.md"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+
+            std::fs::write(root.join("JAN.md"), "JAN_RULES").unwrap();
+            let mut app = test_app();
+            app.project_root = root.clone();
+            super::init_command(&mut app);
+            let sent = app.history.last().expect("user message").to_string();
+            assert!(sent.contains("Write `JAN.md`"), "{sent}");
+            assert!(sent.contains("legacy instructions file"), "{sent}");
+            assert!(transcript_text(&app).contains("reviewing JAN.md"));
+            let _ = std::fs::remove_dir_all(&app.agent_dir);
+            let _ = std::fs::remove_dir_all(&root);
+        });
     }
 
     #[test]
