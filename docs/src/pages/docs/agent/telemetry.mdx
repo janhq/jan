@@ -93,6 +93,7 @@ setup you already use for another agent works unchanged.
 | `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes, e.g. `tenant.id=acme,deployment.environment=ci`. |
 | `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often metrics are exported, in ms. |
 | `OTEL_LOGS_EXPORT_INTERVAL` | `5000` | How often events are exported, in ms. |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `cumulative` | `cumulative`, `delta`, or `lowmemory` (the same as `delta` here, since every metric is a counter). Use `delta` for backends that sum points, like Datadog. Any other value logs a warning and uses `cumulative`. |
 | `OTEL_METRICS_INCLUDE_SESSION_ID` | `true` | `false` keeps `session.id` off metric points, so the number of series stays small. Events keep it. |
 | `OTEL_LOG_USER_PROMPTS` | off | Include the prompt text on `user_prompt`. |
 | `OTEL_LOG_TOOL_DETAILS` | off | Include tool arguments on `tool_result` and the `tool` span. |
@@ -103,16 +104,21 @@ setup you already use for another agent works unchanged.
 
 Everything is also exported when a run ends and when the process exits, with a 2-second limit on
 that final export. A short `jan cli agent run` or an ADK session that ends right away still reports.
+So does a process stopped by Ctrl-C or `SIGTERM`: `jan cli agent run` and `jan cli agent rpc`
+export what is buffered, then exit as that signal would.
 
 ## Metrics
 
-All metrics are cumulative monotonic sums. Every point carries `session.id` unless
-`OTEL_METRICS_INCLUDE_SESSION_ID=false`.
+All metrics are monotonic sums. They are cumulative (running totals since the process started)
+unless `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` asks for delta, where each point holds
+only what changed since the last export. Every point carries `session.id` unless
+`OTEL_METRICS_INCLUDE_SESSION_ID=false`. When an RPC host archives a session, its series are sent
+one last time and then dropped, so a long-lived host doesn't keep exporting finished sessions.
 
 | Metric | Unit | Attributes |
 | --- | --- | --- |
 | `jan_agent.session.count` | 1 | |
-| `jan_agent.prompt.count` | 1 | |
+| `jan_agent.prompt.count` | 1 | Counts new user prompts. A run that continues or resumes a conversation without a new user message doesn't count. |
 | `jan_agent.turn.count` | 1 | `agent` (`main` / `subagent`) |
 | `jan_agent.token.usage` | tokens | `type` (`input` / `output` / `cache_read` / `cache_write`), `model`, `provider` |
 | `jan_agent.cost.usage` | USD | `model`, `provider`. Only for models whose price is in the model catalog. An unpriced model reports nothing, not zero. |
@@ -133,7 +139,7 @@ Events are OTLP log records with `event_name` set. Every event carries `session.
 
 | Event | Attributes |
 | --- | --- |
-| `jan_agent.user_prompt` | `prompt_length`. `prompt` only with `OTEL_LOG_USER_PROMPTS`. |
+| `jan_agent.user_prompt` | `prompt_length`. `prompt` only with `OTEL_LOG_USER_PROMPTS`. Not sent when a run continues or resumes without a new user message. |
 | `jan_agent.api_request` | `model`, `provider`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `duration_ms`, `request_bytes`, `cost_usd` (when priced), `execution_id` (when the provider reports one) |
 | `jan_agent.api_error` | `code`, `error` (message, truncated), `model` and `duration_ms` when a request was in flight |
 | `jan_agent.tool_decision` | `tool_name`, `decision` (`accept` / `reject`), `source` (`config` / `user` / `hook`) |
@@ -209,8 +215,10 @@ LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=... LANGFUSE_BASE_URL=https://cloud.
 
 Recording a signal never waits: it goes into a bounded in-memory queue. If a collector is slow or
 down, new records are dropped and counted in `jan_agent.telemetry.dropped`, and the turn doesn't
-slow down. Export failures are logged at debug level (`RUST_LOG=debug`) on stderr and never
-printed to stdout.
+slow down. A collector that answers 429, 502, 503 or 504 gets one retry, after its `Retry-After`
+(up to 10 seconds; a longer wait drops the batch) or 1 second.
+Export failures are logged at debug level (`RUST_LOG=debug`) on stderr and never printed to
+stdout.
 
 ## With the ADK
 
