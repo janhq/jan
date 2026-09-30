@@ -104,7 +104,7 @@ each one applies:
 | --- | --- |
 | `wave` | Now |
 | `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, `budget.max_tokens` | After `/reload config`, from the next run |
-| Everything else (`max_parallel_subagents`, `tools.default`, `skills.inject`, `show_reasoning`, ...) | When Jan restarts |
+| Everything else (`max_parallel_subagents`, `tools.default`, `show_reasoning`, ...) | When Jan restarts |
 
 - It only changes `/settings` keys. The model, providers, API keys, MCP servers and skills are out
   of scope; when a request needs one, the reply names the command to use (`/model`, `/login`, ...).
