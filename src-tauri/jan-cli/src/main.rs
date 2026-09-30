@@ -702,7 +702,7 @@ async fn main() {
 
     // Pre-scan raw args for --verbose / -v before full parse so we can set
     // the log level before any logging happens.
-    let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v");
+    let verbose = std::env::args().any(|a| a == "--verbose" || a == "-v") == true;
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if verbose {
         "info"
     } else {
