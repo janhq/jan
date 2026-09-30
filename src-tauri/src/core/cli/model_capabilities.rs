@@ -51,7 +51,9 @@ impl ContextWindowSource {
 fn strip_provider_qualifier(mut model_id: &str) -> &str {
     while let Some((first, rest)) = model_id.split_once('/') {
         match first {
-            "anthropic" | "openai" | "google" | "tokamak" | "jan" => model_id = rest,
+            "anthropic" | "openai" | "google" | "tokamak" | "jan" | "opencode" | "opencode-go" => {
+                model_id = rest
+            }
             _ => break,
         }
     }
@@ -84,6 +86,10 @@ fn catalog_window(model_id: &str) -> Option<u64> {
                     .is_some_and(|version| claude_generation(version) >= (4, 6))
             });
         return Some(if one_million { 1_000_000 } else { 200_000 });
+    }
+
+    if model_id == "gpt-5.6-luna" || model_id == "gpt-6-astra" {
+        return Some(272_000);
     }
 
     // Codex variants are matched before the base gpt-5.x rows they contain.
@@ -210,6 +216,21 @@ mod tests {
             1_000_000
         );
     }
+    #[test]
+    fn catalog_resolves_live_model_defaults() {
+        assert_eq!(
+            resolve_context_window("gpt-5.6-luna", None, None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("gpt-6-astra", None, None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("claude-fable-5-1", None, None).tokens,
+            1_000_000
+        );
+    }
 
     /// Anthropic's current lineup: Sonnet/Opus 4.6 and later, Fable and Mythos
     /// are 1M by default; older generations and every Haiku are 200K. A dated
@@ -252,6 +273,20 @@ mod tests {
         assert_eq!(
             resolve_context_window("tokamak/azure/claude-sonnet-4-6", None, None).source,
             ContextWindowSource::Fallback,
+        );
+    }
+
+    #[test]
+    fn supported_provider_qualifiers_match_live_model_defaults() {
+        // A qualified id resolves off the same catalog entry as the bare one:
+        // the picker hands back `provider/model`, the body carries the bare id.
+        assert_eq!(
+            resolve_context_window("opencode/gpt-5.6-luna", None, None).tokens,
+            272_000
+        );
+        assert_eq!(
+            resolve_context_window("opencode-go/gpt-5.6-luna", None, None).tokens,
+            272_000
         );
     }
 

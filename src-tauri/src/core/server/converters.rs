@@ -377,7 +377,7 @@ impl UpstreamConverter for OpenAIResponsesConverter {
                 out[dst] = v.clone();
             }
         }
-        for key in ["temperature", "top_p", "stream"] {
+        for key in ["temperature", "top_p", "stream", "service_tier"] {
             if let Some(v) = body.get(key) {
                 out[key] = v.clone();
             }
@@ -1774,6 +1774,17 @@ mod openai_responses_tests {
                 {"type": "input_image", "image_url": "data:image/png;base64,AAAA"}
             ])
         );
+    }
+
+    #[test]
+    fn request_preserves_service_tier_for_responses() {
+        let body = json!({
+            "model": "gpt-5",
+            "messages": [{"role": "user", "content": "hi"}],
+            "service_tier": "priority",
+        });
+        let out = conv().convert_request(&body);
+        assert_eq!(out["service_tier"], json!("priority"));
     }
 
     #[test]

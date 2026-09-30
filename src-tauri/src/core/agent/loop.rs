@@ -332,6 +332,10 @@ struct HttpModelInvoker {
     /// this converter translates the request and decodes the upstream stream
     /// back into chat shape. `None` keeps the verbatim chat/completions path.
     converter: Option<Box<dyn UpstreamConverter>>,
+    /// Enable Codex priority service tier for this resolved OpenAI Responses
+    /// OAuth transport. This is deliberately transport-derived, not model-name
+    /// matching, and is false for auxiliary compaction/goal invokers.
+    codex_fast: bool,
     /// Native provider converters still use reqwest 0.12 while the default
     /// agent path uses genai's reqwest 0.13 client.
     converter_client: reqwest::Client,
@@ -432,12 +436,22 @@ impl ModelInvoker for HttpModelInvoker {
         // the body must carry the bare model id - providers like OpenCode GO
         // reject a provider-qualified id with "model not supported".
         let mut normalized = request.clone();
+        // This is an internal orchestration hint. Consume it here so it can
+        // never reach any provider's wire body.
+        let fast_mode = normalized
+            .as_object_mut()
+            .and_then(|obj| obj.remove("fast_mode"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if let Some(model) = normalized.get("model").and_then(|m| m.as_str()) {
             let pc = self.provider_configs.lock().await;
             let bare = crate::core::agent::upstream::strip_provider_prefix(model, &pc);
             if bare != model {
                 normalized["model"] = serde_json::json!(bare);
             }
+        }
+        if self.codex_fast && fast_mode {
+            normalized["service_tier"] = serde_json::json!("priority");
         }
         // Emitted before the request goes out, so a harness that records
         // provenance sees the request even when the call then fails. It goes to
@@ -3284,6 +3298,12 @@ async fn orchestrate_inner(
         .api_type
         .as_deref()
         .and_then(|api_type| converter_for(Some(api_type), provenance.oauth));
+    let codex_fast = json_body
+        .get("fast_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        && provenance.api_type.as_deref() == Some("openai-responses")
+        && provenance.oauth;
 
     let http_model = HttpModelInvoker {
         client: client.clone(),
@@ -3291,6 +3311,7 @@ async fn orchestrate_inner(
         api_keys: session_api_keys,
         provider_configs: provider_configs.clone(),
         converter,
+        codex_fast,
         converter_client: converter_http_client(),
         client_request_id: crate::core::agent::correlation::session_request_id(
             args.session_id.as_deref(),
@@ -3646,6 +3667,15 @@ pub(crate) fn build_completion_request(
         );
     }
     copy_optional_chat_params(json_body, &mut completion_map);
+    // Carry the internal session hint to HttpModelInvoker, which consumes it
+    // before conversion. It is intentionally not part of copy_optional_chat_params.
+    if json_body
+        .get("fast_mode")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        completion_map.insert("fast_mode".to_string(), serde_json::json!(true));
+    }
     serde_json::Value::Object(completion_map)
 }
 
@@ -3752,6 +3782,7 @@ pub(crate) async fn compact_history(
         api_keys,
         provider_configs: args.provider_configs.clone(),
         converter,
+        codex_fast: false,
         converter_client: converter_http_client(),
         // A compaction call is billed to the same session as the turn that
         // triggered it, so it carries the same correlation id: leaving it out
@@ -3838,6 +3869,7 @@ async fn side_call_invoker(
         api_keys,
         provider_configs: args.provider_configs.clone(),
         converter,
+        codex_fast: false,
         converter_client: converter_http_client(),
         // Same session, same bill (see `compact_history`).
         client_request_id: crate::core::agent::correlation::session_request_id(
@@ -5172,6 +5204,7 @@ mod tests {
             api_keys: Vec::new(),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
             converter: None,
+            codex_fast: false,
             converter_client: converter_http_client(),
             client_request_id: None,
             session_id: Some("session-1".to_string()),
@@ -6328,6 +6361,19 @@ mod tests {
             todo_request["tool_choice"],
             json!({ "type": "function", "function": { "name": "todo" } })
         );
+    }
+
+    #[test]
+    fn fast_mode_is_internal_request_hint_only() {
+        let request = build_completion_request(
+            "m",
+            &[json!({"role": "user", "content": "hi"})],
+            &[],
+            &json!({"fast_mode": true}),
+            None,
+        );
+        assert_eq!(request["fast_mode"], json!(true));
+        assert!(request.get("service_tier").is_none());
     }
 
     fn mutating_tool_call_completion(id: &str, name: &str) -> serde_json::Value {
