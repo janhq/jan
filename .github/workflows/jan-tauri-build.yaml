@@ -71,11 +71,35 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
+  build-windows-arm64:
+    uses: ./.github/workflows/template-tauri-build-windows-arm64.yml
+    secrets: inherit
+    needs: [get-update-version, create-draft-release]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      channel: stable
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
+      vulkan_fallback: '1'
+
   sync-temp-to-latest:
-    needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]
+    needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64, build-windows-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # build-windows-arm64 does not gate publishing: a failed ARM leg still ships
+    # x64, linux and macOS. The other legs are re-asserted by hand because a
+    # status function anywhere in `if` drops the implicit success() gate for the
+    # whole `needs` set.
+    if: >-
+      !cancelled()
+      && needs.create-draft-release.result == 'success'
+      && needs.get-update-version.result == 'success'
+      && needs.build-macos.result == 'success'
+      && needs.build-windows-x64.result == 'success'
+      && needs.build-linux-x64.result == 'success'
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -89,6 +113,11 @@ jobs:
           LINUX_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
           WINDOWS_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          # Empty when the ARM leg failed or was skipped; the key is then left out
+          # rather than written blank, which the updater would find and fail on.
+          WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.outputs.WIN_SIG }}"
+          WINDOWS_ARM_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-arm64.outputs.FILE_NAME }}"
+          [ -n "$WINDOWS_ARM_SIGNATURE" ] || echo "::warning::no ARM64 build this run -- publishing latest.json without windows-aarch64"
           DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
           DARWIN_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-macos.outputs.TAR_NAME }}"
 
@@ -98,6 +127,8 @@ jobs:
             --arg linux_url "$LINUX_URL" \
             --arg windows_signature "$WINDOWS_SIGNATURE" \
             --arg windows_url "$WINDOWS_URL" \
+            --arg windows_arm_signature "$WINDOWS_ARM_SIGNATURE" \
+            --arg windows_arm_url "$WINDOWS_ARM_URL" \
             --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
             --arg darwin_arm_url "$DARWIN_URL" \
             --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
@@ -108,6 +139,10 @@ jobs:
               | .platforms["linux-x86_64"].url = $linux_url
               | .platforms["windows-x86_64"].signature = $windows_signature
               | .platforms["windows-x86_64"].url = $windows_url
+              | if $windows_arm_signature == "" then . else
+                  .platforms["windows-aarch64"].signature = $windows_arm_signature
+                  | .platforms["windows-aarch64"].url = $windows_arm_url
+                end
               | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
               | .platforms["darwin-aarch64"].url = $darwin_arm_url
               | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
