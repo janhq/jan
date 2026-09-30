@@ -4779,9 +4779,22 @@ async fn run_turn_cycle(
         turn += 1;
     }
 
-    Err(format!(
-        "reached the {max_turns}-turn limit while the model was still calling tools"
-    ))
+    Err(turn_limit_error(max_turns))
+}
+
+/// The error a run ends with when `max_turns` runs out. One place so a surface
+/// that reports the limit as a stop reason rather than a failure (ACP's
+/// `max_turn_requests`) recognizes it with [`is_turn_limit_error`] instead of
+/// matching a copy of the wording.
+fn turn_limit_error(max_turns: usize) -> String {
+    format!("reached the {max_turns}-turn limit while the model was still calling tools")
+}
+
+/// Whether `message` is the error [`turn_limit_error`] produced.
+#[cfg(feature = "cli")]
+pub(crate) fn is_turn_limit_error(message: &str) -> bool {
+    message.starts_with("reached the ")
+        && message.ends_with("-turn limit while the model was still calling tools")
 }
 
 #[cfg(test)]

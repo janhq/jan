@@ -435,9 +435,7 @@ fn finish_turn(
     let session = sessions
         .get_mut(&session_id)
         .ok_or("active session missing")?;
-    if let Some(history) = updated_history {
-        session.history = history;
-    }
+    super::adopt_turn_history(&mut session.history, updated_history, result.as_ref().ok());
     let stop_reason = if interrupted {
         "interrupted"
     } else if result.is_ok() {
@@ -450,25 +448,18 @@ fn finish_turn(
     } else {
         result.as_ref().err().cloned()
     };
-    if let Ok(completion) = &result {
-        if let Some(text) = super::completion_text(completion) {
-            session
-                .history
-                .push(json!({"role":"assistant","content":text}));
-        }
-        if !session.ephemeral {
-            if let Some(project) = session.agent.args.project_root.as_ref() {
-                if let Err(message) = cli_save_thread(
-                    &agent_dir_for(project),
-                    Some(&session.id),
-                    &session.agent.model,
-                    &session.history,
-                    session.agent.args.host_system_prompt.as_ref().map(|prompt| {
-                        json!({ super::SYSTEM_PROMPT_KEY: prompt })
-                    }),
-                ) {
-                    error_message = Some(format!("could not save session: {message}"));
-                }
+    if result.is_ok() && !session.ephemeral {
+        if let Some(project) = session.agent.args.project_root.as_ref() {
+            if let Err(message) = cli_save_thread(
+                &agent_dir_for(project),
+                Some(&session.id),
+                &session.agent.model,
+                &session.history,
+                session.agent.args.host_system_prompt.as_ref().map(|prompt| {
+                    json!({ super::SYSTEM_PROMPT_KEY: prompt })
+                }),
+            ) {
+                error_message = Some(format!("could not save session: {message}"));
             }
         }
     }

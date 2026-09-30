@@ -508,7 +508,8 @@ byte-identical rather than a diff.
 
 Print the RPC surface as a JSON Schema document, generated from the Rust types that deserialize each
 request. Like `schema`, no project and no provider are involved. It describes this surface only: the
-`stream-json` records are in `protocol/schema.json`, and ACP has no document yet.
+`stream-json` records are in `protocol/schema.json`, and ACP (`jan acp`) uses the
+upstream [ACP schema](https://agentclientprotocol.com) rather than one of its own.
 
 ```bash
 jan cli agent rpc-schema                                  # stdout
@@ -737,6 +738,20 @@ than blocking. On `http` the listener is loopback-only and every request must ca
 
 See [Serving Jan's own tools](/docs/agent/mcp#serving-jans-own-tools).
 
+## `jan acp`
+
+**Experimental.** Serves the agent over the [Agent Client Protocol](https://agentclientprotocol.com)
+on stdio, so Zed, JetBrains and other ACP editors can run it. The command is hidden from `--help`
+and is off unless you set `JAN_EXPERIMENTAL_ACP=1` or add `[experimental] acp = true` to
+`~/.jan/config.toml`. Without either, it exits with status 2.
+
+```bash
+JAN_EXPERIMENTAL_ACP=1 jan acp           # what an editor spawns
+JAN_EXPERIMENTAL_ACP=1 jan acp --login   # the sign-in an ACP client runs in a terminal
+```
+
+See [Editors (ACP)](/docs/agent/acp) for editor setup and the supported surface.
+
 ## `jan update`
 
 Update the binary to the latest build of the channel it was built for.
@@ -759,6 +774,7 @@ doing anything. Re-run the installer with `--source` to rebuild.
 | `JAN_API_KEY` | API key for the target provider |
 | `<PROVIDER>_API_KEY` | Per-provider key, e.g. `ANTHROPIC_API_KEY` |
 | `JAN_INSTALL_DIR` | Install directory used by the install script |
+| `JAN_EXPERIMENTAL_ACP` | `1` allows the experimental `jan acp` server; `0` blocks it even if `[experimental] acp` is set |
 
 ## Using it in CI
 

@@ -270,6 +270,16 @@ enum Commands {
         #[command(subcommand)]
         cmd: McpServeCommands,
     },
+    /// Experimental: serve the agent over the Agent Client Protocol (ACP) on
+    /// stdio, for Zed, JetBrains and other ACP clients. Hidden until it
+    /// graduates; needs JAN_EXPERIMENTAL_ACP=1 or `[experimental] acp = true`
+    #[command(hide = true)]
+    Acp {
+        /// Sign in interactively and exit: what an ACP client runs for the
+        /// terminal auth method `initialize` offers
+        #[arg(long)]
+        login: bool,
+    },
     /// Update this binary to the latest build of the channel it was built for
     #[command(display_order = 8)]
     Update {
@@ -762,6 +772,7 @@ async fn main() {
         command,
         Commands::Update { .. }
             | Commands::Mcp { .. }
+            | Commands::Acp { .. }
             | Commands::Cli {
                 cmd: CliCommands::Agent {
                     cmd: AgentCommands::Rpc
@@ -799,9 +810,35 @@ async fn main() {
         }
         Commands::Plugin { cmd } => handle_plugin(cmd).await,
         Commands::Mcp { cmd } => handle_mcp_serve(cmd).await,
+        Commands::Acp { login } => handle_acp(login).await,
         Commands::Update { check, force } => handle_update(check, force).await,
     }
     app_lib::core::agent::otel::shutdown().await;
+}
+
+// ── ACP server handler ─────────────────────────────────────────────────────
+
+/// `jan acp`. Refused before anything reads stdin unless the experimental
+/// opt-in is on, so a client pointed at it by mistake gets a clear error on
+/// stderr and an exit rather than a half-open protocol channel.
+async fn handle_acp(login: bool) {
+    use app_lib::core::cli::acp;
+    if !acp::enabled() {
+        eprintln!("Error: {}", acp::DISABLED_MESSAGE);
+        std::process::exit(2);
+    }
+    // The terminal auth method: the client relaunches `jan acp --login` in a
+    // terminal it shows the user, and a zero exit means signed in.
+    let result = if login {
+        app_lib::core::cli::login::run_login(false).await
+    } else {
+        acp::serve().await
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        app_lib::core::agent::otel::shutdown().await;
+        std::process::exit(1);
+    }
 }
 
 // ── MCP server handler ─────────────────────────────────────────────────────
@@ -1689,6 +1726,17 @@ mod tests {
     /// `rpc` and `rpc-schema` are the long-lived session transport and its
     /// generated artifact: neither involves a project or a provider, and
     /// `rpc-schema --out` is the only flag between them.
+    #[test]
+    fn acp_parses_and_stays_out_of_help() {
+        let cli = Cli::parse_from(["jan", "acp"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: false })));
+        let cli = Cli::parse_from(["jan", "acp", "--login"]);
+        assert!(matches!(cli.command, Some(Commands::Acp { login: true })));
+        // Experimental: callable, but not offered in `--help` until it graduates.
+        let help = Cli::command().render_help().to_string();
+        assert!(!help.contains("Agent Client Protocol"), "{help}");
+    }
+
     #[test]
     fn rpc_subcommands_parse() {
         let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);

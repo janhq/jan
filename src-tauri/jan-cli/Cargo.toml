@@ -6,7 +6,8 @@ authors = ["Jan <service@jan.ai>"]
 license = "MIT"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
-rust-version = "1.85"
+# Matches ../Cargo.toml: `agent-client-protocol` (behind `jan acp`) needs 1.88.
+rust-version = "1.88"
 
 # A standalone crate (NOT a workspace member of ../Cargo.toml) so the Tauri
 # bundler never enumerates it as a bin target of the desktop app -- tauri-cli

@@ -7090,7 +7090,7 @@ pub(super) fn format_tokens(tokens: u64) -> String {
     // as noise. Same half-up tenths rule as the K branch, so no zero decimal.
     if tokens >= 1_000_000 {
         let tenths = (tokens + 50_000) / 100_000;
-        return if tenths % 10 == 0 {
+        return if tenths.is_multiple_of(10) {
             format!("{}M", tenths / 10)
         } else {
             format!("{}.{}M", tenths / 10, tenths % 10)
@@ -7098,7 +7098,7 @@ pub(super) fn format_tokens(tokens: u64) -> String {
     }
     // Tenths of a thousand, half-up. Exact for every u64 below ~1.8e15.
     let tenths = (tokens + 50) / 100;
-    if tokens < 10_000 && tenths % 10 != 0 {
+    if tokens < 10_000 && !tenths.is_multiple_of(10) {
         format!("{}.{}K", tenths / 10, tenths % 10)
     } else {
         // 6.0K reads as noise; report it as 6K. Above 10K the decimal is

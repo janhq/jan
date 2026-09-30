@@ -5,7 +5,8 @@
 //! committed at `protocol/rpc-schema.json`, which CI regenerates and diffs: an
 //! envelope change cannot land without the artifact moving with it. It is the
 //! RPC counterpart of `protocol/schema.json`, and covers this surface only -
-//! the stream-json records are in that file, and ACP has no document yet.
+//! the stream-json records are in that file, and ACP (`jan acp`)
+//! uses the upstream ACP schema rather than one of its own.
 //!
 //! Like that one, the document has to regenerate byte-identically: keys are
 //! sorted by `serde_json`, nothing iterates a hash map on the way out, and the

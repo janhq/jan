@@ -3,6 +3,7 @@
 //! This module is only compiled when the `cli` feature is enabled.
 
 mod agent_status;
+pub mod acp;
 pub mod auth;
 pub mod brand;
 pub mod browser;
@@ -2790,6 +2791,23 @@ async fn resolve_permission_silently(
         let _ = sender.send(decision);
     }
     Some((request_id, decision))
+}
+
+/// Fold a finished turn into a session's history: the engine's own rewrite of
+/// the conversation (tool calls and results included) when it sent one, then
+/// the final assistant text when the turn completed. The one rule every
+/// multi-turn surface (RPC, ACP) keeps its history by.
+pub(crate) fn adopt_turn_history(
+    history: &mut Vec<serde_json::Value>,
+    updated: Option<Vec<serde_json::Value>>,
+    completion: Option<&serde_json::Value>,
+) {
+    if let Some(updated) = updated {
+        *history = updated;
+    }
+    if let Some(text) = completion.and_then(completion_text) {
+        history.push(serde_json::json!({"role":"assistant","content":text}));
+    }
 }
 
 /// Assistant text of a chat-completion response, if any.
