@@ -176,6 +176,12 @@ pub(crate) struct OrchestrationArgs {
     /// window must not be guessed at, so this is an `Option` rather than a
     /// default budget.
     pub compaction: Option<crate::core::agent::compaction::CompactionBudget>,
+    /// The date and branch this session started with, written into the system
+    /// prompt. Taken once by whoever builds the session (the TUI and headless
+    /// CLI when they build `args`, and a child inherits its parent's), so every
+    /// turn composes the same bytes. `None` for a one-off run with no session to
+    /// freeze across, which snapshots at the start of that run instead.
+    pub session_start: Option<crate::core::agent::context::SessionStart>,
 }
 
 #[async_trait]
@@ -2435,6 +2441,8 @@ pub(crate) async fn run_server_side_openai_orchestration(
         // Server-side runs take whatever window the proxy's route reports
         // through its own path, so the loop has none to size against here.
         compaction: None,
+        // Each proxy request is a session of one run: it snapshots its own.
+        session_start: None,
     };
     let body = match json_body.get("max_turns") {
         Some(_) => std::borrow::Cow::Borrowed(json_body),
@@ -2795,6 +2803,7 @@ fn new_user_prompt(messages: &[serde_json::Value]) -> Option<String> {
 /// cannot be honored — a contributor that varies asked to sit above the cache
 /// line — is an error, not a warning: that is the whole point of resolving
 /// placement at composition.
+#[allow(clippy::too_many_arguments)]
 fn build_run_system_prompt(
     assistant_instructions: Option<&str>,
     override_prompt: Option<&str>,
@@ -2803,6 +2812,7 @@ fn build_run_system_prompt(
     subagents_enabled: bool,
     sandbox: bool,
     policy: &PromptPolicy,
+    session_start: Option<&crate::core::agent::context::SessionStart>,
 ) -> Result<Option<ComposedPrompt>, String> {
     let base = override_prompt.or(assistant_instructions);
     match project_root {
@@ -2817,6 +2827,7 @@ fn build_run_system_prompt(
                 scratch.as_deref(),
                 subagents_enabled,
                 policy,
+                session_start,
             )
             .map(Some)
         }
@@ -2833,8 +2844,8 @@ fn build_run_system_prompt(
 /// the CLI `/context` view to size the system segments: routing it through the
 /// same builder is what keeps the reported breakdown from drifting away from
 /// what is actually sent. It sizes all project-composed blocks, including
-/// blocks demoted to the tail, but excludes the run's date, git state,
-/// query-dependent memory recall, and plan/todo additions.
+/// blocks demoted to the tail and the session-start block, but excludes the
+/// query-dependent memory recall and plan/todo additions.
 /// `None` when no prompt would be built, or
 /// when the project's `[prompt]` policy cannot be honored (the run itself
 /// reports that failure with the same message).
@@ -2845,6 +2856,7 @@ pub(crate) fn context_system_prompt_preview(
     session_id: Option<&str>,
     subagents_enabled: bool,
     sandbox_flag: Option<bool>,
+    session_start: Option<&crate::core::agent::context::SessionStart>,
 ) -> Option<String> {
     let settings = resolve_run_settings(project_root, sandbox_flag);
     let policy = crate::core::agent::project::prompt_policy(project_root);
@@ -2856,6 +2868,7 @@ pub(crate) fn context_system_prompt_preview(
         subagents_enabled,
         settings.sandbox,
         &policy,
+        session_start,
     )
     .ok()
     .flatten()
@@ -2905,20 +2918,6 @@ pub(crate) async fn context_advertised_tools(
         host_tools,
     );
     tools
-}
-
-/// The git state block: which branch the project is on, so the model knows what
-/// its edits apply to.
-///
-/// A per-turn block rather than part of the environment in the stable prefix:
-/// the answer changes the moment anything checks out another branch, including
-/// the agent itself, and a branch switch inside a turn would otherwise move
-/// every byte behind the cache line.
-fn git_state_block(project_root: &std::path::Path) -> String {
-    match crate::core::agent::git::current_branch(project_root) {
-        Some(branch) => format!("# Git\n\nGit branch: `{branch}`"),
-        None => "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
-    }
 }
 
 /// Where this run's scratch lives. Session-keyed so it persists across turns in
@@ -3052,6 +3051,7 @@ async fn orchestrate_inner(
         subagent_bg: session_subagent_bg,
         sandbox,
         compaction,
+        session_start,
     } = args;
 
     // Per-turn override: the TUI toggles plan mode live via the request body
@@ -3118,27 +3118,20 @@ async fn orchestrate_inner(
             *subagents_enabled,
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
+            // A run with no session snapshot (the API proxy, a test) takes its
+            // own now: it has no later turn whose bytes it could disturb.
+            Some(
+                &session_start
+                    .clone()
+                    .unwrap_or_else(|| {
+                        crate::core::agent::context::SessionStart::capture(project_root.as_deref())
+                    }),
+            ),
         )?,
     };
     let jan_owns_prompt = host_system_prompt.is_none();
 
     let mut volatile_parts: Vec<(Composer, String)> = Vec::new();
-    // Always tell the model today's date, including isolated child runs.
-    if jan_owns_prompt {
-        volatile_parts.push((
-            Composer::Date,
-            format!(
-                "Today's date is {}.",
-                chrono::Local::now().format("%Y-%m-%d")
-            ),
-        ));
-    }
-    // Which checkout the work applies to. Per-turn rather than part of the
-    // environment block above, because anything that switches branch -- the
-    // agent included -- would otherwise move every byte behind it.
-    if let Some(root) = project_root.as_deref().filter(|_| jan_owns_prompt) {
-        volatile_parts.push((Composer::GitState, git_state_block(root)));
-    }
     // Normal parent runs recall project memory for the current query before it
     // is indexed. Child runs keep their isolated history and skip memory. A
     // host-prompted run still indexes its answers but is never sent recall:
@@ -5393,6 +5386,7 @@ mod tests {
             false,
             true,
             &PromptPolicy::default(),
+            None,
         )
         .expect("prompt")
         .expect("project prompt")
@@ -5442,6 +5436,7 @@ mod tests {
             false,
             false,
             &policy,
+            None,
         )
         .expect("prompt")
         .expect("project prompt");
@@ -5483,6 +5478,7 @@ mod tests {
             false,
             false,
             &policy,
+            None,
         )
         .expect_err("a per-turn composer cannot be allowed above the cache line");
         assert!(error.contains("todo_addendum"), "{error}");
@@ -9396,6 +9392,7 @@ mod tests {
             false,
             true,
             &PromptPolicy::default(),
+            None,
         )
         .expect("prompt")
         .expect("project prompt")
@@ -9409,6 +9406,7 @@ mod tests {
             false,
             false,
             &PromptPolicy::default(),
+            None,
         )
         .expect("prompt")
         .expect("project prompt")

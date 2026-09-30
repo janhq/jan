@@ -5426,6 +5426,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.session_id.as_deref(),
             args.subagents_enabled,
             args.sandbox,
+            args.session_start.as_ref(),
         )
         .unwrap_or_default();
         context_bytes =
@@ -27308,6 +27309,7 @@ mod tests {
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
             compaction: None,
+            session_start: None,
         })
     }
 

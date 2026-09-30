@@ -237,7 +237,7 @@ prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"
 | Key | Default | Description |
 | --- | --- | --- |
 | `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
-| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
 
 All current contributors either declare their placement or vary, so changing `default` alone has
 no effect today. Use `prefix_allow` to narrow the current prefix. The tool schemas are a request
@@ -248,8 +248,10 @@ jan cli agent status   # the resolved placement of every contributor, and why
 ```
 
 Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `runtime_environment`,
-`subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`, `memory_catalog`,
-`tool_schemas`, `date`, `git_state`, `memory_recall`, `plan_addendum`, `todo_addendum`. See
+`session_start`, `subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`,
+`memory_catalog`, `tool_schemas`, `memory_recall`, `plan_addendum`, `todo_addendum`.
+`session_start` is the date and git branch taken once when the session starts ("Session start date",
+"Starting branch"); it stays fixed for the session so it can sit above the cache line. See
 [Context and Compaction](/docs/agent/context) for what the split buys.
 
 ### `[skills]`

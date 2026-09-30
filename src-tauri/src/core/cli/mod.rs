@@ -1252,7 +1252,7 @@ fn build_cli_orchestration_args(
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),
         jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
         permissions,
-        project_root: Some(project_root),
+        project_root: Some(project_root.clone()),
         permission_requests,
         host_tools,
         host_tool_requests,
@@ -1293,6 +1293,12 @@ fn build_cli_orchestration_args(
         // window lives in the local engine's preset, not in a catalog this
         // builder can read.
         compaction: None,
+        // Once per session, here: the TUI reuses these args for every turn and
+        // a resumed session builds them afresh, so each session carries one
+        // snapshot and every turn of it composes the same system prompt.
+        session_start: Some(crate::core::agent::context::SessionStart::capture(Some(
+            &project_root,
+        ))),
     }
 }
 

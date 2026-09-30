@@ -894,7 +894,7 @@ mod tests {
             Placement::Prefix
         );
         assert_eq!(
-            policy.placement_of(Composer::Date).unwrap(),
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
             Placement::Tail
         );
         let _ = std::fs::remove_dir_all(&root);

@@ -3855,6 +3855,7 @@ pub(crate) mod tests {
             session_id: None,
             sandbox: None,
             compaction: None,
+            session_start: None,
         }
     }
 
