@@ -15,10 +15,10 @@ vi.mock('@/hooks/useServiceHub', () => ({
 import { LlamacppEngineInfo } from '../LlamacppEngineInfo'
 
 const PIN = {
-  version: '0.4.1',
-  tag: 'b10964',
-  buildNumber: '10964',
-  commit: 'b29c606e28a01b1bc8c1351026a0fa6e616bf6c4',
+  version: '0.5.0',
+  tag: 'b11146',
+  buildNumber: '11146',
+  commit: '7fe450e19305b828c199d602c23a8337aaa1f03b',
 }
 
 describe('LlamacppEngineInfo', () => {
@@ -31,8 +31,8 @@ describe('LlamacppEngineInfo', () => {
     render(<LlamacppEngineInfo />)
 
     expect(await screen.findByText('llama.cpp')).toBeInTheDocument()
-    expect(screen.getByText('0.4.1')).toBeInTheDocument()
-    expect(screen.getByText('b10964')).toBeInTheDocument()
+    expect(screen.getByText('0.5.0')).toBeInTheDocument()
+    expect(screen.getByText('b11146')).toBeInTheDocument()
   })
 
   // A 40-char sha would wrap the row and buys nothing a reader can use; the
@@ -41,13 +41,13 @@ describe('LlamacppEngineInfo', () => {
     getEngineVersion.mockResolvedValue(PIN)
     render(<LlamacppEngineInfo />)
 
-    expect(await screen.findByText('b29c606e')).toBeInTheDocument()
+    expect(await screen.findByText('7fe450e1')).toBeInTheDocument()
     expect(screen.queryByText(PIN.commit)).not.toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: /engineReleaseNotes/ })
     ).toHaveAttribute(
       'href',
-      'https://github.com/ggml-org/llama.cpp/releases/tag/b10964'
+      'https://github.com/ggml-org/llama.cpp/releases/tag/b11146'
     )
   })
 

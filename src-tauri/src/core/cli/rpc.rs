@@ -740,7 +740,11 @@ pub async fn serve() -> Result<(), String> {
                         Ok(SessionIdParams { session_id: sid }) if active.as_ref().is_some_and(|t| t.session_id == sid) => {
                             error(&id, -32001, "session busy")
                         }
-                        Ok(SessionIdParams { session_id: sid }) if sessions.remove(&sid).is_some() => response(&id, json!({})),
+                        Ok(SessionIdParams { session_id: sid }) if sessions.remove(&sid).is_some() => {
+                            // Its metric series stop growing a long-lived host's export.
+                            crate::core::agent::otel::session_closed(&sid);
+                            response(&id, json!({}))
+                        }
                         Ok(_) => error(&id, -32602, "unknown sessionId"),
                     },
                     "turn/start" => {
@@ -814,7 +818,9 @@ pub async fn serve() -> Result<(), String> {
                                 let session = sessions.get(&turn.session_id).expect("active session");
                                 match session.agent.permission_requests.lock().await.remove(&request_id) {
                                     Some(sender) => { let _ = sender.send(decision); response(&id, json!({})) }
-                                    None => error(&id, -32602, "no permission request is pending"),
+                                    // Typed like `tool/respond`'s: an id this session never
+                                    // issued, or already settled, is not pending here.
+                                    None => error_data(&id, -32602, &format!("no permission request '{request_id}' is pending (answered, cancelled, or never issued)"), json!({"kind":"not_pending"})),
                                 }
                             } else { error(&id, -32602, "invalid permission decision") }
                         }
@@ -837,6 +843,7 @@ pub async fn serve() -> Result<(), String> {
                 let turn = active.as_mut().expect("active");
                 match message {
                     TurnMessage::Event(event) => {
+                        crate::core::agent::otel::observe(&event);
                         if let StreamEvent::MessagesUpdated { messages } = &event { turn.updated_history = Some(messages.clone()); }
                         let wire = serde_json::to_value(&event).map_err(|e| e.to_string())?;
                         let method = format!("item/{}", wire["type"].as_str().ok_or("event has no tag")?);

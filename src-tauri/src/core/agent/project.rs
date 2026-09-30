@@ -30,6 +30,13 @@ pub(crate) struct AgentToml {
     pub skills: SkillsSection,
     #[serde(default)]
     pub plugins: PluginsSection,
+    /// `[telemetry]`: opt-in OTLP export. Wins over the global setting.
+    /// CLI-only: the desktop doesn't export telemetry yet.
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub telemetry: crate::core::agent::global_config::TelemetrySection,
+    #[serde(default)]
+    pub context: ContextSection,
     /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
     /// prompts, sessions and compactions. An array of tables rather than a
     /// `[hooks]` map because several hooks may share one event.
@@ -54,6 +61,52 @@ pub(crate) struct PromptSection {
     /// not a silent no-op.
     #[serde(default)]
     pub prefix_allow: Option<Vec<String>>,
+}
+
+/// `[context]` — which instructions files Jan reads besides `JAN.md`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct ContextSection {
+    /// Files read, in order, from a directory that has no non-empty `JAN.md`
+    /// (#9079). Only `AGENTS.md` and `CLAUDE.md` are recognised. `None` defers to
+    /// `~/.jan/config.toml`, then to [`DEFAULT_CONTEXT_FALLBACK_FILES`]; `[]`
+    /// reads `JAN.md` only, which is the behaviour before the fallback existed.
+    #[serde(default)]
+    pub fallback_files: Option<Vec<String>>,
+}
+
+/// The fallback used when neither `agent.toml` nor `~/.jan/config.toml` sets
+/// `[context].fallback_files`: the vendor-neutral `AGENTS.md`. `CLAUDE.md` is
+/// opt-in, since it is usually written for one specific agent.
+pub(crate) const DEFAULT_CONTEXT_FALLBACK_FILES: &[&str] = &["AGENTS.md"];
+
+/// The fallback names Jan will ever read. Anything else in `fallback_files` is
+/// dropped, so the list cannot be used to ingest arbitrary files.
+pub(crate) const KNOWN_CONTEXT_FALLBACK_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+
+/// The resolved `[context].fallback_files` for `project_root`: the project's
+/// `agent.toml` if it sets the key, else `~/.jan/config.toml`, else the
+/// default. Unknown names and duplicates are dropped; order is kept, and it is
+/// the precedence within a directory.
+pub(crate) fn context_fallback_files(project_root: &Path) -> Vec<String> {
+    let configured = load_agent_config(project_root)
+        .ok()
+        .and_then(|cfg| cfg.context.fallback_files)
+        .or_else(crate::core::agent::global_config::context_fallback_files_setting);
+    let names: Vec<String> = match configured {
+        Some(list) => list,
+        None => DEFAULT_CONTEXT_FALLBACK_FILES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for name in names {
+        let name = name.trim().to_string();
+        if KNOWN_CONTEXT_FALLBACK_FILES.contains(&name.as_str()) && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// `[plugins]` — plugin installs and marketplace. Installed plugins live in
@@ -326,6 +379,12 @@ enabled = []
 # Fallback for a future unclassified composer: tail (the default) or prefix.
 # No effect on current composers. Use prefix_allow to narrow today's prefix.
 # default = "tail"
+
+# Instructions files read from a directory that has no JAN.md, in order. JAN.md
+# always wins. Unset uses ~/.jan/config.toml, else ["AGENTS.md"]. Add
+# "CLAUDE.md" to opt in to it; [] reads JAN.md only.
+# [context]
+# fallback_files = ["AGENTS.md"]
 "#;
 
 /// `~/.jan`, where every project's store lives. Test builds use a per-process
@@ -523,6 +582,10 @@ pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
 /// scaffolded: an empty placeholder costs prompt space and teaches nothing, so
 /// it is written by `/init` or by hand.
 pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
+    // Refresh the plugin env registry first: this is the one choke point
+    // every run path calls, so a stored API key reaches the sandboxed shells
+    // of the run about to start.
+    super::plugins::sync_env_registry(project_root);
     if !project_root.is_dir() {
         return Err(format!(
             "project directory does not exist: {}. Pass --project with a path to an existing directory (paths are case-sensitive).",
@@ -775,6 +838,17 @@ mod tests {
         ensure_project(&root).expect("ensure again");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.tools.default.as_deref(), Some("deny"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn telemetry_section_is_optional_and_parsed() {
+        let root = unique_root("telemetry");
+        ensure_project(&root).expect("scaffold");
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, None);
+        std::fs::write(agent_toml_path(&root), "[telemetry]\nenabled = false\n").unwrap();
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, Some(false));
         let _ = std::fs::remove_dir_all(&root);
     }
 

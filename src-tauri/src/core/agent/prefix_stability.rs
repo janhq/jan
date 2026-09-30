@@ -628,6 +628,96 @@ async fn compaction_breaks_the_prefix_exactly_once() {
     );
 }
 
+/// #9079: a project whose instructions come from the `AGENTS.md` fallback
+/// instead of `JAN.md`. The fixture pins `[context].fallback_files` in its own
+/// agent.toml, so the result cannot depend on the developer's
+/// `~/.jan/config.toml`.
+fn agents_md_project(tag: &str, link_jan_md: bool) -> Project {
+    let project = Project::new(tag);
+    let root = project.root();
+    let body = "# Project\n\nPrefix-stability fixture.\n";
+    std::fs::remove_file(root.join("JAN.md")).unwrap();
+    std::fs::write(root.join("AGENTS.md"), body).unwrap();
+    if link_jan_md {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("AGENTS.md", root.join("JAN.md")).unwrap();
+        #[cfg(not(unix))]
+        std::fs::write(root.join("JAN.md"), body).unwrap();
+    }
+    let store = crate::core::agent::project::store_root(root);
+    std::fs::write(
+        store.join("agent.toml"),
+        "[context]\nfallback_files = [\"AGENTS.md\"]\n",
+    )
+    .unwrap();
+    project
+}
+
+/// #9079: the fallback file is part of the stable prefix like `JAN.md` is. The
+/// same tree composes the same bytes, consecutive turns extend each other, and
+/// the block names the file it came from.
+#[test]
+fn an_agents_md_fallback_keeps_the_prefix_stable() {
+    let project = agents_md_project("agentsmd", false);
+    let tools = advertised(&["read_file"]);
+
+    let first = turn(project.root(), &[user("first question")], DAY, &tools);
+    let again = turn(project.root(), &[user("first question")], DAY, &tools);
+    assert_same_bytes(
+        "the same AGENTS.md project must compose the same bytes",
+        &first.body,
+        &again.body,
+    );
+
+    let stable = first.messages[0]["content"]
+        .as_str()
+        .expect("message 0 is the stable prompt");
+    assert!(stable.contains("<project_context>"));
+    assert!(stable.contains("AGENTS.md\">"), "the tag names the fallback file");
+
+    let mut history = first.messages.clone();
+    history.push(assistant("first answer"));
+    history.push(user("second question"));
+    let second = turn(project.root(), &history, DAY, &tools);
+    first.assert_extended_by("an AGENTS.md project on the next turn", &second);
+}
+
+/// #9079: the common `JAN.md -> AGENTS.md` symlink loads once, as `JAN.md`, so
+/// the prefix is byte-identical to a project with a plain `JAN.md` of the same
+/// text. Adopting the symlink costs no cache miss beyond the one edit.
+#[test]
+fn a_jan_md_symlink_to_agents_md_composes_like_a_plain_jan_md() {
+    let plain = Project::new("plainjan");
+    let linked = agents_md_project("linkedjan", true);
+    let tools = advertised(&["read_file"]);
+    let history = [user("a question")];
+
+    let plain_turn = turn(plain.root(), &history, DAY, &tools);
+    let linked_turn = turn(linked.root(), &history, DAY, &tools);
+    // The working directory differs between the two roots; everything that
+    // is the context block must not.
+    let block = |request: &Request| {
+        let stable = request.messages[0]["content"].as_str().unwrap().to_string();
+        let start = stable.find("<project_context>").expect("a context block");
+        let end = stable.find("</project_context>").expect("a closed block");
+        let block = stable[start..end].to_string();
+        block.replace(&request_root(request), "<root>")
+    };
+    fn request_root(request: &Request) -> String {
+        let stable = request.messages[0]["content"].as_str().unwrap();
+        let marker = "Current project directory: `";
+        let at = stable.find(marker).unwrap() + marker.len();
+        stable[at..at + stable[at..].find('`').unwrap()].to_string()
+    }
+    let linked_block = block(&linked_turn);
+    assert_same_bytes(
+        "a symlinked JAN.md must load once, as JAN.md",
+        &block(&plain_turn),
+        &linked_block,
+    );
+    assert_eq!(linked_block.matches("Prefix-stability fixture.").count(), 1);
+}
+
 /// The guard on the cache line: this list is every composer permitted to write
 /// above it.
 ///

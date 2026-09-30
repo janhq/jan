@@ -1629,6 +1629,20 @@ fn prepare_agent_session(
     }
     let cfg = load_agent_config(&project_root)?;
     let permissions = permissions_from(&cfg);
+    // Opt-in OTLP export, decided once per process by the first session: every
+    // surface (TUI, `agent run`, RPC) starts here. agent.toml outranks the
+    // global setting and the env var outranks both (`otel::config`).
+    crate::core::agent::otel::init(
+        cfg.telemetry.enabled,
+        crate::core::agent::global_config::telemetry_setting(),
+        || {
+            let catalog = crate::core::cli::model_catalog::load();
+            Some(Box::new(move |provider: Option<&str>, model: &str| {
+                catalog.get(provider, model).and_then(|info| info.rates())
+            }))
+        },
+        crate::core::cli::updater::build_version(),
+    );
 
     // Resolution order: --model flag, then agent.toml [agent].model, then the
     // standalone global config (~/.jan/config.toml default_model / first provider
@@ -2169,6 +2183,7 @@ async fn run_agent_loop(
         let mut updated_history = None;
         while let Some(ev) = rx.recv().await {
             report.observe(&ev);
+            crate::core::agent::otel::observe(&ev);
             if format.is_stream_json() {
                 print_json_line(&ev);
             }
@@ -2932,6 +2947,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             reason,
             messages,
         } => eprintln!("\x1b[2m[compaction] {}\x1b[0m", describe_compaction(phase, reason, messages)),
+        StreamEvent::Retry {
+            attempt,
+            max_attempts,
+            delay_ms,
+            reason,
+        } => eprintln!(
+            "\x1b[2m[retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
+        ),
         // The snapshot backs a live panel the headless printer has no room
         // for; `Notice` already reports each match as it lands.
         StreamEvent::Monitors { .. } => {}
@@ -2953,6 +2976,14 @@ async fn print_event(ev: StreamEvent, registry: &PermissionRegistry, duplex: boo
             } => eprintln!(
                 "\x1b[2m[subagent:{name}] [compaction] {}\x1b[0m",
                 describe_compaction(phase, reason, messages)
+            ),
+            StreamEvent::Retry {
+                attempt,
+                max_attempts,
+                delay_ms,
+                reason,
+            } => eprintln!(
+                "\x1b[2m[subagent:{name}] [retry] {reason}; attempt {attempt}/{max_attempts} in {delay_ms}ms\x1b[0m"
             ),
             _ => {}
         },

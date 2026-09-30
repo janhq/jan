@@ -7,6 +7,7 @@ import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
 import { ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
+import DocSearch from './DocSearch'
 import { useDownloadLink } from '@/hooks/useDownloadLink'
 
 type MenuItem = {
@@ -48,6 +49,8 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const currentPath = router.asPath
 
   const isLanding = currentPath === '/'
+  // The docs home has its own large search field.
+  const isDocsHome = router.pathname === '/docs'
 
   useEffect(() => {
     const handleScroll = () => {
@@ -149,6 +152,14 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 </li>
               )
             })}
+            {/* Landing page keeps the navbar transparent over artwork, where a
+                filled input would read as a stray form field. The docs home
+                has its own field, and two would compete for Cmd+K. */}
+            {!isLanding && !isDocsHome && (
+              <li>
+                <DocSearch />
+              </li>
+            )}
             <li>
               <a
                 href={downloadHref}
@@ -266,6 +277,15 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   ×
                 </button>
+              </div>
+
+              {/* Nextra's own sidebar search is unreachable here: our custom
+                  hamburger drives this modal, not Nextra's sidebar state. */}
+              <div className="mb-6">
+                <DocSearch
+                  variant="panel"
+                  onNavigate={() => setIsMobileMenuOpen(false)}
+                />
               </div>
 
               {/* Menu Items */}

@@ -39,6 +39,7 @@ export type EventTag =
   | "subagent"
   | "notice"
   | "compaction"
+  | "retry"
   | "monitors"
   | "parked"
   | "messages_updated"
@@ -360,6 +361,15 @@ export interface CompactionEvent {
   "type": "compaction"
 }
 
+/** The upstream request failed before anything streamed and is about to be sent again after `delay_ms`. `attempt` is the 1-based attempt that follows the wait, out of `max_attempts`; `reason` is the failure that prompted it. Sent once per retry so a consumer can say "retrying" rather than show a spinner that looks like a slow model. Display-only and never journaled; the turn continues with the next event or ends in `Error`. */
+export interface RetryEvent {
+  "attempt": number
+  "max_attempts": number
+  "delay_ms": number
+  "reason": string
+  "type": "retry"
+}
+
 /** The run's active file monitors, as a whole replacing the previous set. Emitted whenever the set changes (a `monitor` start or stop, a condition matching, a monitor finishing), so a consumer keeps a live view without bookkeeping of its own. Display-only and never journaled. Not forwarded from a child: a child's monitors are its own. */
 export interface MonitorsEvent {
   "monitors": MonitorSnapshot[]
@@ -499,6 +509,7 @@ export type StreamEvent =
   | SubagentEvent
   | NoticeEvent
   | CompactionEvent
+  | RetryEvent
   | MonitorsEvent
   | ParkedEvent
   | MessagesUpdatedEvent
@@ -531,6 +542,7 @@ export interface EventByTag {
   "subagent": SubagentEvent
   "notice": NoticeEvent
   "compaction": CompactionEvent
+  "retry": RetryEvent
   "monitors": MonitorsEvent
   "parked": ParkedEvent
   "messages_updated": MessagesUpdatedEvent

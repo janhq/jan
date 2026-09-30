@@ -433,7 +433,7 @@ namespace {
 jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
                                 char * err, size_t err_len) {
     try {
-        // server.cpp:152-157, in llama-server's main() -- which neither entry
+        // server.cpp:156-161, in llama-server's main() -- which neither entry
         // point here goes through. n_parallel = -1 is the SERVER default, and
         // server_context loops `for (i = 0; i < n_parallel; i++)` to build its
         // slots, so leaving the sentinel unresolved yields an engine with no
@@ -443,7 +443,7 @@ jan_llama_engine * finish_start(std::unique_ptr<jan_llama_engine> engine,
             engine->params.kv_unified = true;
         }
 
-        // server.cpp:160-170, immediately after the block above and dependent on
+        // server.cpp:164-174, immediately after the block above and dependent on
         // it: the pool is n_parallel wide, so it can only be sized once the
         // sentinel is resolved. Only `-c 0` (size to the model's trained
         // context) leaves n_ctx at 0 for this to act on; any explicit ctx-size

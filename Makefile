@@ -196,15 +196,20 @@ test-ci: test-prepare
 # Compile and test guard for the CLI feature set. The `jan` CLI is no longer
 # bundled with the app; `make test` still builds the real binary via build-cli.
 #
-# This is the only job that compiles jan-cli at all: it is a standalone crate
-# and not a dependency of src-tauri, so the rust-check `cli` matrix entry never
-# reaches it (that entry's --all-targets covers app_lib's own
-# cfg(feature = "cli") test modules, which is a different crate). A bare
-# `cargo check` here built the bin but not the #[cfg(test)] module, which is
-# how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
-# `cargo test` builds and runs those targets, so it subsumes that check.
+# jan-cli is a standalone crate and not a dependency of src-tauri, so the
+# rust-check `cli` app entry never reaches it (that entry's --all-targets covers
+# app_lib's own cfg(feature = "cli") test modules, a different crate). This
+# target runs its tests; the CI lint guarantee is the jan-cli entry of the
+# rust-check `crates` matrix, which `lint-cli` reproduces locally. A bare
+# `cargo check` here once built the bin but not the #[cfg(test)] module, which
+# is how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
 check-cli:
 	cd src-tauri/jan-cli && cargo test --locked --no-default-features --features cli
+
+# The same clippy invocation as the rust-check `crates` matrix jan-cli entry.
+# Kept out of check-cli so the linter workflow does not lint it a second time.
+lint-cli:
+	cd src-tauri/jan-cli && cargo clippy --locked --no-default-features --features cli --all-targets -- -D warnings
 
 # Build MLX server (macOS Apple Silicon only) - always builds, unless
 # JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
