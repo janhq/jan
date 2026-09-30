@@ -56,6 +56,20 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # Defaults to 👋; set "" for the plain
 #                                     # throbber if your terminal draws tofu
 #
+# [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
+# enabled = true                      # usage metrics and events to YOUR
+#                                     # collector (OTEL_EXPORTER_OTLP_* env);
+#                                     # off by default. A project's agent.toml
+#                                     # [telemetry] and JAN_AGENT_ENABLE_TELEMETRY
+#                                     # win over this
+#
+# [context]
+# fallback_files = ["AGENTS.md"]      # instructions files read where a folder
+#                                     # has no JAN.md (JAN.md always wins).
+#                                     # Default ["AGENTS.md"]; add "CLAUDE.md"
+#                                     # to opt in; [] reads JAN.md only. A
+#                                     # project's agent.toml [context] wins
+#
 # [providers.my-provider]
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
@@ -153,8 +167,38 @@ struct GlobalConfigToml {
     /// but a human appending to the file would not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[telemetry]` -- opt-in OTLP export (`core::agent::otel`). A table, so
+    /// declared after the plain values and before `providers`.
+    #[serde(default, skip_serializing_if = "TelemetrySection::is_empty")]
+    telemetry: TelemetrySection,
+    /// `[context]` -- the user-wide default for which instructions files are
+    /// read where a directory has no `JAN.md`. A project's own `[context]`
+    /// wins. See `project::context_fallback_files`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<GlobalContextSection>,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[telemetry]` in `~/.jan/config.toml` or a project's `agent.toml`. Only the
+/// switch lives here: where the data goes is the standard `OTEL_*` env, so one
+/// collector setup serves every OpenTelemetry-speaking tool unchanged.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct TelemetrySection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+impl TelemetrySection {
+    fn is_empty(&self) -> bool {
+        self.enabled.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct GlobalContextSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fallback_files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -281,6 +325,14 @@ pub(crate) fn smol_model() -> Result<Option<String>, String> {
     Ok(config.smol_model.filter(|m| !m.trim().is_empty()))
 }
 
+/// `[telemetry].enabled` in `~/.jan/config.toml`; `None` when unset. Fails
+/// open to "unset" like every other preference here: telemetry is never a
+/// reason for a session not to start. CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn telemetry_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.telemetry.enabled)
+}
+
 /// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),
 /// defaulting to on. A display preference must never block startup, so an
 /// unreadable or malformed config yields the default rather than an error.
@@ -323,6 +375,16 @@ pub(crate) fn claude_code_alias_enabled() -> bool {
 /// user cannot parse must not be the thing that blocks a session from starting.
 pub(crate) fn sandbox_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.sandbox)
+}
+
+/// `[context].fallback_files` from `~/.jan/config.toml`, or `None` when unset
+/// or unreadable, so the project's `agent.toml` and then the built-in default
+/// decide. Like the other preferences, a bad file never blocks a session.
+pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.context)
+        .and_then(|context| context.fallback_files)
 }
 
 /// Whether a session gets its own git worktree by default (`worktree` in
@@ -806,6 +868,22 @@ mod tests {
         with_temp_home(|_| {
             let configs = load_global_config().expect("load");
             assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn telemetry_is_unset_by_default_and_reads_its_table() {
+        with_temp_home(|_| {
+            assert_eq!(telemetry_setting(), None, "missing file");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(telemetry_setting(), None, "scaffolded file");
+            std::fs::write(&path, "[telemetry]\nenabled = true\n").unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            // A provider write keeps the table.
+            set_provider("p", ProviderUpdate::default()).unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(telemetry_setting(), None, "fails open to unset");
         });
     }
 

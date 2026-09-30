@@ -1343,7 +1343,7 @@ impl CompositeToolInvoker {
                     match self.prompt_subagent_create(&def.name).await {
                         PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
                         PermissionDecision::Deny => {
-                            return "ERROR: user-scope subagent creation denied by user".to_string()
+                            return format!("ERROR: user-scope subagent creation {DENIED_BY_USER}")
                         }
                     }
                 }
@@ -1427,7 +1427,7 @@ impl CompositeToolInvoker {
                     match self.prompt_monitor_start(&spec).await {
                         PermissionDecision::AllowOnce | PermissionDecision::AllowAlways => {}
                         PermissionDecision::Deny => {
-                            return "ERROR: monitor start denied by user".to_string()
+                            return format!("ERROR: monitor start {DENIED_BY_USER}")
                         }
                     }
                 }
@@ -1621,11 +1621,20 @@ impl CompositeToolInvoker {
     }
 }
 
+/// Refusal phrases the loop puts in a tool result it produced without running
+/// the tool. Shared with `otel::refusal_of`, so telemetry classifies refusals
+/// from the same constants the messages are built from.
+pub(crate) const DENIED_BY_USER: &str = "denied by user";
+pub(crate) const DENIED_BY_POLICY: &str = "denied by project policy";
+pub(crate) const HIDDEN_PATH_REFUSED: &str = "refused: the Jan home";
+pub(crate) const PLAN_MODE_UNAVAILABLE: &str = "unavailable in plan_mode_read_only";
+pub(crate) const HOOK_DENIED: &str = "denied: ";
+
 /// Message for a tool blocked by the project's own deny list, naming the
 /// exact config file so the block is actionable, not mysterious.
 fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
     format!(
-        "ERROR: tool '{name}' denied by project policy (see [tools] deny in {})",
+        "ERROR: tool '{name}' {DENIED_BY_POLICY} (see [tools] deny in {})",
         crate::core::agent::project::agent_toml_path(project_root).display()
     )
 }
@@ -1634,7 +1643,7 @@ fn denied_by_policy_msg(name: &str, project_root: &std::path::Path) -> String {
 /// policy the user edits, so it points at the dedicated tools instead.
 fn hidden_path_msg(name: &str) -> String {
     format!(
-        "ERROR: tool '{name}' refused: the Jan home (~/.jan) holds the agent's own \
+        "ERROR: tool '{name}' {HIDDEN_PATH_REFUSED} (~/.jan) holds the agent's own \
          configuration and state and is hidden from every tool -- do not try to reach it \
          another way. Skills and memory are available through the skill_*/memory_* tools."
     )
@@ -1658,11 +1667,11 @@ fn hard_deny_msg(name: &str, reason: DenyReason, project_root: &std::path::Path)
 /// to teach either of them. The hook's reason is what distinguishes it, which
 /// is the part the user wrote to be read.
 fn hook_denied_msg(name: &str, reason: &str) -> String {
-    format!("ERROR: tool '{name}' denied: {reason}")
+    format!("ERROR: tool '{name}' {HOOK_DENIED}{reason}")
 }
 
 fn plan_mode_read_only_msg(name: &str) -> String {
-    format!("ERROR: tool '{name}' unavailable in plan_mode_read_only (plan mode is read-only)")
+    format!("ERROR: tool '{name}' {PLAN_MODE_UNAVAILABLE} (plan mode is read-only)")
 }
 
 #[async_trait]
@@ -1931,7 +1940,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -1993,7 +2002,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -2098,7 +2107,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 if !approved {
                     out.push(ToolOutcome::plain(
                         id,
-                        format!("ERROR: tool '{name}' denied by user"),
+                        format!("ERROR: tool '{name}' {DENIED_BY_USER}"),
                     ));
                     continue;
                 }
@@ -2284,7 +2293,7 @@ impl ToolInvoker for CompositeToolInvoker {
                             .await
                         }
                         PermissionDecision::Deny => {
-                            (format!("ERROR: tool '{name}' denied by user"), None, None)
+                            (format!("ERROR: tool '{name}' {DENIED_BY_USER}"), None, None)
                         }
                     }
                 }
@@ -2712,6 +2721,23 @@ fn latest_user_text(messages: &[serde_json::Value]) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The prompt a run was started with: [`latest_user_text`], but only when that
+/// user message is still the conversation's last word, reminders aside. A run
+/// that continues or resumes a conversation ending in an assistant or tool
+/// message was handed no new prompt, so telemetry must not count one.
+fn new_user_prompt(messages: &[serde_json::Value]) -> Option<String> {
+    let last = messages.iter().rev().find(|m| {
+        !(m.get("role").and_then(|v| v.as_str()) == Some("user")
+            && crate::core::agent::reminder::is_reminder_only(
+                m.get("content").unwrap_or(&serde_json::Value::Null),
+            ))
+    })?;
+    if last.get("role").and_then(|v| v.as_str()) != Some("user") {
+        return None;
+    }
+    latest_user_text(messages)
 }
 
 /// Assembles the run's system prompt: `override_prompt` (a subagent's
@@ -3146,6 +3172,9 @@ async fn orchestrate_inner(
     // is the whole prompt -- still placed below the history, so the arrangement
     // does not depend on which half happens to be empty.
     let submitted_prompt = latest_user_text(&conversation_messages);
+    // What telemetry counts as a prompt: narrower than `submitted_prompt`,
+    // which `UserPromptSubmit` below still fires with.
+    let new_prompt = new_user_prompt(&conversation_messages);
     let mut transcript =
         crate::core::agent::transcript::Transcript::from_history(conversation_messages);
     if let Some(composed) = stable_system.as_ref().filter(|c| !c.prefix.is_empty()) {
@@ -3431,6 +3460,15 @@ async fn orchestrate_inner(
         // hooks fire back to back on the same state.
         let request_message_count =
             projected_message_count(&transcript, volatile_projection.as_deref(), send_reasoning);
+        // Telemetry's bracket around the same span the hooks bracket: the run
+        // (and the prompt that started it) now, its end and active time when
+        // this is dropped -- on cancellation too. Inert unless the exporter is
+        // on, and it never touches the request.
+        let _telemetry_run = crate::core::agent::otel::RunScope::begin(
+            session_id.as_deref(),
+            run_id.as_deref(),
+            new_prompt.as_deref(),
+        );
         tools
             .fire_hooks(
                 tauri_plugin_agent_tools::tools::hooks::HookEvent::SessionStart,
@@ -3743,6 +3781,38 @@ pub(crate) async fn evaluate_goal(
     condition: &str,
     messages: &[serde_json::Value],
 ) -> Result<crate::core::agent::goal::GoalVerdict, String> {
+    let model = side_call_invoker(args, smol_model_id).await?;
+    crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
+}
+
+/// One stateless, tool-free completion outside the run: `request` is sent as
+/// is and the reply's text content returned. For CLI side calls that must not
+/// touch the session's history or prompt -- `/vibe-setting` maps a sentence to
+/// settings this way, so the conversation's cached prefix is never involved.
+#[cfg(feature = "cli")]
+pub(crate) async fn side_completion(
+    args: &OrchestrationArgs,
+    model_id: &str,
+    request: &serde_json::Value,
+) -> Result<String, String> {
+    let model = side_call_invoker(args, model_id).await?;
+    // Nothing streams to the user: a dropped receiver keeps the tokens internal.
+    let (sink, _rx) = mpsc::unbounded_channel();
+    let completion = model.invoke(request, &sink).await?;
+    Ok(crate::core::agent::upstream::extract_choice_message(&completion)
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or_default()
+        .to_string())
+}
+
+/// The invoker a between-turns side call uses: `model_id`'s upstream, billed to
+/// this session, with no run stream to report provenance on.
+#[cfg(feature = "cli")]
+async fn side_call_invoker(
+    args: &OrchestrationArgs,
+    smol_model_id: &str,
+) -> Result<HttpModelInvoker, String> {
     let (upstream_url, api_keys) = resolve_upstream_for_model(
         smol_model_id,
         args.provider_configs.clone(),
@@ -3778,7 +3848,7 @@ pub(crate) async fn evaluate_goal(
         // Between turns, like `/compact`: no run stream exists to carry it.
         provenance_events: None,
     };
-    crate::core::agent::goal::evaluate(smol_model_id, condition, messages, &model).await
+    Ok(model)
 }
 
 /// Summary of still-open (pending/in-progress) todos, or `None` when there is
@@ -4722,6 +4792,37 @@ mod tests {
     use serde_json::json;
     use std::collections::VecDeque;
     use std::sync::Mutex as StdMutex;
+
+    /// Telemetry's `user_prompt` count: a run continuing or resuming a
+    /// conversation that ends in the model's or a tool's turn was handed no
+    /// new prompt, even though an earlier user message is still in history.
+    #[test]
+    fn only_a_trailing_user_message_is_a_new_prompt() {
+        let reminder =
+            json!({"role": "user", "content": crate::core::agent::reminder::wrap("note")});
+        let asked = json!({"role": "user", "content": "fix the bug"});
+        let answered = json!({"role": "assistant", "content": "done"});
+        let tool = json!({"role": "tool", "tool_call_id": "c1", "content": "ok"});
+        let text = |messages: &[serde_json::Value]| new_user_prompt(messages);
+        assert_eq!(text(std::slice::from_ref(&asked)).as_deref(), Some("fix the bug"));
+        assert_eq!(
+            text(&[asked.clone(), reminder.clone()]).as_deref(),
+            Some("fix the bug"),
+            "a trailing reminder is not a turn"
+        );
+        assert_eq!(
+            text(&[asked.clone(), answered.clone()]),
+            None,
+            "continue after an answer"
+        );
+        assert_eq!(
+            text(&[asked.clone(), answered, tool.clone()]),
+            None,
+            "resume with a tool result"
+        );
+        assert_eq!(text(&[asked, tool, reminder]), None);
+        assert_eq!(text(&[]), None);
+    }
 
     /// The cache-prefix contract from #340: across turns the system prompt at
     /// message 0 and the tool schema must be byte-identical, so a provider can

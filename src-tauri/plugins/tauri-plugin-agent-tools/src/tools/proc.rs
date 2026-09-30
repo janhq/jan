@@ -4,13 +4,42 @@
 //! top-level shell. Without this, any command that spawns children (a build, a
 //! `foo &`, a pipeline) leaks orphans when the run is torn down.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::Instant;
 
 use tokio::process::{Child, Command};
+
+/// User-supplied, plugin-declared credentials, scoped to the project that
+/// registered them. Concurrent projects must never replace each other's keys.
+static PLUGIN_ENV: RwLock<BTreeMap<PathBuf, BTreeMap<String, String>>> =
+    RwLock::new(BTreeMap::new());
+
+/// Replace one project's plugin credentials, or revoke them with an empty map.
+pub fn set_plugin_env(root: &Path, vars: BTreeMap<String, String>) {
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let mut projects = PLUGIN_ENV.write().unwrap();
+    if vars.is_empty() {
+        projects.remove(&root);
+    } else {
+        projects.insert(root, vars);
+    }
+}
+
+/// True for variable names the sandbox owns itself: the static allowlist, the
+/// scratch temp keys, and the classic dynamic-linker/loader injection
+/// prefixes. The host refuses to store or inject plugin-declared values under
+/// these names -- a plugin declaring `PATH` or `LD_PRELOAD` would otherwise
+/// let one pasted value clobber (or escape) the sandbox environment wholesale.
+pub fn is_reserved_env_key(key: &str) -> bool {
+    SANDBOX_ENV_ALLOW.contains(&key)
+        || TEMP_ENV_KEYS.contains(&key)
+        || key.starts_with("LD_")
+        || key.starts_with("DYLD_")
+        || key.starts_with("SUDO_")
+}
 
 /// How to invoke the host shell. `program` + `args` are fixed; the command
 /// string is appended as the final argv element, or piped to stdin when
@@ -209,7 +238,11 @@ const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 /// than returning an error most tools report clearly.
 #[cfg(unix)]
 const CHILD_LIMITS: &[(RlimitResource, u64)] = &[
-    (nix::libc::RLIMIT_NPROC, 4096),
+    // Linux counts NPROC across the entire UID, not one Jan child tree. Keep a
+    // finite fork-bomb guard without making ordinary workstation activity starve
+    // agent-tool shells. macOS inherits its host-managed per-UID ceiling instead.
+    #[cfg(target_os = "linux")]
+    (nix::libc::RLIMIT_NPROC, 8192),
     (nix::libc::RLIMIT_NOFILE, 65536),
     (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
 ];
@@ -225,13 +258,12 @@ type RlimitResource = nix::libc::c_int;
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
-/// funnels through. A fork-bomb is capped by `NPROC`, descriptor exhaustion by
-/// `NOFILE`, and disk fill through the unbounded workspace bind by `FSIZE`. The
-/// hard limit is left at the host's value so a command that genuinely needs more
-/// can raise its own soft limit back up. The bwrap wrapper execs `bwrap` itself,
-/// which sets up the namespace and then execs the real shell, so the limits carry
-/// over to every descendant. Linux only; the Windows AppContainer child is
-/// limited by its token.
+/// funnels through. Linux `NPROC` still constrains fork bombs, while descriptor
+/// exhaustion and disk fill are capped by `NOFILE` and `FSIZE`. The hard limit is
+/// left at the host's value so a command that genuinely needs more can raise its
+/// own soft limit back up. The bwrap wrapper execs `bwrap` itself, which sets up
+/// the namespace and then execs the real shell, so the limits carry over to every
+/// descendant. Linux only; the Windows AppContainer child is limited by its token.
 #[cfg(unix)]
 fn confine_limits(cmd: &mut Command) {
     // `tokio::process::Command::pre_exec` (unix) is the std `pre_exec`; the call
@@ -389,6 +421,18 @@ pub async fn spawn_with_stdin(
     // by a glob (see [`resolve_env_overrides`]).
     for (key, val) in resolve_env_overrides(std::env::vars(), env) {
         cmd.env(key, val);
+    }
+    // Plugin-declared credentials come last so they always win over an
+    // allowlist key of the same name (reserved names never get this far --
+    // see `is_reserved_env_key`). `cwd` is the tool context's project root, not
+    // a shell-selected subdirectory, so the borrow is scoped to the project that
+    // registered the keys rather than every project in the process.
+    {
+        let root = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+        let projects = PLUGIN_ENV.read().unwrap();
+        if let Some(vars) = projects.get(&root) {
+            cmd.envs(vars);
+        }
     }
     // Point the shell's temp env at the session scratch, overriding the host
     // values the allowlist just copied in. Without this a command that writes
@@ -812,9 +856,8 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn confine_limits_caps_the_child_process_count() {
-        // The rlimit mounting must actually reach the spawned child: with NPROC
-        // clamped we still run up to the cap, but a fork-bomb past it fails.
+    async fn confine_limits_caps_child_resource_limits() {
+        // The rlimit mounting must reach the spawned child before its shell runs.
         let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
@@ -822,7 +865,7 @@ mod tests {
 
         // Spawn a shell that reports its own soft limits; confine_limits sets
         // each to the target, bounded by whatever hard limit the host allows.
-        // `ulimit -f` reports FSIZE in 1024-byte blocks, `-n` a raw count.
+        // `ulimit -f` reports FSIZE in 1024-byte blocks; `-n` and `-u` are raw.
         for (name, flag, resource, target, unit) in [
             ("NOFILE", "-n", nix::libc::RLIMIT_NOFILE, 65536_u64, 1_u64),
             (
@@ -832,6 +875,8 @@ mod tests {
                 16 * 1024 * 1024 * 1024,
                 1024,
             ),
+            #[cfg(target_os = "linux")]
+            ("NPROC", "-u", nix::libc::RLIMIT_NPROC, 8192_u64, 1_u64),
         ] {
             let cmd = format!("ulimit {flag}");
             let child = spawn(shell(), &cmd, &tmp(), None, ShellEnv::default(), None).await.unwrap();

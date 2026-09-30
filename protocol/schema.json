@@ -397,6 +397,41 @@
           ]
         },
         {
+          "description": "The upstream request failed before anything streamed and is about to be\nsent again after `delay_ms`. `attempt` is the 1-based attempt that\nfollows the wait, out of `max_attempts`; `reason` is the failure that\nprompted it. Sent once per retry so a consumer can say \"retrying\" rather\nthan show a spinner that looks like a slow model. Display-only and never\njournaled; the turn continues with the next event or ends in `Error`.",
+          "type": "object",
+          "properties": {
+            "attempt": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "max_attempts": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "delay_ms": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "reason": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "retry"
+            }
+          },
+          "required": [
+            "type",
+            "attempt",
+            "max_attempts",
+            "delay_ms",
+            "reason"
+          ]
+        },
+        {
           "description": "The run's active file monitors, as a whole replacing the previous set.\nEmitted whenever the set changes (a `monitor` start or stop, a condition\nmatching, a monitor finishing), so a consumer keeps a live view without\nbookkeeping of its own. Display-only and never journaled. Not forwarded\nfrom a child: a child's monitors are its own.",
           "type": "object",
           "properties": {

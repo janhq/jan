@@ -266,9 +266,13 @@ pub(crate) fn scan_skill_dir(dir: &Path) -> Vec<SkillEntry> {
     out
 }
 
-/// All project skills (`<store_root>/skills`), sorted by name.
+/// All project skills (`<store_root>/skills`), sorted by name. A linked git
+/// worktree shares its main checkout's skills because
+/// [`crate::core::agent::project::store_root`] maps both to one store.
 pub(crate) fn discover(root: &Path) -> Vec<SkillEntry> {
-    scan_skill_dir(&skills_dir(root))
+    let mut out = scan_skill_dir(&skills_dir(root));
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
 }
 
 /// All user-scope skills (`~/.jan/skills`), sorted by name.
@@ -301,6 +305,35 @@ pub(crate) struct Shadowed {
 /// The plugins directory `<store_root>/plugins`.
 pub(crate) fn plugins_dir(root: &Path) -> PathBuf {
     crate::core::agent::project::store_root(root).join("plugins")
+}
+
+/// Locate an installed plugin's directory by name. `None` when not installed.
+pub(crate) fn find_plugin_dir(root: &Path, plugin: &str) -> Option<PathBuf> {
+    Some(plugins_dir(root).join(plugin)).filter(|p| p.is_dir())
+}
+
+/// Visit every installed plugin directory. Skips non-directories and
+/// interrupted `.installing-*` staging directories (a partially-copied plugin
+/// must not leak its payload mid-install). Shared by the skill, command,
+/// agent, and plugin-listing discovery passes so they all agree on what is
+/// installed.
+pub(crate) fn for_each_plugin_dir(root: &Path, mut visit: impl FnMut(&str, &Path)) {
+    let Ok(rd) = std::fs::read_dir(plugins_dir(root)) else {
+        return;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if plugin.starts_with(".installing-") {
+            continue;
+        }
+        visit(plugin, &path);
+    }
 }
 
 /// Recursively yield every `*.md` file under `dir`, skipping dotfiles and
@@ -353,44 +386,27 @@ pub(crate) fn invocation_wrapper(name: &str, kind: &str) -> String {
 /// (folder and flat forms, same rules as project skills) plus an optional
 /// single `SKILL.md` at the plugin root (a repo that is itself one skill).
 pub(crate) fn discover_plugins(root: &Path) -> Vec<SkillEntry> {
-    let dir = plugins_dir(root);
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
     let mut out: Vec<SkillEntry> = Vec::new();
-    for entry in rd.flatten() {
-        let path = entry.path();
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let Some(plugin) = path.file_name().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        // Ignore interrupted `.installing-*` staging directories, matching the
-        // command/agent loaders: a partially-copied plugin must not leak its
-        // skills into the catalog during an install.
-        if plugin.starts_with(".installing-") {
-            continue;
-        }
+    for_each_plugin_dir(root, |plugin, path| {
         let mut tagged = Vec::new();
-        for e in scan_skill_dir(&path.join("skills")) {
-            tagged.push(SkillEntry {
-                plugin: Some(plugin.to_string()),
-                ..e
-            });
-        }
-        let root_md = path.join("SKILL.md");
-        if root_md.is_file() {
-            tagged.push(SkillEntry {
-                name: plugin.to_string(),
-                file: root_md,
-                is_folder: false,
-                plugin: Some(plugin.to_string()),
-                user: false,
-            });
-        }
-        out.extend(tagged);
-    }
+            for e in scan_skill_dir(&path.join("skills")) {
+                tagged.push(SkillEntry {
+                    plugin: Some(plugin.to_string()),
+                    ..e
+                });
+            }
+            let root_md = path.join("SKILL.md");
+            if root_md.is_file() {
+                tagged.push(SkillEntry {
+                    name: plugin.to_string(),
+                    file: root_md,
+                    is_folder: false,
+                    plugin: Some(plugin.to_string()),
+                    user: false,
+                });
+            }
+            out.extend(tagged);
+    });
     out.sort_by(|a, b| a.name.cmp(&b.name));
     out
 }
@@ -540,7 +556,7 @@ fn resolve_in_plugin(root: &Path, plugin: &str, plain: &str) -> Option<SkillEntr
     if safe_stem(plugin).ok()? != plugin || safe_stem(plain).ok()? != plain {
         return None;
     }
-    let base = plugins_dir(root).join(plugin);
+    let base = find_plugin_dir(root, plugin)?;
     let folder = base.join("skills").join(plain).join("SKILL.md");
     if folder.is_file() {
         return Some(SkillEntry {
@@ -1461,6 +1477,71 @@ mod tests {
         // Unknown skill errors.
         assert!(build_invocation_message(&root, "nope", "").is_err());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A repo with one commit plus a linked worktree, or skip when git is
+    /// unavailable. Returns `(main_root, linked_root)`.
+    fn repo_with_linked_worktree(tag: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+        if std::process::Command::new("git").arg("--version").output().is_err() {
+            return None;
+        }
+        let n = std::time::SystemTime::UNIX_EPOCH
+            .elapsed()
+            .unwrap()
+            .as_nanos();
+        let main = std::env::temp_dir().join(format!("jan_wt_main_{tag}_{n}"));
+        std::fs::create_dir_all(&main).unwrap();
+        let run = |args: &[&str]| -> bool {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&main)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        if !run(&["init", "-q", "."])
+            || !run(&["commit", "--allow-empty", "-q", "-m", "init"])
+        {
+            return None;
+        }
+        let linked = std::env::temp_dir().join(format!("jan_wt_link_{tag}_{n}"));
+        let l = linked.to_string_lossy().to_string();
+        if !run(&["worktree", "add", &l]) {
+            return None;
+        }
+        Some((main, linked))
+    }
+
+    /// Skills and plugins installed in the main worktree are visible from a
+    /// linked worktree: the store follows the repo, not the checkout.
+    #[test]
+    fn linked_worktree_sees_main_worktree_skills_and_plugins() {
+        let Some((main, linked)) = repo_with_linked_worktree("discover") else {
+            return;
+        };
+        // git resolves paths through realpath, and on macOS /var is a symlink
+        // to /private/var: canonicalize so prefix comparisons hold.
+        let main = std::fs::canonicalize(&main).unwrap();
+        let linked = std::fs::canonicalize(&linked).unwrap();
+        project_skill(&main, "shared", "shared\n");
+        plugin_skill(&main, "shared-plugin", "prep", "plugin\n");
+
+        // Both the shared skill and the shared plugin's skills are visible
+        // from the linked worktree, under the linked root.
+        let names: Vec<String> = discover(&linked).iter().map(|e| e.name.clone()).collect();
+        assert!(names.contains(&"shared".to_string()), "{names:?}");
+        let plugins = discover_plugins(&linked);
+        assert_eq!(
+            plugins.iter().map(qualified_name).collect::<Vec<_>>(),
+            vec!["shared-plugin:prep".to_string()]
+        );
+        // Both checkouts resolve to one store, so the file lives in it.
+        let entry = resolve_readable(&linked, "shared-plugin:prep").unwrap();
+        assert!(entry.file.starts_with(plugins_dir(&main)), "{:?}", entry.file);
+        assert_eq!(plugins_dir(&linked), plugins_dir(&main));
+
+        let _ = std::fs::remove_dir_all(&main);
+        let _ = std::fs::remove_dir_all(&linked);
     }
 
     /// Skills written into the (per-process, test-only) user scope
