@@ -171,7 +171,8 @@ jobs:
           WINDOWS_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
           # Empty when that leg failed or was skipped; the key is then left out
           # rather than written blank, which the updater would find and fail on.
-          WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.outputs.WIN_SIG }}"
+          # Requires success too: WIN_SIG is set before the upload step.
+          WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.result == 'success' && needs.build-windows-arm64.outputs.WIN_SIG || '' }}"
           WINDOWS_ARM_URL="https://delta.jan.ai/nightly/${{ needs.build-windows-arm64.outputs.FILE_NAME }}"
           [ -n "$WINDOWS_ARM_SIGNATURE" ] || echo "::warning::no ARM64 build this run -- publishing latest.json without windows-aarch64"
           DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
