@@ -159,6 +159,13 @@ pub fn sort_threads_recent(threads: &mut [serde_json::Value]) {
     });
 }
 
+/// Told to the model, as a `<SYSTEM>` notice on the first message after a saved
+/// conversation is reopened (TUI `/resume`, headless `--resume`): the history
+/// predates the session-start snapshot, which was taken at the resume.
+pub(crate) const SESSION_RESUMED_NOTICE: &str = "Session resumed: the conversation above was \
+saved by an earlier session. The session start date and starting branch in the system prompt \
+were taken at this resume, so earlier messages may predate them.";
+
 /// Message shown when there is nothing to resume; the caller then starts fresh.
 pub const NO_SESSION_TO_RESUME: &str = "No session to resume";
 
@@ -1294,8 +1301,8 @@ fn build_cli_orchestration_args(
         // builder can read.
         compaction: None,
         // Once per session, here: the TUI reuses these args for every turn and
-        // a resumed session builds them afresh, so each session carries one
-        // snapshot and every turn of it composes the same system prompt.
+        // re-snapshots only at a conversation boundary (`/new`, `/resume`), so
+        // every turn of a session composes the same system prompt.
         session_start: Some(crate::core::agent::context::SessionStart::capture(Some(
             &project_root,
         ))),
@@ -1965,6 +1972,14 @@ fn prepare_agent_run(
 
     let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
     history.push(serde_json::json!({ "role": "user", "content": final_task }));
+    // Same notice the TUI attaches to the first message after `/resume`: the
+    // saved turns predate this session's start snapshot.
+    if resumed.as_ref().is_some_and(|r| !r.history.is_empty()) {
+        crate::core::agent::reminder::attach(
+            &mut history,
+            crate::core::cli::SESSION_RESUMED_NOTICE,
+        );
+    }
     let body = session.body(serde_json::json!(history.clone()));
     // Emit resolved references stderr so the user sees what was injected
     if !injected.is_empty() {

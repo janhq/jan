@@ -2011,6 +2011,10 @@ struct App {
     /// not drop the parent pointer `fork_thread` wrote (`thread_metadata` owns
     /// the whole metadata object, not a merge into it).
     forked_from: Option<serde_json::Value>,
+    /// Set when a saved thread is loaded, cleared by the next user message, which
+    /// carries `SESSION_RESUMED_NOTICE` so the model knows the history predates
+    /// the session-start snapshot.
+    resume_notice_pending: bool,
     /// Pending git snapshots, run off the render loop (see `SnapshotJob`).
     snap_queue: std::collections::VecDeque<SnapshotJob>,
     /// Whether a base snapshot has been requested for the active thread (queued,
@@ -2798,6 +2802,7 @@ impl App {
             workspace: None,
             workspace_record: None,
             forked_from: None,
+            resume_notice_pending: false,
             snap_queue: std::collections::VecDeque::new(),
             base_requested: false,
             last_esc: None,
@@ -3001,6 +3006,24 @@ impl App {
         self.args = Some(Arc::new(next));
     }
 
+    /// Take a fresh session-start snapshot (date and branch) for the session
+    /// that begins now. Called at a conversation boundary only -- `/new`,
+    /// `/clear`, `/resume`, a fork -- where the system prompt starts over anyway,
+    /// so no turn's cached prefix is disturbed.
+    fn refresh_session_start(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let start = crate::core::agent::context::SessionStart::capture(Some(&root));
+        if args.session_start.as_ref() == Some(&start) {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.session_start = Some(start);
+        self.args = Some(Arc::new(next));
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -3016,7 +3039,9 @@ impl App {
         // A fresh session is a root, whatever the one it replaced was, and it
         // owns the checkout this session is working in.
         self.forked_from = None;
+        self.resume_notice_pending = false;
         self.set_host_system_prompt(None);
+        self.refresh_session_start();
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -4613,6 +4638,12 @@ impl App {
 
     fn record_pending_message(&mut self, pending: PendingMessage) {
         self.history.push(pending.message);
+        if std::mem::take(&mut self.resume_notice_pending) {
+            crate::core::agent::reminder::attach(
+                &mut self.history,
+                crate::core::cli::SESSION_RESUMED_NOTICE,
+            );
+        }
         if pending.display {
             let text = if let Some((name, args, description)) = pending.invocation {
                 self.push_invocation_row(&format!("[skill:{name}]"), &args, &description);
@@ -18197,6 +18228,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
     restore_host_system_prompt(app, thread.get("metadata"));
+    app.refresh_session_start();
     app.forked_from = thread
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
@@ -18229,6 +18261,8 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     // before journaling (or whose journal was lost).
     let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
     app.history = super::rebuild_wire_history(&messages);
+    // Only a conversation with something in it predates the snapshot.
+    app.resume_notice_pending = !app.history.is_empty();
     // A resumed thread was never measured by *this* session's provider calls, and
     // any count left over from the thread we were on describes a different
     // conversation entirely. Estimate until a fresh response lands.
@@ -37112,6 +37146,55 @@ mod tests {
         restore_host_system_prompt(&mut app, Some(&meta));
         restore_host_system_prompt(&mut app, Some(&serde_json::json!({})));
         assert_eq!(prompt(&app), None, "a thread without one resumes on Jan's");
+    }
+
+    /// `/new` starts a session, so it takes a fresh session-start snapshot in
+    /// place of the one the process started with.
+    #[test]
+    fn a_new_session_takes_a_fresh_session_start_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        args.session_start = Some(crate::core::agent::context::SessionStart::fixed(
+            "1999-01-01",
+            Some("stale"),
+        ));
+        app.args = Some(std::sync::Arc::new(args));
+        app.reset_session();
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone());
+        let fresh = crate::core::agent::context::SessionStart::capture(Some(&app.project_root));
+        assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
+    }
+
+    /// The first message after a resume carries the `<SYSTEM>` resumed notice,
+    /// once; later messages and a fresh session carry none.
+    #[tokio::test]
+    async fn the_first_message_after_a_resume_carries_the_resumed_notice() {
+        let notice = crate::core::cli::SESSION_RESUMED_NOTICE;
+        let carries = |m: &serde_json::Value| {
+            m.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains(&crate::core::agent::reminder::wrap(notice)))
+        };
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        assert!(!app.history.iter().any(carries), "a fresh session has no notice");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert!(!fresh.history.iter().any(carries), "nothing is sent until the user speaks");
+
+        fresh.submit_user("continue".to_string());
+        let last = fresh.history.last().expect("the new message");
+        assert!(carries(last), "{last}");
+        assert!(
+            last["content"].as_str().unwrap().starts_with("continue"),
+            "the notice follows what the user typed: {last}"
+        );
+
+        fresh.status = Status::Idle;
+        fresh.submit_user("again".to_string());
+        assert_eq!(fresh.history.iter().filter(|m| carries(m)).count(), 1, "once");
     }
 
     #[test]

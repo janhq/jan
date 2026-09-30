@@ -370,7 +370,8 @@ impl SessionStart {
         }
     }
 
-    fn block(&self) -> String {
+    /// The `# Session Start` block as it is written into the system prompt.
+    pub(crate) fn block(&self) -> String {
         let branch = match &self.branch {
             Some(branch) => format!("`{branch}`"),
             None => "none (not a git repository, or no commits yet)".to_string(),

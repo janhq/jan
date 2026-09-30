@@ -2831,10 +2831,19 @@ fn build_run_system_prompt(
             )
             .map(Some)
         }
-        None => Ok(base.map(|prompt| ComposedPrompt {
-            prefix: prompt.to_string(),
-            tail: Vec::new(),
-        })),
+        // No project to compose around, but the model still needs to know what
+        // day it is: the snapshot follows the base prompt, and alone makes one.
+        None => {
+            let prefix = [base.map(str::to_string), session_start.map(|s| s.block())]
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n\n");
+            Ok((!prefix.is_empty()).then_some(ComposedPrompt {
+                prefix,
+                tail: Vec::new(),
+            }))
+        }
     }
 }
 
@@ -3119,7 +3128,8 @@ async fn orchestrate_inner(
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
             // A run with no session snapshot (the API proxy, a test) takes its
-            // own now: it has no later turn whose bytes it could disturb.
+            // own now: it has no later turn whose bytes it could disturb. With
+            // no project either, it still reaches the prompt, after the base.
             Some(
                 &session_start
                     .clone()
@@ -9376,6 +9386,34 @@ mod tests {
         assert!(resolve_sandbox(None, Some(false)));
         assert!(resolve_sandbox(Some(false), None));
         assert!(resolve_sandbox(Some(false), Some(false)));
+    }
+
+    /// A run with no project (the API proxy) composes nothing around its base
+    /// prompt, but still has to be told the date: the session-start block
+    /// follows the base, or stands alone when there is no base.
+    #[test]
+    fn a_projectless_prompt_still_carries_the_session_start() {
+        let start = crate::core::agent::context::SessionStart::fixed("2026-09-30", None);
+        let build = |base: Option<&str>| {
+            build_run_system_prompt(
+                base,
+                None,
+                None,
+                None,
+                false,
+                false,
+                &PromptPolicy::default(),
+                Some(&start),
+            )
+            .expect("prompt")
+            .expect("a prompt, even with no base")
+            .prefix
+        };
+        let with_base = build(Some("be helpful"));
+        assert!(with_base.starts_with("be helpful\n\n# Session Start"), "{with_base}");
+        assert!(with_base.contains("Session start date: 2026-09-30"), "{with_base}");
+        let alone = build(None);
+        assert!(alone.starts_with("# Session Start"), "{alone}");
     }
 
     /// An unconfined run has no scratch, so the prompt must not name one: the
