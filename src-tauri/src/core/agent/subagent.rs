@@ -2094,40 +2094,15 @@ pub(crate) fn spawn_dispatch_plan(
     };
     let mut phases = plan.phases.into_iter();
     let first = phases.next().expect("non-empty checked above");
-    let mut first_names = Vec::with_capacity(first.subagents.len());
-    let mut first_ids = Vec::with_capacity(first.subagents.len());
-    let mut first_children = Vec::with_capacity(first.subagents.len());
     // A single-phase fan-out pings per child (the last phase is the only phase);
     // a multi-phase plan keeps every child silent and rings once when it ends.
-    for req in first.subagents {
-        let name = req.name.clone();
-        first_names.push(name.clone());
-        match spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi) {
-            Ok(d) => {
-                first_children.push(DispatchedChild {
-                    name,
-                    run_id: d.run_id.clone(),
-                });
-                first_ids.push(d.run_id)
-            }
-            Err(e) => {
-                // The plan resolves and prices every child up front so an `Err`
-                // here is meant to fail the dispatch atomically, before any child
-                // starts. Once one has, that promise needs keeping: the children
-                // this loop already registered are silent and owned by nobody
-                // (`end_plan` only releases the plan hold), so abort them before
-                // the error leaves -- and only then release the hold, so the plan
-                // owes nothing the moment it reports its failure.
-                for run_id in &first_ids {
-                    bg.abort_child(run_id);
-                }
-                if multi {
-                    bg.end_plan();
-                }
-                return Err(e);
-            }
-        }
-    }
+    let FirstPhase {
+        names: first_names,
+        ids: first_ids,
+        children: first_children,
+    } = spawn_first_phase(bg, multi, first.subagents, |req| {
+        spawn_subagent(&scope, parent_args, req, parent, events, scratch, !multi)
+    })?;
 
     if multi {
         let remaining: Vec<Phase> = phases.collect();
@@ -2164,6 +2139,59 @@ pub(crate) fn spawn_dispatch_plan(
         first_phase: first_children,
         blackboard_dir,
     })
+}
+
+/// What [`spawn_first_phase`] started, in request order.
+struct FirstPhase {
+    names: Vec<String>,
+    ids: Vec<String>,
+    children: Vec<DispatchedChild>,
+}
+
+/// Start every phase-0 child through `spawn`, or none of them.
+///
+/// The plan resolves and prices every child up front so an `Err` here is meant
+/// to fail the dispatch atomically, before any child starts. Once one has, that
+/// promise needs keeping: the children already registered are silent and owned
+/// by nobody (`end_plan` only releases the plan hold), so they are aborted
+/// before the error leaves -- and only then is the hold released, so the plan
+/// owes nothing the moment it reports its failure. `spawn` is a parameter so a
+/// test can make a later child fail, which no request that passed the up-front
+/// checks otherwise does on demand.
+fn spawn_first_phase(
+    bg: &BackgroundSubagents,
+    multi: bool,
+    reqs: Vec<SubagentRequest>,
+    mut spawn: impl FnMut(SubagentRequest) -> Result<Dispatched, SubagentError>,
+) -> Result<FirstPhase, SubagentError> {
+    let mut started = FirstPhase {
+        names: Vec::with_capacity(reqs.len()),
+        ids: Vec::with_capacity(reqs.len()),
+        children: Vec::with_capacity(reqs.len()),
+    };
+    for req in reqs {
+        let name = req.name.clone();
+        started.names.push(name.clone());
+        match spawn(req) {
+            Ok(d) => {
+                started.children.push(DispatchedChild {
+                    name,
+                    run_id: d.run_id.clone(),
+                });
+                started.ids.push(d.run_id);
+            }
+            Err(e) => {
+                for run_id in &started.ids {
+                    bg.abort_child(run_id);
+                }
+                if multi {
+                    bg.end_plan();
+                }
+                return Err(e);
+            }
+        }
+    }
+    Ok(started)
 }
 
 /// Plan-wide facts the phase driver needs to compose the single completion ping.
@@ -4804,6 +4832,76 @@ pub(crate) mod tests {
             matches!(
                 ev,
                 StreamEvent::SubagentEnd { ref run_id, .. } if *run_id == d.run_id
+            )
+        });
+        assert!(ended, "the aborted child's start bracket is closed");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// F3, end to end through the phase-0 loop: one child starts, the next
+    /// cannot, and the dispatch's `Err` leaves nothing behind -- the started
+    /// child aborted and bracketed, the counters and the plan hold released.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_first_phase_spawn_failure_leaves_no_child_or_plan_hold() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("first_phase_fail");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // Park the good child on the semaphore so it cannot finish on its own
+        // before the failure path is what removes it.
+        let _running = bg.semaphore.clone().try_acquire_owned().unwrap();
+        let scope = DispatchScope {
+            bg: bg.clone(),
+            generation: bg.generation(),
+        };
+        // As `spawn_dispatch_plan` does for a multi-phase plan before phase 0.
+        bg.begin_plan();
+
+        let mut started = Vec::new();
+        let result = spawn_first_phase(
+            &bg,
+            true,
+            vec![req("reviewer", None), req("broken", None)],
+            |r| {
+                if r.name == "broken" {
+                    assert_eq!(
+                        bg.running.load(Ordering::SeqCst),
+                        1,
+                        "the good child is live when its sibling fails"
+                    );
+                    return Err(SubagentError::Upstream("cannot start".to_string()));
+                }
+                let d = spawn_subagent(&scope, &args, r, &parent_run(), &events_tx, None, false)?;
+                started.push(d.run_id.clone());
+                Ok(d)
+            },
+        );
+
+        assert!(
+            matches!(result, Err(SubagentError::Upstream(ref m)) if m == "cannot start"),
+            "the sibling's error is what the dispatch returns"
+        );
+        assert_eq!(started.len(), 1, "the good child did start");
+        assert!(bg.inner.lock().unwrap().is_empty(), "the registry is empty");
+        assert!(bg.live_run_ids().is_empty(), "nothing is live afterwards");
+        assert_eq!(bg.running.load(Ordering::SeqCst), 0, "counters released");
+        assert_eq!(bg.queued.load(Ordering::SeqCst), 0, "queue slot released");
+        assert_eq!(
+            bg.plans_pending.load(Ordering::SeqCst),
+            0,
+            "the plan hold is released"
+        );
+        assert!(!bg.has_pending_work(), "the parent is owed nothing");
+        assert!(bg.take_notices().is_empty(), "a silent child queues no ping");
+        let ended = std::iter::from_fn(|| events_rx.try_recv().ok()).any(|ev| {
+            matches!(
+                ev,
+                StreamEvent::SubagentEnd { ref run_id, .. } if *run_id == started[0]
             )
         });
         assert!(ended, "the aborted child's start bracket is closed");
