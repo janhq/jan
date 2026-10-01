@@ -2505,11 +2505,9 @@ async fn apply_input_line(
             // Taking the sender is what makes a decision single-use: a second
             // reply for the same id finds nothing and is reported, rather than
             // silently overwriting an answer the run already acted on.
-            let sender = registry.lock().await.remove(&request_id);
-            let Some(sender) = sender else {
+            if !crate::core::agent::r#loop::settle_permission(registry, &request_id, decision).await {
                 return Err(format!("no permission request '{request_id}' is pending"));
-            };
-            let _ = sender.send(decision);
+            }
             Ok(InputFlow::Decided(request_id, decision))
         }
         InputMessage::ToolResult { request_id, result } => {
@@ -2807,6 +2805,68 @@ pub(crate) fn adopt_turn_history(
     }
     if let Some(text) = completion.and_then(completion_text) {
         history.push(serde_json::json!({"role":"assistant","content":text}));
+    }
+}
+
+/// Fold the tool calls an interrupted turn made, and the results it got back,
+/// into `history` in wire form, so the next prompt and a later resume see the
+/// work that ran rather than only the prose around it. Shared by the surfaces
+/// that can stop a run mid-way (the TUI's cancel and error paths, ACP's
+/// `session/cancel`).
+///
+/// `calls` are `(id, name, args)` in the order they were made. A call that is
+/// already in `history` is skipped: a run publishes `MessagesUpdated`
+/// mid-turn on a compaction retry and the budget soft-stop, and a cancel is
+/// often followed by a late event from the aborted task, so the fold can be
+/// reached for calls already folded, and putting one exchange on the wire
+/// twice invites a double execution. A call with no result (still in flight
+/// when the run stopped) gets [`MISSING_TOOL_RESULT`], so the exchange stays
+/// protocol-valid.
+pub(crate) fn fold_interrupted_tools(
+    history: &mut Vec<serde_json::Value>,
+    calls: &[(String, String, serde_json::Value)],
+    results: &[(String, String)],
+) {
+    let folded: std::collections::HashSet<&str> = history
+        .iter()
+        .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
+        .flatten()
+        .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
+        .collect();
+    let calls: Vec<&(String, String, serde_json::Value)> =
+        calls.iter().filter(|(id, _, _)| !folded.contains(id.as_str())).collect();
+    if calls.is_empty() {
+        return;
+    }
+    let tool_calls: serde_json::Value = calls
+        .iter()
+        .map(|(id, name, args)| {
+            serde_json::json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() },
+            })
+        })
+        .collect();
+    history.push(serde_json::json!({
+        "role": "assistant",
+        "content": serde_json::Value::Null,
+        "tool_calls": tool_calls,
+    }));
+    // Results follow the order of the `tool_calls` array, not the order they
+    // finished: the loop dispatches calls concurrently, and a strict endpoint
+    // cannot match out-of-order results to the calls above.
+    for (id, _, _) in &calls {
+        let content = results
+            .iter()
+            .find(|(rid, _)| rid == id)
+            .map(|(_, c)| c.clone())
+            .unwrap_or_else(|| MISSING_TOOL_RESULT.to_string());
+        history.push(serde_json::json!({
+            "role": "tool",
+            "tool_call_id": id,
+            "content": content,
+        }));
     }
 }
 

@@ -47,6 +47,19 @@ fn write_call() -> String {
     out
 }
 
+/// The model reads `a.txt`: a call the default gate allows without asking.
+fn read_call() -> String {
+    let args = json!({"path":"a.txt"}).to_string();
+    let mut out = chunk(
+        json!({"role":"assistant","tool_calls":[{"index":0,"id":"call-r","type":"function",
+            "function":{"name":"read","arguments":args}}]}),
+        None,
+    );
+    out.push_str(&chunk(json!({}), Some("tool_calls")));
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
 /// Serve `replies` in order, one per request, repeating the last. A `None`
 /// reply holds the connection open without answering, so a prompt stays in
 /// flight until it is cancelled.
@@ -241,6 +254,22 @@ impl Acp {
     }
 }
 
+/// Every thread id saved anywhere under `dir`: a thread is a directory holding
+/// `messages.jsonl`, named by its id.
+fn thread_ids(dir: &std::path::Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if path.join("messages.jsonl").is_file() {
+                out.push(entry.file_name().to_string_lossy().into_owned());
+            }
+            out.extend(thread_ids(&path));
+        }
+    }
+    out
+}
+
 fn updates<'a>(frames: &'a [Value], tag: &str) -> Vec<&'a Value> {
     frames
         .iter()
@@ -338,6 +367,92 @@ fn a_prompt_streams_updates_and_a_gated_write_asks_the_client() {
         None,
     );
     assert!(reply.get("error").is_some(), "{reply}");
+    acp.close();
+}
+
+/// A thread another surface wrote -- here a headless `jan cli agent run`, which
+/// saves through the same store the TUI does, tool calls included -- loads
+/// and replays, and the loaded session can be prompted.
+#[test]
+fn load_replays_a_thread_another_surface_saved() {
+    let scratch = Scratch::new("foreign");
+    scratch.configure(&stub_provider(vec![
+        Some(read_call()),
+        Some(prose("read it")),
+        Some(prose("continued")),
+    ]));
+    let project = scratch.project();
+    std::fs::write(project.join("a.txt"), "alpha").unwrap();
+    let out = scratch
+        .command(&["cli", "agent", "run", "--project", project.to_str().unwrap(), "--output-format", "json", "read a.txt"])
+        .output()
+        .expect("run `jan cli agent run`");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let report: Value = serde_json::from_slice(&out.stdout).expect("the json result");
+    // The report abbreviates the id for a person; the store holds it whole,
+    // and that is what a client that remembers a session holds.
+    let short = report["session_id"].as_str().unwrap_or_else(|| panic!("{report}")).to_string();
+    let sid = thread_ids(&scratch.root)
+        .into_iter()
+        .find(|id| id.starts_with(&short))
+        .unwrap_or_else(|| panic!("no saved thread for {short}"));
+
+    let mut acp = scratch.open();
+    acp.initialize();
+    let (reply, frames) = acp.call("session/load", json!({"sessionId":sid,"cwd":project,"mcpServers":[]}), None);
+    assert!(reply.get("error").is_none(), "{reply}");
+    let users: Vec<&str> = updates(&frames, "user_message_chunk")
+        .iter()
+        .filter_map(|u| u["content"]["text"].as_str())
+        .collect();
+    assert_eq!(users, ["read a.txt"]);
+    let calls = updates(&frames, "tool_call");
+    assert_eq!(calls.len(), 1, "{frames:?}");
+    assert_eq!(calls[0]["toolCallId"], "call-r");
+    let results = updates(&frames, "tool_call_update");
+    assert!(results[0]["content"][0]["content"]["text"].as_str().unwrap().contains("alpha"), "{frames:?}");
+
+    let (reply, _) = acp.call("session/prompt", json!({"sessionId":sid,"prompt":[{"type":"text","text":"go on"}]}), None);
+    assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
+    acp.close();
+}
+
+/// Cancelled while a gated call waits on the client: the prompt ends
+/// `cancelled`, the open `session/request_permission` is withdrawn, the call
+/// never runs, and the next prompt goes out on a well-formed history.
+#[test]
+fn cancel_during_a_pending_tool_call_neither_runs_it_nor_breaks_the_session() {
+    let scratch = Scratch::new("cancel-tool");
+    scratch.configure(&stub_provider(vec![Some(write_call()), Some(prose("after"))]));
+    let project = scratch.project();
+    let mut acp = scratch.open();
+    acp.initialize();
+    let sid = acp.new_session(&project);
+    let id = acp.request("session/prompt", json!({"sessionId":sid,"prompt":[{"type":"text","text":"write"}]}));
+    // Wait for the gate prompt, then cancel instead of answering it.
+    loop {
+        let frame = acp.read();
+        if frame["method"] == "session/request_permission" {
+            break;
+        }
+    }
+    acp.send(json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":sid}}));
+    loop {
+        let frame = acp.read();
+        if frame["id"] == json!(id) {
+            assert_eq!(frame["result"]["stopReason"], "cancelled", "{frame}");
+            break;
+        }
+    }
+    assert!(!project.join("note.txt").exists(), "a cancelled call must not run");
+
+    let (reply, frames) = acp.call("session/prompt", json!({"sessionId":sid,"prompt":[{"type":"text","text":"again"}]}), None);
+    assert_eq!(reply["result"]["stopReason"], "end_turn", "{reply}");
+    let text: String = updates(&frames, "agent_message_chunk")
+        .iter()
+        .filter_map(|u| u["content"]["text"].as_str())
+        .collect();
+    assert_eq!(text, "after");
     acp.close();
 }
 

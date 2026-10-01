@@ -85,10 +85,10 @@ Jan speaks stable ACP protocol version **1**. It doesn't enable any draft or uns
 | --- | --- |
 | `initialize` | Advertises `loadSession`, image and embedded-context prompts. Nothing else is advertised. |
 | `authenticate` | Checks that a provider is configured. Clients that can run a terminal get a sign-in method that runs `jan acp --login`. |
-| `session/new` | Opens a session in `cwd`, which must be absolute. The session id is a Jan thread id. |
-| `session/load` | Replays a saved thread, including ones started in the TUI, then replies. |
-| `session/prompt` | Runs one turn. The reply's `stopReason` is `end_turn`, `max_tokens`, `max_turn_requests`, `refusal` or `cancelled`. |
-| `session/cancel` | Stops the turn. A tool call that hasn't run yet never runs. |
+| `session/new` | Opens a session in `cwd`, which must be absolute. The session id is a Jan thread id. MCP servers the editor passes over stdio are connected as well as the project's own. |
+| `session/load` | Replays a saved thread, including ones started in the TUI or with `jan cli agent run`, then replies. Refused while that session has a prompt running. |
+| `session/prompt` | Runs one turn. The reply's `stopReason` is `end_turn`, `max_tokens`, `max_turn_requests` (the session's cost ceiling was reached), `refusal` or `cancelled`. If the run fails, the error is shown in the reply text and the turn ends with `end_turn`. |
+| `session/cancel` | Stops the turn. A tool call waiting for your permission never runs. The work done before the cancel is kept, so the next prompt continues from it. |
 | `session/request_permission` | Sent for every gated tool call. You get **Allow**, **Always allow** where Jan offers it, and **Reject**. |
 
 The session id is the thread id, so `jan --resume <id>` in the terminal opens a conversation that
@@ -119,7 +119,7 @@ If you reject a call, or cancel the prompt, the call is refused just as it would
 
 - Jan uses its own filesystem and shell tools. It doesn't read the editor's unsaved buffers or run
   commands in the editor's terminal, so `fs/*` and `terminal/*` are never requested.
-- Jan ignores MCP servers that the editor passes in `session/new`. It connects the servers set up
-  for the project (see [MCP](/docs/agent/mcp)).
+- Editor MCP servers over HTTP or SSE are skipped. Only stdio servers are connected, alongside the
+  servers set up for the project (see [MCP](/docs/agent/mcp)).
 - There's no `session/set_mode` yet, so plan mode and model switching aren't available from the
   editor.

@@ -1723,9 +1723,6 @@ mod tests {
         assert_eq!(out.as_deref(), Some(std::path::Path::new("protocol/schema.json")));
     }
 
-    /// `rpc` and `rpc-schema` are the long-lived session transport and its
-    /// generated artifact: neither involves a project or a provider, and
-    /// `rpc-schema --out` is the only flag between them.
     #[test]
     fn acp_parses_and_stays_out_of_help() {
         let cli = Cli::parse_from(["jan", "acp"]);
@@ -1737,6 +1734,9 @@ mod tests {
         assert!(!help.contains("Agent Client Protocol"), "{help}");
     }
 
+    /// `rpc` and `rpc-schema` are the long-lived session transport and its
+    /// generated artifact: neither involves a project or a provider, and
+    /// `rpc-schema --out` is the only flag between them.
     #[test]
     fn rpc_subcommands_parse() {
         let cli = Cli::parse_from(["jan", "cli", "agent", "rpc"]);

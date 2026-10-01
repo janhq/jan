@@ -15,10 +15,11 @@
 //! [`TurnMap::map`], whose match has no wildcard arm so a new `StreamEvent`
 //! variant cannot slip past the decision.
 //!
-//! Out of scope for this cut: consuming the client's `fs/*` and `terminal/*`
-//! (Jan's own tools serve the filesystem), MCP servers passed in `session/new`
-//! (Jan connects the servers configured for the project), and
-//! `session/set_mode`. None of those capabilities is advertised.
+//! MCP servers a client passes in `session/new`/`session/load` are connected
+//! alongside the project's own, over stdio (the transport every ACP agent must
+//! support); HTTP and SSE are not advertised. Out of scope for this cut:
+//! consuming the client's `fs/*` and `terminal/*` (Jan's own tools serve the
+//! filesystem) and `session/set_mode`. Neither is advertised.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -27,7 +28,7 @@ use std::sync::Arc;
 use agent_client_protocol::schema::v1::{
     AgentCapabilities, AuthMethod, AuthMethodTerminal, AuthenticateRequest, AuthenticateResponse,
     CancelNotification, ContentBlock, ContentChunk, EmbeddedResourceResource, Implementation,
-    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse,
+    InitializeRequest, InitializeResponse, LoadSessionRequest, LoadSessionResponse, McpServer,
     NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionKind, Plan,
     PlanEntry, PlanEntryPriority, PlanEntryStatus, PromptCapabilities, PromptRequest,
     PromptResponse, RequestPermissionOutcome, RequestPermissionRequest,
@@ -45,11 +46,11 @@ use tokio_util::sync::CancellationToken;
 use super::providers::ProviderOverrides;
 use super::{
     adopt_turn_history, agent_dir_for, cli_read_messages_lenient, cli_save_thread,
-    find_resume_thread, is_user_turn, prepare_agent_session, rebuild_wire_history,
-    thread_message_text, AgentSession, ResumeTarget, SessionFlags,
+    find_resume_thread, fold_interrupted_tools, is_user_turn, prepare_agent_session,
+    rebuild_wire_history, thread_message_text, AgentSession, ResumeTarget, SessionFlags,
 };
 use crate::core::agent::events::StreamEvent;
-use crate::core::agent::r#loop::{is_turn_limit_error, run_orchestration_steered};
+use crate::core::agent::r#loop::{run_orchestration_steered, settle_permission};
 use crate::core::agent::todo::{TodoList, TodoStatus};
 
 /// The env var that switches the experimental server on. Any explicit value
@@ -95,7 +96,9 @@ struct Session {
     agent: AgentSession,
     history: Vec<Value>,
     cwd: PathBuf,
-    /// Set while a prompt runs; `session/cancel` fires it.
+    /// Set from the moment a prompt is accepted until its thread is saved;
+    /// `session/cancel` fires it, and `session/load` refuses to replace a
+    /// session while it is set.
     turn: Option<CancellationToken>,
 }
 
@@ -124,9 +127,8 @@ pub async fn serve() -> Result<(), String> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |req: AuthenticateRequest, responder: Responder<AuthenticateResponse>, cx: ConnectionTo<Client>| {
+            async move |_req: AuthenticateRequest, responder: Responder<AuthenticateResponse>, cx: ConnectionTo<Client>| {
                 cx.spawn(async move {
-                    let _ = req.method_id;
                     responder.respond_with_result(authenticate().await)
                 })
             },
@@ -221,12 +223,20 @@ fn auth_required(detail: &str) -> Error {
 }
 
 fn internal(message: impl Into<String>) -> Error {
-    let message = message.into();
-    Error::new(-32603, message)
+    Error::internal_error().data(json!({"message": message.into()}))
 }
 
 fn invalid_params(message: impl Into<String>) -> Error {
-    Error::new(-32602, message.into())
+    Error::invalid_params().data(json!({"message": message.into()}))
+}
+
+/// Run blocking work (thread-store reads and writes, session setup that reads
+/// config files) off the async workers, so it can never stall
+/// `session/cancel` or another session's stream.
+async fn blocking<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T, Error> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| internal(format!("background task failed: {e}")))
 }
 
 fn checked_cwd(cwd: &Path) -> Result<PathBuf, Error> {
@@ -239,24 +249,29 @@ fn checked_cwd(cwd: &Path) -> Result<PathBuf, Error> {
     Ok(cwd.to_path_buf())
 }
 
-/// Build the engine handle for `cwd`, reporting the session under `id`.
-async fn open_agent(cwd: &Path, id: &str) -> Result<AgentSession, Error> {
-    let mut agent = prepare_agent_session(
-        &cwd.to_string_lossy(),
-        None,
-        ProviderOverrides::default(),
-        // Gated: an editor surface asks before writes, shell and MCP calls,
-        // which is what `session/request_permission` exists for.
-        SessionFlags { require_model: true, ..Default::default() },
-        None,
-    )
-    .map_err(|message| {
-        if super::providers::has_usable_provider(Some(cwd)) {
-            internal(message)
-        } else {
-            auth_required(&message)
-        }
-    })?;
+/// Build the engine handle for `cwd`, reporting the session under `id`, with
+/// the client's MCP servers connected next to the project's.
+async fn open_agent(cwd: &Path, id: &str, client_mcp: Vec<McpServer>) -> Result<AgentSession, Error> {
+    let project = cwd.to_path_buf();
+    let mut agent = blocking(move || {
+        prepare_agent_session(
+            &project.to_string_lossy(),
+            None,
+            ProviderOverrides::default(),
+            // Gated: an editor surface asks before writes, shell and MCP calls,
+            // which is what `session/request_permission` exists for.
+            SessionFlags { require_model: true, ..Default::default() },
+            None,
+        )
+        .map_err(|message| {
+            if super::providers::has_usable_provider(Some(&project)) {
+                internal(message)
+            } else {
+                auth_required(&message)
+            }
+        })
+    })
+    .await??;
     agent.args.session_id = Some(id.to_string());
     // The todo tool drives ACP's `plan` update, so an ACP session gets the
     // registry the TUI has and the headless run does not.
@@ -270,23 +285,73 @@ async fn open_agent(cwd: &Path, id: &str) -> Result<AgentSession, Error> {
             }
         }
     }
+    for server in client_mcp {
+        let Some((name, config)) = client_mcp_config(server) else {
+            continue;
+        };
+        // Best-effort, like the project's own servers: one that fails to start
+        // costs its tools, not the session.
+        if let Err(e) = super::mcp::connect(&name, &config, &agent.mcp_servers).await {
+            log::warn!("ACP: client MCP server '{name}': {e}");
+        }
+    }
     Ok(agent)
+}
+
+/// A client MCP server in the shape `mcp_config.json` stores, so it connects
+/// through the same code as a configured one. Only stdio: HTTP and SSE are not
+/// advertised in `mcpCapabilities`, so a client that sends one anyway is
+/// logged and skipped.
+fn client_mcp_config(server: McpServer) -> Option<(String, Value)> {
+    match server {
+        McpServer::Stdio(stdio) => {
+            let env: serde_json::Map<String, Value> =
+                stdio.env.into_iter().map(|v| (v.name, Value::String(v.value))).collect();
+            Some((
+                stdio.name,
+                json!({"command": stdio.command.to_string_lossy(), "args": stdio.args, "env": env}),
+            ))
+        }
+        other => {
+            log::warn!("ACP: skipping a client MCP server on an unadvertised transport: {other:?}");
+            None
+        }
+    }
 }
 
 async fn new_session(sessions: &Sessions, req: NewSessionRequest) -> Result<NewSessionResponse, Error> {
     let cwd = checked_cwd(&req.cwd)?;
-    if !req.mcp_servers.is_empty() {
-        log::warn!("ACP: ignoring {} client MCP server(s); Jan connects the project's own", req.mcp_servers.len());
-    }
     // The session id is the thread id, unabbreviated, so `session/load`,
     // `/resume` and `--resume` all name the same conversation.
     let id = uuid::Uuid::new_v4().to_string();
-    let agent = open_agent(&cwd, &id).await?;
+    let agent = open_agent(&cwd, &id, req.mcp_servers).await?;
     sessions.lock().await.insert(
         id.clone(),
         Session { agent, history: Vec::new(), cwd, turn: None },
     );
     Ok(NewSessionResponse::new(SessionId::new(id)))
+}
+
+/// The wire history of the saved thread `id` under `agent_dir`, whichever
+/// surface wrote it (TUI, headless run, RPC or ACP: all save through
+/// `cli_save_thread`). Exact ids only: a prefix is a convenience for a person
+/// typing, and a client that holds an id holds all of it.
+fn read_thread(agent_dir: &Path, id: &str) -> Result<Vec<Value>, Error> {
+    let found = find_resume_thread(agent_dir, &ResumeTarget::Id(id.to_string()))
+        .ok()
+        .filter(|thread| thread.get("id").and_then(Value::as_str) == Some(id));
+    if found.is_none() {
+        return Err(Error::resource_not_found(None).data(json!({"sessionId": id})));
+    }
+    let (messages, skipped) = cli_read_messages_lenient(agent_dir, id).map_err(internal)?;
+    if skipped > 0 {
+        log::warn!("ACP: skipped {skipped} unreadable message(s) loading {id}");
+    }
+    Ok(rebuild_wire_history(&messages))
+}
+
+fn busy() -> Error {
+    Error::invalid_request().data(json!({"message": "session has a prompt running"}))
 }
 
 async fn load_session(
@@ -296,28 +361,29 @@ async fn load_session(
 ) -> Result<LoadSessionResponse, Error> {
     let cwd = checked_cwd(&req.cwd)?;
     let id = req.session_id.0.to_string();
-    let agent_dir = agent_dir_for(&cwd);
-    // Exact ids only: a prefix is a convenience for a person typing, and a
-    // client that holds an id holds all of it.
-    let found = find_resume_thread(&agent_dir, &ResumeTarget::Id(id.clone()))
-        .ok()
-        .filter(|thread| thread.get("id").and_then(Value::as_str) == Some(id.as_str()));
-    if found.is_none() {
-        return Err(Error::resource_not_found(None).data(json!({"sessionId": id})));
-    }
+    // A cheap early refusal; the check that counts is the one under the lock
+    // below, since a prompt can start while this awaits.
     if sessions.lock().await.get(&id).is_some_and(|s| s.turn.is_some()) {
-        return Err(Error::invalid_request().data(json!({"message": "session has a prompt running"})));
+        return Err(busy());
     }
-    let (messages, skipped) = cli_read_messages_lenient(&agent_dir, &id).map_err(internal)?;
-    if skipped > 0 {
-        log::warn!("ACP: skipped {skipped} unreadable message(s) loading {id}");
+    let agent_dir = agent_dir_for(&cwd);
+    let thread_id = id.clone();
+    let history = blocking(move || read_thread(&agent_dir, &thread_id)).await??;
+    let agent = open_agent(&cwd, &id, req.mcp_servers).await?;
+    let updates = replay(&history, &cwd);
+    {
+        // Check and insert under one lock: a prompt accepted while the thread
+        // was read would otherwise have its session replaced under it, and fold
+        // its turn into the reloaded copy.
+        let mut map = sessions.lock().await;
+        if map.get(&id).is_some_and(|s| s.turn.is_some()) {
+            return Err(busy());
+        }
+        map.insert(id, Session { agent, history, cwd, turn: None });
     }
-    let history = rebuild_wire_history(&messages);
-    let agent = open_agent(&cwd, &id).await?;
-    for update in replay(&history, &cwd) {
+    for update in updates {
         cx.send_notification(SessionNotification::new(req.session_id.clone(), update))?;
     }
-    sessions.lock().await.insert(id, Session { agent, history, cwd, turn: None });
     Ok(LoadSessionResponse::new())
 }
 
@@ -480,9 +546,9 @@ async fn prompt(
     };
 
     let result = if cancelled {
-        // Dropping the run drops any tool call in flight before it executes;
-        // dropping the asks sends `$/cancel_request` for each open prompt, and
-        // a dropped decision sender reads as Deny to anything still waiting.
+        // Dropping the run drops any tool call in flight; dropping the asks
+        // sends `$/cancel_request` for each open prompt, and a dropped decision
+        // sender reads as Deny to anything still waiting.
         runner.abort();
         asks.abort_all();
         registry.lock().await.clear();
@@ -492,39 +558,58 @@ async fn prompt(
         Some(runner.await.unwrap_or_else(|e| Err(format!("the run ended without an outcome: {e}"))))
     };
 
-    let mut map_sessions = sessions.lock().await;
-    let session = map_sessions.get_mut(&id).ok_or_else(|| internal("session vanished"))?;
-    session.turn = None;
-    let completion = result.as_ref().and_then(|r| r.as_ref().ok());
-    adopt_turn_history(&mut session.history, map.history.take(), completion);
-    if completion.is_some() {
-        if let Err(message) = cli_save_thread(
-            &agent_dir_for(&session.cwd),
-            Some(&id),
-            &session.agent.model,
-            &session.history,
-            None,
-        ) {
-            log::warn!("ACP: could not save session {id}: {message}");
+    // Settle the turn's history under the lock, but write it to disk after
+    // dropping it: the lock is shared by every session and by
+    // `session/cancel`. `turn` stays set until the save is done, so a
+    // `session/load` cannot replace the session while its thread is written.
+    let (agent_dir, model, history) = {
+        let mut map_sessions = sessions.lock().await;
+        let session = map_sessions.get_mut(&id).ok_or_else(|| internal("session vanished"))?;
+        let completion = result.as_ref().and_then(|r| r.as_ref().ok());
+        match completion {
+            Some(completion) => adopt_turn_history(&mut session.history, map.history.take(), Some(completion)),
+            None => map.settle_interrupted(&mut session.history),
+        }
+        (agent_dir_for(&session.cwd), session.agent.model.clone(), session.history.clone())
+    };
+    if !history.is_empty() {
+        let thread_id = id.clone();
+        let saved = blocking(move || cli_save_thread(&agent_dir, Some(&thread_id), &model, &history, None)).await;
+        if let Err(message) = saved.and_then(|r| r.map_err(internal)) {
+            log::warn!("ACP: could not save session {id}: {}", message.message);
         }
     }
-    drop(map_sessions);
+    if let Some(session) = sessions.lock().await.get_mut(&id) {
+        session.turn = None;
+    }
+
     match result {
         None => Ok(PromptResponse::new(StopReason::Cancelled)),
         Some(Ok(_)) => Ok(PromptResponse::new(stop_reason(map.stop_reason.as_deref()))),
-        Some(Err(message)) if is_turn_limit_error(&message) => {
-            Ok(PromptResponse::new(StopReason::MaxTurnRequests))
+        // A failed run is not a failed request: the editor gets the turn's end
+        // as `end_turn`, the reason as text it can show, and the log a copy.
+        // A JSON-RPC error here would read to a client as a protocol fault.
+        Some(Err(message)) => {
+            log::warn!("ACP: run failed in session {id}: {message}");
+            let _ = cx.send_notification(SessionNotification::new(
+                sid,
+                SessionUpdate::AgentMessageChunk(text_chunk(format!("\n\nError: {message}"))),
+            ));
+            Ok(PromptResponse::new(StopReason::EndTurn))
         }
-        Some(Err(message)) => Err(internal(message)),
     }
 }
 
 /// ACP's stop reason for the `Done` the run ended with. `Done` is the single
-/// source: a stop reason is never inferred from the stream going quiet.
+/// source: a stop reason is never inferred from the stream going quiet or
+/// parsed from an error's text. ACP sessions set no turn cap, so the limit a
+/// run can hit is the session's cost ceiling, which `Done` reports as
+/// `budget_exceeded` -- a limit, not an error, hence `max_turn_requests`.
 fn stop_reason(done: Option<&str>) -> StopReason {
     match done {
         Some("length") => StopReason::MaxTokens,
         Some("content_filter") => StopReason::Refusal,
+        Some("budget_exceeded") => StopReason::MaxTurnRequests,
         _ => StopReason::EndTurn,
     }
 }
@@ -551,9 +636,8 @@ async fn ask_permission(
         Ok(RequestPermissionOutcome::Selected(selected)) => decision_for(&selected.option_id.0),
         _ => PermissionDecision::Deny,
     };
-    if let Some(sender) = registry.lock().await.remove(&ask.request_id) {
-        let _ = sender.send(decision);
-    }
+    // `false` is a prompt the cancel path already cleared: nothing waits on it.
+    settle_permission(&registry, &ask.request_id, decision).await;
 }
 
 fn decision_for(option_id: &str) -> PermissionDecision {
@@ -586,6 +670,10 @@ struct CallState {
     /// A gate prompt was already matched to it.
     prompted: bool,
     output: String,
+    /// The arguments, once whole, and the result: what a cancelled turn folds
+    /// back into history.
+    args: Option<Value>,
+    result: Option<String>,
 }
 
 /// Per-turn translation state: which calls the client knows about, their
@@ -598,6 +686,8 @@ struct TurnMap {
     order: Vec<String>,
     stop_reason: Option<String>,
     history: Option<Vec<Value>>,
+    /// The prose streamed since the last published history, kept for a cancel.
+    answer: String,
 }
 
 impl TurnMap {
@@ -609,6 +699,42 @@ impl TurnMap {
             order: Vec::new(),
             stop_reason: None,
             history: None,
+            answer: String::new(),
+        }
+    }
+
+    /// Leave `history` as a well-formed conversation after a run stopped before
+    /// it finished, the way the TUI does on Esc: the latest published history
+    /// is adopted, the tool calls made since are folded in with their results
+    /// (a call still in flight gets a placeholder), and the partial answer is
+    /// kept. A turn that produced nothing is taken back out, so the next prompt
+    /// does not put two user turns in a row on the wire -- the cancelled prompt
+    /// neither ran nor counted.
+    fn settle_interrupted(&mut self, history: &mut Vec<Value>) {
+        adopt_turn_history(history, self.history.take(), None);
+        let calls: Vec<(String, String, Value)> = self
+            .order
+            .iter()
+            .filter_map(|id| {
+                let call = self.calls.get(id)?;
+                Some((id.clone(), call.name.clone(), call.args.clone()?))
+            })
+            .collect();
+        let results: Vec<(String, String)> = self
+            .calls
+            .iter()
+            .filter_map(|(id, call)| Some((id.clone(), call.result.clone()?)))
+            .collect();
+        let before = history.len();
+        fold_interrupted_tools(history, &calls, &results);
+        let answer = self.answer.trim();
+        if !answer.is_empty() {
+            history.push(json!({"role":"assistant","content":answer}));
+        }
+        if history.len() == before
+            && history.last().is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        {
+            history.pop();
         }
     }
 
@@ -628,7 +754,10 @@ impl TurnMap {
     fn map(&mut self, event: StreamEvent) -> Vec<Outbound> {
         let update = |u| vec![Outbound::Update(u)];
         match event {
-            StreamEvent::Token { text } => update(SessionUpdate::AgentMessageChunk(text_chunk(text))),
+            StreamEvent::Token { text } => {
+                self.answer.push_str(&text);
+                update(SessionUpdate::AgentMessageChunk(text_chunk(text)))
+            }
             StreamEvent::Reasoning { text } => update(SessionUpdate::AgentThoughtChunk(text_chunk(text))),
             StreamEvent::ToolCallStarted { id, name } => {
                 let call = self.call(&id, &name);
@@ -642,6 +771,7 @@ impl TurnMap {
                 let title = tool_title(&name, &args);
                 let kind = tool_kind(&name);
                 let call = self.call(&id, &name);
+                call.args = Some(args.clone());
                 if call.announced {
                     update(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                         id,
@@ -678,11 +808,11 @@ impl TurnMap {
                 )))
             }
             StreamEvent::ToolResult { id, content, is_error, diff } => {
-                self.call(&id, "").finished = true;
+                let call = self.call(&id, "");
+                call.finished = true;
+                call.result = Some(content.clone());
                 let mut blocks = vec![ToolCallContent::from(content)];
-                if let Some(diff) = diff {
-                    blocks.push(ToolCallContent::from(format!("```diff\n{diff}\n```")));
-                }
+                blocks.extend(diff.as_deref().map(diff_block));
                 let status = if is_error { ToolCallStatus::Failed } else { ToolCallStatus::Completed };
                 update(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
                     id,
@@ -690,13 +820,15 @@ impl TurnMap {
                 )))
             }
             ask @ StreamEvent::PermissionRequest { .. } => {
-                self.permission(ask).map(Outbound::Permission).into_iter().collect()
+                self.permission(ask, true).map(Outbound::Permission).into_iter().collect()
             }
             // A subagent shares its parent's permission registry, so its gate
             // prompts have to reach the client or the child waits forever. The
-            // rest of a child's stream has no ACP home and is dropped.
+            // child's calls are not the parent's, so the prompt is never pinned
+            // to one of the parent's cards. The rest of a child's stream has no
+            // ACP home and is dropped.
             StreamEvent::Subagent { event, .. } => {
-                self.permission(*event).map(Outbound::Permission).into_iter().collect()
+                self.permission(*event, false).map(Outbound::Permission).into_iter().collect()
             }
             StreamEvent::TodoUpdate { list } => update(SessionUpdate::Plan(plan(&list))),
             StreamEvent::TurnUsage { usage, .. } => {
@@ -710,7 +842,10 @@ impl TurnMap {
                 }
             }
             StreamEvent::MessagesUpdated { messages } => {
+                // Everything streamed so far is in it, so a cancel from here on
+                // folds only what comes after.
                 self.history = Some(messages);
+                self.answer.clear();
                 Vec::new()
             }
             StreamEvent::Done { stop_reason, .. } => {
@@ -748,11 +883,11 @@ impl TurnMap {
     }
 
     /// Build the client's view of one gate prompt; `None` for any other event.
-    /// The prompt names a tool but not the call, so it is matched to the oldest
-    /// open, unprompted call of that tool -- the gate prompts in call order.
-    /// With no match it stands on its own request id, which a client renders
-    /// as a fresh card.
-    fn permission(&mut self, event: StreamEvent) -> Option<PermissionAsk> {
+    /// The prompt names a tool but not the call, so with `match_calls` it is
+    /// matched to the oldest open, unprompted call of that tool -- the gate
+    /// prompts in call order. Without a match, or for a subagent's prompt, it
+    /// stands on its own request id, which a client renders as a fresh card.
+    fn permission(&mut self, event: StreamEvent, match_calls: bool) -> Option<PermissionAsk> {
         let StreamEvent::PermissionRequest {
             request_id, tool_name, capability, path, command, diff, offers_always, ..
         } = event
@@ -763,6 +898,7 @@ impl TurnMap {
         let matched = self
             .order
             .iter()
+            .filter(|_| match_calls)
             .find(|id| {
                 self.calls
                     .get(*id)
@@ -784,7 +920,7 @@ impl TurnMap {
             fields = fields.locations(vec![ToolCallLocation::new(absolute(&self.cwd, path))]);
         }
         if let Some(diff) = diff {
-            fields = fields.content(vec![ToolCallContent::from(format!("```diff\n{diff}\n```"))]);
+            fields = fields.content(vec![diff_block(&diff)]);
         }
         Some(PermissionAsk {
             tool_call: ToolCallUpdate::new(matched.unwrap_or_else(|| request_id.clone()), fields),
@@ -792,6 +928,11 @@ impl TurnMap {
             offers_always,
         })
     }
+}
+
+/// A unified diff as tool-call content, fenced so a client renders it as one.
+fn diff_block(diff: &str) -> ToolCallContent {
+    ToolCallContent::from(format!("```diff\n{diff}\n```"))
 }
 
 fn text_chunk(text: impl Into<String>) -> ContentChunk {
@@ -1129,10 +1270,79 @@ mod tests {
     }
 
     #[test]
-    fn the_turn_limit_is_recognized() {
-        assert!(is_turn_limit_error(
-            "reached the 4-turn limit while the model was still calling tools"
-        ));
-        assert!(!is_turn_limit_error("upstream returned 500"));
+    fn a_client_stdio_mcp_server_maps_to_the_stored_config_shape() {
+        let servers: Vec<McpServer> = serde_json::from_value(json!([
+            {"name":"fs","command":"/bin/fs-mcp","args":["--stdio"],"env":[{"name":"K","value":"v"}]},
+            {"type":"http","name":"web","url":"https://x","headers":[]},
+        ]))
+        .unwrap();
+        let mapped: Vec<_> = servers.into_iter().filter_map(client_mcp_config).collect();
+        assert_eq!(mapped.len(), 1, "an unadvertised transport is skipped");
+        let (name, config) = &mapped[0];
+        assert_eq!(name, "fs");
+        assert_eq!(config, &json!({"command":"/bin/fs-mcp","args":["--stdio"],"env":{"K":"v"}}));
+        let parsed = crate::core::mcp::models::extract_command_args(config).expect("connectable");
+        assert_eq!(parsed.command, "/bin/fs-mcp");
+    }
+
+    #[test]
+    fn the_stop_reason_comes_from_done_alone() {
+        assert_eq!(stop_reason(Some("stop")), StopReason::EndTurn);
+        assert_eq!(stop_reason(Some("tool_calls")), StopReason::EndTurn);
+        assert_eq!(stop_reason(Some("length")), StopReason::MaxTokens);
+        assert_eq!(stop_reason(Some("content_filter")), StopReason::Refusal);
+        assert_eq!(stop_reason(Some("budget_exceeded")), StopReason::MaxTurnRequests);
+        assert_eq!(stop_reason(None), StopReason::EndTurn);
+    }
+
+    #[test]
+    fn a_subagent_prompt_is_not_pinned_to_a_parent_call() {
+        let mut map = map();
+        map.map(StreamEvent::ToolCall { id: "parent".into(), name: "bash".into(), args: json!({"command":"make"}) });
+        let out = map.map(StreamEvent::Subagent {
+            run_id: "r".into(),
+            name: "scout".into(),
+            event: Box::new(StreamEvent::PermissionRequest {
+                request_id: "perm-9".into(),
+                tool_name: "bash".into(),
+                capability: "exec".into(),
+                path: None,
+                command: Some("rm -rf build".into()),
+                diff: None,
+                prompt_kind: "exec".into(),
+                offers_always: false,
+            }),
+        });
+        let w = wire(&out[0]);
+        assert_eq!(w["toolCall"]["toolCallId"], "perm-9", "{w}");
+        assert_eq!(w["toolCall"]["title"], "bash: rm -rf build");
+        assert!(!map.calls["parent"].prompted, "the parent's card is left for its own prompt");
+    }
+
+    #[test]
+    fn a_cancelled_turn_folds_its_work_into_a_well_formed_history() {
+        let mut map = map();
+        map.map(StreamEvent::ToolCall { id: "c1".into(), name: "read".into(), args: json!({"path":"a"}) });
+        map.map(StreamEvent::ToolResult { id: "c1".into(), content: "A".into(), is_error: false, diff: None });
+        map.map(StreamEvent::ToolCall { id: "c2".into(), name: "bash".into(), args: json!({"command":"sleep 9"}) });
+        map.map(StreamEvent::Token { text: "partial".into() });
+        let mut history = vec![json!({"role":"user","content":"go"})];
+        map.settle_interrupted(&mut history);
+        let roles: Vec<&str> = history.iter().map(|m| m["role"].as_str().unwrap()).collect();
+        assert_eq!(roles, ["user", "assistant", "tool", "tool", "assistant"]);
+        assert_eq!(history[2]["content"], "A");
+        assert_eq!(history[3]["content"], super::super::MISSING_TOOL_RESULT, "in flight: placeholder");
+        assert_eq!(history[4]["content"], "partial");
+    }
+
+    #[test]
+    fn a_cancelled_turn_that_produced_nothing_is_taken_back() {
+        let mut history = vec![
+            json!({"role":"user","content":"earlier"}),
+            json!({"role":"assistant","content":"ok"}),
+            json!({"role":"user","content":"hang"}),
+        ];
+        map().settle_interrupted(&mut history);
+        assert_eq!(history.len(), 2, "no dangling user turn: {history:?}");
     }
 }

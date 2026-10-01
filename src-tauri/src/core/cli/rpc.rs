@@ -807,11 +807,11 @@ pub async fn serve() -> Result<(), String> {
                             };
                             if let Some(decision) = decision {
                                 let session = sessions.get(&turn.session_id).expect("active session");
-                                match session.agent.permission_requests.lock().await.remove(&request_id) {
-                                    Some(sender) => { let _ = sender.send(decision); response(&id, json!({})) }
+                                match crate::core::agent::r#loop::settle_permission(&session.agent.permission_requests, &request_id, decision).await {
+                                    true => response(&id, json!({})),
                                     // Typed like `tool/respond`'s: an id this session never
                                     // issued, or already settled, is not pending here.
-                                    None => error_data(&id, -32602, &format!("no permission request '{request_id}' is pending (answered, cancelled, or never issued)"), json!({"kind":"not_pending"})),
+                                    false => error_data(&id, -32602, &format!("no permission request '{request_id}' is pending (answered, cancelled, or never issued)"), json!({"kind":"not_pending"})),
                                 }
                             } else { error(&id, -32602, "invalid permission decision") }
                         }

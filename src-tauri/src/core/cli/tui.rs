@@ -6646,25 +6646,11 @@ impl App {
             .rposition(|e| matches!(e, DisplayEntry::User { .. }))
             .map(|i| i + 1)
             .unwrap_or(0);
-        // `display_log` is not cleared by a cancel and the fold is reached from
-        // several terminal paths, so a call can already be in `history`: the
-        // backend publishes a mid-turn `MessagesUpdated` on a compaction retry
-        // and on the budget soft-stop, and a cancel is routinely followed by a
-        // late `Error` or stream close from the aborted task. Folding it twice
-        // puts the exchange on the wire twice, which invites a double execution
-        // and wastes context, so ids already folded are skipped.
-        let folded: std::collections::HashSet<&str> = self
-            .history
-            .iter()
-            .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
-            .flatten()
-            .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
-            .collect();
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         let mut results: Vec<(String, String)> = Vec::new();
         for entry in self.display_log.iter().skip(start) {
             match entry {
-                DisplayEntry::ToolCall { id, name, args } if !folded.contains(id.as_str()) => {
+                DisplayEntry::ToolCall { id, name, args } => {
                     calls.push((id.clone(), name.clone(), args.clone()));
                 }
                 DisplayEntry::ToolResult { id, content, .. } => {
@@ -6673,43 +6659,7 @@ impl App {
                 _ => {}
             }
         }
-        if calls.is_empty() {
-            return;
-        }
-        let tool_calls: serde_json::Value = calls
-            .iter()
-            .map(|(id, name, args)| {
-                serde_json::json!({
-                    "id": id,
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": args.to_string(),
-                    }
-                })
-            })
-            .collect();
-        self.history.push(serde_json::json!({
-            "role": "assistant",
-            "content": serde_json::Value::Null,
-            "tool_calls": tool_calls,
-        }));
-        // Results are paired to the ids of the `tool_calls` array and emitted in
-        // its order, not in the order they finished: the loop dispatches calls
-        // concurrently, so an out-of-order or partial completion would otherwise
-        // hand a strict endpoint results it cannot match to the calls above.
-        for (id, _, _) in &calls {
-            let content = results
-                .iter()
-                .find(|(rid, _)| rid == id)
-                .map(|(_, c)| c.clone())
-                .unwrap_or_else(|| super::MISSING_TOOL_RESULT.to_string());
-            self.history.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
-                "content": content,
-            }));
-        }
+        super::fold_interrupted_tools(&mut self.history, &calls, &results);
     }
 }
 

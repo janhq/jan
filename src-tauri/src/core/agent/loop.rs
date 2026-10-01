@@ -44,6 +44,23 @@ use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 pub(crate) type PermissionRegistry =
     Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>;
 
+/// Answer the pending prompt `request_id` with `decision`: the one place every
+/// out-of-process surface (stream-json, RPC, ACP) settles a gate prompt.
+/// Taking the sender makes a decision single-use, so `false` means the id was
+/// already answered, cancelled, or never issued, and the caller reports it.
+#[cfg(feature = "cli")]
+pub(crate) async fn settle_permission(
+    registry: &PermissionRegistry,
+    request_id: &str,
+    decision: PermissionDecision,
+) -> bool {
+    let Some(sender) = registry.lock().await.remove(request_id) else {
+        return false;
+    };
+    let _ = sender.send(decision);
+    true
+}
+
 static PERMISSION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn next_permission_id() -> String {
@@ -4779,22 +4796,9 @@ async fn run_turn_cycle(
         turn += 1;
     }
 
-    Err(turn_limit_error(max_turns))
-}
-
-/// The error a run ends with when `max_turns` runs out. One place so a surface
-/// that reports the limit as a stop reason rather than a failure (ACP's
-/// `max_turn_requests`) recognizes it with [`is_turn_limit_error`] instead of
-/// matching a copy of the wording.
-fn turn_limit_error(max_turns: usize) -> String {
-    format!("reached the {max_turns}-turn limit while the model was still calling tools")
-}
-
-/// Whether `message` is the error [`turn_limit_error`] produced.
-#[cfg(feature = "cli")]
-pub(crate) fn is_turn_limit_error(message: &str) -> bool {
-    message.starts_with("reached the ")
-        && message.ends_with("-turn limit while the model was still calling tools")
+    Err(format!(
+        "reached the {max_turns}-turn limit while the model was still calling tools"
+    ))
 }
 
 #[cfg(test)]
