@@ -7,11 +7,14 @@
 //! `agent.toml` exposes (`thread_retention_days`, `max_threads`).
 //!
 //! Deliberately conservative, because a deleted thread is not recoverable:
+//! - nothing runs unless the user turned it on (`prune_threads = true` in
+//!   `~/.jan/config.toml`);
 //! - a thread is removed only when a limit condemns it, and the newest
 //!   [`MIN_KEEP`] are never touched whatever the limits say;
 //! - the thread this session is running or resumed is always kept;
 //! - a thread that owns a git worktree is kept (its checkout is real work), as
-//!   is a thread some kept thread was forked from, so a fork never dangles.
+//!   is a thread some kept thread was forked from, so a fork never dangles;
+//! - a thread with no `updated`/`created` stamp is kept, since its age is unknown.
 //!
 //! Subagent transcripts live in the session scratch, which the startup scratch
 //! sweep already collects, so they need no handling here.
@@ -21,7 +24,8 @@ use std::path::Path;
 
 use serde_json::Value;
 
-/// Default age past which a thread is a candidate for removal.
+/// Default age past which a thread is a candidate for removal, once pruning is
+/// switched on (`prune_threads` in `~/.jan/config.toml`; off by default).
 pub const DEFAULT_RETENTION_DAYS: u32 = 90;
 
 /// Default cap on how many threads a project keeps.
@@ -73,7 +77,7 @@ pub fn plan(
     let mut condemned: HashSet<&str> = HashSet::new();
     for (rank, thread) in order.iter().enumerate() {
         let Some(id) = id_of(thread) else { continue };
-        if rank < MIN_KEEP || protect.contains(id) || has_worktree(thread) {
+        if rank < MIN_KEEP || protect.contains(id) || has_worktree(thread) || !is_stamped(thread) {
             continue;
         }
         let too_old = cutoff.is_some_and(|c| super::thread_recency(thread) < c);
@@ -106,6 +110,15 @@ pub fn plan(
         .filter(|id| condemned.contains(id))
         .map(str::to_string)
         .collect()
+}
+
+/// Whether `thread` says when it was last touched. One that does not has an
+/// unknown age, and sorting would rank it as ancient; a deletion must not rest
+/// on a guess, so it is kept.
+fn is_stamped(thread: &Value) -> bool {
+    ["updated", "created"]
+        .iter()
+        .any(|key| thread.get(key).and_then(Value::as_f64).is_some())
 }
 
 fn has_worktree(thread: &Value) -> bool {
@@ -285,14 +298,16 @@ mod tests {
         assert!(plan(&threads, NOW, policy(1, 1), &none()).is_empty());
     }
 
-    /// A thread with no `updated` reads as recency 0, i.e. ancient. It is old
-    /// by that measure and goes once beyond the floor -- but a missing stamp on
-    /// one of the newest never costs it its floor protection.
+    /// A thread with neither `updated` nor `created` has an unknown age. It
+    /// sorts as the oldest, but neither the age limit nor the cap removes it.
+    /// `created` alone is enough to date a thread.
     #[test]
-    fn a_stampless_thread_is_treated_as_oldest() {
+    fn a_stampless_thread_is_kept() {
         let mut threads = floor();
         threads.push(json!({ "id": "stampless", "metadata": {} }));
-        assert_eq!(plan(&threads, NOW, policy(90, 0), &none()), vec!["stampless"]);
+        threads.push(json!({ "id": "created-only", "created": NOW - 400.0 * DAY }));
+        assert_eq!(plan(&threads, NOW, policy(90, 0), &none()), vec!["created-only"]);
+        assert_eq!(plan(&threads, NOW, policy(0, 1), &none()), vec!["created-only"]);
     }
 
     #[test]

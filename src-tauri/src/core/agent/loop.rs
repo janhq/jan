@@ -864,12 +864,11 @@ fn output_sink(
 
 /// The model-facing summary of a phased `dispatch_subagent` call.
 ///
-/// Every started child is listed on its own line with the `run_id` that
-/// addresses it, because that id is what `await_subagent` and `message_subagent`
-/// take. Reporting names alone (what this used to do) left the model holding a
-/// batch of children it could not address for the entire window in which
-/// addressing them is useful -- the first id it learned arrived in the
-/// completion notice, by which time the child was done.
+/// Every started child is listed on its own line with its name, which is what
+/// `message_subagent` and `stop_subagent` take, and its `run_id`, which the
+/// completion ping and the run transcript carry. The roster arrives with the
+/// dispatch result, so the model can steer a child while it is still running
+/// rather than first learning of it from the ping that says it is done.
 fn format_dispatched_plan(d: &crate::core::agent::subagent::DispatchedPlan) -> String {
     let roster = d
         .first_phase
@@ -2635,7 +2634,8 @@ fn advertise_local_tools(
                     // right now" would move every byte behind the cache line
                     // each time a child starts or finishes. Its description
                     // says it addresses a running child, and a call naming a
-                    // finished or unknown id answers with what to do instead.
+                    // finished child or an unknown name answers with what to
+                    // do instead.
                     if let Some(allow) = allowed_names {
                         if !allow.contains(name) {
                             continue;

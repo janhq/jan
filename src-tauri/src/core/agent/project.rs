@@ -221,7 +221,8 @@ pub(crate) struct AgentSection {
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
     /// Saved threads untouched for this many days are pruned at session start
-    /// (default 90; 0 disables). The newest few, the resumed thread, forks'
+    /// (default 90; 0 disables), when `prune_threads = true` in
+    /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
     /// parents and worktree-owning threads are always kept.
     #[serde(default)]
     pub thread_retention_days: Option<u32>,
@@ -307,6 +308,7 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
 # thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
 # max_threads = 500  # keep at most this many saved threads; 0 disables
+#                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 # send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 #                        # (a provider that rejects the field is detected and stripped automatically)

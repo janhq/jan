@@ -46,12 +46,14 @@ pub struct SessionStartParams {
     pub tools: Vec<serde_json::Value>,
     /// `false` advertises only the host tools: no built-ins, MCP, plugin,
     /// `ask`, `todo` or monitor tools. `subagents: true` adds back only
-    /// `dispatch_subagent` and `list_subagents`.
+    /// `dispatch_subagent`, `list_subagents`, `message_subagent` and
+    /// `stop_subagent`.
     #[serde(default = "builtins_default")]
     pub builtins: bool,
     /// Whether the session may delegate to subagents; defaults to `builtins`.
-    /// With `builtins: false` it adds only `dispatch_subagent` and
-    /// `list_subagents`, and every child is held to the session's host tools.
+    /// With `builtins: false` it adds only `dispatch_subagent`,
+    /// `list_subagents`, `message_subagent` and `stop_subagent`, and every
+    /// child is held to the session's host tools.
     /// `false` withholds subagent tools even from a session with built-ins.
     #[serde(default)]
     pub subagents: Option<bool>,

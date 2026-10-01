@@ -2665,7 +2665,9 @@ enum ChildLogEntry {
     Prose(String),
     /// A message the user sent it from `/agents`.
     Steer(String),
-    /// A completed call; `result` fills in when its `ToolResult` lands.
+    /// A completed call; `result` fills in when its `ToolResult` lands, kept
+    /// as the one-line summary the log renders (see [`child_result_summary`]),
+    /// never the whole output.
     Call {
         id: String,
         label: String,
@@ -2676,6 +2678,31 @@ enum ChildLogEntry {
 /// Longest log a child panel keeps. The detail view only ever shows the tail,
 /// and a child that streams for an hour must not grow the TUI without bound.
 const CHILD_LOG_MAX: usize = 400;
+
+/// Most bytes one prose entry keeps. [`CHILD_LOG_MAX`] bounds the entry count,
+/// but a child that streams one long answer extends a single entry, so that
+/// entry is bounded too. The oldest text goes: the detail view shows the tail.
+const CHILD_PROSE_MAX: usize = 64 * 1024;
+
+/// What a child log keeps of a tool result: the first non-empty line and a
+/// count of the rest, which is all `child_log_lines` ever renders. A child
+/// that reads a large file must not keep the whole file alive in the TUI.
+fn child_result_summary(content: &str) -> String {
+    summarize_result(content, 500)
+}
+
+/// Append streamed `text` to a prose entry, dropping its oldest bytes (on a
+/// char boundary) once it passes [`CHILD_PROSE_MAX`].
+fn push_child_prose(prose: &mut String, text: &str) {
+    prose.push_str(text);
+    if prose.len() > CHILD_PROSE_MAX {
+        let mut cut = prose.len() - CHILD_PROSE_MAX;
+        while !prose.is_char_boundary(cut) {
+            cut += 1;
+        }
+        prose.drain(..cut);
+    }
+}
 
 impl SubagentPanel {
     fn push_log(&mut self, entry: ChildLogEntry) {
@@ -6156,7 +6183,7 @@ impl App {
             StreamEvent::Token { text } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     match panel.log.last_mut() {
-                        Some(ChildLogEntry::Prose(prose)) => prose.push_str(&text),
+                        Some(ChildLogEntry::Prose(prose)) => push_child_prose(prose, &text),
                         _ => panel.push_log(ChildLogEntry::Prose(text)),
                     }
                 }
@@ -6173,7 +6200,7 @@ impl App {
                         _ => None,
                     });
                     if let Some(result) = call {
-                        *result = Some((content, is_error));
+                        *result = Some((child_result_summary(&content), is_error));
                     }
                 }
             }
@@ -21608,8 +21635,8 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, open_agents_picker, retry_wait_label, trailing_repeat,
-        RetryWait, SubagentPanel,
+        cache_summary_lines, child_result_summary, open_agents_picker, push_child_prose,
+        retry_wait_label, trailing_repeat, RetryWait, SubagentPanel, CHILD_PROSE_MAX,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -32039,6 +32066,31 @@ mod tests {
             .join("\n");
         assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
         assert!(app.pending_rows.is_empty());
+    }
+
+    /// One long streamed answer extends a single entry, so the entry cap alone
+    /// never bounds it: the prose keeps its newest bytes, cut on a char
+    /// boundary.
+    #[test]
+    fn a_child_prose_entry_keeps_only_its_newest_bytes() {
+        let mut prose = String::new();
+        for _ in 0..CHILD_PROSE_MAX {
+            push_child_prose(&mut prose, "\u{e9}");
+        }
+        push_child_prose(&mut prose, "END");
+        assert!(prose.len() <= CHILD_PROSE_MAX, "{}", prose.len());
+        assert!(prose.ends_with("END"));
+        assert!(prose.starts_with('\u{e9}'), "cut on a char boundary");
+    }
+
+    /// A child's tool result is kept as the line the log renders, not the
+    /// whole output.
+    #[test]
+    fn a_child_tool_result_is_kept_as_its_summary() {
+        let big = format!("first line\n{}", "x\n".repeat(100_000));
+        let kept = child_result_summary(&big);
+        assert!(kept.starts_with("first line") && kept.contains("(+100000 lines)"), "{kept}");
+        assert!(kept.len() < 600);
     }
 
     #[test]

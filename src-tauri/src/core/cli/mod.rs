@@ -2874,20 +2874,30 @@ pub async fn cli_agent_ui(
     // TUI threads persist in the project's store, separate from the desktop
     // store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
-    prune_threads(&agent_dir, &project_root, resume.as_ref());
+    prune_threads(
+        &agent_dir,
+        &project_root,
+        resume.as_ref(),
+        crate::core::agent::global_config::prune_threads_enabled(),
+    );
     tui::run(session, agent_dir, project_root, task, images, resume).await
 }
 
-/// Drop stale threads from the project's store (see [`housekeeping`]). Reads the
-/// limits from `agent.toml` and never touches the thread this session resumes.
+/// Drop stale threads from the project's store (see [`housekeeping`]) when the
+/// user `enabled` it (`prune_threads` in `~/.jan/config.toml`, off by default).
+/// Reads the limits from `agent.toml` and never touches the thread this session
+/// resumes.
 fn prune_threads(
     agent_dir: &std::path::Path,
     project_root: &std::path::Path,
     resume: Option<&ResumeRequest>,
+    enabled: bool,
 ) {
-    // A project with no readable agent.toml still gets the default limits: the
-    // store grows the same either way, so a missing file must not switch
-    // housekeeping off.
+    if !enabled {
+        return;
+    }
+    // Once pruning is on, a project with no readable agent.toml still gets the
+    // default limits: the store grows the same either way.
     let (retention_days, max_threads) = load_agent_config(project_root)
         .map(|cfg| (cfg.agent.thread_retention_days, cfg.agent.max_threads))
         .unwrap_or_default();
@@ -3754,7 +3764,7 @@ mod tests {
             target: ResumeTarget::Id("resumed-old".to_string()),
             fork: false,
         };
-        prune_threads(&base, &project, Some(&request));
+        prune_threads(&base, &project, Some(&request), true);
         assert!(get_thread_dir(&base, "resumed-old").exists());
         assert!(!get_thread_dir(&base, "stale-old").exists());
         let _ = std::fs::remove_dir_all(&base);
@@ -3785,10 +3795,28 @@ mod tests {
         for i in 0..housekeeping::MIN_KEEP + 3 {
             seed_thread(&base, &format!("t{i}"), now - i as f64);
         }
-        prune_threads(&base, &project, None);
+        prune_threads(&base, &project, None, true);
         let left = list_threads_in(&base).unwrap().len();
         assert_eq!(left, housekeeping::MIN_KEEP + 1, "the cap of floor+1 applied");
         let _ = std::fs::remove_dir_all(&store);
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// Pruning is opt-in: switched off (the default), even a store far past
+    /// both limits keeps every thread.
+    #[test]
+    fn prune_threads_deletes_nothing_when_it_is_off() {
+        let base = std::env::temp_dir().join(format!("jan-prune-off-{}", std::process::id()));
+        let project =
+            std::env::temp_dir().join(format!("jan-prune-off-project-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        let total = housekeeping::MIN_KEEP + 3;
+        for i in 0..total {
+            seed_thread(&base, &format!("t{i}"), 1.0 + i as f64);
+        }
+        prune_threads(&base, &project, None, false);
+        assert_eq!(list_threads_in(&base).unwrap().len(), total);
         let _ = std::fs::remove_dir_all(&base);
         let _ = std::fs::remove_dir_all(&project);
     }
@@ -3804,7 +3832,7 @@ mod tests {
         for i in 0..housekeeping::MIN_KEEP {
             seed_thread(&base, &format!("t{i}"), 1.0 + i as f64);
         }
-        prune_threads(&base, &project, None);
+        prune_threads(&base, &project, None, true);
         for i in 0..housekeeping::MIN_KEEP {
             assert!(get_thread_dir(&base, &format!("t{i}")).exists());
         }

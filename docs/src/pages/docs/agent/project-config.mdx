@@ -165,11 +165,20 @@ The running agent reads this file at startup. After editing `context_window`, `c
 | `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
 | `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
 | `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
-| `thread_retention_days` | `90` | Saved threads untouched for this many days are deleted at session start; `0` disables. The newest few, the resumed thread, a fork's parent and worktree-owning threads are always kept |
-| `max_threads` | `500` | Most saved threads a project keeps; the oldest past it are deleted at session start, with the same exemptions. `0` disables |
+| `thread_retention_days` | `90` | Saved threads untouched for this many days are deleted at session start, once `prune_threads = true` in `~/.jan/config.toml` turns pruning on (it is off by default); `0` disables. The newest few, the resumed thread, a fork's parent, worktree-owning threads and threads with no timestamp are always kept |
+| `max_threads` | `500` | Most saved threads a project keeps; with pruning on, the oldest past it are deleted at session start, with the same exemptions. `0` disables |
 | `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
 | `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
 | `worktree` | `false` | Run each session in its own git worktree under `~/.jan/worktrees`, on a `jan/agent/` branch, instead of editing this checkout. Overridden by `--worktree` / `--no-worktree`. See [Sessions](/docs/agent/sessions) |
+
+Thread pruning is off by default, so no saved thread is ever deleted. To turn it on for every
+project, add this to `~/.jan/config.toml`:
+
+```toml
+prune_threads = true
+```
+
+The TUI then prunes at startup under that project's `thread_retention_days` and `max_threads`.
 
 ### `[provider]`
 

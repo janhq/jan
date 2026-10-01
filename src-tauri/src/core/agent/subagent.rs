@@ -766,8 +766,12 @@ fn parent_message_value(text: &str) -> serde_json::Value {
 /// Find the child a parent addressed. Subagents belong to the session's own
 /// registry, so a name is resolved there and nowhere else: the newest live
 /// (unfinished) child answering to it wins, since a name can be re-dispatched
-/// once its earlier run is done. An exact `run_id` always wins over a name, which
-/// keeps ids usable for the rare case of two live children sharing one.
+/// once its earlier run is done. With no live one, the newest finished child of
+/// that name is returned, so the caller can report "already finished" (a
+/// non-error result the parent acts on) rather than "no such subagent". Only a
+/// name no child ever had is an error. An exact `run_id` always wins over a
+/// name, which keeps ids usable for the rare case of two live children sharing
+/// one.
 fn resolve_target<'a>(
     entries: &'a std::collections::HashMap<String, BackgroundEntry>,
     target: &str,
@@ -787,11 +791,11 @@ fn resolve_target<'a>(
     };
     entries
         .values()
-        .filter(|e| e.name == target && !e.finished.load(Ordering::SeqCst))
-        .max_by_key(seq)
+        .filter(|e| e.name == target)
+        .max_by_key(|e| (!e.finished.load(Ordering::SeqCst), seq(e)))
         .ok_or_else(|| {
             SubagentError::Upstream(format!(
-                "no subagent named '{target}' is running in this session"
+                "no subagent named '{target}' was dispatched in this session"
             ))
         })
 }
@@ -1172,8 +1176,9 @@ impl BackgroundSubagents {
             // cancels it) cannot double-count -- see `ChildSlot::release`.
             entry.slot.release(self);
             // A child that ran to completion already emitted its own end event;
-            // this is only closing the bracket for one cut off mid-run.
-            if entry.finished.load(std::sync::atomic::Ordering::SeqCst) {
+            // this is only closing the bracket for one cut off mid-run. Claimed
+            // with a swap so the child's own end cannot also fire.
+            if entry.finished.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 continue;
             }
             let _ = entry.events.send(StreamEvent::SubagentEnd {
@@ -1211,8 +1216,9 @@ impl BackgroundSubagents {
         // Exactly once, whether the child finished or is cut off here: see
         // `ChildSlot::release`.
         entry.slot.release(self);
-        // A child that already finished emitted its own end event.
-        if !entry.finished.load(Ordering::SeqCst) {
+        // A child that already finished emitted its own end event; claimed with
+        // a swap so the child's own end cannot also fire.
+        if !entry.finished.swap(true, Ordering::SeqCst) {
             let _ = entry.events.send(StreamEvent::SubagentEnd {
                 run_id: entry.run_id,
                 name: entry.name,
@@ -1585,6 +1591,9 @@ fn child_body(
 /// Run one resolved subagent to completion, wrapping its events for `run_id` and
 /// returning its final assistant text. Isolated: fresh history (`description`),
 /// the definition's system prompt, narrowed tools, dispatch disabled.
+///
+/// Opens the `SubagentStart` bracket but leaves closing it to the caller, which
+/// alone can tell whether a `stop_subagent` already did.
 #[allow(clippy::too_many_arguments)]
 async fn run_subagent(
     parent_args: crate::core::agent::r#loop::OrchestrationArgs,
@@ -1714,11 +1723,6 @@ async fn run_subagent(
     if let Some(recorder) = recorder {
         recorder.finish(&outcome.clone().map_err(|e| e.to_string()));
     }
-    let _ = events.send(StreamEvent::SubagentEnd {
-        run_id,
-        name,
-        error: outcome.as_ref().err().map(|e| e.to_string()),
-    });
     outcome
 }
 
@@ -1881,6 +1885,7 @@ pub(crate) fn spawn_subagent(
             }
         };
         let _permit = permit;
+        let end_events = task_events.clone();
         let result = run_subagent(
             parent_args,
             resolved,
@@ -1895,7 +1900,17 @@ pub(crate) fn spawn_subagent(
         if let Some((_, path)) = &result_file {
             fill_subagent_result(path, &spilled_text(&result));
         }
-        finished_task.store(true, Ordering::SeqCst);
+        // Claimed with a swap, after the answer is on the blackboard (a phase
+        // barrier reads `finished` as "the file is there"). A `stop_subagent` or
+        // teardown that got in first already closed the bracket, so this end is
+        // skipped: one `SubagentEnd` per child, whichever side wins the race.
+        if !finished_task.swap(true, Ordering::SeqCst) {
+            let _ = end_events.send(crate::core::agent::events::StreamEvent::SubagentEnd {
+                run_id: run_id_task.clone(),
+                name: name_task.clone(),
+                error: result.as_ref().err().map(|e| e.to_string()),
+            });
+        }
         // Queue the ping before releasing the run count, so a parent asking
         // "is anything still owed to me?" can never see neither. A plan-managed
         // child stays silent: the phase driver rings the doorbell once at the end.
@@ -4780,6 +4795,39 @@ pub(crate) mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// A child that ran to its own end and a stop that follows it share one
+    /// `finished` flag, claimed by swap: whichever side gets it closes the
+    /// bracket, so a stop arriving as the child ends never adds a second
+    /// `SubagentEnd`, and it is told the child had already finished.
+    #[cfg(feature = "cli")]
+    #[tokio::test]
+    async fn a_child_and_a_late_stop_emit_one_subagent_end() {
+        use crate::core::agent::events::StreamEvent;
+
+        let root = unique_root("stop_race");
+        write_def(&project_subagents_dir(&root), "reviewer", "");
+        let args = max_par_args(&root);
+        let bg = Arc::new(BackgroundSubagents::new(1));
+        let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+        // No provider is configured, so the child's run errors out at once.
+        let run_id = dispatch_reviewer(&bg, &args, &events_tx);
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while !bg.live_run_ids().is_empty() {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the child ends on its own");
+
+        let reply = stop_subagent(&bg, "reviewer").unwrap();
+        assert!(reply.contains("already finished"), "{reply}");
+        let ends = std::iter::from_fn(|| events_rx.try_recv().ok())
+            .filter(|ev| matches!(ev, StreamEvent::SubagentEnd { run_id: r, .. } if *r == run_id))
+            .count();
+        assert_eq!(ends, 1, "exactly one end bracket");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// F3: a first-phase spawn failure aborts the children that phase already
     /// started. They were dispatched silent, so anything left behind runs on
     /// unowned, spending tokens for a plan that already failed, and only a
@@ -5278,16 +5326,23 @@ pub(crate) mod tests {
         assert!(err.to_string().contains("ghost"), "{err}");
     }
 
-    /// Only finished runs of a name exist: nothing is live to address by name,
-    /// so the parent is told plainly rather than a stale run being messaged.
+    /// Only finished runs of a name exist: the newest is reported as already
+    /// finished, a non-error result (#355), and nothing reaches its inbox.
     #[tokio::test]
-    async fn message_by_name_ignores_finished_runs() {
+    async fn message_by_name_to_a_finished_run_reports_it_finished() {
         let bg = Arc::new(BackgroundSubagents::default());
         let (a, ia) = live_entry("sub-w-1", "w");
+        let (b, ib) = live_entry("sub-w-2", "w");
         a.finished.store(true, std::sync::atomic::Ordering::SeqCst);
-        bg.inner.lock().unwrap().insert("sub-w-1".into(), a);
-        assert!(message_subagent(&bg, "w", "late").is_err());
-        assert_eq!(ia.drain().len(), 0);
+        b.finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        {
+            let mut g = bg.inner.lock().unwrap();
+            g.insert("sub-w-1".into(), a);
+            g.insert("sub-w-2".into(), b);
+        }
+        let reply = message_subagent(&bg, "w", "late").unwrap();
+        assert!(reply.contains("already finished") && reply.contains("sub-w-2"), "{reply}");
+        assert_eq!(ia.drain().len() + ib.drain().len(), 0);
     }
 
     #[test]
@@ -5435,9 +5490,11 @@ pub(crate) mod tests {
         let (entry, _inbox) = live_entry("sub-w-1", "w");
         entry.finished.store(true, std::sync::atomic::Ordering::SeqCst);
         bg.inner.lock().unwrap().insert("sub-w-1".into(), entry);
-        // By exact id, since a finished run is not a live match for its name.
-        let reply = stop_subagent(&bg, "sub-w-1").unwrap();
-        assert!(reply.contains("already finished"), "{reply}");
+        // By name, the way the model addresses it, and by exact id.
+        for target in ["w", "sub-w-1"] {
+            let reply = stop_subagent(&bg, target).unwrap();
+            assert!(reply.contains("already finished"), "{target}: {reply}");
+        }
     }
 
     #[tokio::test]
@@ -5451,7 +5508,8 @@ pub(crate) mod tests {
         let entry = guard.get("sub-worker-1").expect("still registered");
         assert!(entry.finished.load(std::sync::atomic::Ordering::SeqCst));
         drop(guard);
-        assert!(stop_subagent(&bg, "worker").is_err(), "no live child is left to stop");
+        let again = stop_subagent(&bg, "worker").unwrap();
+        assert!(again.contains("already finished"), "a second stop is a no-op: {again}");
     }
 
     /// A finished child is a different situation from a bad id: the parent's
