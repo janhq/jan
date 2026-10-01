@@ -61,14 +61,10 @@ pub(super) fn install_id() -> Option<String> {
 // "Jan Agent", not "Jan": lets the analytics backend tell this apart from a
 // desktop client, which sends "Jan/{version} (...)" (see
 // `custom_updater::build_user_agent`) -- both share the same version number,
-// so the client name is the only distinguishing signal in the request.
-pub(super) fn user_agent(version: &str) -> String {
-    format!(
-        "Jan-Agent/{} ({}; {})",
-        version,
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    )
+// so the client name is the only distinguishing signal in the request. The
+// format lives with the inference headers, which send the same token.
+pub fn user_agent(version: &str) -> String {
+    crate::core::agent::request_headers::agent_user_agent(version)
 }
 
 #[cfg(test)]

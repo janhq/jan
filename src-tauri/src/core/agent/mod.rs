@@ -46,6 +46,7 @@ pub mod project;
 pub mod prompt;
 pub mod provenance;
 pub mod reminder;
+pub mod request_headers;
 pub mod secrets;
 pub mod session;
 pub mod skill_hub;

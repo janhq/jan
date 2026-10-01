@@ -61,6 +61,9 @@ const RETRY_DELAY: Duration = Duration::from_secs(1);
 /// The longest `Retry-After` honoured; a longer one drops the batch instead.
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 
+/// Telemetry capabilities this build reports in `jan cli agent status`.
+pub const CAPABILITIES: &[&str] = &[];
+
 /// Per-token prices for `(provider, model)`, when the catalog knows them.
 pub type Pricer = Box<dyn Fn(Option<&str>, &str) -> Option<TokenRates> + Send + Sync>;
 
@@ -408,6 +411,13 @@ pub fn init(
     }
     let _ = GLOBAL.set(Telemetry::start(cfg, pricer(), version));
     true
+}
+
+/// Whether this process exports telemetry ([`init`] turned the exporter on).
+/// While it does, the `OTEL_EXPORTER_OTLP_*HEADERS` in the environment are
+/// Jan's own collector credentials, which child processes must not inherit.
+pub fn is_active() -> bool {
+    GLOBAL.get().is_some()
 }
 
 /// Hand one consumed event to the exporter, if it is on.

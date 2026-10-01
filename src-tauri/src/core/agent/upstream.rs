@@ -1408,7 +1408,7 @@ pub(crate) async fn stream_openai_chat_completions(
     api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
-    client_request_id: Option<&str>,
+    extra_headers: &[(String, String)],
 ) -> Result<serde_json::Value, String> {
     super::genai_bridge::stream_chat_completions(
         client,
@@ -1417,7 +1417,7 @@ pub(crate) async fn stream_openai_chat_completions(
         api_type,
         body,
         events,
-        client_request_id,
+        extra_headers,
     )
     .await
 }
@@ -1434,10 +1434,12 @@ pub(crate) async fn stream_openai_chat_completions(
 /// [`resolve_upstream_for_model`]); the base is recovered by stripping that
 /// suffix and the native path appended in its place.
 ///
-/// `client_request_id` is sent as the correlation header so this request can be
-/// found in the provider's usage records later (see
-/// [`crate::core::agent::correlation`]). This path also owns the HTTP response,
-/// so unlike the genai path it can read the execution id straight back off it.
+/// `extra_headers` are the provider's custom headers plus Jan's own, the
+/// correlation id among them, so this request can be found in the provider's
+/// usage records later (see [`crate::core::agent::correlation`] and
+/// [`crate::core::agent::request_headers`]). This path also owns the HTTP
+/// response, so unlike the genai path it can read the execution id straight
+/// back off it.
 pub(crate) async fn stream_converted_chat_completions(
     client: &Client,
     upstream_url: &str,
@@ -1445,7 +1447,7 @@ pub(crate) async fn stream_converted_chat_completions(
     converter: &dyn UpstreamConverter,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
-    client_request_id: Option<&str>,
+    extra_headers: &[(String, String)],
 ) -> Result<serde_json::Value, String> {
     // Base is upstream_url minus the trailing "/chat/completions". Recover it
     // the same way the proxy does when it swaps the destination path.
@@ -1472,33 +1474,37 @@ pub(crate) async fn stream_converted_chat_completions(
 
     let mut last_err = String::new();
     for (i, key_ref) in attempts.iter().enumerate() {
-        let mut req = client
-            .post(&native_url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "text/event-stream")
-            .header("Accept-Encoding", "identity");
+        // Built as one list and applied in one pass: `RequestBuilder::header`
+        // appends, so a custom header sharing a name with one of these would
+        // otherwise reach the wire twice -- a second credential, for `x-api-key`.
+        let mut headers: Vec<(String, String)> = vec![
+            ("Content-Type".to_string(), "application/json".to_string()),
+            ("Accept".to_string(), "text/event-stream".to_string()),
+            ("Accept-Encoding".to_string(), "identity".to_string()),
+        ];
 
         // The converter decides the auth scheme (Bearer default, but Google
         // uses x-goog-api-key and Anthropic x-api-key).
         if let Some(key) = key_ref {
             let (auth_name, auth_value) = converter.auth_header(key);
-            req = req.header(auth_name, auth_value);
+            headers.push((auth_name.to_string(), auth_value));
             for (name, value) in converter.credential_headers(key) {
-                req = req.header(name, value);
+                headers.push((name.to_string(), value));
             }
         }
         // Fixed headers the native API requires (Anthropic: anthropic-version).
         for (name, value) in converter.extra_headers() {
-            req = req.header(name, value);
+            headers.push((name.to_string(), value.to_string()));
         }
-        // Correlation id, so this request is findable in the provider's usage
-        // records. Harmless to a provider that does not use it: an unknown
-        // request header is ignored.
-        if let Some(id) = client_request_id {
-            req = req.header(
-                crate::core::agent::correlation::CLIENT_REQUEST_ID_HEADER,
-                id,
-            );
+        // The provider's custom headers and Jan's own: the correlation id, so
+        // this request is findable in the provider's usage records, and the
+        // session id and User-Agent. Harmless to a provider that does not use
+        // them: an unknown request header is ignored.
+        crate::core::agent::request_headers::merge_onto(&mut headers, extra_headers);
+
+        let mut req = client.post(&native_url);
+        for (name, value) in &headers {
+            req = req.header(name.as_str(), value.as_str());
         }
 
         let resp = req
@@ -2442,7 +2448,7 @@ mod tests {
             None,
             &json!({ "model": "m", "messages": [] }),
             &tx,
-            None,
+            &[],
         )
         .await
         .expect("the retry carries the turn");
@@ -2502,7 +2508,7 @@ mod tests {
                 "max_tokens": 128,
             }),
             &tx,
-            None,
+            &[],
         )
         .await
         .expect("request");
@@ -2565,7 +2571,7 @@ mod tests {
                 "messages": [{"role": "user", "content": "hi"}],
             }),
             &tx,
-            Some("jan-session-7"),
+            &crate::core::agent::request_headers::owned(None, Some("jan-session-7")),
         )
         .await
         .expect("request");
@@ -2577,10 +2583,92 @@ mod tests {
                 .contains("\r\nx-client-request-id: jan-session-7\r\n"),
             "the correlation id must reach the wire: {request}"
         );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("\r\nx-session-id: session-7\r\n"),
+            "the session id rides next to it: {request}"
+        );
         assert_eq!(
             crate::core::agent::correlation::execution_id_of(&completion),
             Some("exec-abc".to_string()),
             "the execution id must be read off the response headers"
+        );
+    }
+
+    /// Custom headers reach the native path, but never as a second credential:
+    /// a custom `x-api-key` would otherwise ride next to the converter's own
+    /// (reqwest's `header` appends), and Jan's own ids beat a custom spelling.
+    #[tokio::test]
+    async fn the_converted_path_sends_custom_headers_without_a_second_credential() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.expect("accept");
+            let mut bytes = vec![0u8; 16 * 1024];
+            let read = socket.read(&mut bytes).await.expect("read");
+            bytes.truncate(read);
+            let response = "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+            let wire = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\r\n{response}",
+                response.len()
+            );
+            socket.write_all(wire.as_bytes()).await.expect("response");
+            String::from_utf8(bytes).expect("request is utf-8")
+        });
+
+        let converter = crate::core::server::converters::converter_for(Some("anthropic"), false)
+            .expect("converter");
+        let custom = vec![
+            crate::core::state::ProviderCustomHeader {
+                header: "X-Api-Key".into(),
+                value: "second-credential".into(),
+            },
+            crate::core::state::ProviderCustomHeader {
+                header: "X-Client-Name".into(),
+                value: "jan-agent".into(),
+            },
+            crate::core::state::ProviderCustomHeader {
+                header: "x-session-id".into(),
+                value: "spoofed".into(),
+            },
+        ];
+        let extras = crate::core::agent::request_headers::extras(
+            &custom,
+            crate::core::agent::request_headers::owned(
+                Some("Jan-Agent/0.0.0 (test; test)"),
+                Some("jan-s-1"),
+            ),
+        );
+        let (tx, _rx) = sink();
+        let _ = stream_converted_chat_completions(
+            &Client::new(),
+            &format!("http://{addr}/v1/chat/completions"),
+            &["real-key".to_string()],
+            converter.as_ref(),
+            &json!({"model": "claude", "messages": [{"role": "user", "content": "hi"}]}),
+            &tx,
+            &extras,
+        )
+        .await;
+
+        let request = server.await.expect("server task").to_ascii_lowercase();
+        assert_eq!(
+            request.matches("\r\nx-api-key: ").count(),
+            1,
+            "exactly one credential header: {request}"
+        );
+        assert!(request.contains("\r\nx-api-key: real-key\r\n"), "{request}");
+        assert!(request.contains("\r\nx-client-name: jan-agent\r\n"), "{request}");
+        assert!(request.contains("\r\nx-session-id: s-1\r\n"), "{request}");
+        assert!(!request.contains("spoofed"), "{request}");
+        assert!(
+            request.contains("\r\nuser-agent: jan-agent/0.0.0 (test; test)\r\n"),
+            "{request}"
         );
     }
 
@@ -2624,7 +2712,7 @@ mod tests {
             converter.as_ref(),
             &json!({"model": "m", "messages": [{"role": "user", "content": "hi"}]}),
             &tx,
-            None,
+            &[],
         )
         .await
         .expect("request");
