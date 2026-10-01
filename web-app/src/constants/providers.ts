@@ -175,7 +175,7 @@ export const predefinedProviders = [
     active: true,
     api_key: '',
     base_url: 'https://api.tokenlab.sh/v1',
-    explore_models_url: 'https://docs.tokenlab.sh/',
+    explore_models_url: 'https://tokenlab.sh/models',
     provider: 'tokenlab',
     settings: [
       {
