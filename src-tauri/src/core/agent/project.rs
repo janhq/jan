@@ -161,12 +161,6 @@ pub(crate) struct ProviderSection {
 pub(crate) struct SkillsSection {
     #[serde(default)]
     pub enabled: Vec<String>,
-    /// Retired `inject = "always" | "relevance"`: it was scaffolded and
-    /// documented but never read, so it is no longer part of the config.
-    /// Still accepted (any value) so an older agent.toml keeps parsing; its
-    /// presence only earns a one-time log warning.
-    #[serde(default)]
-    pub inject: Option<toml::Value>,
 }
 
 /// `[budget]` — the only cap on how long a run may go. The agent takes as many
@@ -226,6 +220,16 @@ pub(crate) struct AgentSection {
     /// run only.
     #[serde(default)]
     pub max_parallel_subagents: Option<u32>,
+    /// Saved threads untouched for this many days are pruned at session start
+    /// (default 90; 0 disables), when `prune_threads = true` in
+    /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
+    /// parents and worktree-owning threads are always kept.
+    #[serde(default)]
+    pub thread_retention_days: Option<u32>,
+    /// Most saved threads a project keeps (default 500; 0 disables); the oldest
+    /// past it are pruned at session start, subject to the same exemptions.
+    #[serde(default)]
+    pub max_threads: Option<u32>,
     /// Expand `<think>` reasoning blocks in the TUI transcript instead of
     /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
     /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
@@ -302,6 +306,9 @@ const AGENT_TOML_TEMPLATE: &str = r#"[agent]
 # compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
 # max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
 # max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
+# max_threads = 500  # keep at most this many saved threads; 0 disables
+#                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
 # show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
 # send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
 #                        # (a provider that rejects the field is detected and stripped automatically)
@@ -514,9 +521,6 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     let Ok(cfg) = load_agent_config(project_root) else {
         return RunSettings::default();
     };
-    if cfg.skills.inject.is_some() {
-        warn_retired_inject();
-    }
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
@@ -528,16 +532,6 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
-}
-
-/// Log once per process that `[skills].inject` is ignored.
-fn warn_retired_inject() {
-    static WARNED: std::sync::Once = std::sync::Once::new();
-    WARNED.call_once(|| {
-        log::warn!(
-            "agent.toml: [skills].inject is no longer used and is ignored; every enabled skill's name and description is listed in the prompt. Remove the key to silence this warning."
-        );
-    });
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
@@ -608,11 +602,35 @@ pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
     if !toml_path.exists() {
         std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
             .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
+    } else if drop_retired_keys(&toml_path) {
+        log::info!("agent.toml: removed the retired [skills].inject key");
     }
     // Best-effort: only the memory index's project pointers read it.
     let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&agent_dir, project_root);
 
     Ok(agent_dir)
+}
+
+/// Delete keys an older scaffold wrote that nothing reads any more, in place and
+/// format-preserving. Only `[skills].inject` today (janhq/jan-internal#394): the
+/// agent.toml is Jan's own scaffold in Jan's store, so tidying it here beats a
+/// warning on every launch asking the user to do the same edit by hand.
+///
+/// Best-effort: a file that cannot be read, parsed or written is left alone,
+/// since the key is ignored when parsing anyway. True when a key was removed.
+fn drop_retired_keys(path: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(mut doc) = raw.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let removed = doc
+        .get_mut("skills")
+        .and_then(|skills| skills.as_table_like_mut())
+        .and_then(|skills| skills.remove("inject"))
+        .is_some();
+    removed && std::fs::write(path, doc.to_string()).is_ok()
 }
 
 /// Persist `[agent].model` into the agent.toml at `path`, format-preserving
@@ -786,8 +804,26 @@ mod tests {
                 toml::from_str(&format!("[skills]\nenabled = [\"a\"]\ninject = {value}\n"))
                     .expect("a legacy inject key still parses");
             assert_eq!(cfg.skills.enabled, vec!["a".to_string()]);
-            assert!(cfg.skills.inject.is_some());
         }
+    }
+
+    /// Starting a run removes the retired key from an existing agent.toml,
+    /// keeping the rest of the file (comments included) byte for byte, and
+    /// leaves a file without it untouched.
+    #[test]
+    fn ensure_project_removes_the_retired_skills_inject_key() {
+        let root = unique_root("retired_inject");
+        let store = ensure_project(&root).expect("scaffold");
+        let path = store.join("agent.toml");
+        let kept = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n\n[tools]\ndefault = \"allow\"\n";
+        let legacy = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n# how skills reach the prompt\ninject = \"relevance\"\n\n[tools]\ndefault = \"allow\"\n";
+        std::fs::write(&path, legacy).unwrap();
+
+        ensure_project(&root).expect("ensure again");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        assert!(!drop_retired_keys(&path), "nothing left to remove");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The scaffold documents the key, so it has to stay parseable as written.
@@ -883,7 +919,7 @@ mod tests {
             Placement::Prefix
         );
         assert_eq!(
-            policy.placement_of(Composer::Date).unwrap(),
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
             Placement::Tail
         );
         let _ = std::fs::remove_dir_all(&root);
@@ -975,6 +1011,45 @@ mod tests {
         set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
         let cfg = load_agent_config(&root).expect("load");
         assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn thread_retention_keys_parse_and_default_to_none() {
+        let root = unique_root("thread_retention");
+        // The store sits in the shared per-pid test home, not under `root`, so a
+        // leftover from an earlier run with the same pid must not leak in.
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None, "template leaves it unset");
+        assert_eq!(cfg.agent.max_threads, None);
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "thread_retention_days", Some(toml_edit::value(30))).expect("write");
+        set_agent_key(&path, "max_threads", Some(toml_edit::value(0))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, Some(30));
+        assert_eq!(cfg.agent.max_threads, Some(0), "0 is a real value: it disables the cap");
+        set_agent_key(&path, "thread_retention_days", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None);
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffolded agent.toml documents both knobs, so a user finds them
+    /// without reading source.
+    #[test]
+    fn the_scaffolded_agent_toml_documents_the_housekeeping_keys() {
+        let root = unique_root("template_keys");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let written = std::fs::read_to_string(agent_toml_path(&root)).unwrap();
+        assert!(written.contains("# thread_retention_days = 90"), "{written}");
+        assert!(written.contains("# max_threads = 500"), "{written}");
+        let _ = std::fs::remove_dir_all(store_root(&root));
         let _ = std::fs::remove_dir_all(&root);
     }
 

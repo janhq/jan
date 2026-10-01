@@ -416,6 +416,13 @@ pub fn init(
     true
 }
 
+/// Whether this process exports telemetry ([`init`] turned the exporter on).
+/// While it does, the `OTEL_EXPORTER_OTLP_*HEADERS` in the environment are
+/// Jan's own collector credentials, which child processes must not inherit.
+pub fn is_active() -> bool {
+    GLOBAL.get().is_some()
+}
+
 /// Hand one consumed event to the exporter, if it is on.
 pub fn observe(event: &StreamEvent) {
     if let Some(t) = global() {

@@ -6,9 +6,11 @@ authors = ["Jan <service@jan.ai>"]
 license = "MIT"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
-# 1.85 is the floor: `genai` (the OpenAI upstream client) is edition 2024.
-# Below that the previous floor was 1.82, for `Option::is_none_or` in agent/loop.rs.
-rust-version = "1.85"
+# 1.88 is the floor: `agent-client-protocol` (the experimental `jan acp`
+# server) declares it. Before that, 1.85 was the floor because `genai` (the
+# OpenAI upstream client) is edition 2024, and 1.82 before that, for
+# `Option::is_none_or` in agent/loop.rs.
+rust-version = "1.88"
 resolver = "2"
 default-run = "Jan-Desktop"
 
@@ -100,7 +102,7 @@ test-tauri = [
     "deep-link",
     "hardware",
 ]
-cli = ["dep:env_logger", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
+cli = ["dep:env_logger", "dep:agent-client-protocol", "dep:indicatif", "dep:console", "dep:ratatui", "dep:unicode-width", "dep:pulldown-cmark", "dep:syntect", "dep:comfy-table", "dep:arboard", "dep:png"]
 
 [build-dependencies]
 tauri-build = { version = "2.0.2", features = [], optional = true }
@@ -208,6 +210,10 @@ regex = "1"
 ignore = "0.4"
 clap = { version = "4", features = ["derive"] }
 env_logger = { version = "0.11", optional = true }
+# The experimental `jan acp` server (core/cli/acp.rs). Stable ACP wire protocol
+# v1 only: no `unstable_*` feature, since those are drafts a client may not
+# have negotiated. The crate version is a library version, not the wire version.
+agent-client-protocol = { version = "2.2.0", default-features = false, optional = true }
 indicatif = { version = "0.17", optional = true }
 console = { version = "0.15", optional = true }
 # The Secret Service backend must be `async-secret-service` (zbus, pure Rust),

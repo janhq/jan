@@ -71,11 +71,33 @@ jobs:
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
 
+  build-windows-arm64:
+    uses: ./.github/workflows/template-tauri-build-windows-arm64.yml
+    secrets: inherit
+    needs: [get-update-version, create-draft-release]
+    with:
+      ref: ${{ github.ref }}
+      public_provider: github
+      channel: stable
+      new_version: ${{ needs.get-update-version.outputs.new_version }}
+      upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
+      vulkan_fallback: '1'
+
   sync-temp-to-latest:
-    needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64]
+    needs: [create-draft-release, get-update-version, build-macos, build-windows-x64, build-linux-x64, build-windows-arm64]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # ARM is optional: if it fails, the other platforms still ship. `!cancelled()`
+    # drops the implicit success() gate, so the required legs are listed by hand.
+    if: >-
+      !cancelled()
+      && needs.create-draft-release.result == 'success'
+      && needs.get-update-version.result == 'success'
+      && needs.build-macos.result == 'success'
+      && needs.build-windows-x64.result == 'success'
+      && needs.build-linux-x64.result == 'success'
     steps:
       - name: Getting the repo
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -89,6 +111,11 @@ jobs:
           LINUX_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-linux-x64.outputs.APPIMAGE_FILE_NAME }}"
           WINDOWS_SIGNATURE="${{ needs.build-windows-x64.outputs.WIN_SIG }}"
           WINDOWS_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-x64.outputs.FILE_NAME }}"
+          # Blank unless the ARM leg succeeded (WIN_SIG is set before the upload
+          # step); a blank signature leaves windows-aarch64 out of the manifest.
+          WINDOWS_ARM_SIGNATURE="${{ needs.build-windows-arm64.result == 'success' && needs.build-windows-arm64.outputs.WIN_SIG || '' }}"
+          WINDOWS_ARM_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-windows-arm64.outputs.FILE_NAME }}"
+          [ -n "$WINDOWS_ARM_SIGNATURE" ] || echo "::warning::no ARM64 build this run -- publishing latest.json without windows-aarch64"
           DARWIN_SIGNATURE="${{ needs.build-macos.outputs.MAC_UNIVERSAL_SIG }}"
           DARWIN_URL="https://github.com/janhq/jan/releases/download/v${{ needs.get-update-version.outputs.new_version }}/${{ needs.build-macos.outputs.TAR_NAME }}"
 
@@ -98,6 +125,8 @@ jobs:
             --arg linux_url "$LINUX_URL" \
             --arg windows_signature "$WINDOWS_SIGNATURE" \
             --arg windows_url "$WINDOWS_URL" \
+            --arg windows_arm_signature "$WINDOWS_ARM_SIGNATURE" \
+            --arg windows_arm_url "$WINDOWS_ARM_URL" \
             --arg darwin_arm_signature "$DARWIN_SIGNATURE" \
             --arg darwin_arm_url "$DARWIN_URL" \
             --arg darwin_amd_signature "$DARWIN_SIGNATURE" \
@@ -108,6 +137,10 @@ jobs:
               | .platforms["linux-x86_64"].url = $linux_url
               | .platforms["windows-x86_64"].signature = $windows_signature
               | .platforms["windows-x86_64"].url = $windows_url
+              | if $windows_arm_signature == "" then . else
+                  .platforms["windows-aarch64"].signature = $windows_arm_signature
+                  | .platforms["windows-aarch64"].url = $windows_arm_url
+                end
               | .platforms["darwin-aarch64"].signature = $darwin_arm_signature
               | .platforms["darwin-aarch64"].url = $darwin_arm_url
               | .platforms["darwin-x86_64"].signature = $darwin_amd_signature
@@ -115,12 +148,8 @@ jobs:
             src-tauri/latest.json.template > latest.json
             cat latest.json
 
+      # --clobber so re-running a failed ARM leg can replace latest.json.
       - name: Upload release assert if public provider is github
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        uses: actions/upload-release-asset@64e5e85fc528f162d7ba7ce2d15a3bb67efb3d80 # v1.0.1
-        with:
-          upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
-          asset_path: ./latest.json
-          asset_name: latest.json
-          asset_content_type: text/json
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" latest.json --clobber

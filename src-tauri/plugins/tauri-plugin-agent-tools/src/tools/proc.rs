@@ -238,7 +238,11 @@ const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 /// than returning an error most tools report clearly.
 #[cfg(unix)]
 const CHILD_LIMITS: &[(RlimitResource, u64)] = &[
-    (nix::libc::RLIMIT_NPROC, 4096),
+    // Linux counts NPROC across the entire UID, not one Jan child tree. Keep a
+    // finite fork-bomb guard without making ordinary workstation activity starve
+    // agent-tool shells. macOS inherits its host-managed per-UID ceiling instead.
+    #[cfg(target_os = "linux")]
+    (nix::libc::RLIMIT_NPROC, 8192),
     (nix::libc::RLIMIT_NOFILE, 65536),
     (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
 ];
@@ -254,13 +258,12 @@ type RlimitResource = nix::libc::c_int;
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
-/// funnels through. A fork-bomb is capped by `NPROC`, descriptor exhaustion by
-/// `NOFILE`, and disk fill through the unbounded workspace bind by `FSIZE`. The
-/// hard limit is left at the host's value so a command that genuinely needs more
-/// can raise its own soft limit back up. The bwrap wrapper execs `bwrap` itself,
-/// which sets up the namespace and then execs the real shell, so the limits carry
-/// over to every descendant. Linux only; the Windows AppContainer child is
-/// limited by its token.
+/// funnels through. Linux `NPROC` still constrains fork bombs, while descriptor
+/// exhaustion and disk fill are capped by `NOFILE` and `FSIZE`. The hard limit is
+/// left at the host's value so a command that genuinely needs more can raise its
+/// own soft limit back up. The bwrap wrapper execs `bwrap` itself, which sets up
+/// the namespace and then execs the real shell, so the limits carry over to every
+/// descendant. Linux only; the Windows AppContainer child is limited by its token.
 #[cfg(unix)]
 fn confine_limits(cmd: &mut Command) {
     // `tokio::process::Command::pre_exec` (unix) is the std `pre_exec`; the call
@@ -298,8 +301,22 @@ fn confine_limits(cmd: &mut Command) {
 /// Case-insensitive markers a `passthrough` glob must never copy, so a broad
 /// pattern (`GIT_*`, `*`) cannot leak a credential into the shell. To inject one
 /// on purpose, name it in [`ShellEnv::set`], which is not scrubbed.
+///
+/// `HEADERS` covers `OTEL_EXPORTER_OTLP_*HEADERS` and `JAN_CUSTOM_HEADERS`,
+/// which carry an API key when a launcher sets them, so `OTEL_*` cannot copy
+/// one. `AUTHORIZATION`, not a bare `AUTH`, which would also match
+/// `GIT_AUTHOR_NAME`.
 fn is_secret_name(name: &str) -> bool {
-    const MARKERS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];
+    const MARKERS: &[&str] = &[
+        "KEY",
+        "SECRET",
+        "TOKEN",
+        "PASSWORD",
+        "PASSWD",
+        "CREDENTIAL",
+        "HEADERS",
+        "AUTHORIZATION",
+    ];
     let upper = name.to_ascii_uppercase();
     MARKERS.iter().any(|m| upper.contains(m))
 }
@@ -853,9 +870,8 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn confine_limits_caps_the_child_process_count() {
-        // The rlimit mounting must actually reach the spawned child: with NPROC
-        // clamped we still run up to the cap, but a fork-bomb past it fails.
+    async fn confine_limits_caps_child_resource_limits() {
+        // The rlimit mounting must reach the spawned child before its shell runs.
         let child = spawn(shell(), "exit 0", &tmp(), None, ShellEnv::default(), None).await.unwrap();
         let pid = child.id().unwrap();
         child.wait_with_output().await.unwrap();
@@ -863,7 +879,7 @@ mod tests {
 
         // Spawn a shell that reports its own soft limits; confine_limits sets
         // each to the target, bounded by whatever hard limit the host allows.
-        // `ulimit -f` reports FSIZE in 1024-byte blocks, `-n` a raw count.
+        // `ulimit -f` reports FSIZE in 1024-byte blocks; `-n` and `-u` are raw.
         for (name, flag, resource, target, unit) in [
             ("NOFILE", "-n", nix::libc::RLIMIT_NOFILE, 65536_u64, 1_u64),
             (
@@ -873,6 +889,8 @@ mod tests {
                 16 * 1024 * 1024 * 1024,
                 1024,
             ),
+            #[cfg(target_os = "linux")]
+            ("NPROC", "-u", nix::libc::RLIMIT_NPROC, 8192_u64, 1_u64),
         ] {
             let cmd = format!("ulimit {flag}");
             let child = spawn(shell(), &cmd, &tmp(), None, ShellEnv::default(), None).await.unwrap();
@@ -926,10 +944,27 @@ mod env_policy_tests {
 
     #[test]
     fn secret_names_are_recognized() {
-        for name in ["OPENAI_API_KEY", "MY_SECRET", "GH_TOKEN", "DB_PASSWORD", "aws_credential"] {
+        for name in [
+            "OPENAI_API_KEY",
+            "MY_SECRET",
+            "GH_TOKEN",
+            "DB_PASSWORD",
+            "aws_credential",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+            "JAN_CUSTOM_HEADERS",
+            "HTTP_AUTHORIZATION",
+        ] {
             assert!(is_secret_name(name), "{name} should read as secret");
         }
-        for name in ["PATH", "HOME", "GIT_AUTHOR_NAME", "RUST_LOG"] {
+        for name in [
+            "PATH",
+            "HOME",
+            "GIT_AUTHOR_NAME",
+            "RUST_LOG",
+            "OTEL_SERVICE_NAME",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+        ] {
             assert!(!is_secret_name(name), "{name} should not read as secret");
         }
     }
@@ -957,6 +992,24 @@ mod env_policy_tests {
         assert!(out.contains(&("CARGO_HOME".into(), "/c".into())));
         assert!(!out.iter().any(|(k, _)| k == "GIT_TOKEN"), "secret-named var must not leak");
         assert!(!out.iter().any(|(k, _)| k == "UNRELATED"));
+    }
+
+    #[test]
+    fn an_otel_glob_never_copies_the_exporters_headers() {
+        // A launcher puts its API key in the OTLP headers; `OTEL_*` is a
+        // natural pass-through to write, and must not carry it into a shell.
+        let pats = vec!["OTEL_*".to_string(), "JAN_*".to_string()];
+        let env = ShellEnv { passthrough: &pats, set: &[] };
+        let out = resolve_env_overrides(
+            host(&[
+                ("OTEL_SERVICE_NAME", "jan-agent"),
+                ("OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=sk"),
+                ("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "x-api-key=sk"),
+                ("JAN_CUSTOM_HEADERS", "Authorization: Bearer sk"),
+            ]),
+            env,
+        );
+        assert_eq!(out, vec![("OTEL_SERVICE_NAME".to_string(), "jan-agent".to_string())]);
     }
 
     #[test]

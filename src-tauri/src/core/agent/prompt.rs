@@ -80,6 +80,7 @@ pub(crate) enum Composer {
     Guidelines,
     WorkingDirectory,
     RuntimeEnvironment,
+    SessionStart,
     SubagentGuide,
     SkillGuide,
     WebToolsGuide,
@@ -88,8 +89,6 @@ pub(crate) enum Composer {
     MemoryCatalog,
     ToolSchemas,
     // Below it today: per-turn content, so they can never be in the prefix.
-    Date,
-    GitState,
     MemoryRecall,
     PlanAddendum,
     TodoAddendum,
@@ -102,6 +101,7 @@ impl Composer {
         Composer::Guidelines,
         Composer::WorkingDirectory,
         Composer::RuntimeEnvironment,
+        Composer::SessionStart,
         Composer::SubagentGuide,
         Composer::SkillGuide,
         Composer::WebToolsGuide,
@@ -109,8 +109,6 @@ impl Composer {
         Composer::Skills,
         Composer::MemoryCatalog,
         Composer::ToolSchemas,
-        Composer::Date,
-        Composer::GitState,
         Composer::MemoryRecall,
         Composer::PlanAddendum,
         Composer::TodoAddendum,
@@ -124,6 +122,7 @@ impl Composer {
             Composer::Guidelines => "guidelines",
             Composer::WorkingDirectory => "working_directory",
             Composer::RuntimeEnvironment => "runtime_environment",
+            Composer::SessionStart => "session_start",
             Composer::SubagentGuide => "subagent_guide",
             Composer::SkillGuide => "skill_guide",
             Composer::WebToolsGuide => "web_tools_guide",
@@ -131,8 +130,6 @@ impl Composer {
             Composer::Skills => "skills",
             Composer::MemoryCatalog => "memory_catalog",
             Composer::ToolSchemas => "tool_schemas",
-            Composer::Date => "date",
-            Composer::GitState => "git_state",
             Composer::MemoryRecall => "memory_recall",
             Composer::PlanAddendum => "plan_addendum",
             Composer::TodoAddendum => "todo_addendum",
@@ -150,6 +147,7 @@ impl Composer {
             Composer::Guidelines => "the always-on behavioral guidelines",
             Composer::WorkingDirectory => "the project directory relative paths resolve against",
             Composer::RuntimeEnvironment => "OS, architecture, shell, and scratch space",
+            Composer::SessionStart => "the date and git branch, frozen when the session started",
             Composer::SubagentGuide => "how to delegate context-heavy exploration",
             Composer::SkillGuide => "the skills and memory file conventions",
             Composer::WebToolsGuide => "the native web tools and when to reach for them",
@@ -159,8 +157,6 @@ impl Composer {
             Composer::Skills => "the installed skill catalog",
             Composer::MemoryCatalog => "the curated memory note catalog",
             Composer::ToolSchemas => "the advertised tool array (a request field)",
-            Composer::Date => "today's date",
-            Composer::GitState => "the current git branch",
             Composer::MemoryRecall => "memory recalled for this request",
             Composer::PlanAddendum => "the plan-mode instructions",
             Composer::TodoAddendum => "the active todo list",
@@ -182,6 +178,7 @@ impl Composer {
             | Composer::Guidelines
             | Composer::WorkingDirectory
             | Composer::RuntimeEnvironment
+            | Composer::SessionStart
             | Composer::SubagentGuide
             | Composer::SkillGuide
             | Composer::WebToolsGuide
@@ -189,9 +186,7 @@ impl Composer {
             | Composer::Skills
             | Composer::MemoryCatalog
             | Composer::ToolSchemas => Some(Placement::Prefix),
-            Composer::Date
-            | Composer::GitState
-            | Composer::MemoryRecall
+            Composer::MemoryRecall
             | Composer::PlanAddendum
             | Composer::TodoAddendum => None,
         }
@@ -214,6 +209,7 @@ impl Composer {
             | Composer::Guidelines
             | Composer::WorkingDirectory
             | Composer::RuntimeEnvironment
+            | Composer::SessionStart
             | Composer::SubagentGuide
             | Composer::SkillGuide
             | Composer::WebToolsGuide
@@ -221,9 +217,7 @@ impl Composer {
             | Composer::Skills
             | Composer::MemoryCatalog
             | Composer::ToolSchemas => true,
-            Composer::Date
-            | Composer::GitState
-            | Composer::MemoryRecall
+            Composer::MemoryRecall
             | Composer::PlanAddendum
             | Composer::TodoAddendum => false,
         }
@@ -381,9 +375,9 @@ mod tests {
         // is safe before anybody reviews it.
         let policy = PromptPolicy::default();
         assert_eq!(Placement::default(), Placement::Tail);
-        assert_eq!(Composer::Date.declared(), None);
+        assert_eq!(Composer::MemoryRecall.declared(), None);
         assert_eq!(
-            policy.placement_of(Composer::Date).unwrap(),
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
             Placement::Tail
         );
     }
@@ -395,7 +389,7 @@ mod tests {
         // prefix on the turn it changes.
         let policy = PromptPolicy::new(Placement::Prefix, None);
         assert_eq!(
-            policy.placement_of(Composer::Date).unwrap(),
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
             Placement::Tail
         );
         assert_eq!(
@@ -474,11 +468,11 @@ mod tests {
 
     #[test]
     fn allowing_a_composer_that_varies_is_a_hard_failure() {
-        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["date".to_string()]));
+        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["memory_recall".to_string()]));
         let error = policy
-            .placement_of(Composer::Date)
+            .placement_of(Composer::MemoryRecall)
             .expect_err("a per-turn composer cannot be allowed into the prefix");
-        assert!(error.contains("date"), "{error}");
+        assert!(error.contains("memory_recall"), "{error}");
         assert!(error.contains("prefix_allow"), "{error}");
         // ...and the failure is reported for the policy as a whole, so a run
         // cannot start without resolving every composer.

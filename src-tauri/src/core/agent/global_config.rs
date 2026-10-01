@@ -55,6 +55,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # 3 characters ("🍌", "~", "👁️👄👁️").
 #                                     # Defaults to 👋; set "" for the plain
 #                                     # throbber if your terminal draws tofu
+# prune_threads = true                # delete old saved threads at TUI start,
+#                                     # under each project's agent.toml
+#                                     # thread_retention_days / max_threads.
+#                                     # Off by default: nothing is deleted
 #
 # [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
 # enabled = true                      # usage metrics and events to YOUR
@@ -70,10 +74,17 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # to opt in; [] reads JAN.md only. A
 #                                     # project's agent.toml [context] wins
 #
+# [experimental]                      # features that may change or go away
+# acp = true                          # allow `jan acp`, the Agent Client
+#                                     # Protocol server editors such as Zed
+#                                     # and JetBrains drive. Off by default;
+#                                     # JAN_EXPERIMENTAL_ACP wins over this
+#
 # [providers.my-provider]
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
 # models = ["my-model"]
+# headers = { "X-Team" = "infra" }  # sent with every request to this provider
 "#;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -146,6 +157,11 @@ struct GlobalConfigToml {
     /// one cell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wave: Option<String>,
+    /// Prune old saved threads at TUI start. `None` = the default, off: a
+    /// deleted thread is not recoverable, so removing the user's history is
+    /// something they turn on, not something they find out about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prune_threads: Option<bool>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist. Empty by default, so the shell env is
     /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
@@ -176,8 +192,28 @@ struct GlobalConfigToml {
     /// wins. See `project::context_fallback_files`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     context: Option<GlobalContextSection>,
+    /// `[experimental]` -- opt-ins for surfaces whose contract is not settled
+    /// yet. One table so every such switch is found in one place, and so
+    /// graduating a feature is deleting its key rather than migrating it.
+    #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
+    experimental: ExperimentalSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[experimental]` in `~/.jan/config.toml`. Each key is `None` when unset,
+/// which means off.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+struct ExperimentalSection {
+    /// `jan acp`, the Agent Client Protocol server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    acp: Option<bool>,
+}
+
+impl ExperimentalSection {
+    fn is_empty(&self) -> bool {
+        self.acp.is_none()
+    }
 }
 
 /// `[telemetry]` in `~/.jan/config.toml` or a project's `agent.toml`. Only the
@@ -224,6 +260,11 @@ struct GlobalProviderEntry {
     /// guessing an identity endpoint's response shape).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     account: Option<String>,
+    /// Extra request headers sent with every request to this provider, inference
+    /// and `/models` listing alike: `headers = { "X-Team" = "infra" }`. A
+    /// session's `JAN_CUSTOM_HEADERS` beats a header of the same name here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
@@ -288,7 +329,14 @@ pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, St
                     api_key: entry.api_key,
                     api_keys,
                     base_url: entry.base_url,
-                    custom_headers: Vec::new(),
+                    custom_headers: entry
+                        .headers
+                        .into_iter()
+                        .map(|(header, value)| crate::core::state::ProviderCustomHeader {
+                            header,
+                            value,
+                        })
+                        .collect(),
                     models: entry.models,
                     api_type: entry.api_type,
                     // `~/.jan/config.toml` describes the desktop app's
@@ -331,6 +379,13 @@ pub(crate) fn smol_model() -> Result<Option<String>, String> {
 #[cfg(feature = "cli")]
 pub(crate) fn telemetry_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.telemetry.enabled)
+}
+
+/// `[experimental].acp` in `~/.jan/config.toml`; `None` when unset. A malformed
+/// file reads as unset, which is off: an experimental surface fails closed.
+#[cfg(feature = "cli")]
+pub(crate) fn experimental_acp_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.experimental.acp)
 }
 
 /// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),
@@ -393,6 +448,18 @@ pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
 /// [`sandbox_setting`]: a preference must not block a session from starting.
 pub(crate) fn worktree_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// Whether saved threads are pruned at TUI start (`prune_threads` in
+/// `~/.jan/config.toml`), defaulting to off. An unreadable config also reads
+/// as off: the failure direction of a setting that deletes data is to keep it.
+/// CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn prune_threads_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.prune_threads)
+        .unwrap_or(false)
 }
 
 /// Host env-var names the sandboxed `bash` may inherit beyond the base
@@ -901,6 +968,23 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(mouse_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn prune_threads_defaults_off_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(!prune_threads_enabled(), "missing file -> nothing pruned");
+            let path = ensure_global_config().expect("ensure");
+            assert!(!prune_threads_enabled(), "scaffolded file -> nothing pruned");
+
+            std::fs::write(&path, "prune_threads = true\n").unwrap();
+            assert!(prune_threads_enabled());
+            std::fs::write(&path, "prune_threads = false\n").unwrap();
+            assert!(!prune_threads_enabled());
+
+            std::fs::write(&path, "prune_threads = true\nnot valid toml [[[").unwrap();
+            assert!(!prune_threads_enabled(), "an unreadable config deletes nothing");
         });
     }
 

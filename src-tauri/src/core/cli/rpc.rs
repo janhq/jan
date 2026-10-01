@@ -394,6 +394,10 @@ fn start_turn(
 /// agent, not the session, and a run that reported a different session after
 /// `session/model/set` would rename something the client is still holding.
 /// `session/fork` names its new session itself, after this returns.
+///
+/// It keeps the session-start snapshot too: the history it continues already
+/// carries a system prompt with that date and branch, and a fresh capture would
+/// append a second, different `# Session Start` behind it.
 fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession, String> {
     let project = source
         .agent
@@ -401,6 +405,9 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
         .project_root
         .as_deref()
         .ok_or_else(|| "session has no project root".to_owned())?;
+    // No session overrides here, on purpose: RPC takes none (an ADK host brings
+    // its own provider setup), so its sessions see the configured providers
+    // alone. See `session_provider` for the TUI/run/step side.
     let mut agent = prepare_agent_session(
         &project.to_string_lossy(),
         Some(model.unwrap_or_else(|| source.agent.model.clone())),
@@ -414,6 +421,7 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
     agent.args.project_memory = source.agent.args.project_memory;
     agent.args.subagents_enabled = source.subagents;
     agent.args.host_system_prompt = source.agent.args.host_system_prompt.clone();
+    agent.args.session_start = source.agent.args.session_start.clone();
     Ok(agent)
 }
 
@@ -435,9 +443,7 @@ fn finish_turn(
     let session = sessions
         .get_mut(&session_id)
         .ok_or("active session missing")?;
-    if let Some(history) = updated_history {
-        session.history = history;
-    }
+    super::adopt_turn_history(&mut session.history, updated_history, result.as_ref().ok());
     let stop_reason = if interrupted {
         "interrupted"
     } else if result.is_ok() {
@@ -450,25 +456,18 @@ fn finish_turn(
     } else {
         result.as_ref().err().cloned()
     };
-    if let Ok(completion) = &result {
-        if let Some(text) = super::completion_text(completion) {
-            session
-                .history
-                .push(json!({"role":"assistant","content":text}));
-        }
-        if !session.ephemeral {
-            if let Some(project) = session.agent.args.project_root.as_ref() {
-                if let Err(message) = cli_save_thread(
-                    &agent_dir_for(project),
-                    Some(&session.id),
-                    &session.agent.model,
-                    &session.history,
-                    session.agent.args.host_system_prompt.as_ref().map(|prompt| {
-                        json!({ super::SYSTEM_PROMPT_KEY: prompt })
-                    }),
-                ) {
-                    error_message = Some(format!("could not save session: {message}"));
-                }
+    if result.is_ok() && !session.ephemeral {
+        if let Some(project) = session.agent.args.project_root.as_ref() {
+            if let Err(message) = cli_save_thread(
+                &agent_dir_for(project),
+                Some(&session.id),
+                &session.agent.model,
+                &session.history,
+                session.agent.args.host_system_prompt.as_ref().map(|prompt| {
+                    json!({ super::SYSTEM_PROMPT_KEY: prompt })
+                }),
+            ) {
+                error_message = Some(format!("could not save session: {message}"));
             }
         }
     }
@@ -816,11 +815,11 @@ pub async fn serve() -> Result<(), String> {
                             };
                             if let Some(decision) = decision {
                                 let session = sessions.get(&turn.session_id).expect("active session");
-                                match session.agent.permission_requests.lock().await.remove(&request_id) {
-                                    Some(sender) => { let _ = sender.send(decision); response(&id, json!({})) }
+                                match crate::core::agent::r#loop::settle_permission(&session.agent.permission_requests, &request_id, decision).await {
+                                    true => response(&id, json!({})),
                                     // Typed like `tool/respond`'s: an id this session never
                                     // issued, or already settled, is not pending here.
-                                    None => error_data(&id, -32602, &format!("no permission request '{request_id}' is pending (answered, cancelled, or never issued)"), json!({"kind":"not_pending"})),
+                                    false => error_data(&id, -32602, &format!("no permission request '{request_id}' is pending (answered, cancelled, or never issued)"), json!({"kind":"not_pending"})),
                                 }
                             } else { error(&id, -32602, "invalid permission decision") }
                         }

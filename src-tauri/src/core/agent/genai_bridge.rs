@@ -99,7 +99,7 @@ fn client_for(
     request_url: &str,
     api_key: Option<&str>,
     adapter: AdapterKind,
-    client_request_id: Option<&str>,
+    extra_headers: &[(String, String)],
 ) -> Client {
     let endpoint = Endpoint::from_owned(endpoint_base.to_string());
 
@@ -122,16 +122,13 @@ fn client_for(
     if let Some(key) = api_key.filter(|k| !k.is_empty()) {
         headers.push(("Authorization".to_string(), format!("Bearer {key}")));
     }
-    // The correlation id has to go in here rather than through
+    // The provider's custom headers and Jan's own (User-Agent, correlation and
+    // session ids) have to go in here rather than through
     // `ChatOptions::with_extra_headers`: genai overwrites the whole header map
     // with this override's when `RequestOverride` is set, which it always is on
-    // this path, so extra headers set anywhere else are silently dropped.
-    if let Some(id) = client_request_id.filter(|id| !id.is_empty()) {
-        headers.push((
-            super::correlation::CLIENT_REQUEST_ID_HEADER.to_string(),
-            id.to_string(),
-        ));
-    }
+    // this path, so extra headers set anywhere else are silently dropped. genai
+    // sets no User-Agent of its own, so this list is exactly what is sent.
+    super::request_headers::merge_onto(&mut headers, extra_headers);
     let auth = AuthData::RequestOverride {
         url: request_url.to_string(),
         headers: genai::Headers::from(headers),
@@ -727,7 +724,7 @@ pub(crate) async fn stream_chat_completions(
     api_type: Option<&str>,
     body: &serde_json::Value,
     events: &mpsc::UnboundedSender<StreamEvent>,
-    client_request_id: Option<&str>,
+    extra_headers: &[(String, String)],
 ) -> Result<serde_json::Value, String> {
     let (model, chat_req) = chat_request_from_body(body)?;
     let options = options_from_body(body);
@@ -750,7 +747,7 @@ pub(crate) async fn stream_chat_completions(
             upstream_url,
             *key,
             adapter,
-            client_request_id,
+            extra_headers,
         );
 
         for attempt in 0..MAX_ATTEMPTS {
@@ -1461,7 +1458,7 @@ mod tests {
 
     async fn run(url: &str, keys: &[String], events: &mpsc::UnboundedSender<StreamEvent>)
         -> Result<serde_json::Value, String> {
-        stream_chat_completions(&build_http_client(), url, keys, None, &body(), events, None).await
+        stream_chat_completions(&build_http_client(), url, keys, None, &body(), events, &[]).await
     }
 
     #[tokio::test]

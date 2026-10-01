@@ -128,6 +128,13 @@ jobs:
           cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
             --no-default-features --features cli --test agent_rpc
 
+      # The experimental ACP server (`jan acp`), driven over stdio the way an
+      # editor drives it, against a stub provider.
+      - name: cargo test (ACP CLI)
+        run: |
+          cargo test --locked --manifest-path src-tauri/jan-cli/Cargo.toml \
+            --no-default-features --features cli --test acp
+
       # The ADK cookbook's runnable source, run with the runner's own
       # node and python3 against the jan binary this commit builds, plus the
       # check that every docs excerpt still matches the file it quotes.
@@ -195,6 +202,12 @@ jobs:
   # Each plugin and src-tauri/utils is its own workspace, so checking the app
   # crate compiles them as path dependencies but never lints them. No --locked
   # here: Cargo.lock is gitignored and only some of these crates commit one.
+  #
+  # jan-cli is standalone the same way, but depends on app_lib rather than the
+  # reverse, so the app matrix never reaches it either. Its include entry adds
+  # what it differs by: it commits a Cargo.lock (so --locked), it only builds
+  # with the cli feature, that feature is Tauri-free (no system libraries), and
+  # its .cargo/config.toml puts the target dir at src-tauri/target.
   crates:
     name: ${{ matrix.crate }}
     runs-on: ubuntu-latest
@@ -204,6 +217,7 @@ jobs:
         # tauri-plugin-mlx is Apple-Silicon-only and is a macOS target
         # dependency, not part of any Linux build.
         crate:
+          - jan-cli
           - plugins/tauri-plugin-agent-tools
           - plugins/tauri-plugin-hardware
           - plugins/tauri-plugin-llamacpp
@@ -211,6 +225,11 @@ jobs:
           - plugins/tauri-plugin-vector-db
           - plugins/tauri-plugin-websearch
           - utils
+        include:
+          - crate: jan-cli
+            flags: --locked --no-default-features --features cli
+            target_dir: ../target
+            skip_tauri: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -220,19 +239,20 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri/${{ matrix.crate }}
+          workspaces: src-tauri/${{ matrix.crate }} -> ${{ matrix.target_dir || 'target' }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Tauri dependencies
+        if: ${{ !matrix.skip_tauri }}
         run: |
           sudo apt update
           sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
 
       - name: cargo check
-        run: cargo check --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets
+        run: cargo check ${{ matrix.flags }} --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets
 
       - name: cargo clippy
-        run: cargo clippy --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy ${{ matrix.flags }} --manifest-path src-tauri/${{ matrix.crate }}/Cargo.toml --all-targets -- -D warnings
 
   # The ADKs are clients of the same channel the CLI tests drive, so they are
   # built and run here rather than in the linter workflow: the subject is a real
