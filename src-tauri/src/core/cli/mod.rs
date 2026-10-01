@@ -3,12 +3,14 @@
 //! This module is only compiled when the `cli` feature is enabled.
 
 mod agent_status;
+pub mod acp;
 pub mod auth;
 pub mod brand;
 pub mod browser;
 #[cfg(test)]
 mod contract_conformance;
 pub mod device_auth;
+pub mod housekeeping;
 pub mod journal;
 pub mod login;
 pub mod mcp;
@@ -157,6 +159,13 @@ pub fn sort_threads_recent(threads: &mut [serde_json::Value]) {
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 }
+
+/// Told to the model, as a `<SYSTEM>` notice on the first message after a saved
+/// conversation is reopened (TUI `/resume`, headless `--resume`): the history
+/// predates the session-start snapshot, which was taken at the resume.
+pub(crate) const SESSION_RESUMED_NOTICE: &str = "Session resumed: the conversation above was \
+saved by an earlier session. The session start date and starting branch in the system prompt \
+were taken at this resume, so earlier messages may predate them.";
 
 /// Message shown when there is nothing to resume; the caller then starts fresh.
 pub const NO_SESSION_TO_RESUME: &str = "No session to resume";
@@ -342,6 +351,15 @@ pub fn cli_save_thread(
         })
         .collect();
     write_messages_to_file(&messages, &get_messages_path(base, &id))?;
+    // Best effort, like the display journal: the record is a convenience for a
+    // reader, and failing to write it must not fail the save of the thread.
+    let record = crate::core::agent::run_record::Transcript::from_history(&id, history);
+    if let Err(e) = crate::core::agent::run_record::write_atomic(
+        &get_thread_dir(base, &id).join(THREAD_TRANSCRIPT_FILE),
+        &record,
+    ) {
+        log::warn!("thread {id}: could not write {THREAD_TRANSCRIPT_FILE}: {e}");
+    }
 
     let existing: Option<serde_json::Value> =
         std::fs::read_to_string(get_thread_metadata_path(base, &id))
@@ -376,6 +394,10 @@ pub fn cli_save_thread(
     update_thread_metadata(base, &id, &thread)?;
     Ok(id)
 }
+
+/// A thread's record in the shared `prompt` / `transcript[]` / `output` shape,
+/// next to its `messages.jsonl`. See `agent::run_record`.
+pub const THREAD_TRANSCRIPT_FILE: &str = "transcript.json";
 
 /// Persist a TUI `/model` choice to the project's `agent.toml` `[agent].model`,
 /// so it is remembered on the next session (agent.toml wins over the desktop
@@ -1238,7 +1260,7 @@ fn build_cli_orchestration_args(
         mcp_settings: Arc::new(Mutex::new(mcp_settings)),
         jan_data_folder: resolve_jan_data_folder().to_string_lossy().into_owned(),
         permissions,
-        project_root: Some(project_root),
+        project_root: Some(project_root.clone()),
         permission_requests,
         host_tools,
         host_tool_requests,
@@ -1279,6 +1301,12 @@ fn build_cli_orchestration_args(
         // window lives in the local engine's preset, not in a catalog this
         // builder can read.
         compaction: None,
+        // Once per session, here: the TUI reuses these args for every turn and
+        // re-snapshots only at a conversation boundary (`/new`, `/resume`), so
+        // every turn of a session composes the same system prompt.
+        session_start: Some(crate::core::agent::context::SessionStart::capture(Some(
+            &project_root,
+        ))),
     }
 }
 
@@ -1945,6 +1973,14 @@ fn prepare_agent_run(
 
     let mut history = resumed.as_ref().map(|r| r.history.clone()).unwrap_or_default();
     history.push(serde_json::json!({ "role": "user", "content": final_task }));
+    // Same notice the TUI attaches to the first message after `/resume`: the
+    // saved turns predate this session's start snapshot.
+    if resumed.as_ref().is_some_and(|r| !r.history.is_empty()) {
+        crate::core::agent::reminder::attach(
+            &mut history,
+            crate::core::cli::SESSION_RESUMED_NOTICE,
+        );
+    }
     let body = session.body(serde_json::json!(history.clone()));
     // Emit resolved references stderr so the user sees what was injected
     if !injected.is_empty() {
@@ -2504,11 +2540,9 @@ async fn apply_input_line(
             // Taking the sender is what makes a decision single-use: a second
             // reply for the same id finds nothing and is reported, rather than
             // silently overwriting an answer the run already acted on.
-            let sender = registry.lock().await.remove(&request_id);
-            let Some(sender) = sender else {
+            if !crate::core::agent::r#loop::settle_permission(registry, &request_id, decision).await {
                 return Err(format!("no permission request '{request_id}' is pending"));
-            };
-            let _ = sender.send(decision);
+            }
             Ok(InputFlow::Decided(request_id, decision))
         }
         InputMessage::ToolResult { request_id, result } => {
@@ -2792,6 +2826,85 @@ async fn resolve_permission_silently(
     Some((request_id, decision))
 }
 
+/// Fold a finished turn into a session's history: the engine's own rewrite of
+/// the conversation (tool calls and results included) when it sent one, then
+/// the final assistant text when the turn completed. The one rule every
+/// multi-turn surface (RPC, ACP) keeps its history by.
+pub(crate) fn adopt_turn_history(
+    history: &mut Vec<serde_json::Value>,
+    updated: Option<Vec<serde_json::Value>>,
+    completion: Option<&serde_json::Value>,
+) {
+    if let Some(updated) = updated {
+        *history = updated;
+    }
+    if let Some(text) = completion.and_then(completion_text) {
+        history.push(serde_json::json!({"role":"assistant","content":text}));
+    }
+}
+
+/// Fold the tool calls an interrupted turn made, and the results it got back,
+/// into `history` in wire form, so the next prompt and a later resume see the
+/// work that ran rather than only the prose around it. Shared by the surfaces
+/// that can stop a run mid-way (the TUI's cancel and error paths, ACP's
+/// `session/cancel`).
+///
+/// `calls` are `(id, name, args)` in the order they were made. A call that is
+/// already in `history` is skipped: a run publishes `MessagesUpdated`
+/// mid-turn on a compaction retry and the budget soft-stop, and a cancel is
+/// often followed by a late event from the aborted task, so the fold can be
+/// reached for calls already folded, and putting one exchange on the wire
+/// twice invites a double execution. A call with no result (still in flight
+/// when the run stopped) gets [`MISSING_TOOL_RESULT`], so the exchange stays
+/// protocol-valid.
+pub(crate) fn fold_interrupted_tools(
+    history: &mut Vec<serde_json::Value>,
+    calls: &[(String, String, serde_json::Value)],
+    results: &[(String, String)],
+) {
+    let folded: std::collections::HashSet<&str> = history
+        .iter()
+        .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
+        .flatten()
+        .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
+        .collect();
+    let calls: Vec<&(String, String, serde_json::Value)> =
+        calls.iter().filter(|(id, _, _)| !folded.contains(id.as_str())).collect();
+    if calls.is_empty() {
+        return;
+    }
+    let tool_calls: serde_json::Value = calls
+        .iter()
+        .map(|(id, name, args)| {
+            serde_json::json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() },
+            })
+        })
+        .collect();
+    history.push(serde_json::json!({
+        "role": "assistant",
+        "content": serde_json::Value::Null,
+        "tool_calls": tool_calls,
+    }));
+    // Results follow the order of the `tool_calls` array, not the order they
+    // finished: the loop dispatches calls concurrently, and a strict endpoint
+    // cannot match out-of-order results to the calls above.
+    for (id, _, _) in &calls {
+        let content = results
+            .iter()
+            .find(|(rid, _)| rid == id)
+            .map(|(_, c)| c.clone())
+            .unwrap_or_else(|| MISSING_TOOL_RESULT.to_string());
+        history.push(serde_json::json!({
+            "role": "tool",
+            "tool_call_id": id,
+            "content": content,
+        }));
+    }
+}
+
 /// Assistant text of a chat-completion response, if any.
 fn completion_text(completion: &serde_json::Value) -> Option<String> {
     let text = completion
@@ -2839,7 +2952,40 @@ pub async fn cli_agent_ui(
     // TUI threads persist in the project's store, separate from the desktop
     // store, so continuing here never mutates desktop threads.
     let agent_dir = agent_dir_for(&project_root);
+    prune_threads(
+        &agent_dir,
+        &project_root,
+        resume.as_ref(),
+        crate::core::agent::global_config::prune_threads_enabled(),
+    );
     tui::run(session, agent_dir, project_root, task, images, resume).await
+}
+
+/// Drop stale threads from the project's store (see [`housekeeping`]) when the
+/// user `enabled` it (`prune_threads` in `~/.jan/config.toml`, off by default).
+/// Reads the limits from `agent.toml` and never touches the thread this session
+/// resumes.
+fn prune_threads(
+    agent_dir: &std::path::Path,
+    project_root: &std::path::Path,
+    resume: Option<&ResumeRequest>,
+    enabled: bool,
+) {
+    if !enabled {
+        return;
+    }
+    // Once pruning is on, a project with no readable agent.toml still gets the
+    // default limits: the store grows the same either way.
+    let (retention_days, max_threads) = load_agent_config(project_root)
+        .map(|cfg| (cfg.agent.thread_retention_days, cfg.agent.max_threads))
+        .unwrap_or_default();
+    let policy = housekeeping::Policy::from_config(retention_days, max_threads);
+    let protect: std::collections::HashSet<String> = resume
+        .and_then(|r| find_resume_thread(agent_dir, &r.target).ok())
+        .and_then(|t| t.get("id").and_then(|v| v.as_str()).map(str::to_string))
+        .into_iter()
+        .collect();
+    housekeeping::run(agent_dir, policy, &protect);
 }
 
 /// Where the TUI persists a project's threads: the project's store,
@@ -3571,6 +3717,205 @@ mod tests {
                 + "\n",
         )
         .unwrap();
+    }
+
+    /// Every save writes the thread's record beside its messages, in the shared
+    /// prompt/transcript/output shape.
+    #[test]
+    fn saving_a_thread_writes_its_transcript_json() {
+        let base = std::env::temp_dir().join(format!("jan-save-transcript-{}", std::process::id()));
+        let history = vec![
+            serde_json::json!({ "role": "user", "content": "fix the bug" }),
+            serde_json::json!({ "role": "assistant", "content": "fixed" }),
+        ];
+        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
+        let path = get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE);
+        let doc: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).expect("transcript written")).unwrap();
+        assert_eq!(doc["prompt"], "fix the bug");
+        assert_eq!(doc["output"], "fixed");
+        assert_eq!(doc["run_id"], id.as_str());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A resave replaces the record rather than appending to it: it always
+    /// mirrors the history as saved.
+    #[test]
+    fn resaving_a_thread_rewrites_its_transcript() {
+        let base = std::env::temp_dir().join(format!("jan-resave-transcript-{}", std::process::id()));
+        let mut history = vec![
+            serde_json::json!({ "role": "user", "content": "one" }),
+            serde_json::json!({ "role": "assistant", "content": "a" }),
+        ];
+        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
+        history.push(serde_json::json!({ "role": "user", "content": "two" }));
+        history.push(serde_json::json!({ "role": "assistant", "content": "b" }));
+        cli_save_thread(&base, Some(&id), "m", &history, None).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(doc["output"], "b");
+        let kinds: Vec<&str> = doc["transcript"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["prose", "user", "prose"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The record is a convenience: if it cannot be written the thread still
+    /// saves. A directory squatting on the file name makes the write fail.
+    #[test]
+    fn a_transcript_write_failure_does_not_fail_the_save() {
+        let base = std::env::temp_dir().join(format!("jan-save-blocked-{}", std::process::id()));
+        let history = vec![serde_json::json!({ "role": "user", "content": "hi" })];
+        let id = cli_save_thread(&base, None, "m", &history, None).unwrap();
+        let blocked = get_thread_dir(&base, &id).join(THREAD_TRANSCRIPT_FILE);
+        std::fs::remove_file(&blocked).unwrap();
+        std::fs::create_dir(&blocked).unwrap();
+        let again = cli_save_thread(&base, Some(&id), "m", &history, None);
+        assert_eq!(again.as_deref(), Ok(id.as_str()));
+        assert_eq!(list_threads_in(&base).unwrap().len(), 1);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Forking copies messages by their own path, and the fork gets a record of
+    /// its own: it must describe the fork's history, not the source's.
+    #[test]
+    fn a_thread_transcript_is_not_shared_between_threads() {
+        let base = std::env::temp_dir().join(format!("jan-two-transcripts-{}", std::process::id()));
+        let a = cli_save_thread(
+            &base,
+            None,
+            "m",
+            &[serde_json::json!({ "role": "user", "content": "alpha" })],
+            None,
+        )
+        .unwrap();
+        let b = cli_save_thread(
+            &base,
+            None,
+            "m",
+            &[serde_json::json!({ "role": "user", "content": "beta" })],
+            None,
+        )
+        .unwrap();
+        let prompt = |id: &str| -> String {
+            let doc: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(get_thread_dir(&base, id).join(THREAD_TRANSCRIPT_FILE)).unwrap(),
+            )
+            .unwrap();
+            doc["prompt"].as_str().unwrap().to_string()
+        };
+        assert_eq!((prompt(&a).as_str(), prompt(&b).as_str()), ("alpha", "beta"));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// The thread this session resumes is exempt from pruning however stale the
+    /// limits call it: resuming something and then finding it deleted underneath
+    /// is the one way housekeeping could lose a user work in progress.
+    #[test]
+    fn prune_threads_never_deletes_the_thread_being_resumed() {
+        let base = std::env::temp_dir().join(format!(
+            "jan-prune-resume-{}",
+            std::process::id()
+        ));
+        let project = std::env::temp_dir().join(format!(
+            "jan-prune-resume-project-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&project).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        for i in 0..housekeeping::MIN_KEEP {
+            seed_thread(&base, &format!("new{i}"), now);
+        }
+        seed_thread(&base, "resumed-old", now - 400.0 * 86_400.0);
+        seed_thread(&base, "stale-old", now - 400.0 * 86_400.0);
+
+        let request = ResumeRequest {
+            target: ResumeTarget::Id("resumed-old".to_string()),
+            fork: false,
+        };
+        prune_threads(&base, &project, Some(&request), true);
+        assert!(get_thread_dir(&base, "resumed-old").exists());
+        assert!(!get_thread_dir(&base, "stale-old").exists());
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// The configured limits reach the pruner: a tight `max_threads` in
+    /// agent.toml removes what the defaults would keep.
+    #[test]
+    fn prune_threads_honors_the_limits_in_agent_toml() {
+        let base = std::env::temp_dir().join(format!("jan-prune-cfg-{}", std::process::id()));
+        let project =
+            std::env::temp_dir().join(format!("jan-prune-cfg-project-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        let store = crate::core::agent::project::store_root(&project);
+        let _ = std::fs::remove_dir_all(&store);
+        crate::core::agent::project::ensure_project(&project).unwrap();
+        crate::core::agent::project::set_agent_key(
+            &crate::core::agent::project::agent_toml_path(&project),
+            "max_threads",
+            Some(toml_edit::value(housekeeping::MIN_KEEP as i64 + 1)),
+        )
+        .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        for i in 0..housekeeping::MIN_KEEP + 3 {
+            seed_thread(&base, &format!("t{i}"), now - i as f64);
+        }
+        prune_threads(&base, &project, None, true);
+        let left = list_threads_in(&base).unwrap().len();
+        assert_eq!(left, housekeeping::MIN_KEEP + 1, "the cap of floor+1 applied");
+        let _ = std::fs::remove_dir_all(&store);
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// Pruning is opt-in: switched off (the default), even a store far past
+    /// both limits keeps every thread.
+    #[test]
+    fn prune_threads_deletes_nothing_when_it_is_off() {
+        let base = std::env::temp_dir().join(format!("jan-prune-off-{}", std::process::id()));
+        let project =
+            std::env::temp_dir().join(format!("jan-prune-off-project-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        let total = housekeeping::MIN_KEEP + 3;
+        for i in 0..total {
+            seed_thread(&base, &format!("t{i}"), 1.0 + i as f64);
+        }
+        prune_threads(&base, &project, None, false);
+        assert_eq!(list_threads_in(&base).unwrap().len(), total);
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// Without a resume request nothing is protected by name, but the newest
+    /// threads still are: a fresh session on an old project keeps its recent work.
+    #[test]
+    fn prune_threads_without_a_resume_keeps_the_newest() {
+        let base = std::env::temp_dir().join(format!("jan-prune-fresh-{}", std::process::id()));
+        let project =
+            std::env::temp_dir().join(format!("jan-prune-fresh-project-{}", std::process::id()));
+        std::fs::create_dir_all(&project).unwrap();
+        for i in 0..housekeeping::MIN_KEEP {
+            seed_thread(&base, &format!("t{i}"), 1.0 + i as f64);
+        }
+        prune_threads(&base, &project, None, true);
+        for i in 0..housekeeping::MIN_KEEP {
+            assert!(get_thread_dir(&base, &format!("t{i}")).exists());
+        }
+        let _ = std::fs::remove_dir_all(&base);
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     #[test]

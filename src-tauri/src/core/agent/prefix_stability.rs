@@ -29,7 +29,7 @@
 //! there is one.
 
 use super::compaction::compact_conversation;
-use super::context::compose_system_prompt;
+use super::context::{compose_system_prompt, SessionStart};
 use super::events::StreamEvent;
 use super::prompt::{Composer, Placement, PromptPolicy};
 use super::r#loop::{build_completion_request, ModelInvoker};
@@ -257,19 +257,26 @@ fn advertised(names: &[&str]) -> Vec<Value> {
 /// composed prompt at the front, then accepted history, then the policy's tail
 /// blocks plus the per-turn blocks merged in registry order.
 ///
-/// The per-turn blocks are the date and a fixed git line - the two the loop
-/// always has - rather than the memory/plan/todo blocks, which depend on
-/// session state this suite does not drive. What the assertions here need is
-/// the *shape*: one marked guidance message after the conversation.
-fn turn(project: &Path, history: &[Value], date: &str, tools: &[Value]) -> Request {
-    let composed =
-        compose_system_prompt(None, project, None, false, &PromptPolicy::default()).unwrap();
+/// The session-start snapshot is fixed, as it is for a real session: taken once
+/// and composed into message 0 on every turn. `recall` stands in for the
+/// per-turn block (memory recall) that does vary; an empty one sends no tail.
+/// What the assertions here need is the *shape*: the stable prompt, then the
+/// conversation, then at most one marked guidance message.
+fn turn(project: &Path, history: &[Value], recall: &str, tools: &[Value]) -> Request {
+    let start = SessionStart::fixed(DAY, None);
+    let composed = compose_system_prompt(
+        None,
+        project,
+        None,
+        false,
+        &PromptPolicy::default(),
+        Some(&start),
+    )
+    .unwrap();
     let mut tail = composed.tail;
-    tail.push((Composer::Date, format!("Today's date is {date}.")));
-    tail.push((
-        Composer::GitState,
-        "# Git\n\nGit: not a git repository (or no commits yet)".to_string(),
-    ));
+    if !recall.is_empty() {
+        tail.push((Composer::MemoryRecall, recall.to_string()));
+    }
     tail.sort_by_key(|(composer, _)| composer.order());
     let volatile = tail
         .iter()
@@ -366,11 +373,11 @@ fn consecutive_turns_extend_the_previous_request() {
     let project = Project::new("turns");
     let tools = advertised(&["read_file"]);
 
-    let first = turn(project.root(), &[user("first question")], DAY, &tools);
+    let first = turn(project.root(), &[user("first question")], "", &tools);
     let mut history = first.messages.clone();
     history.push(assistant("first answer"));
     history.push(user("second question"));
-    let second = turn(project.root(), &history, DAY, &tools);
+    let second = turn(project.root(), &history, "", &tools);
 
     first.assert_extended_by("an unchanged project on the next turn", &second);
 }
@@ -384,7 +391,7 @@ fn the_fixture_reaches_every_prefix_composer() {
     let request = turn(
         project.root(),
         &[user("a question")],
-        DAY,
+        "",
         &advertised(&["read_file"]),
     );
 
@@ -395,6 +402,7 @@ fn the_fixture_reaches_every_prefix_composer() {
         "# Guidelines",
         "# Working Directory",
         "# Runtime Environment",
+        "# Session Start",
         "# Skills and Project Memory",
         "# Web Access",
         "<project_context>",
@@ -422,8 +430,8 @@ fn composing_the_same_input_twice_produces_the_same_bytes() {
     let tools = advertised(&["read_file", "commit"]);
     let history = [user("a question"), assistant("an answer")];
 
-    let first = turn(project.root(), &history, DAY, &tools);
-    let second = turn(project.root(), &history, DAY, &tools);
+    let first = turn(project.root(), &history, "", &tools);
+    let second = turn(project.root(), &history, "", &tools);
 
     assert_same_bytes(
         "the same input must compose the same bytes",
@@ -432,19 +440,20 @@ fn composing_the_same_input_twice_produces_the_same_bytes() {
     );
 }
 
-/// #8958: the date changes once a day. It belongs below the cache line, so a
-/// session that runs over midnight keeps its prefix and diverges inside the
-/// volatile block instead of at the top of the prompt.
+/// #8958: per-turn content belongs below the cache line, so a block that
+/// changes between turns (recalled memory here) keeps the prefix and diverges
+/// inside the volatile block instead of at the top of the prompt. The date no
+/// longer varies at all: it is part of the frozen session-start snapshot.
 #[test]
-fn a_midnight_crossing_diverges_inside_the_volatile_block() {
-    let project = Project::new("midnight");
+fn a_changing_per_turn_block_diverges_inside_the_volatile_block() {
+    let project = Project::new("per-turn");
     let tools = advertised(&["read_file"]);
 
-    let before = turn(project.root(), &[], "2026-09-16", &tools);
-    let after = turn(project.root(), &[], "2026-09-17", &tools);
+    let before = turn(project.root(), &[], "# Recalled memory\n- one", &tools);
+    let after = turn(project.root(), &[], "# Recalled memory\n- two", &tools);
 
-    // Every byte of the stable prompt (message 0) has to survive the date
-    // change; if this fails, a varying block is sitting above the cache line.
+    // Every byte of the stable prompt (message 0) has to survive the change;
+    // if this fails, a varying block is sitting above the cache line.
     let stable = serde_json::to_string(&before.messages[0]).unwrap();
     let stable_end = before
         .body
@@ -481,14 +490,14 @@ fn a_changing_tail_preserves_all_accepted_history() {
     let first = turn(
         project.root(),
         &[user("first question")],
-        "2026-09-20",
+        "# Recalled memory\n- one",
         &tools,
     );
     let mut history = first.messages.clone();
     history.push(assistant("first answer"));
     history.push(user("second question"));
 
-    let second = turn(project.root(), &history, "2026-09-21", &tools);
+    let second = turn(project.root(), &history, "# Recalled memory\n- two", &tools);
     first.assert_extended_by("changed context belongs after accepted history", &second);
 }
 
@@ -501,8 +510,8 @@ async fn a_project_move_does_not_move_the_tool_array() {
     let first = Project::new("move-a");
     let second = Project::new("move-b");
 
-    let before = turn(first.root(), &[], DAY, &advertise(first.root()).await);
-    let after = turn(second.root(), &[], DAY, &advertise(second.root()).await);
+    let before = turn(first.root(), &[], "", &advertise(first.root()).await);
+    let after = turn(second.root(), &[], "", &advertise(second.root()).await);
 
     assert_same_bytes(
         "the advertised tools must not depend on where the project lives",
@@ -541,7 +550,7 @@ fn a_restart_advertises_the_same_tool_bytes() {
     let mut mappings: Vec<HashMap<String, String>> = Vec::new();
     for walk in walks {
         let (tools, mapping) = assemble_tool_array(walk);
-        bodies.push(turn(project.root(), &[], DAY, &tools).body);
+        bodies.push(turn(project.root(), &[], "", &tools).body);
         mappings.push(mapping);
     }
 
@@ -572,11 +581,11 @@ fn a_failed_listing_keeps_the_advertised_tools() {
     let listed = vec![("git".to_string(), Some(vec![tool("commit")]))];
     let warm = reuse_last_good_listings(&mut cache, listed);
     let (warm_tools, _) = assemble_tool_array(warm);
-    let before = turn(project.root(), &[], DAY, &warm_tools);
+    let before = turn(project.root(), &[], "", &warm_tools);
 
     let timed_out = reuse_last_good_listings(&mut cache, vec![("git".to_string(), None)]);
     let (reused_tools, _) = assemble_tool_array(timed_out);
-    let after = turn(project.root(), &[], DAY, &reused_tools);
+    let after = turn(project.root(), &[], "", &reused_tools);
 
     assert_same_bytes(
         "a timed-out listing must not change the advertised array",
@@ -603,7 +612,7 @@ async fn compaction_breaks_the_prefix_exactly_once() {
 
     for index in 0..6 {
         history.push(user(&format!("question {index}")));
-        let request = turn(project.root(), &history, DAY, &tools);
+        let request = turn(project.root(), &history, "", &tools);
         if let Some(previous) = &previous {
             if common_prefix_len(&previous.body, &request.body) < previous.last_message_end() {
                 breaks += 1;
@@ -661,8 +670,8 @@ fn an_agents_md_fallback_keeps_the_prefix_stable() {
     let project = agents_md_project("agentsmd", false);
     let tools = advertised(&["read_file"]);
 
-    let first = turn(project.root(), &[user("first question")], DAY, &tools);
-    let again = turn(project.root(), &[user("first question")], DAY, &tools);
+    let first = turn(project.root(), &[user("first question")], "", &tools);
+    let again = turn(project.root(), &[user("first question")], "", &tools);
     assert_same_bytes(
         "the same AGENTS.md project must compose the same bytes",
         &first.body,
@@ -678,7 +687,7 @@ fn an_agents_md_fallback_keeps_the_prefix_stable() {
     let mut history = first.messages.clone();
     history.push(assistant("first answer"));
     history.push(user("second question"));
-    let second = turn(project.root(), &history, DAY, &tools);
+    let second = turn(project.root(), &history, "", &tools);
     first.assert_extended_by("an AGENTS.md project on the next turn", &second);
 }
 
@@ -692,8 +701,8 @@ fn a_jan_md_symlink_to_agents_md_composes_like_a_plain_jan_md() {
     let tools = advertised(&["read_file"]);
     let history = [user("a question")];
 
-    let plain_turn = turn(plain.root(), &history, DAY, &tools);
-    let linked_turn = turn(linked.root(), &history, DAY, &tools);
+    let plain_turn = turn(plain.root(), &history, "", &tools);
+    let linked_turn = turn(linked.root(), &history, "", &tools);
     // The working directory differs between the two roots; everything that
     // is the context block must not.
     let block = |request: &Request| {
@@ -731,6 +740,7 @@ const PREFIX_CONTRIBUTORS: &[Composer] = &[
     Composer::Guidelines,
     Composer::WorkingDirectory,
     Composer::RuntimeEnvironment,
+    Composer::SessionStart,
     Composer::SubagentGuide,
     Composer::SkillGuide,
     Composer::WebToolsGuide,

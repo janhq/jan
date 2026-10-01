@@ -552,8 +552,8 @@ impl Picker {
             PickerKind::PluginSetup => " Type to search   Up/Down select   Enter set up   Esc cancel",
             PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
-            PickerKind::Agents => " ↑/↓ select   Enter view   Esc close",
-            PickerKind::AgentDetail => " Esc back",
+            PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
+            PickerKind::AgentDetail => " m message   x stop   Esc back",
             PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
         }
     }
@@ -2011,6 +2011,10 @@ struct App {
     /// not drop the parent pointer `fork_thread` wrote (`thread_metadata` owns
     /// the whole metadata object, not a merge into it).
     forked_from: Option<serde_json::Value>,
+    /// Set when a saved thread is loaded, cleared by the next user message, which
+    /// carries `SESSION_RESUMED_NOTICE` so the model knows the history predates
+    /// the session-start snapshot.
+    resume_notice_pending: bool,
     /// Pending git snapshots, run off the render loop (see `SnapshotJob`).
     snap_queue: std::collections::VecDeque<SnapshotJob>,
     /// Whether a base snapshot has been requested for the active thread (queued,
@@ -2172,6 +2176,8 @@ struct App {
     /// keyboard while open. Holds the setting being edited and any validation
     /// error; writes go straight to agent.toml on Enter.
     settings_prompt: Option<SettingsPrompt>,
+    /// `/agents` message dock: text the user is writing to one running child.
+    agent_message: Option<AgentMessagePrompt>,
     /// `/vibe-setting`'s side call mapping the request onto settings, while it
     /// runs. Awaited by the chat loop; off the render loop like `/context`.
     vibe_task: Option<JoinHandle<Result<String, String>>>,
@@ -2647,6 +2653,65 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
+    /// What the child has said and done, in order, for the `/agents` detail
+    /// view: the same prose and tool rows the main transcript shows, kept per
+    /// child because a child's stream never reaches the parent's transcript.
+    log: Vec<ChildLogEntry>,
+}
+
+/// One entry of a child's `/agents` log.
+enum ChildLogEntry {
+    /// Answer prose, extended in place as tokens stream.
+    Prose(String),
+    /// A message the user sent it from `/agents`.
+    Steer(String),
+    /// A completed call; `result` fills in when its `ToolResult` lands, kept
+    /// as the one-line summary the log renders (see [`child_result_summary`]),
+    /// never the whole output.
+    Call {
+        id: String,
+        label: String,
+        result: Option<(String, bool)>,
+    },
+}
+
+/// Longest log a child panel keeps. The detail view only ever shows the tail,
+/// and a child that streams for an hour must not grow the TUI without bound.
+const CHILD_LOG_MAX: usize = 400;
+
+/// Most bytes one prose entry keeps. [`CHILD_LOG_MAX`] bounds the entry count,
+/// but a child that streams one long answer extends a single entry, so that
+/// entry is bounded too. The oldest text goes: the detail view shows the tail.
+const CHILD_PROSE_MAX: usize = 64 * 1024;
+
+/// What a child log keeps of a tool result: the first non-empty line and a
+/// count of the rest, which is all `child_log_lines` ever renders. A child
+/// that reads a large file must not keep the whole file alive in the TUI.
+fn child_result_summary(content: &str) -> String {
+    summarize_result(content, 500)
+}
+
+/// Append streamed `text` to a prose entry, dropping its oldest bytes (on a
+/// char boundary) once it passes [`CHILD_PROSE_MAX`].
+fn push_child_prose(prose: &mut String, text: &str) {
+    prose.push_str(text);
+    if prose.len() > CHILD_PROSE_MAX {
+        let mut cut = prose.len() - CHILD_PROSE_MAX;
+        while !prose.is_char_boundary(cut) {
+            cut += 1;
+        }
+        prose.drain(..cut);
+    }
+}
+
+impl SubagentPanel {
+    fn push_log(&mut self, entry: ChildLogEntry) {
+        self.log.push(entry);
+        if self.log.len() > CHILD_LOG_MAX {
+            let excess = self.log.len() - CHILD_LOG_MAX;
+            self.log.drain(..excess);
+        }
+    }
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -2764,6 +2829,7 @@ impl App {
             workspace: None,
             workspace_record: None,
             forked_from: None,
+            resume_notice_pending: false,
             snap_queue: std::collections::VecDeque::new(),
             base_requested: false,
             last_esc: None,
@@ -2817,6 +2883,7 @@ impl App {
             model_picker: None,
             login: None,
             settings_prompt: None,
+            agent_message: None,
             vibe_task: None,
             vibe_confirm: None,
             readout: None,
@@ -2966,6 +3033,33 @@ impl App {
         self.args = Some(Arc::new(next));
     }
 
+    /// Take a fresh session-start snapshot (date and branch) for the session
+    /// that begins now. Called at a conversation boundary only -- `/new`,
+    /// `/clear`, `/resume`, a fork -- where the system prompt starts over anyway,
+    /// so no turn's cached prefix is disturbed.
+    fn refresh_session_start(&mut self) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
+        let start = crate::core::agent::context::SessionStart::capture(Some(&root));
+        self.adopt_session_start(Some(start));
+    }
+
+    /// Run the session on `start` from the next turn on; a no-op when it is
+    /// already the one in use.
+    fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        if args.session_start == start {
+            return;
+        }
+        let mut next = (**args).clone();
+        next.session_start = start;
+        self.args = Some(Arc::new(next));
+    }
+
     /// Drop the current conversation and all transient turn state, detaching from
     /// the saved thread so the next message starts a fresh one. Backs `/clear` and
     /// `/new`; the model/MCP setup and picker state are untouched.
@@ -2981,7 +3075,9 @@ impl App {
         // A fresh session is a root, whatever the one it replaced was, and it
         // owns the checkout this session is working in.
         self.forked_from = None;
+        self.resume_notice_pending = false;
         self.set_host_system_prompt(None);
+        self.refresh_session_start();
         self.workspace_record = self.workspace.clone();
         self.snap_queue.clear();
         self.base_requested = false;
@@ -3802,6 +3898,8 @@ impl App {
             Some("answer the question above")
         } else if self.settings_prompt.is_some() {
             Some("edit the setting above")
+        } else if self.agent_message.is_some() {
+            Some("finish the message to the subagent above")
         } else if self.vibe_confirm.is_some() {
             Some("answer the proposal above")
         } else if self.mcp_prompt.is_some() || self.provider_prompt.is_some() {
@@ -4576,6 +4674,12 @@ impl App {
 
     fn record_pending_message(&mut self, pending: PendingMessage) {
         self.history.push(pending.message);
+        if std::mem::take(&mut self.resume_notice_pending) {
+            crate::core::agent::reminder::attach(
+                &mut self.history,
+                crate::core::cli::SESSION_RESUMED_NOTICE,
+            );
+        }
         if pending.display {
             let text = if let Some((name, args, description)) = pending.invocation {
                 self.push_invocation_row(&format!("[skill:{name}]"), &args, &description);
@@ -5389,6 +5493,7 @@ async fn compute_context_report(snapshot: ContextSnapshot) -> ContextReport {
             args.session_id.as_deref(),
             args.subagents_enabled,
             args.sandbox,
+            args.session_start.as_ref(),
         )
         .unwrap_or_default();
         context_bytes =
@@ -5826,6 +5931,7 @@ impl App {
                         waiting: 0,
                         pending: true,
                         phase: Some(p.phase),
+                        log: Vec::new(),
                     });
                 }
             }
@@ -5862,6 +5968,7 @@ impl App {
                         waiting: 0,
                         pending: false,
                         phase: None,
+                        log: Vec::new(),
                     });
                 }
             }
@@ -5902,6 +6009,7 @@ impl App {
                         waiting,
                         pending: false,
                         phase: None,
+                        log: Vec::new(),
                     });
                 }
             }
@@ -6063,6 +6171,37 @@ impl App {
                     // Full history retained for expansion; the panel renders only
                     // the last SUBAGENT_WINDOW.
                     panel.calls.push(label);
+                    panel.push_log(ChildLogEntry::Call {
+                        id,
+                        label: tool_finished(&tool, &args),
+                        result: None,
+                    });
+                }
+            }
+            // Prose and results feed only the `/agents` detail log: the parent
+            // transcript still shows a child as its one-line panel.
+            StreamEvent::Token { text } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    match panel.log.last_mut() {
+                        Some(ChildLogEntry::Prose(prose)) => push_child_prose(prose, &text),
+                        _ => panel.push_log(ChildLogEntry::Prose(text)),
+                    }
+                }
+            }
+            StreamEvent::ToolResult {
+                id,
+                content,
+                is_error,
+                ..
+            } => {
+                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                    let call = panel.log.iter_mut().rev().find_map(|e| match e {
+                        ChildLogEntry::Call { id: cid, result, .. } if *cid == id => Some(result),
+                        _ => None,
+                    });
+                    if let Some(result) = call {
+                        *result = Some((child_result_summary(&content), is_error));
+                    }
                 }
             }
             // A child's arguments stream just like the parent's, and for a big
@@ -6158,12 +6297,11 @@ impl App {
                 reason,
                 messages,
             } => self.apply_compaction(phase, reason, messages, Some(name)),
-            // Token/ToolResult, a child's live tool output (`ToolOutputDelta`)
-            // and any nested bracket are internal to the child run and not
-            // surfaced in the parent transcript: a subagent panel is a one-line
-            // activity summary, so a child's shell output would have nowhere to
-            // go and would push the parent's own live panel off screen. Deliberate
-            // -- the child's output still reaches its `ToolResult`.
+            // A child's live tool output (`ToolOutputDelta`) and any nested
+            // bracket stay out of the parent transcript: a subagent panel is a
+            // one-line activity summary, and a child's shell output would push
+            // the parent's own live panel off screen. Its prose and results are
+            // kept above, for `/agents` only.
             _ => {}
         }
     }
@@ -6646,25 +6784,11 @@ impl App {
             .rposition(|e| matches!(e, DisplayEntry::User { .. }))
             .map(|i| i + 1)
             .unwrap_or(0);
-        // `display_log` is not cleared by a cancel and the fold is reached from
-        // several terminal paths, so a call can already be in `history`: the
-        // backend publishes a mid-turn `MessagesUpdated` on a compaction retry
-        // and on the budget soft-stop, and a cancel is routinely followed by a
-        // late `Error` or stream close from the aborted task. Folding it twice
-        // puts the exchange on the wire twice, which invites a double execution
-        // and wastes context, so ids already folded are skipped.
-        let folded: std::collections::HashSet<&str> = self
-            .history
-            .iter()
-            .filter_map(|m| m.get("tool_calls").and_then(|v| v.as_array()))
-            .flatten()
-            .filter_map(|tc| tc.get("id").and_then(|v| v.as_str()))
-            .collect();
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         let mut results: Vec<(String, String)> = Vec::new();
         for entry in self.display_log.iter().skip(start) {
             match entry {
-                DisplayEntry::ToolCall { id, name, args } if !folded.contains(id.as_str()) => {
+                DisplayEntry::ToolCall { id, name, args } => {
                     calls.push((id.clone(), name.clone(), args.clone()));
                 }
                 DisplayEntry::ToolResult { id, content, .. } => {
@@ -6673,43 +6797,7 @@ impl App {
                 _ => {}
             }
         }
-        if calls.is_empty() {
-            return;
-        }
-        let tool_calls: serde_json::Value = calls
-            .iter()
-            .map(|(id, name, args)| {
-                serde_json::json!({
-                    "id": id,
-                    "type": "function",
-                    "function": {
-                        "name": name,
-                        "arguments": args.to_string(),
-                    }
-                })
-            })
-            .collect();
-        self.history.push(serde_json::json!({
-            "role": "assistant",
-            "content": serde_json::Value::Null,
-            "tool_calls": tool_calls,
-        }));
-        // Results are paired to the ids of the `tool_calls` array and emitted in
-        // its order, not in the order they finished: the loop dispatches calls
-        // concurrently, so an out-of-order or partial completion would otherwise
-        // hand a strict endpoint results it cannot match to the calls above.
-        for (id, _, _) in &calls {
-            let content = results
-                .iter()
-                .find(|(rid, _)| rid == id)
-                .map(|(_, c)| c.clone())
-                .unwrap_or_else(|| super::MISSING_TOOL_RESULT.to_string());
-            self.history.push(serde_json::json!({
-                "role": "tool",
-                "tool_call_id": id,
-                "content": content,
-            }));
-        }
+        super::fold_interrupted_tools(&mut self.history, &calls, &results);
     }
 }
 
@@ -7090,7 +7178,7 @@ pub(super) fn format_tokens(tokens: u64) -> String {
     // as noise. Same half-up tenths rule as the K branch, so no zero decimal.
     if tokens >= 1_000_000 {
         let tenths = (tokens + 50_000) / 100_000;
-        return if tenths % 10 == 0 {
+        return if tenths.is_multiple_of(10) {
             format!("{}M", tenths / 10)
         } else {
             format!("{}.{}M", tenths / 10, tenths % 10)
@@ -7098,7 +7186,7 @@ pub(super) fn format_tokens(tokens: u64) -> String {
     }
     // Tenths of a thousand, half-up. Exact for every u64 below ~1.8e15.
     let tenths = (tokens + 50) / 100;
-    if tokens < 10_000 && tenths % 10 != 0 {
+    if tokens < 10_000 && !tenths.is_multiple_of(10) {
         format!("{}.{}K", tenths / 10, tenths % 10)
     } else {
         // 6.0K reads as noise; report it as 6K. Above 10K the decimal is
@@ -8022,13 +8110,24 @@ fn collapse_command(cmd: &str) -> String {
 /// The name of the first subagent in a phased `dispatch_subagent` call. The
 /// schema is a flat `subagents: [{ name, task, phase }]`; the transient row
 /// names the first, mirroring the web card (`firstPlannedSubagent`).
-fn first_dispatched_subagent_name(args: &serde_json::Value) -> &str {
-    args.get("subagents")
+/// The dispatch row's subject: the one child's name, or `N subagents: a, b, c`
+/// for a fan-out. Every name is listed, since once the live dock has scrolled
+/// away this row is the only on-screen account of what was dispatched.
+fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
+    let names: Vec<&str> = args
+        .get("subagents")
         .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|s| s.get("name"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| s.get("name").and_then(|v| v.as_str()))
+                .collect()
+        })
+        .unwrap_or_default();
+    match names.as_slice() {
+        [] => format!("{verb} subagent"),
+        [one] => format!("{verb} subagent: {one}"),
+        many => format!("{verb} {} subagents: {}", many.len(), many.join(", ")),
+    }
 }
 
 fn tool_activity(name: &str, args: &serde_json::Value) -> String {
@@ -8056,9 +8155,9 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listing files".to_string(),
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
-        "dispatch_subagent" => {
-            format!("Dispatching subagent: {}", first_dispatched_subagent_name(args))
-        }
+        "dispatch_subagent" => dispatched_subagents_label("Dispatching", args),
+        "message_subagent" => format!("Messaging subagent: {}", s("name")),
+        "stop_subagent" => format!("Stopping subagent: {}", s("name")),
         "await_subagent" => format!(
             "Awaiting subagent: {}",
             subagent_name_from_run_id(s("run_id"))
@@ -8215,9 +8314,9 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "list" | "ls" => "Listed files".to_string(),
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
-        "dispatch_subagent" => {
-            format!("Dispatched subagent: {}", first_dispatched_subagent_name(args))
-        }
+        "dispatch_subagent" => dispatched_subagents_label("Dispatched", args),
+        "message_subagent" => format!("Messaged subagent: {}", s("name")),
+        "stop_subagent" => format!("Stopped subagent: {}", s("name")),
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
@@ -11052,6 +11151,8 @@ fn route_paste_event(app: &mut App, event: Event) {
         picker.refresh_search();
     } else if let Some(prompt) = app.settings_prompt.as_mut() {
         prompt.paste(&text);
+    } else if let Some(prompt) = app.agent_message.as_mut() {
+        prompt.input.push_str(&text);
     } else if let Some(proposal) = app.vibe_confirm.as_mut() {
         proposal.paste(&text);
     } else if let Some(prompt) = app.mcp_prompt.as_mut() {
@@ -11775,6 +11876,11 @@ async fn handle_key(
         handle_settings_key(app, key, ctrl);
         return;
     }
+    // So does the `/agents` message dock, drawn over the inspector it came from.
+    if app.agent_message.is_some() {
+        handle_agent_message_key(app, key, ctrl);
+        return;
+    }
     // So does `/vibe-setting`'s confirm dock: nothing is written without it.
     if app.vibe_confirm.is_some() {
         vibe_setting::handle_key(app, key, ctrl);
@@ -11930,6 +12036,39 @@ async fn handle_key(
                 }
                 picker.kind = PickerKind::AgentDetail;
                 app.agent_detail = Some(run_id);
+            }
+            // `/agents`: `m` writes to the selected child (or the one drilled
+            // into), `x` stops it. Both reach the same registry calls the parent
+            // agent's `message_subagent` / `stop_subagent` tools make.
+            KeyCode::Char('m') | KeyCode::Char('x')
+                if !ctrl
+                    && matches!(picker.kind, PickerKind::Agents | PickerKind::AgentDetail) =>
+            {
+                let run_id = if picker.kind == PickerKind::AgentDetail {
+                    app.agent_detail.clone().unwrap_or_default()
+                } else {
+                    picker
+                        .items
+                        .get(picker.selected)
+                        .map(|i| i.value.clone())
+                        .unwrap_or_default()
+                };
+                let Some(name) = app
+                    .subagents
+                    .iter()
+                    .find(|p| p.run_id == run_id && !run_id.is_empty())
+                    .map(|p| p.name.clone())
+                else {
+                    return;
+                };
+                if key.code == KeyCode::Char('m') {
+                    app.agent_message = Some(AgentMessagePrompt::new(&run_id, &name));
+                } else {
+                    match crate::core::agent::subagent::stop_subagent(&app.subagent_set, &run_id) {
+                        Ok(_) => app.note(&format!("stopped subagent {name}")),
+                        Err(e) => app.note(&format!("could not stop subagent {name}: {e}")),
+                    }
+                }
             }
             KeyCode::Enter if picker.kind == PickerKind::PluginConnect => {
                 let connect = picker.items[picker.selected].value == "connect";
@@ -13881,6 +14020,132 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
 ];
+
+/// Docked message field for one running subagent, opened from `/agents`. What
+/// it sends goes through `subagent::message_subagent`, the call the parent
+/// agent's own `message_subagent` tool makes, so the child cannot tell (and
+/// need not care) which of the two steered it.
+struct AgentMessagePrompt {
+    run_id: String,
+    name: String,
+    input: String,
+    error: Option<String>,
+}
+
+impl AgentMessagePrompt {
+    fn new(run_id: &str, name: &str) -> Self {
+        Self {
+            run_id: run_id.to_string(),
+            name: name.to_string(),
+            input: String::new(),
+            error: None,
+        }
+    }
+}
+
+/// Keyboard for the `/agents` message dock: chars/backspace edit, Enter queues
+/// the message on the child's inbox and closes, Esc closes without sending.
+/// Either way the inspector underneath stays open where the user left it.
+fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
+    if key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')) {
+        app.agent_message = None;
+        return;
+    }
+    let Some(prompt) = app.agent_message.as_mut() else {
+        return;
+    };
+    match key.code {
+        KeyCode::Enter => {
+            let text = prompt.input.trim().to_string();
+            if text.is_empty() {
+                prompt.error = Some("type a message first (Esc to cancel)".to_string());
+                return;
+            }
+            // By run id: the user picked this exact child, and a re-dispatched
+            // name must not redirect the message to a newer one.
+            match crate::core::agent::subagent::message_subagent(
+                &app.subagent_set,
+                &prompt.run_id,
+                &text,
+            ) {
+                Ok(_) => {
+                    let (run_id, name) = (prompt.run_id.clone(), prompt.name.clone());
+                    app.agent_message = None;
+                    if let Some(panel) = app.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                        panel.push_log(ChildLogEntry::Steer(text));
+                    }
+                    app.note(&format!(
+                        "message queued for subagent {name}; it reads it at its next step"
+                    ));
+                }
+                Err(e) => prompt.error = Some(e.to_string()),
+            }
+        }
+        KeyCode::Backspace => {
+            prompt.input.pop();
+        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
+        _ => {}
+    }
+}
+
+/// The message dock's contents at `width`.
+fn agent_message_lines(prompt: &AgentMessagePrompt, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = width.max(1) as usize;
+    let mut lines: Vec<Line<'static>> = wrap_text(
+        "Delivered at the subagent's next step, after any tool call in flight, as a \
+         message from you.",
+        dim,
+        max,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
+    if let Some(error) = &prompt.error {
+        lines.extend(wrap_text(error, Style::new().red(), max).into_iter().map(Line::from));
+    }
+    lines.extend(field_lines(
+        vec![Span::styled("message: ", Style::new().bold())],
+        &prompt.input,
+        Style::new(),
+        max,
+    ));
+    lines.push(Line::styled("Enter send \u{b7} Esc cancel".to_string(), dim));
+    lines
+}
+
+/// Where the message dock sits: grown upward from the input row into `body`,
+/// sized to its contents, the way the other docks are placed.
+fn agent_message_rect(
+    prompt: &AgentMessagePrompt,
+    body: ratatui::layout::Rect,
+    input: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let height = (agent_message_lines(prompt, input.width.saturating_sub(2)).len() as u16 + 2)
+        .min(body.height);
+    ratatui::layout::Rect {
+        x: input.x,
+        y: input.y.saturating_sub(height).max(body.y),
+        width: input.width,
+        height,
+    }
+}
+
+fn draw_agent_message(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AgentMessagePrompt) {
+    use ratatui::widgets::Clear;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::new().cyan())
+        .title(Span::styled(
+            format!(" message subagent: {} ", prompt.name),
+            Style::new().on_cyan().black().bold(),
+        ));
+    f.render_widget(Clear, area);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    f.render_widget(Paragraph::new(agent_message_lines(prompt, inner.width)), inner);
+}
 
 /// Docked edit prompt for one `/settings` row: value field, inline validation
 /// error, Enter saves / Esc cancels / cleared field unsets.
@@ -16056,21 +16321,8 @@ fn panel_activity_summary(panel: &SubagentPanel) -> String {
     }
 }
 
-/// Group consecutive identical labels into `(label, count)` runs, preserving
-/// order, so a repeated call renders once as `label ×N` instead of N rows.
-fn collapse_runs(calls: &[String]) -> Vec<(String, usize)> {
-    let mut out: Vec<(String, usize)> = Vec::new();
-    for c in calls {
-        match out.last_mut() {
-            Some(run) if &run.0 == c => run.1 += 1,
-            _ => out.push((c.clone(), 1)),
-        }
-    }
-    out
-}
-
 /// The `/agents` detail body for the subagent `run_id`: header, stats, dispatch
-/// brief, and the tail of its collapsed call history that fits in `height`. An
+/// brief, and the tail of its activity log (see [`child_log_lines`]) that fits in `height`. An
 /// agent that has finished (its panel gone) shows a short "finished" note, since
 /// the inspector reads live panels only.
 fn agent_detail_lines(
@@ -16105,39 +16357,85 @@ fn agent_detail_lines(
         );
     }
     out.push(Line::from(""));
-    out.push(Line::styled("recent calls".to_string(), dim));
-    if panel.calls.is_empty() {
-        out.push(Line::styled("  (no tool calls yet)".to_string(), dim));
+    let body = child_log_lines(panel, width);
+    if body.is_empty() {
+        out.push(Line::styled("(no activity yet)".to_string(), dim));
         return out;
     }
-    let runs = collapse_runs(&panel.calls);
-    // Reserve the rows already used plus one for a possible "+N earlier" head,
-    // then show the tail so the most recent calls are the ones that survive.
+    // The tail, so the newest activity is what survives a small box; one row is
+    // held back for the "+N earlier" head whenever anything is cut.
     let budget = (height as usize).saturating_sub(out.len()).max(1);
-    let (hidden, shown) = if runs.len() <= budget {
-        (0, &runs[..])
+    if body.len() <= budget {
+        out.extend(body);
     } else {
-        let start = runs.len() - budget.saturating_sub(1);
-        (start, &runs[start..])
-    };
-    if hidden > 0 {
-        out.push(Line::styled(format!("  +{hidden} earlier"), dim));
+        let keep = budget.saturating_sub(1);
+        let hidden = body.len() - keep;
+        out.push(Line::styled(format!("+{hidden} earlier lines"), dim));
+        out.extend(body.into_iter().skip(hidden));
     }
-    for (label, n) in shown {
-        let text = if *n > 1 {
-            format!("{label} ×{n}")
-        } else {
-            label.clone()
-        };
-        let style = if *n >= STUCK_REPEAT_THRESHOLD {
-            Style::new().red()
-        } else {
-            Style::new().dim()
-        };
-        out.push(Line::from(vec![
-            Span::raw("  "),
-            Span::styled(truncate(&text, max), style),
-        ]));
+    out
+}
+
+/// A child's log rendered like the main transcript: prose as markdown, each
+/// call as a tool row with its outcome tag and a one-line result summary, and
+/// the user's own steering messages as user lines.
+fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
+    let dim = Style::new().dark_gray();
+    let max = (width.max(8) as usize).saturating_sub(2);
+    let repeats = trailing_repeat(&panel.calls);
+    let mut out: Vec<Line<'static>> = Vec::new();
+    for entry in &panel.log {
+        match entry {
+            ChildLogEntry::Prose(text) => {
+                let text = strip_system_xml_tags(text);
+                if text.trim().is_empty() {
+                    continue;
+                }
+                out.extend(format_markdown_lines(text.trim(), width));
+            }
+            ChildLogEntry::Steer(text) => {
+                out.extend(
+                    wrap_text(&format!("> {text}"), Style::new().bold().magenta(), max)
+                        .into_iter()
+                        .map(Line::from),
+                );
+            }
+            ChildLogEntry::Call { label, result, .. } => {
+                let (tag, tag_style) = match result {
+                    None => ("\u{25b8}", Style::new().cyan()),
+                    Some((_, true)) => ("\u{2717}", Style::new().red()),
+                    Some((_, false)) => ("\u{2713}", Style::new().green()),
+                };
+                out.extend(tool_row_lines(
+                    tag,
+                    tag_style,
+                    label,
+                    Style::new().dim(),
+                    TOOL_ROW_RESERVE,
+                    width,
+                    None,
+                ));
+                if let Some((content, is_error)) = result {
+                    let summary = summarize_result(content, max.saturating_sub(4));
+                    if !summary.is_empty() {
+                        let style = if *is_error { Style::new().red() } else { dim };
+                        out.push(Line::from(vec![
+                            Span::styled("\u{2502}   ", dim),
+                            Span::styled(summary, style),
+                        ]));
+                    }
+                }
+            }
+        }
+    }
+    // A spin is still worth flagging in red: the log alone reads as busy.
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        if let Some(last) = panel.calls.last() {
+            out.push(Line::styled(
+                format!("repeating: {last} \u{d7}{repeats}"),
+                Style::new().red(),
+            ));
+        }
     }
     out
 }
@@ -17505,7 +17803,14 @@ async fn fork_at(app: &mut App, target: usize) {
         .chars()
         .take(8)
         .collect();
+    // A fork continues this conversation's prefix, so it keeps this session's
+    // snapshot: the same date and branch compose the same system prompt, and the
+    // provider's cache of the shared history still holds. Nothing predates the
+    // snapshot either, so there is no resume notice to send.
+    let start = app.args.as_ref().and_then(|a| a.session_start.clone());
     load_thread(app, &thread, "forked").await;
+    app.adopt_session_start(start);
+    app.resume_notice_pending = false;
     app.input_clear();
     app.input = fill;
     app.cursor = app.input.len();
@@ -17923,6 +18228,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     restore_run_mode(app, thread.get("metadata"));
     restore_todos(app, thread.get("metadata"));
     restore_host_system_prompt(app, thread.get("metadata"));
+    app.refresh_session_start();
     app.forked_from = thread
         .get("metadata")
         .and_then(|m| m.get(super::FORKED_FROM_KEY))
@@ -17955,6 +18261,8 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     // before journaling (or whose journal was lost).
     let logged = journal::read_journal(&journal::journal_path(&app.agent_dir, full_id));
     app.history = super::rebuild_wire_history(&messages);
+    // Only a conversation with something in it predates the snapshot.
+    app.resume_notice_pending = !app.history.is_empty();
     // A resumed thread was never measured by *this* session's provider calls, and
     // any count left over from the thread we were on describes a different
     // conversation entirely. Estimate until a fresh response lands.
@@ -18315,6 +18623,10 @@ fn draw(f: &mut Frame, app: &mut App) {
         // prompt never shows on the one screen that raises it.
         if let Some(confirm) = &app.browser_confirm {
             draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
+        }
+        // Likewise the `/agents` message dock, opened over the inspector.
+        if let Some(prompt) = &app.agent_message {
+            draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
         }
         return;
     }
@@ -18780,6 +19092,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             height,
         };
         draw_settings_prompt(f, rect, prompt, &toml_path);
+    } else if let Some(prompt) = &app.agent_message {
+        draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
     } else if let Some(prompt) = &app.mcp_prompt {
         let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
             .min(chunks[1].height);
@@ -21278,8 +21592,8 @@ mod tests {
     };
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, collapse_runs, open_agents_picker, retry_wait_label, trailing_repeat,
-        RetryWait, SubagentPanel,
+        cache_summary_lines, child_result_summary, open_agents_picker, push_child_prose,
+        retry_wait_label, trailing_repeat, RetryWait, SubagentPanel, CHILD_PROSE_MAX,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -21393,6 +21707,7 @@ mod tests {
             waiting: 0,
             pending: false,
             phase: None,
+            log: Vec::new(),
         }
     }
 
@@ -21419,15 +21734,6 @@ mod tests {
     }
 
     #[test]
-    fn collapse_runs_groups_consecutive_calls() {
-        let calls: Vec<String> = ["a", "a", "b", "a"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(
-            collapse_runs(&calls),
-            vec![("a".into(), 2), ("b".into(), 1), ("a".into(), 1)]
-        );
-    }
-
-    #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
         let items = agent_picker_items(&[]);
         assert_eq!(items.len(), 1);
@@ -21451,7 +21757,7 @@ mod tests {
         let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
-        assert!(text.contains("×5"), "call run collapsed in the detail: {text}");
+        assert!(text.contains("×5"), "a spin is flagged in the detail: {text}");
     }
 
     #[test]
@@ -21526,6 +21832,213 @@ mod tests {
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
         assert_eq!(app.picker.as_ref().unwrap().kind, PickerKind::Agents);
         assert!(app.agent_detail.is_none(), "Esc cleared the drilled-in id");
+    }
+
+    /// A started child plus a few of its events, as the live stream delivers them.
+    fn app_with_child_activity() -> TestApp {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: Some("count things".to_string()),
+        });
+        let child = |event: StreamEvent| StreamEvent::Subagent {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            event: Box::new(event),
+        };
+        app.apply(child(StreamEvent::Token { text: "Let me run ".into() }));
+        app.apply(child(StreamEvent::Token { text: "the command.".into() }));
+        app.apply(child(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "sleep 20 && echo counted" }),
+        }));
+        app.apply(child(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "counted\n[exit 0]".into(),
+            is_error: false,
+            diff: None,
+        }));
+        app.apply(child(StreamEvent::ToolCall {
+            id: "c2".into(),
+            name: "read".into(),
+            args: json!({ "path": "/nope/missing.txt" }),
+        }));
+        app.apply(child(StreamEvent::ToolResult {
+            id: "c2".into(),
+            content: "ERROR: no such file".into(),
+            is_error: true,
+            diff: None,
+        }));
+        app.apply(child(StreamEvent::Token { text: "All done.".into() }));
+        app
+    }
+
+    /// The detail view reads like the main transcript: the child's prose, and
+    /// each tool call with its outcome tag and a summary of its result, in the
+    /// order they happened.
+    #[test]
+    fn agent_detail_shows_the_childs_prose_and_tool_calls() {
+        let app = app_with_child_activity();
+        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let order = [
+            "Let me run the command.",
+            "✓ Ran: sleep 20 && echo counted",
+            "counted",
+            "✗ Read missing.txt",
+            "ERROR: no such file",
+            "All done.",
+        ];
+        let mut at = 0;
+        for want in order {
+            let found = text[at..].find(want).unwrap_or_else(|| {
+                panic!("{want:?} missing or out of order in:\n{text}")
+            });
+            at += found + want.len();
+        }
+    }
+
+    /// A long-running child keeps its newest activity on screen: the detail
+    /// shows the tail of the log and says how much scrolled off above it.
+    #[test]
+    fn agent_detail_keeps_the_newest_activity_in_view() {
+        let mut app = app_with_child_activity();
+        for n in 0..40 {
+            app.apply(StreamEvent::Subagent {
+                run_id: "sub-counter-1".to_string(),
+                name: "counter".to_string(),
+                event: Box::new(StreamEvent::ToolCall {
+                    id: format!("n{n}"),
+                    name: "bash".into(),
+                    args: json!({ "command": format!("echo step-{n}") }),
+                }),
+            });
+        }
+        let lines = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 20);
+        assert!(lines.len() <= 20, "fits the box: {}", lines.len());
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("step-39"), "newest call shown: {text}");
+        assert!(!text.contains("step-0\n"), "oldest scrolled off: {text}");
+        assert!(text.contains("earlier"), "says what scrolled off: {text}");
+    }
+
+    /// `m` on a child's detail opens a message dock; Enter queues the text on
+    /// the child's inbox through the same `message_subagent` the parent agent
+    /// uses, so it lands as a plain user turn at the child's next boundary.
+    #[tokio::test]
+    async fn agents_detail_m_steers_the_child_like_the_parent_does() {
+        let mut app = test_app();
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: Some("count".to_string()),
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        assert!(app.agent_message.is_some(), "m opens the message dock");
+        assert!(app.blocking_dock().is_some(), "the dock owns the keyboard");
+
+        type_key_chars(&mut app, "also say BANANA").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+
+        assert!(app.agent_message.is_none(), "Enter sends and closes the dock");
+        assert_eq!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::AgentDetail),
+            "the user is left where they were"
+        );
+        assert_eq!(
+            inbox.drain(),
+            vec![json!({ "role": "user", "content": "also say BANANA" })],
+            "queued exactly as a parent message is"
+        );
+        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("also say BANANA"), "the message shows in its log: {text}");
+    }
+
+    /// The dock opens over the `/agents` inspector, whose draw path returns
+    /// before the ordinary dock chain: it must still be on screen, or the user
+    /// types into a field they cannot see.
+    #[tokio::test]
+    async fn agents_message_dock_is_drawn_over_the_inspector() {
+        let mut app = test_app();
+        crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "hello").await;
+        let screen = render_rows(&mut app, 100, 30).join("\n");
+        assert!(screen.contains("message subagent: counter"), "{screen}");
+        assert!(screen.contains("message: hello"), "{screen}");
+    }
+
+    /// Esc abandons a message without sending it, back on the detail screen.
+    #[tokio::test]
+    async fn agents_message_dock_esc_sends_nothing() {
+        let mut app = test_app();
+        let inbox = crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-counter-1",
+            "counter",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-counter-1".to_string(),
+            name: "counter".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Char('m'), KeyModifiers::NONE).await;
+        type_key_chars(&mut app, "never mind").await;
+        press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
+        assert!(app.agent_message.is_none());
+        assert_eq!(app.picker.as_ref().map(|p| p.kind), Some(PickerKind::Agents));
+        assert!(inbox.drain().is_empty());
+    }
+
+    /// `x` on the list stops the selected child through `stop_subagent`.
+    #[tokio::test]
+    async fn agents_x_stops_the_selected_child() {
+        let mut app = test_app();
+        crate::core::agent::subagent::tests::register_live_child(
+            &app.subagent_set,
+            "sub-waster-1",
+            "waster",
+        );
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "sub-waster-1".to_string(),
+            name: "waster".to_string(),
+            task: None,
+        });
+        open_agents_picker(&mut app);
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(crate::core::agent::subagent::tests::child_is_finished(
+            &app.subagent_set,
+            "sub-waster-1"
+        ));
     }
 
     /// When more agents are running than the dock can show, the overflow row
@@ -24802,6 +25315,35 @@ mod tests {
         );
     }
 
+    /// A fan-out names every child, not just the first: the row is the only
+    /// on-screen account of what was dispatched once the dock scrolls away.
+    #[test]
+    fn a_multi_dispatch_row_names_every_subagent() {
+        let dispatch = json!({ "subagents": [
+            { "name": "counter", "task": "x" },
+            { "name": "waster", "task": "y" },
+            { "name": "reader", "task": "z" },
+        ] });
+        assert_eq!(
+            tool_activity("dispatch_subagent", &dispatch),
+            "Dispatching 3 subagents: counter, waster, reader"
+        );
+        assert_eq!(
+            tool_finished("dispatch_subagent", &dispatch),
+            "Dispatched 3 subagents: counter, waster, reader"
+        );
+    }
+
+    #[test]
+    fn steering_tool_rows_name_their_target() {
+        let msg = json!({ "name": "counter", "message": "also say BANANA" });
+        assert_eq!(tool_activity("message_subagent", &msg), "Messaging subagent: counter");
+        assert_eq!(tool_finished("message_subagent", &msg), "Messaged subagent: counter");
+        let stop = json!({ "name": "waster" });
+        assert_eq!(tool_activity("stop_subagent", &stop), "Stopping subagent: waster");
+        assert_eq!(tool_finished("stop_subagent", &stop), "Stopped subagent: waster");
+    }
+
     #[test]
     fn awaiting_throbber_renders_below_assistant_prose() {
         use ratatui::{backend::TestBackend, Terminal};
@@ -26310,7 +26852,7 @@ mod tests {
     /// the next dock added cannot quietly regress only the rendering half.
     #[test]
     fn every_blocking_dock_marks_the_input_row_inactive() {
-        let setups: [DockSetup; 9] = [
+        let setups: [DockSetup; 10] = [
             // The account OAuth dock takes every keystroke and outranks the
             // API-key one, so it has to block the field as hard as the rest.
             ("account_login", |app| {
@@ -26347,6 +26889,9 @@ mod tests {
             }),
             ("mcp_prompt", |app| {
                 app.mcp_prompt = Some(blank_mcp_prompt())
+            }),
+            ("agent_message", |app| {
+                app.agent_message = Some(super::AgentMessagePrompt::new("sub-a-1", "a"))
             }),
             ("provider_prompt", |app| {
                 app.provider_prompt = Some(super::ProviderPrompt::new())
@@ -26798,6 +27343,7 @@ mod tests {
             bg_shells: Some(app.shell_set.clone()),
             subagent_bg: Some(app.subagent_set.clone()),
             compaction: None,
+            session_start: None,
         })
     }
 
@@ -31477,6 +32023,31 @@ mod tests {
             .join("\n");
         assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
         assert!(app.pending_rows.is_empty());
+    }
+
+    /// One long streamed answer extends a single entry, so the entry cap alone
+    /// never bounds it: the prose keeps its newest bytes, cut on a char
+    /// boundary.
+    #[test]
+    fn a_child_prose_entry_keeps_only_its_newest_bytes() {
+        let mut prose = String::new();
+        for _ in 0..CHILD_PROSE_MAX {
+            push_child_prose(&mut prose, "\u{e9}");
+        }
+        push_child_prose(&mut prose, "END");
+        assert!(prose.len() <= CHILD_PROSE_MAX, "{}", prose.len());
+        assert!(prose.ends_with("END"));
+        assert!(prose.starts_with('\u{e9}'), "cut on a char boundary");
+    }
+
+    /// A child's tool result is kept as the line the log renders, not the
+    /// whole output.
+    #[test]
+    fn a_child_tool_result_is_kept_as_its_summary() {
+        let big = format!("first line\n{}", "x\n".repeat(100_000));
+        let kept = child_result_summary(&big);
+        assert!(kept.starts_with("first line") && kept.contains("(+100000 lines)"), "{kept}");
+        assert!(kept.len() < 600);
     }
 
     #[test]
@@ -36600,6 +37171,88 @@ mod tests {
         restore_host_system_prompt(&mut app, Some(&meta));
         restore_host_system_prompt(&mut app, Some(&serde_json::json!({})));
         assert_eq!(prompt(&app), None, "a thread without one resumes on Jan's");
+    }
+
+    /// `/new` starts a session, so it takes a fresh session-start snapshot in
+    /// place of the one the process started with.
+    #[test]
+    fn a_new_session_takes_a_fresh_session_start_snapshot() {
+        let mut app = test_app();
+        let mut args = (*test_args(&app, std::collections::HashMap::new())).clone();
+        args.session_start = Some(crate::core::agent::context::SessionStart::fixed(
+            "1999-01-01",
+            Some("stale"),
+        ));
+        app.args = Some(std::sync::Arc::new(args));
+        app.reset_session();
+        let start = app.args.as_ref().and_then(|a| a.session_start.clone());
+        let fresh = crate::core::agent::context::SessionStart::capture(Some(&app.project_root));
+        assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
+    }
+
+    /// A fork continues the source's prefix, so it keeps the source's snapshot
+    /// (same date, same branch, same system prompt bytes) and sends no resume
+    /// notice, where a resume of the same thread takes a fresh snapshot.
+    #[tokio::test]
+    async fn a_fork_keeps_the_source_session_start_snapshot() {
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        let with_stale = |app: &mut App| {
+            let mut args = (*test_args(app, std::collections::HashMap::new())).clone();
+            args.session_start = Some(stale.clone());
+            app.args = Some(std::sync::Arc::new(args));
+        };
+        let start = |app: &App| app.args.as_ref().and_then(|a| a.session_start.clone());
+
+        let mut app = test_app();
+        with_stale(&mut app);
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        fork_at(&mut app, 1).await;
+        assert_eq!(start(&app), Some(stale.clone()), "the fork kept the source's snapshot");
+        assert!(!app.resume_notice_pending, "nothing in a fork predates its snapshot");
+
+        let mut resumed = test_app();
+        resumed.agent_dir = app.agent_dir.clone();
+        with_stale(&mut resumed);
+        apply_resume(&mut resumed, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert_ne!(start(&resumed), Some(stale), "a resume takes its own snapshot");
+    }
+
+    /// The first message after a resume carries the `<SYSTEM>` resumed notice,
+    /// once; later messages and a fresh session carry none.
+    #[tokio::test]
+    async fn the_first_message_after_a_resume_carries_the_resumed_notice() {
+        let notice = crate::core::cli::SESSION_RESUMED_NOTICE;
+        let carries = |m: &serde_json::Value| {
+            m.get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains(&crate::core::agent::reminder::wrap(notice)))
+        };
+        let mut app = test_app();
+        record_full_turn(&mut app);
+        assert!(!app.history.iter().any(carries), "a fresh session has no notice");
+
+        let mut fresh = test_app();
+        fresh.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert!(!fresh.history.iter().any(carries), "nothing is sent until the user speaks");
+
+        fresh.submit_user("continue".to_string());
+        let last = fresh.history.last().expect("the new message");
+        assert!(carries(last), "{last}");
+        assert!(
+            last["content"].as_str().unwrap().starts_with("continue"),
+            "the notice follows what the user typed: {last}"
+        );
+
+        fresh.status = Status::Idle;
+        fresh.submit_user("again".to_string());
+        assert_eq!(fresh.history.iter().filter(|m| carries(m)).count(), 1, "once");
     }
 
     #[test]

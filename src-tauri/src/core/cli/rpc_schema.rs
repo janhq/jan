@@ -5,7 +5,8 @@
 //! committed at `protocol/rpc-schema.json`, which CI regenerates and diffs: an
 //! envelope change cannot land without the artifact moving with it. It is the
 //! RPC counterpart of `protocol/schema.json`, and covers this surface only -
-//! the stream-json records are in that file, and ACP has no document yet.
+//! the stream-json records are in that file, and ACP (`jan acp`)
+//! uses the upstream ACP schema rather than one of its own.
 //!
 //! Like that one, the document has to regenerate byte-identically: keys are
 //! sorted by `serde_json`, nothing iterates a hash map on the way out, and the
@@ -46,12 +47,14 @@ pub struct SessionStartParams {
     pub tools: Vec<serde_json::Value>,
     /// `false` advertises only the host tools: no built-ins, MCP, plugin,
     /// `ask`, `todo` or monitor tools. `subagents: true` adds back only
-    /// `dispatch_subagent` and `list_subagents`.
+    /// `dispatch_subagent`, `list_subagents`, `message_subagent` and
+    /// `stop_subagent`.
     #[serde(default = "builtins_default")]
     pub builtins: bool,
     /// Whether the session may delegate to subagents; defaults to `builtins`.
-    /// With `builtins: false` it adds only `dispatch_subagent` and
-    /// `list_subagents`, and every child is held to the session's host tools.
+    /// With `builtins: false` it adds only `dispatch_subagent`,
+    /// `list_subagents`, `message_subagent` and `stop_subagent`, and every
+    /// child is held to the session's host tools.
     /// `false` withholds subagent tools even from a session with built-ins.
     #[serde(default)]
     pub subagents: Option<bool>,

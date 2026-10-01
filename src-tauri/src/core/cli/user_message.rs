@@ -115,7 +115,7 @@ pub(crate) fn data_url_mime_and_len(url: &str) -> Result<(&str, usize), String> 
 /// the real size, which is what the caps are measured against: the line cap is a
 /// weak proxy for it, since base64 inflates whatever it encodes.
 pub(crate) fn base64_decoded_len(payload: &str) -> Result<usize, String> {
-    if payload.len() % 4 != 0 {
+    if !payload.len().is_multiple_of(4) {
         return Err("base64 payload length is not a multiple of 4".to_string());
     }
     let padding = payload.bytes().rev().take_while(|b| *b == b'=').count();

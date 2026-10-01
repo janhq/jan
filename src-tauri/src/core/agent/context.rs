@@ -276,10 +276,10 @@ fn display_path(path: &Path) -> String {
 /// session start so the agent is grounded from turn one. Fields: working
 /// directory, OS/platform/arch, shell, and scratch space.
 ///
-/// Deliberately carries nothing that varies within a session -- today's date and
-/// the current git branch have their own tail composers ([`Composer::Date`] and
-/// [`Composer::GitState`]) -- so this block stays constant for the session and
-/// can sit above the cache line. Kept short: a few lines, not a wall of text.
+/// Deliberately carries nothing that varies within a session -- the date and git
+/// branch are the separate [`SessionStart`] snapshot -- so this block stays
+/// constant for the session and can sit above the cache line. Kept short: a few
+/// lines, not a wall of text.
 fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> String {
     let cwd = display_path(project_root);
 
@@ -336,6 +336,51 @@ struct CompositionInputs<'a> {
     project_root: &'a Path,
     scratch: Option<&'a Path>,
     subagents_enabled: bool,
+    session_start: Option<&'a SessionStart>,
+}
+
+/// The date and git branch a session started with, taken once and then carried
+/// unchanged for the session's life.
+///
+/// Frozen rather than read per turn so the system prompt stays byte-identical
+/// across the session: a live date moves at midnight and a live branch moves on
+/// every checkout, and either would rewrite the cached prefix. The block says
+/// "session start" and "starting branch" so the model reads them as a snapshot,
+/// not a live reading. A resumed session takes a fresh one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionStart {
+    date: String,
+    branch: Option<String>,
+}
+
+impl SessionStart {
+    /// Read the clock and `project_root`'s checkout now.
+    pub(crate) fn capture(project_root: Option<&Path>) -> Self {
+        Self {
+            date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+            branch: project_root.and_then(crate::core::agent::git::current_branch),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixed(date: &str, branch: Option<&str>) -> Self {
+        Self {
+            date: date.to_string(),
+            branch: branch.map(str::to_string),
+        }
+    }
+
+    /// The `# Session Start` block as it is written into the system prompt.
+    pub(crate) fn block(&self) -> String {
+        let branch = match &self.branch {
+            Some(branch) => format!("`{branch}`"),
+            None => "none (not a git repository, or no commits yet)".to_string(),
+        };
+        format!(
+            "# Session Start\n\nSession start date: {}\nStarting branch: {branch}",
+            self.date
+        )
+    }
 }
 
 /// The system prompt, split by where the placement policy sent each block.
@@ -380,6 +425,7 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         Composer::RuntimeEnvironment => {
             Some(runtime_environment_block(inputs.project_root, inputs.scratch))
         }
+        Composer::SessionStart => inputs.session_start.map(SessionStart::block),
         Composer::SubagentGuide => inputs.subagents_enabled.then(|| SUBAGENT_GUIDE.to_string()),
         Composer::SkillGuide => Some(DEFAULT_SKILL_GUIDE.trim().to_string()),
         Composer::WebToolsGuide => Some(WEB_TOOLS_GUIDE.to_string()),
@@ -387,12 +433,9 @@ fn render(composer: Composer, inputs: &CompositionInputs) -> Option<String> {
         Composer::Skills => load_skills(inputs.project_root),
         Composer::MemoryCatalog => load_memory_catalog(inputs.project_root),
         // Built where the request is assembled, because they need state the
-        // composition has no access to: the tool array is a request field, the
-        // date and git state are the run's own clock and checkout, and the last
-        // three read per-turn state (a query, the todo registry).
+        // composition has no access to: the tool array is a request field, and
+        // the last three read per-turn state (a query, the todo registry).
         Composer::ToolSchemas
-        | Composer::Date
-        | Composer::GitState
         | Composer::MemoryRecall
         | Composer::PlanAddendum
         | Composer::TodoAddendum => None,
@@ -414,12 +457,14 @@ pub(crate) fn compose_system_prompt(
     scratch: Option<&Path>,
     subagents_enabled: bool,
     policy: &PromptPolicy,
+    session_start: Option<&SessionStart>,
 ) -> Result<ComposedPrompt, String> {
     let inputs = CompositionInputs {
         base,
         project_root,
         scratch,
         subagents_enabled,
+        session_start,
     };
     policy.validate()?;
     let mut prefix: Vec<String> = Vec::new();
@@ -461,6 +506,7 @@ mod tests {
             scratch,
             subagents_enabled,
             &PromptPolicy::default(),
+            None,
         )
         .ok()
         .map(|composed| composed.as_prompt())
@@ -884,9 +930,8 @@ mod tests {
         // Must be a handful of lines, not a wall of text.
         let lines: Vec<_> = block.lines().filter(|l| !l.is_empty()).collect();
         assert!(lines.len() <= 15, "env block is too large: {} lines", lines.len());
-        // Must contain the key sections. Today's date and the git branch are
-        // deliberately NOT here: they vary within a session, so they are their
-        // own per-turn composers rather than part of this cache-line block.
+        // Must contain the key sections. The date and git branch are
+        // deliberately NOT here: they are the separate session-start block.
         assert!(block.contains("# Runtime Environment"));
         assert!(block.contains("Work directory:"));
         assert!(block.contains("OS:"));
@@ -925,27 +970,88 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// The date is per-turn content: it belongs in the volatile block, not in
-    /// the stable prefix, or a run that crosses midnight moves every byte behind
-    /// the cache line.
+    /// The date and branch the session started with sit in the system prompt,
+    /// right after the runtime environment, worded as what they are: values
+    /// taken once at session start, not live readings.
     #[test]
-    fn the_date_is_a_tail_composer() {
-        let root = scratch_project("date-tail");
-        std::fs::create_dir_all(&root).unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
-            .expect("default policy");
+    fn the_session_start_block_sits_in_the_prefix_after_the_environment() {
+        let root = scratch_project("session-start");
+        let start = SessionStart::fixed("2026-09-30", Some("feat/x"));
+        let composed = compose_system_prompt(
+            None,
+            &root,
+            None,
+            false,
+            &PromptPolicy::default(),
+            Some(&start),
+        )
+        .expect("default policy");
+        let block = "# Session Start\n\nSession start date: 2026-09-30\nStarting branch: `feat/x`";
+        let at = composed.prefix.find(block).unwrap_or_else(|| {
+            panic!("the block is in the system prompt: {}", composed.prefix)
+        });
+        let env = composed.prefix.find("# Runtime Environment").unwrap();
+        assert!(env < at, "it follows the runtime environment");
+        assert!(!composed.prefix.contains("Today's date"), "no live-date wording");
+        assert!(composed.tail.is_empty(), "nothing of it is left for the tail");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Outside a repository the block says so instead of naming a branch.
+    #[test]
+    fn the_session_start_block_names_a_missing_repository() {
+        let root = scratch_project("session-start-norepo");
+        let start = SessionStart::fixed("2026-09-30", None);
+        let prompt = compose_system_prompt(
+            None,
+            &root,
+            None,
+            false,
+            &PromptPolicy::default(),
+            Some(&start),
+        )
+        .unwrap()
+        .prefix;
         assert!(
-            !composed.prefix.contains("Today's date"),
-            "the date must not sit above the cache line: {}",
-            composed.prefix
+            prompt.contains("Starting branch: none (not a git repository, or no commits yet)"),
+            "{prompt}"
         );
-        assert!(
-            composed
-                .tail
-                .iter()
-                .all(|(composer, _)| *composer != Composer::Date),
-            "the date is rendered by the run, not by this composition"
-        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Frozen means frozen: the snapshot is taken once, and a branch switch
+    /// after it changes nothing the prompt says.
+    #[test]
+    fn a_session_start_snapshot_ignores_a_later_branch_switch() {
+        let root = scratch_project("session-start-switch");
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .output()
+                .unwrap()
+        };
+        git(&["init", "-q", "-b", "first"]);
+        git(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"]);
+        let start = SessionStart::capture(Some(&root));
+        git(&["checkout", "-q", "-b", "second"]);
+        let compose = || {
+            compose_system_prompt(
+                None,
+                &root,
+                None,
+                false,
+                &PromptPolicy::default(),
+                Some(&start),
+            )
+            .unwrap()
+            .prefix
+        };
+        let (one, two) = (compose(), compose());
+        assert_eq!(one, two, "byte-identical across turns");
+        assert!(one.contains("Starting branch: `first`"), "{one}");
+        assert!(!one.contains("second"), "{one}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -964,7 +1070,7 @@ mod tests {
                 "guidelines".to_string(),
             ]),
         );
-        let composed = compose_system_prompt(None, &root, None, false, &policy).expect("policy");
+        let composed = compose_system_prompt(None, &root, None, false, &policy, None).expect("policy");
 
         assert!(composed.prefix.contains("# Guidelines"));
         assert!(
@@ -996,10 +1102,10 @@ mod tests {
     fn a_policy_that_allows_a_varying_composer_fails_composition() {
         let root = scratch_project("varying");
         std::fs::create_dir_all(&root).unwrap();
-        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["date".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy)
+        let policy = PromptPolicy::new(Placement::Tail, Some(vec!["memory_recall".to_string()]));
+        let error = compose_system_prompt(None, &root, None, false, &policy, None)
             .expect_err("a per-turn composer cannot be allowed into the prefix");
-        assert!(error.contains("date"), "{error}");
+        assert!(error.contains("memory_recall"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1010,7 +1116,7 @@ mod tests {
         let root = scratch_project("typo");
         std::fs::create_dir_all(&root).unwrap();
         let policy = PromptPolicy::new(Placement::Tail, Some(vec!["skils".to_string()]));
-        let error = compose_system_prompt(None, &root, None, false, &policy)
+        let error = compose_system_prompt(None, &root, None, false, &policy, None)
             .expect_err("an unknown id must not read as a policy");
         assert!(error.contains("skils"), "{error}");
         let _ = std::fs::remove_dir_all(&root);
@@ -1024,7 +1130,7 @@ mod tests {
         let root = scratch_project("order");
         write_skill(&root, "s.md", "Do the thing.");
         std::fs::write(root.join("JAN.md"), "PROJECT_RULES").unwrap();
-        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default())
+        let composed = compose_system_prompt(None, &root, None, false, &PromptPolicy::default(), None)
             .expect("default policy");
 
         // Every block the registry declares for the prefix is present, in the

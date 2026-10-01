@@ -35,6 +35,7 @@
   "adk-tools": "Host Tools",
   "adk-runtime": "Process & Failures",
   "protocol": "Protocol Records",
+  "acp": "Editors (ACP)",
   "reference-separator": { "title": "Reference", "type": "separator" },
   "cli": "CLI"
 }

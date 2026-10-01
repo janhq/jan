@@ -56,13 +56,35 @@ Context share is the one to watch: an agent climbing toward 100% is about to run
 
 | Tool | Purpose |
 | --- | --- |
-| `dispatch_subagent` | Start a subagent on a task and return immediately with a `run_id` |
-| `await_subagent` | Block until a dispatched run finishes and return its answer |
+| `dispatch_subagent` | Start one or more subagents and return immediately, listing each one's name, `run_id` and answer file |
+| `message_subagent` | Send a running subagent a correction or extra context, by the name it was dispatched with |
+| `stop_subagent` | Stop one running subagent by name; its work in progress is discarded |
 | `create_subagent` | Save a reusable subagent definition |
 | `list_subagents` | List the subagents available here |
 
 Dispatch is non-blocking, which is what makes parallel fan-out possible: the main agent dispatches
-several, then awaits each one. Each `run_id` can be awaited once.
+several and keeps working. Each subagent's answer arrives in a note the moment it finishes, so
+there is nothing to wait on.
+
+## Steering a running subagent
+
+A subagent that misread its task doesn't have to run to the end. `message_subagent` queues a message
+and returns straight away. The subagent reads it at its next step, after any tool call in flight has
+finished, as an ordinary user message: to a subagent, the agent that dispatched it is its user.
+Several messages are delivered together, in order.
+
+- A subagent still waiting for a free slot can be messaged too; the message is waiting when it starts.
+- A subagent that already finished is reported as such: dispatch a follow-up instead.
+- A message is only text. It cannot widen the subagent's tools, answer a permission prompt, or change
+  its sandbox or model.
+- If one name was dispatched more than once, the newest still-running subagent is the one addressed.
+
+`stop_subagent` ends one subagent without touching the others. Esc still stops all of them along
+with the turn.
+
+You can do both yourself from `/agents`: select a subagent and press `m` to message it or `x` to stop
+it. Its detail view shows what it has written and every tool call it made, with a short result for
+each.
 
 ## Parallelism and queueing
 
@@ -70,9 +92,8 @@ Up to `max_parallel_subagents` subagents run at the same time (default `10`, min
 `agent.toml` under `[agent]` - or from the console with `/settings max_parallel_subagents N`).
 Dispatches beyond the cap are queued FIFO and start as a running child finishes.
 
-A queued run still returns a `run_id` immediately, and `await_subagent` on it simply blocks until a
-slot frees and the run completes - no deadlock, no premature promotion. `abort_all` cancels queued
-runs too.
+A queued run still gets a `run_id` immediately, and its answer arrives in a note once a slot frees
+and it completes - no deadlock, no premature promotion. Esc cancels queued runs too.
 
 In the console, a queued subagent shows as `queued (N waiting)` in its panel, where `N` is its
 position in line (`1` = next to start). The panel turns into a normal running row once its slot
