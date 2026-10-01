@@ -405,6 +405,9 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
         .project_root
         .as_deref()
         .ok_or_else(|| "session has no project root".to_owned())?;
+    // No session overrides here, on purpose: RPC takes none (an ADK host brings
+    // its own provider setup), so its sessions see the configured providers
+    // alone. See `session_provider` for the TUI/run/step side.
     let mut agent = prepare_agent_session(
         &project.to_string_lossy(),
         Some(model.unwrap_or_else(|| source.agent.model.clone())),

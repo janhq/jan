@@ -301,8 +301,22 @@ fn confine_limits(cmd: &mut Command) {
 /// Case-insensitive markers a `passthrough` glob must never copy, so a broad
 /// pattern (`GIT_*`, `*`) cannot leak a credential into the shell. To inject one
 /// on purpose, name it in [`ShellEnv::set`], which is not scrubbed.
+///
+/// `HEADERS` covers `OTEL_EXPORTER_OTLP_*HEADERS` and `JAN_CUSTOM_HEADERS`,
+/// which carry an API key when a launcher sets them, so `OTEL_*` cannot copy
+/// one. `AUTHORIZATION`, not a bare `AUTH`, which would also match
+/// `GIT_AUTHOR_NAME`.
 fn is_secret_name(name: &str) -> bool {
-    const MARKERS: &[&str] = &["KEY", "SECRET", "TOKEN", "PASSWORD", "PASSWD", "CREDENTIAL"];
+    const MARKERS: &[&str] = &[
+        "KEY",
+        "SECRET",
+        "TOKEN",
+        "PASSWORD",
+        "PASSWD",
+        "CREDENTIAL",
+        "HEADERS",
+        "AUTHORIZATION",
+    ];
     let upper = name.to_ascii_uppercase();
     MARKERS.iter().any(|m| upper.contains(m))
 }
@@ -930,10 +944,27 @@ mod env_policy_tests {
 
     #[test]
     fn secret_names_are_recognized() {
-        for name in ["OPENAI_API_KEY", "MY_SECRET", "GH_TOKEN", "DB_PASSWORD", "aws_credential"] {
+        for name in [
+            "OPENAI_API_KEY",
+            "MY_SECRET",
+            "GH_TOKEN",
+            "DB_PASSWORD",
+            "aws_credential",
+            "OTEL_EXPORTER_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+            "JAN_CUSTOM_HEADERS",
+            "HTTP_AUTHORIZATION",
+        ] {
             assert!(is_secret_name(name), "{name} should read as secret");
         }
-        for name in ["PATH", "HOME", "GIT_AUTHOR_NAME", "RUST_LOG"] {
+        for name in [
+            "PATH",
+            "HOME",
+            "GIT_AUTHOR_NAME",
+            "RUST_LOG",
+            "OTEL_SERVICE_NAME",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+        ] {
             assert!(!is_secret_name(name), "{name} should not read as secret");
         }
     }
@@ -961,6 +992,24 @@ mod env_policy_tests {
         assert!(out.contains(&("CARGO_HOME".into(), "/c".into())));
         assert!(!out.iter().any(|(k, _)| k == "GIT_TOKEN"), "secret-named var must not leak");
         assert!(!out.iter().any(|(k, _)| k == "UNRELATED"));
+    }
+
+    #[test]
+    fn an_otel_glob_never_copies_the_exporters_headers() {
+        // A launcher puts its API key in the OTLP headers; `OTEL_*` is a
+        // natural pass-through to write, and must not carry it into a shell.
+        let pats = vec!["OTEL_*".to_string(), "JAN_*".to_string()];
+        let env = ShellEnv { passthrough: &pats, set: &[] };
+        let out = resolve_env_overrides(
+            host(&[
+                ("OTEL_SERVICE_NAME", "jan-agent"),
+                ("OTEL_EXPORTER_OTLP_HEADERS", "x-api-key=sk"),
+                ("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "x-api-key=sk"),
+                ("JAN_CUSTOM_HEADERS", "Authorization: Bearer sk"),
+            ]),
+            env,
+        );
+        assert_eq!(out, vec![("OTEL_SERVICE_NAME".to_string(), "jan-agent".to_string())]);
     }
 
     #[test]

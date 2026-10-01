@@ -912,14 +912,14 @@ enum LoginStage {
 
 impl LoginStage {
     /// The page this stage would send the user to, while that is still unasked.
-    fn unconfirmed_url(&self) -> Option<&str> {
+    fn unconfirmed_url(&self) -> Option<String> {
         match self {
             Self::Approving {
                 authorize_url,
                 confirm_open: true,
                 ..
-            } => Some(authorize_url),
-            Self::Paste { confirm_open: true } => Some(super::tokamak::API_KEYS_URL),
+            } => Some(authorize_url.clone()),
+            Self::Paste { confirm_open: true } => Some(super::tokamak::api_keys_url()),
             _ => None,
         }
     }
@@ -979,7 +979,7 @@ impl LoginPrompt {
                 crate::core::cli::auth::provider_by_id(&self.provider)
                     .map(|provider| provider.api_key.keys_url.to_string())
             }
-            _ => self.stage.unconfirmed_url().map(str::to_string),
+            _ => self.stage.unconfirmed_url(),
         }
     }
 
@@ -2228,6 +2228,10 @@ struct App {
     /// on every bare `/model` -- that would freeze the render loop for the whole
     /// request timeout -- so only unprobed providers are fetched once.
     probed_models: std::collections::HashSet<String>,
+    /// Whether `--model` named the model this session started on. A resumed
+    /// thread then keeps it rather than switching to the model the thread
+    /// was saved with: the flag is the more explicit, more recent choice.
+    model_pinned: bool,
     /// Key handed off to the loop to verify off the render loop. Taken once.
     login_submit: Option<(String, String)>,
     /// Active OAuth account prompt; owns the keyboard while open.
@@ -2898,6 +2902,7 @@ impl App {
             mcp_auth_cancel: false,
             provider_prompt: None,
             probed_models: std::collections::HashSet::new(),
+            model_pinned: false,
             login_submit: None,
             plugin_setup: None,
             plugin_setup_queue: Default::default(),
@@ -5229,10 +5234,22 @@ impl App {
     fn set_model(&mut self, model: String) {
         self.model = model;
         self.refresh_context_window();
+        // A model the session-scoped provider serves is this session's choice
+        // only: its id names the session's endpoint, and saving it would start
+        // the next native `jan` in this project on a model nothing it has
+        // configured may serve.
+        let session_only = self
+            .serving_provider()
+            .as_deref()
+            .is_some_and(super::session_provider::is_session_scoped);
         // Persistence warning preserved verbatim from the prior behaviour.
-        let persistence = match super::cli_set_project_model(&self.agent_dir, &self.model) {
-            Ok(()) => String::new(),
-            Err(e) => format!(" (not saved: {e})"),
+        let persistence = if session_only {
+            " (this session only)".to_string()
+        } else {
+            match super::cli_set_project_model(&self.agent_dir, &self.model) {
+                Ok(()) => String::new(),
+                Err(e) => format!(" (not saved: {e})"),
+            }
         };
         self.note(&format!(
             "model set to {} (context {}K, {}){}",
@@ -6917,7 +6934,7 @@ impl UsageKey {
 fn session_cost(
     usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
 ) -> Option<(f64, bool)> {
-    let catalog = super::model_catalog::load();
+    let catalog = super::model_catalog::effective();
     let mut total = 0.0;
     let mut priced = false;
     let mut unpriced = false;
@@ -6961,7 +6978,7 @@ fn usage_lines(
     usage: &std::collections::BTreeMap<UsageKey, super::model_catalog::TokenUsage>,
     all_models: bool,
 ) -> Vec<Vec<Span<'static>>> {
-    let catalog = super::model_catalog::load();
+    let catalog = super::model_catalog::effective();
     let mut rows: Vec<UsageRow> = Vec::new();
     let mut totals = super::model_catalog::TokenUsage::default();
     let mut total_cost = 0.0;
@@ -9873,6 +9890,7 @@ pub async fn run(
         mcp_task,
         workspace,
         workspace_note,
+        model_pinned,
     } = session;
     let ask_requests = crate::core::agent::interaction::new_registry();
     args.ask_requests = Some(ask_requests.clone());
@@ -9947,6 +9965,7 @@ pub async fn run(
         repo_root,
     );
     app.set_workspace(workspace);
+    app.model_pinned = model_pinned;
     app.smol_model = smol_model;
     app.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
@@ -9975,6 +9994,11 @@ pub async fn run(
     };
     app.push_session_banner(!seeded);
     if let Some(note) = super::take_migration_notice() {
+        app.note(&note);
+    }
+    // The startup model listing ran before the alternate screen, where a
+    // failure printed to stderr would be wiped by the first frame.
+    if let Some(note) = super::session_provider::take_startup_notice() {
         app.note(&note);
     }
     if let Some(note) = workspace_note {
@@ -12126,6 +12150,10 @@ async fn handle_key(
                     // The watermark row: nothing to delete.
                     return;
                 }
+                if tokamak_change_refused(&name) {
+                    app.note(super::session_provider::TOKAMAK_REFUSAL);
+                    return;
+                }
                 let sel = picker.selected;
                 if picker.armed_delete == Some(sel) {
                     // Second `d` on the same row confirms the delete.
@@ -12148,6 +12176,9 @@ async fn handle_key(
             KeyCode::Char('x') if picker.kind == PickerKind::ProviderSettings => {
                 let name = picker.items[picker.selected].value.clone();
                 if name.is_empty() {
+                    return;
+                }
+                if refuse_tokamak_change(app, &name) {
                     return;
                 }
                 sign_out_provider(app, &name);
@@ -12224,6 +12255,9 @@ async fn handle_key(
             // for a provider that is currently signed in.
             KeyCode::Char('x') if picker.kind == PickerKind::LoginProvider => {
                 let name = picker.items[picker.selected].value.clone();
+                if refuse_tokamak_change(app, &name) {
+                    return;
+                }
                 if !crate::core::cli::providers::provider_is_signed_in(
                     Some(&app.project_root),
                     &name,
@@ -12297,6 +12331,9 @@ async fn handle_key(
                         resume_thread(app, &value).await
                     }
                     PickerKind::LoginProvider => {
+                        if refuse_tokamak_change(app, &value) {
+                            return;
+                        }
                         if crate::core::cli::auth::account::AccountProvider::from_credential_provider(&value)
                             .is_some()
                         {
@@ -12340,6 +12377,9 @@ async fn handle_key(
                     }
                     // `/settings > providers`: open the wizard for the row.
                     PickerKind::ProviderSettings => {
+                        if refuse_tokamak_change(app, &value) {
+                            return;
+                        }
                         let entry = crate::core::agent::global_config::load_global_config()
                             .ok()
                             .and_then(|c| c.get(&value).cloned());
@@ -14554,6 +14594,13 @@ impl ProviderPrompt {
         let name = self.name.trim();
         if name.is_empty() {
             return Err("provider name is required".to_string());
+        }
+        // The add wizard takes any name, and `set_provider` merges into an
+        // existing entry: `tokamak` here would overwrite (or create) the entry
+        // a launched session must leave alone.
+        if name == super::tokamak::PROVIDER && super::session_provider::tokamak_is_session_scoped()
+        {
+            return Err(super::session_provider::TOKAMAK_REFUSAL.to_string());
         }
         if let Some(err) = self.validate_base_url() {
             return Err(err);
@@ -16778,7 +16825,11 @@ fn login_command(app: &mut App, arg: &str) {
         return;
     }
     match arg.split_whitespace().next() {
-        Some("--paste-token" | "--paste") => open_login_prompt(app, "tokamak"),
+        Some("--paste-token" | "--paste") => {
+            if !refuse_tokamak_change(app, super::tokamak::PROVIDER) {
+                open_login_prompt(app, "tokamak")
+            }
+        }
         Some(other) => app.note(&format!(
             "/login: unknown option {other} (try --paste-token)"
         )),
@@ -16790,6 +16841,9 @@ fn login_command(app: &mut App, arg: &str) {
 /// there is something to Esc out of while the session is being created, and
 /// `chat_loop` picks the request up off the render loop.
 fn open_login(app: &mut App) {
+    if refuse_tokamak_change(app, super::tokamak::PROVIDER) {
+        return;
+    }
     app.login = Some(LoginPrompt::connecting());
     app.login_device_request = true;
 }
@@ -16912,9 +16966,33 @@ fn open_browser(url: &str) -> Result<(), String> {
         .map_err(|_| "could not open the browser".to_string())
 }
 
+/// Refuse a change to the Tokamak entry or its credential while Tokamak is the
+/// session-scoped provider -- the credential in use then comes from whoever
+/// started the session, and a sign-in, sign-out or edit here would only rewrite
+/// the user's native Tokamak setup (or orphan a live key) while the session
+/// carried on with the launcher's. `true` when refused; the note says why.
+/// Other providers are never refused.
+fn refuse_tokamak_change(app: &mut App, provider: &str) -> bool {
+    if tokamak_change_refused(provider) {
+        app.note(super::session_provider::TOKAMAK_REFUSAL);
+        return true;
+    }
+    false
+}
+
+/// The predicate behind [`refuse_tokamak_change`], for a caller still holding a
+/// borrow into `App` (a picker row) when it asks.
+fn tokamak_change_refused(provider: &str) -> bool {
+    provider.trim() == super::tokamak::PROVIDER
+        && super::session_provider::tokamak_is_session_scoped()
+}
+
 fn logout_command(app: &mut App, provider: &str) {
     if provider.trim().is_empty() {
         return app.note("usage: /logout <provider>");
+    }
+    if refuse_tokamak_change(app, provider) {
+        return;
     }
     let owned_model = crate::core::agent::global_config::load_global_config()
         .ok()
@@ -16943,6 +17021,9 @@ fn sign_out_provider(app: &mut App, provider: &str) {
 }
 
 fn open_login_prompt(app: &mut App, provider: &str) {
+    if refuse_tokamak_change(app, provider) {
+        return;
+    }
     let Some(definition) = crate::core::cli::auth::provider_by_id(provider) else {
         return app.note("selected provider is unavailable");
     };
@@ -17121,6 +17202,16 @@ fn adopt_account_login_model(app: &mut App, provider: &str) {
     adopt_login_model(app, &login);
 }
 fn adopt_login_model(app: &mut App, login: &crate::core::cli::auth::LoginResult) {
+    // Signing in to another provider inside a session served by its
+    // session-scoped provider (a launched session) must not move the session
+    // off it, nor write the other provider's model into agent.toml.
+    if app
+        .serving_provider()
+        .as_deref()
+        .is_some_and(super::session_provider::is_session_scoped)
+    {
+        return;
+    }
     let runnable = super::providers::list_provider_models(Some(&app.project_root));
     if runnable.iter().any(|(_, model)| *model == app.model) {
         return;
@@ -17145,9 +17236,12 @@ async fn reload_provider_configs(app: &mut App) {
         return;
     };
     let project_root = app.project_root.clone();
+    // The session's own overrides, so a key or base URL given on the command
+    // line or in the environment survives the reload instead of being dropped
+    // for whatever the files say.
     match super::providers::load_provider_configs(
         Some(&project_root),
-        &super::providers::ProviderOverrides::default().with_env(),
+        &super::providers::ProviderOverrides::session(),
     ) {
         Ok(configs) => {
             *args.provider_configs.lock().await = configs;
@@ -18239,11 +18333,15 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
         }
     }
 
-    // Adopt the thread's model so continuation stays coherent.
+    // Adopt the thread's model so continuation stays coherent -- unless
+    // `--model` named one: resuming under an explicit model is asking to
+    // continue this conversation *on that model*, and a launcher that pins its
+    // provider's model must not be moved off it by a thread saved elsewhere.
     if let Some(model) = thread
         .get("model")
         .and_then(|m| m.get("id"))
         .and_then(|v| v.as_str())
+        .filter(|_| !app.model_pinned)
     {
         app.model = model.to_string();
     }
@@ -19357,10 +19455,11 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
         ],
         LoginStage::Paste { .. } => {
             let keys_url = crate::core::cli::auth::provider_by_id(&prompt.provider)
-                .map_or("", |provider| provider.api_key.keys_url);
+                .map(|provider| provider.api_key.keys_url)
+                .unwrap_or_default();
             vec![
                 Span::styled("get a key at ", dim),
-                Span::styled(keys_url.to_string(), Style::new().cyan()),
+                Span::styled(keys_url, Style::new().cyan()),
             ]
         }
     };
@@ -26539,7 +26638,7 @@ mod tests {
         let prompt = app.login.as_ref().unwrap();
         assert_eq!(
             prompt.stage.unconfirmed_url(),
-            Some(crate::core::cli::tokamak::API_KEYS_URL)
+            Some(crate::core::cli::tokamak::api_keys_url())
         );
         let screen = render_rows(&mut app, 80, 24).join("\n");
         assert!(
@@ -26551,7 +26650,7 @@ mod tests {
         let mut app = test_app();
         super::show_login_approval(&mut app, &test_session());
         assert_eq!(
-            app.login.as_ref().unwrap().stage.unconfirmed_url(),
+            app.login.as_ref().unwrap().stage.unconfirmed_url().as_deref(),
             Some("https://tokamak.sh/cli/authorize?code=ABCD-2345")
         );
         let screen = render_rows(&mut app, 80, 24).join("\n");
@@ -31299,7 +31398,7 @@ mod tests {
                 None,
                 &json!({"model": "m", "messages": [{"role": "user", "content": "go"}]}),
                 &tx,
-                None,
+                &[],
             ),
         )
         .await
@@ -42309,5 +42408,255 @@ mod tests {
             !SPINNER.iter().any(|s| row.contains(s)),
             "throbber still present in {row:?}"
         );
+    }
+
+    // ── Session-scoped providers (gateway launches) ─────────────────────────
+
+    /// A resumed thread keeps the model `--model` named: a launcher pins its
+    /// provider's model, and a thread saved elsewhere must not move it off.
+    #[tokio::test]
+    async fn resuming_under_an_explicit_model_keeps_it() {
+        let app = test_app();
+        let history = vec![json!({ "role": "user", "content": "hi" })];
+        super::super::cli_save_thread(&app.agent_dir, None, "saved-model", &history, None).unwrap();
+
+        let mut pinned = test_app();
+        pinned.agent_dir = app.agent_dir.clone();
+        pinned.model = "tokamak/claude-x".into();
+        pinned.model_pinned = true;
+        apply_resume(&mut pinned, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert!(pinned.thread_id.is_some(), "the thread was resumed");
+        assert_eq!(pinned.model, "tokamak/claude-x");
+
+        let mut unpinned = test_app();
+        unpinned.agent_dir = app.agent_dir.clone();
+        apply_resume(&mut unpinned, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert_eq!(unpinned.model, "saved-model", "without --model the thread's model wins");
+    }
+
+    /// `with_isolated_login_state`, with Tokamak installed as the session-scoped
+    /// provider for its duration.
+    fn with_session_tokamak<T>(f: impl FnOnce() -> T) -> T {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                super::super::session_provider::reset();
+            }
+        }
+        with_isolated_login_state(|| {
+            let _reset = Reset;
+            super::super::session_provider::reset();
+            super::super::providers::ProviderOverrides {
+                provider: Some("tokamak".into()),
+                api_key: Some("tk-session".into()),
+                base_url: Some("https://api-stag.tokamak.sh/v1".into()),
+                explicit_provider: true,
+                ..Default::default()
+            }
+            .install();
+            f()
+        })
+    }
+
+    /// A native sign-in the launched session must leave exactly as it was.
+    fn seed_native_tokamak() -> Vec<u8> {
+        use crate::core::cli::auth::{Credential, CredentialStore};
+        CredentialStore::store("tokamak", &Credential::ApiKey("tk-native".into())).unwrap();
+        crate::core::agent::global_config::set_provider(
+            "tokamak",
+            crate::core::agent::global_config::ProviderUpdate {
+                api_key: Some("tk-native".into()),
+                base_url: Some("https://api.tokamak.sh/v1".into()),
+                models: Some(vec!["native-model".into()]),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        std::fs::read(crate::core::agent::global_config::global_config_path().unwrap()).unwrap()
+    }
+
+    fn assert_native_tokamak_untouched(before: &[u8], sink: &str) {
+        let after =
+            std::fs::read(crate::core::agent::global_config::global_config_path().unwrap()).unwrap();
+        assert_eq!(after, before, "{sink}: config.toml must be byte-identical");
+        assert!(
+            crate::core::cli::auth::CredentialStore::load("tokamak")
+                .unwrap()
+                .is_some(),
+            "{sink}: the stored Tokamak credential must survive"
+        );
+    }
+
+    /// Whether the refusal was said, however the transcript wrapped it.
+    fn refused(app: &App) -> bool {
+        let text = transcript_text(app);
+        let flat = text
+            .split_whitespace()
+            .filter(|word| *word != "•")
+            .collect::<Vec<_>>()
+            .join(" ");
+        flat.contains(super::super::session_provider::TOKAMAK_REFUSAL)
+    }
+
+    #[test]
+    fn a_session_tokamak_refuses_login_paste_token() {
+        with_session_tokamak(|| {
+            let before = seed_native_tokamak();
+            let mut app = test_app();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(run_command(&mut app, "login --paste-token", &no_mcp()));
+            assert!(app.login.is_none(), "no key field opens");
+            assert!(refused(&app), "{}", transcript_text(&app));
+            assert_native_tokamak_untouched(&before, "/login --paste-token");
+        });
+    }
+
+    #[test]
+    fn a_session_tokamak_refuses_the_login_pickers_enter_and_x() {
+        with_session_tokamak(|| {
+            let before = seed_native_tokamak();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            let mut app = test_app();
+            super::open_login_picker(&mut app);
+            assert_eq!(app.picker.as_ref().unwrap().items[0].value, "tokamak");
+            rt.block_on(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+            assert!(app.login.is_none() && !app.login_device_request, "no sign-in starts");
+            assert!(refused(&app), "Enter: {}", transcript_text(&app));
+
+            let mut app = test_app();
+            super::open_login_picker(&mut app);
+            rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
+            assert!(refused(&app), "x: {}", transcript_text(&app));
+            assert_native_tokamak_untouched(&before, "/login picker");
+        });
+    }
+
+    #[test]
+    fn a_session_tokamak_refuses_logout_but_not_for_other_providers() {
+        with_session_tokamak(|| {
+            let before = seed_native_tokamak();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+
+            let mut app = test_app();
+            rt.block_on(run_command(&mut app, "logout", &no_mcp()));
+            assert!(transcript_text(&app).contains("usage: /logout <provider>"));
+            rt.block_on(run_command(&mut app, "logout tokamak", &no_mcp()));
+            assert!(refused(&app), "{}", transcript_text(&app));
+            assert_native_tokamak_untouched(&before, "/logout tokamak");
+
+            rt.block_on(run_command(&mut app, "logout openai", &no_mcp()));
+            assert!(transcript_text(&app).contains("signed out of openai"));
+        });
+    }
+
+    #[test]
+    fn a_session_tokamak_refuses_the_provider_settings_x_d_and_edit() {
+        with_session_tokamak(|| {
+            let before = seed_native_tokamak();
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            for code in [KeyCode::Char('x'), KeyCode::Char('d'), KeyCode::Enter] {
+                let mut app = test_app();
+                super::open_provider_settings(&mut app);
+                assert_eq!(app.picker.as_ref().unwrap().items[0].value, "tokamak");
+                rt.block_on(press(&mut app, code, KeyModifiers::NONE));
+                if code == KeyCode::Char('d') {
+                    // A second `d` would confirm a delete: it must not either.
+                    rt.block_on(press(&mut app, code, KeyModifiers::NONE));
+                }
+                assert!(app.provider_prompt.is_none(), "{code:?}: no edit form opens");
+                assert!(refused(&app), "{code:?}: {}", transcript_text(&app));
+                assert_native_tokamak_untouched(&before, &format!("/settings > providers {code:?}"));
+            }
+        });
+    }
+
+    /// The add wizard's name is free text, and saving merges into an existing
+    /// entry: `tokamak` there would overwrite the native one.
+    #[test]
+    fn a_session_tokamak_refuses_the_add_wizard_named_tokamak() {
+        with_session_tokamak(|| {
+            let before = seed_native_tokamak();
+            let mut app = test_app();
+            let mut prompt = super::ProviderPrompt::new();
+            prompt.name = "tokamak".into();
+            prompt.base_url = "https://evil.example/v1".into();
+            prompt.api_key = "sk-other".into();
+            app.provider_prompt = Some(prompt);
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(press(&mut app, KeyCode::Enter, KeyModifiers::NONE));
+            let prompt = app.provider_prompt.as_ref().expect("the form stays open on the refusal");
+            assert_eq!(
+                prompt.error.as_deref(),
+                Some(super::super::session_provider::TOKAMAK_REFUSAL)
+            );
+            assert_native_tokamak_untouched(&before, "/settings > providers add");
+
+            // Any other name still saves.
+            let mut other = super::ProviderPrompt::new();
+            other.name = "mine".into();
+            other.base_url = "https://mine.example/v1".into();
+            assert!(other.save().is_ok());
+        });
+    }
+
+    /// Signing in to another provider inside a launched session neither moves
+    /// the session off its provider nor writes that provider's model into
+    /// agent.toml; a `/model` pick the session provider serves is not saved
+    /// either.
+    #[test]
+    fn a_session_served_by_its_own_provider_stays_there() {
+        with_session_tokamak(|| {
+            let mut app = test_app();
+            let mut configs = std::collections::HashMap::new();
+            configs.insert(
+                "tokamak".to_string(),
+                crate::core::state::ProviderConfig {
+                    provider: "tokamak".into(),
+                    base_url: Some("https://api-stag.tokamak.sh/v1".into()),
+                    api_key: Some("tk-session".into()),
+                    models: vec!["band-model".into()],
+                    ..Default::default()
+                },
+            );
+            app.args = Some(test_args(&app, configs));
+            app.model = "tokamak/band-model".into();
+            let agent_toml = app.agent_dir.join("agent.toml");
+
+            super::adopt_login_model(
+                &mut app,
+                &crate::core::cli::auth::LoginResult {
+                    provider: "openai".into(),
+                    models: vec!["gpt-x".into()],
+                    config_path: std::path::PathBuf::new(),
+                    default_model: Some("gpt-x".into()),
+                },
+            );
+            assert_eq!(app.model, "tokamak/band-model");
+            assert!(!agent_toml.exists(), "no agent.toml write");
+
+            app.set_model("band-model".into());
+            assert!(!agent_toml.exists(), "a session-provider pick is not persisted");
+            assert!(transcript_text(&app).contains("(this session only)"));
+        });
+    }
+
+    /// The reload after a sign-in rebuilds the provider map with the session's
+    /// overrides, so the launcher's key and base URL survive it.
+    #[test]
+    fn a_reload_keeps_the_session_key_and_base_url() {
+        with_session_tokamak(|| {
+            seed_native_tokamak();
+            let mut app = test_app();
+            let args = test_args(&app, std::collections::HashMap::new());
+            app.args = Some(args.clone());
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(super::reload_provider_configs(&mut app));
+            let map = rt.block_on(args.provider_configs.lock());
+            let tokamak = map.get("tokamak").expect("present");
+            assert_eq!(tokamak.bearer_key_chain(), vec!["tk-session".to_string()]);
+            assert_eq!(tokamak.base_url.as_deref(), Some("https://api-stag.tokamak.sh/v1"));
+            assert!(tokamak.models.is_empty(), "not the native roster");
+        });
     }
 }

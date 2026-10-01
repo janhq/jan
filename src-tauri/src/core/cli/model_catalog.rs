@@ -161,6 +161,12 @@ fn catalog_path() -> Result<PathBuf, String> {
 /// Read the cache. A missing or unreadable file is an empty catalog, never an
 /// error: this is metadata that improves a display, so a corrupt cache must
 /// never block a run.
+///
+/// Disk only, on purpose: every catalog write starts from this (`probe_models`,
+/// [`cache_listing`], [`forget`]), so anything merged in here would be saved to
+/// `model_catalog.json` by the next write for any provider. A reader that must
+/// see the session-scoped provider's in-memory prices goes through
+/// [`effective`] instead.
 pub fn load() -> Catalog {
     let Ok(path) = catalog_path() else {
         return Catalog::default();
@@ -169,6 +175,15 @@ pub fn load() -> Catalog {
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
+}
+
+/// The catalog as this session sees it: [`load`], with the session-scoped
+/// provider's entries replaced by what its endpoint listed (see
+/// [`super::session_provider`]). For reading only -- never save it.
+pub fn effective() -> Catalog {
+    let mut catalog = load();
+    super::session_provider::apply_catalog(&mut catalog);
+    catalog
 }
 
 impl Catalog {
@@ -184,6 +199,28 @@ impl Catalog {
 
     pub fn remove_provider(&mut self, provider: &str) {
         self.providers.remove(provider);
+    }
+
+    /// Replace one provider's entries and keep the provider even when `models`
+    /// is empty: unlike [`Self::set_provider`], an empty map here means "this
+    /// provider prices nothing", so [`Self::get`] under it answers `None`
+    /// instead of falling through to another provider's rates.
+    pub(crate) fn overlay_provider(&mut self, provider: &str, models: BTreeMap<String, ModelInfo>) {
+        self.providers.insert(provider.to_string(), models);
+    }
+
+    /// This catalog with the session overlay applied, borrowing it untouched
+    /// when there is nothing to overlay: the telemetry pricer asks per request,
+    /// and the overlay can be filled after the pricer was built.
+    pub(crate) fn with_session_overlay(&self) -> std::borrow::Cow<'_, Catalog> {
+        match super::session_provider::overlay_catalog() {
+            Some((provider, models)) => {
+                let mut view = self.clone();
+                view.overlay_provider(&provider, models);
+                std::borrow::Cow::Owned(view)
+            }
+            None => std::borrow::Cow::Borrowed(self),
+        }
     }
 
     /// Metadata for `model_id` as `provider` reports it, matching the exact id
