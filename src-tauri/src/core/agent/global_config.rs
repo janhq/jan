@@ -70,6 +70,12 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # to opt in; [] reads JAN.md only. A
 #                                     # project's agent.toml [context] wins
 #
+# [experimental]                      # features that may change or go away
+# acp = true                          # allow `jan acp`, the Agent Client
+#                                     # Protocol server editors such as Zed
+#                                     # and JetBrains drive. Off by default;
+#                                     # JAN_EXPERIMENTAL_ACP wins over this
+#
 # [providers.my-provider]
 # api_key = "sk-..."
 # base_url = "https://api.example.com/v1"
@@ -176,8 +182,28 @@ struct GlobalConfigToml {
     /// wins. See `project::context_fallback_files`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     context: Option<GlobalContextSection>,
+    /// `[experimental]` -- opt-ins for surfaces whose contract is not settled
+    /// yet. One table so every such switch is found in one place, and so
+    /// graduating a feature is deleting its key rather than migrating it.
+    #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
+    experimental: ExperimentalSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[experimental]` in `~/.jan/config.toml`. Each key is `None` when unset,
+/// which means off.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+struct ExperimentalSection {
+    /// `jan acp`, the Agent Client Protocol server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    acp: Option<bool>,
+}
+
+impl ExperimentalSection {
+    fn is_empty(&self) -> bool {
+        self.acp.is_none()
+    }
 }
 
 /// `[telemetry]` in `~/.jan/config.toml` or a project's `agent.toml`. Only the
@@ -331,6 +357,13 @@ pub(crate) fn smol_model() -> Result<Option<String>, String> {
 #[cfg(feature = "cli")]
 pub(crate) fn telemetry_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.telemetry.enabled)
+}
+
+/// `[experimental].acp` in `~/.jan/config.toml`; `None` when unset. A malformed
+/// file reads as unset, which is off: an experimental surface fails closed.
+#[cfg(feature = "cli")]
+pub(crate) fn experimental_acp_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.experimental.acp)
 }
 
 /// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),

@@ -44,6 +44,23 @@ use tauri_plugin_agent_tools::tools::gate::{DenyReason, PermissionDecision};
 pub(crate) type PermissionRegistry =
     Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>;
 
+/// Answer the pending prompt `request_id` with `decision`: the one place every
+/// out-of-process surface (stream-json, RPC, ACP) settles a gate prompt.
+/// Taking the sender makes a decision single-use, so `false` means the id was
+/// already answered, cancelled, or never issued, and the caller reports it.
+#[cfg(feature = "cli")]
+pub(crate) async fn settle_permission(
+    registry: &PermissionRegistry,
+    request_id: &str,
+    decision: PermissionDecision,
+) -> bool {
+    let Some(sender) = registry.lock().await.remove(request_id) else {
+        return false;
+    };
+    let _ = sender.send(decision);
+    true
+}
+
 static PERMISSION_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 fn next_permission_id() -> String {
