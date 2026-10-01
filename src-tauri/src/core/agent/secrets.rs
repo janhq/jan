@@ -148,7 +148,13 @@ fn load_key() -> [u8; 32] {
     let path = crate::core::agent::global_config::global_jan_dir()
         .ok()
         .map(|dir| dir.join("secret-placeholder.key"));
-    if let Some(path) = &path {
+    load_key_at(path.as_deref())
+}
+
+/// [`load_key`] for an explicit file, so a test does not depend on how the
+/// platform resolves the home directory (`HOME` is ignored on Windows).
+fn load_key_at(path: Option<&std::path::Path>) -> [u8; 32] {
+    if let Some(path) = path {
         if let Ok(text) = std::fs::read_to_string(path) {
             if let Ok(bytes) = hex::decode(text.trim()) {
                 if let Ok(key) = <[u8; 32]>::try_from(bytes.as_slice()) {
@@ -159,7 +165,7 @@ fn load_key() -> [u8; 32] {
     }
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
-    if let Some(path) = &path {
+    if let Some(path) = path {
         if let Err(e) = save_key(path, &key) {
             log::warn!(
                 "hide_secrets: could not save {}: {e}; placeholders will change on restart",
@@ -643,18 +649,19 @@ mod tests {
 
     #[test]
     fn the_key_is_created_once_private_and_reused() {
-        crate::core::agent::global_config::with_temp_home(|home| {
-            let first = load_key();
-            let path = home.join(".jan").join("secret-placeholder.key");
-            assert!(path.exists(), "{}", path.display());
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-                assert_eq!(mode, 0o600);
-            }
-            assert_eq!(first, load_key(), "the same key on the next call");
-        });
+        let dir = std::env::temp_dir().join(format!("jan_secret_key_{}", std::process::id()));
+        let path = dir.join(".jan").join("secret-placeholder.key");
+        let _ = std::fs::remove_dir_all(&dir);
+        let first = load_key_at(Some(&path));
+        assert!(path.exists(), "{}", path.display());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+        assert_eq!(first, load_key_at(Some(&path)), "the same key on the next call");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
