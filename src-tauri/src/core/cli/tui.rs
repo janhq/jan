@@ -13857,6 +13857,13 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         scope: SettingScope::Global,
     },
     AgentSettingDef {
+        key: "hide_secrets",
+        label: "hide_secrets",
+        desc: "Privacy: obfuscate secret env values and redact credential-shaped tokens before sending to AI providers",
+        kind: AgentSettingKind::Bool { default: false },
+        scope: SettingScope::Global,
+    },
+    AgentSettingDef {
         key: "wave",
         label: "wave",
         desc: "glyph swept along the working row (up to 3 chars; empty = throbber)",

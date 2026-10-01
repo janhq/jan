@@ -355,6 +355,10 @@ struct HttpModelInvoker {
     /// to carry it (a `/compact` or `/goal` evaluation started between turns,
     /// the API-server proxy that discards its events).
     provenance_events: Option<mpsc::UnboundedSender<StreamEvent>>,
+    /// Hide Secrets, when it is on for this process: every request is filtered
+    /// just before it leaves, and the completion is mapped back. `None` = off,
+    /// and then nothing in the request or the reply changes.
+    secrets: Option<Arc<crate::core::agent::secrets::SecretFilter>>,
 }
 
 /// [`crate::core::agent::provenance::RequestIdentity`] as the invoker stores it:
@@ -431,7 +435,10 @@ impl ModelInvoker for HttpModelInvoker {
         // URL + credential have already been resolved from that qualifier, so
         // the body must carry the bare model id - providers like OpenCode GO
         // reject a provider-qualified id with "model not supported".
-        let mut normalized = request.clone();
+        let mut normalized = match &self.secrets {
+            Some(filter) => filter.filter_request(request),
+            None => request.clone(),
+        };
         if let Some(model) = normalized.get("model").and_then(|m| m.as_str()) {
             let pc = self.provider_configs.lock().await;
             let bare = crate::core::agent::upstream::strip_provider_prefix(model, &pc);
@@ -452,7 +459,7 @@ impl ModelInvoker for HttpModelInvoker {
                 &normalized,
                 self.provenance.as_identity(self.session_id.as_deref()),
             ));
-        if let Some(converter) = &self.converter {
+        let completion = if let Some(converter) = &self.converter {
             crate::core::agent::upstream::stream_converted_chat_completions(
                 &self.converter_client,
                 &self.upstream_url,
@@ -475,7 +482,16 @@ impl ModelInvoker for HttpModelInvoker {
                 self.client_request_id.as_deref(),
             )
             .await
+        };
+        if self.secrets.is_some() {
+            // The model saw placeholders; the tool and the saved thread get the
+            // real values back. The next request hides them again.
+            return completion.map(|mut c| {
+                crate::core::agent::secrets::restore_completion(&mut c);
+                c
+            });
         }
+        completion
     }
 }
 
@@ -3298,6 +3314,7 @@ async fn orchestrate_inner(
         session_id: args.session_id.clone(),
         provenance,
         provenance_events: Some(events.clone()),
+        secrets: crate::core::agent::secrets::for_run(),
     };
     let mcp_tools = McpToolInvoker {
         tool_to_server,
@@ -3765,6 +3782,7 @@ pub(crate) async fn compact_history(
         // to carry the record, so this request is reported nowhere rather than
         // somewhere a client cannot read.
         provenance_events: None,
+        secrets: crate::core::agent::secrets::for_run(),
     };
     crate::core::agent::compaction::compact_conversation(messages, model_id, &model, keep_recent)
         .await
@@ -3847,6 +3865,7 @@ async fn side_call_invoker(
         provenance,
         // Between turns, like `/compact`: no run stream exists to carry it.
         provenance_events: None,
+        secrets: crate::core::agent::secrets::for_run(),
     };
     Ok(model)
 }
@@ -5182,6 +5201,7 @@ mod tests {
                 oauth: false,
             },
             provenance_events: Some(run),
+            secrets: None,
         };
 
         let request =
@@ -5207,6 +5227,88 @@ mod tests {
                 .any(|event| matches!(event, StreamEvent::RequestProvenance { .. })),
             "the private sink keeps only the side call's own text: {private:?}"
         );
+    }
+
+    /// Hide Secrets, end to end through the invoker: the body a provider
+    /// receives holds a placeholder and never the secret, and a tool call the
+    /// model writes with that placeholder comes back holding the real value.
+    #[tokio::test]
+    async fn hide_secrets_filters_the_wire_body_and_restores_the_tool_call() {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        const SECRET: &str = "live-value-1234567890";
+        let filter = Arc::new(crate::core::agent::secrets::SecretFilter::for_tests(&[(
+            "OPENAI_API_KEY",
+            SECRET,
+        )]));
+        let placeholder = filter.hide(SECRET);
+        assert!(placeholder.starts_with("$$OPENAI_API_KEY_"), "{placeholder}");
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/v1/chat/completions", listener.local_addr().unwrap());
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel::<String>();
+        let reply_args = serde_json::json!({ "command": format!("login {placeholder}") })
+            .to_string();
+        std::thread::spawn(move || {
+            let Some(Ok(mut stream)) = listener.incoming().next() else { return };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0usize;
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).unwrap_or(0) == 0 || line == "\r\n" {
+                    break;
+                }
+                if let Some(n) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = n.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; length];
+            let _ = reader.read_exact(&mut body);
+            let _ = seen_tx.send(String::from_utf8_lossy(&body).into_owned());
+            let chunk = serde_json::json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                "choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[
+                    {"index":0,"id":"c1","type":"function","function":{"name":"bash","arguments":reply_args}}]},
+                    "finish_reason":null}]});
+            let done = serde_json::json!({"id":"s","object":"chat.completion.chunk","created":1,"model":"m",
+                "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],
+                "usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}});
+            let answer = format!("data: {chunk}\n\ndata: {done}\n\ndata: [DONE]\n\n");
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}", answer.len()).unwrap();
+        });
+
+        let (events, _rx) = mpsc::unbounded_channel();
+        let invoker = HttpModelInvoker {
+            client: crate::core::agent::upstream::agent_http_client(),
+            upstream_url: url,
+            api_keys: Vec::new(),
+            provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            converter: None,
+            converter_client: converter_http_client(),
+            client_request_id: None,
+            session_id: None,
+            provenance: RequestIdentityOwned {
+                run_id: None,
+                provider: Some("stub".to_string()),
+                api_type: None,
+                oauth: false,
+            },
+            provenance_events: None,
+            secrets: Some(filter),
+        };
+        let request = json!({"model":"m","messages":[
+            {"role":"user","content":format!("my key is {SECRET}")}]});
+        let completion = invoker.invoke(&request, &events).await.expect("the stub answers");
+
+        let wire = seen_rx.recv_timeout(std::time::Duration::from_secs(5)).expect("a request");
+        assert!(!wire.contains(SECRET), "the secret reached the provider: {wire}");
+        assert!(wire.contains(&placeholder), "the placeholder is what it saw: {wire}");
+
+        let args = completion["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+            .as_str()
+            .expect("a tool call came back");
+        let parsed: serde_json::Value = serde_json::from_str(args).unwrap();
+        assert_eq!(parsed["command"], format!("login {SECRET}"), "the tool gets the real value");
+        assert_eq!(request["messages"][0]["content"], format!("my key is {SECRET}"), "the caller's history is untouched");
     }
 
     #[derive(Default)]
