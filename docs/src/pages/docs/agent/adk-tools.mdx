@@ -145,7 +145,8 @@ an operating-system sandbox for your callback: that function still has your proc
 Two more session options suit an app that drives Jan with only its own tools:
 
 - **`subagents: true` / `subagents=True`** lets the model delegate with `dispatch_subagent` and
-  `list_subagents`, even with `builtins: false`. Every subagent is limited to your session's
+  `list_subagents`, and steer or stop a running child with `message_subagent` and
+  `stop_subagent`, even with `builtins: false`. Every subagent is limited to your session's
   host tools (no shell, files or web), and its calls reach your handlers like the parent's,
   with the subagent's `run_id` on the request. Subagents are off by default when `builtins` is
   off.

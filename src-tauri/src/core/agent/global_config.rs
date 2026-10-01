@@ -55,6 +55,10 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # 3 characters ("🍌", "~", "👁️👄👁️").
 #                                     # Defaults to 👋; set "" for the plain
 #                                     # throbber if your terminal draws tofu
+# prune_threads = true                # delete old saved threads at TUI start,
+#                                     # under each project's agent.toml
+#                                     # thread_retention_days / max_threads.
+#                                     # Off by default: nothing is deleted
 #
 # [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
 # enabled = true                      # usage metrics and events to YOUR
@@ -152,6 +156,11 @@ struct GlobalConfigToml {
     /// one cell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     wave: Option<String>,
+    /// Prune old saved threads at TUI start. `None` = the default, off: a
+    /// deleted thread is not recoverable, so removing the user's history is
+    /// something they turn on, not something they find out about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prune_threads: Option<bool>,
     /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
     /// beyond the fixed base allowlist. Empty by default, so the shell env is
     /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
@@ -426,6 +435,18 @@ pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
 /// [`sandbox_setting`]: a preference must not block a session from starting.
 pub(crate) fn worktree_setting() -> Option<bool> {
     load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// Whether saved threads are pruned at TUI start (`prune_threads` in
+/// `~/.jan/config.toml`), defaulting to off. An unreadable config also reads
+/// as off: the failure direction of a setting that deletes data is to keep it.
+/// CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn prune_threads_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.prune_threads)
+        .unwrap_or(false)
 }
 
 /// Host env-var names the sandboxed `bash` may inherit beyond the base
@@ -934,6 +955,23 @@ mod tests {
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(mouse_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn prune_threads_defaults_off_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(!prune_threads_enabled(), "missing file -> nothing pruned");
+            let path = ensure_global_config().expect("ensure");
+            assert!(!prune_threads_enabled(), "scaffolded file -> nothing pruned");
+
+            std::fs::write(&path, "prune_threads = true\n").unwrap();
+            assert!(prune_threads_enabled());
+            std::fs::write(&path, "prune_threads = false\n").unwrap();
+            assert!(!prune_threads_enabled());
+
+            std::fs::write(&path, "prune_threads = true\nnot valid toml [[[").unwrap();
+            assert!(!prune_threads_enabled(), "an unreadable config deletes nothing");
         });
     }
 

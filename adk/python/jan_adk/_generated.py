@@ -224,9 +224,9 @@ class SessionStartParams(TypedDict):
     ephemeral: NotRequired[bool]
     # Host tools this session may call. Kept as raw values until declaration so a malformed entry is reported as `invalid_tools` with the reason, rather than as a generic params error that names nothing.
     tools: NotRequired[list[HostToolDeclSchema]]
-    # `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent` and `list_subagents`.
+    # `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent`, `list_subagents`, `message_subagent` and `stop_subagent`.
     builtins: NotRequired[bool]
-    # Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent` and `list_subagents`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins.
+    # Whether the session may delegate to subagents; defaults to `builtins`. With `builtins: false` it adds only `dispatch_subagent`, `list_subagents`, `message_subagent` and `stop_subagent`, and every child is held to the session's host tools. `false` withholds subagent tools even from a session with built-ins.
     subagents: NotRequired[Union[bool, None]]
     # The session's whole system prompt, sent byte for byte in place of the one Jan composes: no Jan identity, guides, environment, date, git state or recalled project memory. Its answers are still indexed for later sessions unless it is `ephemeral`. Jan may still append runtime notices to the conversation. Children keep their own prompts.
     systemPrompt: NotRequired[Union[str, None]]
