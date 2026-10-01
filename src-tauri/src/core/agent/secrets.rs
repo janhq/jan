@@ -23,7 +23,8 @@
 //! of a transcript cannot dictionary-hash a placeholder back to its secret.
 
 use std::collections::HashMap;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::io::Write;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 
 use hmac::{Hmac, Mac};
 use rand::RngCore;
@@ -120,7 +121,7 @@ pub(crate) fn for_run() -> Option<Arc<SecretFilter>> {
         return None;
     }
     let vars: Vec<(String, String)> = std::env::vars().collect();
-    Some(Arc::new(SecretFilter::new(load_key(), &vars)))
+    Some(Arc::new(SecretFilter::new(process_key(), &vars)))
 }
 
 fn enabled(env: Option<&str>, setting: Option<bool>) -> bool {
@@ -131,9 +132,18 @@ fn enabled(env: Option<&str>, setting: Option<bool>) -> bool {
     }
 }
 
+/// The key every filter in this process uses. Loaded once: `load_key` makes a
+/// new random key per call when the file cannot be saved, and a key that
+/// changed between runs, compactions or side calls would change every
+/// placeholder and break the provider's prompt cache.
+fn process_key() -> [u8; 32] {
+    static KEY: OnceLock<[u8; 32]> = OnceLock::new();
+    *KEY.get_or_init(load_key)
+}
+
 /// The per-install key, created on first use. If it cannot be written the run
 /// still works: the key is ephemeral, so placeholders are stable within the
-/// process but not across restarts.
+/// process (see [`process_key`]) but not across restarts.
 fn load_key() -> [u8; 32] {
     let path = crate::core::agent::global_config::global_jan_dir()
         .ok()
@@ -150,30 +160,31 @@ fn load_key() -> [u8; 32] {
     let mut key = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut key);
     if let Some(path) = &path {
-        let written = path
-            .parent()
-            .map(std::fs::create_dir_all)
-            .transpose()
-            .and_then(|_| std::fs::write(path, hex::encode(key)));
-        match written {
-            Ok(()) => restrict(path),
-            Err(e) => log::warn!(
+        if let Err(e) = save_key(path, &key) {
+            log::warn!(
                 "hide_secrets: could not save {}: {e}; placeholders will change on restart",
                 path.display()
-            ),
+            );
         }
     }
     key
 }
 
-#[cfg(unix)]
-fn restrict(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+/// Write the key with mode 0600 from the first byte, so it is never readable by
+/// others even briefly.
+fn save_key(path: &std::path::Path, key: &[u8; 32]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(hex::encode(key).as_bytes())
 }
-
-#[cfg(not(unix))]
-fn restrict(_path: &std::path::Path) {}
 
 fn is_secret_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
@@ -258,14 +269,26 @@ impl SecretFilter {
     }
 
     /// `text` with every secret replaced by its placeholder. Text that holds no
-    /// secret comes back unchanged, and a placeholder is never rewritten.
+    /// secret comes back unchanged, and a placeholder is never rewritten: each
+    /// pass skips the spans that already are placeholders, so a hidden value is
+    /// not matched again by a shape (`://user:$$PLACEHOLDER$$@`).
     pub(crate) fn hide(&self, text: &str) -> String {
+        let literals = map_plain(text, |plain| self.hide_literals(plain));
+        map_plain(&literals, |plain| self.hide_shapes(plain))
+    }
+
+    fn hide_literals(&self, text: &str) -> String {
         let mut out = text.to_string();
         for (label, value) in &self.literals {
             if out.contains(value.as_str()) {
                 out = out.replace(value.as_str(), &self.placeholder(label, value));
             }
         }
+        out
+    }
+
+    fn hide_shapes(&self, text: &str) -> String {
+        let mut out = text.to_string();
         for shape in SHAPES.iter() {
             if !shape.re.is_match(&out) {
                 continue;
@@ -313,14 +336,41 @@ impl SecretFilter {
         out
     }
 
-    fn hide_in_content(&self, value: &mut Value) {
+    /// [`hide`](Self::hide) for a string the provider reads. When the result is
+    /// a JSON object or array (tool-call arguments, a JSON tool result), the
+    /// secrets are also hidden per decoded string: a value with a quote, a
+    /// backslash or a newline is stored escaped there, so the plain pass cannot
+    /// match it. Text that changes in neither pass keeps its exact bytes.
+    fn hide_text(&self, text: &str) -> String {
+        let hidden = self.hide(text);
+        if matches!(hidden.trim_start().as_bytes().first(), Some(b'{' | b'[')) {
+            if let Ok(mut parsed) = serde_json::from_str::<Value>(&hidden) {
+                if self.hide_json(&mut parsed) {
+                    return parsed.to_string();
+                }
+            }
+        }
+        hidden
+    }
+
+    /// Hide the strings of a JSON value in place; `true` when any changed.
+    fn hide_json(&self, value: &mut Value) -> bool {
         match value {
             Value::String(text) => {
                 let hidden = self.hide(text);
-                if hidden != *text {
-                    *text = hidden;
-                }
+                let changed = hidden != *text;
+                *text = hidden;
+                changed
             }
+            Value::Array(items) => items.iter_mut().fold(false, |any, v| self.hide_json(v) | any),
+            Value::Object(map) => map.values_mut().fold(false, |any, v| self.hide_json(v) | any),
+            _ => false,
+        }
+    }
+
+    fn hide_in_content(&self, value: &mut Value) {
+        match value {
+            Value::String(text) => *text = self.hide_text(text),
             Value::Array(parts) => {
                 for part in parts {
                     if let Some(text) = part.get_mut("text") {
@@ -333,19 +383,53 @@ impl SecretFilter {
     }
 }
 
-/// `text` with every placeholder this process knows put back to its secret.
-/// An unknown placeholder is left as it is.
+/// A secret whose value holds another placeholder needs another round; this
+/// bounds a pathological cycle.
+const MAX_RESTORE_ROUNDS: usize = 8;
+
+/// `text` with every placeholder this process knows put back to its secret,
+/// repeated until no known placeholder is left. An unknown placeholder is left
+/// as it is.
 pub(crate) fn restore(text: &str) -> String {
     if !text.contains("$$") {
         return text.to_string();
     }
     let reverse = REVERSE.lock().unwrap_or_else(|e| e.into_inner());
-    PLACEHOLDER
-        .replace_all(text, |caps: &regex::Captures| {
-            let found = caps.get(0).expect("group 0").as_str();
-            reverse.get(found).cloned().unwrap_or_else(|| found.to_string())
-        })
-        .into_owned()
+    let mut out = text.to_string();
+    for _ in 0..MAX_RESTORE_ROUNDS {
+        let mut known = false;
+        let next = PLACEHOLDER
+            .replace_all(&out, |caps: &regex::Captures| {
+                let found = caps.get(0).expect("group 0").as_str();
+                match reverse.get(found) {
+                    Some(secret) => {
+                        known = true;
+                        secret.clone()
+                    }
+                    None => found.to_string(),
+                }
+            })
+            .into_owned();
+        if !known {
+            break;
+        }
+        out = next;
+    }
+    out
+}
+
+/// Run `f` over the parts of `text` that are not placeholders and keep the
+/// placeholders as they are.
+fn map_plain(text: &str, f: impl Fn(&str) -> String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for m in PLACEHOLDER.find_iter(text) {
+        out.push_str(&f(&text[last..m.start()]));
+        out.push_str(m.as_str());
+        last = m.end();
+    }
+    out.push_str(&f(&text[last..]));
+    out
 }
 
 /// Restore placeholders in the strings of a JSON value, so a secret containing
@@ -571,5 +655,71 @@ mod tests {
             }
             assert_eq!(first, load_key(), "the same key on the next call");
         });
+    }
+
+    #[test]
+    fn the_process_key_is_loaded_once() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            assert_eq!(process_key(), process_key());
+        });
+    }
+
+    #[test]
+    fn an_env_url_password_is_hidden_once_and_restores_to_the_password() {
+        let f = filter(&[("DATABASE_URL", "postgres://app:hunter2hunter2@db.local:5432/x")]);
+        let text = "dsn postgres://app:hunter2hunter2@db.local:5432/x";
+        let once = f.hide(text);
+        assert!(!once.contains("hunter2hunter2"), "{once}");
+        assert_eq!(once.matches("$$").count(), 2, "one placeholder, not a wrapped one: {once}");
+        assert_eq!(once, f.hide(&once), "hiding hidden text changes nothing");
+        assert_eq!(restore(&once), text);
+    }
+
+    #[test]
+    fn restore_runs_until_no_known_placeholder_is_left() {
+        let f = filter(&[("MY_SECRET", "inner-secret-value")]);
+        let inner = f.hide("inner-secret-value");
+        let outer = f.placeholder("OUTER", &format!("wrap-{inner}-wrap"));
+        assert_eq!(restore(&outer), "wrap-inner-secret-value-wrap");
+    }
+
+    #[test]
+    fn a_secret_with_a_quote_backslash_or_newline_is_hidden_in_json_text() {
+        for secret in ["abc\"defghij", "p@ss\\word\\value1", "line1\nline2secret"] {
+            let f = filter(&[("MY_SECRET", secret)]);
+            let args = json!({ "command": format!("login {secret}"), "n": 1 }).to_string();
+            let request = json!({"messages":[
+                {"role":"assistant","content":null,"tool_calls":[
+                    {"id":"c1","type":"function","function":{"name":"bash","arguments": args}}]},
+                {"role":"tool","tool_call_id":"c1","content": json!({"out": secret}).to_string()}
+            ]});
+            let out = f.filter_request(&request);
+            assert!(!out.to_string().contains(&json!(secret).to_string()[1..json!(secret).to_string().len() - 1]), "{secret:?} leaked: {out}");
+            let sent = out["messages"][0]["tool_calls"][0]["function"]["arguments"].as_str().unwrap();
+            let parsed: Value = serde_json::from_str(sent).expect("still valid JSON");
+            assert!(parsed["command"].as_str().unwrap().starts_with("login $$MY_SECRET_"), "{secret:?}");
+            assert_eq!(parsed["n"], 1);
+            let result: Value =
+                serde_json::from_str(out["messages"][1]["content"].as_str().unwrap()).unwrap();
+            assert!(result["out"].as_str().unwrap().starts_with("$$MY_SECRET_"), "{secret:?}");
+            let mut completion = json!({"choices":[{"message":{"tool_calls":[
+                {"id":"c2","type":"function","function":{"name":"bash","arguments": sent}}]}}]});
+            restore_completion(&mut completion);
+            let args = completion["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"]
+                .as_str()
+                .unwrap();
+            let restored: Value = serde_json::from_str(args).unwrap();
+            assert_eq!(restored["command"], format!("login {secret}"));
+        }
+    }
+
+    #[test]
+    fn json_text_without_a_secret_keeps_its_exact_bytes() {
+        let f = filter(&[("MY_SECRET", "s3cr3t-value-xyz")]);
+        let args = "{ \"command\" :  \"ls\" }";
+        let request = json!({"messages":[{"role":"assistant","content":null,"tool_calls":[
+            {"id":"c1","type":"function","function":{"name":"bash","arguments": args}}]}]});
+        let out = f.filter_request(&request);
+        assert_eq!(out["messages"][0]["tool_calls"][0]["function"]["arguments"], args);
     }
 }
