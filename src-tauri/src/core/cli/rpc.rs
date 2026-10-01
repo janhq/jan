@@ -394,6 +394,10 @@ fn start_turn(
 /// agent, not the session, and a run that reported a different session after
 /// `session/model/set` would rename something the client is still holding.
 /// `session/fork` names its new session itself, after this returns.
+///
+/// It keeps the session-start snapshot too: the history it continues already
+/// carries a system prompt with that date and branch, and a fresh capture would
+/// append a second, different `# Session Start` behind it.
 fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession, String> {
     let project = source
         .agent
@@ -414,6 +418,7 @@ fn rebuild_agent(source: &Session, model: Option<String>) -> Result<AgentSession
     agent.args.project_memory = source.agent.args.project_memory;
     agent.args.subagents_enabled = source.subagents;
     agent.args.host_system_prompt = source.agent.args.host_system_prompt.clone();
+    agent.args.session_start = source.agent.args.session_start.clone();
     Ok(agent)
 }
 

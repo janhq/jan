@@ -1574,6 +1574,66 @@ fn a_host_system_prompt_is_sent_verbatim_and_kept() {
     let _ = std::fs::remove_dir_all(scratch);
 }
 
+/// Run `git` in `dir`, failing the test on a non-zero exit.
+fn git(dir: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"])
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("git runs");
+    assert!(status.success(), "git {args:?}");
+}
+
+/// The session-start snapshot is taken once, at `session/start`. A model
+/// switch and a fork rebuild the agent but keep it, so a branch switch between
+/// turns moves no byte of the system prompt and each request's system message
+/// is the one the first request sent.
+#[test]
+fn a_rebuilt_agent_keeps_the_session_start_snapshot() {
+    let scratch = scratch("session-start-kept");
+    let home = scratch.join("home");
+    let project = scratch.join("project");
+    git(&project, &["init", "-q", "-b", "first"]);
+    git(&project, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    let (url, seen) = scripted_provider(&[PROSE]);
+    configure(&home, &url);
+    let mut rpc = Rpc::open(&home);
+    rpc.handshake();
+
+    let session_id = start_with(&mut rpc, 3, &project, true);
+    complete_turn(&mut rpc, 4, &session_id);
+    git(&project, &["checkout", "-q", "-b", "second"]);
+    let set = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":5,"method":"session/model/set","params":{"sessionId":session_id,"model":"stub-model"}}));
+    assert_eq!(set["result"]["model"], "stub-model", "{set}");
+    complete_turn(&mut rpc, 6, &session_id);
+    let fork = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":7,"method":"session/fork","params":{"sessionId":session_id}}));
+    let fork = fork["result"]["sessionId"].as_str().unwrap_or_else(|| panic!("{fork}")).to_owned();
+    complete_turn(&mut rpc, 8, &fork);
+
+    let requests = seen.lock().unwrap();
+    assert_eq!(requests.len(), 3, "{requests:?}");
+    let first = serde_json::to_string(&requests[0]["messages"][0]).unwrap();
+    assert!(first.contains("Starting branch: `first`"), "{first}");
+    for body in requests.iter() {
+        let systems: Vec<&serde_json::Value> = body["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|message| message["role"] == "system")
+            .collect();
+        assert_eq!(systems.len(), 1, "a second system prompt was appended: {body}");
+        assert_eq!(serde_json::to_string(systems[0]).unwrap(), first, "{body}");
+    }
+    drop(requests);
+
+    rpc.close();
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
 /// With built-ins on, a child asking for a plugin tool by its wire name gets
 /// that plugin tool even though the host declared a tool under the same bare
 /// name, and a bare host name (`robot_arm_move`) still resolves to the host

@@ -2847,6 +2847,22 @@ fn build_run_system_prompt(
     }
 }
 
+/// The session-start snapshot a run composes with: the session's own when it
+/// has one, so every turn of the session writes the same bytes. A run with none
+/// (the API proxy, a test) takes its own now. The proxy is stateless -- each
+/// request is the whole conversation and the head is replaced every time
+/// (`replace_system_prompt`) -- so there is no earlier snapshot to keep, and a
+/// per-request one costs the caller one cache miss when its chat crosses
+/// midnight.
+fn run_session_start(
+    snapshot: Option<&crate::core::agent::context::SessionStart>,
+    project_root: Option<&std::path::Path>,
+) -> crate::core::agent::context::SessionStart {
+    snapshot
+        .cloned()
+        .unwrap_or_else(|| crate::core::agent::context::SessionStart::capture(project_root))
+}
+
 /// The system prompt the *next* ordinary turn in `project_root` would carry,
 /// built through the exact path a real run takes (`build_run_system_prompt`
 /// with this project's resolved sandbox/scratch and `[prompt]` policy). Used by
@@ -3127,16 +3143,8 @@ async fn orchestrate_inner(
             *subagents_enabled,
             settings.as_ref().is_some_and(|s| s.sandbox),
             &prompt_policy,
-            // A run with no session snapshot (the API proxy, a test) takes its
-            // own now: it has no later turn whose bytes it could disturb. With
-            // no project either, it still reaches the prompt, after the base.
-            Some(
-                &session_start
-                    .clone()
-                    .unwrap_or_else(|| {
-                        crate::core::agent::context::SessionStart::capture(project_root.as_deref())
-                    }),
-            ),
+            // With no project, it still reaches the prompt, after the base.
+            Some(&run_session_start(session_start.as_ref(), project_root.as_deref())),
         )?,
     };
     let jan_owns_prompt = host_system_prompt.is_none();
@@ -9414,6 +9422,16 @@ mod tests {
         assert!(with_base.contains("Session start date: 2026-09-30"), "{with_base}");
         let alone = build(None);
         assert!(alone.starts_with("# Session Start"), "{alone}");
+    }
+
+    /// A session's snapshot wins over the clock; only a run without one (the
+    /// proxy) reads the date itself.
+    #[test]
+    fn a_run_uses_its_session_snapshot_and_only_captures_without_one() {
+        use crate::core::agent::context::SessionStart;
+        let stale = SessionStart::fixed("1999-01-01", Some("stale"));
+        assert_eq!(run_session_start(Some(&stale), None), stale);
+        assert_eq!(run_session_start(None, None), SessionStart::capture(None));
     }
 
     /// An unconfined run has no scratch, so the prompt must not name one: the

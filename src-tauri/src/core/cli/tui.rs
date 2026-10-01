@@ -3016,11 +3016,20 @@ impl App {
         };
         let root = args.project_root.clone().unwrap_or_else(|| self.project_root.clone());
         let start = crate::core::agent::context::SessionStart::capture(Some(&root));
-        if args.session_start.as_ref() == Some(&start) {
+        self.adopt_session_start(Some(start));
+    }
+
+    /// Run the session on `start` from the next turn on; a no-op when it is
+    /// already the one in use.
+    fn adopt_session_start(&mut self, start: Option<crate::core::agent::context::SessionStart>) {
+        let Some(args) = self.args.as_ref() else {
+            return;
+        };
+        if args.session_start == start {
             return;
         }
         let mut next = (**args).clone();
-        next.session_start = Some(start);
+        next.session_start = start;
         self.args = Some(Arc::new(next));
     }
 
@@ -17810,7 +17819,14 @@ async fn fork_at(app: &mut App, target: usize) {
         .chars()
         .take(8)
         .collect();
+    // A fork continues this conversation's prefix, so it keeps this session's
+    // snapshot: the same date and branch compose the same system prompt, and the
+    // provider's cache of the shared history still holds. Nothing predates the
+    // snapshot either, so there is no resume notice to send.
+    let start = app.args.as_ref().and_then(|a| a.session_start.clone());
     load_thread(app, &thread, "forked").await;
+    app.adopt_session_start(start);
+    app.resume_notice_pending = false;
     app.input_clear();
     app.input = fill;
     app.cursor = app.input.len();
@@ -37163,6 +37179,39 @@ mod tests {
         let start = app.args.as_ref().and_then(|a| a.session_start.clone());
         let fresh = crate::core::agent::context::SessionStart::capture(Some(&app.project_root));
         assert_eq!(start, Some(fresh), "the snapshot is the one taken at /new");
+    }
+
+    /// A fork continues the source's prefix, so it keeps the source's snapshot
+    /// (same date, same branch, same system prompt bytes) and sends no resume
+    /// notice, where a resume of the same thread takes a fresh snapshot.
+    #[tokio::test]
+    async fn a_fork_keeps_the_source_session_start_snapshot() {
+        let stale = crate::core::agent::context::SessionStart::fixed("1999-01-01", Some("stale"));
+        let with_stale = |app: &mut App| {
+            let mut args = (*test_args(app, std::collections::HashMap::new())).clone();
+            args.session_start = Some(stale.clone());
+            app.args = Some(std::sync::Arc::new(args));
+        };
+        let start = |app: &App| app.args.as_ref().and_then(|a| a.session_start.clone());
+
+        let mut app = test_app();
+        with_stale(&mut app);
+        record_full_turn(&mut app);
+        app.submit_user("and again".to_string());
+        app.apply(StreamEvent::Token {
+            text: "Second answer.".into(),
+        });
+        app.on_done("stop".into(), None);
+
+        fork_at(&mut app, 1).await;
+        assert_eq!(start(&app), Some(stale.clone()), "the fork kept the source's snapshot");
+        assert!(!app.resume_notice_pending, "nothing in a fork predates its snapshot");
+
+        let mut resumed = test_app();
+        resumed.agent_dir = app.agent_dir.clone();
+        with_stale(&mut resumed);
+        apply_resume(&mut resumed, &ResumeRequest::resume(ResumeTarget::Latest)).await;
+        assert_ne!(start(&resumed), Some(stale), "a resume takes its own snapshot");
     }
 
     /// The first message after a resume carries the `<SYSTEM>` resumed notice,
