@@ -237,9 +237,21 @@ impl SecretFilter {
             .re;
         for (name, value) in vars {
             for caps in url_password.captures_iter(value) {
-                if let Some(m) = caps.get(1) {
-                    push(label_of(name), m.as_str());
+                let (Some(whole), Some(password)) = (caps.get(0), caps.get(1)) else {
+                    continue;
+                };
+                // `postgres://postgres:postgres@db`: a password that is also
+                // the scheme or the user name would turn every "postgres" in
+                // the prompt into a placeholder. The URL shape still hides it
+                // where it sits in a URL.
+                let user = whole.as_str().trim_start_matches("://");
+                let user = user.split(':').next().unwrap_or("");
+                let before = &value[..whole.start()];
+                let scheme = before.rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.').next().unwrap_or("");
+                if password.as_str() == user || password.as_str().eq_ignore_ascii_case(scheme) {
+                    continue;
                 }
+                push(label_of(name), password.as_str());
             }
         }
         literals.sort_by_key(|(_, value)| std::cmp::Reverse(value.len()));
@@ -306,8 +318,12 @@ impl SecretFilter {
                     match caps.get(shape.group) {
                         Some(hidden) => {
                             let placeholder = self.placeholder(shape.label, hidden.as_str());
-                            // Keep the text around the hidden group (`://user:`).
-                            whole.replacen(hidden.as_str(), &placeholder, 1)
+                            // Keep the text around the hidden group (`://user:`),
+                            // splicing at its position: the same text can appear
+                            // earlier in the match (`guest:guest@`).
+                            let start = hidden.start() - caps.get(0).expect("group 0").start();
+                            let end = hidden.end() - caps.get(0).expect("group 0").start();
+                            format!("{}{}{}", &whole[..start], placeholder, &whole[end..])
                         }
                         None => whole.to_string(),
                     }
@@ -680,6 +696,35 @@ mod tests {
         assert_eq!(once.matches("$$").count(), 2, "one placeholder, not a wrapped one: {once}");
         assert_eq!(once, f.hide(&once), "hiding hidden text changes nothing");
         assert_eq!(restore(&once), text);
+    }
+
+    #[test]
+    fn a_password_equal_to_the_user_name_is_hidden_at_its_own_position() {
+        let f = filter(&[]);
+        let out = f.hide("amqp://guest:guest@host/vhost");
+        assert!(out.starts_with("amqp://guest:$$URLPASSWORD_"), "the user stays, the password goes: {out}");
+        assert!(out.ends_with("$$@host/vhost"), "{out}");
+        assert_eq!(restore(&out), "amqp://guest:guest@host/vhost");
+    }
+
+    #[test]
+    fn an_env_url_password_that_is_a_common_word_does_not_rewrite_the_prompt() {
+        for url in [
+            "postgres://postgres:postgres@db.local:5432/x",
+            "redis://default:default@cache.local:6379",
+        ] {
+            let f = filter(&[("DATABASE_URL", url)]);
+            let prose = "the postgres docs say default settings apply; run postgres and redis default";
+            assert_eq!(f.hide(prose), prose, "{url}: ordinary words survive");
+            let hidden = f.hide(&format!("dsn {url}"));
+            let password = url.split(':').nth(2).unwrap().split('@').next().unwrap();
+            assert!(hidden.contains("$$URLPASSWORD_"), "{hidden}");
+            assert!(!hidden.contains(&format!(":{password}@")), "{url} leaked: {hidden}");
+            assert_eq!(restore(&hidden), format!("dsn {url}"));
+        }
+        // A distinct password is still hidden where it appears alone.
+        let f = filter(&[("DATABASE_URL", "postgres://app:hunter2hunter2@db/x")]);
+        assert!(!f.hide("password is hunter2hunter2").contains("hunter2hunter2"));
     }
 
     #[test]
