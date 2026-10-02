@@ -43,6 +43,13 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
     secretKey: 'you-api-key',
     homepage: 'you.com',
   },
+  {
+    id: 'serply',
+    label: 'Serply',
+    keyless: false,
+    secretKey: 'serply-api-key',
+    homepage: 'serply.io',
+  },
 ]
 
 export const DEFAULT_SEARCH_PROVIDER = 'exa'
