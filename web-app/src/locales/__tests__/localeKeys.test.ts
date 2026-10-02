@@ -22,7 +22,7 @@ const COMPLETE_NAMESPACES = ['tools']
  * rather than silently rendering the key to the user.
  */
 const DYNAMIC_KEYS: Record<string, string[]> = {
-  'setup': [
+  setup: [
     'stageModel',
     'stageConsent',
     'checkModelResolving',
@@ -49,7 +49,7 @@ const DYNAMIC_KEYS: Record<string, string[]> = {
     'checkSearchProbeFailed',
     'checkSearchUnavailable',
   ],
-  'common': [
+  common: [
     // CoworkEmptyState picks its example set by whether a folder is attached.
     'coworkEmpty.sandbox.first',
     'coworkEmpty.sandbox.second',
@@ -106,10 +106,14 @@ function leaves(
   )
 }
 
-/** The `{{name}}` interpolations in a string, order-insensitive. */
+/**
+ * The `{{name}}` interpolations in a string, order-insensitive. Same pattern
+ * as the runtime in i18n/setup.ts, so `{{ tool }}` (which it renders
+ * literally) counts as a dropped placeholder.
+ */
 function placeholders(value: unknown): string[] {
   return typeof value === 'string'
-    ? [...value.matchAll(/{{\s*([\w.]+)\s*}}/g)].map((m) => m[1]).sort()
+    ? [...value.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort()
     : []
 }
 
@@ -212,6 +216,16 @@ describe.each(COMPLETE_NAMESPACES)('translated %s locales', (namespace) => {
       .map(([key]) => key)
       .filter((key) => lookup(bundle, key) === undefined)
     expect(missing, `missing from ${locale}/${namespace}.json`).toEqual([])
+  })
+
+  // A key dropped from en, or a typo'd one, would otherwise linger unseen in
+  // every translated file.
+  it.each(TRANSLATED_LOCALES)('%s has no keys en lacks', (locale) => {
+    const known = new Set(english.map(([key]) => key))
+    const extra = leaves(loadNamespace(namespace, locale))
+      .map(([key]) => key)
+      .filter((key) => !known.has(key))
+    expect(extra, `not in en/${namespace}.json`).toEqual([])
   })
 
   // A translated string that drops or renames `{{tool}}` renders a sentence

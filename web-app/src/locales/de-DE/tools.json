@@ -1,6 +1,6 @@
 {
   "toolApproval": {
-    "needsApproval": "Dieses Werkzeug benötigt Ihre Genehmigung, bevor es ausgeführt wird.",
+    "needsApproval": "Dieses Werkzeug benötigt deine Genehmigung, bevor es ausgeführt wird.",
     "deny": "Ablehnen",
     "allowOnce": "Einmal erlauben",
     "allowInThread": "In diesem Thread erlauben",
@@ -40,7 +40,6 @@
     "originSubagent": "Subagent",
     "subagentPlaceholder": "Subagent",
     "dispatching": "Wird übergeben...",
-    "subagentBrief": "Auftrag",
     "viewRaw": "Roh",
     "viewTable": "Tabelle",
     "showMore": "Mehr anzeigen",
@@ -55,7 +54,7 @@
     "summaryEmpty": "Leeres Ergebnis",
     "terminal": "Terminal",
     "exitCode": "Exit {{code}}",
-    "terminated": "beendet",
+    "terminated": "abgebrochen",
     "outputTruncated": "Die Ausgabe wurde gekürzt; nur die letzten Zeilen werden angezeigt.",
     "pathPlaceholder": "Pfad",
     "reading": "Wird gelesen...",
