@@ -5,7 +5,6 @@
 Before testing, set-up the following in the old version to make sure that we can see the data is properly migrated:
 - [ ] Changing Interface / theme to something that is obviously different from default set-up 
 - [ ] Ensure there are a few chat threads
-- [ ] Ensure there are a few chat threads (favourites removed in 0.8.5 — threads are organized via Projects)
 - [ ] Ensure there are 2 model downloaded 
 - [ ] Ensure there are 2 import on local provider (llama.cpp) 
 - [ ] Modify MCP servers list and add some ENV value to MCP servers
@@ -205,7 +204,7 @@ Ensure that the following section information show up for hardware
 - [ ] User can delete an old thread, and it won't reappear even when app restart
 - [ ] Change the title of the thread should update its last modification date and re-organise its position in the correct chronological order on the left bar.
 - [ ] [0.8.5] New thread titles are AI-generated from conversation content (Auto-generate chat title toggle in Settings → Appearance). Verify titles are meaningful and the toggle works
-- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents (including from both `Favourite` and `Recent`)
+- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents
 - [ ] `Delete All` should delete only threads in the `Recents` section
 #### In a thread:
 - [ ] When `New Chat` is clicked, the assistant is set as the last selected assistant, the model selected is set as the last used model, and the user can immediately chat with the model. 
