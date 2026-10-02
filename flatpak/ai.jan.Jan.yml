@@ -1,109 +1,191 @@
 id: ai.jan.Jan
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '51'
 sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
 command: Jan
 finish-args:
   - --socket=wayland # Permission needed to show the window
   - --socket=fallback-x11 # Permission needed to show the window on X11
-  - --device=all # Full GPU access including NVIDIA CUDA compute
+  # GPU access for the in-process llama.cpp engine. --device=dri also binds
+  # /dev/nvidia*, and libcuda.so.1 comes from the host-matched
+  # org.freedesktop.Platform.GL.nvidia-* extension on the default ld path.
+  - --device=dri
   - --share=ipc
   - --share=network
   - --socket=pulseaudio # for future multimodality
-  - --env=LD_LIBRARY_PATH=/app/lib:/usr/lib/extensions/vulkan/nvidia/lib:/usr/lib/extensions/cuda/lib
-
-add-extensions:
-  org.freedesktop.Platform.GL:
-    directory: lib/GL
-    merge-dirs: vulkan/icd.d;glvnd/egl_vendor.d;OpenCL/vendors;lib
-    subdirectories: true
-    no-autodownload: true
-    autodelete: false
 
 cleanup:
   - /include
   - /lib/cmake
   - /lib/pkgconfig
+  - /share/cmake
+  - '*.a'
 
 modules:
-  - name: volk
+  # ggml-vulkan needs `find_package(SPIRV-Headers CONFIG)`; the SDK ships
+  # glslc, glslang and the Vulkan headers/loader, but not this cmake config.
+  - name: spirv-headers
     buildsystem: cmake-ninja
     builddir: true
-    config-opts:
-      - -DVOLK_INSTALL=ON
     cleanup:
-      - /bin
+      - '*'
     sources:
       - type: archive
-        url: https://github.com/zeux/volk/archive/refs/tags/vulkan-sdk-1.3.280.0.zip
-        sha256: 178875134d36e8b90f7e3ec31171355df3b71f47eba49cca2f98158e6552b011
+        url: https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-1.4.357.0.tar.gz
+        sha256: 4d703067a7e06331ccb37bdfed3f9b7879cc61969a2689ae95c95db34a47ff07
 
-  - name: vulkan-headers
-    buildsystem: cmake-ninja
-    builddir: true
-    sources:
-      - type: archive
-        url: https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.283.zip
-        sha256: 2094159c87fb4b6d8f734bd4cad59564cef7ef32feb00cf6d8ca7e75a84df921
-
-  - name: vulkan-tools
-    buildsystem: cmake-ninja
-    builddir: true
-    sources:
-      - type: archive
-        url: https://github.com/KhronosGroup/Vulkan-Tools/archive/refs/tags/v1.3.283.zip
-        sha256: 11ec6b474e91dc8cb6e7f22891294ede549bb6ed67c19d230e293b3fc9610883
-
-  - name: shaderc
-    buildsystem: cmake-ninja
-    builddir: true
-    config-opts:
-      - -DSHADERC_SKIP_COPYRIGHT_CHECK=ON
-      - -DSHADERC_SKIP_EXAMPLES=ON
-      - -DSHADERC_SKIP_TESTS=ON
-      - -DSPIRV_SKIP_EXECUTABLES=ON
-      - -DENABLE_GLSLANG_BINARIES=OFF
-    sources:
-      - type: git
-        url: https://github.com/google/shaderc.git
-        tag: v2024.1
-        commit: 47a9387ef5b3600d30d84c71ec77a59dc7db46fa
-      # https://github.com/google/shaderc/blob/known-good/known_good.json
-      - type: git
-        url: https://github.com/KhronosGroup/SPIRV-Tools.git
-        commit: dd4b663e13c07fea4fbb3f70c1c91c86731099f7
-        dest: third_party/spirv-tools
-      - type: git
-        url: https://github.com/KhronosGroup/SPIRV-Headers.git
-        commit: 5e3ad389ee56fca27c9705d093ae5387ce404df4
-        dest: third_party/spirv-headers
-      - type: git
-        url: https://github.com/KhronosGroup/glslang.git
-        commit: 142052fa30f9eca191aa9dcf65359fcaed09eeec
-        dest: third_party/glslang
-      - type: patch
-        path: patches/fix-cstdint.patch
-
-  - name: jan-binary
+  # Build-only CUDA toolkit from NVIDIA's per-component redist archives (no
+  # SDK extension exists). The whole tree is cleaned up; the engine staging
+  # step copies only the redistributable runtime (cudart, cublas, cublasLt,
+  # EULA Attachment A) beside the worker. 13.2+ is required: earlier 13.x
+  # headers clash with the SDK's glibc on rsqrt/rsqrtf.
+  - name: cuda-toolkit
     buildsystem: simple
+    only-arches: [x86_64]
+    cleanup:
+      - /cuda
+    build-commands:
+      - mkdir -p /app/cuda
+      - for d in nvcc crt nvvm cudart cccl cublas; do cp -a $d/. /app/cuda/; done
+      # nvcc resolves -lcudadevrt via <nvcc>/../lib64; the archives ship lib
+      - ln -s lib /app/cuda/lib64
+      - install -Dm644 cudart/LICENSE /app/share/licenses/ai.jan.Jan/CUDA-LICENSE.txt
     sources:
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/cuda_nvcc/linux-x86_64/cuda_nvcc-linux-x86_64-13.4.92-archive.tar.xz
+        sha256: 60998f40cc9df5826b2a846e2dcc328133fbc5ef539398ce0a21cf5dcac7193d
+        dest: nvcc
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/cuda_crt/linux-x86_64/cuda_crt-linux-x86_64-13.4.92-archive.tar.xz
+        sha256: c969e61ded12dbf0cf20ace72867f1622ec0e8ea1e1d305e27761012025f7aaa
+        dest: crt
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/libnvvm/linux-x86_64/libnvvm-linux-x86_64-13.4.92-archive.tar.xz
+        sha256: 0e619cf3d5b27f7c812665599ca9761fc296e56129b24a85d822a5d8a1a3bd75
+        dest: nvvm
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-13.4.92-archive.tar.xz
+        sha256: 0ac5dbc538d04e9983bc493b410cce4b459e1ee9f5f6654b6464ef7b3e14a8b5
+        dest: cudart
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/cccl/linux-x86_64/cccl-linux-x86_64-13.3.4.3.1-archive.tar.xz
+        sha256: 6b7516074f42f80dd3feb9c11318c8e1c5ab56cdd9f18fff4c5ace2e7e0a8209
+        dest: cccl
+      - type: archive
+        url: https://developer.download.nvidia.com/compute/cuda/redist/libcublas/linux-x86_64/libcublas-linux-x86_64-13.8.0.4-archive.tar.xz
+        sha256: bd6ffcce561672da6abb928214a6694f392741e7d1e2d7dfde0da4bd651706b6
+        dest: cublas
+
+  - name: jan
+    buildsystem: simple
+    only-arches: [x86_64]
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin:/app/cuda/bin
+      env:
+        CARGO_NET_OFFLINE: 'true'
+        SKIP_BINARIES: '1'
+        RELEASE_CHANNEL: stable
+        AUTO_UPDATER_DISABLED: 'true'
+        YARN_ENABLE_TELEMETRY: '0'
+        YARN_ENABLE_GLOBAL_CACHE: 'false'
+        # Engine: CUDA 13 + Vulkan, the same variant as the nightly linux build
+        CUDA_PATH: /app/cuda
+        CUDA_HOME: /app/cuda
+        JAN_ENGINE_FEATURES: engine-cuda,engine-vulkan
+    sources:
+      # TODO(v0.8.5): fill in sha256 once the tag and its dependency tarballs
+      # (manual-release-dependency-tarballs.yml) are published.
+      - type: archive
+        url: https://github.com/janhq/jan/archive/refs/tags/v0.8.5.tar.gz
+        sha256: TODO
+      # Vendors src-tauri/Cargo.lock and the llamacpp plugin's own lockfile;
+      # its .cargo/config.toml covers every crate built under src-tauri
+      - type: archive
+        url: https://github.com/janhq/jan/releases/download/v0.8.5/jan-cargo-vendor-v0.8.5.tar.gz
+        sha256: TODO
+        dest: src-tauri
+        strip-components: 0
+      - type: archive
+        url: https://github.com/janhq/jan/releases/download/v0.8.5/jan-yarn-cache-v0.8.5.tar.gz
+        sha256: TODO
+        strip-components: 0
+      # llama.cpp at the pin in src-tauri/plugins/tauri-plugin-llamacpp/build.rs
+      # (PINNED_TAG / PINNED_COMMIT), where build.rs looks for it by default;
+      # this replaces the network clone in fetch-engine-source.sh
+      - type: archive
+        url: https://github.com/ggml-org/llama.cpp/archive/refs/tags/b11146.tar.gz
+        sha256: 25eb89e300a0600bfdfadaac2acc7ec3a93cd23b992b7eff3c0eeae7987e4474
+        dest: src-tauri/plugins/tauri-plugin-llamacpp/vendor/llama.cpp
       - type: file
-        url: https://catalog.jan.ai/flatpak/Jan_0.7.3_amd64.deb
-        sha256: de852b052cf85007f8ac9728c0607926af2c1d7375ee1652d31d5e91be4a6283
-        only-arches: [x86_64]
+        url: https://repo.yarnpkg.com/4.5.3/packages/yarnpkg-cli/bin/yarn.js
+        sha256: dddc0b96ad2dca8d56a5302b56bf3cbf8210654474a6bf88877da61e866f3d46
+        dest: .yarn/releases
+        dest-filename: yarn-4.5.3.cjs
+      - type: archive
+        url: https://github.com/oven-sh/bun/releases/download/bun-v1.3.14/bun-linux-x64.zip
+        sha256: 951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f
+        dest: prebuilt/bun
+        strip-components: 1
+      - type: archive
+        url: https://github.com/astral-sh/uv/releases/download/0.11.31/uv-x86_64-unknown-linux-gnu.tar.gz
+        sha256: 8cc1cd82d434ec565376f98bd938d4b715b5791a80ff2d3aa78821cf85091b4b
+        dest: prebuilt/uv
+        strip-components: 1
       - type: file
         path: ai.jan.Jan.metainfo.xml
+      - type: file
+        path: ai.jan.Jan.desktop
     build-commands:
-      - ar -x *.deb
-      - tar -xf data.tar.gz
-      - 'install -Dm755 usr/bin/Jan /app/bin/Jan'
-      - 'install -Dm755 usr/bin/bun /app/bin/bun'
-      - 'install -Dm755 usr/bin/uv /app/bin/uv'
-      - cp -rv usr/lib/* /app/lib/.
-      - install -Dm644 usr/share/applications/Jan.desktop /app/share/applications/ai.jan.Jan.desktop
-      - desktop-file-edit --set-key=Exec --set-value=/app/bin/Jan --set-icon=ai.jan.Jan /app/share/applications/ai.jan.Jan.desktop
-      - install -Dm644 usr/share/icons/hicolor/128x128/apps/Jan.png /app/share/icons/hicolor/128x128/apps/ai.jan.Jan.png
-      - install -Dm644 usr/share/icons/hicolor/32x32/apps/Jan.png /app/share/icons/hicolor/32x32/apps/ai.jan.Jan.png
-      - install -Dm644 usr/share/icons/hicolor/256x256@2/apps/Jan.png /app/share/icons/hicolor/256x256@2/apps/ai.jan.Jan.png
+      # Offline binaries normally fetched by scripts/download-bin.mjs (SKIP_BINARIES=1)
+      - install -Dm755 prebuilt/bun/bun src-tauri/resources/bin/bun
+      - install -Dm755 prebuilt/uv/uv src-tauri/resources/bin/uv
+      - install -Dm755 prebuilt/uv/uv src-tauri/resources/bin/uv-x86_64-unknown-linux-gnu
+      # Pin yarn to the vendored release; nested `yarn` calls in scripts resolve
+      # via yarn's own PATH injection, bypassing the corepack shim entirely
+      - echo "yarnPath: .yarn/releases/yarn-4.5.3.cjs" >> .yarnrc.yml
+      # Offline installs from the vendored yarn cache (root + plugins are
+      # two separate yarn projects); YARN_ENABLE_GLOBAL_CACHE=false points
+      # yarn at each project's .yarn/cache
+      - node .yarn/releases/yarn-4.5.3.cjs install
+      - cd src-tauri/plugins && node "$FLATPAK_BUILDER_BUILDDIR/.yarn/releases/yarn-4.5.3.cjs" install
+      # Stamp release version into web-app/package.json (source tag ships it
+      # stale; the UI's VERSION is injected from here at build time)
+      - node -e "const f='web-app/package.json',p=require('./'+f);p.version='0.8.5';require('fs').writeFileSync(f,JSON.stringify(p,null,2)+'\n')"
+      # Build TS layers
+      - node .yarn/releases/yarn-4.5.3.cjs build:tauri:plugin:api
+      - node .yarn/releases/yarn-4.5.3.cjs build:core
+      - node .yarn/releases/yarn-4.5.3.cjs build:extensions
+      # Generate sized app icons (git-ignored; tauri macro needs them) + stage LICENSE
+      - node .yarn/releases/yarn-4.5.3.cjs build:icon
+      - node .yarn/releases/yarn-4.5.3.cjs copy:assets:tauri
+      # llama.cpp engine worker + ggml backend modules (+ CUDA runtime), the
+      # offline equivalent of `make build-engine`. It is built from the plugin
+      # crate alone (the app crate forwards no engine feature) and must be
+      # staged before `tauri build`: tauri.linux.conf.json lists the staged
+      # files as bundle resources and generate_context!() fails without them.
+      - bash src-tauri/build-utils/check-engine-toolchain.sh cuda13-vulkan "$JAN_ENGINE_FEATURES"
+      - cd src-tauri/plugins/tauri-plugin-llamacpp && cargo build --release --locked --features "$JAN_ENGINE_FEATURES" --bin jan-llama-worker
+      - bash src-tauri/build-utils/stage-engine.sh release
+      - src-tauri/resources/bin/jan-llama-worker --version
+      # Main app binary (frontend built via beforeBuildCommand)
+      - node .yarn/releases/yarn-4.5.3.cjs tauri build --no-bundle
+      # Install app: binary, sidecars, resources (tauri resource_dir =
+      # <exe>/../lib/<productName>, i.e. /app/lib/Jan)
+      - install -Dm755 src-tauri/target/release/Jan-Desktop /app/bin/Jan
+      - install -Dm755 src-tauri/resources/bin/bun /app/bin/bun
+      - install -Dm755 src-tauri/resources/bin/uv /app/bin/uv
+      - install -Dm644 src-tauri/resources/LICENSE /app/lib/Jan/resources/LICENSE
+      # Worker, ggml modules and CUDA runtime must share one directory (ggml
+      # scans the worker's dir; everything resolves via $ORIGIN). cp -P keeps
+      # the soname symlink chains as links.
+      - install -Dm755 src-tauri/resources/bin/jan-llama-worker /app/lib/Jan/resources/bin/jan-llama-worker
+      - cp -P src-tauri/resources/bin/lib*.so* /app/lib/Jan/resources/bin/
+      # Desktop entry, icons, appstream metadata
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/ai.jan.Jan.png
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/ai.jan.Jan.png
+      - install -Dm644 src-tauri/icons/128x128@2x.png /app/share/icons/hicolor/256x256@2/apps/ai.jan.Jan.png
+      - install -Dm644 ai.jan.Jan.desktop /app/share/applications/ai.jan.Jan.desktop
       - install -Dm644 ai.jan.Jan.metainfo.xml /app/share/metainfo/ai.jan.Jan.metainfo.xml
-      - mkdir -p /app/lib/GL
