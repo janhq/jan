@@ -16,6 +16,7 @@ type Language =
   | 'ja'
   | 'ru'
   | 'ca'
+  | 'tr'
 interface LogEntry {
   timestamp: string | number
   level: 'info' | 'warn' | 'error' | 'debug'
