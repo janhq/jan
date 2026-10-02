@@ -1,0 +1,10 @@
+{
+  "newVersion": "Ny version {{version}}",
+  "updateAvailable": "Uppdatering tillgänglig",
+  "nightlyBuild": "Nattlig version",
+  "showReleaseNotes": "Visa versionsinformation",
+  "hideReleaseNotes": "Dölj versionsinformation",
+  "remindMeLater": "Påminn mig senare",
+  "downloading": "Hämtar…",
+  "updateNow": "Uppdatera nu"
+}
