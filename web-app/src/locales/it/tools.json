@@ -49,7 +49,7 @@
     "hideRaw": "Nascondi grezzo",
     "summaryText": "{{preview}}",
     "summaryTextBlocks": "{{count}} blocchi: {{preview}}",
-    "summaryBlocks": "{{text}} testo, {{other}} allegato/i",
+    "summaryBlocks": "Blocchi di testo: {{text}}, allegati: {{other}}",
     "summaryItems": "{{count}} elemento/i",
     "summaryFields": "{{count}} campo/i: {{fields}}",
     "summaryEmpty": "Risultato vuoto",

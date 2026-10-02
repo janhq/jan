@@ -49,7 +49,7 @@
     "hideRaw": "Masquer le brut",
     "summaryText": "{{preview}}",
     "summaryTextBlocks": "{{count}} blocs : {{preview}}",
-    "summaryBlocks": "{{text}} texte, {{other}} pièce(s) jointe(s)",
+    "summaryBlocks": "Blocs de texte : {{text}}, pièces jointes : {{other}}",
     "summaryItems": "{{count}} élément(s)",
     "summaryFields": "{{count}} champ(s) : {{fields}}",
     "summaryEmpty": "Résultat vide",

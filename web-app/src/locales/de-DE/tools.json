@@ -49,7 +49,7 @@
     "hideRaw": "Rohdaten ausblenden",
     "summaryText": "{{preview}}",
     "summaryTextBlocks": "{{count}} Blöcke: {{preview}}",
-    "summaryBlocks": "{{text}} Text, {{other}} Anhang/Anhänge",
+    "summaryBlocks": "Textblöcke: {{text}}, Anhänge: {{other}}",
     "summaryItems": "{{count}} Element(e)",
     "summaryFields": "{{count}} Feld(er): {{fields}}",
     "summaryEmpty": "Leeres Ergebnis",

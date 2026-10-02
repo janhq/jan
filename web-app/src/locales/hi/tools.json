@@ -27,7 +27,7 @@
     "documentsPlaceholder": "अपने दस्तावेज़ खोजें",
     "searchingDocuments": "दस्तावेज़ खोजे जा रहे हैं...",
     "noMatches": "कोई मिलता-जुलता अंश नहीं",
-    "fileFilter": "{{count}} फ़ाइल(लों) में",
+    "fileFilter": "फ़ाइलें: {{count}}",
     "addressPlaceholder": "URL दर्ज करें",
     "searching": "खोजा जा रहा है...",
     "opening": "पेज खोला जा रहा है...",

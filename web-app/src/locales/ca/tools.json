@@ -49,7 +49,7 @@
     "hideRaw": "Amaga el text en brut",
     "summaryText": "{{preview}}",
     "summaryTextBlocks": "{{count}} blocs: {{preview}}",
-    "summaryBlocks": "{{text}} text, {{other}} adjunt(s)",
+    "summaryBlocks": "Blocs de text: {{text}}, adjunts: {{other}}",
     "summaryItems": "{{count}} element(s)",
     "summaryFields": "{{count}} camp(s): {{fields}}",
     "summaryEmpty": "Resultat buit",

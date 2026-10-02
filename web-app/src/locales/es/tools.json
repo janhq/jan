@@ -49,7 +49,7 @@
     "hideRaw": "Ocultar sin formato",
     "summaryText": "{{preview}}",
     "summaryTextBlocks": "{{count}} bloques: {{preview}}",
-    "summaryBlocks": "{{text}} texto, {{other}} adjunto(s)",
+    "summaryBlocks": "Bloques de texto: {{text}}, adjuntos: {{other}}",
     "summaryItems": "{{count}} elemento(s)",
     "summaryFields": "{{count}} campo(s): {{fields}}",
     "summaryEmpty": "Resultado vacío",
