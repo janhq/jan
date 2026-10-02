@@ -143,6 +143,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/mistral.svg'
     case 'openrouter':
       return '/images/model-provider/open-router.svg'
+    case 'api-route':
+      return '/images/model-provider/api-route.png'
     case 'groq':
       return '/images/model-provider/groq.svg'
     case 'cohere':
@@ -176,6 +178,8 @@ export const getProviderTitle = (provider: string) => {
       return 'OpenAI'
     case 'openrouter':
       return 'OpenRouter'
+    case 'api-route':
+      return 'API Route'
     case 'gemini':
       return 'Gemini'
     case 'huggingface':
