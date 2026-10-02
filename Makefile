@@ -13,7 +13,18 @@ else
     DETECTED_OS := $(shell uname -s)
 endif
 
+# On Windows make runs recipes through cmd.exe -- unless an sh.exe is on PATH,
+# which is every Git Bash and MSYS invocation, CI included. The two share no
+# spelling for mkdir or for a one-off environment variable, and the OS alone
+# cannot tell them apart, so the shell make picked is what the Windows-only
+# recipes have to branch on.
 ifeq ($(OS),Windows_NT)
+    RECIPE_SHELL_IS_CMD := $(if $(filter sh sh.exe bash bash.exe,$(notdir $(SHELL))),,yes)
+else
+    RECIPE_SHELL_IS_CMD :=
+endif
+
+ifeq ($(RECIPE_SHELL_IS_CMD),yes)
     MKDIR = if not exist "$(1)" mkdir "$(1)"
 else
     MKDIR = mkdir -p $(1)
@@ -65,8 +76,8 @@ install-ios-rust-targets:
 
 dev: install-and-build
 	yarn download:bin
-	make build-mlx-server-if-exists
-	make build-cli-dev
+	$(MAKE) build-mlx-server-if-exists
+	$(MAKE) build-engine-dev-if-possible
 	yarn dev
 
 # Web application targets
@@ -75,17 +86,17 @@ install-web-app:
 
 dev-web-app: install-web-app
 	yarn build:core
-	yarn dev:web-app
+	yarn dev:web
 
 build-web-app: install-web-app
 	yarn build:core
-	yarn build:web-app
+	yarn build:web
 
 serve-web-app:
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 build-serve-web-app: build-web-app
-	yarn serve:web-app
+	yarn workspace @janhq/web-app preview
 
 # Mobile
 dev-android: install-and-build install-android-rust-targets
@@ -121,23 +132,92 @@ lint: install-and-build
 	yarn lint
 
 # Testing
-test: lint install-rust-targets
+#
+# `test` is the full local suite: it also builds the real MLX server and CLI
+# binary. `test-ci` runs the same suites without those release builds -- neither
+# is a declared Tauri resource or externalBin (bundle.resources is only
+# resources/LICENSE) and no test executes them, so in CI they were just
+# duplicating what `make build` already does on the release path.
+#
+# Both go through `test-rust`, which owns `stub-resources`: the app's build
+# script fails on any missing bundle.resources path, and neither entry point
+# builds the engine worker or the ggml backends.
+test-prepare: lint
 	yarn download:bin
-ifeq ($(DETECTED_OS),Windows)
-endif
 	yarn test
 	yarn copy:assets:tauri
 	yarn build:icon
-	yarn build:mlx-server
-	make build-cli
+
+test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/Cargo.toml --no-default-features --features test-tauri -- --test-threads=1
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
 
-# Build MLX server (macOS Apple Silicon only) - always builds
+# protocol/schema.json is committed, and core::cli::protocol_schema fails when it
+# no longer matches the types that define the channel. This is the fix for that
+# failure, not an optional extra: change a protocol type, run this, commit both.
+# `cd` rather than `--manifest-path` because jan-cli is its own workspace and its
+# .cargo/config.toml is what points the build at src-tauri/target. The feature
+# set matches build-cli, so this does not compile a second configuration.
+protocol-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent schema --out ../../protocol/schema.json
+
+# The same guard for the RPC surface: protocol/rpc-schema.json is committed, and
+# core::cli::rpc_schema fails when it no longer matches the types that define the
+# envelope. It covers this surface only - stream-json records are in
+# protocol/schema.json, and ACP (`jan acp`) uses the upstream
+# ACP schema.
+protocol-rpc-schema:
+	cd src-tauri/jan-cli && cargo run --quiet --locked --no-default-features --features cli --bin jan -- cli agent rpc-schema --out ../../protocol/rpc-schema.json
+
+test: test-prepare install-rust-targets
+	yarn build:mlx-server
+	$(MAKE) build-cli
+	$(MAKE) test-rust
+
+# Placeholders for the binaries no test target builds. Each platform's
+# tauri.<os>.conf.json declares these under bundle.resources, and
+# generate_context!() fails the build script if a declared path is missing --
+# but it only checks existence, and no test executes them. Every stub is guarded
+# so we never clobber a real local build or churn the cargo:rerun-if-changed
+# stamps these paths emit.
+#
+# scripts/stub-tauri-resources.mjs is the one implementation, shared with the
+# coverage and rust-check workflows; keeping a second copy here is how the
+# engine worker ended up stubbed in one place and not the other. It is Node and
+# not shell so this recipe needs no cmd.exe arm -- `node` is spelled the same
+# whichever shell make picked, and a stock Windows box has no `sh` on PATH.
+stub-resources:
+	@node scripts/stub-tauri-resources.mjs
+
+test-ci: test-prepare
+	$(MAKE) test-rust
+
+# Compile and test guard for the CLI feature set. The `jan` CLI is no longer
+# bundled with the app; `make test` still builds the real binary via build-cli.
+#
+# jan-cli is a standalone crate and not a dependency of src-tauri, so the
+# rust-check `cli` app entry never reaches it (that entry's --all-targets covers
+# app_lib's own cfg(feature = "cli") test modules, a different crate). This
+# target runs its tests; the CI lint guarantee is the jan-cli entry of the
+# rust-check `crates` matrix, which `lint-cli` reproduces locally. A bare
+# `cargo check` here once built the bin but not the #[cfg(test)] module, which
+# is how the fixture in `compact_plugin_list_omits_long_metadata` silently rotted.
+check-cli:
+	cd src-tauri/jan-cli && cargo test --locked --no-default-features --features cli
+
+# The same clippy invocation as the rust-check `crates` matrix jan-cli entry.
+# Kept out of check-cli so the linter workflow does not lint it a second time.
+lint-cli:
+	cd src-tauri/jan-cli && cargo clippy --locked --no-default-features --features cli --all-targets -- -D warnings
+
+# Build MLX server (macOS Apple Silicon only) - always builds, unless
+# JAN_MLX_PREBUILT_DIR holds a cached build of the same inputs
+# (build-utils/mlx-prebuilt.sh), which is then staged and signed the same way
 build-mlx-server:
 ifeq ($(DETECTED_OS),Darwin)
+ifeq ($(JAN_MLX_PREBUILT_DIR),)
 	@echo "Building MLX server for Apple Silicon..."
 	# mlx-swift's Metal shaders are compiled by the PrepareMetalShaders
 	# plugin, which only runs under Xcode -- `swift build` produces a
@@ -145,8 +225,9 @@ ifeq ($(DETECTED_OS),Darwin)
 	# https://github.com/ml-explore/mlx-swift README ("SwiftPM (command
 	# line) cannot build the Metal shaders").
 	cd mlx-server && xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release OTHER_LDFLAGS="-dead_strip"
+endif
 	@echo "Finding build products..."
-	@DERIVED_DATA=$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1); \
+	@DERIVED_DATA=$${JAN_MLX_PREBUILT_DIR:-$$(find ~/Library/Developer/Xcode/DerivedData/mlx-server-*/Build/Products/Release -maxdepth 0 2>/dev/null | head -1)}; \
 	if [ -z "$$DERIVED_DATA" ] || [ ! -f "$$DERIVED_DATA/mlx-server" ]; then \
 		echo "Error: Could not find xcodebuild products under DerivedData"; \
 		exit 1; \
@@ -198,49 +279,315 @@ endif
 # Build jan CLI (release, platform-aware) → src-tauri/resources/bin/jan[.exe]
 build-cli:
 ifeq ($(DETECTED_OS),Darwin)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target aarch64-apple-darwin
-	cd src-tauri && cargo build --release --features cli --bin jan-cli --target x86_64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target aarch64-apple-darwin
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli --target x86_64-apple-darwin
 	lipo -create \
-		src-tauri/target/aarch64-apple-darwin/release/jan-cli \
-		src-tauri/target/x86_64-apple-darwin/release/jan-cli \
-		-output src-tauri/resources/bin/jan-cli
-	chmod +x src-tauri/resources/bin/jan-cli
+		src-tauri/target/aarch64-apple-darwin/release/jan \
+		src-tauri/target/x86_64-apple-darwin/release/jan \
+		-output src-tauri/resources/bin/jan
+	chmod +x src-tauri/resources/bin/jan
 	$(call MKDIR,'src-tauri/target/universal-apple-darwin/release')
 
 	echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		echo "Signing jan-cli with identity: $$SIGNING_IDENTITY"; \
-		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan-cli; \
+		echo "Signing jan with identity: $$SIGNING_IDENTITY"; \
+		codesign --force --options runtime --timestamp --sign "$$SIGNING_IDENTITY" src-tauri/resources/bin/jan; \
 		echo "Code signing completed successfully"; \
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
 	fi
 
-	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
+	cp src-tauri/resources/bin/jan src-tauri/target/universal-apple-darwin/release/jan
 else ifeq ($(DETECTED_OS),Windows)
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli.exe src-tauri/resources/bin/jan-cli.exe
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
+	cp src-tauri/target/release/jan.exe src-tauri/resources/bin/jan.exe
 else
-	cd src-tauri && cargo build --release --features cli --bin jan-cli
-	cp src-tauri/target/release/jan-cli src-tauri/resources/bin/jan-cli
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
+	cp src-tauri/target/release/jan src-tauri/resources/bin/jan
 endif
 
-# Debug build for local dev (faster, native arch only)
-build-cli-dev:
-	$(call MKDIR,'src-tauri/resources/bin')	
-	cd src-tauri && cargo build --features cli --bin jan-cli
+# ---------------------------------------------------------------------------
+# llama.cpp engine worker
+#
+# JAN_ENGINE_VARIANT picks the GPU backends compiled into the worker. Vulkan is
+# in every variant, not just the default: it is the fallback when the CUDA or
+# ROCm runtime turns out to be missing or too old on the user's machine, and
+# ggml chooses between the registered backends at runtime.
+#
+# The CPU backend is always multi-versioned (GGML_CPU_ALL_VARIANTS), so every
+# variant ships the full set of x86-64/ARM microarchitecture modules and ggml
+# scores them at load time. That is what "common CPUs" means here.
+#
+# The variant is a `-` separated list of backends, so a shipping build names
+# every backend it carries and one worker covers the machine it lands on:
+#
+#   vulkan  (default)  vulkan
+#   cuda13             cuda + vulkan   (needs CUDA 13 toolkit on PATH)
+#   cuda12             cuda + vulkan   (needs CUDA 12 toolkit on PATH)
+#   rocm               hip  + vulkan   (needs ROCm/HIP)
+#   cuda13-hip-vulkan  all three       (needs the CUDA and the HIP toolkit)
+#
+# cuda12 and cuda13 cannot be combined: the CUDA major is whichever nvcc is on
+# PATH, one toolkit per configure, and both emit libggml-cuda.so.
+#
+# CUDA 12 vs 13 is not a cmake flag -- it is whichever nvcc is found, and
+# llama.cpp adapts CMAKE_CUDA_ARCHITECTURES to it on its own (ggml-cuda's
+# CMakeLists only adds the 50/61/70 virtual archs below CUDA 13). They are still
+# separate variants because the resulting binaries cover different GPUs, so
+# check-engine-toolchain asserts the toolkit matches the variant name rather
+# than letting a cuda13 build ship labelled cuda12.
+COMMA := ,
+SPACE := $(subst ,, )
+JAN_ENGINE_VARIANT ?= vulkan
+
+# Shipping builds pair Vulkan with CUDA/ROCm so the app still offloads when the
+# vendor runtime turns out to be missing or too old. That needs the Vulkan SDK,
+# which a developer with only a CUDA toolkit has no reason to install, so it can
+# be dropped locally. Never drop it for a release: the fallback is the point.
+JAN_ENGINE_VULKAN_FALLBACK ?= 1
+
+# Overrides the GPU architectures a CUDA build targets. Empty means upstream's
+# own list, which covers discrete desktop/datacenter parts (75/80/86/89/90, plus
+# 50/61/70 below CUDA 13) but has NO Jetson entry -- Orin is sm_87 and Xavier
+# sm_72. Set it for an ARM/Jetson target, or to trim a build to one known GPU:
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_CUDA_ARCHS=87
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_CUDA_ARCHS=86-real
+JAN_ENGINE_CUDA_ARCHS ?=
+export JAN_ENGINE_CUDA_ARCHS
+
+# Overrides the AMD GPUs a HIP build targets (cmake GPU_TARGETS). Empty means
+# the list build.rs carries over from the previous engine's releases:
+#     make build-engine JAN_ENGINE_VARIANT=rocm JAN_ENGINE_HIP_TARGETS=gfx1100
+JAN_ENGINE_HIP_TARGETS ?=
+export JAN_ENGINE_HIP_TARGETS
+
+# One token to one cargo feature. `engine` alone is the CPU-only worker, and it
+# is implied by every other feature, so `cpu` maps to it and the GPU tokens do
+# not have to name it.
+ENGINE_TOKENS := $(subst -, ,$(JAN_ENGINE_VARIANT))
+ENGINE_FEATURE_cpu := engine
+ENGINE_FEATURE_vulkan := engine-vulkan
+ENGINE_FEATURE_metal := engine-metal
+ENGINE_FEATURE_cuda12 := engine-cuda
+ENGINE_FEATURE_cuda13 := engine-cuda
+ENGINE_FEATURE_hip := engine-hip
+ENGINE_FEATURE_rocm := engine-hip
+
+ENGINE_UNKNOWN_TOKENS := $(strip $(foreach t,$(ENGINE_TOKENS),$(if $(ENGINE_FEATURE_$(t)),,$(t))))
+ifneq ($(ENGINE_UNKNOWN_TOKENS),)
+    $(error Unknown JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)': no backend named '$(ENGINE_UNKNOWN_TOKENS)'. Tokens are cpu, vulkan, metal, cuda12, cuda13, hip/rocm, joined by '-')
+endif
+ifneq ($(word 2,$(filter cuda12 cuda13,$(ENGINE_TOKENS))),)
+    $(error JAN_ENGINE_VARIANT '$(JAN_ENGINE_VARIANT)' names more than one CUDA major, which one build cannot carry)
+endif
+
+# The fallback adds vulkan whenever a vendor runtime is in play and the variant
+# did not already ask for it. $(sort) dedupes, so naming vulkan twice is
+# harmless and the feature list is deterministic.
+ENGINE_VENDOR_FEATURES := $(filter engine-cuda engine-hip,$(foreach t,$(ENGINE_TOKENS),$(ENGINE_FEATURE_$(t))))
+ENGINE_FEATURE_LIST := $(sort $(foreach t,$(ENGINE_TOKENS),$(ENGINE_FEATURE_$(t))) \
+    $(if $(ENGINE_VENDOR_FEATURES),$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)),engine-vulkan,),))
+ENGINE_FEATURES := $(subst $(SPACE),$(COMMA),$(ENGINE_FEATURE_LIST))
+
+ENGINE_PLUGIN_DIR := src-tauri/plugins/tauri-plugin-llamacpp
+ENGINE_BIN_DIR := src-tauri/resources/bin
+
+# cmake and nvcc output goes here, and is tailed live while cargo runs -- cargo
+# captures a build script's output and only shows it on failure, so without this
+# a fifteen-minute engine build prints nothing and looks hung. Kept afterwards
+# as the artifact to attach to a build report.
+ENGINE_BUILD_LOG := $(CURDIR)/src-tauri/target/engine-build.log
+export JAN_ENGINE_BUILD_LOG := $(ENGINE_BUILD_LOG)
+
+# Parallelism for the engine build only.
+#
+# `make -j2` alone does NOT reach cmake: build.rs reads NUM_JOBS, which *cargo*
+# sets from its own parallelism, and cargo ignores make's jobserver for that
+# purpose -- it defaults to num_cpus. So `make -j2` silently built 8-wide and
+# passed cmake -j8. Translating make's own -j into CARGO_BUILD_JOBS makes the
+# flag mean what it says.
+#
+# Scoped to the engine rather than exported globally, because an 8-way nvcc
+# build is the memory spike worth limiting; throttling the 1,200-crate app build
+# to match would just make everything slower.
+#
+# JAN_ENGINE_JOBS overrides both, for limiting the engine without touching the
+# rest of the tree:
+#     make build-engine JAN_ENGINE_VARIANT=cuda13 JAN_ENGINE_JOBS=2
+#
+# A bare `make -j` (unlimited) yields an empty value and falls through to
+# cargo's default, which is the right reading of "no limit".
+# Deferred (`=`, not `:=`) on purpose: make puts -j into MAKEFLAGS only when it
+# runs a recipe, not while parsing the makefile, so a simple assignment reads an
+# empty value and the limit is silently lost -- the exact failure this is meant
+# to fix. `--jobserver-auth=...` does not match `-j%` (it starts `--`).
+MAKE_J = $(strip $(patsubst -j%,%,$(filter -j%,$(MAKEFLAGS))))
+JAN_ENGINE_JOBS ?= $(MAKE_J)
+ENGINE_CARGO_JOBS = $(if $(JAN_ENGINE_JOBS),CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS),)
+# cmd.exe has no `VAR=value command` prefix, so the same limit is set with `set`
+# there. The Windows recipes still run under sh when one is on PATH, where the
+# prefix form is the only one that works.
+ENGINE_CARGO_JOBS_WIN = $(if $(RECIPE_SHELL_IS_CMD),$(if $(JAN_ENGINE_JOBS),set CARGO_BUILD_JOBS=$(JAN_ENGINE_JOBS)&&,),$(ENGINE_CARGO_JOBS))
+
+# cargo also finds the jobserver in MAKEFLAGS and tries to join it, but a recipe
+# line make did not mark recursive never inherits its file descriptors, so cargo
+# warns and falls back on every build. An empty CARGO_MAKEFLAGS takes precedence
+# over MAKEFLAGS and reads as "no jobserver", which is the truth here:
+# parallelism reaches cargo as CARGO_BUILD_JOBS above, and build.rs sizes
+# cmake -j from the NUM_JOBS cargo derives from it.
+export CARGO_MAKEFLAGS :=
+
+# Streams the build log while $(1) runs, then stops the tail either way. Unix
+# only -- the Windows recipes run cargo straight, so cmake output there arrives
+# in cargo's own failure dump rather than live.
+# `tail -F` tolerates the file not existing yet; the trap covers a cargo failure
+# and a Ctrl-C so no reader is left behind.
+define with_engine_log
+	@mkdir -p $(dir $(ENGINE_BUILD_LOG))
+	@: > $(ENGINE_BUILD_LOG)
+	@tail -F -n +1 $(ENGINE_BUILD_LOG) 2>/dev/null | sed 's/^/[engine] /' & \
+	tail_pid=$$!; \
+	trap 'kill $$tail_pid 2>/dev/null || true' EXIT INT TERM; \
+	$(1); \
+	rc=$$?; \
+	sleep 1; \
+	kill $$tail_pid 2>/dev/null || true; \
+	exit $$rc
+endef
+
+# `make dev` must not require a GPU toolchain: a contributor working on the UI
+# has no reason to install the Vulkan SDK or CUDA, so the default variant skips
+# rather than blocks.
+#
+# But a variant asked for *explicitly* is a request, not a default -- silently
+# skipping it would leave someone waiting for an engine that was never built.
+# `origin` distinguishes the two: `file` means the `?=` default below, anything
+# else means the caller named it.
+ENGINE_VARIANT_EXPLICIT := $(if $(filter-out file,$(origin JAN_ENGINE_VARIANT)),yes,)
+
+build-engine-dev-if-possible:
 ifeq ($(DETECTED_OS),Windows)
-	copy src-tauri\target\debug\jan-cli.exe src-tauri\resources\bin\jan-cli.exe
+	@echo "Building the llama.cpp engine (skipped if the toolchain is incomplete)"
+	-$(MAKE) build-engine-dev
 else
-	install -m755 src-tauri/target/debug/jan-cli src-tauri/resources/bin/jan-cli
+	@if out=$$($(MAKE) --no-print-directory check-engine-toolchain 2>&1); then \
+		$(MAKE) --no-print-directory build-engine-dev; \
+	elif [ -n "$(ENGINE_VARIANT_EXPLICIT)" ]; then \
+		echo "$$out" >&2; \
+		echo "" >&2; \
+		echo "You asked for JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT) explicitly, so this is a" >&2; \
+		echo "hard failure rather than a skip. Note that PATH changes must be in the" >&2; \
+		echo "same shell as make, e.g.:" >&2; \
+		echo "    PATH=/usr/local/cuda-13/bin:\$$PATH make dev JAN_ENGINE_VARIANT=$(JAN_ENGINE_VARIANT)$(if $(filter 1,$(JAN_ENGINE_VULKAN_FALLBACK)), JAN_ENGINE_VULKAN_FALLBACK=0,)" >&2; \
+		exit 1; \
+	else \
+		echo "=============================================================="; \
+		echo "Skipping the llama.cpp engine -- toolchain incomplete:"; \
+		echo "$$out" | sed 's/^/  /'; \
+		echo ""; \
+		echo "Local models will not run. Cloud providers are unaffected."; \
+		echo "To build one, name a variant you have the toolchain for:"; \
+		echo "    make build-engine-dev JAN_ENGINE_VARIANT=cpu"; \
+		echo "=============================================================="; \
+	fi
+endif
+
+# The vendored llama.cpp. The pin itself lives in build.rs and is read by
+# fetch-engine-source.sh, so there is exactly one source of truth for it.
+ENGINE_SRC_DIR := $(ENGINE_PLUGIN_DIR)/vendor/llama.cpp
+
+engine-source:
+	bash src-tauri/build-utils/fetch-engine-source.sh
+
+# Drops the vendored clone. A `clean` prerequisite rather than part of its
+# recipe so it runs *before* clean's `find . -name build -type d` sweeps the
+# tree -- otherwise those walk the whole llama.cpp checkout on the way to
+# deleting it.
+clean-engine-source:
+ifeq ($(DETECTED_OS),Windows)
+	-powershell -Command "if (Test-Path '$(ENGINE_SRC_DIR)') { Remove-Item -Recurse -Force '$(ENGINE_SRC_DIR)' }"
+else
+	rm -rf $(ENGINE_SRC_DIR)
+endif
+
+check-engine-toolchain:
+	bash src-tauri/build-utils/check-engine-toolchain.sh $(JAN_ENGINE_VARIANT) $(ENGINE_FEATURES)
+
+# The S3 cache key for what build-engine would compile. Run through make so the
+# script sees the same resolved features and exported environment cargo gets.
+engine-prebuilt-key:
+	@bash src-tauri/build-utils/engine-prebuilt.sh key $(ENGINE_FEATURES)
+
+# Release worker plus the ggml runtime it loads.
+build-engine: engine-source check-engine-toolchain
+	@echo "Building llama.cpp engine worker (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
+	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+ifeq ($(DETECTED_OS),Windows)
+	cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS_WIN) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker
+	bash src-tauri/build-utils/stage-engine.sh release
+else
+	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --release --features $(ENGINE_FEATURES) --bin jan-llama-worker)
+	bash src-tauri/build-utils/stage-engine.sh release
+endif
+	bash src-tauri/build-utils/sign-engine.sh
+
+# Type-checks and links the engine-gated test suites without running them.
+#
+# Every suite under tests/ is `#![cfg(feature = "engine")]`, and both
+# rust-check.yml and a plain `cargo test --lib` run with the feature off, so all
+# three report "0 passed; ok" -- green suites that assert nothing, over the whole
+# FFI boundary. `--no-run` is the part that needs no model: the runtime half
+# still wants JAN_TEST_GGUF, but a suite that stops compiling now fails loudly
+# instead of passing vacuously. Depends on the same toolchain check as
+# build-engine, and reuses ENGINE_FEATURES so it cannot drift from what the
+# worker is built with.
+check-engine-tests: engine-source check-engine-toolchain
+	@echo "Compiling engine test suites (variant: $(JAN_ENGINE_VARIANT), features: $(ENGINE_FEATURES))"
+	cd $(ENGINE_PLUGIN_DIR) && cargo test --features $(ENGINE_FEATURES) --no-run
+
+# Debug worker for local dev. Same staging, so `make dev` behaves like a bundle.
+build-engine-dev: engine-source check-engine-toolchain
+	@echo "Building llama.cpp engine worker (dev, variant: $(JAN_ENGINE_VARIANT), jobs: $(if $(JAN_ENGINE_JOBS),$(JAN_ENGINE_JOBS),all cores))"
+	$(call MKDIR,'$(ENGINE_BIN_DIR)')
+ifeq ($(DETECTED_OS),Windows)
+	cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS_WIN) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker
+	bash src-tauri/build-utils/stage-engine.sh debug
+else
+	$(call with_engine_log,cd $(ENGINE_PLUGIN_DIR) && $(ENGINE_CARGO_JOBS) cargo build --features $(ENGINE_FEATURES) --bin jan-llama-worker)
+	bash src-tauri/build-utils/stage-engine.sh debug
+endif
+
+# Build the Jan agent CLI (the `jan` binary with the `cli` feature)
+# The compiled binary lives at two locations after build:
+#   1. src-tauri/resources/bin/jan[.exe] (bundled copy)
+#   2. src-tauri/target/<triple>/release/jan[.exe] (Cargo output)
+agent: build-agent
+
+# Build the jan agent CLI binary (release, platform-aware)
+# The binary is compiled into src-tauri/target/<triple>/release/jan[.exe]
+# and then installed to src-tauri/resources/bin/jan[.exe] for bundling.
+build-agent:
+ifeq ($(DETECTED_OS),Windows)
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
+	copy src-tauri\target\release\jan.exe src-tauri\resources\bin\jan.exe
+	@echo "Jan agent built at:"
+	@echo "  src-tauri/resources/bin/jan.exe"
+	@echo "  src-tauri/target/release/jan.exe"
+else
+	cd src-tauri/jan-cli && cargo build --release --no-default-features --features cli
+	install -m755 src-tauri/target/release/jan src-tauri/resources/bin/jan
+	@echo "Jan agent built at:"
+	@echo "  src-tauri/resources/bin/jan"
+	@echo "  src-tauri/target/release/jan"
 endif
 
 # Build
 build: install-and-build install-rust-targets
+	$(MAKE) build-engine
 	yarn build
 
-clean:
+clean: clean-engine-source
 ifeq ($(DETECTED_OS),Windows)
 	-powershell -Command "Get-ChildItem -Path . -Include node_modules, .next, dist, build, out, .turbo, .yarn -Recurse -Directory | Remove-Item -Recurse -Force"
 	-powershell -Command "Get-ChildItem -Path . -Include package-lock.json, tsconfig.tsbuildinfo -Recurse -File | Remove-Item -Recurse -Force"

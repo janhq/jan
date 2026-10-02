@@ -1,0 +1,200 @@
+---
+title: MCP
+description: Use your Model Context Protocol servers from the Jan Agent console.
+keywords: [Jan, Jan Agent, MCP, Model Context Protocol, servers, connectors, tools]
+---
+
+import { Callout } from 'nextra/components'
+
+# MCP
+
+Model Context Protocol servers extend the agent with tools it doesn't have built in - a private
+wiki, a database, a browser that holds a login, an internal API.
+
+Jan Agent reads the same `mcp_config.json` as Jan Desktop, so servers you configured in the app are
+available in the terminal with nothing further to do. For what MCP is and how to add servers, see
+[Model Context Protocol](/docs/desktop/mcp).
+
+## At startup
+
+Active servers connect in the background while the console opens, and announce themselves:
+
+```
+MCP ready: sequential-thinking, serper
+```
+
+A server that fails to come up says so in the transcript, with the reason:
+
+```
+MCP: failed to connect to 'fetch': connection closed: initialize response
+```
+
+<Callout type="info">
+The first turn waits for the connecting servers, so the model sees the full toolset rather than a
+half-connected one. A slow stdio server delays that first turn, not the whole session.
+</Callout>
+
+If a connected server later fails to list its tools - a timeout, a transient error - Jan advertises
+its last known tools instead of dropping it for that turn. The toolset stays the same across the
+hiccup, and so does the prefix your provider is caching.
+
+## A stdio server's environment
+
+A stdio server inherits Jan's environment, minus the credentials Jan was given for its own gateway:
+`JAN_API_KEY`, `JAN_CUSTOM_HEADERS`, the `--provider`'s own `<PROVIDER>_API_KEY` (for example
+`TOKAMAK_API_KEY` under `jan --provider tokamak`), and, while Jan exports
+[telemetry](/docs/agent/telemetry), the `OTEL_EXPORTER_OTLP_*HEADERS` variables. Everything else is
+inherited as before, so a server that reads `GITHUB_TOKEN`, or the key of a provider you did not
+name with `--provider`, keeps working. To hand a server one of the removed variables, set it in the
+server's own `env`, which is applied last.
+
+## Managing servers
+
+### In the console
+
+```
+/mcp
+```
+
+Lists every configured server with its state. <kbd>Space</kbd> toggles the highlighted one; turning
+one on connects it in the background and the tools appear once it lands. <kbd>Enter</kbd> opens the
+server's detail screen (see below).
+
+While the list is open you can also manage it:
+
+- <kbd>a</kbd> opens an add form (`name`, transport, then the transport-specific fields)
+- <kbd>e</kbd> edits the highlighted server, prefilled
+- <kbd>d</kbd> removes the highlighted server after writing it out
+
+The list opens even with nothing configured, so <kbd>a</kbd> is reachable on a fresh install.
+
+Inside the form, arrow keys (or <kbd>Tab</kbd>) move between fields. <kbd>k</kbd> and <kbd>j</kbd>
+type as ordinary characters - URLs, paths, and header values contain them - so they no longer
+steer between fields as they did in earlier releases.
+
+A newly added server defaults to inactive, so it is persisted but not connected until you toggle
+it on.
+
+The change is written back to `mcp_config.json`, so it persists - and applies to Jan Desktop too.
+
+### The server detail screen
+
+<kbd>Enter</kbd> on a row opens that server on its own screen: transport, endpoint or command, the
+`mcp_config.json` path it came from, connection state, authentication state, the tool count, and the
+name and version the server reported when it connected. Everything there is read from local state,
+so it opens immediately; only the tool listing is a round trip and it fills in when it lands.
+
+The actions below the info block are filtered to what the server can actually do - no sign-in rows
+for a stdio server, no `View tools` while it is disconnected, no `Reconnect` while it is disabled:
+
+- `View tools` prints the tool names into the conversation, where they scroll and persist
+- `Authenticate` / `Re-authenticate` runs the OAuth flow (see below)
+- `Clear authentication` forgets the stored tokens and drops the connection, which still holds the
+  old one. The server stays enabled, so signing back in brings it up again
+- `Reconnect`, `Enable` / `Disable`, `Edit configuration`, `Remove server`
+
+<kbd>Esc</kbd> steps back to the list rather than out of `/mcp`.
+
+### Signing in to a remote server
+
+Remote (`http` / `sse`) servers that require OAuth are handled for you: Jan discovers the provider's
+metadata, registers itself dynamically, and runs the authorization-code flow with PKCE against a
+loopback redirect. `Authenticate` prints the consent URL into the conversation *before* it starts
+waiting, and opens it in your browser - so a remote or headless session can still finish the sign-in
+by opening the URL by hand. The wait times out after five minutes.
+
+A server that fails to connect purely for want of a sign-in says so, rather than reporting a
+transport error: Jan asks the server whether it advertises OAuth instead of guessing from the
+failure.
+
+Tokens are written to `mcp_oauth.json`, next to `mcp_config.json` in the Jan data folder, with
+`0600` permissions:
+
+- **not in `mcp_config.json`**, which is hand-edited, copied between machines and shared with Jan
+  Desktop; bearer tokens have no business travelling with it
+- Access tokens are refreshed automatically, a minute before they expire, when the provider issued a
+  refresh token
+- Changing a server's `url` invalidates its stored tokens rather than silently sending credentials
+  issued for a different resource
+- Removing a server clears its tokens too, so a later server reusing the name does not inherit the
+  authorization
+
+If you set an `Authorization` header by hand, that wins: OAuth is never attempted and never reported
+as missing, because wrapping it would put two credentials on one request.
+
+### From the command line
+
+Add, list, edit, remove, and toggle servers headlessly with `jan cli mcp ...` - `jan cli mcp add
+files --command npx --arg -y --arg my-mcp`, `jan cli mcp list`, `jan cli mcp remove files`. See the
+[CLI reference](/docs/agent/cli#jan-cli-mcp).
+
+## Serving Jan's own tools
+
+The other direction: `jan mcp serve` exposes Jan's built-in tools - `read`, the memory and skill
+store, `web_search`, `web_fetch` - as an MCP server, so Claude Code, Codex CLI or any other MCP
+client can call them. See the [CLI reference](/docs/agent/cli#jan-mcp-serve) for every flag.
+
+```bash
+jan mcp serve --project .              # stdio, what another agent spawns as a child process
+jan mcp serve --transport http         # loopback Streamable HTTP; prints its URL and bearer token
+```
+
+The served tools run against **one project root**, fixed when the server starts, with the same path
+confinement and sandbox re-checks an in-agent call gets. A path argument that escapes that root is
+refused.
+
+The default set touches no project file: file reading, search, the web tools, and the memory and
+skill tools. Those last two do write, but only into the agent's own store under `~/.jan/projects/<slug>` and
+only by sanitized name, so they can never reach a file in your project. Note that a skill written
+this way is an instruction Jan's own agent may later read, so a peer you would not trust to write
+instructions should be narrowed with `--tool`.
+
+The two classes that can change the machine are opt-in, because the caller is another program
+rather than a person who can answer a permission prompt:
+
+| Flag | Adds |
+| --- | --- |
+| `--allow-write` | `write` and `edit`, confined to the project root |
+| `--allow-exec` | `bash`, under the same OS sandbox the agent's shell uses |
+| `--tool NAME` | Narrows the set to these names; never widens what the flags above permit |
+
+Anything that would otherwise wait for an approval returns an error instead of blocking, so a peer
+never hangs on a prompt nobody can see. A project's `[tools]` section still applies: `sandbox` and
+`allow_network` are read from its `agent.toml` exactly as a normal run reads them.
+
+On `--transport http` the listener is loopback-only and every request must carry the bearer token
+printed at startup (`--token` sets your own); a request without it gets a `401`. Point a client at
+the printed URL:
+
+```json
+{
+  "mcpServers": {
+    "jan": { "command": "jan", "args": ["mcp", "serve", "--project", "/path/to/project"] }
+  }
+}
+```
+
+## Tool policy
+
+MCP tools follow the project's [`[tools]` policy](/docs/agent/permissions#project-policy):
+
+| `default` | Effect on MCP tools |
+| --- | --- |
+| `read-only` | Available. The default |
+| `deny` | Locked down, except anything in `allow` |
+| `allow` | Available, except anything in `deny` |
+
+```toml
+[tools]
+default = "deny"
+allow = ["sequential-thinking"]
+```
+
+That exposes one server's tools and nothing else - useful for a project where you want reasoning
+help but no outside network access.
+
+## Choosing a model
+
+Not every model is good at tool calling, and some can't do it at all. If MCP tools are connected but
+never used, try a different model before debugging the server - `/model` switches without leaving
+the session.

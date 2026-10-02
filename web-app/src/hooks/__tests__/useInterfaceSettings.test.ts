@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useInterfaceSettings } from '../useInterfaceSettings'
+import {
+  MESSAGE_ZOOM_LEVELS,
+  sanitizeMessageZoom,
+  useInterfaceSettings,
+} from '../useInterfaceSettings'
 
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
@@ -155,6 +159,87 @@ describe('useInterfaceSettings', () => {
         '--font-size-base',
         '16px'
       )
+    })
+  })
+
+  describe('message zoom', () => {
+    beforeEach(() => {
+      const { result } = renderHook(() => useInterfaceSettings())
+      act(() => {
+        result.current.resetMessageZoom()
+      })
+    })
+
+    it('defaults to 1', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      expect(result.current.messageZoom).toBe(1)
+    })
+
+    it('steps up and down through the zoom levels', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      act(() => {
+        result.current.zoomInMessages()
+      })
+      expect(result.current.messageZoom).toBe(1.1)
+
+      act(() => {
+        result.current.zoomInMessages()
+      })
+      expect(result.current.messageZoom).toBe(1.25)
+
+      act(() => {
+        result.current.zoomOutMessages()
+      })
+      expect(result.current.messageZoom).toBe(1.1)
+    })
+
+    it('clamps at the highest and lowest levels', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      act(() => {
+        MESSAGE_ZOOM_LEVELS.forEach(() => result.current.zoomInMessages())
+      })
+      expect(result.current.messageZoom).toBe(
+        MESSAGE_ZOOM_LEVELS[MESSAGE_ZOOM_LEVELS.length - 1]
+      )
+
+      act(() => {
+        MESSAGE_ZOOM_LEVELS.forEach(() => result.current.zoomOutMessages())
+      })
+      expect(result.current.messageZoom).toBe(MESSAGE_ZOOM_LEVELS[0])
+    })
+
+    it('is restored by resetInterface', () => {
+      const { result } = renderHook(() => useInterfaceSettings())
+
+      act(() => {
+        result.current.zoomInMessages()
+      })
+      act(() => {
+        result.current.resetInterface()
+      })
+
+      expect(result.current.messageZoom).toBe(1)
+    })
+  })
+
+  describe('sanitizeMessageZoom', () => {
+    it('keeps values that are valid zoom levels', () => {
+      expect(sanitizeMessageZoom(1.25)).toBe(1.25)
+    })
+
+    it('snaps arbitrary values to the nearest level', () => {
+      expect(sanitizeMessageZoom(1.2)).toBe(1.25)
+      expect(sanitizeMessageZoom(5)).toBe(2)
+      expect(sanitizeMessageZoom(0.1)).toBe(0.8)
+    })
+
+    it('falls back to 1 for non-numeric values', () => {
+      expect(sanitizeMessageZoom(undefined)).toBe(1)
+      expect(sanitizeMessageZoom(Number.NaN)).toBe(1)
+      expect(sanitizeMessageZoom('1.5' as never)).toBe(1)
     })
   })
 

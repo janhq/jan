@@ -3,17 +3,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Citations, type WebCitation } from '@/components/Citations'
-
-const hostOf = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
-
-const faviconOf = (url: string) =>
-  `https://www.google.com/s2/favicons?domain=${hostOf(url)}&sz=64`
+import { faviconForUrl } from '@/lib/webUrl'
 
 export const WebSourcesRow = memo(
   ({ citations }: { citations: WebCitation[] }) => {
@@ -47,7 +37,7 @@ export const WebSourcesRow = memo(
             {preview.map((c) => (
               <img
                 key={c.url}
-                src={c.favicon || faviconOf(c.url)}
+                src={c.favicon || faviconForUrl(c.url)}
                 alt=""
                 className="size-4 rounded-full border border-border/60 bg-white object-contain"
               />

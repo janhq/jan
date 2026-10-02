@@ -95,7 +95,10 @@ describe('validationRules', () => {
     expect(validationRules.ngl(12)).toBe(true)
     expect(validationRules.ngl(1)).toBe(true)
     expect(validationRules.ngl(0)).toBe(true)
-    expect(validationRules.ngl(-1)).toBe(false)
+    // -1 is auto (VRAM-aware) and -2 offloads all layers; both are valid.
+    expect(validationRules.ngl(-1)).toBe(true)
+    expect(validationRules.ngl(-2)).toBe(true)
+    expect(validationRules.ngl(-3)).toBe(false)
     expect(validationRules.ngl('12')).toBe(false)
   })
 
@@ -156,7 +159,9 @@ describe('validationRules', () => {
 
   it('should validate repeat_last_n correctly', () => {
     expect(validationRules.repeat_last_n(5)).toBe(true)
-    expect(validationRules.repeat_last_n(-5)).toBe(true)
+    // Rejected: llama.cpp throws on a negative window rather than clamping,
+    // so persisting one aborts the model load and 400s every request.
+    expect(validationRules.repeat_last_n(-5)).toBe(false)
     expect(validationRules.repeat_last_n(0)).toBe(true)
     expect(validationRules.repeat_last_n(1.5)).toBe(true)
     expect(validationRules.repeat_last_n('5')).toBe(false)

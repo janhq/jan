@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 type DropdownModelProviderProps = {
   model?: ThreadModel
   useLastUsedModel?: boolean
+  onModelChange?: (model: ThreadModel) => void
 }
 
 interface SearchableModel {
@@ -55,6 +56,7 @@ const setLastUsedModel = (provider: string, model: string) => {
 const DropdownModelProvider = memo(function DropdownModelProvider({
   model,
   useLastUsedModel = false,
+  onModelChange,
 }: DropdownModelProviderProps) {
   const {
     providers,
@@ -406,7 +408,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         searchableModel.provider.provider,
         searchableModel.model.id
       )
-      updateCurrentThreadModel({
+      ;(onModelChange ?? updateCurrentThreadModel)({
         id: searchableModel.model.id,
         provider: searchableModel.provider.provider,
       })
@@ -450,6 +452,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     [
       selectModelProvider,
       updateCurrentThreadModel,
+      onModelChange,
       updateProvider,
       getProviderByName,
       checkAndUpdateModelVisionCapability,
@@ -469,7 +472,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-          <div className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full">
+          <div
+            data-testid="model-selector-trigger"
+            className="border relative z-20 px-4 py-1.5 flex items-center gap-1.5 rounded-full"
+          >
             <button
               type="button"
               className="font-medium cursor-pointer flex items-center gap-1.5 relative z-20 min-w-0"
@@ -575,6 +581,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                       return (
                         <div
                           key={`fav-${searchableModel.value}`}
+                          data-testid={`model-option-${searchableModel.model.id}`}
                           onClick={() => handleSelect(searchableModel)}
                           className={cn(
                             'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',
@@ -674,6 +681,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                           return (
                             <div
                               key={searchableModel.value}
+                              data-testid={`model-option-${searchableModel.model.id}`}
                               onClick={() => handleSelect(searchableModel)}
                               className={cn(
                                 'mx-1 mb-1 px-2 py-1.5 rounded-sm cursor-pointer flex items-center gap-2 transition-all duration-200',

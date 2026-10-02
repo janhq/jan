@@ -25,9 +25,9 @@ describe('useToolApproval', () => {
     // Reset store state to defaults
     useToolApproval.setState({
       approvedTools: {},
+      approvedServers: [],
+      approvedToolsGlobal: [],
       allowAllMCPPermissions: false,
-      isModalOpen: false,
-      modalProps: null,
     })
   })
 
@@ -35,14 +35,13 @@ describe('useToolApproval', () => {
     const { result } = renderHook(() => useToolApproval())
 
     expect(result.current.approvedTools).toEqual({})
+    expect(result.current.approvedServers).toEqual([])
+    expect(result.current.approvedToolsGlobal).toEqual([])
     expect(result.current.allowAllMCPPermissions).toBe(false)
-    expect(result.current.isModalOpen).toBe(false)
-    expect(result.current.modalProps).toBe(null)
     expect(typeof result.current.approveToolForThread).toBe('function')
+    expect(typeof result.current.approveServer).toBe('function')
+    expect(typeof result.current.approveToolEverywhere).toBe('function')
     expect(typeof result.current.isToolApproved).toBe('function')
-    expect(typeof result.current.showApprovalModal).toBe('function')
-    expect(typeof result.current.closeModal).toBe('function')
-    expect(typeof result.current.setModalOpen).toBe('function')
     expect(typeof result.current.setAllowAllMCPPermissions).toBe('function')
   })
 
@@ -155,179 +154,57 @@ describe('useToolApproval', () => {
     })
   })
 
-  describe('closeModal', () => {
-    it('should close the modal and reset props', () => {
+  describe('approveServer', () => {
+    it('approves every tool from that server, in any thread', () => {
       const { result } = renderHook(() => useToolApproval())
 
-      // First set modal to open state
       act(() => {
-        result.current.setModalOpen(true)
+        result.current.approveServer('github')
       })
 
-      expect(result.current.isModalOpen).toBe(true)
+      expect(
+        result.current.isToolApproved('thread-1', 'create_issue', 'github')
+      ).toBe(true)
+      expect(
+        result.current.isToolApproved('thread-9', 'list_repos', 'github')
+      ).toBe(true)
+    })
 
-      // Then close the modal
+    it('leaves other servers alone', () => {
+      const { result } = renderHook(() => useToolApproval())
+
       act(() => {
-        result.current.closeModal()
+        result.current.approveServer('github')
       })
 
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
+      expect(
+        result.current.isToolApproved('thread-1', 'read_file', 'filesystem')
+      ).toBe(false)
+    })
+
+    it('does not duplicate a server approved twice', () => {
+      const { result } = renderHook(() => useToolApproval())
+
+      act(() => {
+        result.current.approveServer('github')
+        result.current.approveServer('github')
+      })
+
+      expect(result.current.approvedServers).toEqual(['github'])
     })
   })
 
-  describe('setModalOpen', () => {
-    it('should set modal open state to true', () => {
+  describe('approveToolEverywhere', () => {
+    it('approves the tool in every thread', () => {
       const { result } = renderHook(() => useToolApproval())
 
       act(() => {
-        result.current.setModalOpen(true)
+        result.current.approveToolEverywhere('tool-a')
       })
 
-      expect(result.current.isModalOpen).toBe(true)
-    })
-
-    it('should set modal open state to false and call closeModal', () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Set up initial state
-      act(() => {
-        result.current.setModalOpen(true)
-      })
-
-      // Mock modalProps to verify they get reset
-      useToolApproval.setState({
-        modalProps: {
-          toolName: 'test-tool',
-          threadId: 'test-thread',
-          onApprove: vi.fn(),
-          onDeny: vi.fn(),
-        },
-      })
-
-      // Set to false should trigger closeModal
-      act(() => {
-        result.current.setModalOpen(false)
-      })
-
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
-    })
-  })
-
-  describe('showApprovalModal', () => {
-    it('should return true immediately if tool is already approved', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // First approve the tool
-      act(() => {
-        result.current.approveToolForThread('thread-1', 'tool-a')
-      })
-
-      // Then show approval modal
-      let approvalResult: boolean
-      await act(async () => {
-        approvalResult = await result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      expect(approvalResult!).toBe(true)
-      expect(result.current.isModalOpen).toBe(false)
-    })
-
-    it('should open modal and set up modal props for non-approved tool', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Start the async operation
-      let approvalPromise: Promise<boolean>
-
-      act(() => {
-        approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      // Check that modal is open and props are set
-      expect(result.current.isModalOpen).toBe(true)
-      expect(result.current.modalProps).not.toBe(null)
-      expect(result.current.modalProps?.toolName).toBe('tool-a')
-      expect(result.current.modalProps?.threadId).toBe('thread-1')
-      expect(typeof result.current.modalProps?.onApprove).toBe('function')
-      expect(typeof result.current.modalProps?.onDeny).toBe('function')
-
-      // Resolve by calling onDeny
-      act(() => {
-        result.current.modalProps?.onDeny()
-      })
-
-      const approvalResult = await approvalPromise!
-      expect(approvalResult).toBe(false)
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
-    })
-
-    it('should resolve with true when onApprove is called with allowOnce=true', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Start the async operation
-      let approvalPromise: Promise<boolean>
-
-      act(() => {
-        approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      // Call onApprove with allowOnce=true
-      act(() => {
-        result.current.modalProps?.onApprove(true)
-      })
-
-      const approvalResult = await approvalPromise!
-      expect(approvalResult).toBe(true)
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
-      // Tool should NOT be added to approved tools when allowOnce=true
-      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(false)
-    })
-
-    it('should resolve with true and approve tool when onApprove is called with allowOnce=false', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Start the async operation
-      let approvalPromise: Promise<boolean>
-
-      act(() => {
-        approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      // Call onApprove with allowOnce=false
-      act(() => {
-        result.current.modalProps?.onApprove(false)
-      })
-
-      const approvalResult = await approvalPromise!
-      expect(approvalResult).toBe(true)
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
-      // Tool should be added to approved tools when allowOnce=false
       expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
-    })
-
-    it('should resolve with false when onDeny is called', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Start the async operation
-      let approvalPromise: Promise<boolean>
-
-      act(() => {
-        approvalPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      // Call onDeny
-      act(() => {
-        result.current.modalProps?.onDeny()
-      })
-
-      const approvalResult = await approvalPromise!
-      expect(approvalResult).toBe(false)
-      expect(result.current.isModalOpen).toBe(false)
-      expect(result.current.modalProps).toBe(null)
+      expect(result.current.isToolApproved('thread-2', 'tool-a')).toBe(true)
+      expect(result.current.isToolApproved('thread-1', 'tool-b')).toBe(false)
     })
   })
 
@@ -343,101 +220,6 @@ describe('useToolApproval', () => {
 
       expect(result2.current.approvedTools['thread-1']).toContain('tool-a')
       expect(result2.current.allowAllMCPPermissions).toBe(true)
-    })
-  })
-
-  describe('complex scenarios', () => {
-    it('should handle multiple sequential approval requests', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // First request
-      let firstPromise: Promise<boolean>
-      act(() => {
-        firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      act(() => {
-        result.current.modalProps?.onApprove(false)
-      })
-
-      const firstResult = await firstPromise!
-      expect(firstResult).toBe(true)
-      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
-
-      // Second request for same tool should resolve immediately
-      let secondPromise: Promise<boolean>
-      act(() => {
-        secondPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      const secondResult = await secondPromise!
-      expect(secondResult).toBe(true)
-      expect(result.current.isModalOpen).toBe(false)
-    })
-
-    it('should handle approval for different tools in same thread', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // Approve tool-a permanently
-      let firstPromise: Promise<boolean>
-      act(() => {
-        firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      act(() => {
-        result.current.modalProps?.onApprove(false)
-      })
-
-      await firstPromise!
-      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
-
-      // Approve tool-b once only
-      let secondPromise: Promise<boolean>
-      act(() => {
-        secondPromise = result.current.showApprovalModal('tool-b', 'thread-1')
-      })
-
-      act(() => {
-        result.current.modalProps?.onApprove(true)
-      })
-
-      await secondPromise!
-      expect(result.current.isToolApproved('thread-1', 'tool-b')).toBe(false)
-
-      // Verify final state
-      expect(result.current.approvedTools['thread-1']).toEqual(['tool-a'])
-    })
-
-    it('should handle denial and subsequent approval', async () => {
-      const { result } = renderHook(() => useToolApproval())
-
-      // First request - deny
-      let firstPromise: Promise<boolean>
-      act(() => {
-        firstPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      act(() => {
-        result.current.modalProps?.onDeny()
-      })
-
-      const firstResult = await firstPromise!
-      expect(firstResult).toBe(false)
-      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(false)
-
-      // Second request - approve
-      let secondPromise: Promise<boolean>
-      act(() => {
-        secondPromise = result.current.showApprovalModal('tool-a', 'thread-1')
-      })
-
-      act(() => {
-        result.current.modalProps?.onApprove(false)
-      })
-
-      const secondResult = await secondPromise!
-      expect(secondResult).toBe(true)
-      expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
     })
   })
 })

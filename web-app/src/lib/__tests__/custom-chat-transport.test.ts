@@ -4,6 +4,7 @@ import type { UIMessage } from '@ai-sdk/react'
 import {
   buildLlamacppReasoningParams,
   coalesceMessagesForAlternation,
+  effectiveContextWindow,
   hasGenuineUserQuery,
   extractContextInfoFromError,
   normalizeToolInputSchema,
@@ -12,6 +13,7 @@ import {
   stripUnsupportedImageParts,
   unwrapRetryError,
 } from '../custom-chat-transport'
+import { encodeToolImageSentinel } from '../tool-image-sentinel'
 
 const userMsg = (id: string, text: string): UIMessage =>
   ({
@@ -29,6 +31,14 @@ const assistantMsg = (
     role: 'assistant',
     parts,
   }) as UIMessage
+
+describe('effectiveContextWindow', () => {
+  it('uses the live llama.cpp context only when context shift is enabled', () => {
+    expect(effectiveContextWindow(0, 12_288, true)).toBe(12_288)
+    expect(effectiveContextWindow(8_192, 12_288, false)).toBe(8_192)
+  })
+})
+
 
 describe('normalizeToolInputSchema', () => {
   it('adds empty properties for object schemas without properties', () => {
@@ -628,6 +638,25 @@ describe('stripUnsupportedImageParts', () => {
     const input = [userWithParts('u1', [textPart, imagePart])]
     const out = stripUnsupportedImageParts(input, false)
     expect(out[0].parts).toEqual([textPart])
+  })
+
+  // A tool image would otherwise reach a text-only model as an image_url part
+  // it rejects; the caption stays so the model knows a screenshot was taken.
+  it('strips tool image sentinels from tool outputs when model lacks vision', () => {
+    const png = 'data:image/png;base64,AAA'
+    const toolPart = {
+      type: 'tool-screenshot',
+      toolCallId: 'c1',
+      state: 'output-available',
+      input: {},
+      output: `Screenshot of a.html${encodeToolImageSentinel(png)}`,
+    } as unknown as UIMessage['parts'][number]
+    const input = [{ id: 'a1', role: 'assistant', parts: [toolPart] } as UIMessage]
+    const out = stripUnsupportedImageParts(input, false)
+    const output = (out[0].parts[0] as { output: string }).output
+    expect(output).not.toContain('AAA')
+    expect(output).toContain('Screenshot of a.html')
+    expect(stripUnsupportedImageParts(input, true)).toBe(input)
   })
 
   it('drops AI-SDK image-type parts when model lacks vision', () => {

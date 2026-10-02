@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { createFileRoute, useParams, useSearch } from '@tanstack/react-router'
 import { cn } from '@/lib/utils'
 
@@ -16,14 +17,15 @@ import { useAppState } from '@/hooks/useAppState'
 import { SESSION_STORAGE_PREFIX } from '@/constants/chat'
 import { useChat } from '@/hooks/use-chat'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { engineSlotsIdle } from '@janhq/tauri-plugin-llamacpp-api'
 import { useInterfaceSettings } from '@/hooks/useInterfaceSettings'
+import { deriveToolOutputCap } from '@/lib/context-manager'
 import { renderInstructions } from '@/lib/instructionTemplate'
 import {
   Conversation,
   ConversationContent,
   ConversationScrollButton,
 } from '@/components/ai-elements/conversation'
-import { invoke } from '@tauri-apps/api/core'
 import { generateId, lastAssistantMessageIsCompleteWithToolCalls } from 'ai'
 import type { UIMessage } from '@ai-sdk/react'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -74,7 +76,9 @@ import { Button } from '@/components/ui/button'
 import { IconAlertCircle, IconRefresh, IconLoader2 } from '@tabler/icons-react'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useToolApprovalRequests } from '@/hooks/useToolApprovalRequests'
+import { useToolCallRuntime } from '@/hooks/useToolCallRuntime'
 import { WEB_TOOL_NAMES, executeWebTool } from '@/lib/webSearchTool'
+import { CHAT_AGENT_TOOL_NAMES, executeAgentTool } from '@/lib/agentTools'
 import DropdownModelProvider from '@/containers/DropdownModelProvider'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -89,6 +93,24 @@ const CHAT_STATUS = {
 } as const
 
 const TITLE_REFRESH_EVERY_N_ASSISTANT_MESSAGES = 4
+
+// The MCP server a tool belongs to, so an approval prompt can offer to trust
+// the whole server rather than this one tool.
+function serverForTool(toolName: string): string | undefined {
+  return useAppState.getState().tools.find((tool) => tool.name === toolName)
+    ?.server
+}
+
+// Internal tools never prompt: RAG and the native web tools are Jan's own, and
+// the built-in shell is gated in Rust (execute_tool refuses anything needing
+// approval), so only workspace-confined calls ever reach here.
+function isAutoAllowedTool(toolName: string): boolean {
+  return (
+    useAppState.getState().ragToolNames.has(toolName) ||
+    WEB_TOOL_NAMES.has(toolName) ||
+    CHAT_AGENT_TOOL_NAMES.has(toolName)
+  )
+}
 
 // Persist the out-of-context error onto the latest user message so the banner
 // survives thread switches, mirroring how LlamacppOomListener stamps oom/backend.
@@ -134,6 +156,8 @@ function ThreadDetail() {
   const { threadId } = useParams({ from: Route.id })
   const search = useSearch({ from: Route.id })
   const searchThreadModel = search.threadModel
+  const fontSize = useInterfaceSettings((state) => state.fontSize)
+  const messageZoom = useInterfaceSettings((state) => state.messageZoom)
   const setCurrentThreadId = useThreads((state) => state.setCurrentThreadId)
   const setMessages = useMessages((state) => state.setMessages)
   const addMessage = useMessages((state) => state.addMessage)
@@ -463,6 +487,11 @@ function ThreadDetail() {
       // since streaming has already ended and isSessionBusy's tools-array read isn't reactive.
       useAppState.getState().setThreadBusy(threadId, true)
 
+      // Tools run one at a time below, so the rest are genuinely queued.
+      useToolCallRuntime
+        .getState()
+        .enqueue(sessionData.tools.map((tc) => tc.toolCallId))
+
       ;(async () => {
         for (const toolCall of sessionData.tools) {
           if (signal.aborted) {
@@ -472,14 +501,17 @@ function ThreadDetail() {
           try {
             const toolName = toolCall.toolName
 
-            // Built-in RAG and native web tools are internal and auto-allowed.
-            const approved = ragToolNames.has(toolName) ||
-              WEB_TOOL_NAMES.has(toolName)
+            const approved = isAutoAllowedTool(toolName)
               ? true
               : await (toolApprovalPromises.current.get(toolCall.toolCallId) ??
                   useToolApprovalRequests
                     .getState()
-                    .requestApproval(toolCall.toolCallId, toolName, threadId))
+                    .requestApproval(
+                      toolCall.toolCallId,
+                      toolName,
+                      threadId,
+                      serverForTool(toolName)
+                    ))
             toolApprovalPromises.current.delete(toolCall.toolCallId)
 
             if (!approved) {
@@ -492,10 +524,32 @@ function ThreadDetail() {
               continue
             }
 
+            // Timed from here, not from approval, so a long approval wait is
+            // not reported as the tool being slow.
+            useToolCallRuntime.getState().markRunning(toolCall.toolCallId)
+
             let result
 
             if (WEB_TOOL_NAMES.has(toolName)) {
               result = await executeWebTool(toolName, toolCall.input)
+            } else if (CHAT_AGENT_TOOL_NAMES.has(toolName)) {
+              // Chat's shell runs with the sandbox network closed: the default
+              // `allowNetwork = false` is the contract here, not an accident.
+              const agentResult = await executeAgentTool(
+                toolName,
+                toolCall.input,
+                threadId
+              )
+              // The diff is display-only, so it goes to the runtime store rather
+              // than into `result`: anything in `result` reaches the model, and a
+              // full diff there would duplicate the file it just wrote.
+              const { diff, ...rest } = agentResult
+              if (diff) {
+                useToolCallRuntime
+                  .getState()
+                  .recordDiff(toolCall.toolCallId, diff)
+              }
+              result = rest
             } else if (ragToolNames.has(toolName)) {
               result = await serviceHub.rag().callTool({
                 toolName,
@@ -505,9 +559,18 @@ function ThreadDetail() {
                 scope: projectId ? 'project' : 'thread',
               })
             } else if (mcpToolNames.has(toolName)) {
+              // An MCP result is injected into conversation history verbatim, so
+              // a page-sized one can exhaust the context on its own. Give the
+              // backend a budget scaled to the window this model actually has;
+              // it narrows that against the user's configured ceiling.
+              const ctxLen = useModelProvider.getState().selectedModel?.settings
+                ?.ctx_len?.controller_props?.value
               result = await serviceHub.mcp().callTool({
                 toolName,
                 arguments: toolCall.input,
+                maxOutputChars: deriveToolOutputCap(
+                  typeof ctxLen === 'number' ? ctxLen : undefined
+                ),
               })
             } else {
               result = {
@@ -539,9 +602,13 @@ function ThreadDetail() {
                 errorText: `Error: ${JSON.stringify(error)}`,
               })
             }
+          } finally {
+            // Covers every exit from the iteration, including the denied path.
+            useToolCallRuntime.getState().markSettled(toolCall.toolCallId)
           }
         }
 
+        useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
@@ -550,6 +617,7 @@ function ThreadDetail() {
         if (error.name !== 'AbortError') {
           console.error('Tool call error:', error)
         }
+        useToolCallRuntime.getState().settleRemaining()
         sessionData.tools = []
         toolApprovalPromises.current.clear()
         toolCallAbortController.current = null
@@ -597,10 +665,7 @@ function ThreadDetail() {
                 let idle = false
                 for (let attempt = 0; attempt < 6; attempt++) {
                   try {
-                    idle = await invoke<boolean>(
-                      'plugin:llamacpp|router_slots_idle',
-                      { modelId }
-                    )
+                    idle = await engineSlotsIdle(modelId)
                   } catch {
                     idle = true
                     break
@@ -630,20 +695,23 @@ function ThreadDetail() {
       // right now so the popup appears immediately instead of waiting for the
       // stream's terminal finish chunk (a stalled stream would otherwise leave
       // the tool at "Running..." with no popup). Execution itself stays in
-      // onFinish so the tool result lands on a completed message. RAG tools are
-      // internal and never prompt.
+      // onFinish so the tool result lands on a completed message. Internal tools
+      // never prompt (see isAutoAllowedTool).
       sessionData.tools.push(toolCall)
-      const ragToolNames = useAppState.getState().ragToolNames
       if (
-        !ragToolNames.has(toolCall.toolName) &&
-        !WEB_TOOL_NAMES.has(toolCall.toolName) &&
+        !isAutoAllowedTool(toolCall.toolName) &&
         !toolApprovalPromises.current.has(toolCall.toolCallId)
       ) {
         toolApprovalPromises.current.set(
           toolCall.toolCallId,
           useToolApprovalRequests
             .getState()
-            .requestApproval(toolCall.toolCallId, toolCall.toolName, threadId)
+            .requestApproval(
+              toolCall.toolCallId,
+              toolCall.toolName,
+              threadId,
+              serverForTool(toolCall.toolName)
+            )
         )
       }
     },
@@ -849,6 +917,11 @@ function ThreadDetail() {
       toolCallAbortController.current = null
       approvalPromises.clear()
       useToolApprovalRequests.getState().clearPendingForThread(threadId)
+      // Drop per-thread timing/progress/diff state from the shared runtime
+      // store. The cards for the thread we leave are unmounting, so a thread a
+      // later visit cannot show another thread's diff. (code.tsx re-hydrates
+      // its own diffs on mount, so it is unaffected by clearing here.)
+      useToolCallRuntime.getState().reset()
     }
   }, [threadId])
 
@@ -1647,7 +1720,14 @@ function ThreadDetail() {
       </HeaderPage>
       <div className="flex flex-1 flex-col h-full overflow-hidden">
         {/* Messages Area */}
-        <div className="flex-1 relative">
+        <div
+          className="message-zoom flex-1 relative"
+          style={
+            {
+              '--font-size-base': `calc(${fontSize} * ${messageZoom})`,
+            } as CSSProperties
+          }
+        >
           <Conversation className="absolute inset-0 text-start">
             <ConversationContent
               className={cn('mx-auto w-full md:w-4/5 xl:w-4/6')}

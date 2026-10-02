@@ -1,0 +1,78 @@
+---
+title: "Jan v0.8.5: llama.cpp Stability, MCP Hardening & Platform Fixes"
+version: 0.8.5
+description: "Jan v0.8.5 is a fixes release: llama.cpp per-slot context and backend-update stability, a cap on MCP tool-result size, macOS and Windows platform fixes, an agent history that heals from malformed tool calls, and a Trusted Hosts allowlist fix for the API server. No new features are announced in it."
+date: 2026-09-22
+unlisted: true
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.5: llama.cpp Stability, MCP Hardening & Platform Fixes"
+  date="2026-09-22"
+/>
+
+# This release is fixes only
+
+No new features are announced in v0.8.5. Work in progress stays in the nightly channel: [Cowork](https://jan.ai/docs/desktop/cowork) and the current agent work ship there until they are announced, and a stable build does not show them.
+
+One thing a first launch will notice: the first-run setup is now a guided wizard - welcome, engine setup, a first model, and the consent page - instead of a single screen. It is onboarding rather than a new capability, so it is not a headline; it is written down here so a new install is not a surprise.
+
+---
+
+# Bug Fixes
+
+**llama.cpp & Local Models**
+
+- Setting `parallel` no longer halves the per-slot context window.
+- Context-shifted chat history is trimmed instead of being sent back whole.
+- Backend updates are applied atomically with rollback, and a crashed router is recovered rather than leaving the app without a backend.
+- The llama.cpp library path is resolved correctly on Fedora and RHEL.
+- llama.cpp is upgraded to 0.3.0, with the Windows `MAX_PATH` build failure fixed and grammar/template file paths configurable.
+
+**MCP**
+
+- Tool results are capped before they enter conversation history, so a single large result can no longer blow the context window.
+- A failing `bash` tool now reports as an error instead of a successful result.
+
+**Desktop & Platform**
+
+- The sidebar's Jan label no longer overlaps the macOS traffic lights.
+- Zoom shortcuts are scoped to chat message text, so zooming a message no longer rescales the whole app.
+- Hub search ranks exact model id matches first.
+- The Windows installer template substitutes `jan_workspace` correctly.
+
+**Agent & Tooling**
+
+- A session heals from malformed or poisoned tool-call history instead of failing every turn after it.
+- Session token spend is counted honestly, including marginal spend.
+- A compacted turn resumes from where it stopped, and orphan tool rows are retired.
+- Compaction retries on llama-server context-overflow responses, and the compaction prompt is appended rather than rewriting the request prefix.
+- `bash` works on Windows, and TUI scrollback follows the terminal's scroll wheel.
+
+**Security**
+
+- Binding the Local API Server to `0.0.0.0` now enforces the Trusted Hosts allowlist (GHSA-x6p8-7cp8-c3p6). Thanks to the reporter.
+
+---
+
+# Nightly
+
+Cowork and the in-progress agent work are available in the nightly channel:
+
+- macOS (universal): https://app.jan.ai/download/nightly/mac-universal
+- Windows (x64): https://app.jan.ai/download/nightly/win-x64
+- Linux (x64): https://app.jan.ai/download/nightly/linux-amd64-deb or https://app.jan.ai/download/nightly/linux-amd64-appimage
+
+---
+
+# Engineering
+
+- The desktop end-to-end suite now runs on all four platforms on a nightly schedule, with a mock provider covering the chat critical path.
+
+---
+
+Update Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.5).

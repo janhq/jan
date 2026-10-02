@@ -85,18 +85,34 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
     }, obj as unknown) as string | undefined
   }
   
-  // Try to get translation from current language
-  let translation = getNestedValue(res[language]?.[namespace], translationKey)
-  
-  // Fallback to fallback language if not found
-  if (translation === undefined && language !== fallbackLng) {
-    translation = getNestedValue(res[fallbackLng]?.[namespace], translationKey)
+  // i18next resolves plural forms via `_one`/`_other` key suffixes when a
+  // numeric `count` is passed; several resource keys only exist in that form
+  // (e.g. htmlArtifact.unresolvedAssets_one), so try the suffixed key first.
+  const keysToTry =
+    typeof options.count === 'number'
+      ? [`${translationKey}_${options.count === 1 ? 'one' : 'other'}`, translationKey]
+      : [translationKey]
+
+  let translation: string | undefined
+  for (const candidate of keysToTry) {
+    // Try the current language, then the fallback language.
+    translation = getNestedValue(res[language]?.[namespace], candidate)
+    if (translation === undefined && language !== fallbackLng) {
+      translation = getNestedValue(res[fallbackLng]?.[namespace], candidate)
+    }
+    if (translation !== undefined) break
   }
   
-  // If still not found, return the key itself
+  // Callers may supply an inline `defaultValue`, as i18next allows. Honour it
+  // before giving up, so a missing key degrades to real copy rather than
+  // rendering the key itself at the user.
   if (translation === undefined) {
-    console.warn(`Translation missing for key: ${key}`)
-    return key
+    if (typeof options.defaultValue === 'string') {
+      translation = options.defaultValue
+    } else {
+      console.warn(`Translation missing for key: ${key}`)
+      return key
+    }
   }
   
   // Handle interpolation

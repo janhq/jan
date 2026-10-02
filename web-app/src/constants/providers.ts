@@ -95,6 +95,17 @@ export const predefinedProviders = [
           input_actions: ['unobscure', 'copy'],
         },
       },
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'Your Azure OpenAI resource endpoint, e.g. https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+          value: 'https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1',
+        },
+      },
     ],
     models: [],
   },

@@ -1,7 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Jan",
-  "version": "0.8.4",
+  "mainBinaryName": "Jan-Desktop",
+  "version": "0.8.5",
   "identifier": "jan.ai.app",
   "build": {
     "frontendDist": "../web-app/dist",
@@ -27,6 +28,7 @@
         ],
         "img-src": "'self' asset: http://asset.localhost blob: data: https:",
         "media-src": "'self' asset: http://asset.localhost blob: data: https:",
+        "frame-src": "'self' preview: http://preview.localhost",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
         "script-src": "'self' 'unsafe-eval' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
       },
@@ -41,6 +43,9 @@
     }
   },
   "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": false
+    },
     "os": {
       "version": "latest",
       "resolve": true

@@ -5,7 +5,7 @@ const Principles = () => {
     <div className="px-4 lg:px-8 mt-10 pb-24 lg:mt-20">
       <div className="nx-mx-auto nx-flex nx-max-w-[90rem] nx-pl-[max(env(safe-area-inset-left),1.5rem)] nx-pr-[max(env(safe-area-inset-right),1.5rem)]">
         <div className="w-full mx-auto relative pt-8 text-center">
-          <h1 className="text-5xl lg:text-7xl !font-normal leading-tight lg:leading-tight mt-2 font-serif">
+          <h1 className="text-5xl lg:text-7xl !font-semibold leading-tight lg:leading-tight mt-2 font-serif">
             Our Principles
           </h1>
           <p className="leading-relaxed mt-2 text-black/60 dark:text-white/60 flex gap-x-2 justify-center">

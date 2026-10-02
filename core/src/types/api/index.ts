@@ -50,6 +50,9 @@ export enum AppRoute {
   baseName = 'baseName',
   log = 'log',
   showToast = 'showToast',
+  settingsGet = 'settingsGet',
+  settingsSet = 'settingsSet',
+  settingsRemove = 'settingsRemove',
 }
 
 export enum AppEvent {
@@ -67,6 +70,8 @@ export enum AppEvent {
   onMainViewStateChange = 'onMainViewStateChange',
 
   onBackendVerificationFailed = 'onBackendVerificationFailed',
+  onBackendRollback = 'onBackendRollback',
+  onBackendUpdateQueued = 'onBackendUpdateQueued',
 }
 
 export enum DownloadEvent {
@@ -97,6 +102,9 @@ export enum FileSystemRoute {
   mkdir = 'mkdir',
   readFileSync = 'readFileSync',
   writeFileSync = 'writeFileSync',
+  readYaml = 'readYaml',
+  writeYaml = 'writeYaml',
+  decompress = 'decompress',
 }
 export enum FileManagerRoute {
   copyFile = 'copyFile',

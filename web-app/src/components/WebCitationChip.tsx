@@ -6,17 +6,7 @@ import {
 } from '@/components/ui/hover-card'
 import { useWebCitationStore } from '@/stores/web-citation-store'
 import { cn } from '@/lib/utils'
-
-const hostOf = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url
-  }
-}
-
-const faviconOf = (host: string) =>
-  `https://www.google.com/s2/favicons?domain=${host}&sz=64`
+import { faviconForUrl, hostOf } from '@/lib/webUrl'
 
 export const WebCitationChip = memo(
   ({ messageId, url }: { messageId?: string; url: string }) => {
@@ -24,7 +14,7 @@ export const WebCitationChip = memo(
       messageId ? s.byMessageId[messageId]?.[url] : undefined
     )
     const host = hostOf(url)
-    const favicon = citation?.favicon || faviconOf(host)
+    const favicon = citation?.favicon || faviconForUrl(url)
     return (
       <HoverCard openDelay={80} closeDelay={120}>
         <HoverCardTrigger asChild>

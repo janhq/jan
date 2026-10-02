@@ -1,0 +1,19 @@
+# Collector for scripts/otel-e2e.sh: OTLP/HTTP in, JSON lines out. Forwards
+# traces to Langfuse too when LANGFUSE_OTLP_ENDPOINT/LANGFUSE_AUTH are set
+# (see otel-e2e/collector.langfuse.yaml).
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file:
+    path: /out/otel.jsonl
+processors:
+  batch:
+    timeout: 1s
+service:
+  pipelines:
+    metrics: { receivers: [otlp], processors: [batch], exporters: [file] }
+    logs: { receivers: [otlp], processors: [batch], exporters: [file] }
+    traces: { receivers: [otlp], processors: [batch], exporters: [file] }

@@ -69,12 +69,48 @@ impl CudaPaths {
     }
 }
 
+/// Environment a child needs to resolve the backend's libraries. Returned
+/// rather than applied so callers holding either a `tokio` or a `std` Command
+/// share one implementation.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct LibraryEnv {
+    pub vars: Vec<(String, String)>,
+    pub current_dir: Option<std::path::PathBuf>,
+}
+
+// Mirrors the Command setter names so the path-building logic below reads the
+// same whether it targets a Command or this struct.
+impl LibraryEnv {
+    fn env(&mut self, key: &str, value: impl AsRef<str>) {
+        self.vars
+            .push((key.to_string(), value.as_ref().to_string()));
+    }
+
+    fn current_dir(&mut self, dir: impl AsRef<Path>) {
+        self.current_dir = Some(dir.as_ref().to_path_buf());
+    }
+}
+
 /// Merges binary lib dir + CUDA paths into a single `command.env()` call per variable.
 pub fn setup_library_path(
     library_path: Option<&Path>,
     cuda: &CudaPaths,
     command: &mut tokio::process::Command,
 ) {
+    let env = library_path_env(library_path, cuda);
+    for (key, value) in &env.vars {
+        command.env(key, value);
+    }
+    if let Some(dir) = &env.current_dir {
+        command.current_dir(dir);
+    }
+}
+
+/// Computes the same overrides `setup_library_path` applies.
+pub fn library_path_env(library_path: Option<&Path>, cuda: &CudaPaths) -> LibraryEnv {
+    let mut env = LibraryEnv::default();
+    let command = &mut env;
+
     if cfg!(target_os = "linux") {
         let mut all_lib_dirs: Vec<String> = Vec::new();
         if let Some(lib_path) = library_path {
@@ -113,8 +149,8 @@ pub fn setup_library_path(
         let mut all_dirs: Vec<String> = Vec::new();
         if let Some(lib_path) = library_path {
             let lib_str = lib_path.to_string_lossy();
-            let normalized = if lib_str.starts_with(r"\\?\") {
-                lib_str[4..].to_string()
+            let normalized = if let Some(stripped) = lib_str.strip_prefix(r"\\?\") {
+                stripped.to_string()
             } else {
                 lib_str.to_string()
             };
@@ -152,6 +188,8 @@ pub fn setup_library_path(
         #[cfg(feature = "logging")]
         log::warn!("Library path setup not supported on this OS");
     }
+
+    env
 }
 
 pub fn binary_requires_cuda(_bin_path: &Path) -> bool {
@@ -549,13 +587,13 @@ fn collect_flatpak_gl_paths(cuda_lib_paths: &mut std::collections::HashSet<Strin
 }
 
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
-    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
-    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    #[cfg(not(windows))]
     {
         let _ = command; // Silence unused parameter warning on non-Windows platforms
     }

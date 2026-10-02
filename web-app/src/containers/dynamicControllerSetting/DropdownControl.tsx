@@ -8,11 +8,18 @@ import {
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ChevronsUpDown } from 'lucide-react'
+import { useTranslation } from '@/i18n'
 
 // Dropdown component
 type DropdownControlProps = {
   value: string
-  options?: Array<{ value: number | string; name: string }>
+  options?: Array<{
+    value: number | string
+    name: string
+    /** Present on backend versions: already on disk, so selecting it is a
+     * rollback rather than a download. */
+    installed?: boolean
+  }>
   recommended?: string
   onChange: (value: number | string) => void
 }
@@ -22,6 +29,7 @@ export function DropdownControl({
   options = [],
   onChange,
 }: DropdownControlProps) {
+  const { t } = useTranslation()
   const isSelected =
     options.find((option) => option.value === value)?.name || value
 
@@ -57,6 +65,11 @@ export function DropdownControl({
             )}
           >
             <span>{option.name}</span>
+            {option.installed && (
+              <span className="ml-2 shrink-0 text-xs text-muted-foreground">
+                {t('providers:backendInstalled')}
+              </span>
+            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

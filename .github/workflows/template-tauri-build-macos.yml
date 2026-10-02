@@ -28,12 +28,29 @@ on:
         type: string
         default: 'nightly'
         description: 'The channel to use for this job'
+      runner:
+        required: false
+        type: string
+        default: 'macos-latest'
+        description: >
+          Label of the runner to build on. A self-hosted arm64 label is what
+          carries the engine toolchain; the default keeps the GitHub-hosted
+          image, where Xcode alone is enough for the metal variant.
+      engine_variant:
+        required: false
+        type: string
+        default: 'metal'
+        description: >
+          JAN_ENGINE_VARIANT for the bundled jan-llama-worker. Metal is the only
+          backend worth shipping on macOS.
     secrets:
       DELTA_AWS_S3_BUCKET_NAME:
         required: false
       DELTA_AWS_ACCESS_KEY_ID:
         required: false
       DELTA_AWS_SECRET_ACCESS_KEY:
+        required: false
+      DELTA_AWS_REGION:
         required: false
       CODE_SIGN_P12_BASE64:
         required: false
@@ -63,7 +80,7 @@ on:
 
 jobs:
   build-macos:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner }}
     outputs:
       MAC_UNIVERSAL_SIG: ${{ steps.metadata.outputs.MAC_UNIVERSAL_SIG }}
       FILE_NAME: ${{ steps.metadata.outputs.FILE_NAME }}
@@ -152,7 +169,6 @@ jobs:
 
             # Update Cargo.toml
             ctoml ./src-tauri/Cargo.toml package.name "Jan-${{ inputs.channel }}"
-            ctoml ./src-tauri/Cargo.toml package.default-run "Jan-${{ inputs.channel }}"
             ctoml ./src-tauri/Cargo.toml dependencies.tauri.features[] "devtools"
             echo "------------------"
             cat ./src-tauri/Cargo.toml
@@ -180,11 +196,38 @@ jobs:
           yarn --version
           yarn config set -H enableImmutableInstalls false
 
+      # `make build` compiles jan-llama-worker, which the dmg bundles. Metal is
+      # the only backend worth shipping on macOS, and it needs nothing beyond
+      # Xcode, so this runs on the GitHub-hosted image unless a caller says
+      # otherwise.
+      - name: Set up the llama.cpp engine toolchain
+        uses: ./.github/actions/setup-engine-toolchain
+        with:
+          variant: ${{ inputs.engine_variant }}
+
+      # Stages a cached mlx-server build instead of compiling it (~8 of the ~10
+      # minutes xcodebuild takes; resolving its Swift packages still runs, since
+      # the exact versions resolved are part of the key). No credentials, or a
+      # missing or incomplete object, means the full xcodebuild build. Key and
+      # layout: src-tauri/build-utils/mlx-prebuilt.sh
+      - name: Restore the prebuilt MLX server
+        id: mlx_prebuilt
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/mlx-prebuilt.sh restore
+        env:
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
       - name: Build app
         run: |
           make build
         env:
           NODE_OPTIONS: "--max-old-space-size=4196"
+          JAN_ENGINE_REQUIRE_SIGNING: '1'
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_PATH: '.'
           POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
@@ -197,6 +240,87 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           JAN_SIGNING_KEY: ${{ secrets.JAN_SIGNING_KEY }}
+
+      # Only after a miss, and only when the job builds main or a release tag
+      # itself: PR runs (github.ref refs/pull/N/merge) read the cache but never
+      # write it, and neither does a caller on main that builds another ref.
+      # `!cancelled()` rather than success() so the build is kept when signing
+      # or notarization fails later; the script itself refuses unless mlx-server
+      # was built and staged in this run.
+      - name: Save the prebuilt MLX server
+        if: ${{ !cancelled() && steps.mlx_prebuilt.outputs.key != '' && steps.mlx_prebuilt.outputs.hit != 'true' && inputs.ref == github.ref && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+        continue-on-error: true
+        shell: bash
+        run: bash src-tauri/build-utils/mlx-prebuilt.sh save
+        env:
+          KEY: ${{ steps.mlx_prebuilt.outputs.key }}
+          BUCKET: ${{ secrets.DELTA_AWS_S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.DELTA_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DELTA_AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.DELTA_AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+
+      - name: Report ccache statistics
+        if: success() || failure()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null 2>&1; then ccache -s; else echo "ccache not available"; fi
+
+      # The engine build is fifteen minutes of cmake whose output cargo only
+      # surfaces as a tail. When it fails, the whole log is the artifact worth
+      # having.
+      - name: Upload the engine build log
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-build-log-macos
+          path: src-tauri/target/engine-build.log
+          if-no-files-found: ignore
+
+      # The bundle is universal but the engine build is host-arch, so name the
+      # slice that is actually covered instead of shipping the gap silently.
+      - name: Report the engine's architecture coverage
+        shell: bash
+        run: |
+          archs=$(lipo -archs src-tauri/resources/bin/jan-llama-worker)
+          echo "jan-llama-worker: $archs"
+          for want in x86_64 arm64; do
+            case " $archs " in
+              *" $want "*) ;;
+              *) echo "::warning::jan-llama-worker has no $want slice, so local inference will not start on $want Macs" ;;
+            esac
+          done
+
+      # Tauri signs the .app and notarizes the dmg, but nothing in that path
+      # would notice an unsigned nested binary until a user's Gatekeeper did.
+      - name: Verify the signed and notarized bundle
+        shell: bash
+        run: |
+          bundle=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
+          echo "Verifying $bundle"
+          codesign --verify --deep --strict --verbose=2 "$bundle"
+          worker=$(find "$bundle/Contents/Resources" -name jan-llama-worker | head -1)
+          if [ -z "$worker" ]; then
+            echo "error: no jan-llama-worker inside $bundle" >&2
+            exit 1
+          fi
+          codesign --verify --strict "$worker"
+
+          # tauri notarizes and staples the .app, then builds the dmg around it,
+          # so the dmg carries no ticket of its own -- requiring one there
+          # failed a build whose app was notarized and Accepted. Either side
+          # having a ticket proves the submission happened; neither does not.
+          dmg=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -maxdepth 1 -name '*.dmg' | head -1)
+          if xcrun stapler validate "$bundle"; then
+            echo "the .app carries its notarization ticket"
+          elif [ -n "$dmg" ] && xcrun stapler validate "$dmg"; then
+            echo "the .dmg carries its notarization ticket"
+          else
+            echo "error: neither the .app nor the dmg has a stapled ticket" >&2
+            exit 1
+          fi
+          # What Gatekeeper actually runs against the app the user launches.
+          spctl --assess --type exec --verbose=2 "$bundle"
 
       # Publish app
 

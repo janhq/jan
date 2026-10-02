@@ -105,8 +105,32 @@ const applyAccentColorToDOM = (colorValue: string, isDark: boolean) => {
   root.style.setProperty('--primary', color.primary)
 }
 
+export const MESSAGE_ZOOM_LEVELS = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
+const defaultMessageZoom = 1
+
+export const sanitizeMessageZoom = (zoom: unknown): number => {
+  if (typeof zoom !== 'number' || !Number.isFinite(zoom)) {
+    return defaultMessageZoom
+  }
+  return MESSAGE_ZOOM_LEVELS.reduce((nearest, level) =>
+    Math.abs(level - zoom) < Math.abs(nearest - zoom) ? level : nearest
+  )
+}
+
+const stepMessageZoom = (current: number, direction: 1 | -1): number => {
+  const levels =
+    direction === 1 ? MESSAGE_ZOOM_LEVELS : [...MESSAGE_ZOOM_LEVELS].reverse()
+  const from = sanitizeMessageZoom(current)
+  return (
+    levels.find((level) =>
+      direction === 1 ? level > from : level < from
+    ) ?? from
+  )
+}
+
 interface InterfaceSettingsState {
   fontSize: FontSize
+  messageZoom: number
   accentColor: AccentColorValue
   notificationPosition: NotificationPosition
   showTokenSpeed: boolean
@@ -114,6 +138,9 @@ interface InterfaceSettingsState {
   renderHtmlArtifacts: boolean
   autoGenerateTitle: boolean
   setFontSize: (size: FontSize) => void
+  zoomInMessages: () => void
+  zoomOutMessages: () => void
+  resetMessageZoom: () => void
   setAccentColor: (color: AccentColorValue) => void
   setNotificationPosition: (position: NotificationPosition) => void
   setShowTokenSpeed: (show: boolean) => void
@@ -127,6 +154,9 @@ type InterfaceSettingsPersistedSlice = Omit<
   InterfaceSettingsState,
   | 'resetInterface'
   | 'setFontSize'
+  | 'zoomInMessages'
+  | 'zoomOutMessages'
+  | 'resetMessageZoom'
   | 'setAccentColor'
   | 'setNotificationPosition'
   | 'setShowTokenSpeed'
@@ -148,6 +178,7 @@ const defaultFontSize: FontSize = '16px'
 const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   return {
     fontSize: defaultFontSize,
+    messageZoom: defaultMessageZoom,
     accentColor: DEFAULT_ACCENT_COLOR,
     notificationPosition: getDefaultNotificationPosition(),
     showTokenSpeed: true,
@@ -187,6 +218,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Update state
           set({
             fontSize: defaultFontSize,
+            messageZoom: defaultMessageZoom,
             accentColor: DEFAULT_ACCENT_COLOR,
             notificationPosition: getDefaultNotificationPosition(),
             showTokenSpeed: true,
@@ -211,6 +243,16 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
           // Update state
           set({ fontSize: size })
         },
+
+        zoomInMessages: () =>
+          set((state) => ({ messageZoom: stepMessageZoom(state.messageZoom, 1) })),
+
+        zoomOutMessages: () =>
+          set((state) => ({
+            messageZoom: stepMessageZoom(state.messageZoom, -1),
+          })),
+
+        resetMessageZoom: () => set({ messageZoom: defaultMessageZoom }),
 
         setNotificationPosition: (position) => {
           if (!isNotificationPosition(position)) return
@@ -240,6 +282,7 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
       skipHydration: true,
       partialize: (state) => ({
         fontSize: state.fontSize,
+        messageZoom: state.messageZoom,
         accentColor: state.accentColor,
         notificationPosition: state.notificationPosition,
         showTokenSpeed: state.showTokenSpeed,
@@ -260,6 +303,8 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
             '--font-size-base',
             state.fontSize
           )
+
+          state.messageZoom = sanitizeMessageZoom(state.messageZoom)
 
           // Get the current theme state
           const { isDark } = useTheme.getState()

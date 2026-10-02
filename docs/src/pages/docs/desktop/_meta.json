@@ -12,9 +12,10 @@
     "title": "Core concepts",
     "type": "separator"
   },
-  "agents": "Agents",
+  "cowork": "Cowork (Preview)",
   "projects": "Projects",
   "assistants": "Assistants",
+  "web-search": "Web Search",
   "file-upload": "File Upload",
   "manage-models": "Hub",
   "api-server": "Local API Server",

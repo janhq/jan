@@ -86,7 +86,7 @@ const Home = () => {
     <Fragment>
       {/* Hero */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[760px] md:h-[900px] 2xl:h-[1080px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="flex justify-center items-center mt-14 lg:mt-20 px-4">
               <a
@@ -105,7 +105,7 @@ const Home = () => {
               </a>
             </div>
             <div className="mt-4">
-              <div className="text-center relative lg:w-1/2 mx-auto">
+              <div className="text-center relative mx-auto">
                 <div className="flex flex-col lg:flex-row items-center justify-center gap-4 animate-fade-in-up delay-300">
                   <span>
                     <img
@@ -119,7 +119,7 @@ const Home = () => {
                   </h1>
                 </div>
                 <p className="px-4 lg:px-0 mt-2 text-lg lg:text-2xl font-medium leading-relaxed text-white animate-fade-in-up delay-500 -tracking-[0.6px]">
-                  Personal Intelligence that answers only to you
+                  Your personal intelligence. Run any model, your way.
                 </p>
               </div>
               <div className="flex px-4 flex-col lg:flex-row items-start gap-4 w-full justify-center text-center animate-fade-in-up delay-600 mt-8 lg:mt-10">
@@ -130,7 +130,7 @@ const Home = () => {
                     lastRelease={lastRelease}
                   />
                   <div className="font-medium text-center mt-2 text-white">
-                    +{totalDownload(release)} downloads
+                    {totalDownload(release)}+ downloads
                   </div>
                 </div>
                 <a
@@ -208,7 +208,7 @@ const Home = () => {
           </div>
         </div>
 
-        <div className="hidden size-4/5 xl:size-3/5 rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
+        <div className="hidden size-4/5 xl:size-3/5 max-w-[1200px] rounded-[20px] mx-auto relative -mt-40 lg:flex animate-scale-in delay-300">
           <div className="rounded-md size-full overflow-hidden">
             <img
               src={AppJanPNG.src}
@@ -233,7 +233,7 @@ const Home = () => {
       <section className="pt-20">
         <div className="container mx-auto">
           <h2 className="text-[24px] lg:text-[52px] font-semibold text-center mb-16 -tracking-[1.3px]">
-            Over 4 million downloads
+            Over 6 million downloads
           </h2>
         </div>
         <TweetSection />
@@ -241,7 +241,7 @@ const Home = () => {
 
       {/* Social tech */}
       <section className="px-3 mt-20">
-        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden">
+        <div className="bg-[#C6E09E] px-4 relative py-10 h-[640px] sm:h-[800px] lg:h-[900px] 2xl:h-[1040px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="container mx-auto relative z-10">
             <div className="md:mt-10">
               <div className="lg:w-3/5 mx-auto">
@@ -301,7 +301,7 @@ const Home = () => {
                         <span className="font-bold text-lg">Discord</span>
                         <span className="text-sm mt-1">
                           {formatCompactNumber(discordWidget.presence_count)}{' '}
-                          Online
+                          online
                         </span>
                       </span>
                     </Button>
@@ -572,7 +572,7 @@ const Home = () => {
 
       {/* Call to action */}
       <section className="px-3 pt-3">
-        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden">
+        <div className="bg-[#458edf] relative py-10 h-[480px] lg:h-[650px] rounded-2xl overflow-hidden max-w-[1600px] mx-auto">
           <div className="w-full lg:w-3/5 mx-auto">
             <div className="container relative z-10">
               <div className="mt-10 flex flex-col lg:flex-row justify-between items-center gap-8">
@@ -591,7 +591,7 @@ const Home = () => {
                     classNameButton="!shadow-none border-2"
                   />
                   <span className="text-xs font-medium text-center mt-2">
-                    +{totalDownload(release)} downloads, Free & Open source
+                    {totalDownload(release)}+ downloads, Free & Open source
                   </span>
                 </div>
               </div>

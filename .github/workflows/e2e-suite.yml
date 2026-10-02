@@ -1,0 +1,185 @@
+# Runs the desktop e2e suite against a real Jan build on all four supported
+# platforms. e2e-check.yml is the per-PR gate and only type-checks the harness;
+# this is the one that launches the app and drives it.
+#
+# Nightly rather than per-PR because the cost is the build, not the tests: the
+# suite itself is ~25s, `yarn build:e2e:app` is minutes. Promoting the Linux leg
+# to pull_request once we have a run history is a one-line change; doing it
+# before we know the flake rate would block merges on an unmeasured job.
+#
+# Deliberately not folded into jan-tauri-build-nightly.yaml: that pipeline
+# publishes to S3, and its artifacts are release bundles built without the `e2e`
+# cargo feature, so they have no embedded WebDriver and this suite cannot use
+# them. There is nothing to share but the cron.
+name: e2e suite
+
+on:
+  # Two hours after jan-tauri-build-nightly, so a broken build is already
+  # visible and this is not the first thing anyone has to triage.
+  schedule:
+    - cron: '0 22 * * 1,2,3'
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: Which platforms to run
+        type: choice
+        default: all
+        options:
+          - all
+          - linux
+          - macos
+          - windows-x64
+          - windows-arm64
+
+concurrency:
+  group: e2e-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same shape as engine-build.yml's `variants` job: a dispatch input cannot
+  # filter a static matrix, so the matrix is data this job emits.
+  platforms:
+    name: Select platforms
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.select.outputs.include }}
+    steps:
+      - id: select
+        shell: bash
+        run: |
+          # `xvfb` marks the one leg with no display of its own. Measured on the
+          # images current in Sept 2026 rather than assumed, and these labels do
+          # roll: ubuntu-24.04 reported an empty
+          # $DISPLAY but ships /usr/bin/xvfb-run, while macos-latest is a real
+          # Aqua session and both Windows images run in an interactive session 2
+          # with a window station, so a window opens there without help.
+          all='[
+            {"name":"linux","runs-on":"ubuntu-latest","xvfb":true},
+            {"name":"macos","runs-on":"macos-latest"},
+            {"name":"windows-x64","runs-on":"windows-latest"},
+            {"name":"windows-arm64","runs-on":"windows-11-arm"}
+          ]'
+          pick='${{ inputs.platforms }}'
+          if [ -z "$pick" ] || [ "$pick" = all ]; then
+            echo "include=$(echo "$all" | jq -c .)" >> "$GITHUB_OUTPUT"
+          else
+            echo "include=$(echo "$all" | jq -c --arg n "$pick" '[.[] | select(.name == $n)]')" >> "$GITHUB_OUTPUT"
+          fi
+
+  suite:
+    name: e2e (${{ matrix.name }})
+    needs: platforms
+    runs-on: ${{ matrix.runs-on }}
+    # Roughly 3x the slowest cold leg measured on the hosted images: 14.1 min on
+    # windows-x64 (11.3 of it cargo), 13.9 on windows-arm64, 10.9 on linux,
+    # 10.1 on macos. A run wedged waiting on a driver session would otherwise
+    # sit on the 6h default; compare template-tauri-build-windows-arm64.yml,
+    # which bounds its release build at 180.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.platforms.outputs.include) }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      # wdio.conf.ts creates a throwaway profile per run and deletes it, but an
+      # inherited JAN_E2E_HOME is used and never removed (`ownsTestHome`) -- so
+      # naming one is what leaves the profile behind for the artifact step.
+      # Exported from a step rather than set in the job's `env`, because the
+      # `runner` context does not exist yet at job level.
+      - name: Pin the test profile inside the runner temp dir
+        shell: bash
+        run: echo "JAN_E2E_HOME=${{ runner.temp }}/jan-e2e-home" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # No cargo cache on purpose. rust-check.yml's policy of restoring on
+      # branches and saving only on main would not help here and would hurt:
+      # this workflow's main trigger IS a schedule, which runs on main, so it
+      # would save four debug `target` trees three nights a week into a repo
+      # already past the 10GB cache cap -- evicting the release builds' caches
+      # to speed up a job that does not need it. A cold build measured 6m14s on
+      # linux and 11m16s on windows-x64, which is the whole budget anyway.
+
+      - name: Free disk space
+        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: false
+          swap-storage: false
+          large-packages: false
+          android: true
+          dotnet: true
+
+      # The GTK/webkit set rust-check.yml installs, and nothing beyond it.
+      # Notably absent: `xvfb`, because /usr/bin/xvfb-run is already on the
+      # ubuntu-24.04 image; and `webkit2gtk-driver`, because the embedded
+      # provider drives the webview in-process and never launches
+      # WebKitWebDriver (e2e/README.md).
+      - name: Install Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt update
+          sudo apt install -y libglib2.0-dev libatk1.0-dev libpango1.0-dev libgtk-3-dev libsoup-3.0-dev libwebkit2gtk-4.1-dev librsvg2-dev
+
+      - name: Enable yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@4.5.3 --activate
+          yarn --version
+          yarn config set -H enableImmutableInstalls false
+
+      # Not redundant with the `yarn install` inside build:e2e:app. Yarn Berry
+      # refuses to run any package script before node_modules exists, so without
+      # this the build dies in under a second with "Couldn't find the
+      # node_modules state file" -- see the Running section of e2e/README.md.
+      - name: Install the workspace
+        run: yarn install
+
+      # Produces the debug binary the harness expects at
+      # src-tauri/target/debug/Jan-Desktop[.exe].
+      - name: Build the app with --features e2e
+        run: yarn build:e2e:app
+
+      # --immutable here but not at the root: e2e/ is a standalone project with
+      # its own lockfile, which is the same reason e2e-check.yml can enforce it.
+      - name: Install the e2e harness
+        working-directory: e2e
+        run: yarn install --immutable
+
+      - name: Run the suite (under Xvfb)
+        if: matrix.xvfb
+        working-directory: e2e
+        run: xvfb-run -a yarn test
+
+      - name: Run the suite
+        if: ${{ !matrix.xvfb }}
+        working-directory: e2e
+        run: yarn test
+
+      # A failed run is otherwise undiagnosable after the runner is gone: the
+      # spec reporter says which assertion failed but not which selector the
+      # polling helper gave up on, and the profile holds the app's own logs,
+      # settings and thread files.
+      #
+      # `always()` rather than `failure()`: a step guarded on failure alone is
+      # skipped when the job is cancelled, which would drop the diagnostics in
+      # the one case the timeout above exists for -- a run wedged waiting on a
+      # driver session. It also means a green run keeps its log, which is what
+      # you want to diff against when a later one goes red. Four small files.
+      - name: Upload logs and profile
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: e2e-logs-${{ matrix.name }}
+          path: |
+            e2e/logs
+            ${{ runner.temp }}/jan-e2e-home
+            !${{ runner.temp }}/jan-e2e-home/AppData/Local/*/EBWebView
+          retention-days: 7
+          if-no-files-found: warn

@@ -7,16 +7,25 @@ Object.defineProperty(globalThis, 'SETTINGS', {
   configurable: true,
 })
 
-// window.core.extensionManager is the bridge RagExtension resolves dependencies through.
-Object.defineProperty(globalThis, 'window', {
-  value: {
-    core: {
-      extensionManager: {
-        get: vi.fn(),
-        getByName: vi.fn(),
-      },
-    },
+// window.core.extensionManager is the bridge RagExtension resolves dependencies
+// through. `@janhq/core` reads `globalThis.core`, so both names must reach the
+// same object -- in the browser they are the same object, and a setup that set
+// only one made the core helpers silently see no extensions.
+const core = {
+  extensionManager: {
+    get: vi.fn(),
+    getByName: vi.fn(),
   },
+}
+
+Object.defineProperty(globalThis, 'window', {
+  value: { core },
+  writable: true,
+  configurable: true,
+})
+
+Object.defineProperty(globalThis, 'core', {
+  value: core,
   writable: true,
   configurable: true,
 })
@@ -29,7 +38,11 @@ vi.mock('@janhq/tauri-plugin-rag-api', () => ({
   parseDocument: vi.fn(),
 }))
 
-vi.mock('@janhq/core', () => {
+// The embedding helpers are taken from the real module rather than stubbed:
+// they are the shared implementation this extension delegates to, so stubbing
+// them would leave the delegation untested on both sides.
+vi.mock('@janhq/core', async () => {
+  const actual = await vi.importActual<typeof import('@janhq/core')>('@janhq/core')
   class BaseExtension {
     registerSettings = vi.fn().mockResolvedValue(undefined)
     getSetting = vi.fn(async (_key: string, defaultValue: unknown) => defaultValue)
@@ -37,9 +50,11 @@ vi.mock('@janhq/core', () => {
   }
   class RAGExtension extends BaseExtension {}
   return {
+    embedTexts: actual.embedTexts,
+    getEmbeddingEngine: actual.getEmbeddingEngine,
+    isEmbeddingEngine: actual.isEmbeddingEngine,
     RAGExtension,
     BaseExtension,
-    AIEngine: class {},
     RAG_INTERNAL_SERVER: 'rag-internal',
     ExtensionTypeEnum: {
       RAG: 'RAG',

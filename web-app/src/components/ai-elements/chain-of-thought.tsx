@@ -9,6 +9,8 @@ import { cn } from '@/lib/utils'
 import {
   SparklesIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CheckCircle2Icon,
   CircleDotIcon,
   CircleIcon,
@@ -22,9 +24,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 import { Streamdown } from 'streamdown'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import { formatCompactDuration } from '@/lib/duration'
 import { Shimmer } from './shimmer'
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -67,6 +72,12 @@ export type ChainOfThoughtProps = ComponentProps<typeof Collapsible> & {
   open?: boolean
   defaultOpen?: boolean
   onOpenChange?: (open: boolean) => void
+  /** Persisted trace duration (ms), used to seed the header when a restored
+   * trace never streamed in this mount. Live measurement takes over otherwise. */
+  durationMs?: number
+  /** Fired once with the accumulated ms when a live measurement settles, so the
+   * caller can persist it against the message. */
+  onDurationSettled?: (ms: number) => void
 }
 
 export const ChainOfThought = memo(
@@ -78,9 +89,13 @@ export const ChainOfThought = memo(
     open,
     defaultOpen = true,
     onOpenChange,
+    durationMs,
+    onDurationSettled,
     children,
     ...props
   }: ChainOfThoughtProps) => {
+    const onSettledRef = useRef(onDurationSettled)
+    onSettledRef.current = onDurationSettled
     const [isOpen, setIsOpen] = useControllableState({
       prop: open,
       defaultProp: defaultOpen,
@@ -104,18 +119,42 @@ export const ChainOfThought = memo(
     }
 
     const [startTime, setStartTime] = useState<number | null>(null)
-    const [duration, setDuration] = useState<number | undefined>(undefined)
+    const [elapsedMs, setElapsedMs] = useState<number | undefined>(undefined)
+
+    // Seed from a persisted value when this trace never streamed in this mount
+    // (a reload/session-switch): the live measurement below, when it runs, sets
+    // elapsedMs itself and this stays out of its way.
+    useEffect(() => {
+      if (!isStreaming && elapsedMs === undefined && durationMs !== undefined) {
+        setElapsedMs(durationMs)
+      }
+    }, [isStreaming, elapsedMs, durationMs])
 
     useEffect(() => {
       if (isStreaming) {
         if (startTime === null) {
           setStartTime(Date.now())
         }
-      } else if (startTime !== null) {
-        setDuration(Math.ceil((Date.now() - startTime) / MS_IN_S))
-        setStartTime(null)
+        return
       }
-    }, [isStreaming, startTime])
+      if (startTime !== null) {
+        // Accumulated, not replaced: an agentic turn reasons, answers, then
+        // reasons again, and each window is part of the same trace.
+        const total = (elapsedMs ?? 0) + (Date.now() - startTime)
+        setElapsedMs(total)
+        setStartTime(null)
+        onSettledRef.current?.(total)
+      }
+      // elapsedMs is read to accumulate; its own change re-runs this to a no-op
+      // (not streaming, startTime cleared), so no measurement is lost.
+    }, [isStreaming, startTime, elapsedMs])
+
+    // Rounded up to at least a second: a trace that begins and ends inside one
+    // tick still ran, and a zero would read as "still going" below.
+    const duration =
+      elapsedMs === undefined
+        ? undefined
+        : Math.max(1, Math.ceil(elapsedMs / MS_IN_S))
 
     const contextValue = useMemo(
       () => ({ isStreaming, isOpen, setIsOpen, duration }),
@@ -126,9 +165,12 @@ export const ChainOfThought = memo(
       <ChainOfThoughtContext.Provider value={contextValue}>
         <Collapsible
           className={cn(
-            'not-prose rounded-2xl transition-colors',
-            // Card frame only while expanded; collapsed shows a bare summary row.
-            'data-[state=open]:border data-[state=open]:border-border/50 data-[state=open]:bg-main-view-fg/2 data-[state=open]:p-3',
+            'not-prose transition-colors',
+            // Expanded: a full-width card frame around the timeline.
+            'data-[state=open]:w-full data-[state=open]:rounded-2xl data-[state=open]:border data-[state=open]:border-border/50 data-[state=open]:bg-main-view-fg/2 data-[state=open]:p-3',
+            // Collapsed: a compact pill that hugs its label, so the folded trace
+            // reads as a distinct chip between messages, not a full-width row.
+            'data-[state=closed]:w-fit data-[state=closed]:self-start data-[state=closed]:rounded-full data-[state=closed]:border data-[state=closed]:border-border/50 data-[state=closed]:bg-main-view-fg/2 data-[state=closed]:px-2.5 data-[state=closed]:py-1 data-[state=closed]:hover:bg-main-view-fg/5',
             className
           )}
           onOpenChange={handleOpenChange}
@@ -150,51 +192,111 @@ export type ChainOfThoughtHeaderProps = ComponentProps<
   title?: string
   /** Label shown while streaming, e.g. "Working...". Defaults to "Reasoning...". */
   streamingLabel?: string
-  /** Past-tense verb for the completed state, e.g. "Worked". Defaults to "Thought". */
-  completedVerb?: string
+  /** Which past-tense phrasing to use once the trace is complete. */
+  completedVariant?: 'thought' | 'worked'
+  /**
+   * Turns the header into a view switch instead of a collapse toggle: the
+   * chevron points the way it navigates, e.g. `right` to drill into the full
+   * timeline and `left` to come back.
+   */
+  navDirection?: 'left' | 'right'
+  onNavigate?: () => void
 }
+
+const COMPLETED_KEYS = {
+  thought: {
+    aWhile: 'chat:reasoning.thoughtForAWhile',
+    withDuration: 'chat:reasoning.thoughtFor',
+  },
+  worked: {
+    aWhile: 'chat:reasoning.workedForAWhile',
+    withDuration: 'chat:reasoning.workedFor',
+  },
+} as const
 
 export const ChainOfThoughtHeader = memo(
   ({
     className,
     title,
-    streamingLabel = 'Reasoning...',
-    completedVerb = 'Thought',
+    streamingLabel,
+    completedVariant = 'thought',
+    navDirection,
+    onNavigate,
     children,
     ...props
   }: ChainOfThoughtHeaderProps) => {
+    const { t } = useTranslation()
     const { isStreaming, isOpen, duration } = useChainOfThought()
 
+    const keys = COMPLETED_KEYS[completedVariant]
+    const completedLabel =
+      duration === undefined
+        ? t(keys.aWhile)
+        : t(keys.withDuration, { duration: formatCompactDuration(duration, t) })
+
+    // The folded summary is a compact pill, so it reads a notch smaller than
+    // the expanded card's header.
+    const iconSize = isOpen ? 'size-4' : 'size-3.5'
+    const rowClassName = cn(
+      'flex w-full items-center gap-2 text-muted-foreground transition-colors hover:text-foreground',
+      isOpen ? 'text-sm' : 'text-xs',
+      className
+    )
+
+    if (children) {
+      return (
+        <CollapsibleTrigger className={rowClassName} {...props}>
+          {children}
+        </CollapsibleTrigger>
+      )
+    }
+
+    const label = (
+      <>
+        <SparklesIcon className={cn(iconSize, 'shrink-0')} />
+        {isStreaming ? (
+          <Shimmer duration={1}>
+            {streamingLabel ?? t('chat:reasoning.label')}
+          </Shimmer>
+        ) : title ? (
+          <p>{title}</p>
+        ) : (
+          <p>{completedLabel}</p>
+        )}
+      </>
+    )
+
+    if (navDirection) {
+      const navLabel =
+        navDirection === 'right'
+          ? t('chat:reasoning.showFullTimeline')
+          : t('chat:reasoning.showCurrentStep')
+      return (
+        <button
+          type="button"
+          className={rowClassName}
+          onClick={onNavigate}
+          aria-label={navLabel}
+          title={navLabel}
+          {...props}
+        >
+          {navDirection === 'left' && <ChevronLeftIcon className="size-4" />}
+          {label}
+          {navDirection === 'right' && <ChevronRightIcon className="size-4" />}
+        </button>
+      )
+    }
+
     return (
-      <CollapsibleTrigger
-        className={cn(
-          'flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground',
-          className
-        )}
-        {...props}
-      >
-        {children ?? (
-          <>
-            <SparklesIcon className="size-4" />
-            {isStreaming || duration === 0 ? (
-              <Shimmer duration={1}>{streamingLabel}</Shimmer>
-            ) : title ? (
-              <p>{title}</p>
-            ) : duration === undefined ? (
-              <p>{completedVerb} for a few seconds</p>
-            ) : (
-              <p>
-                {completedVerb} for {duration} seconds
-              </p>
-            )}
-            <ChevronDownIcon
-              className={cn(
-                'size-4 transition-transform',
-                isOpen ? 'rotate-180' : 'rotate-0'
-              )}
-            />
-          </>
-        )}
+      <CollapsibleTrigger className={rowClassName} {...props}>
+        {label}
+        <ChevronDownIcon
+          className={cn(
+            iconSize,
+            'shrink-0 transition-transform',
+            isOpen ? 'rotate-180' : 'rotate-0'
+          )}
+        />
       </CollapsibleTrigger>
     )
   }
@@ -211,7 +313,11 @@ export const ChainOfThoughtContent = memo(
     <CollapsibleContent
       className={cn(
         'mt-4 text-sm relative',
-        'data-[state=closed]:fade-out-0 data-[state=closed]:slide-out-to-top-2 data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=closed]:animate-out data-[state=open]:animate-in',
+        // Expand animates in; collapse unmounts synchronously (no exit
+        // animation). A lingering exit keeps the content's height while the
+        // root has already snapped to the folded w-fit/rounded-full pill,
+        // which renders a tall narrow rounded box as a circle for that frame.
+        'data-[state=open]:slide-in-from-top-2 text-muted-foreground outline-none data-[state=open]:animate-in',
         className
       )}
       {...props}

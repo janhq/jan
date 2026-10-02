@@ -1,21 +1,24 @@
-use rmcp::model::{CallToolRequestParam, CallToolResult};
+use rmcp::model::{CallToolRequestParams, CallToolResult};
 use serde_json::{json, Map, Value};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
 
 use super::{
     constants::DEFAULT_MCP_CONFIG,
     helpers::{restart_active_mcp_servers, start_mcp_server, terminate_browser_mcp},
+    truncate::truncate_tool_result,
 };
 use crate::core::{
     app::commands::get_jan_data_folder_path,
     mcp::models::{McpSettings, ServerSummary},
+    mcp::oauth,
     state::AppState,
 };
 use crate::core::{
     mcp::models::ToolWithServer,
-    state::{RunningServiceEnum, SharedMcpServers},
+    state::{RunningMcpService, SharedMcpServers},
 };
 use std::{collections::HashSet, fs, time::Duration};
 
@@ -219,16 +222,8 @@ pub async fn deactivate_mcp_server<R: Runtime>(
     // Release the lock before calling cancel
     drop(servers_map);
 
-    match service {
-        RunningServiceEnum::NoInit(service) => {
-            log::info!("Stopping server {name}...");
-            service.cancel().await.map_err(|e| e.to_string())?;
-        }
-        RunningServiceEnum::WithInit(service) => {
-            log::info!("Stopping server {name} with initialization...");
-            service.cancel().await.map_err(|e| e.to_string())?;
-        }
-    }
+    log::info!("Stopping server {name}...");
+    service.cancel().await.map_err(|e| e.to_string())?;
 
     let child_pid = {
         let mut pids = state.mcp_server_pids.lock().await;
@@ -293,21 +288,11 @@ pub async fn get_connected_servers(
 }
 
 /// Remove an MCP server entry and cancel its running service (used when list-tools fails).
-async fn remove_mcp_server_entry(
-    mcp_servers: &SharedMcpServers,
-    server_name: &str,
-) -> bool {
+async fn remove_mcp_server_entry(mcp_servers: &SharedMcpServers, server_name: &str) -> bool {
     let mut servers = mcp_servers.lock().await;
     if let Some(service) = servers.remove(server_name) {
         log::warn!("Removing MCP server {server_name} from connected servers");
-        match service {
-            RunningServiceEnum::NoInit(s) => {
-                let _ = s.cancel().await;
-            }
-            RunningServiceEnum::WithInit(s) => {
-                let _ = s.cancel().await;
-            }
-        }
+        let _ = service.cancel().await;
         true
     } else {
         false
@@ -405,6 +390,9 @@ pub async fn get_server_summaries(
 /// * `server_name` - Optional name of the server to call the tool from (for disambiguation)
 /// * `arguments` - Optional map of argument names to values
 /// * `cancellation_token` - Optional token to allow cancellation from JS side
+/// * `max_output_chars` - Optional caller-derived per-result character budget
+///   (the desktop chat derives one from the active model's context window);
+///   combined with the `maxToolOutputChars` setting, tighter wins
 ///
 /// # Returns
 /// * `Result<CallToolResult, String>` - Result of the tool call if successful, or error message if failed
@@ -423,8 +411,15 @@ pub async fn call_tool(
     server_name: Option<String>,
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
+    max_output_chars: Option<u64>,
 ) -> Result<CallToolResult, String> {
-    let timeout_duration = tool_call_timeout(&state).await;
+    let (timeout_duration, tool_output_cap) = {
+        let settings = state.mcp_settings.lock().await;
+        (
+            settings.tool_call_timeout_duration(),
+            settings.tool_output_cap(max_output_chars),
+        )
+    };
     // Set up cancellation if token is provided
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
 
@@ -436,7 +431,7 @@ pub async fn call_tool(
     let servers = state.mcp_servers.lock().await;
 
     // If server_name is provided, only check that specific server
-    let servers_to_check: Vec<(&String, &crate::core::state::RunningServiceEnum)> =
+    let servers_to_check: Vec<(&String, &RunningMcpService)> =
         if let Some(ref server) = server_name {
             servers.iter().filter(|(name, _)| *name == server).collect()
         } else {
@@ -448,7 +443,9 @@ pub async fn call_tool(
         if let Some(server) = server_name {
             return Err(format!("Server '{server}' not found"));
         }
-        return Err(format!("Tool {tool_name} not found — no MCP servers connected"));
+        return Err(format!(
+            "Tool {tool_name} not found — no MCP servers connected"
+        ));
     }
 
     let mut transport_error_servers: Vec<String> = Vec::new();
@@ -461,7 +458,8 @@ pub async fn call_tool(
                 let err_str = e.to_string();
                 log::warn!(
                     "MCP server {} failed to list tools during call_tool: {}",
-                    srv_name, err_str
+                    srv_name,
+                    err_str
                 );
                 if is_transport_error(&err_str) {
                     transport_error_servers.push(srv_name.to_string());
@@ -477,10 +475,11 @@ pub async fn call_tool(
         log::info!("Found tool {tool_name} in server {srv_name}");
 
         // Call the tool with timeout and cancellation support
-        let tool_call = service.call_tool(CallToolRequestParam {
-            name: tool_name.clone().into(),
-            arguments,
-        });
+        let mut params = CallToolRequestParams::new(tool_name.clone());
+        if let Some(args) = arguments.clone() {
+            params = params.with_arguments(args);
+        }
+        let tool_call = service.call_tool(params);
 
         // Race between timeout, tool call, and cancellation
         let result = if cancellation_token.is_some() {
@@ -513,14 +512,18 @@ pub async fn call_tool(
             if is_transport_error(e) {
                 log::warn!(
                     "MCP server {} transport error during tool call: {}",
-                    srv_name, e
+                    srv_name,
+                    e
                 );
                 state.mcp_reconnect_notify.notify_waiters();
             }
         }
 
         cleanup_cancellation_token(&state, &cancellation_token).await;
-        return result;
+        // Cap here rather than at each caller: this is the single point every
+        // desktop MCP tool result passes through on its way into conversation
+        // history, so an unbounded result can never reach the model.
+        return result.map(|res| truncate_tool_result(&res, tool_output_cap));
     }
 
     // No server had the tool — check if it's because of transport errors
@@ -567,6 +570,83 @@ fn parse_mcp_settings(value: Option<&Value>) -> McpSettings {
     value
         .and_then(|v| serde_json::from_value::<McpSettings>(v.clone()).ok())
         .unwrap_or_default()
+}
+
+/// Read one configured server's entry out of `mcp_config.json`. Errors rather
+/// than defaulting: every caller here is acting on a server the user picked, and
+/// a silent empty config would report "not authenticated" for a typo.
+fn read_server_config<R: Runtime>(app: &AppHandle<R>, name: &str) -> Result<Value, String> {
+    let mut path = get_jan_data_folder_path(app.clone());
+    path.push("mcp_config.json");
+    let body = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str::<Value>(&body)
+        .map_err(|e| format!("Failed to parse mcp_config.json: {e}"))?
+        .get("mcpServers")
+        .and_then(|s| s.get(name))
+        .cloned()
+        .ok_or_else(|| format!("server '{name}' not found in mcp_config.json"))
+}
+
+/// The OAuth state of one configured server. Local only -- no network -- so the
+/// settings screen can call it per row without a round trip each.
+#[tauri::command]
+pub async fn get_mcp_auth_status<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<oauth::AuthStatusInfo, String> {
+    let config = read_server_config(&app, &name)?;
+    let folder = get_jan_data_folder_path(app);
+    Ok(oauth::status(&folder, &name, &config).into())
+}
+
+/// Run an interactive OAuth authorization for one server: discover the
+/// provider, register a client, open the consent page, and wait for the
+/// redirect on a loopback listener.
+///
+/// Resolves only once the flow finishes (or times out after five minutes), so
+/// the caller awaits a single promise. The consent url is also emitted as
+/// `mcp-oauth-url` before the wait begins, so the UI can offer it as a link
+/// when the browser did not come up.
+#[tauri::command]
+pub async fn authorize_mcp_server<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<(), String> {
+    let config = read_server_config(&app, &name)?;
+    let url = config
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|u| !u.trim().is_empty())
+        .ok_or_else(|| {
+            format!("'{name}' is a stdio server - OAuth applies to http/sse servers only")
+        })?;
+
+    let pending = oauth::begin(&name, url).await?;
+    if let Err(e) = app.emit(
+        "mcp-oauth-url",
+        json!({ "server": &name, "url": &pending.authorization_url }),
+    ) {
+        log::error!("Failed to emit mcp-oauth-url event: {e}");
+    }
+    // Best-effort: the url has already been emitted, so a session with no
+    // browser can still finish by opening it by hand.
+    if let Err(e) = app.opener().open_url(&pending.authorization_url, None::<&str>) {
+        log::warn!("Could not open the browser for '{name}': {e}");
+    }
+
+    let folder = get_jan_data_folder_path(app);
+    pending.complete(&folder).await.map(|_| ())
+}
+
+/// Forget one server's stored tokens. `false` when there were none, so the UI
+/// can tell "cleared" from "nothing to clear".
+#[tauri::command]
+pub async fn clear_mcp_auth<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+) -> Result<bool, String> {
+    let folder = get_jan_data_folder_path(app);
+    oauth::clear(&folder, &name)
 }
 
 #[tauri::command]
@@ -728,13 +808,10 @@ enum PingResult {
     ToolNotAvailable,
 }
 
-async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
+async fn try_ping_tool(service: &RunningMcpService) -> PingResult {
     let result = timeout(
         Duration::from_secs(3),
-        service.call_tool(CallToolRequestParam {
-            name: "ping".into(),
-            arguments: Some(Map::new()),
-        }),
+        service.call_tool(CallToolRequestParams::new("ping").with_arguments(Map::new())),
     )
     .await;
 
@@ -764,15 +841,14 @@ async fn try_ping_tool(service: &RunningServiceEnum) -> PingResult {
     }
 }
 
-async fn try_browser_snapshot_tool(service: &RunningServiceEnum) -> Result<bool, String> {
+async fn try_browser_snapshot_tool(service: &RunningMcpService) -> Result<bool, String> {
     let result = timeout(
         // Snapshot tool is very time-consuming
         // Extend timeout to make sure the tool call has enough time to succeed
         Duration::from_secs(20),
-        service.call_tool(CallToolRequestParam {
-            name: "browser_snapshot".into(),
-            arguments: Some(Map::new()),
-        }),
+        service.call_tool(
+            CallToolRequestParams::new("browser_snapshot").with_arguments(Map::new()),
+        ),
     )
     .await;
 

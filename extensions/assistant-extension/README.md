@@ -28,13 +28,13 @@ After you've cloned the repository to your local machine or codespace, you'll ne
 1. :hammer_and_wrench: Install the dependencies
 
    ```bash
-   npm install
+   yarn install
    ```
 
 1. :building_construction: Package the TypeScript for distribution
 
    ```bash
-   npm run bundle
+   yarn build:publish
    ```
 
 1. :white_check_mark: Check your artifact

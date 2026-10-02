@@ -10,7 +10,7 @@
         "minHeight": 740,
         "resizable": true,
         "fullscreen": false,
-        "zoomHotkeysEnabled": true,
+        "zoomHotkeysEnabled": false,
         "center": true,
         "hiddenTitle": true,
         "transparent": true,
@@ -21,7 +21,13 @@
         "decorations": false,
         "titleBarStyle": "Overlay",
         "windowEffects": {
-          "effects": ["fullScreenUI", "mica", "tabbed", "blur", "acrylic"],
+          "effects": [
+            "fullScreenUI",
+            "mica",
+            "tabbed",
+            "blur",
+            "acrylic"
+          ],
           "state": "active"
         },
         "dragDropEnabled": false
@@ -29,9 +35,19 @@
     ]
   },
   "bundle": {
-    "targets": ["nsis", "msi"],
-    "resources": ["resources/LICENSE", "resources/bin/jan-cli.exe"],
-    "externalBin": ["resources/bin/bun", "resources/bin/uv"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "resources": [
+      "resources/LICENSE",
+      "resources/bin/jan-llama-worker.exe",
+      "resources/bin/*.dll"
+    ],
+    "externalBin": [
+      "resources/bin/bun",
+      "resources/bin/uv"
+    ],
     "windows": {
       "webviewInstallMode": {
         "silent": true,

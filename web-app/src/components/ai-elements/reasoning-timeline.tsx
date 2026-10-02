@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import type React from 'react'
 import { cn } from '@/lib/utils'
-import { splitReasoningParagraphs } from '@/lib/reasoning'
+import { segmentReasoningSteps } from '@/lib/reasoning'
 
 type StepRowProps = {
   text?: string
@@ -48,34 +48,38 @@ export const StepRow = ({
   </li>
 )
 
+export type ReasoningStepMode = 'settled' | 'live'
+
 /**
- * While reasoning streams, show only the most recently *completed* paragraph as
- * plain text — never the paragraph currently being written. As the model
- * finishes each paragraph and starts the next, the derived last-completed
- * paragraph swaps, so exactly one bounded block is visible at a time instead of
- * the whole growing trace.
+ * One bounded block of a streaming reasoning trace, rather than the whole
+ * growing text. `settled` shows the last step the model actually finished, so
+ * the condensed view does not shift under the reader; `live` shows the step
+ * being written, so tokens appear as they arrive. Steps are budget-bounded, so
+ * either mode advances even when the model never emits a paragraph break.
  */
-export const ReasoningActiveStep = memo(({ text }: { text: string }) => {
-  const steps = splitReasoningParagraphs(text)
-  // The final element is the in-progress paragraph; the one before it is the
-  // last paragraph the model has actually finished.
-  const completed = steps.slice(0, -1)
-  const current = completed[completed.length - 1] ?? ''
-  if (!current) return null
-  // Key by paragraph index so each swap remounts the block, replaying the
-  // fade/collapse enter transition as one paragraph gives way to the next.
-  return (
-    <div
-      key={completed.length}
-      dir="auto"
-      className={cn(
-        'select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70',
-        'animate-in fade-in-0 slide-in-from-top-1 duration-300 ease-out'
-      )}
-    >
-      {current}
-    </div>
-  )
-})
+export const ReasoningActiveStep = memo(
+  ({ text, mode = 'settled' }: { text: string; mode?: ReasoningStepMode }) => {
+    const steps = segmentReasoningSteps(text)
+    // The final element is always the step in progress.
+    const index = mode === 'live' ? steps.length - 1 : steps.length - 2
+    const current = index >= 0 ? steps[index] : undefined
+    if (!current) return null
+    // Key by step index so each swap remounts the block, replaying the
+    // fade/collapse enter transition as one step gives way to the next. A step
+    // keeps its key while it grows, so it is not remounted on every token.
+    return (
+      <div
+        key={index}
+        dir="auto"
+        className={cn(
+          'select-text whitespace-pre-wrap wrap-break-word text-sm text-main-view-fg/70',
+          'animate-in fade-in-0 slide-in-from-top-1 duration-300 ease-out'
+        )}
+      >
+        {current}
+      </div>
+    )
+  }
+)
 
 ReasoningActiveStep.displayName = 'ReasoningActiveStep'

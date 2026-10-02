@@ -29,7 +29,7 @@ export const getStaticProps = async() => {
   return {
     props: {
       ssg: {
-        stars: repo.stargazers_count || 2000,
+        stars: repo.stargazers_count || 44000, // placeholder before the client-side useGitHubStars fetch resolves
         lastRelease: latestRelease,
         release: release,
         lastVersion: latestRelease.tag_name || 'v.0.0.1'

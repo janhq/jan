@@ -206,6 +206,21 @@ describe('retrieve', () => {
     expect(res.error).toBe('db down')
     expect(res.content[0].text).toContain('Retrieve failed')
   })
+
+  // Rust plugin errors arrive as { VariantName: "message" }; the message is
+  // what the model can act on, not the wrapper.
+  it('unwraps a plugin error variant instead of dumping its JSON', async () => {
+    extMgr().get.mockReturnValue({
+      searchCollection: vi
+        .fn()
+        .mockRejectedValue({ InvalidInput: 'embedding is empty' }),
+    })
+    extMgr().getByName.mockReturnValue({
+      embed: vi.fn().mockResolvedValue({ data: [{ embedding: [1], index: 0 }] }),
+    })
+    const res = await ext.callTool('retrieve', { thread_id: 't1', query: 'q' })
+    expect(res.error).toBe('embedding is empty')
+  })
 })
 
 describe('getChunks', () => {

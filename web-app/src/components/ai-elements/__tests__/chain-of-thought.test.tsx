@@ -26,6 +26,10 @@ vi.mock('../shimmer', () => ({
   ),
 }))
 
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
 describe('ChainOfThought', () => {
   it('renders children inside a Collapsible, defaults open', () => {
     render(
@@ -102,14 +106,23 @@ describe('ChainOfThought', () => {
 })
 
 describe('ChainOfThoughtHeader', () => {
-  it('shows "Reasoning..." shimmer when isStreaming=true', () => {
+  it('shows the default reasoning shimmer when isStreaming=true', () => {
     render(
       <ChainOfThought isStreaming={true}>
         <ChainOfThoughtHeader />
       </ChainOfThought>
     )
     expect(screen.getByTestId('shimmer')).toBeInTheDocument()
-    expect(screen.getByText('Reasoning...')).toBeInTheDocument()
+    expect(screen.getByText('chat:reasoning.label')).toBeInTheDocument()
+  })
+
+  it('prefers an explicit streamingLabel over the default', () => {
+    render(
+      <ChainOfThought isStreaming={true}>
+        <ChainOfThoughtHeader streamingLabel="Web search..." />
+      </ChainOfThought>
+    )
+    expect(screen.getByText('Web search...')).toBeInTheDocument()
   })
 
   it('shows title when provided and not streaming', () => {
@@ -129,7 +142,45 @@ describe('ChainOfThoughtHeader', () => {
       </ChainOfThought>
     )
     expect(
-      screen.getByText('Thought for a few seconds')
+      screen.getByText('chat:reasoning.thoughtForAWhile')
+    ).toBeInTheDocument()
+  })
+
+  it('uses the worked phrasing when the trace ran tools', () => {
+    render(
+      <ChainOfThought isStreaming={false}>
+        <ChainOfThoughtHeader completedVariant="worked" />
+      </ChainOfThought>
+    )
+    expect(
+      screen.getByText('chat:reasoning.workedForAWhile')
+    ).toBeInTheDocument()
+  })
+
+  it('navigates instead of collapsing when navDirection is set', () => {
+    const onNavigate = vi.fn()
+    render(
+      <ChainOfThought isStreaming={true}>
+        <ChainOfThoughtHeader navDirection="right" onNavigate={onNavigate} />
+      </ChainOfThought>
+    )
+    const button = screen.getByRole('button', {
+      name: 'chat:reasoning.showFullTimeline',
+    })
+    button.click()
+    expect(onNavigate).toHaveBeenCalledTimes(1)
+    // A nav header must not also toggle the collapsible.
+    expect(button).not.toHaveAttribute('data-state')
+  })
+
+  it('labels the back direction distinctly', () => {
+    render(
+      <ChainOfThought isStreaming={true}>
+        <ChainOfThoughtHeader navDirection="left" onNavigate={() => {}} />
+      </ChainOfThought>
+    )
+    expect(
+      screen.getByRole('button', { name: 'chat:reasoning.showCurrentStep' })
     ).toBeInTheDocument()
   })
 
@@ -142,9 +193,7 @@ describe('ChainOfThoughtHeader', () => {
       </ChainOfThought>
     )
     expect(screen.getByText('Custom header')).toBeInTheDocument()
-    expect(
-      screen.queryByText(/Thought for/)
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/thoughtFor/)).not.toBeInTheDocument()
   })
 })
 

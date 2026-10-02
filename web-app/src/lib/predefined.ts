@@ -15,11 +15,13 @@ export const modelSettings = {
     key: 'ngl',
     title: 'GPU Layers',
     description:
-      'Number of model layers to offload to the GPU (-1 for all layers, 0 for CPU only).',
+      'Model layers to keep in VRAM. Leave empty for automatic (VRAM-aware) offload; -1 is auto, -2 offloads all layers, 0 is CPU only.',
     controller_type: 'input',
     controller_props: {
-      value: 100,
-      placeholder: '100',
+      // Empty, not 100: a value here pins offload and defeats llama.cpp's own
+      // VRAM-aware auto, which is an OOM on a small GPU.
+      value: '',
+      placeholder: 'auto',
       type: 'number',
     },
   },
@@ -77,12 +79,13 @@ export const modelSettings = {
     key: 'repeat_last_n',
     title: 'Repeat Last N',
     description:
-      'Number of tokens to consider for repeat penalty (0 = disabled, -1 = ctx_size). This is the default setting on load and can be overridden by the assistant settings.',
+      'Number of tokens to consider for repeat penalty (0 = disabled). This is the default setting on load and can be overridden by the assistant settings.',
     controller_type: 'input',
     controller_props: {
       value: '',
       placeholder: '64',
       type: 'number',
+      min: 0,
     },
   },
   repeat_penalty: {
@@ -124,12 +127,26 @@ export const modelSettings = {
   chatTemplate: {
     key: 'chat_template',
     title: 'Custom Jinja Chat template',
-    description: 'Custom Jinja chat_template to be used for the model',
+    description:
+      'Custom Jinja chat_template for the model: a built-in template name, an inline template body, or an absolute path to a .jinja file',
     controller_type: 'textarea',
     controller_props: {
       value: '',
       placeholder:
-        'e.g., {% for message in messages %}...{% endfor %} (default is read from GGUF)',
+        'e.g., {% for message in messages %}...{% endfor %} or /path/to/template.jinja (default is read from GGUF)',
+      type: 'text',
+      textAlign: 'right',
+    },
+  },
+  grammar: {
+    key: 'grammar',
+    title: 'Grammar',
+    description:
+      'GBNF grammar to constrain generations: an inline grammar body or an absolute path to a .gbnf file',
+    controller_type: 'textarea',
+    controller_props: {
+      value: '',
+      placeholder: 'e.g., root ::= "yes" | "no" or /path/to/grammar.gbnf',
       type: 'text',
       textAlign: 'right',
     },
@@ -149,6 +166,18 @@ export const modelSettings = {
     title: 'Number of MoE weights in the CPU',
     description:
       'Keep the Mixture of Experts (MoE) weights of the first N layers in the CPU (if GPU is used)',
+    controller_type: 'input',
+    controller_props: {
+      value: '',
+      placeholder: '24',
+      type: 'number',
+    },
+  },
+  n_cpu_ffn: {
+    key: 'n_cpu_ffn',
+    title: 'Number of dense FFN weights in the CPU',
+    description:
+      'Keep the dense feed-forward weights of the first N layers in the CPU (if GPU is used). For dense models; MoE experts use the setting above.',
     controller_type: 'input',
     controller_props: {
       value: '',

@@ -71,6 +71,27 @@ describe('getModelProps', () => {
   })
 })
 
+describe('getModelContextLimit', () => {
+  it('uses the text model limit from a multimodal config', async () => {
+    const ext = new mlx_extension()
+    mockInvoke.mockResolvedValueOnce({ model_path: '/external/model' })
+    mockFileStat.mockResolvedValue({ isDirectory: true } as never)
+    mockInvoke.mockResolvedValueOnce(JSON.stringify({
+      max_position_embeddings: 1024,
+      text_config: { max_position_embeddings: 32768 },
+    }))
+    expect(await ext.getModelContextLimit('model')).toBe(32768)
+  })
+
+  it('does not assume a context limit when the config omits it', async () => {
+    const ext = new mlx_extension()
+    mockInvoke.mockResolvedValueOnce({ model_path: '/external/model' })
+    mockFileStat.mockResolvedValue({ isDirectory: true } as never)
+    mockInvoke.mockResolvedValueOnce('{}')
+    expect(await ext.getModelContextLimit('model')).toBeUndefined()
+  })
+})
+
 describe('createDownloadTaskId', () => {
   it('prefixes the provider and strips everything after the first dot', () => {
     const ext = newExt()

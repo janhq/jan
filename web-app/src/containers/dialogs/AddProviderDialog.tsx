@@ -78,6 +78,7 @@ export function AddProviderDialog({
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent
+        data-testid="add-provider-dialog"
         className="sm:max-w-[460px] max-w-[90vw]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
@@ -90,6 +91,7 @@ export function AddProviderDialog({
 
         <div className="flex flex-col gap-3 mt-2">
           <Input
+            data-testid="provider-name-input"
             ref={nameInputRef}
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -120,6 +122,7 @@ export function AddProviderDialog({
               {t('provider:baseUrlLabel')}
             </label>
             <Input
+              data-testid="provider-base-url-input"
               value={baseUrl}
               onChange={(e) => {
                 setBaseUrl(e.target.value)
@@ -134,6 +137,7 @@ export function AddProviderDialog({
               {t('provider:apiKeyLabel')}
             </label>
             <Input
+              data-testid="provider-api-key-input"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -163,6 +167,7 @@ export function AddProviderDialog({
             </Button>
           </DialogClose>
           <Button
+            data-testid="add-provider-submit"
             disabled={!canSubmit}
             onClick={handleCreate}
             className="w-full sm:w-auto"

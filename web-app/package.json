@@ -24,6 +24,7 @@
     "@dnd-kit/sortable": "10.0.0",
     "@janhq/core": "workspace:*",
     "@janhq/interfaces": "0.0.2",
+    "@janhq/tauri-plugin-agent-tools-api": "link:../src-tauri/plugins/tauri-plugin-agent-tools",
     "@janhq/tauri-plugin-llamacpp-api": "link:../src-tauri/plugins/tauri-plugin-llamacpp",
     "@janhq/tauri-plugin-websearch-api": "link:../src-tauri/plugins/tauri-plugin-websearch",
     "@radix-ui/react-accordion": "1.2.11",

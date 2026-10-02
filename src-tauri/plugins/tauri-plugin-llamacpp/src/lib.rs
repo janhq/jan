@@ -5,19 +5,15 @@ use tauri::{
     Manager, Runtime,
 };
 
-mod backend;
 pub mod cleanup;
-pub mod deps_analyzer;
 mod commands;
-mod device;
+pub mod engine;
 mod error;
 mod gguf;
-mod path;
 mod process;
-pub mod router;
 pub mod state;
 pub use cleanup::cleanup_llama_processes;
-pub use commands::{force_kill_router_tree, stop_router, try_graceful_stop_router};
+pub use engine::commands::try_graceful_stop_engine;
 pub use state::LlamacppState;
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
@@ -26,46 +22,132 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             cleanup::cleanup_llama_processes,
             commands::load_llama_model,
             commands::unload_llama_model,
-            commands::start_router,
-            commands::stop_router,
-            commands::try_graceful_stop_router,
-            commands::force_kill_router_tree,
-            commands::get_router_info,
-            commands::reload_router_models,
-            commands::router_slots_idle,
-            commands::get_devices,
+            engine::commands::start_engine,
+            engine::commands::stop_engine,
+            engine::commands::get_engine_info,
+            engine::commands::get_engine_version,
+            engine::commands::reload_engine_models,
+            engine::commands::engine_devices,
+            engine::commands::force_stop_engine,
+            engine::commands::engine_slots_idle,
+            engine::commands::erase_thread_slot_state,
             commands::generate_api_key,
             commands::ensure_session_ready,
             commands::find_session_by_model,
             commands::get_loaded_models,
             gguf::commands::read_gguf_metadata,
-            gguf::commands::estimate_kv_cache_size,
-            gguf::commands::get_model_size,
+            gguf::commands::find_gguf_tensors,
             gguf::commands::is_model_supported,
-            backend::map_old_backend_to_new,
-            backend::get_local_installed_backends,
-            backend::list_supported_backends,
-            backend::determine_supported_backends,
-            backend::get_supported_features,
-            backend::is_cuda_installed,
-            backend::find_latest_version_for_backend,
-            backend::prioritize_backends,
-            backend::parse_backend_version,
-            backend::check_backend_for_updates,
-            backend::remove_old_backend_versions,
-            backend::validate_backend_string,
-            backend::should_migrate_backend,
-            backend::handle_setting_update,
-            backend::get_backend_dir,
-            backend::get_backend_exe_path,
-            backend::check_backend_installed,
-            backend::verify_backend_installation,
-            backend::fetch_remote_supported_backends,
-            backend::build_backend_download_items
         ])
         .setup(|app, _api| {
             app.manage(Arc::new(state::LlamacppState::new()));
             Ok(())
         })
         .build()
+}
+
+#[cfg(test)]
+mod permission_tests {
+    /// A command reaches the frontend only if it is BOTH in `generate_handler!`
+    /// and in `build.rs`'s `COMMANDS` (which generates its permission). Missing
+    /// the latter compiles and tests clean, then fails at runtime with
+    /// "not allowed. Command not found" -- invisible to any suite that mocks
+    /// `invoke`. Keep the two lists in lockstep.
+    fn names_between<'a>(src: &'a str, start: &str, end: &str) -> Vec<&'a str> {
+        let body = src
+            .split_once(start)
+            .and_then(|(_, rest)| rest.split_once(end))
+            .map(|(body, _)| body)
+            .unwrap_or_else(|| panic!("could not locate {start} .. {end}"));
+        body.lines()
+            .map(|l| l.trim().trim_end_matches(',').trim_matches('"'))
+            .filter(|l| !l.is_empty() && !l.starts_with("//") && !l.starts_with('#'))
+            .map(|l| l.rsplit("::").next().unwrap_or(l))
+            .collect()
+    }
+
+    #[test]
+    fn every_registered_command_has_a_permission() {
+        let handlers = names_between(
+            include_str!("lib.rs"),
+            "tauri::generate_handler![",
+            "])",
+        );
+        let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
+
+        let missing: Vec<_> = handlers
+            .iter()
+            .filter(|c| !declared.contains(c))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands registered but absent from build.rs COMMANDS (they will \
+             fail at runtime as \"not allowed\"): {missing:?}"
+        );
+    }
+
+    #[test]
+    fn every_permission_is_in_the_default_set() {
+        let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
+        let default_toml = include_str!("../permissions/default.toml");
+
+        let missing: Vec<_> = declared
+            .iter()
+            .filter(|c| {
+                let permission = format!("allow-{}", c.replace('_', "-"));
+                !default_toml.contains(&permission)
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "commands missing an allow-* entry in permissions/default.toml: {missing:?}"
+        );
+    }
+    /// The mirror of `every_registered_command_has_a_permission`. A name in
+    /// `COMMANDS` with no `generate_handler!` entry still ships an `allow-*`
+    /// permission, and `tauri_plugin::Builder` only ever writes
+    /// `permissions/autogenerated/commands/*.toml` -- it never prunes -- so the
+    /// stale file survives every rebuild and advertises a command that cannot
+    /// be invoked.
+    #[test]
+    fn every_declared_command_is_registered() {
+        let handlers = names_between(
+            include_str!("lib.rs"),
+            "tauri::generate_handler![",
+            "])",
+        );
+        let declared = names_between(include_str!("../build.rs"), "COMMANDS: &[&str] = &[", "];");
+
+        let orphaned: Vec<_> = declared
+            .iter()
+            .filter(|c| !handlers.contains(c))
+            .collect();
+        assert!(
+            orphaned.is_empty(),
+            "commands in build.rs COMMANDS with no entry in generate_handler!: {orphaned:?}"
+        );
+    }
+    /// The project rule is that `invoke` lives only in the plugin's `guest-js`
+    /// layer, so every command the frontend can reach needs a wrapper there.
+    /// Without this, a new command silently invites a raw
+    /// `invoke('plugin:llamacpp|...')` at the call site.
+    #[test]
+    fn every_command_has_a_guest_js_wrapper() {
+        let handlers = names_between(
+            include_str!("lib.rs"),
+            "tauri::generate_handler![",
+            "])",
+        );
+        let guest_js = include_str!("../guest-js/index.ts");
+
+        let unwrapped: Vec<_> = handlers
+            .iter()
+            .filter(|c| !guest_js.contains(&format!("'plugin:llamacpp|{c}'")))
+            .collect();
+        assert!(
+            unwrapped.is_empty(),
+            "commands with no guest-js wrapper -- callers will reach for a raw \
+             invoke() and violate the invoke-only-in-guest-js rule: {unwrapped:?}"
+        );
+    }
 }

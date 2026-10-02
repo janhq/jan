@@ -63,6 +63,8 @@ type NavMainItem = {
   isActive?: boolean
   shortcut?: React.ReactNode
   onClick?: () => void
+  /** Emitted as `data-testid` on the rendered control; see e2e/README.md. */
+  testId?: string
 }
 
 const getNavMainItems = (
@@ -75,6 +77,7 @@ const getNavMainItems = (
     title: 'common:newChat',
     animatedIcon: MessageCircleIcon,
     onClick: onNewChat,
+    testId: 'new-chat-button',
     shortcut: (
       <KbdGroup className="ml-auto scale-90 gap-0">
         <Kbd className="bg-transparent size-3">
@@ -158,6 +161,7 @@ function NavMainItemWithAnimatedIcon({
       <SidebarMenuButton
         asChild={!!item.url}
         isActive={item.isActive}
+        data-testid={item.testId}
         onMouseEnter={() => iconRef.current?.startAnimation()}
         onMouseLeave={() => iconRef.current?.stopAnimation()}
         onClick={item.onClick}
@@ -217,6 +221,7 @@ export function NavMain() {
               <SidebarMenuButton
                 asChild={!!item.url}
                 isActive={item.isActive}
+                data-testid={item.testId}
                 onClick={item.onClick}
               >
                 {item.url ? (

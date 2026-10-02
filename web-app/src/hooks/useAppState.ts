@@ -55,6 +55,10 @@ type AppState = {
   busyThreads: Record<string, boolean>
   embeddingThreads: Record<string, boolean>
   currentStreamThreadId?: string
+  // The stream named by currentStreamThreadId is a Cowork run, so its
+  // load-progress events route to useCoworkRun's session mirror rather than
+  // this store's thread-keyed slots (which feed chat-thread active detection).
+  currentStreamIsCowork: boolean
   oomError?: string
   backendError?: string
 
@@ -104,7 +108,10 @@ type AppState = {
     error: AppErrorMessage | undefined
   ) => void
   clearThreadState: (threadId: string) => void
-  setCurrentStreamThreadId: (threadId: string | undefined) => void
+  setCurrentStreamThreadId: (
+    threadId: string | undefined,
+    isCowork?: boolean
+  ) => void
   setThreadBusy: (threadId: string, busy: boolean) => void
   setThreadEmbedding: (threadId: string, embedding: boolean) => void
 }
@@ -130,7 +137,12 @@ export const useAppState = create<AppState>()((set) => ({
   busyThreads: {},
   embeddingThreads: {},
   currentStreamThreadId: undefined,
-  setCurrentStreamThreadId: (threadId) => set({ currentStreamThreadId: threadId }),
+  currentStreamIsCowork: false,
+  setCurrentStreamThreadId: (threadId, isCowork = false) =>
+    set({
+      currentStreamThreadId: threadId,
+      currentStreamIsCowork: threadId ? isCowork : false,
+    }),
   setOomError: (line) => set({ oomError: line }),
   setBackendError: (line) => set({ backendError: line }),
   setThreadBusy: (threadId, busy) =>

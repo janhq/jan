@@ -13,40 +13,54 @@ A high-performance inference server for MLX models, providing an OpenAI-compatib
 
 - macOS 14.0+ (Sonoma or later)
 - Apple Silicon (M1, M2, M3, M4)
-- Xcode 15+ for building
+- Xcode 26.2 or later (what CI selects; `Package.swift` declares `swift-tools-version: 5.12`)
 - At least 8GB of unified memory
 
 ## Installation
 
 ### Building from Source
 
+From the repo root:
+
 ```bash
-# Clone the repository
-cd mlx-server
-
-# Build in release mode
-xcodebuild -scheme mlx-server -configuration Release
-
-# The binary and metallib will be in the Xcode derived data build products
+# Builds with xcodebuild, then stages the binary and its Metal bundle into
+# src-tauri/resources/bin/ - the same path the app and `make dev` use
+make build-mlx-server
 ```
+
+Or build it directly:
+
+```bash
+cd mlx-server
+xcodebuild build -scheme mlx-server -destination 'platform=OS X' -configuration Release
+```
+
+Build products land in the `mlx-server-*/Build/Products/Release` directory under Xcode's
+DerivedData. Use `xcodebuild`, not `swift build`: mlx-swift's Metal shaders are compiled
+by its `PrepareMetalShaders` plugin, which only runs under Xcode, so a `swift build`
+binary has no `default.metallib` and fails at inference time.
 
 ## Quick Start
 
 ```bash
-# Run with a local MLX model
-./.build/arm64-apple-macosx/release/mlx-server \
+# Run the staged build against a local MLX model directory
+./src-tauri/resources/bin/mlx-server \
   --model "/path/to/your/model" \
   --port 8080
 ```
+
+`--model` takes a local path. A directory is used directly when it has a `config.json`,
+otherwise its parent directory is tried; no model is downloaded from Hugging Face.
 
 ## Command-Line Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `-m, --model` | Required | Path to model directory or HuggingFace model ID |
+| `-m, --model` | Required | Path to a local model directory, or to a file inside it |
 | `--port` | 8080 | HTTP server port |
 | `--ctx-size` | 4096 | Context window size |
 | `--api-key` | `""` | API key for authentication (optional) |
+| `--model-id` | `""` | Model ID reported by the API; empty derives it from the model path |
 
 ## API Endpoints
 
@@ -106,6 +120,9 @@ mlx-server/
 │       ├── ModelRunner.swift          # Core inference engine
 │       ├── Server.swift               # HTTP server & API handlers
 │       ├── OpenAITypes.swift          # API type definitions
+│       ├── AnthropicTypes.swift       # Anthropic-compatible request/response types
+│       ├── ReasoningSplitter.swift    # Splits reasoning_content from content on think markers
+│       ├── TokenizerAdapter.swift     # Adapts swift-transformers to MLXLMCommon's TokenizerLoader
 │       └── Logger.swift               # Logging utilities
 ├── Package.swift                      # Swift package manifest
 └── README.md                          # This file

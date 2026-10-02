@@ -1,11 +1,16 @@
 /**
- * @file Generates the llama-server router preset INI from per-model `model.yml`
- * files under `<providerPath>/models/<modelId>/model.yml`.
+ * @file Generates `router.preset.ini` from the per-model `model.yml` files under
+ * `<providerPath>/models/<modelId>/model.yml`.
  *
- * Phase 2 keeps the preset minimal — model path, mmproj, chat-template,
- * load-on-startup=false. A small `[*]` global section pulls a couple of
- * conservative defaults from `LlamacppConfig`. Per-model setting fidelity
- * is deferred to Phase 3.
+ * The file has a `[*]` section of engine-wide defaults, then one `[<modelId>]`
+ * section per model. Only values that differ from llama.cpp's own defaults are
+ * written, so the preset stays intent-revealing and a setting left alone keeps
+ * whatever upstream (or the GGUF) decided. `load-on-startup = false` is the one
+ * unconditional line.
+ *
+ * An ini key is the CLI flag with its leading dashes removed, resolved by
+ * `common/preset.cpp` `get_map_key_opt`. Defaults quoted below are from
+ * `common/common.h` at the pinned build.
  */
 
 import { fs, joinPath } from '@janhq/core'
@@ -16,6 +21,7 @@ import type { LlamacppConfig, ModelConfig } from '@janhq/tauri-plugin-llamacpp-a
 // `chat_template` that aren't yet in the strict typing.
 type ModelYaml = ModelConfig & {
   chat_template?: string
+  grammar?: string
   ctx_size?: number
   n_gpu_layers?: number
   flash_attn?: string
@@ -29,6 +35,7 @@ type ModelYaml = ModelConfig & {
   mtp_layers?: number
   mtp?: boolean
   mtp_model_path?: string
+  spec_type?: string
   temperature?: number
   top_k?: number
   top_p?: number
@@ -42,24 +49,93 @@ type ModelYaml = ModelConfig & {
   spec_draft_p_min?: number
   cpu_moe?: boolean
   n_cpu_moe?: number
+  n_cpu_ffn?: number
   no_kv_offload?: boolean
   override_tensor?: string
   mmproj_offload?: boolean
 }
 
-// One extra llama-server slot beyond the user-visible "Parallel Sequences"
-// count, reserved for background requests (e.g. thread auto-titling) that
-// must never be able to evict the user's own chat KV cache from its slot.
-// Hidden from the setting's UI value; see reservedSlotId in thread-title-summarizer.ts.
-export const RESERVED_BACKGROUND_SLOTS = 1
+/**
+ * The ubatch every embedding model's preset section is pinned to.
+ *
+ * Exported because `embed()` has to budget its batches against the *embedder's*
+ * ubatch, not the engine-wide setting: llama.cpp rejects a batch wider than
+ * n_ubatch outright, with no retry path.
+ */
+export const DEFAULT_EMBEDDING_UBATCH = 2048
 
-export const MTP_MIN_BUILD = 9193
+/**
+ * Where each thread's saved KV cache lives.
+ *
+ * Under the provider directory rather than a temp dir: it is a cache the user
+ * paid prefill time for and expects to survive a reboot, which is the whole
+ * point. Shared verbatim with the Rust side, which llama.cpp joins file names
+ * onto, so the two must not compute it differently -- this function is the one
+ * definition.
+ */
+export function threadCacheDir(providerPath: string): string {
+  const sep = isWindowsPath(providerPath) ? '\\' : '/'
+  return `${providerPath.replace(/[\\/]+$/, '')}${sep}thread-cache`
+}
 
-const DEFAULT_EMBEDDING_UBATCH = 2048
+/**
+ * Whether a path is rooted the Windows way: a drive letter, a UNC share, or an
+ * extended `\\?\` prefix.
+ *
+ * Tested on the root rather than on "contains a backslash" because `\` is a
+ * legal filename character on Linux. Win32 normalizes `/` to `\` for the first
+ * two, but *not* for an extended path, where a `/` is a literal name character
+ * -- `create_dir_all` then fails with ERROR_INVALID_NAME and the worker exits
+ * before it serves anything.
+ */
+function isWindowsPath(p: string): boolean {
+  return /^(?:[A-Za-z]:|\\\\)/.test(p)
+}
 
 // Fallback context size when the user hasn't set one, to avoid loading a
 // model's full trained context (which can OOM on large-context models).
 const DEFAULT_CTX_SIZE = 8192
+
+/**
+ * The `--spec-type` values llama.cpp accepts for a draft model
+ * (common/speculative.cpp). A model.yml records one at import; anything else
+ * -- an older install with no record, or a value we do not recognise -- falls
+ * back to MTP, which is what every embedded-head model is.
+ */
+const SPEC_TYPES = new Set([
+  'draft-mtp',
+  'draft-eagle3',
+  'draft-dflash',
+  'draft-dspark',
+])
+const DEFAULT_SPEC_TYPE = 'draft-mtp'
+
+/**
+ * A built-in template name (`chatml`, `llama3`, ...) as opposed to a template
+ * body. `--chat-template` takes either, but `--chat-template-file` reads its
+ * value as a path, so the two have to be told apart. Any real jinja carries
+ * `{`, whitespace or a newline, none of which match here.
+ */
+const BUILTIN_TEMPLATE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+// Absolute paths only: a relative one would resolve against llama.cpp's cwd,
+// which is not something the user can predict. Covers POSIX, drive-letter and
+// UNC forms.
+const ABSOLUTE_PATH_RE = /^(?:\/|[A-Za-z]:[\\/]|\\\\)/
+
+/**
+ * When a setting value is an absolute path to an existing file, the preset
+ * passes it through to the corresponding `*-file` flag instead of treating it
+ * as an inline body.
+ */
+async function existingFilePath(value: string): Promise<string | null> {
+  if (!ABSOLUTE_PATH_RE.test(value)) return null
+  try {
+    return (await fs.existsSync(value)) ? value : null
+  } catch {
+    return null
+  }
+}
 
 function escapeIniValue(v: string): string {
   // INI values for llama-server are read as strings; trim surrounding whitespace
@@ -75,16 +151,8 @@ function escapeIniValue(v: string): string {
 export async function generatePreset(
   providerPath: string,
   janDataFolderPath: string,
-  config: LlamacppConfig,
-  opts: { supportsMtp?: boolean; reservedBackgroundSlots?: number } = {}
+  config: LlamacppConfig
 ): Promise<{ path: string; embeddingCount: number }> {
-  const supportsMtp = opts.supportsMtp === true
-  // Reserved background slot count (thread auto-titling). Disabling that
-  // feature drops it to 0 so no extra parallel slot is provisioned.
-  const reservedBackgroundSlots =
-    typeof opts.reservedBackgroundSlots === 'number'
-      ? opts.reservedBackgroundSlots
-      : RESERVED_BACKGROUND_SLOTS
   const modelsDir = await joinPath([providerPath, 'models'])
 
   // Ensure the directory exists; an empty install is fine — we still emit a
@@ -127,6 +195,9 @@ export async function generatePreset(
 
   modelEntries.sort((a, b) => a.modelId.localeCompare(b.modelId))
 
+  const kvUnifiedIsAuto =
+    config.kv_unified !== 'on' && config.kv_unified !== 'off'
+
   const lines: string[] = []
 
   // Emit only values that differ from llama.cpp's compiled defaults so the
@@ -156,27 +227,15 @@ export async function generatePreset(
     lines.push(`fit-ctx = ${fitCtxNum}`)
   }
   // ctx-size: llama.cpp's own default loads the model's full trained context,
-  // which can OOM on large-context models. Fall back to 8192 only when the
-  // value is unset; an explicit 0 is honored as "native" (load from model).
-  // Skip entirely when auto-fit is enabled — fit owns context sizing and an
-  // explicit ctx-size would override it.
+  // which can OOM on a large-context model, so a conservative cap stands in.
+  // There is no engine-level context setting to read here -- per-model
+  // `ctx_len` owns that -- so this is purely the guard.
+  //
+  // Skipped when auto-fit is on: emitting it would make n_ctx non-zero for
+  // every model and stop fit from reducing context to make a model fit.
   const fitEnabled = config.fit !== false
   if (!fitEnabled) {
-    const ctxSize =
-      typeof config.ctx_size === 'number' && Number.isFinite(config.ctx_size) && config.ctx_size >= 0
-        ? config.ctx_size
-        : DEFAULT_CTX_SIZE
-    lines.push(`ctx-size = ${ctxSize}`)
-  }
-  // n-gpu-layers default = 0 / auto; emit any non-negative explicit value.
-  // Skip when auto-fit is on: an explicit n-gpu-layers makes fit abort its
-  // layer-offload computation (llama.cpp common/fit.cpp), so fit owns ngl too.
-  if (
-    !fitEnabled &&
-    typeof config.n_gpu_layers === 'number' &&
-    config.n_gpu_layers >= 0
-  ) {
-    lines.push(`n-gpu-layers = ${config.n_gpu_layers}`)
+    lines.push(`ctx-size = ${DEFAULT_CTX_SIZE}`)
   }
   // flash-attn default = 'auto'; explicit on/off only.
   if (
@@ -200,10 +259,17 @@ export async function generatePreset(
   ) {
     lines.push(`cache-type-v = ${escapeIniValue(config.cache_type_v)}`)
   }
-  // parallel default = -1 (auto); positive user value is intent. The reserved
-  // slot is added on top and never exposed in the setting's own value.
+  // parallel default = 0 (llama.cpp's own auto resolution); a positive user
+  // value is intent and is emitted verbatim. Jan adds no hidden slot of its
+  // own: every pinned surface shares slot 0 and is told apart by `thread_id`
+  // (web-app/src/constants/models.ts), so no slot has to be reserved for one.
   if (typeof config.parallel === 'number' && config.parallel > 0) {
-    lines.push(`parallel = ${config.parallel + reservedBackgroundSlots}`)
+    lines.push(`parallel = ${config.parallel}`)
+    // llama.cpp only turns on unified KV as part of resolving parallel = -1;
+    // passing parallel explicitly leaves it off, which splits ctx-size into
+    // ctx-size/parallel per slot. Restore the auto behaviour so the configured
+    // context is what each slot actually gets.
+    if (kvUnifiedIsAuto) lines.push('kv-unified = true')
   }
   // cont-batching default = true; emit only the explicit-off case.
   if (config.cont_batching === false) {
@@ -234,6 +300,15 @@ export async function generatePreset(
   ) {
     lines.push(`n-predict = ${Math.floor(config.n_predict)}`)
   }
+  // batch-size default = 2048 (common.h: n_batch)
+  if (
+    typeof config.batch_size === 'number' &&
+    Number.isFinite(config.batch_size) &&
+    config.batch_size > 0 &&
+    config.batch_size !== 2048
+  ) {
+    lines.push(`batch-size = ${Math.floor(config.batch_size)}`)
+  }
   // ubatch-size default = 512
   if (
     typeof config.ubatch_size === 'number' &&
@@ -242,6 +317,59 @@ export async function generatePreset(
     config.ubatch_size !== 512
   ) {
     lines.push(`ubatch-size = ${Math.floor(config.ubatch_size)}`)
+  }
+  // n-cpu-moe default = 0 (no MoE weights pinned to the host)
+  if (
+    typeof config.n_cpu_moe === 'number' &&
+    Number.isFinite(config.n_cpu_moe) &&
+    config.n_cpu_moe > 0
+  ) {
+    lines.push(`n-cpu-moe = ${Math.floor(config.n_cpu_moe)}`)
+  }
+  // n-cpu-ffn default = 0. The dense-model counterpart of n-cpu-moe, added in
+  // llama.cpp 0.4.0; the two are independent and a model can want either.
+  if (
+    typeof config.n_cpu_ffn === 'number' &&
+    Number.isFinite(config.n_cpu_ffn) &&
+    config.n_cpu_ffn > 0
+  ) {
+    lines.push(`n-cpu-ffn = ${Math.floor(config.n_cpu_ffn)}`)
+  }
+  // no-kv-offload default = false (the cache is offloaded). Spelled negatively
+  // to match llama.cpp's own flag and the existing no_mmap setting.
+  // common_preset's parse_bool_arg recognises `no-kv-offload` as the negated
+  // half of the kv-offload pair (arg.cpp:2403-2410) and inverts it, so `true`
+  // here does disable offloading.
+  if (config.no_kv_offload === true) {
+    lines.push('no-kv-offload = true')
+  }
+  // tensor-split default = empty (even split across devices).
+  if (
+    typeof config.tensor_split === 'string' &&
+    config.tensor_split.trim().length > 0
+  ) {
+    lines.push(`tensor-split = ${escapeIniValue(config.tensor_split.trim())}`)
+  }
+  // no-op-offload default = false (host tensor ops are offloaded).
+  if (config.no_op_offload === true) {
+    lines.push('no-op-offload = true')
+  }
+  // ctx-checkpoints default = 32, checkpoint-min-step default = 8192.
+  if (
+    typeof config.ctx_checkpoints === 'number' &&
+    Number.isFinite(config.ctx_checkpoints) &&
+    config.ctx_checkpoints >= 0 &&
+    config.ctx_checkpoints !== 32
+  ) {
+    lines.push(`ctx-checkpoints = ${Math.floor(config.ctx_checkpoints)}`)
+  }
+  if (
+    typeof config.checkpoint_min_step === 'number' &&
+    Number.isFinite(config.checkpoint_min_step) &&
+    config.checkpoint_min_step >= 0 &&
+    config.checkpoint_min_step !== 8192
+  ) {
+    lines.push(`checkpoint-min-step = ${Math.floor(config.checkpoint_min_step)}`)
   }
   // device default = empty (auto-pick)
   if (typeof config.device === 'string' && config.device.trim().length > 0) {
@@ -263,31 +391,31 @@ export async function generatePreset(
   ) {
     lines.push(`main-gpu = ${Math.floor(config.main_gpu)}`)
   }
-  // no-mmap / mlock default = false
-  if (config.no_mmap === true) {
-    lines.push('no-mmap = true')
+  // `--mlock`, `--mmap`/`--no-mmap` and `--direct-io` were deprecated aliases of
+  // the single params.load_mode field and were deleted outright in 0.4.1, so
+  // `load-mode` is now the only spelling llama.cpp understands. Jan keeps the two
+  // familiar toggles in its settings and derives that one key from them.
+  const wantsMlock = config.mlock === true
+  const wantsNoMmap = config.no_mmap === true
+  if (wantsMlock || wantsNoMmap) {
+    const loadMode = wantsMlock
+      ? wantsNoMmap
+        ? 'mlock'
+        : 'mmap+mlock'
+      : 'none'
+    lines.push(`load-mode = ${loadMode}`)
   }
-  if (config.mlock === true) {
-    lines.push('mlock = true')
-  }
-  // rope-scaling default = 'none'
+  // rope-scaling default is UNSPECIFIED (let the model decide), not 'none'.
+  // Treating 'none' as the default made "None" -- an explicit request to
+  // disable scaling -- impossible to express.
   if (
     typeof config.rope_scaling === 'string' &&
     config.rope_scaling.length > 0 &&
-    config.rope_scaling !== 'none'
+    config.rope_scaling !== 'auto'
   ) {
     lines.push(`rope-scaling = ${escapeIniValue(config.rope_scaling)}`)
   }
-  // rope-scale / rope-freq-scale default = 1.0 (identity / no scaling);
   // rope-freq-base default = 0 (loaded from model).
-  if (
-    typeof config.rope_scale === 'number' &&
-    Number.isFinite(config.rope_scale) &&
-    config.rope_scale > 0 &&
-    config.rope_scale !== 1
-  ) {
-    lines.push(`rope-scale = ${config.rope_scale}`)
-  }
   if (
     typeof config.rope_freq_base === 'number' &&
     Number.isFinite(config.rope_freq_base) &&
@@ -295,11 +423,13 @@ export async function generatePreset(
   ) {
     lines.push(`rope-freq-base = ${config.rope_freq_base}`)
   }
+  // rope-freq-scale default = 0 (loaded from model). 1.0 is not the default: it
+  // is an explicit "force no scaling", so it must still be emitted. `rope_scale`
+  // is gone -- it was a second spelling of this same upstream field (as 1/N).
   if (
     typeof config.rope_freq_scale === 'number' &&
     Number.isFinite(config.rope_freq_scale) &&
-    config.rope_freq_scale > 0 &&
-    config.rope_freq_scale !== 1
+    config.rope_freq_scale > 0
   ) {
     lines.push(`rope-freq-scale = ${config.rope_freq_scale}`)
   }
@@ -315,6 +445,18 @@ export async function generatePreset(
   ) {
     lines.push(`cache-ram = ${Math.floor(config.cache_ram)}`)
   }
+  // lazy-mode default = auto (on for arch-marked tensors above 4 GiB). Needs
+  // mmap, so it is silently inert with `no_mmap` on; `off` is the pre-0.4.0
+  // behaviour of always keeping those tensors resident.
+  if (config.lazy_mode === 'on' || config.lazy_mode === 'off') {
+    lines.push(`lazy-mode = ${config.lazy_mode}`)
+  }
+  // slot-save-path has no default: naming it is what enables llama.cpp's slot
+  // save/restore routes at all. Emitted even with the feature off, so the worker
+  // knows which directory to keep clear and can still erase a deleted thread's
+  // state; the *budget* is what decides whether anything is written. The C++ arg
+  // handler throws if the directory is missing -- the worker creates it first.
+  lines.push(`slot-save-path = ${escapeIniValue(threadCacheDir(providerPath))}`)
   // cache-reuse default = 0 (disabled)
   if (
     typeof config.cache_reuse === 'number' &&
@@ -326,11 +468,30 @@ export async function generatePreset(
   if (config.swa_full === true) {
     lines.push('swa-full = true')
   }
-  // auto = omit the flag, let llama.cpp decide based on slot count
+  // auto is handled next to each `parallel` emission above; with no explicit
+  // parallel the flag is omitted so llama.cpp's own auto resolution applies.
   if (config.kv_unified === 'on') {
     lines.push('kv-unified = true')
   } else if (config.kv_unified === 'off') {
     lines.push('kv-unified = false')
+  }
+  // kv-unified-per-slot default = unset. Caps one slot's share of the shared KV
+  // pool, which is what bounds a single conversation once the pool is unified
+  // and every surface shares a slot. Only sizes the pool itself when no
+  // ctx-size is pinned (server.cpp:160-170, mirrored in the shim).
+  if (
+    typeof config.kv_unified_per_slot === 'number' &&
+    Number.isFinite(config.kv_unified_per_slot) &&
+    config.kv_unified_per_slot > 0
+  ) {
+    lines.push(`kv-unified-per-slot = ${Math.floor(config.kv_unified_per_slot)}`)
+  }
+  // reasoning-preserve defaults to on since 0.4.0, for any template advertising
+  // `supports_preserve_reasoning`. Emitted only to turn it off, which restores
+  // the template's own default and keeps a per-request `chat_template_kwargs`
+  // (Jan's per-model `preserve_thinking`) the authoritative control.
+  if (config.reasoning_preserve === false) {
+    lines.push('reasoning-preserve = false')
   }
   // keep default = 0
   if (
@@ -365,16 +526,53 @@ export async function generatePreset(
       lines.push(`mmproj = ${escapeIniValue(mmprojAbs)}`)
     }
 
-    if (mc.chat_template && mc.chat_template.trim().length > 0) {
-      lines.push(`chat-template = ${escapeIniValue(mc.chat_template)}`)
+    // A template body cannot survive the ini: values have no line
+    // continuation, and `#`/`;` anywhere in one starts a comment. So an
+    // absolute path to an existing file passes through as-is, a built-in name
+    // goes inline, and anything else is written beside model.yml and passed by
+    // path, which llama.cpp reads verbatim.
+    const chatTemplate =
+      typeof mc.chat_template === 'string' ? mc.chat_template.trim() : ''
+    if (chatTemplate.length > 0) {
+      const templateFile = await existingFilePath(chatTemplate)
+      if (templateFile) {
+        lines.push(`chat-template-file = ${escapeIniValue(templateFile)}`)
+      } else if (BUILTIN_TEMPLATE_NAME_RE.test(chatTemplate)) {
+        lines.push(`chat-template = ${chatTemplate}`)
+      } else {
+        const templatePath = await joinPath([
+          modelsDir,
+          modelId,
+          'chat_template.jinja',
+        ])
+        await fs.writeFileSync(templatePath, chatTemplate)
+        lines.push(`chat-template-file = ${escapeIniValue(templatePath)}`)
+      }
     }
 
-    // Per-model overrides — same default-skipping rules as the [*] block.
-    // ctx-size is skipped when auto-fit is on so fit can size the context.
-    // An explicit 0 overrides the global default with "native" (load from model).
+    // GBNF uses `#` for comments and is usually multi-line, so an inline body
+    // can never go through the ini; it always reaches llama.cpp as a file.
+    const grammar = typeof mc.grammar === 'string' ? mc.grammar.trim() : ''
+    if (grammar.length > 0) {
+      const grammarFile = await existingFilePath(grammar)
+      if (grammarFile) {
+        lines.push(`grammar-file = ${escapeIniValue(grammarFile)}`)
+      } else {
+        const grammarPath = await joinPath([modelsDir, modelId, 'grammar.gbnf'])
+        await fs.writeFileSync(grammarPath, grammar)
+        lines.push(`grammar-file = ${escapeIniValue(grammarPath)}`)
+      }
+    }
+
+    // Per-model overrides -- same default-skipping rules as the [*] block.
+    // An explicit 0 means "native" (load the model's own trained context).
+    //
+    // Emitted even with auto-fit on, unlike n-gpu-layers below: upstream's fit
+    // explicitly leaves a user-set context alone (common/fit.cpp: "context size
+    // set by user -> no change") and only bails on an explicit n_gpu_layers. The
+    // old gate is why "Increase Context Size" did nothing while Fit was on.
     let ctxEmitted = false
     if (
-      !fitEnabled &&
       typeof mc.ctx_size === 'number' &&
       Number.isFinite(mc.ctx_size) &&
       mc.ctx_size >= 0
@@ -382,11 +580,13 @@ export async function generatePreset(
       lines.push(`ctx-size = ${mc.ctx_size}`)
       ctxEmitted = true
     }
-    // Skipped when auto-fit is on so fit computes GPU offload (see [*] above).
+    // Skipped when auto-fit is on: an explicit n-gpu-layers makes fit abort its
+    // layer-offload computation. -1 is auto and -2 or below means all layers,
+    // so the floor is -2 rather than 0.
     if (
       !fitEnabled &&
       typeof mc.n_gpu_layers === 'number' &&
-      mc.n_gpu_layers >= 0
+      mc.n_gpu_layers >= -2
     ) {
       lines.push(`n-gpu-layers = ${mc.n_gpu_layers}`)
     }
@@ -411,7 +611,8 @@ export async function generatePreset(
       lines.push(`cache-type-v = ${escapeIniValue(mc.cache_type_v)}`)
     }
     if (typeof mc.parallel === 'number' && mc.parallel > 0) {
-      lines.push(`parallel = ${mc.parallel + reservedBackgroundSlots}`)
+      lines.push(`parallel = ${mc.parallel}`)
+      if (kvUnifiedIsAuto) lines.push('kv-unified = true')
     }
     if (mc.cont_batching === false) {
       lines.push('cont-batching = false')
@@ -436,6 +637,9 @@ export async function generatePreset(
     if (typeof mc.n_cpu_moe === 'number' && mc.n_cpu_moe > 0) {
       lines.push(`n-cpu-moe = ${Math.floor(mc.n_cpu_moe)}`)
     }
+    if (typeof mc.n_cpu_ffn === 'number' && mc.n_cpu_ffn > 0) {
+      lines.push(`n-cpu-ffn = ${Math.floor(mc.n_cpu_ffn)}`)
+    }
     if (mc.no_kv_offload === true) {
       // INI key is the negated form; parse_bool_arg flips it server-side.
       // Writing `no-kv-offload = true` => kv-offload disabled.
@@ -450,13 +654,17 @@ export async function generatePreset(
     }
 
     // MTP either lives in the main gguf (mtp_layers > 0) or ships as a separate
-    // draft gguf (mtp_model_path), which is passed to llama-server as the draft.
+    // draft gguf (mtp_model_path), which is passed to the engine as the draft.
     const hasMtpModel =
       typeof mc.mtp_model_path === 'string' && mc.mtp_model_path.length > 0
     const hasMtpLayers =
       typeof mc.mtp_layers === 'number' && mc.mtp_layers > 0
-    if (mc.mtp === true && supportsMtp && (hasMtpLayers || hasMtpModel)) {
-      lines.push('spec-type = draft-mtp')
+    if (mc.mtp === true && (hasMtpLayers || hasMtpModel)) {
+      const specType =
+        typeof mc.spec_type === 'string' && SPEC_TYPES.has(mc.spec_type)
+          ? mc.spec_type
+          : DEFAULT_SPEC_TYPE
+      lines.push(`spec-type = ${specType}`)
       if (hasMtpModel) {
         const mtpAbs = await joinPath([janDataFolderPath, mc.mtp_model_path!])
         lines.push(`spec-draft-model = ${escapeIniValue(mtpAbs)}`)
@@ -486,21 +694,31 @@ export async function generatePreset(
     // defaults for every request to the model (chat and external API clients);
     // a per-request JSON field still overrides them. INI keys are the CLI
     // long-form names minus dashes.
-    const samplingIniKeys: Array<[keyof ModelYaml, string]> = [
-      ['temperature', 'temperature'],
-      ['top_k', 'top-k'],
-      ['top_p', 'top-p'],
-      ['min_p', 'min-p'],
-      ['repeat_last_n', 'repeat-last-n'],
-      ['repeat_penalty', 'repeat-penalty'],
-      ['presence_penalty', 'presence-penalty'],
-      ['frequency_penalty', 'frequency-penalty'],
+    //
+    // Skipping a value equal to llama.cpp's default is not just tidiness here:
+    // passing any of the first six sets a `user_sampling_config` bit that
+    // suppresses the GGUF's own `general.sampling.*` recommendations, so writing
+    // an identical-looking default silently overrode what the model asked for.
+    // `null` means "no default, always emit" -- the two penalties set no bit.
+    const samplingIniKeys: Array<[keyof ModelYaml, string, number | null]> = [
+      ['temperature', 'temperature', 0.8],
+      ['top_k', 'top-k', 40],
+      ['top_p', 'top-p', 0.95],
+      ['min_p', 'min-p', 0.05],
+      ['repeat_last_n', 'repeat-last-n', 64],
+      ['repeat_penalty', 'repeat-penalty', 1.0],
+      ['presence_penalty', 'presence-penalty', null],
+      ['frequency_penalty', 'frequency-penalty', null],
     ]
-    for (const [yamlKey, iniKey] of samplingIniKeys) {
+    for (const [yamlKey, iniKey, upstreamDefault] of samplingIniKeys) {
       const v = mc[yamlKey]
-      if (typeof v === 'number' && Number.isFinite(v)) {
-        lines.push(`${iniKey} = ${v}`)
-      }
+      if (typeof v !== 'number' || !Number.isFinite(v)) continue
+      if (upstreamDefault !== null && v === upstreamDefault) continue
+      // Upstream throws on a negative window rather than clamping, which aborts
+      // the load; a legacy -1 from the old "-1 = full context" UI must not reach
+      // the preset.
+      if (iniKey === 'repeat-last-n' && v < 0) continue
+      lines.push(`${iniKey} = ${v}`)
     }
 
     if (mc.embedding === true) {

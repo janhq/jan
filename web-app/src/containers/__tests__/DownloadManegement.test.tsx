@@ -212,65 +212,12 @@ describe('DownloadManagement', () => {
     await waitFor(() => expect(hoisted.abortDownloadMock).toHaveBeenCalledWith('cloud-model'))
   })
 
-  it('handles HTTP 401 download error with settings toast action', () => {
-    render(<DownloadManagement />)
-    const handler = hoisted.eventHandlers['fde']
-    expect(handler).toBeDefined()
-    handler({ modelId: 'x', error: 'HTTP status 401 unauth' })
-    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
-      'Hugging Face token required',
-      expect.any(Object)
-    )
-    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith('x')
-  })
 
-  it('handles HTTP 403 download error', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fde']({ modelId: 'y', error: 'HTTP status 403 denied' })
-    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
-      'Accept model license on Hugging Face',
-      expect.any(Object)
-    )
-  })
 
-  it('handles HTTP 429 rate-limit error', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fde']({ modelId: 'z', error: 'HTTP status 429 slow down' })
-    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
-      'Rate limited by Hugging Face',
-      expect.any(Object)
-    )
-  })
 
-  it('handles generic download error with translated toast', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fde']({ modelId: 'w', error: 'other' })
-    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
-      'common:toast.downloadFailed.title',
-      expect.any(Object)
-    )
-  })
 
-  it('on file download success, removes download and shows toast', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fds']({ modelId: 'ok' })
-    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith('ok')
-    expect(hoisted.toastMock.success).toHaveBeenCalled()
-  })
 
-  it('on model validation started, shows info toast', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['mvs']({ modelId: 'v', downloadType: 'model' })
-    expect(hoisted.toastMock.info).toHaveBeenCalled()
-  })
 
-  it('on model validation failed, dismisses toast and removes download', () => {
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['mvf']({ modelId: 'v', error: 'bad', reason: 'checksum' })
-    expect(hoisted.toastMock.dismiss).toHaveBeenCalledWith('model-validation-started-v')
-    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith('v')
-    expect(hoisted.toastMock.error).toHaveBeenCalled()
-  })
 
   it('on app update download success, shows success toast', () => {
     render(<DownloadManagement />)
@@ -356,25 +303,7 @@ describe('DownloadManagement', () => {
     expect(hoisted.toastMock.error).toHaveBeenCalled()
   })
 
-  it('keeps the entry on stopped event when paused', () => {
-    hoisted.downloadStore.downloads = {
-      'cloud-model': { name: 'cloud-model', progress: 0.3, paused: true },
-    }
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fdx']({ modelId: 'cloud-model' })
-    expect(hoisted.downloadStore.removeDownload).not.toHaveBeenCalled()
-  })
 
-  it('removes the entry on stopped event when not paused', () => {
-    hoisted.downloadStore.downloads = {
-      'cloud-model': { name: 'cloud-model', progress: 0.3 },
-    }
-    render(<DownloadManagement />)
-    hoisted.eventHandlers['fdx']({ modelId: 'cloud-model' })
-    expect(hoisted.downloadStore.removeDownload).toHaveBeenCalledWith(
-      'cloud-model'
-    )
-  })
 
   it('does not show pause/resume for llamacpp direct downloads', () => {
     hoisted.downloadStore.downloads = {

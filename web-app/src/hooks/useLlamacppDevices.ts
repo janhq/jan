@@ -13,6 +13,9 @@ interface LlamacppDevicesStore {
   clearError: () => void
   setDevices: (devices: (DeviceList & { activated: boolean })[]) => void
   toggleDevice: (deviceId: string) => void
+  // Atomically set activation for several devices (e.g. one physical GPU
+  // exposed by multiple backends) and persist the result once.
+  setActivations: (updates: Record<string, boolean>) => Promise<void>
 }
 
 export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
@@ -58,26 +61,29 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
   setDevices: (devices) => set({ devices }),
 
   toggleDevice: async (deviceId: string) => {
-    // Toggle device activation in the local state
+    const device = get().devices.find((d) => d.id === deviceId)
+    if (device) {
+      await get().setActivations({ [deviceId]: !device.activated })
+    }
+  },
+
+  setActivations: async (updates: Record<string, boolean>) => {
     set((state) => ({
       devices: state.devices.map((device) =>
-        device.id === deviceId
-          ? { ...device, activated: !device.activated }
-          : device
+        updates[device.id] === undefined
+          ? device
+          : { ...device, activated: updates[device.id] }
       ),
     }))
 
-    // Update llamacpp provider settings
     const { getProviderByName, updateProvider } = useModelProvider.getState()
     const llamacppProvider = getProviderByName('llamacpp')
 
     if (llamacppProvider) {
-      // Get activated devices after toggle
-      const activatedDeviceIds = get().devices
-        .filter((device) => device.activated)
+      const deviceString = get()
+        .devices.filter((device) => device.activated)
         .map((device) => device.id)
-
-      const deviceString = activatedDeviceIds.join(',')
+        .join(',')
 
       const updatedSettings = llamacppProvider.settings.map((setting) => {
         if (setting.key === 'device') {
@@ -98,5 +104,4 @@ export const useLlamacppDevices = create<LlamacppDevicesStore>((set, get) => ({
       })
     }
   },
-
 }))

@@ -3,25 +3,54 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { cn } from '@/lib/utils'
 import { FaDiscord, FaGithub } from 'react-icons/fa'
-import { FiDownload } from 'react-icons/fi'
 import { FaXTwitter, FaLinkedinIn } from 'react-icons/fa6'
+import { ChevronDown } from 'lucide-react'
 import { Button } from './ui/button'
 import LogoJanSVG from '@/assets/icons/logo-jan.svg'
+import DocSearch from './DocSearch'
+import { useDownloadLink } from '@/hooks/useDownloadLink'
 
-const MENU_ITEMS = [
+type MenuItem = {
+  name: string
+  href: string
+  external?: boolean
+  children?: { name: string; href: string; external?: boolean }[]
+}
+
+const MENU_ITEMS: MenuItem[] = [
+  {
+    name: 'Jan',
+    href: '/docs/desktop/quickstart',
+    children: [
+      {
+        name: 'Jan Desktop',
+        href: '/docs/desktop/quickstart',
+      },
+      { name: 'Jan Agent', href: '/docs/agent/quickstart' },
+    ],
+  },
+  { name: 'Research', href: '/research' },
   { name: 'Docs', href: '/docs' },
-  { name: 'Changelog', href: '/changelog' },
-  { name: 'Blog', href: '/blog' },
-  { name: 'Handbook', href: '/handbook' },
+  {
+    name: 'Company',
+    href: '#',
+    children: [
+      { name: 'Blog', href: '/blog' },
+      { name: 'Careers', href: 'https://menlo.ai/careers', external: true },
+    ],
+  },
 ]
 
 const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
   const router = useRouter()
+  const downloadHref = useDownloadLink()
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const currentPath = router.asPath
 
   const isLanding = currentPath === '/'
+  // The docs home has its own large search field.
+  const isDocsHome = router.pathname === '/docs'
 
   useEffect(() => {
     const handleScroll = () => {
@@ -55,7 +84,7 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
       className={cn(
         'h-[100px] w-full top-0 z-50 transition-all duration-300 border-b lg:px-6 left-0',
         isLanding ? 'fixed' : 'sticky !border-opacity-100 !top-0',
-        isScrolled || noScroll
+        !isLanding || isScrolled || noScroll
           ? 'bg-white text-black h-[60px] border-border'
           : 'bg-transparent text-white h-[60px] border-gray-100 border-opacity-10 top-4'
       )}
@@ -79,23 +108,61 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             {MENU_ITEMS.map((item) => {
               const isActive = currentPath === item.href
               return (
-                <li key={item.name}>
+                <li
+                  key={item.name}
+                  className={cn(item.children && 'group relative py-2')}
+                >
                   <a
                     href={item.href}
+                    target={item.external ? '_blank' : undefined}
+                    rel={item.external ? 'noopener noreferrer' : undefined}
                     className={cn(
-                      'hover:opacity-70 transition-opacity',
+                      'flex items-center gap-1 hover:opacity-70 transition-opacity',
                       !isLanding && '!text-black',
-                      isActive && 'text-blue-600 font-semibold'
+                      isActive && !isLanding && 'text-blue-600',
+                      isActive && 'font-semibold'
                     )}
                   >
                     {item.name}
+                    {item.children && (
+                      <ChevronDown className="size-3.5 transition-transform duration-200 group-hover:rotate-180" />
+                    )}
                   </a>
+                  {item.children && (
+                    <div
+                      className="invisible opacity-0 translate-y-1 group-hover:visible group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-200 absolute left-0 top-full pt-2 z-50"
+                    >
+                      <div className="bg-white rounded-xl border border-black shadow-[0px_4px_0px_0px_rgba(0,0,0,1)] overflow-hidden min-w-[180px]">
+                        {item.children.map((child) => (
+                          <a
+                            key={child.name}
+                            href={child.href}
+                            target={child.external ? '_blank' : undefined}
+                            rel={
+                              child.external ? 'noopener noreferrer' : undefined
+                            }
+                            className="block px-4 py-2 whitespace-nowrap text-black hover:bg-[#E0EEFE] hover:text-[#0668D5] transition-colors"
+                          >
+                            {child.name}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </li>
               )
             })}
+            {/* Landing page keeps the navbar transparent over artwork, where a
+                filled input would read as a stray form field. The docs home
+                has its own field, and two would compete for Cmd+K. */}
+            {!isLanding && !isDocsHome && (
+              <li>
+                <DocSearch />
+              </li>
+            )}
             <li>
               <a
-                href="https://github.com/janhq/jan/releases/latest"
+                href={downloadHref}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -133,20 +200,20 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaXTwitter className="size-5" />
                 </a>
                 <a
-                  href="https://linkedin.com/company/opensuperintelligence"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="rounded-lg flex items-center justify-center"
-                >
-                  <FaLinkedinIn className="size-5" />
-                </a>
-                <a
                   href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-lg flex items-center justify-center"
                 >
                   <FaGithub className="size-5" />
+                </a>
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg flex items-center justify-center"
+                >
+                  <FaLinkedinIn className="size-5" />
                 </a>
               </div>
             </li>
@@ -155,24 +222,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
 
         {/* Mobile Download Button and Hamburger */}
         <div className="lg:hidden flex items-center gap-3">
-          <a
-            href="https://github.com/janhq/jan/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button
-              size="sm"
-              className={cn(
-                !isLanding &&
-                  '!bg-black !text-white !hover:bg-black !hover:text-white',
-                isScrolled || noScroll
-                  ? 'bg-black text-white hover:bg-gray-800'
-                  : 'bg-white text-black hover:bg-gray-100'
-              )}
-            >
-              Download
-            </Button>
-          </a>
           <button
             className="flex flex-col items-center justify-center w-8 h-8"
             onClick={toggleMobileMenu}
@@ -217,7 +266,10 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
             <div className="p-6">
               {/* Header with close button */}
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-black">Jan</h2>
+                <div className="flex items-center gap-2">
+                  <img src={LogoJanSVG.src} alt="Jan" className="w-6 h-6" />
+                  <span className="text-2xl font-bold text-black">Jan</span>
+                </div>
                 <button
                   className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200"
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -225,6 +277,15 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   ×
                 </button>
+              </div>
+
+              {/* Nextra's own sidebar search is unreachable here: our custom
+                  hamburger drives this modal, not Nextra's sidebar state. */}
+              <div className="mb-6">
+                <DocSearch
+                  variant="panel"
+                  onNavigate={() => setIsMobileMenuOpen(false)}
+                />
               </div>
 
               {/* Menu Items */}
@@ -236,6 +297,8 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                       <li key={item.name}>
                         <a
                           href={item.href}
+                          target={item.external ? '_blank' : undefined}
+                          rel={item.external ? 'noopener noreferrer' : undefined}
                           className={cn(
                             'block text-lg font-medium text-black hover:text-gray-600 transition-colors py-2',
                             isActive && 'text-blue-600 font-bold'
@@ -244,10 +307,30 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                         >
                           {item.name}
                         </a>
+                        {item.children && (
+                          <ul className="pl-4 space-y-2">
+                            {item.children.map((child) => (
+                              <li key={child.name}>
+                                <a
+                                  href={child.href}
+                                  target={child.external ? '_blank' : undefined}
+                                  rel={
+                                    child.external
+                                      ? 'noopener noreferrer'
+                                      : undefined
+                                  }
+                                  className="block text-base text-gray-600 hover:text-black transition-colors py-1"
+                                  onClick={() => setIsMobileMenuOpen(false)}
+                                >
+                                  {child.name}
+                                </a>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     )
                   })}
-                  <li></li>
                 </ul>
               </nav>
 
@@ -270,14 +353,6 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                   <FaXTwitter className="size-5" />
                 </a>
                 <a
-                  href="https://linkedin.com/company/opensuperintelligence"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-black rounded-lg flex items-center justify-center"
-                >
-                  <FaLinkedinIn className="size-5" />
-                </a>
-                <a
                   href="https://github.com/janhq/jan"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -285,25 +360,14 @@ const Navbar = ({ noScroll }: { noScroll?: boolean }) => {
                 >
                   <FaGithub className="size-5" />
                 </a>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="space-y-3">
-                <Button
-                  variant="playful-green"
-                  size="xl"
-                  className="w-full lg:w-auto text-left justify-start"
-                  asChild
+                <a
+                  href="https://linkedin.com/company/opensuperintelligence"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-black rounded-lg flex items-center justify-center"
                 >
-                  <a
-                    href="https://github.com/janhq/jan/releases/latest"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <FiDownload className="size-6 mr-2" />
-                    Download Jan
-                  </a>
-                </Button>
+                  <FaLinkedinIn className="size-5" />
+                </a>
               </div>
             </div>
           </div>

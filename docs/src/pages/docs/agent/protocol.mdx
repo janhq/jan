@@ -1,0 +1,249 @@
+---
+title: Protocol Records
+description: The wire reference for custom Jan clients. Choose RPC or stream-json, then use the generated schemas for record shapes.
+keywords: [Jan, Jan Agent, protocol, stream-json, RPC, JSON Schema, reference]
+---
+
+import { Callout } from 'nextra/components'
+
+# Protocol Records
+
+**You do not need this page for the ADK quickstarts.** The ADK handles the messages for you.
+Use this reference when building your own client, debugging the channel, or generating types.
+
+## Choose the transport first
+
+| | RPC | stream-json |
+| --- | --- | --- |
+| Start command | `jan cli agent rpc` | `jan cli agent run --output-format stream-json --input-format stream-json` |
+| Process lifetime | One process, multiple sessions, one active turn at a time | One process per run |
+| First exchange | `initialize` request, then `initialized` notification | The runtime emits `init` when setup succeeds |
+| During work | JSON-RPC requests and notifications such as `item/token` | Records with a `type`, such as `token` |
+| End of work | `turn/completed`; the process stays available | `result`, then process exit |
+| Best for | ADKs and long-lived applications | Direct CLI automation |
+
+These are different envelopes. Do not send a stream-json `abort` record to RPC, or parse an RPC
+notification as a bare stream-json event. For normal application code, use the
+[JavaScript](/docs/agent/adk-ts) or [Python](/docs/agent/adk-python) ADK.
+
+## Read the generated records
+
+Generate the schema from the **same binary your client will run**:
+
+```bash
+jan cli agent rpc-schema --out rpc-schema.json
+jan cli agent schema --out stream-schema.json
+```
+
+| Artifact | What to read |
+| --- | --- |
+| [`protocol/rpc-schema.json`](https://github.com/janhq/jan/blob/main/protocol/rpc-schema.json) | `protocol_version`, `envelope`, `requests`, `notifications` and `events` |
+| [`protocol/schema.json`](https://github.com/janhq/jan/blob/main/protocol/schema.json) | Root `input` and `output` schemas, `$defs`, and `x-protocol-version` |
+
+Both are generated from Rust types and checked for drift in CI. The repository links describe
+`main`; your installed binary can be older. RPC's schema covers requests and events, not every
+response shape. The method tables below document the host-tool responses.
+
+## Check runtime support
+
+Use RPC's `initialize` response for its negotiated protocol and capabilities. For stream-json,
+use that run's `init` record. These are not interchangeable capability inventories.
+
+<Callout type="info">
+The current ADKs use RPC. If your binary has no `rpc` command, update the nightly runtime.
+ACP is a separate protocol for editors, not another name for either of these. See
+[Editors (ACP)](/docs/agent/acp) for the experimental `jan acp` server.
+</Callout>
+
+See the [RPC command reference](/docs/agent/cli#rpc) for startup and session methods, and
+[CLI protocol version](/docs/agent/cli#the-protocol-version) for the stream-json contract.
+
+## RPC stream events
+
+A turn's events reach the client as notifications named `item/<tag>`, where `<tag>` is the event's
+own `type` on the `stream-json` surface: one naming rule for both, and no second list to keep in
+sync. `protocol/rpc-schema.json` publishes the resulting notification names in its `events`
+section, generated from the same Rust enum that produces them. Look up the record there rather
+than maintaining a second event list in your client.
+
+A `request_provenance` event therefore arrives as `item/request_provenance`, carrying the identity
+of each outbound provider request (run, session, provider, model, wire API, body and tool-array
+hashes, image hashes) and none of its content. A subagent's request is reported on its child's
+stream, so its record arrives nested in `item/subagent` (`{run_id, name, event}`) rather than at the
+top level. See [Request provenance](/docs/agent/cli#request-provenance) for the record's fields.
+
+A turn whose provider request fails ends with `item/error` (`{type: "error", code, message}`, the
+provider's own words where it gave any) and then `turn/completed` with `stopReason: "error"` and the
+same message. A client must read that as the turn's outcome: the assistant text is whatever arrived
+before the failure, which is usually nothing, and no further records follow.
+
+## RPC host tools
+
+A host declares tools on `session/start`; the model calls them, Jan sends the call to the host,
+and the host's answer becomes the model's tool message. Request and parameter shapes are in the
+`requests` section of `protocol/rpc-schema.json`.
+
+### Declaring tools
+
+`session/start` accepts these optional fields next to `cwd`, `model` and `ephemeral`:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `tools` | `[]` | Declarations `{name, description?, parameters?, capability?}`. `capability` is `read` or `actuator`; absent is opaque. |
+| `builtins` | `true` | `false` advertises only the host tools: no built-ins, MCP, plugin, `ask`, `todo` or monitor tools. `subagents: true` adds back only `dispatch_subagent`, `list_subagents`, `message_subagent` and `stop_subagent`. |
+| `subagents` | same as `builtins` | Whether the model may delegate. With `builtins: false`, `true` adds only `dispatch_subagent`, `list_subagents`, `message_subagent` and `stop_subagent`, and every child is limited to the session's host tools (no shell, files, web or skills). A child's host tool call arrives as an ordinary `item/tool_request` with `run_id` set. `false` removes subagent tools even when built-ins are on. |
+| `systemPrompt` | none | The whole system prompt, sent exactly as given: no identity, guides, environment, session start (date and branch), todo guidance or recalled project memory. The session's answers are still indexed into project memory for later sessions; `ephemeral` is the only way to turn that off, and it also stops the thread being saved. The system prompt is exactly yours; Jan may still append runtime notices to the conversation (`<SYSTEM>` notes such as a finished subagent, cost or token-budget notices, and compaction summaries). Subagents keep their own prompts. Kept across `session/model/set` and `session/fork`. A blank string fails with `-32602`. |
+| `permissions` | `"jan"` | `"host"` means the host's callback is the gate: Jan never sends a `permission_request` for a host tool. Built-ins are unaffected. |
+
+The result is `{sessionId, model, tools, toolSpecs}`. `tools` lists the names the next turn
+advertises (with `builtins: false`, only the host tools, plus the two subagent tools when
+`subagents: true`). `toolSpecs` echoes the schemas of the
+host tools that are actually advertised, so a host can compare them with what it sent and see a
+tool that a deny list or Plan mode withheld. A declaration Jan refuses (reserved name, duplicate,
+unknown key, non-object `parameters`) fails the whole call with `-32602` and
+`data: {"kind": "invalid_tools"}`, and the message names the problem.
+
+Host tools are advertised as `host__<name>`. Every other tool source has its own prefix
+(`plugin__`, MCP server names) and duplicates within the host set are refused, so a host tool can
+never shadow or be shadowed by another source. The host's own name is what it receives back.
+
+### Answering calls
+
+A call arrives as the notification `item/tool_request` with
+`event: {request_id, tool_name, args, run_id?}`. `run_id` is set when a subagent made the call.
+Answer it with:
+
+```json
+{"jsonrpc":"2.0","id":7,"method":"tool/respond","params":{
+  "requestId":"host-1",
+  "content":[{"type":"text","text":"frame captured"},
+             {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}],
+  "isError":false,
+  "details":{"frame":7}}}
+```
+
+`content` is a string or an array of `text` / `image_url` parts, and images are held to the same
+caps as a user message. The parts are kept, in order, as the tool message in the transcript; where
+an image goes on the provider request depends on the provider's API (see
+[tool result images](./cli#tool-result-images)). `details` is for the host's display only: Jan
+emits it as `item/tool_details`, never sends it to the model, and does not persist it with the
+thread. A reply for a request that is no longer pending (already answered, cancelled, or never
+issued) fails with `-32602` and `data: {"kind": "not_pending"}`. So does a `permission/respond`
+whose `requestId` is not pending in the running turn's session, including one another session
+was issued.
+
+`turn/interrupt` withdraws every request the host still holds. For each one Jan sends
+`item/tool_request_cancelled` with `reason: "interrupted"`, and all of them arrive before the
+turn's `turn/completed`. When stdin closes, pending requests are cancelled the same way with
+`reason: "client_gone"`, but those records are best effort.
+
+### Changing a session between turns
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `session/tools/get` | `{sessionId}` | `{tools, toolSpecs}` |
+| `session/tools/set` | `{sessionId, tools}` | `{tools, toolSpecs}`. Replaces the host set; refusals are `invalid_tools`. |
+| `session/model/set` | `{sessionId, model}` | `{model}`. History, host tools, `builtins`, `subagents`, `systemPrompt` and `permissions` are kept. A model no configured provider can serve fails here with `-32602` rather than being substituted at the next turn; the check is servability, so it does not fetch (or refresh) the credential the model's provider needs - the next turn resolves that, and reports a credential failure as its own. |
+| `session/reset` | `{sessionId}` | `{tools, toolSpecs}`. History is cleared; model and tools are kept. |
+
+These four methods are refused while that session's turn is running: `-32001` with
+`data: {"retryable": true, "kind": "turn_active"}`. Retry after `turn/completed`. (`session/fork`
+and `session/archive` of a busy session, and a second `turn/start`, keep their plain retryable
+`-32001`.) An unknown `sessionId` is `-32602`. `session/fork` copies the host
+tools, `builtins`, `subagents`, `systemPrompt` and `permissions`, but pending requests are never shared between sessions.
+`session/list` entries include `hostTools`, the number of declared host tools.
+
+`provider/model` is explicit selection: the provider is taken from the name, so a provider that
+accepts ids it does not list (a gateway, a proxy) is used as asked rather than overridden. A bare
+model id that no provider lists is refused as above.
+
+Every mutating method is answered. A client that gets no answer, for example because the process
+died, should treat the session as gone and close it. This fail-closed handling belongs to the ADK
+or client, not the wire protocol.
+
+## Direct stream-json examples
+
+Prefer the ADK unless you need to own the pipes yourself. The runnable examples in
+[`examples/adk`](https://github.com/janhq/jan/tree/main/examples/adk) show that
+lower-level alternative. CI runs all four against a real runtime and checks these excerpts
+against their source. They are not the RPC ADK examples above.
+
+<details>
+<summary>Read a streamed answer without the ADK</summary>
+
+The complete scripts handle startup and cleanup. Their reading loops distinguish answer text
+from the terminal result:
+
+```js filename="examples/adk/js/first-turn.mjs"
+for await (const line of createInterface({ input: run.stdout })) {
+  const record = JSON.parse(line)
+  if (record.type === 'init') {
+    console.error(`[session ${record.session_id} on ${record.model}]`)
+  } else if (record.type === 'token') {
+    process.stdout.write(record.text)
+  } else if (record.type === 'result') {
+    result = record
+  }
+}
+```
+
+```python filename="examples/adk/python/first_turn.py"
+    for line in run.stdout:
+        record = json.loads(line)
+        if record["type"] == "init":
+            print(f"[session {record['session_id']} on {record['model']}]", file=sys.stderr)
+        elif record["type"] == "token":
+            print(record["text"], end="", flush=True)
+        elif record["type"] == "result":
+            result = record
+```
+
+</details>
+
+<details>
+<summary>Answer a host tool call without the ADK</summary>
+
+The complete scripts declare a weather fixture and handle permissions. These dispatch blocks
+show the extra work a direct client owns: looking up a handler, reporting errors and matching
+the request id. The ADK performs that dispatch for you.
+
+```js filename="examples/adk/js/host-tool.mjs"
+    case 'tool_request': {
+      // `tool_name` is the name declared above, without `host__`.
+      let content
+      let isError = false
+      try {
+        const handler = handlers[record.tool_name]
+        if (!handler) throw new Error(`no handler for ${record.tool_name}`)
+        content = JSON.stringify(handler(record.args))
+      } catch (error) {
+        // The model sees this as the tool's error.
+        content = `${error.name}: ${error.message}`
+        isError = true
+      }
+      console.error(`\n[${record.tool_name}(${JSON.stringify(record.args)}) -> ${content}]`)
+      send({ type: 'tool_result', request_id: record.request_id, content, is_error: isError })
+      break
+    }
+```
+
+```python filename="examples/adk/python/host_tool.py"
+            elif kind == "tool_request":
+                # `tool_name` is the name declared above, without `host__`.
+                handler = HANDLERS.get(record["tool_name"])
+                try:
+                    if handler is None:
+                        raise KeyError(f"no handler for {record['tool_name']}")
+                    content, is_error = json.dumps(handler(record["args"])), False
+                except Exception as error:  # the model sees this as the tool's error
+                    content, is_error = f"{type(error).__name__}: {error}", True
+                print(f"\n[{record['tool_name']}({json.dumps(record['args'])}) -> {content}]", file=sys.stderr)
+                send({
+                    "type": "tool_result",
+                    "request_id": record["request_id"],
+                    "content": content,
+                    "is_error": is_error,
+                })
+```
+
+</details>

@@ -24,12 +24,12 @@ keywords:
 
 import { Callout } from 'nextra/components'
 import { DocCard, DocCards } from '@/components/DocCard'
-import { Rocket, Package, Bot, Plug, Monitor, Globe, Server, Brain, Terminal, Layers, MessageCircle } from 'lucide-react'
+import { Rocket, Package, Bot, Plug, Monitor, Globe, Server, Brain, Terminal, Layers, MessageCircle, Hammer } from 'lucide-react'
 
 # Overview
 
 <Callout type="info">
-**Jan 0.8.3 is now live!** Navigable message version branching, a fully custom Linux titlebar that follows your desktop environment's button layout, a unified reasoning/tool chain-of-thought timeline, interactive HTML and static SVG artifact previews (experimental), video input for local vision models, and a wide batch of streaming-performance, citation, sampler, and error-surfacing fixes. [See the full changelog.](/changelog/2026-06-24-jan-v0.8.3)
+**Jan 0.8.4 is now live!** Native web search and fetch tools, per-model chat-template kwargs for llama.cpp, a token counter for remote and MLX providers, settings and credentials moved into a backend store, and a batch of chat, MCP, provider, and streaming fixes. [See the full changelog.](/changelog/2026-07-21-jan-v0.8.4)
 </Callout>
 
 Jan is an open-source replacement for Claude and ChatGPT. It comes with built-in foundation models and an application ecosystem that runs entirely on your hardware, keeping your data private and giving you full ownership over your AI.
@@ -39,7 +39,8 @@ Jan is an open-source replacement for Claude and ChatGPT. It comes with built-in
 <DocCards>
   <DocCard title="Quickstart" href="/docs/desktop/quickstart" icon={<Rocket size={20} />}>Install Jan on macOS, Windows, or Linux and chat with AI in minutes — no account needed.</DocCard>
   <DocCard title="Models" href="/docs/desktop/jan-models/jan-code-4b" icon={<Package size={20} />}>Jan ships with foundation models built for reasoning, agents, and deep research — ready to run on your computer.</DocCard>
-  <DocCard title="Agents" href="/docs/desktop/agents" icon={<Bot size={20} />}>Autonomous AI agents that run on your hardware — read files, manage calendars, and take actions via WhatsApp, Discord, or Slack.</DocCard>
+  <DocCard title="Cowork (Preview)" href="/docs/desktop/cowork" icon={<Hammer size={20} />}>Give Jan a task and it works on it autonomously — files, commands, and web research.</DocCard>
+  <DocCard title="Agents" href="/docs/agent" icon={<Bot size={20} />}>Autonomous AI agents that run on your hardware — read files, manage calendars, and take actions via WhatsApp, Discord, or Slack.</DocCard>
   <DocCard title="Integrations" href="/docs/desktop/integrations/claude-code" icon={<Plug size={20} />}>Connect Jan with Claude Code, OpenClaw, MCP servers, and more.</DocCard>
 </DocCards>
 

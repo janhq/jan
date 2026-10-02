@@ -71,12 +71,17 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         {trigger || (
-          <Button variant="secondary" size="icon-xs">
+          <Button
+            data-testid="add-model-trigger"
+            variant="secondary"
+            size="icon-xs"
+          >
             <IconPlus size={18} className="text-muted-foreground" />
           </Button>
         )}
       </DialogTrigger>
       <DialogContent
+        data-testid="add-model-dialog"
         onEscapeKeyDown={(e: KeyboardEvent) => {
           if (isComboboxOpen) {
             e.preventDefault()
@@ -134,6 +139,7 @@ export const DialogAddModel = ({ provider, trigger }: DialogAddModelProps) => {
 
         <DialogFooter>
           <Button
+            data-testid="add-model-submit"
             variant="default"
             size="sm"
             onClick={handleSubmit}
