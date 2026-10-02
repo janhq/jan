@@ -5,7 +5,6 @@
 Before testing, set-up the following in the old version to make sure that we can see the data is properly migrated:
 - [ ] Changing Interface / theme to something that is obviously different from default set-up 
 - [ ] Ensure there are a few chat threads
-- [ ] Ensure there are a few favourites / star threads 
 - [ ] Ensure there are 2 model downloaded 
 - [ ] Ensure there are 2 import on local provider (llama.cpp) 
 - [ ] Modify MCP servers list and add some ENV value to MCP servers
@@ -107,10 +106,9 @@ In Remote Model Providers:
 	- [ ] Groq
 	- [ ] Gemini
 	- [ ] Hugging Face
-- [ ] [0.8.5] NVIDIA NIM
-- [ ] [0.8.5] xAI
-- [ ] [0.8.5] MiniMax
-- [ ] Models should appear as available on the selectable dropdown in chat input once some value is input in the API key field. (it could be the wrong API key)
+	- [ ] [0.8.5] NVIDIA NIM
+	- [ ] [0.8.5] xAI
+	- [ ] [0.8.5] MiniMax
 - [ ] Once a valid API key is used, user can select a model from that provider and chat without any error. 
 - [ ] Delete a model and ensure that it doesn't show up in the `Models` list view or in the selectable dropdown in chat input.
 - [ ] Ensure that a deleted model also not selectable or appear in old threads that used it.
@@ -206,9 +204,8 @@ Ensure that the following section information show up for hardware
 - [ ] User can delete an old thread, and it won't reappear even when app restart
 - [ ] Change the title of the thread should update its last modification date and re-organise its position in the correct chronological order on the left bar.
 - [ ] [0.8.5] New thread titles are AI-generated from conversation content (Auto-generate chat title toggle in Settings → Appearance). Verify titles are meaningful and the toggle works
-- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents (including from both `Favourite` and `Recent`)
+- [ ] Ensure that the search thread feature return accurate result based on thread titles and contents
 - [ ] `Delete All` should delete only threads in the `Recents` section
-
 #### In a thread:
 - [ ] When `New Chat` is clicked, the assistant is set as the last selected assistant, the model selected is set as the last used model, and the user can immediately chat with the model. 
 - [ ] User can conduct multi-turn conversation in a single thread without lost of data (given that `Context Shift` is not enabled)
@@ -236,6 +233,7 @@ Ensure that the following section information show up for hardware
 - [ ] [0.6.10] User can click mode's setting on chat, enable Auto-Optimize Settings, and continue chatting with the model without interruption.
   - [ ] Verify this works with at least two models of different sizes (e.g., 1B and 7B).
 - [ ] [0.7.0] When chatting with a model, the UI displays a token usage counter showing the percentage of context consumed.
+- [ ] [0.8.5] Message version navigation (< 1/2 >) appears after editing and regenerating a message
 - [ ] [0.7.0] When chatting with a model, the scroll no longer follows the model’s streaming response; it only auto-scrolls when the user sends a new message
 #### In Project
 
@@ -287,13 +285,25 @@ In `Settings -> General`:
 	- [ ] On Windows
 		- [ ] `C:\Users\\<Username>\\AppData\Roaming\Jan\`
 		- [ ] `C:\Users\\<Username>\\AppData\Local\jan.ai.app`
-	- [ ] On Linux
 		- [ ] `~/.cache/Jan`
 		- [ ] `~/.cache/jan.ai.app`
 		- [ ] `~/.local/share/Jan`
 		- [ ] `~/.local/share/jan.ai.app`
 - [ ] Ensure that the fresh install of Jan launch
 - [ ] Do some basic check to see that all function still behaved as expected. To be extra careful, you can go through the whole list again. However, it is more advisable to just check to make sure that all the core functionality like `Thread` and `Model Providers` work as intended.
+
+## H. Channel gate (preview surfaces)
+Some surfaces ship in the `nightly` channel only — Cowork is one of them. The desktop e2e suite covers the stable half on every nightly run; this section is how a release candidate and its nightly build are checked by hand.
+On the stable build:
+- [ ] The left bar shows no `Cowork` tab, and no `Home` / `Cowork` switcher above the chat list
+- [ ] `Settings` has no `Cowork` entry
+- [ ] Opening `/cowork` or `/artifacts` lands on `Home`, and `/settings/cowork` lands on `Settings -> General`
+- [ ] A thread, a project and a chat turn still work — the gate must not take the app down with it
+- [ ] A profile whose last surface was `Cowork` opens on `Home` in the stable build
+On the nightly build of the same commit:
+- [ ] The `Cowork` tab and switcher are present, and `/cowork` opens the surface
+- [ ] `Settings -> Cowork` is present and lists memory, skills and subagents
+
 
 # II. After release
 - [ ] Check that the App Updater works and user can update to the latest release without any problem
