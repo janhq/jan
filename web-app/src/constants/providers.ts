@@ -399,4 +399,25 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'http://localhost:17434/v1',
+    explore_models_url: 'https://hub.docker.com/catalogs/models',
+    provider: 'llmman',
+    settings: [
+      {
+        key: 'base-url',
+        title: 'Base URL',
+        description:
+          'The base endpoint to use. llmman serves an OpenAI-compatible API on port 17434 by default; change this if you started it with a different LLMMAN_HOST.',
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'http://localhost:17434/v1',
+          value: 'http://localhost:17434/v1',
+        },
+      },
+    ],
+    models: [],
+  },
 ]
