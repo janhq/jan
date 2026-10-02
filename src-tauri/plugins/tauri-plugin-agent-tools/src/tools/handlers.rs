@@ -1079,7 +1079,6 @@ fn next_background_id() -> u64 {
 /// the path to the model only on `true`: on ENOSPC, or a leftover `.part` from
 /// an earlier crash, the promise "its output is in {path}" would otherwise name
 /// a file that is absent or stale.
-#[must_use]
 fn write_background_output(path: &Path, content: &str) -> bool {
     use std::io::Write;
     let part = path.with_extension("part");
