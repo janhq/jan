@@ -25,6 +25,7 @@
   "permissions": "Tool Permissions",
   "hooks": "Hooks",
   "mcp": "MCP",
+  "hide-secrets": "Hide Secrets",
   "telemetry": "Telemetry (OpenTelemetry)",
   "embedding-separator": { "title": "Embedding", "type": "separator" },
   "adk": "Jan ADK",

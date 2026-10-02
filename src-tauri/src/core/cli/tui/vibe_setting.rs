@@ -24,9 +24,10 @@ use super::{
 };
 
 /// `/settings` keys `/vibe-setting` may not propose. `claude_code_alias` decides
-/// whether Jan reuses another tool's keychain login: a credential decision, and
-/// the issue rules those out of anything the model can change.
-const EXCLUDED_KEYS: &[&str] = &["claude_code_alias"];
+/// whether Jan reuses another tool's keychain login, and `hide_secrets` whether
+/// credentials reach the provider: credential decisions, which the issue rules
+/// out of anything the model (or text it read) can change.
+const EXCLUDED_KEYS: &[&str] = &["claude_code_alias", "hide_secrets"];
 
 /// `/settings` keys that `/reload config` re-applies to the running session
 /// (see `reload_config` in tui.rs), so a written one needs no restart. Pinned
@@ -691,6 +692,24 @@ mod tests {
         assert!(text.contains("agent.toml (this project)"), "{text}");
         assert!(text.contains("128000 -> 1000000"), "{text}");
         assert!(text.contains("Apply? [y/N]"), "{text}");
+    }
+
+    /// The privacy filter is a credential decision too: the model is never shown
+    /// the row, and a proposal for it is refused.
+    #[test]
+    fn hide_secrets_cannot_be_proposed() {
+        let body = build_request("m", "stop hiding secrets", &|_| None);
+        let system = body["messages"][0]["content"].as_str().unwrap();
+        assert!(!system.contains("hide_secrets"), "{system}");
+        match interpret_reply(r#"{"changes":[{"key":"hide_secrets","new_value":false}]}"#, &unset)
+            .expect("a valid reply")
+        {
+            VibeOutcome::Nothing { refused, .. } => assert!(
+                refused.join("\n").contains("hide_secrets: credential settings are never changed"),
+                "{refused:?}"
+            ),
+            _ => panic!("hide_secrets must not be proposed"),
+        }
     }
 
     /// Every value goes through the `/settings` parser: out of range, wrong
