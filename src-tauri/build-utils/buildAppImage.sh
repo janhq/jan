@@ -1,4 +1,13 @@
 #!/bin/bash
+
+ARCH="${ARCH:-"$(uname -m)"}"
+case "$ARCH" in
+  x86_64|amd64)        ARCH="x86_64"  ;;
+  i386|i486|i586|i686) ARCH="i386"    ;;
+  arm64|aarch64)       ARCH="aarch64" ;;
+  arm*)                ARCH="armhf"   ;;               
+esac
+
 APPIMAGETOOL="./.cache/build-tools/appimagetool"
 RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 
@@ -8,7 +17,7 @@ RELEASE_CHANNEL=${RELEASE_CHANNEL:-"stable"}
 export APPIMAGE_EXTRACT_AND_RUN=1
 
 mkdir -p ./.cache/build-tools
-wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "${APPIMAGETOOL}" || { echo "Failed to download appimagetool."; exit 1; }
+wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage -O "${APPIMAGETOOL}" || { echo "Failed to download appimagetool."; exit 1; }
 chmod +x "${APPIMAGETOOL}"
 
 if [ "${RELEASE_CHANNEL}" != "stable" ]; then
