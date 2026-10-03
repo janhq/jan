@@ -32,5 +32,5 @@
   "installConfig": {
     "hoistingLimits": "workspaces"
   },
-  "packageManager": "yarn@4.5.3"
+  "packageManager": "yarn@4.10.3"
 }

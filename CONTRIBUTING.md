@@ -137,7 +137,7 @@ jan/
 
 **Prerequisites:**
 - Node.js ≥ 20.0.0
-- Yarn ≥ 4.5.3
+- Yarn ≥ 4.10.0
 - Make ≥ 3.81
 - Rust (for Tauri)
 - (macOS Apple Silicon only) MetalToolchain `xcodebuild -downloadComponent MetalToolchain`
