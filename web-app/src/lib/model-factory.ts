@@ -967,6 +967,7 @@ export class ModelFactory {
       case 'gemini':
         return this.createGoogleModel(modelId, provider, parameters)
       case 'azure':
+      case 'gitgot':
       case 'groq':
       case 'together':
       case 'fireworks':
