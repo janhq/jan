@@ -88,7 +88,6 @@ export function createLanguageModel(
       baseURL: 'http://localhost:1337/v1', // Placeholder - will be updated when model loads
       headers: {
         Authorization: 'Bearer placeholder', // Placeholder - will be updated when model loads
-        Origin: 'tauri://localhost',
       },
       // Include usage data in streaming responses for token speed calculation
       includeUsage: true,
@@ -124,11 +123,6 @@ export function createLanguageModel(
     apiKey: provider.api_key ?? '',
     baseURL: provider.base_url ?? 'http://localhost:1337/v1',
     headers: {
-      // Add Origin header for local providers
-      ...(provider.base_url?.includes('localhost:') ||
-      provider.base_url?.includes('127.0.0.1:')
-        ? { Origin: 'tauri://localhost' }
-        : {}),
       // OpenRouter identification headers
       ...(provider.provider === 'openrouter'
         ? {
