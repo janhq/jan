@@ -34,7 +34,6 @@
     "build:ios:device": "yarn build:icon && yarn copy:assets:mobile && cross-env IS_IOS=true yarn tauri ios build -- --no-default-features --features mobile --export-method debugging",
     "copy:assets:tauri": "cpx \"LICENSE\" \"src-tauri/resources/\"",
     "copy:assets:mobile": "cpx \"LICENSE\" \"src-tauri/resources/\"",
-    "download:lib": "node ./scripts/download-lib.mjs",
     "download:bin": "node ./scripts/download-bin.mjs",
     "build:mlx-server": "make build-mlx-server",
     "build:tauri:win32": "yarn download:bin && yarn tauri build",
