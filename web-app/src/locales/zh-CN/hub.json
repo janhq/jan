@@ -3,6 +3,7 @@
   "sortMostDownloaded": "最多下载",
   "newChat": "新对话",
   "download": "下载",
+  "downloadFailed": "下载启动失败",
   "downloaded": "已下载",
   "loadingModels": "正在加载模型...",
   "noModels": "未找到模型",
@@ -13,5 +14,6 @@
   "useModel": "使用此模型",
   "downloadModel": "下载模型",
   "tools": "工具",
-  "searchPlaceholder": "在 Hugging Face 上搜索模型..."
+  "searchPlaceholder": "在 Hugging Face 上搜索模型...",
+  "resumeUnavailable": "无法恢复此下载，请重新开始。"
 }
