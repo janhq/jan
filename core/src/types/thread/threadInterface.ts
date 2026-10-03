@@ -17,7 +17,7 @@ export interface ThreadInterface {
    * Create a thread.
    * @abstract
    * @param {Thread} thread - The thread to save.
-   * @returns {Promise<void>} A promise that resolves when the thread is saved.
+   * @returns {Promise<Thread>} A promise that resolves when the thread is saved.
    */
   createThread(thread: Thread): Promise<Thread>
 
