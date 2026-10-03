@@ -69,6 +69,7 @@ mod server_tests {
             trusted_hosts: vec![vec!["localhost".to_string()]],
             host: "localhost".to_string(),
             port: 1337,
+            cors_enabled: true,
             enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "/v1");
@@ -86,6 +87,7 @@ mod server_tests {
             trusted_hosts: vec![],
             host: "127.0.0.1".to_string(),
             port: 8080,
+            cors_enabled: true,
             enable_server_tool_execution: false,
         };
         assert_eq!(config.prefix, "");
@@ -1046,6 +1048,7 @@ mod server_tests {
             "localhost",
             "http://localhost:3000",
             &trusted,
+            true,
         );
         let resp = builder
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
@@ -1070,6 +1073,7 @@ mod server_tests {
             "localhost",
             "http://evil.example.com",
             &trusted,
+            true,
         );
         let resp = builder
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
@@ -1085,12 +1089,33 @@ mod server_tests {
         let trusted = vec![vec!["localhost".to_string()]];
         let builder = hyper::Response::builder();
         let builder =
-            proxy::add_cors_headers_with_host_and_origin(builder, "localhost", "", &trusted);
+            proxy::add_cors_headers_with_host_and_origin(builder, "localhost", "", &trusted, true);
         let resp = builder
             .body(http_body_util::Empty::<hyper::body::Bytes>::new())
             .unwrap();
         let h = resp.headers();
         assert!(!h.contains_key("access-control-allow-origin"));
+    }
+
+    #[test]
+    fn add_cors_headers_when_disabled_omits_all_cors_headers() {
+        let trusted = vec![vec!["localhost".to_string()]];
+        let builder = proxy::add_cors_headers_with_host_and_origin(
+            hyper::Response::builder(),
+            "localhost",
+            "http://localhost:3000",
+            &trusted,
+            false,
+        );
+        let response = builder
+            .body(http_body_util::Empty::<hyper::body::Bytes>::new())
+            .unwrap();
+
+        assert!(!response
+            .headers()
+            .keys()
+            .any(|name| name.as_str().starts_with("access-control-")));
+        assert!(!response.headers().contains_key("vary"));
     }
 
     #[test]
@@ -1108,11 +1133,13 @@ mod server_tests {
             trusted_hosts: vec![vec!["a".to_string()]],
             host: "h".to_string(),
             port: 1,
+            cors_enabled: false,
             enable_server_tool_execution: true,
         };
         let cloned = cfg.clone();
         assert_eq!(cloned.prefix, "/p");
         assert_eq!(cloned.proxy_api_key, "k");
+        assert!(!cloned.cors_enabled);
         assert!(cloned.enable_server_tool_execution);
     }
 
