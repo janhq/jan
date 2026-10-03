@@ -14,6 +14,8 @@ type ToolApprovalState = {
 
   approveToolForThread: (threadId: string, toolName: string) => void
   approveServer: (serverName: string) => void
+  revokeServer: (serverName: string) => void
+  isServerApproved: (serverName: string) => boolean
   approveToolEverywhere: (toolName: string) => void
   isToolApproved: (
     threadId: string,
@@ -49,6 +51,18 @@ export const useToolApproval = create<ToolApprovalState>()(
             ? state
             : { approvedServers: [...state.approvedServers, serverName] }
         )
+      },
+
+      revokeServer: (serverName: string) => {
+        set((state) => ({
+          approvedServers: state.approvedServers.filter(
+            (s) => s !== serverName
+          ),
+        }))
+      },
+
+      isServerApproved: (serverName: string) => {
+        return get().approvedServers.includes(serverName)
       },
 
       approveToolEverywhere: (toolName: string) => {
