@@ -129,8 +129,8 @@ export function createLanguageModel(
       provider.base_url?.includes('127.0.0.1:')
         ? { Origin: 'tauri://localhost' }
         : {}),
-      // OpenRouter identification headers
-      ...(provider.provider === 'openrouter'
+      // Identification headers for gateway providers (OpenRouter, Requesty)
+      ...(['openrouter', 'requesty'].includes(provider.provider)
         ? {
             'HTTP-Referer': 'https://jan.ai',
             'X-Title': 'Jan',
