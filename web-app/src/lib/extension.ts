@@ -99,8 +99,8 @@ export class ExtensionManager {
   }
 
   /**
-   * Retrieves a extension by its type.
-   * @param type - The type of the extension to retrieve.
+   * Retrieves an extension by its name.
+   * @param name - The name of the extension to retrieve.
    * @returns The extension, if found.
    */
   get<T extends BaseExtension>(type: ExtensionTypeEnum): T | undefined {
@@ -108,8 +108,8 @@ export class ExtensionManager {
   }
 
   /**
-   * Retrieves a extension by its type.
-   * @param type - The type of the extension to retrieve.
+   * Retrieves an extension by its name.
+   * @param name - The name of the extension to retrieve.
    * @returns The extension, if found.
    */
   getByName(name: string): BaseExtension | undefined {
@@ -117,8 +117,8 @@ export class ExtensionManager {
   }
 
   /**
-   * Retrieves a extension by its type.
-   * @param type - The type of the extension to retrieve.
+   * Retrieves an extension by its name.
+   * @param name - The name of the extension to retrieve.
    * @returns The extension, if found.
    */
   getAll(): BaseExtension[] {
@@ -126,7 +126,7 @@ export class ExtensionManager {
   }
 
   /**
-   * Retrieves a extension by its type.
+   * Retrieves an extension by its name.
    * @param engine - The engine name to retrieve.
    * @returns The extension, if found.
    */
