@@ -48,7 +48,7 @@ pub async fn web_search(args: &Value) -> String {
         return "ERROR: web_search 'query' must not be empty.".to_string();
     }
     let count = clamp_count(args.get("count").and_then(|v| v.as_u64()));
-    let provider = match create_provider(None, exa_api_key(), None) {
+    let provider = match create_provider(None, exa_api_key(), None, None) {
         Ok(p) => p,
         Err(e) => return e,
     };
@@ -73,7 +73,7 @@ pub async fn web_fetch(args: &Value) -> String {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return format!("ERROR: web_fetch 'url' must be an http(s) URL, got: {url}");
     }
-    let provider = match create_provider(None, exa_api_key(), None) {
+    let provider = match create_provider(None, exa_api_key(), None, None) {
         Ok(p) => p,
         Err(e) => return e,
     };
