@@ -338,6 +338,23 @@ describe('TauriProvidersService', () => {
       )
     })
 
+    it('omits auth headers when no api key is configured', async () => {
+      vi.mocked(providerRemoteApiKeyChain).mockReturnValue([])
+      vi.mocked(fetchTauri).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue({ data: [] }),
+      } as any)
+
+      await svc.fetchModelsFromProvider(baseProvider)
+      const headers = vi.mocked(fetchTauri).mock.calls[0][1]?.headers as Record<
+        string,
+        string
+      >
+      expect(headers).not.toHaveProperty('Authorization')
+      expect(headers).not.toHaveProperty('x-api-key')
+    })
+
     it('adds auth headers when api key is available', async () => {
       vi.mocked(providerRemoteApiKeyChain).mockReturnValue(['sk-test'])
       vi.mocked(fetchTauri).mockResolvedValueOnce({

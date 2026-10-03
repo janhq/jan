@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { customProviderRequiresApiKey } from '@/lib/provider-api-keys'
 
 interface AddProviderDialogProps {
   onCreateProvider: (
@@ -46,11 +47,14 @@ export function AddProviderDialog({
     setError(null)
   }
 
+  const requiresApiKey = customProviderRequiresApiKey(apiType)
+
   const handleCreate = () => {
     const trimmedName = name.trim()
     const trimmedBaseUrl = baseUrl.trim().replace(/\/+$/, '')
     const trimmedApiKey = apiKey.trim()
-    if (!trimmedName || !trimmedBaseUrl || !trimmedApiKey) return
+    if (!trimmedName || !trimmedBaseUrl) return
+    if (requiresApiKey && !trimmedApiKey) return
     if (!URL_PATTERN.test(trimmedBaseUrl)) {
       setError(t('provider:invalidBaseUrl'))
       return
@@ -68,11 +72,17 @@ export function AddProviderDialog({
   const canSubmit =
     name.trim().length > 0 &&
     baseUrl.trim().length > 0 &&
-    apiKey.trim().length > 0
+    (!requiresApiKey || apiKey.trim().length > 0)
   const baseUrlPlaceholder =
     apiType === 'anthropic'
       ? t('provider:baseUrlPlaceholderAnthropic')
       : t('provider:baseUrlPlaceholder')
+  const apiKeyLabel = requiresApiKey
+    ? t('provider:apiKeyLabel')
+    : t('provider:apiKeyLabelOptional')
+  const apiKeyPlaceholder = requiresApiKey
+    ? t('provider:apiKeyPlaceholder')
+    : t('provider:apiKeyPlaceholderOptional')
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -134,14 +144,14 @@ export function AddProviderDialog({
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">
-              {t('provider:apiKeyLabel')}
+              {apiKeyLabel}
             </label>
             <Input
               data-testid="provider-api-key-input"
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={t('provider:apiKeyPlaceholder')}
+              placeholder={apiKeyPlaceholder}
               onKeyDown={(e) => {
                 e.stopPropagation()
                 if (e.key === 'Enter' && canSubmit) {
