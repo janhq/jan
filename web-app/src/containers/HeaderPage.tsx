@@ -5,7 +5,7 @@ import {
 } from '@tabler/icons-react'
 import { ReactNode, memo } from 'react'
 import { Button } from "@/components/ui/button"
-import { DownloadManagement } from '@/containers/DownloadManegement'
+import { DownloadManagement } from '@/containers/DownloadManagement'
 import { useTitlebarLayout } from '@/stores/titlebar-layout-store'
 
 type HeaderPageProps = {
