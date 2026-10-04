@@ -323,7 +323,10 @@ pub fn register_defer(
 }
 
 /// N1 熔断判定：检查本 turn 内是否有任何 DEFER 工具返回 content=ERROR。
-/// 
+///
+/// NEW-4：finalize_turn 已改用本地 entries.iter().any() 判熔断，此函数不再被调用。
+/// 保留供外部 hook / 诊断用。
+///
 /// 语义：只要本 turn 内有一个"闯祸信号"，整批（含其它成功工具的 staging）一律 abort。
 pub fn circuit_break(turn_id: &str) -> bool {
     let map = match registry().lock() {
@@ -381,29 +384,30 @@ pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
     let mut errors: Vec<String> = Vec::new();
 
     // 3a. 全量备份旧 target
+    // NEW-2 修复：用 copy 而非 replace——崩溃窗口内 target 必须始终存在，
+    // reconcile 的 exists(path)→replace(bak,path) 还原分支才成立。
     for (i, entry) in entries.iter().enumerate() {
         let bak_path = format!("{}.taiji-bak.{}", entry.target, entry.rid);
-        match std::fs::replace(&entry.target, &bak_path) {
-            Ok(()) => {
-                bak_paths.push(bak_path);
-                committed_indices.push(i);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                // target 不存在（新文件 write），无需备份
-                bak_paths.push(String::new());
-                committed_indices.push(i);
-            }
-            Err(e) => {
-                errors.push(format!("backup failed for {}: {}", entry.target, e));
-                // 备份失败 → 立即还原已替换的
-                rollback_committed(&entries, &bak_paths, &committed_indices);
-                // 清理空备份
-                clean_bak_list(&bak_paths);
-                for entry in &entries {
-                    journal_rollback(&entry.rid);
+        if std::path::Path::new(&entry.target).exists() {
+            match std::fs::copy(&entry.target, &bak_path) {
+                Ok(_) => {
+                    bak_paths.push(bak_path);
+                    committed_indices.push(i);
                 }
-                return (0, errors);
+                Err(e) => {
+                    errors.push(format!("backup copy failed for {}: {}", entry.target, e));
+                    rollback_committed(&entries, &bak_paths, &committed_indices);
+                    clean_bak_list(&bak_paths);
+                    for entry in &entries {
+                        journal_rollback(&entry.rid);
+                    }
+                    return (0, errors);
+                }
             }
+        } else {
+            // target 不存在（新文件 write），无需备份
+            bak_paths.push(String::new());
+            committed_indices.push(i);
         }
     }
 

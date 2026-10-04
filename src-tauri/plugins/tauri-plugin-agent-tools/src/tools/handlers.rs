@@ -295,34 +295,37 @@ pub async fn execute_builtin(
         // B phase：登记 DEFER 条目（turn_id 用 thread_id 代理）
         // TODO(Blocker-5): 真·per-step turn_id 需由 dispatch 层传入，现用 thread_id 代理
         let turn_id = ctx.thread_id.unwrap_or("per-call");
-        if let (Some(target), Some(staging)) = (&defer_target, &defer_staging) {
-            // Blocker-4 修复：同 target 多次写检测 → 保守 DENY
-            if crate::tools::cplus::turn_mode()
-                && crate::tools::cplus::duplicate_target_in_turn(turn_id, target)
-            {
-                eprintln!(
-                    "[cplus] duplicate target in turn: {} -> deny",
-                    target
-                );
-                // 已登记的 rid 走 rollback
-                crate::tools::cplus::journal_rollback(&rid);
-                return (
-                    format!(
-                        "ERROR: tool '{}' denied: duplicate write to {} within same turn",
-                        tool.name, target
-                    ),
-                    None,
+        // NEW-3 修复：register_defer 只登记 turn 模式下的条目。
+        // 非 turn 模式走 per-call journal_commit，finalize_turn 不会被调用，
+        // 不 gate 会导致 TURN_REGISTRY 无界增长（内存泄漏）。
+        if crate::tools::cplus::turn_mode() {
+            if let (Some(target), Some(staging)) = (&defer_target, &defer_staging) {
+                // Blocker-4 修复：同 target 多次写检测 → 保守 DENY
+                if crate::tools::cplus::duplicate_target_in_turn(turn_id, target) {
+                    eprintln!(
+                        "[cplus] duplicate target in turn: {} -> deny",
+                        target
+                    );
+                    // 已登记的 rid 走 rollback
+                    crate::tools::cplus::journal_rollback(&rid);
+                    return (
+                        format!(
+                            "ERROR: tool '{}' denied: duplicate write to {} within same turn",
+                            tool.name, target
+                        ),
+                        None,
+                    );
+                }
+
+                crate::tools::cplus::register_defer(
+                    turn_id,
+                    &rid,
+                    target,
+                    staging,
+                    tool.name,
+                    &content,
                 );
             }
-
-            crate::tools::cplus::register_defer(
-                turn_id,
-                &rid,
-                target,
-                staging,
-                tool.name,
-                &content,
-            );
         }
 
         // turn 模式：跳过 per-call commit，由 finalize_turn() 统一收口

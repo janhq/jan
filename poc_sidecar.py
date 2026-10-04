@@ -256,7 +256,12 @@ def _handle_finalize(req, phase):
                         "message": f"os.replace failed: {e}"}
         elif phase == "note_commit":
             # B phase (N2)：turn 模式下 Rust 已独占完成 os.replace，只记账本 committed 事件。
-            # 不调 os.replace，避免 Blocker-3 的双 replace 竞态。
+            # NEW-1 修复：复用 found_open fail-closed——无 open 事件不记 committed（[I] 延伸）。
+            if not found_open:
+                _append_event({"phase": "commit_failed", "request_id": rid,
+                               "error": "open event not found for note_commit", "ts": now})
+                return {"status": "COMMIT_FAILED", "request_id": rid,
+                        "message": "open event missing; refuse to claim note_commit"}
             _append_event({"phase": "committed", "request_id": rid, "ts": now})
             return {"status": "OK", "request_id": rid}
         elif phase == "rollback" and mode == "staging":
