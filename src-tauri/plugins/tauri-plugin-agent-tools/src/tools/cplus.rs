@@ -20,7 +20,7 @@
 //! `commit`/`rollback` after, keyed by a request_id, so a crash between exec and
 //! commit leaves a reconcilable orphan (see `poc_sidecar.py::_reconcile`).
 //! Mode is per-request, decided by the sidecar at `open`:
-//!   - "write"  -> S staging (3.1): the tool writes `<target>.taiji-staging`,
+//!   - "write"  -> S staging (3.1): the tool writes `<target>.taiji-staging.<rid>`,
 //!                 `commit` does an atomic `os.replace` onto the target,
 //!                 `rollback` deletes the staging file (target bytes untouched).
 //!   - others   -> J ledger: `rollback` reverts ONLY the ledger / in-memory

@@ -196,11 +196,20 @@ def _handle_finalize(req, phase):
         mode = "ledger"
         path = ""
         staging = ""
+        found_open = False
         for e in _read_events():
             if e.get("request_id") == rid and e.get("phase") == "open":
+                found_open = True
                 mode = e.get("mode", "ledger")
                 path = e.get("path", "")
                 staging = e.get("staging") or (path + ".taiji-staging")
+        if phase == "commit" and not found_open:
+            # fail-closed（与洞 A 同源）：commit 却找不到 open 事件（账本被清/轮转/异常），
+            # 拿不准就报失败，绝不回 OK 假绿——否则会出现"target 从没 replace 却回 OK"。
+            _append_event({"phase": "commit_failed", "request_id": rid,
+                           "error": "open event not found", "ts": now})
+            return {"status": "COMMIT_FAILED", "request_id": rid,
+                    "message": "open event missing; refuse to claim commit"}
         if phase == "commit" and mode == "staging":
             try:
                 # Windows 上 os.replace == MoveFileEx + REPLACE_EXISTING，同卷原子覆盖
