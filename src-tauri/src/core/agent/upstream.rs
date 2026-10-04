@@ -2124,10 +2124,10 @@ mod tests {
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
     }
 
-    /// Two servers exposing the same tool name collide; the array carries one
-    /// definition, and which server wins used to
-    /// depend on iteration order, so the same call could route to either one
-    /// across restarts. Sorting makes it the last server by name, always.
+    /// Two servers exposing the same tool name collide: the array carries one
+    /// definition, and which server wins used to depend on iteration order, so
+    /// the same call could route to either one across restarts. Sorting makes
+    /// it the last server by name, always.
     #[test]
     fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
         let listings = |flipped: bool| {
@@ -2151,7 +2151,6 @@ mod tests {
         assert_eq!(first_map.get("search").unwrap(), "zed");
         assert_eq!(first_map, second_map);
     }
-
 
     /// Regression for janhq/jan#8975: the advertised array must never carry the
     /// same `function.name` twice. A strict provider rejects the request, and a
