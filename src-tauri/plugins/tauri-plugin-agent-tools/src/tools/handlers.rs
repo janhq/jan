@@ -163,8 +163,8 @@ pub async fn execute_builtin(
     // Mode is per-tool: `write` uses S staging (atomic os.replace on commit),
     // the rest use J ledger semantics where rollback reverts ONLY the ledger /
     // in-memory snapshot, NOT bytes already on disk.
-    // S (3.1) 影子写：DEFER 的 write 走原子 staging——只在此处长出 redirect 逻辑，
-    // 门禁/握手/三态判定（verdict）一行不动。edit 等其余 DEFER 工具暂留 J 账本。
+    // S (3.1/3.2) 影子写：DEFER 的 write/edit 走原子 staging——只在此处长出 redirect 逻辑，
+    // 门禁/握手/三态判定（verdict）一行不动。其余 DEFER 工具暂留 J 账本。
     let mut exec_args: serde_json::Value = args.clone();
     let mut defer_req_id: Option<String> = None;
     if crate::tools::cplus::enabled() {
@@ -173,10 +173,10 @@ pub async fn execute_builtin(
             Ok(crate::tools::cplus::Verdict::Defer) => {
                 // 两阶段：执行前先在 sidecar 落 journal(open)
                 let rid = crate::tools::cplus::new_request_id();
-                // write 工具：把【绝对解析后的 target】交给 sidecar 记账，
-                // 并把执行体的 path 重定向到 <target>.taiji-staging。
-                // 其余 DEFER 工具（edit 等）按 J 账本，path 不改。
-                if tool.name == "write" {
+                // write/edit：把【绝对解析后的 target】交给 sidecar 记账，
+                // 并把执行体的 path 重定向到 <target>.taiji-staging.<rid>。
+                // edit 额外注入 _cplus_read_path = 原始 target（读 prior 钉真实文件）。
+                if tool.name == "write" || tool.name == "edit" {
                     match arg_str(args, "path") {
                         Some(p) => {
                             let abs_target =
@@ -202,6 +202,13 @@ pub async fn execute_builtin(
                                     "path".into(),
                                     serde_json::Value::String(staging_str),
                                 );
+                                // edit：读 prior 钉原始 target（不读空 staging）
+                                if tool.name == "edit" {
+                                    obj.insert(
+                                        "_cplus_read_path".into(),
+                                        serde_json::Value::String(abs_target_str),
+                                    );
+                                }
                             }
                             if let Err(reason) =
                                 crate::tools::cplus::journal_open(&rid, tool.name, &journal_args)
@@ -919,7 +926,13 @@ async fn edit(
     if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     }
-    let mut content = match tokio::fs::read_to_string(&target).await {
+    // S(3.2) 读/写分流：DEFER 路径下 _cplus_read_path = 原始 target（读 prior），
+    // path = staging（写新内容）。无该字段时回退 path：ALLOW 路径 / 非 defer 零回归。
+    let prior_src = args.get("_cplus_read_path")
+        .and_then(|v| v.as_str())
+        .map(Path::new)
+        .unwrap_or(&target);
+    let mut content = match tokio::fs::read_to_string(prior_src).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };

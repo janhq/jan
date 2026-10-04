@@ -161,10 +161,10 @@ def _handle_open(req):
     rid = req.get("request_id", "")
     tool = req.get("tool_name", "")
     params = req.get("params", {})
-    # S (3.1) 影子写：write 工具走 staging 模式，commit 时 os.replace 原子覆盖；
-    # 其余 DEFER 工具（edit 等）暂留 J 账本模式（rollback 只回账本不撤字节）。
-    # path 必须是绝对解析后的目标路径（Rust 侧已 resolve），commit 用 path+".taiji-staging"。
-    mode = "staging" if tool == "write" else "ledger"
+    # S (3.1/3.2) 影子写：write/edit 工具走 staging 模式，commit 时 os.replace 原子覆盖；
+    # 其余 DEFER 工具暂留 J 账本模式（rollback 只回账本不撤字节）。
+    # path 必须是绝对解析后的目标路径（Rust 侧已 resolve），commit 用 path+".taiji-staging.<rid>"。
+    mode = "staging" if tool in ("write", "edit") else "ledger"
     abs_path = params.get("path") or params.get("file_path") or ""
     # 洞 B：staging 名以 rid 唯一化（Rust 侧已算好传进来），避免同 target 并发写互相覆盖
     staging_path = params.get("staging") or (abs_path + ".taiji-staging")
@@ -248,7 +248,7 @@ _reconciled = False
 def start_ipc_mode():
     """Stdio IPC 守护进程。按请求中的 kind 分流：
     - 缺省 / "check"      -> 权限三态裁决（ALLOW/DENY/DEFER）
-    - "open"             -> 两阶段记账：write 回 STAGING_READY（记绝对 target + mode），
+    - "open"             -> 两阶段记账：write/edit 回 STAGING_READY（记绝对 target + mode），
                             其余 DEFER 工具回 DEFER；都追加 open 事件
     - "commit"/"rollback" -> 按 mode 分流：staging 走 os.replace / os.remove，ledger 只记账本
     账本 append-only、带文件锁、崩溃可重放；孤儿由 _reconcile 兜底。"""

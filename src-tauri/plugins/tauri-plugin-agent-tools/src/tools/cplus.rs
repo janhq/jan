@@ -20,12 +20,13 @@
 //! `commit`/`rollback` after, keyed by a request_id, so a crash between exec and
 //! commit leaves a reconcilable orphan (see `poc_sidecar.py::_reconcile`).
 //! Mode is per-request, decided by the sidecar at `open`:
-//!   - "write"  -> S staging (3.1): the tool writes `<target>.taiji-staging.<rid>`,
-//!                 `commit` does an atomic `os.replace` onto the target,
-//!                 `rollback` deletes the staging file (target bytes untouched).
+//!   - "write"/"edit" -> S staging (3.1/3.2): the tool writes
+//!                 `<target>.taiji-staging.<rid>`, `commit` does an atomic
+//!                 `os.replace` onto the target, `rollback` deletes the staging
+//!                 file (target bytes untouched). For edit, the read source
+//!                 (`_cplus_read_path`) points to the original target.
 //!   - others   -> J ledger: `rollback` reverts ONLY the ledger / in-memory
-//!                 snapshot, NOT bytes already on disk (honest: edit writes
-//!                 the real target directly, so a crash can't be undone).
+//!                 snapshot, NOT bytes already on disk.
 //!
 //! Protocol: Stdio IPC. The sidecar runs as `python poc_sidecar.py --daemon`,
 //! reads one JSON request per line from stdin
