@@ -292,13 +292,23 @@ pub async fn execute_builtin(
     // finalize_turn() 统一 commit/abort。零回归：finalize_turn() 未被调用时，
     // 走原路径 per-rid commit。
     if let Some(rid) = defer_req_id {
-        // B phase：登记 DEFER 条目（turn_id 用 thread_id 代理）
-        // TODO(Blocker-5): 真·per-step turn_id 需由 dispatch 层传入，现用 thread_id 代理
-        let turn_id = ctx.thread_id.unwrap_or("per-call");
+        // B phase：登记 DEFER 条目（turn_id 由 dispatch 层经 ctx.turn_id 注入）
+        //
+        // Blocker-5 修复：此前用 `ctx.thread_id` 代理，而 thread_id 在插件内挂着
+        // `ensure_thread_workspace` / `ensure_scratch_dir` / 权限分桶（commands.rs
+        // :107/:407/:594），语义上不是批次 id——复用它会让 finalize_turn 用一个
+        // dispatch 层永远不会传入的 key 去收口，等于永不收口。现改取 ctx.turn_id。
+        //
+        // fail-safe 降级：turn_id 缺失（某条 ctx 漏接 .with_turn_id）时取
+        // "per-call" 且**不登记**，走 S 阶段已验透的 per-call commit。这把
+        // "漏接 → staging 永久滞留、target 永不落盘且无告警"翻转为
+        // "退回旧行为"。代价是该调用不参与本 turn 的原子性（见方案 §空洞乙）。
+        let turn_id = ctx.turn_id.unwrap_or("per-call");
         // NEW-3 修复：register_defer 只登记 turn 模式下的条目。
         // 非 turn 模式走 per-call journal_commit，finalize_turn 不会被调用，
         // 不 gate 会导致 TURN_REGISTRY 无界增长（内存泄漏）。
-        if crate::tools::cplus::turn_mode() {
+        // Blocker-5 收紧：turn_id 缺失（ctx 未注入）同样不登记。
+        if crate::tools::cplus::turn_mode() && ctx.turn_id.is_some() {
             if let (Some(target), Some(staging)) = (&defer_target, &defer_staging) {
                 // Blocker-4 修复：同 target 多次写检测 → 保守 DENY
                 if crate::tools::cplus::duplicate_target_in_turn(turn_id, target) {

@@ -80,6 +80,16 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .setup(|app, _api| {
             use tauri::Manager;
             app.manage(preview::PreviewRoots::default());
+            // 启动清扫（第二个 reconcile 驱动点）：运维显式指定
+            // JAN_CPLUS_RECONCILE_ROOT 时，进程起来先恢复上次崩溃遗留的
+            // .taiji-bak.*。不指定则不做全盘扫描（代价与安全边界都不划算），
+            // 常规路径由 register_defer → reconcile_dir 按目录惰性触发。
+            if let Ok(root) = std::env::var("JAN_CPLUS_RECONCILE_ROOT") {
+                let n = tools::cplus::reconcile_root(&root);
+                if n > 0 {
+                    eprintln!("[cplus] startup reconcile: {n} leftover .bak handled under {root}");
+                }
+            }
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("preview", |ctx, request, responder| {

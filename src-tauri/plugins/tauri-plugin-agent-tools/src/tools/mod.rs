@@ -171,6 +171,18 @@ pub struct ToolContext<'a> {
     /// session identity (the CLI, monitor poll children), which share the
     /// process-wide bucket only `kill_all` reaps.
     pub thread_id: Option<&'a str>,
+    /// B phase (Blocker-5): the per-step batch id this call belongs to. A
+    /// "turn" is one `ToolInvoker::invoke(&[tool_calls])` batch; every tool
+    /// call in that batch shares this id, and `cplus::finalize_turn` uses it
+    /// to commit or abort the whole batch atomically.
+    ///
+    /// Deliberately separate from [`Self::thread_id`]: that one keys
+    /// `ensure_thread_workspace` / `ensure_scratch_dir` / the permission
+    /// buckets, so reusing it for a per-batch id would fork a workspace and a
+    /// scratch directory per turn. `None` means "no batch identity" — the C+
+    /// gate then falls back to the pre-B per-call commit instead of
+    /// registering into a turn that would never be finalized.
+    pub turn_id: Option<&'a str>,
     /// Host env-var names (exact or `*`-glob) the shell may inherit on top of the
     /// fixed base allowlist. Empty on every surface that has not configured any,
     /// so the shell env is unchanged by default. Resolved once per run from
@@ -228,6 +240,7 @@ impl std::fmt::Debug for ToolContext<'_> {
             .field("write_roots", &self.write_roots)
             .field("call_id", &self.call_id)
             .field("thread_id", &self.thread_id)
+            .field("turn_id", &self.turn_id)
             .field("env_passthrough", &self.env_passthrough)
             .field("env_set", &self.env_set)
             .field("screenshot_backend", &self.screenshot_backend.is_some())
@@ -381,6 +394,7 @@ impl<'a> ToolContext<'a> {
             write_roots: &[],
             call_id: None,
             thread_id: None,
+            turn_id: None,
             env_passthrough: &[],
             env_set: &[],
             screenshot_backend: None,
@@ -421,6 +435,16 @@ impl<'a> ToolContext<'a> {
     /// The session (thread) this call belongs to. See [`Self::thread_id`].
     pub fn with_thread_id(mut self, thread_id: Option<&'a str>) -> Self {
         self.thread_id = thread_id;
+        self
+    }
+
+    /// B phase (Blocker-5): attach the per-step batch id. See [`Self::turn_id`].
+    /// Set once per `ToolInvoker::invoke` batch by the dispatch layer
+    /// (`core::agent::loop`); every `ToolContext` minted inside that batch must
+    /// carry it, otherwise that call's DEFER falls back to a per-call commit
+    /// and is excluded from the batch's all-or-nothing guarantee.
+    pub fn with_turn_id(mut self, turn_id: Option<&'a str>) -> Self {
+        self.turn_id = turn_id;
         self
     }
 

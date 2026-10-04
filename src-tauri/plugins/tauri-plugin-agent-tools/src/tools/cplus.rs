@@ -43,7 +43,7 @@
 //!   JAN_CPLUS_PYTHON   python executable (default "python")
 
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -306,6 +306,14 @@ pub fn register_defer(
     tool: &str,
     content: &str,
 ) {
+    // 崩溃恢复驱动点：本目录首次登记时，先清扫上次崩溃遗留的 .bak。
+    // 见 `reconcile_dir` 文档——这是崩溃恢复唯一能自然触发的时机。
+    if let Some(dir) = std::path::Path::new(target)
+        .parent()
+        .and_then(|p| p.to_str())
+    {
+        reconcile_dir(dir);
+    }
     let entry = TurnEntry {
         rid: rid.to_string(),
         target: target.to_string(),
@@ -370,7 +378,7 @@ pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
     let has_error = entries.iter().any(|e| e.content.starts_with("ERROR"));
     if has_error {
         eprintln!("[cplus] CIRCUIT BREAK for turn {turn_id}: aborting all {} deferred ops", entries.len());
-        let mut errors = vec![format!("CIRCUIT BREAK: turn {turn_id} has error signals, all staging aborted")];
+        let errors = vec![format!("CIRCUIT BREAK: turn {turn_id} has error signals, all staging aborted")];
         for entry in &entries {
             journal_rollback(&entry.rid);
             eprintln!("[cplus]   rollback staging: {} -> {}", entry.rid, entry.staging);
@@ -395,6 +403,10 @@ pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
                     committed_indices.push(i);
                 }
                 Err(e) => {
+                    // 问题-2 同类：copy 中途失败可能留下半截 bak_i，而它没进
+                    // bak_paths（只有 Ok 才 push），clean_bak_list 也就删不到它。
+                    // 显式清掉，否则崩溃恢复时会被当成"未完成的 commit"误还原。
+                    let _ = std::fs::remove_file(&bak_path);
                     errors.push(format!("backup copy failed for {}: {}", entry.target, e));
                     rollback_committed(&entries, &bak_paths, &committed_indices);
                     clean_bak_list(&bak_paths);
@@ -413,26 +425,29 @@ pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
 
     // 3b. 全量 os.replace(staging → target)
     // Blocker-3 修复：turn 模式下 Rust 独占 replace，不再调 journal_commit（它会二次 replace）。
-    // 改用 journal_note_commit：只记账本 committed 事件，不搬字节。
+    //
+    // 问题-1 修复：committed 事件**不在循环内逐条记**。批内任一条失败即整批回滚，
+    // 若成功条已先记了 committed，回滚只还原字节、不抵消账本 → 账本假绿（"已落盘"
+    // 而磁盘已退回 turn 起点）。改为 3c 之后统一记账：全成才记，全不成一条都不记。
     for (i, entry) in entries.iter().enumerate() {
-        match std::fs::replace(&entry.staging, &entry.target) {
-            Ok(()) => {
-                // commit 成功，只记账本（不调 journal_commit，避免 sidecar 二次 os.replace）
-                if let Err(e) = journal_note_commit(&entry.rid) {
-                    eprintln!("[cplus]   journal_note_commit failed: {e}");
-                }
-            }
+        match std::fs::rename(&entry.staging, &entry.target) {
+            Ok(()) => {}
             Err(e) => {
                 errors.push(format!(
                     "os.replace failed for {} -> {}: {}",
                     entry.staging, entry.target, e
                 ));
                 // replace 失败 → 立即还原所有已替换的（含本步之前成功的）
-                rollback_committed(&entries, &bak_paths, &(0..=i).collect());
+                rollback_committed(&entries, &bak_paths, &(0..=i).collect::<Vec<usize>>());
                 clean_bak_list(&bak_paths);
-                // 对剩余未处理的 rid 走 rollback
-                for j in (i + 1)..entries.len() {
-                    journal_rollback(&entries[j].rid);
+                // 问题-2 修复：必须是 entries 全集，不能是 (i + 1)..。
+                // 索引 i 自己的 staging 既没被 rename 消耗，也没被 rollback_committed
+                // 处理（那里只做 rename(bak→target)），用 (i+1).. 会把它漏成孤儿
+                // *.taiji-staging.*；而 entries 已被 map.remove 掏走，无人再回收。
+                // 全集里 0..i-1 的 staging 已被 rename 消耗，journal_rollback 对它们
+                // 是 best-effort 空转（sidecar 侧 os.remove 失败被吞），无副作用。
+                for victim in &entries {
+                    journal_rollback(&victim.rid);
                 }
                 return (0, errors);
             }
@@ -441,6 +456,26 @@ pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
 
     // 3c. 全部成功，清理 .bak
     clean_bak_list(&bak_paths);
+
+    // 3d. 统一记账本 committed（原为 3b 循环内逐条记，见问题-1）。
+    //
+    // 顺序**必须先 3c 后 3d**：反过来若崩溃卡在两者之间，会出现
+    // "账本已记 committed + .bak 仍在盘" → 下次 reconcile 按 .bak 还原，
+    // 把已提交的字节退回旧值（真·数据丢失）。先清 .bak 则最坏只是少一条
+    // committed 审计事件，属安全侧缺口，不会有字节错。
+    //
+    // **审计 best-effort（成文口径）**：此处 note_commit 失败只 eprintln，
+    // 不回滚、不改变返回值。这是有意为之，不是漏处理——走到 3d 时字节已经
+    // 全部落盘且 .bak 已清空，账本记不上只是**缺一条审计事件**，若因它把整批
+    // 回退反而会把已成功提交的字节退回旧值（即上一段说的反向事故）。
+    // 因此审计口径必须读作："committed 事件缺失 ≠ 本次提交失败"；
+    // 判断提交是否成功看磁盘字节与 finalize_turn 的返回值，不看 committed 事件。
+    for entry in &entries {
+        if let Err(e) = journal_note_commit(&entry.rid) {
+            eprintln!("[cplus]   journal_note_commit failed: {e}");
+        }
+    }
+
     let success_count = entries.len();
     eprintln!("[cplus] turn {turn_id} batch commit OK: {success_count} ops");
     (success_count, errors)
@@ -456,7 +491,7 @@ fn rollback_committed(entries: &[TurnEntry], bak_paths: &[String], indices: &[us
         if bak.is_empty() {
             continue; // 新文件，无备份
         }
-        match std::fs::replace(bak, &entries[i].target) {
+        match std::fs::rename(bak, &entries[i].target) {
             Ok(()) => {
                 eprintln!("[cplus]   restored {} from backup", entries[i].target);
             }
@@ -474,7 +509,11 @@ fn clean_bak_list(bak_paths: &[String]) {
             continue;
         }
         if let Err(e) = std::fs::remove_file(bak) {
-            eprintln!("[cplus]   cleanup bak failed {}: {}", bak, e);
+            // rollback_committed 已用 rename(bak→target) 把 bak 消耗掉，此处再删
+            // 必然 NotFound——是预期路径而非错误，静默掉，避免日志噪音掩盖真错误。
+            if e.kind() != std::io::ErrorKind::NotFound {
+                eprintln!("[cplus]   cleanup bak failed {}: {}", bak, e);
+            }
         }
     }
 }
@@ -491,4 +530,202 @@ pub fn duplicate_target_in_turn(turn_id: &str, target: &str) -> bool {
     } else {
         false
     }
+}
+
+// ---------- turn 收口守卫 (Blocker-2 / 空洞甲) ----------
+//
+// `CompositeToolInvoker::invoke`（core::agent::loop）**不是单出口**。除尾部
+// `Ok(out)` 外还有两条退出路径：
+//   1. `self.mcp.invoke(&mcp_calls).await?`（loop.rs:2402）——发生在所有 builtin
+//      tool call 执行完毕、staging 已建且已登记之后。此时提前返回会让
+//      finalize_turn 永远不跑：全批 staging 滞留、target 永不落盘、无 commit
+//      也无清理。这是"真·数据不落盘"，且 [S] 的 happy-path 冒烟测不到。
+//   2. panic unwind。
+//
+// 守卫把收口挂在 `Drop` 上，三条路径全覆盖：正常返回走 finalize_turn（按各
+// 条目 content 判 commit / 熔断），提前 Err 与 panic 走 abort_turn 强回滚。
+// 未完成就退出时**不 commit**——宁可全不落盘，也不让一个残缺批次落一半。
+
+/// 强制回滚整批：不走 `finalize_turn` 的 commit 分支，直接对每个已登记 rid
+/// 调 `journal_rollback`（os.remove(staging)），然后清空该 turn 的注册表。
+/// 返回被回滚的条目数。
+pub fn abort_turn(turn_id: &str) -> usize {
+    let entries: Vec<TurnEntry> = {
+        let mut map = match registry().lock() {
+            Ok(m) => m,
+            Err(_) => return 0,
+        };
+        map.remove(turn_id).unwrap_or_default()
+    };
+    for entry in &entries {
+        journal_rollback(&entry.rid);
+    }
+    entries.len()
+}
+
+/// Turn 收口守卫。见本节顶部说明。
+///
+/// 用法（dispatch 层）：
+/// ```ignore
+/// let mut guard = TurnGuard::new(&turn_id);
+/// // ... 执行整批 tool call ...
+/// guard.complete();   // 仅正常路径标记；未标记即视为异常退出
+/// Ok(out)             // Drop 在此触发 finalize_turn
+/// ```
+pub struct TurnGuard {
+    turn_id: String,
+    completed: bool,
+}
+
+impl TurnGuard {
+    pub fn new(turn_id: &str) -> Self {
+        Self {
+            turn_id: turn_id.to_string(),
+            completed: false,
+        }
+    }
+
+    /// 标记本批次正常走完。未调用即离开作用域 → Drop 走 `abort_turn` 强回滚。
+    pub fn complete(&mut self) {
+        self.completed = true;
+    }
+}
+
+impl Drop for TurnGuard {
+    fn drop(&mut self) {
+        // 零回归：非 turn 模式下不会有任何条目登记，守卫空转。
+        if !turn_mode() {
+            return;
+        }
+        if self.completed {
+            let (n, errs) = finalize_turn(&self.turn_id);
+            if !errs.is_empty() {
+                eprintln!(
+                    "[cplus] turn {} finalized: {} committed, errors: {:?}",
+                    self.turn_id, n, errs
+                );
+            }
+        } else {
+            let n = abort_turn(&self.turn_id);
+            if n > 0 {
+                eprintln!(
+                    "[cplus] turn {} ABORTED (early return / panic): {} deferred ops rolled back, no bytes committed",
+                    self.turn_id, n
+                );
+            }
+        }
+    }
+}
+
+// ---------- reconcile: .bak 残留恢复 (Rust 生产体) ----------
+//
+// 边界（与 Python `poc_sidecar.py::_reconcile` L152-168 二选一，写死如下）：
+//   **Rust 独占 .bak 恢复，Python 侧 .bak 分支退役。**
+//
+// 理由：`.bak` 由 `finalize_turn` 3a 的 `fs::copy` 在 **Rust 侧**产生，产生方
+// 与恢复方跨语言会让"谁先跑、谁兜底"变成竞态——两边都还原会 double-restore
+// （第二次 restore 时 .bak 已不存在，退化为 no-op，但若并发则可能覆盖对方
+// 刚写回的真值），两边都不还原则 .bak 永久滞留、target 停在半成品。
+//
+// 现状 Python `_reconcile` 的 .bak 分支保留但**仅作兜底观察**：它只在 Rust 侧
+// 未启用（JAN_CPLUS_ENABLED 未设 / 进程已退出）时才可能先跑。启用 Rust 生产
+// 体后，.bak 的权威恢复路径是这里的 `reconcile_bak`。
+
+/// 崩溃恢复：检测到 `<target>.taiji-bak.<rid>` 残留即判定该 turn 的 commit
+/// 未完成。
+/// - target 存在（可能已被部分 replace）→ `fs::rename(bak, target)` 还原真值；
+/// - target 不存在（新文件 write 中途崩溃）→ 删掉孤儿 .bak。
+///
+/// 与 `poc_sidecar.py::_reconcile` 的 .bak 分支逐行等价。
+pub fn reconcile_bak(rid: &str, target: &str) {
+    let bak = format!("{target}.taiji-bak.{rid}");
+    if std::path::Path::new(&bak).exists() {
+        if std::path::Path::new(target).exists() {
+            // 原子覆盖；Rust 的 fs::rename 在 Windows 上走
+            // MoveFileEx(MOVEFILE_REPLACE_EXISTING)，等价于 Python 的 os.replace。
+            if let Err(e) = std::fs::rename(&bak, target) {
+                eprintln!("[cplus] reconcile_bak: restore {target} from {bak} failed: {e}");
+            }
+        } else if let Err(e) = std::fs::remove_file(&bak) {
+            eprintln!("[cplus] reconcile_bak: remove orphan bak {bak} failed: {e}");
+        }
+    }
+}
+
+/// `reconcile_bak` 的驱动者：扫描目录内所有 `<base>.taiji-bak.<rid>` 残留并逐条恢复。
+///
+/// **为什么驱动点在这里**：`.bak` 由 `finalize_turn` 3a 在 Rust 侧 `fs::copy` 产生，
+/// 只在 3c（clean_bak_list）之前进程崩溃时才会滞留。崩溃后 `TURN_REGISTRY` 随进程
+/// 一起消失，内存里没有任何线索——**唯一还活着的事实源就是磁盘上的 .bak 文件**。
+/// 因此恢复只能靠"下次碰到这个目录时顺手扫一遍"，而 `register_defer` 是每个 DEFER
+/// 调用的必经点，且其 `target` 的父目录很可能正是崩溃发生的工作目录。
+///
+/// 进程内每个目录只扫一次（`Once` 去重），之后该目录的登记不再付 read_dir 开销。
+/// 返回实际处理（恢复或清孤儿）的条数。
+pub fn reconcile_dir(dir: &str) -> usize {
+    static SCANNED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let scanned = SCANNED.get_or_init(|| Mutex::new(HashSet::new()));
+    {
+        let mut set = match scanned.lock() {
+            Ok(s) => s,
+            Err(_) => return 0,
+        };
+        if !set.insert(dir.to_string()) {
+            return 0; // 本目录本进程已扫过
+        }
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut n = 0;
+    for entry in rd.flatten() {
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        // rfind：base 名自身可能含点，取最后一段 marker 才不会切错。
+        let Some(pos) = name.rfind(".taiji-bak.") else {
+            continue;
+        };
+        let base = &name[..pos];
+        let rid = &name[pos + ".taiji-bak.".len()..];
+        if base.is_empty() || rid.is_empty() {
+            continue;
+        }
+        let Some(parent) = entry.path().parent().map(|p| p.to_path_buf()) else {
+            continue;
+        };
+        let Some(target) = parent.join(base).to_str().map(str::to_string) else {
+            continue;
+        };
+        reconcile_bak(rid, &target);
+        n += 1;
+    }
+    n
+}
+
+/// 递归版 `reconcile_dir`，供进程启动时的显式清扫使用
+/// （env `JAN_CPLUS_RECONCILE_ROOT`）。`depth` 上限 8 防止符号链接成环。
+pub fn reconcile_root(root: &str) -> usize {
+    fn walk(dir: &std::path::Path, depth: usize, acc: &mut usize) {
+        if depth > 8 {
+            return;
+        }
+        if let Some(d) = dir.to_str() {
+            *acc += reconcile_dir(d);
+        }
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            // 不跟随符号链接，避免成环与跨 FS 意外改写。
+            if path.is_dir() && !path.is_symlink() {
+                walk(&path, depth + 1, acc);
+            }
+        }
+    }
+    let mut acc = 0;
+    walk(std::path::Path::new(root), 0, &mut acc);
+    acc
 }
