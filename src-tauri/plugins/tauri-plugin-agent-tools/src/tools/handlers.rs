@@ -277,7 +277,7 @@ pub async fn execute_builtin(
     let (mut content, images) = execute_builtin_unhooked(tool, &exec_args, ctx).await;
     // DEFER 工具：按真实返回分流 commit / rollback
     // write(S)：commit = os.replace 原子覆盖；rollback = 删 staging（target 不动）。
-    // edit 等(J)：rollback 只回账本/内存态，不撤销已落盘字节（诚实命名）。
+    // 无写语义/其余(J)：rollback 只回账本/内存态，不撤销已落盘字节（诚实命名）。
     // 洞 A：commit 失败（staging os.replace 抛错）时 sidecar 回 COMMIT_FAILED，
     // journal_commit 返回 Err —— 必须把成功回显改判为 ERROR，否则模型会以为写成功、
     // 而磁盘从未更新（静默丢数据）。
