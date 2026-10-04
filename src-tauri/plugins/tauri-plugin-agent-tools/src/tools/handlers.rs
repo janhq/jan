@@ -160,7 +160,7 @@ pub async fn execute_builtin(
     // DEFER (side-effect, requires_commit) tools run a two-phase journal:
     //   phase 1 (before exec) -> journal_open  (ledger entry "open")
     //   phase 2 (after exec)  -> journal_commit on success / journal_rollback on error
-    // Mode is per-tool: `write` uses S staging (atomic os.replace on commit),
+    // Mode is per-tool: `write`/`edit` use S staging (atomic os.replace on commit),
     // the rest use J ledger semantics where rollback reverts ONLY the ledger /
     // in-memory snapshot, NOT bytes already on disk.
     // S (3.1/3.2) 影子写：DEFER 的 write/edit 走原子 staging——只在此处长出 redirect 逻辑，
@@ -206,7 +206,12 @@ pub async fn execute_builtin(
                                 if tool.name == "edit" {
                                     obj.insert(
                                         "_cplus_read_path".into(),
-                                        serde_json::Value::String(abs_target_str),
+                                        serde_json::Value::String(abs_target_str.clone()),
+                                    );
+                                    // 展示用：DEFER edit 成功返回引用原始 target，不含 .taiji-staging
+                                    obj.insert(
+                                        "_cplus_display_path".into(),
+                                        serde_json::Value::String(abs_target_str.clone()),
                                     );
                                 }
                             }
@@ -920,7 +925,12 @@ async fn edit(
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
-    let shown = display_path(root, scratch, &target);
+    // S(3.2) 展示层对齐：DEFER 路径下优先用 _cplus_display_path（原始 target），
+    // 不含 .taiji-staging。无该字段时回退现有 display_path(target)。
+    let shown = match arg_str(args, "_cplus_display_path") {
+        Some(dp) => dp.to_string(),
+        None => display_path(root, scratch, &target),
+    };
     // Re-validate before the final read+write pair so a swapped symlink cannot
     // redirect either the read or the later write.
     if symlink_escapes_any_root(root, scratch, write_roots, &target) {
