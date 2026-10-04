@@ -932,9 +932,25 @@ pub(crate) fn assemble_tool_array(
         tool_sort_key(a_server, a_tool).cmp(&tool_sort_key(b_server, b_tool))
     });
 
-    let mut openai_tools = Vec::with_capacity(flattened.len());
+    // One name, one definition. A collision resolves to the last server in sort
+    // order (what `tool_to_server` always did), and only that server's
+    // definition is advertised: the one the model reads is the one its call
+    // routes to, and no provider sees two functions with the same name.
+    let mut winner: HashMap<String, String> = HashMap::new();
+    for (server_name, tool_name, _) in &flattened {
+        if let Some(previous) = winner.insert(tool_name.clone(), server_name.clone()) {
+            log::warn!(
+                "MCP tool name collision: \"{tool_name}\" is exposed by both \"{previous}\" and \"{server_name}\"; advertising only the definition from \"{server_name}\""
+            );
+        }
+    }
+
+    let mut openai_tools = Vec::with_capacity(winner.len());
     let mut tool_to_server: HashMap<String, String> = HashMap::new();
     for (server_name, tool_name, tool) in flattened {
+        if winner.get(&tool_name) != Some(&server_name) {
+            continue;
+        }
         tool_to_server.insert(tool_name, server_name);
         openai_tools.push(tool);
     }
@@ -2108,8 +2124,8 @@ mod tests {
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
     }
 
-    /// Two servers exposing the same tool name is a pre-existing collision the
-    /// array does not dedupe - but which server wins `tool_to_server` used to
+    /// Two servers exposing the same tool name collide; the array carries one
+    /// definition, and which server wins used to
     /// depend on iteration order, so the same call could route to either one
     /// across restarts. Sorting makes it the last server by name, always.
     #[test]
@@ -2131,7 +2147,7 @@ mod tests {
             serde_json::to_string(&first).unwrap(),
             serde_json::to_string(&second).unwrap()
         );
-        assert_eq!(advertised_names(&first), ["search", "search"]);
+        assert_eq!(advertised_names(&first), ["search"]);
         assert_eq!(first_map.get("search").unwrap(), "zed");
         assert_eq!(first_map, second_map);
     }
