@@ -197,7 +197,7 @@ fn sidecar_call(payload: &Value) -> Result<Value, String> {
 /// Accepts both `DEFER` (J ledger mode) and `STAGING_READY` (S staging mode)
 /// as success. S mode means the sidecar has recorded the absolute target path
 /// and the Rust caller has redirected the tool's `path` arg to
-/// `<target>.taiji-staging`; the sidecar atomically `os.replace`es the staging
+/// `<target>.taiji-staging.<rid>`; the sidecar atomically `os.replace`es the staging
 /// file onto the target on `commit`. Keeping this signature self-contained
 /// (it builds the payload internally) avoids touching the call sites.
 pub fn journal_open(req_id: &str, tool: &str, args: &Value) -> Result<(), String> {
