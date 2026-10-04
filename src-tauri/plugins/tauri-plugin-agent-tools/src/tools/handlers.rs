@@ -151,7 +151,68 @@ pub async fn execute_builtin(
             None,
         );
     }
+    // C+ sidecar gate (taiji-permission-v1): total overlay on top of Jan's own
+    // gate. Opt-in via JAN_CPLUS_ENABLED. Fail-closed: a DENY verdict, an IPC
+    // failure, or (via the sidecar) an unlisted/unknown tool_name all block the
+    // call. The ERROR shape matches the PreToolUse denial above, so the model
+    // and the transcript cannot tell the two apart.
+    //
+    // DEFER (side-effect, requires_commit) tools run a two-phase journal:
+    //   phase 1 (before exec) -> journal_open  (ledger entry "open")
+    //   phase 2 (after exec)  -> journal_commit on success / journal_rollback on error
+    // J-semantics: rollback reverts ONLY the ledger / in-memory snapshot, NOT
+    // bytes already on disk. (S = atomic staging-rename is tracked as 3.1.)
+    let mut defer_req_id: Option<String> = None;
+    if crate::tools::cplus::enabled() {
+        match crate::tools::cplus::verdict(tool.name, args) {
+            Ok(crate::tools::cplus::Verdict::Allow) => {}
+            Ok(crate::tools::cplus::Verdict::Defer) => {
+                // 两阶段：执行前先在 sidecar 落 journal(open)
+                let rid = crate::tools::cplus::new_request_id();
+                if let Err(reason) =
+                    crate::tools::cplus::journal_open(&rid, tool.name, args)
+                {
+                    // 记账失败 = 门禁失败（fail-closed 延伸）
+                    eprintln!("[cplus] journal_open fail-closed deny: {reason}");
+                    return (
+                        format!(
+                            "ERROR: tool '{}' denied by C+ gate (journal fail): {reason}",
+                            tool.name
+                        ),
+                        None,
+                    );
+                }
+                defer_req_id = Some(rid);
+            }
+            Ok(crate::tools::cplus::Verdict::Deny) => {
+                return (
+                    format!("ERROR: tool '{}' denied by C+ gate", tool.name),
+                    None,
+                );
+            }
+            Err(reason) => {
+                eprintln!("[cplus] fail-closed deny: {reason}");
+                return (
+                    format!(
+                        "ERROR: tool '{}' denied by C+ gate (fail-closed): {reason}",
+                        tool.name
+                    ),
+                    None,
+                );
+            }
+        }
+    }
     let (content, images) = execute_builtin_unhooked(tool, args, ctx).await;
+    // DEFER 工具：按真实返回分流 commit / rollback
+    // 注意 J 方案语义——rollback 只回滚账本/内存态，不撤销已落盘字节。
+    if let Some(rid) = defer_req_id {
+        if content.starts_with("ERROR") {
+            crate::tools::cplus::journal_rollback(&rid);
+            eprintln!("[cplus] DEFER rollback (ledger only, bytes not reverted): {rid}");
+        } else {
+            crate::tools::cplus::journal_commit(&rid);
+        }
+    }
     let post = crate::tools::hooks::HookPayload {
         tool_result: Some(content.clone()),
         ..payload

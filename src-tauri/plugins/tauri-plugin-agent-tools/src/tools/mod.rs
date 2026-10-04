@@ -9,6 +9,7 @@ pub mod appcontainer;
 /// User attachments copied into a session workspace for the agent to read.
 pub mod attachments;
 pub mod cmdscan;
+pub mod cplus;
 pub mod gate;
 pub mod handlers;
 /// Declarative lifecycle hooks: user shell commands fired around tool calls,
