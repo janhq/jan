@@ -182,13 +182,18 @@ pub async fn execute_builtin(
                             let abs_target =
                                 resolve_path(ctx.project_root, ctx.scratch_root, p);
                             let abs_target_str = abs_target.to_string_lossy().to_string();
-                            let staging_str = format!("{abs_target_str}.taiji-staging");
-                            // sidecar 记账用绝对 target（commit 时 os.replace 用）
+                            // 洞 B：staging 名按 rid 唯一化，避免同 target 并发写互相覆盖
+                            let staging_str = format!("{abs_target_str}.taiji-staging.{rid}");
+                            // sidecar 记账用绝对 target + 唯一 staging（commit 时 os.replace 用）
                             let mut journal_args = args.clone();
                             if let Some(obj) = journal_args.as_object_mut() {
                                 obj.insert(
                                     "path".into(),
                                     serde_json::Value::String(abs_target_str),
+                                );
+                                obj.insert(
+                                    "staging".into(),
+                                    serde_json::Value::String(staging_str.clone()),
                                 );
                             }
                             // 执行体写到 staging（target 全程不动，直到 commit）
@@ -257,16 +262,23 @@ pub async fn execute_builtin(
             }
         }
     }
-    let (content, images) = execute_builtin_unhooked(tool, &exec_args, ctx).await;
+    let (mut content, images) = execute_builtin_unhooked(tool, &exec_args, ctx).await;
     // DEFER 工具：按真实返回分流 commit / rollback
     // write(S)：commit = os.replace 原子覆盖；rollback = 删 staging（target 不动）。
     // edit 等(J)：rollback 只回账本/内存态，不撤销已落盘字节（诚实命名）。
+    // 洞 A：commit 失败（staging os.replace 抛错）时 sidecar 回 COMMIT_FAILED，
+    // journal_commit 返回 Err —— 必须把成功回显改判为 ERROR，否则模型会以为写成功、
+    // 而磁盘从未更新（静默丢数据）。
     if let Some(rid) = defer_req_id {
         if content.starts_with("ERROR") {
             crate::tools::cplus::journal_rollback(&rid);
             eprintln!("[cplus] DEFER rollback (staging removed / ledger only): {rid}");
-        } else {
-            crate::tools::cplus::journal_commit(&rid);
+        } else if let Err(e) = crate::tools::cplus::journal_commit(&rid) {
+            eprintln!("[cplus] DEFER commit_failed -> downgrade content to ERROR: {e}");
+            content = format!(
+                "ERROR: tool '{}' commit failed (staging os.replace failed, bytes NOT written): {e}",
+                tool.name
+            );
         }
     }
     let post = crate::tools::hooks::HookPayload {

@@ -109,11 +109,12 @@ def _reconcile():
     now = time.time()
     with _FileLock(LOCK_FILE):
         events = _read_events()
-        # 每个 request_id 的最后一条事件 + 它的 open 时间/mode/path
+        # 每个 request_id 的最后一条事件 + 它的 open 时间/mode/path/staging
         last = {}
         open_ts = {}
         open_mode = {}
         open_path = {}
+        open_staging = {}
         for e in events:
             rid = e.get("request_id")
             if not rid:
@@ -123,6 +124,7 @@ def _reconcile():
                 open_ts[rid] = e.get("ts", now)
                 open_mode[rid] = e.get("mode", "ledger")
                 open_path[rid] = e.get("path", "")
+                open_staging[rid] = e.get("staging") or ((e.get("path") or "") + ".taiji-staging")
         orphans = [
             rid for rid, ph in last.items()
             if ph == "open" and (now - open_ts.get(rid, now)) > RECONCILE_TTL
@@ -131,8 +133,8 @@ def _reconcile():
             with open(JOURNAL_FILE, "a", encoding="utf-8") as f:
                 for rid in orphans:
                     if open_mode.get(rid) == "staging":
-                        # staging 孤儿：target 没被替换过，直接删 staging 文件
-                        staging = (open_path.get(rid) or "") + ".taiji-staging"
+                        # staging 孤儿：target 没被替换过，直接删 staging 文件（用事件里的唯一 staging）
+                        staging = open_staging.get(rid) or ""
                         try:
                             os.remove(staging)
                         except OSError:
@@ -164,10 +166,13 @@ def _handle_open(req):
     # path 必须是绝对解析后的目标路径（Rust 侧已 resolve），commit 用 path+".taiji-staging"。
     mode = "staging" if tool == "write" else "ledger"
     abs_path = params.get("path") or params.get("file_path") or ""
+    # 洞 B：staging 名以 rid 唯一化（Rust 侧已算好传进来），避免同 target 并发写互相覆盖
+    staging_path = params.get("staging") or (abs_path + ".taiji-staging")
     evt = {
         "phase": "open", "request_id": rid, "tool": tool,
         "params_sha256": _sha256(params),
         "path": abs_path,
+        "staging": staging_path,
         "mode": mode,
         "ts": time.time(),
     }
@@ -175,7 +180,7 @@ def _handle_open(req):
         _append_event(evt)
         if mode == "staging":
             return {"status": "STAGING_READY", "request_id": rid,
-                    "staging_path": abs_path + ".taiji-staging"}
+                    "staging_path": staging_path}
         return {"status": "DEFER", "request_id": rid}
     except Exception as e:
         # fail-closed 延伸：记账失败 = 门禁失败，交上游改判 DENY
@@ -186,39 +191,44 @@ def _handle_finalize(req, phase):
     rid = req.get("request_id", "")
     now = time.time()
     try:
-        # 反查该 rid 的 open 事件，取出 mode / path（journal 是 append-only，顺序扫一遍）
+        # 反查该 rid 的 open 事件，取出 mode / path / staging（journal 是 append-only，顺序扫一遍）
+        # staging 以事件里的字段为单一事实源（含 rid 唯一化），不再现算 path+".taiji-staging"
         mode = "ledger"
         path = ""
+        staging = ""
         for e in _read_events():
             if e.get("request_id") == rid and e.get("phase") == "open":
                 mode = e.get("mode", "ledger")
                 path = e.get("path", "")
+                staging = e.get("staging") or (path + ".taiji-staging")
         if phase == "commit" and mode == "staging":
-            staging = path + ".taiji-staging"
             try:
                 # Windows 上 os.replace == MoveFileEx + REPLACE_EXISTING，同卷原子覆盖
                 os.replace(staging, path)
                 _append_event({"phase": "committed", "request_id": rid, "ts": now})
+                return {"status": "OK", "request_id": rid}
             except Exception as e:
-                # 防假绿：replace 失败必须显式记 commit_failed，并清理孤儿 staging
+                # 洞 A：replace 失败必须显式回 COMMIT_FAILED（不再掩成 OK），并清理孤儿 staging
                 try:
                     os.remove(staging)
                 except OSError:
                     pass
                 _append_event({"phase": "commit_failed", "request_id": rid,
                                "error": str(e), "ts": now})
+                return {"status": "COMMIT_FAILED", "request_id": rid,
+                        "message": f"os.replace failed: {e}"}
         elif phase == "rollback" and mode == "staging":
-            staging = path + ".taiji-staging"
             try:
                 # staging 还没替换到 target，删掉即可，target 字节不动
                 os.remove(staging)
             except OSError:
                 pass
             _append_event({"phase": "rolled_back", "request_id": rid, "ts": now})
+            return {"status": "OK", "request_id": rid}
         else:
             # J 账本模式（edit 等）：只记账本，不碰字节；rollback 同理
             _append_event({"phase": phase, "request_id": rid, "ts": now})
-        return {"status": "OK", "request_id": rid}
+            return {"status": "OK", "request_id": rid}
     except Exception as e:
         return {"status": "ERROR", "message": f"journal_{phase} failed: {e}", "request_id": rid}
 

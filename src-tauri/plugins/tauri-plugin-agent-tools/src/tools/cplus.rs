@@ -214,12 +214,19 @@ pub fn journal_open(req_id: &str, tool: &str, args: &Value) -> Result<(), String
     }
 }
 
-/// DEFER tool "after" success: journal `commit`. Best-effort; a commit write
-/// failure is logged (the bytes already landed, this is ledger-only in J).
-pub fn journal_commit(req_id: &str) {
+/// DEFER tool "after" success: journal `commit`. Returns `Err` when the sidecar
+/// reports `COMMIT_FAILED` (the staging `os.replace` failed, so bytes were NOT
+/// written) or on any IPC failure. The caller downgrades the tool's success
+/// content to `ERROR` so the model never sees a silent data loss (洞 A).
+pub fn journal_commit(req_id: &str) -> Result<(), String> {
     let payload = serde_json::json!({ "kind": "commit", "request_id": req_id });
-    if let Err(e) = sidecar_call(&payload) {
-        eprintln!("[cplus] journal_commit failed: {e} (req {req_id})");
+    let resp = sidecar_call(&payload)?;
+    match resp.get("status").and_then(|s| s.as_str()) {
+        Some("OK") => Ok(()),
+        Some("COMMIT_FAILED") => Err(
+            "sidecar reported COMMIT_FAILED (staging os.replace failed, bytes not written)".into(),
+        ),
+        other => Err(format!("journal_commit unexpected status: {other:?}")),
     }
 }
 
