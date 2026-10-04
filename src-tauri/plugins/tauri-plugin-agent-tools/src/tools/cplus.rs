@@ -43,15 +43,24 @@
 //!   JAN_CPLUS_PYTHON   python executable (default "python")
 
 use serde_json::Value;
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Whether the C+ overlay is active. Off unless `JAN_CPLUS_ENABLED` is set, so
 /// existing behaviour (and the gate test suite) is untouched.
 pub fn enabled() -> bool {
     std::env::var_os("JAN_CPLUS_ENABLED").is_some()
+}
+
+/// B phase (N2)：turn 级批量收口模式。开启后跳过 per-call commit，
+/// 由 dispatch 层在 turn 末调用 finalize_turn() 统一收口。
+/// 零回归：未设此变量时，走原路径 per-rid commit。
+pub fn turn_mode() -> bool {
+    std::env::var_os("JAN_CPLUS_TURN").is_some()
 }
 
 /// The C+ verdict for a tool call.
@@ -231,11 +240,251 @@ pub fn journal_commit(req_id: &str) -> Result<(), String> {
     }
 }
 
+/// B phase (N2)：turn 模式下 Rust 已独占完成 os.replace，只记账本 committed 事件。
+/// 不调 journal_commit（它会二次 os.replace），避免 Blocker-3 的双 replace 竞态。
+pub fn journal_note_commit(req_id: &str) -> Result<(), String> {
+    let payload = serde_json::json!({ "kind": "note_commit", "request_id": req_id });
+    let resp = sidecar_call(&payload)?;
+    match resp.get("status").and_then(|s| s.as_str()) {
+        Some("OK") => Ok(()),
+        other => Err(format!("journal_note_commit unexpected status: {other:?}")),
+    }
+}
+
 /// DEFER tool "after" error: journal `rollback`. Best-effort; in J this only
 /// marks the ledger, it does NOT revert bytes already on disk (see module docs).
 pub fn journal_rollback(req_id: &str) {
     let payload = serde_json::json!({ "kind": "rollback", "request_id": req_id });
     if let Err(e) = sidecar_call(&payload) {
         eprintln!("[cplus] journal_rollback failed: {e} (req {req_id})");
+    }
+}
+
+// ---------- turn-level batch finalize (B phase) ----------
+//
+// N2 地基：turn = agent-loop 的一批 tool call，commit 触发点从 per-call 上移到 per-turn。
+// 单次 DEFER 调用只做 journal_open（建 staging、写新字节进 staging），不 finalize；
+// finalize 挪到 turn 末、该批调用全部返回后的 join 点，统一执行。
+//
+// 派发可并发、收口必须串行：turn 内多调用可能并发，各自只 open+stage（staging 名带 rid
+// 天然不串，target 全程未被碰）；commit 在 turn 末单线程串行做。
+//
+// 护栏 1 仍满足：不改 verdict()/execute_builtin/journal_commit 签名，只改 commit 发生的
+// 时机与聚合。零回归：finalize_turn() 未被调用时，回退现状 per-rid commit。
+
+/// 单次 DEFER 在 turn 内的登记项：记录 target/staging/tool/内容状态，供 turn 末批量收口用。
+#[derive(Debug, Clone)]
+pub struct TurnEntry {
+    pub rid: String,
+    /// 绝对 target 路径（commit 时的 os.replace 目标）
+    pub target: String,
+    /// staging 路径（os.replace 源）
+    pub staging: String,
+    /// 工具名
+    pub tool: String,
+    /// 执行后内容：ERROR 前缀表示该调用已闯祸，触发熔断
+    pub content: String,
+}
+
+/// Turn 级 rid 注册表：per-turn_id 收集 DEFER 条目。
+/// Mutex<HashMap<turn_id, Vec<TurnEntry>>> 结构，全局共享、线程安全。
+static TURN_REGISTRY: OnceLock<Mutex<HashMap<String, Vec<TurnEntry>>>> = OnceLock::new();
+
+fn registry() -> &'static Mutex<HashMap<String, Vec<TurnEntry>>> {
+    TURN_REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 将单次 DEFER 调用的 rid 登记到 turn 注册表，不立即 commit。
+/// 
+/// `turn_id` 标识本批 tool call（通常来自 thread_id 或 dispatch 层分配的批次 id）。
+/// `target` / `staging` 为绝对路径，`content` 为工具执行后的返回串。
+pub fn register_defer(
+    turn_id: &str,
+    rid: &str,
+    target: &str,
+    staging: &str,
+    tool: &str,
+    content: &str,
+) {
+    let entry = TurnEntry {
+        rid: rid.to_string(),
+        target: target.to_string(),
+        staging: staging.to_string(),
+        tool: tool.to_string(),
+        content: content.to_string(),
+    };
+    if let Ok(mut map) = registry().lock() {
+        map.entry(turn_id.to_string())
+            .or_default()
+            .push(entry);
+    } else {
+        eprintln!("[cplus] turn registry lock poisoned, falling back to per-rid commit");
+    }
+}
+
+/// N1 熔断判定：检查本 turn 内是否有任何 DEFER 工具返回 content=ERROR。
+/// 
+/// 语义：只要本 turn 内有一个"闯祸信号"，整批（含其它成功工具的 staging）一律 abort。
+pub fn circuit_break(turn_id: &str) -> bool {
+    let map = match registry().lock() {
+        Ok(m) => m,
+        Err(_) => return false, // 锁中毒，不熔断
+    };
+    if let Some(entries) = map.get(turn_id) {
+        entries.iter().any(|e| e.content.starts_with("ERROR"))
+    } else {
+        false
+    }
+}
+
+/// Turn 末批量收口：对 turn_id 下所有已登记的 DEFER rid 统一 commit 或统一 abort。
+///
+/// 流程（N2/N3）：
+/// 1. 从注册表取出该 turn 的所有条目
+/// 2. CircuitBreak::check → 触发熔断：对每个 rid 走 rollback（os.remove(staging)）
+/// 3. 未触发：逐个先把旧 target 备份成 `.taiji-bak.<rid>`，再 os.replace(staging→target)
+///    批内任一步失败 → 用已收集的 .bak 把先前已替换的目标全部还原（全成或全不成）
+/// 4. 清理注册表
+///
+/// 返回 (success_count, error_messages)
+pub fn finalize_turn(turn_id: &str) -> (usize, Vec<String>) {
+    // 1. 取出该 turn 的所有条目，从注册表移除
+    let entries: Vec<TurnEntry> = {
+        let mut map = match registry().lock() {
+            Ok(m) => m,
+            Err(e) => {
+                return (0, vec![format!("turn registry lock poisoned: {e}")]);
+            }
+        };
+        map.remove(turn_id).unwrap_or_default()
+    };
+
+    if entries.is_empty() {
+        return (0, vec![]);
+    }
+
+    // N1：熔断判定——基于本地 entries，不回查已被掏空的 registry
+    let has_error = entries.iter().any(|e| e.content.starts_with("ERROR"));
+    if has_error {
+        eprintln!("[cplus] CIRCUIT BREAK for turn {turn_id}: aborting all {} deferred ops", entries.len());
+        let mut errors = vec![format!("CIRCUIT BREAK: turn {turn_id} has error signals, all staging aborted")];
+        for entry in &entries {
+            journal_rollback(&entry.rid);
+            eprintln!("[cplus]   rollback staging: {} -> {}", entry.rid, entry.staging);
+        }
+        return (0, errors);
+    }
+
+    // 3. 批量 commit：先全量备份，再全量替换，失败时全量还原
+    let mut bak_paths: Vec<String> = Vec::new();
+    let mut committed_indices: Vec<usize> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+
+    // 3a. 全量备份旧 target
+    for (i, entry) in entries.iter().enumerate() {
+        let bak_path = format!("{}.taiji-bak.{}", entry.target, entry.rid);
+        match std::fs::replace(&entry.target, &bak_path) {
+            Ok(()) => {
+                bak_paths.push(bak_path);
+                committed_indices.push(i);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // target 不存在（新文件 write），无需备份
+                bak_paths.push(String::new());
+                committed_indices.push(i);
+            }
+            Err(e) => {
+                errors.push(format!("backup failed for {}: {}", entry.target, e));
+                // 备份失败 → 立即还原已替换的
+                rollback_committed(&entries, &bak_paths, &committed_indices);
+                // 清理空备份
+                clean_bak_list(&bak_paths);
+                for entry in &entries {
+                    journal_rollback(&entry.rid);
+                }
+                return (0, errors);
+            }
+        }
+    }
+
+    // 3b. 全量 os.replace(staging → target)
+    // Blocker-3 修复：turn 模式下 Rust 独占 replace，不再调 journal_commit（它会二次 replace）。
+    // 改用 journal_note_commit：只记账本 committed 事件，不搬字节。
+    for (i, entry) in entries.iter().enumerate() {
+        match std::fs::replace(&entry.staging, &entry.target) {
+            Ok(()) => {
+                // commit 成功，只记账本（不调 journal_commit，避免 sidecar 二次 os.replace）
+                if let Err(e) = journal_note_commit(&entry.rid) {
+                    eprintln!("[cplus]   journal_note_commit failed: {e}");
+                }
+            }
+            Err(e) => {
+                errors.push(format!(
+                    "os.replace failed for {} -> {}: {}",
+                    entry.staging, entry.target, e
+                ));
+                // replace 失败 → 立即还原所有已替换的（含本步之前成功的）
+                rollback_committed(&entries, &bak_paths, &(0..=i).collect());
+                clean_bak_list(&bak_paths);
+                // 对剩余未处理的 rid 走 rollback
+                for j in (i + 1)..entries.len() {
+                    journal_rollback(&entries[j].rid);
+                }
+                return (0, errors);
+            }
+        }
+    }
+
+    // 3c. 全部成功，清理 .bak
+    clean_bak_list(&bak_paths);
+    let success_count = entries.len();
+    eprintln!("[cplus] turn {turn_id} batch commit OK: {success_count} ops");
+    (success_count, errors)
+}
+
+/// 用 .bak 还原已替换的 target（全成或全不成语义的核心）。
+fn rollback_committed(entries: &[TurnEntry], bak_paths: &[String], indices: &[usize]) {
+    for &i in indices {
+        if i >= entries.len() {
+            continue;
+        }
+        let bak = &bak_paths[i];
+        if bak.is_empty() {
+            continue; // 新文件，无备份
+        }
+        match std::fs::replace(bak, &entries[i].target) {
+            Ok(()) => {
+                eprintln!("[cplus]   restored {} from backup", entries[i].target);
+            }
+            Err(e) => {
+                eprintln!("[cplus]   FAILED to restore {}: {}", entries[i].target, e);
+            }
+        }
+    }
+}
+
+/// 清理 .bak 文件（成功路径或失败后已还原）。
+fn clean_bak_list(bak_paths: &[String]) {
+    for bak in bak_paths {
+        if bak.is_empty() {
+            continue;
+        }
+        if let Err(e) = std::fs::remove_file(bak) {
+            eprintln!("[cplus]   cleanup bak failed {}: {}", bak, e);
+        }
+    }
+}
+
+/// 同 target 多次写检测：turn 内对同一 target 有多个 DEFER 写入时返回 true。
+/// 保守策略：直接触发熔断 DENY。
+pub fn duplicate_target_in_turn(turn_id: &str, target: &str) -> bool {
+    let map = match registry().lock() {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if let Some(entries) = map.get(turn_id) {
+        entries.iter().any(|e| e.target == target)
+    } else {
+        false
     }
 }

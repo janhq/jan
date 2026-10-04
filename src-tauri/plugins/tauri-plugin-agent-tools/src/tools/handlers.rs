@@ -167,6 +167,9 @@ pub async fn execute_builtin(
     // 门禁/握手/三态判定（verdict）一行不动。其余 DEFER 工具暂留 J 账本。
     let mut exec_args: serde_json::Value = args.clone();
     let mut defer_req_id: Option<String> = None;
+    // B phase：捕获 target/staging 供 turn 末批量收口用
+    let mut defer_target: Option<String> = None;
+    let mut defer_staging: Option<String> = None;
     if crate::tools::cplus::enabled() {
         match crate::tools::cplus::verdict(tool.name, args) {
             Ok(crate::tools::cplus::Verdict::Allow) => {}
@@ -228,6 +231,9 @@ pub async fn execute_builtin(
                                     None,
                                 );
                             }
+                            // B phase：捕获 target/staging 供 turn 末批量收口用
+                            defer_target = Some(abs_target_str);
+                            defer_staging = Some(staging_str);
                         }
                         None => {
                             // path 缺失无法 staging，fail-closed 拦截
@@ -281,16 +287,57 @@ pub async fn execute_builtin(
     // 洞 A：commit 失败（staging os.replace 抛错）时 sidecar 回 COMMIT_FAILED，
     // journal_commit 返回 Err —— 必须把成功回显改判为 ERROR，否则模型会以为写成功、
     // 而磁盘从未更新（静默丢数据）。
+    //
+    // B phase (N2)：turn 级批量收口。将 DEFER 条目登记到 turn 注册表，供 turn 末
+    // finalize_turn() 统一 commit/abort。零回归：finalize_turn() 未被调用时，
+    // 走原路径 per-rid commit。
     if let Some(rid) = defer_req_id {
-        if content.starts_with("ERROR") {
-            crate::tools::cplus::journal_rollback(&rid);
-            eprintln!("[cplus] DEFER rollback (staging removed / ledger only): {rid}");
-        } else if let Err(e) = crate::tools::cplus::journal_commit(&rid) {
-            eprintln!("[cplus] DEFER commit_failed -> downgrade content to ERROR: {e}");
-            content = format!(
-                "ERROR: tool '{}' commit failed (staging os.replace failed, bytes NOT written): {e}",
-                tool.name
+        // B phase：登记 DEFER 条目（turn_id 用 thread_id 代理）
+        // TODO(Blocker-5): 真·per-step turn_id 需由 dispatch 层传入，现用 thread_id 代理
+        let turn_id = ctx.thread_id.unwrap_or("per-call");
+        if let (Some(target), Some(staging)) = (&defer_target, &defer_staging) {
+            // Blocker-4 修复：同 target 多次写检测 → 保守 DENY
+            if crate::tools::cplus::turn_mode()
+                && crate::tools::cplus::duplicate_target_in_turn(turn_id, target)
+            {
+                eprintln!(
+                    "[cplus] duplicate target in turn: {} -> deny",
+                    target
+                );
+                // 已登记的 rid 走 rollback
+                crate::tools::cplus::journal_rollback(&rid);
+                return (
+                    format!(
+                        "ERROR: tool '{}' denied: duplicate write to {} within same turn",
+                        tool.name, target
+                    ),
+                    None,
+                );
+            }
+
+            crate::tools::cplus::register_defer(
+                turn_id,
+                &rid,
+                target,
+                staging,
+                tool.name,
+                &content,
             );
+        }
+
+        // turn 模式：跳过 per-call commit，由 finalize_turn() 统一收口
+        // 非 turn 模式：走原路径 per-rid commit（零回归）
+        if !crate::tools::cplus::turn_mode() {
+            if content.starts_with("ERROR") {
+                crate::tools::cplus::journal_rollback(&rid);
+                eprintln!("[cplus] DEFER rollback (staging removed / ledger only): {rid}");
+            } else if let Err(e) = crate::tools::cplus::journal_commit(&rid) {
+                eprintln!("[cplus] DEFER commit_failed -> downgrade content to ERROR: {e}");
+                content = format!(
+                    "ERROR: tool '{}' commit failed (staging os.replace failed, bytes NOT written): {e}",
+                    tool.name
+                );
+            }
         }
     }
     let post = crate::tools::hooks::HookPayload {

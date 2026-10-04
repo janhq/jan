@@ -104,8 +104,11 @@ def _read_events():
 
 def _reconcile():
     """sidecar 首次被拉起时跑一次：超 TTL 仍是 open 的孤儿 -> orphan_reconciled。
-    - staging 孤儿（write）：真实 target 还没被替换，删掉 .taiji-staging 即清场。
-    - ledger 孤儿（edit 等）：字节已直接落到 target，撤不回，只标状态（J 诚实语义）。"""
+    - staging 孤儿（write/edit）：真实 target 还没被替换，删掉 .taiji-staging 即清场。
+    - ledger 孤儿（其余 DEFER）：字节已直接落到 target，撤不回，只标状态（J 诚实语义）。
+    - B phase (N2)：.bak 残留检测——发现遗留 .bak 即判定该 turn commit 未完成，
+      用 .bak 恢复 target 真值并清 staging。
+    """
     now = time.time()
     with _FileLock(LOCK_FILE):
         events = _read_events()
@@ -145,6 +148,31 @@ def _reconcile():
                         "mode": open_mode.get(rid, "ledger"),
                         "ts": now,
                     }, ensure_ascii=False) + "\n")
+
+        # B phase：.bak 残留检测（N2 批中途崩溃 reconcile）
+        for rid in list(last.keys()):
+            path = open_path.get(rid, "")
+            bak = path + ".taiji-bak." + rid if path else ""
+            if bak and os.path.exists(bak):
+                # 发现遗留 .bak：判定该 turn commit 未完成，用 .bak 恢复 target
+                try:
+                    if os.path.exists(path):
+                        # target 存在（可能被部分替换），用 .bak 覆盖
+                        os.replace(bak, path)
+                        print(f"[cplus] reconcile: restored {path} from {bak}", file=sys.stderr)
+                    else:
+                        # target 不存在（新文件 write 中途崩溃），删 .bak 即可
+                        os.remove(bak)
+                        print(f"[cplus] reconcile: removed orphan bak {bak}", file=sys.stderr)
+                except OSError as ex:
+                    print(f"[cplus] reconcile: failed to handle bak {bak}: {ex}", file=sys.stderr)
+                # 同时清理 staging
+                staging = open_staging.get(rid) or ""
+                if staging:
+                    try:
+                        os.remove(staging)
+                    except OSError:
+                        pass
     return len(orphans)
 
 
@@ -226,6 +254,11 @@ def _handle_finalize(req, phase):
                                "error": str(e), "ts": now})
                 return {"status": "COMMIT_FAILED", "request_id": rid,
                         "message": f"os.replace failed: {e}"}
+        elif phase == "note_commit":
+            # B phase (N2)：turn 模式下 Rust 已独占完成 os.replace，只记账本 committed 事件。
+            # 不调 os.replace，避免 Blocker-3 的双 replace 竞态。
+            _append_event({"phase": "committed", "request_id": rid, "ts": now})
+            return {"status": "OK", "request_id": rid}
         elif phase == "rollback" and mode == "staging":
             try:
                 # staging 还没替换到 target，删掉即可，target 字节不动
@@ -270,6 +303,9 @@ def start_ipc_mode():
                 resp = _handle_open(req)
             elif kind == "commit":
                 resp = _handle_finalize(req, "commit")
+            elif kind == "note_commit":
+                # B phase (N2)：Rust 已独占 replace，只记账本 committed
+                resp = _handle_finalize(req, "note_commit")
             elif kind == "rollback":
                 resp = _handle_finalize(req, "rollback")
             else:

@@ -74,7 +74,8 @@ pub fn init<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
             commands::stop_session_monitors,
             commands::cancel_thread_bash,
             commands::preview_register_root,
-            commands::preview_unregister_root
+            commands::preview_unregister_root,
+            commands::cplus_finalize_turn
         ])
         .setup(|app, _api| {
             use tauri::Manager;
