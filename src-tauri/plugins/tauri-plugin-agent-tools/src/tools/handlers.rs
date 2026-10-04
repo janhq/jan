@@ -160,8 +160,12 @@ pub async fn execute_builtin(
     // DEFER (side-effect, requires_commit) tools run a two-phase journal:
     //   phase 1 (before exec) -> journal_open  (ledger entry "open")
     //   phase 2 (after exec)  -> journal_commit on success / journal_rollback on error
-    // J-semantics: rollback reverts ONLY the ledger / in-memory snapshot, NOT
-    // bytes already on disk. (S = atomic staging-rename is tracked as 3.1.)
+    // Mode is per-tool: `write` uses S staging (atomic os.replace on commit),
+    // the rest use J ledger semantics where rollback reverts ONLY the ledger /
+    // in-memory snapshot, NOT bytes already on disk.
+    // S (3.1) 影子写：DEFER 的 write 走原子 staging——只在此处长出 redirect 逻辑，
+    // 门禁/握手/三态判定（verdict）一行不动。edit 等其余 DEFER 工具暂留 J 账本。
+    let mut exec_args: serde_json::Value = args.clone();
     let mut defer_req_id: Option<String> = None;
     if crate::tools::cplus::enabled() {
         match crate::tools::cplus::verdict(tool.name, args) {
@@ -169,7 +173,58 @@ pub async fn execute_builtin(
             Ok(crate::tools::cplus::Verdict::Defer) => {
                 // 两阶段：执行前先在 sidecar 落 journal(open)
                 let rid = crate::tools::cplus::new_request_id();
-                if let Err(reason) =
+                // write 工具：把【绝对解析后的 target】交给 sidecar 记账，
+                // 并把执行体的 path 重定向到 <target>.taiji-staging。
+                // 其余 DEFER 工具（edit 等）按 J 账本，path 不改。
+                if tool.name == "write" {
+                    match arg_str(args, "path") {
+                        Some(p) => {
+                            let abs_target =
+                                resolve_path(ctx.project_root, ctx.scratch_root, p);
+                            let abs_target_str = abs_target.to_string_lossy().to_string();
+                            let staging_str = format!("{abs_target_str}.taiji-staging");
+                            // sidecar 记账用绝对 target（commit 时 os.replace 用）
+                            let mut journal_args = args.clone();
+                            if let Some(obj) = journal_args.as_object_mut() {
+                                obj.insert(
+                                    "path".into(),
+                                    serde_json::Value::String(abs_target_str),
+                                );
+                            }
+                            // 执行体写到 staging（target 全程不动，直到 commit）
+                            if let Some(obj) = exec_args.as_object_mut() {
+                                obj.insert(
+                                    "path".into(),
+                                    serde_json::Value::String(staging_str),
+                                );
+                            }
+                            if let Err(reason) =
+                                crate::tools::cplus::journal_open(&rid, tool.name, &journal_args)
+                            {
+                                // 记账失败 = 门禁失败（fail-closed 延伸）
+                                eprintln!("[cplus] journal_open fail-closed deny: {reason}");
+                                return (
+                                    format!(
+                                        "ERROR: tool '{}' denied by C+ gate (journal fail): {reason}",
+                                        tool.name
+                                    ),
+                                    None,
+                                );
+                            }
+                        }
+                        None => {
+                            // path 缺失无法 staging，fail-closed 拦截
+                            eprintln!("[cplus] write DEFER missing path -> deny");
+                            return (
+                                format!(
+                                    "ERROR: tool '{}' denied by C+ gate (missing path)",
+                                    tool.name
+                                ),
+                                None,
+                            );
+                        }
+                    }
+                } else if let Err(reason) =
                     crate::tools::cplus::journal_open(&rid, tool.name, args)
                 {
                     // 记账失败 = 门禁失败（fail-closed 延伸）
@@ -202,13 +257,14 @@ pub async fn execute_builtin(
             }
         }
     }
-    let (content, images) = execute_builtin_unhooked(tool, args, ctx).await;
+    let (content, images) = execute_builtin_unhooked(tool, &exec_args, ctx).await;
     // DEFER 工具：按真实返回分流 commit / rollback
-    // 注意 J 方案语义——rollback 只回滚账本/内存态，不撤销已落盘字节。
+    // write(S)：commit = os.replace 原子覆盖；rollback = 删 staging（target 不动）。
+    // edit 等(J)：rollback 只回账本/内存态，不撤销已落盘字节（诚实命名）。
     if let Some(rid) = defer_req_id {
         if content.starts_with("ERROR") {
             crate::tools::cplus::journal_rollback(&rid);
-            eprintln!("[cplus] DEFER rollback (ledger only, bytes not reverted): {rid}");
+            eprintln!("[cplus] DEFER rollback (staging removed / ledger only): {rid}");
         } else {
             crate::tools::cplus::journal_commit(&rid);
         }

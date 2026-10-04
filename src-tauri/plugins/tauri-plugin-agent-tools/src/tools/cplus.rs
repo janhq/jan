@@ -16,11 +16,16 @@
 //! unlisted tools ("unknown = deny by default"), so the gate never silently
 //! passes a tool the contract does not name.
 //!
-//! Two-phase journal (J scheme): DEFER tools emit `open` before execution and
+//! Two-phase journal: DEFER tools emit `open` before execution and
 //! `commit`/`rollback` after, keyed by a request_id, so a crash between exec and
 //! commit leaves a reconcilable orphan (see `poc_sidecar.py::_reconcile`).
-//! J-semantics: `rollback` reverts ONLY the ledger / in-memory snapshot, NOT
-//! bytes already on disk. (S = atomic staging-rename is tracked as 3.1.)
+//! Mode is per-request, decided by the sidecar at `open`:
+//!   - "write"  -> S staging (3.1): the tool writes `<target>.taiji-staging`,
+//!                 `commit` does an atomic `os.replace` onto the target,
+//!                 `rollback` deletes the staging file (target bytes untouched).
+//!   - others   -> J ledger: `rollback` reverts ONLY the ledger / in-memory
+//!                 snapshot, NOT bytes already on disk (honest: edit writes
+//!                 the real target directly, so a crash can't be undone).
 //!
 //! Protocol: Stdio IPC. The sidecar runs as `python poc_sidecar.py --daemon`,
 //! reads one JSON request per line from stdin
@@ -188,6 +193,13 @@ fn sidecar_call(payload: &Value) -> Result<Value, String> {
 /// DEFER tool "before" execution: journal `open`. Write failure returns `Err`
 /// so the caller downgrades to DENY (fail-closed extension: journal failure =
 /// gate failure).
+///
+/// Accepts both `DEFER` (J ledger mode) and `STAGING_READY` (S staging mode)
+/// as success. S mode means the sidecar has recorded the absolute target path
+/// and the Rust caller has redirected the tool's `path` arg to
+/// `<target>.taiji-staging`; the sidecar atomically `os.replace`es the staging
+/// file onto the target on `commit`. Keeping this signature self-contained
+/// (it builds the payload internally) avoids touching the call sites.
 pub fn journal_open(req_id: &str, tool: &str, args: &Value) -> Result<(), String> {
     let payload = serde_json::json!({
         "kind": "open",
@@ -197,7 +209,7 @@ pub fn journal_open(req_id: &str, tool: &str, args: &Value) -> Result<(), String
     });
     let resp = sidecar_call(&payload)?;
     match resp.get("status").and_then(|s| s.as_str()) {
-        Some("DEFER") => Ok(()),
+        Some("DEFER") | Some("STAGING_READY") => Ok(()),
         _ => Err(format!("journal_open rejected: {resp}")),
     }
 }
