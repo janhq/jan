@@ -2136,6 +2136,50 @@ mod tests {
         assert_eq!(first_map, second_map);
     }
 
+
+    /// Regression for janhq/jan#8975: the advertised array must never carry the
+    /// same `function.name` twice. A strict provider rejects the request, and a
+    /// lenient one keeps one definition that the routing table may not point at.
+    #[test]
+    fn the_advertised_array_has_unique_names_and_matches_the_routing_table() {
+        let described = |name: &str, description: &str| -> RenderedTool {
+            let (name, mut tool) = rendered(name);
+            tool["function"]["description"] = json!(description);
+            (name, tool)
+        };
+        let (tools, tool_to_server) = assemble_tool_array(vec![
+            (
+                "fs".to_string(),
+                vec![
+                    described("search", "Search the filesystem"),
+                    rendered("read"),
+                ],
+            ),
+            (
+                "zed".to_string(),
+                vec![described("search", "Search the open editor buffer")],
+            ),
+        ]);
+
+        let mut names = advertised_names(&tools);
+        names.sort();
+        let mut unique = names.clone();
+        unique.dedup();
+        assert_eq!(names, unique, "duplicate function names on the wire");
+        assert_eq!(tool_to_server.len(), tools.len());
+
+        // The definition the model reads must belong to the server the call
+        // routes to: `zed` owns `search` in the routing table.
+        assert_eq!(tool_to_server["search"], "zed");
+        let search = tools
+            .iter()
+            .find(|t| t["function"]["name"] == "search")
+            .unwrap();
+        assert_eq!(
+            search["function"]["description"],
+            "Search the open editor buffer"
+        );
+    }
     #[test]
     fn tool_to_server_stays_consistent_with_the_reordered_array() {
         let (tools, tool_to_server) = assemble_tool_array(vec![
