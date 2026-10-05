@@ -202,6 +202,7 @@ pub(crate) struct OrchestrationArgs {
 }
 
 #[async_trait]
+#[allow(clippy::double_must_use)] // async_trait generates #[must_use] on Pin<Box<dyn Future>> which is already must_use
 pub(crate) trait ModelInvoker: Send + Sync {
     async fn invoke(
         &self,
@@ -288,6 +289,7 @@ pub(crate) struct BackgroundNotice {
 }
 
 #[async_trait]
+#[allow(clippy::double_must_use)] // async_trait generates #[must_use] on Pin<Box<dyn Future>> which is already must_use
 pub(crate) trait ToolInvoker: Send + Sync {
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
 
