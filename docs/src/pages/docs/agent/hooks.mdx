@@ -137,6 +137,11 @@ event has them:
 | `session_id` | `SessionStart`, `SessionEnd`, `UserPromptSubmit` |
 | `message_count` | `SessionStart`, `UserPromptSubmit`, `PreCompact` |
 
+The shell tool was called `bash` before. A `matcher` that says `bash` (or `Bash`) still selects it,
+but `tool_name` in the payload is always the current name, `shell`. A script that tests the payload
+itself - say a matcher-less audit hook running `jq 'select(.tool_name == "bash")'` - has to test
+for `shell` instead, or it stops matching.
+
 ## The answer
 
 Whatever the command writes to stdout, up to 64KB.

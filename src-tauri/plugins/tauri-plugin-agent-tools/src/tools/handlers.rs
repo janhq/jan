@@ -1256,13 +1256,6 @@ impl BashCapture {
     }
 }
 
-/// True when a `bash` tool result reports failure via its exit marker: a
-/// non-zero `[exit N]` or a signal termination. The marker is emitted by
-/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
-/// so scan every line rather than only the tail. Model-facing content is
-/// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
-/// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
-/// the display-only `is_error` flag so the TUI marks the call failed.
 /// Whether a built-in call's result is a failure: an `ERROR` prefix for any
 /// tool, or a failed exit marker from the exec tool. Keyed on the capability
 /// rather than a tool name, so the agent loop, the desktop command and the MCP
@@ -1272,6 +1265,13 @@ pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
         || (tool.capability == super::Capability::Exec && bash_result_failed(content))
 }
 
+/// True when a shell tool result reports failure via its exit marker: a
+/// non-zero `[exit N]` or a signal termination. The marker is emitted by
+/// [`BashCapture::finish`] on its own line and a truncation note may follow it,
+/// so scan every line rather than only the tail. Model-facing content is
+/// deliberately left unprefixed (a non-zero exit is not an "ERROR" string, since
+/// commands like `grep`/`diff`/`test` exit non-zero without failing); this feeds
+/// the display-only `is_error` flag so the TUI marks the call failed.
 pub fn bash_result_failed(content: &str) -> bool {
     content.lines().any(|line| {
         let l = line.trim();

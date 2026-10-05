@@ -14,6 +14,7 @@ import {
   TODO_TOOL_NAME,
 } from '@/lib/coworkTools'
 import { MONITOR_TOOL_NAME } from '@/lib/coworkMonitor'
+import { canonicalToolName } from '@/lib/agentTools'
 import { MAX_SUBAGENT_STEPS } from '@/lib/coworkBudget'
 import { createStepMetadata } from '@/lib/stepMetadata'
 import {
@@ -464,13 +465,17 @@ export function injectInputs(
  * permit, rather than dropping it silently — a child that quietly lost the one
  * tool it needed looks like a model failure. A definition-listed tool the parent
  * lacks *is* dropped: the definition's author cannot know the parent's mode.
- * Ported from `subagent.rs::intersect_allowed_tools`.
+ * Ported from `subagent.rs::intersect_allowed_tools`, including its reading of
+ * the shell's former name: a definition or request that still says `bash`
+ * means the `shell` tool the parent now advertises.
  */
 export function intersectAllowedTools(
-  definition: string[] | null | undefined,
-  request: string[] | null | undefined,
+  rawDefinition: string[] | null | undefined,
+  rawRequest: string[] | null | undefined,
   parentTools: string[]
 ): { tools: string[] | null } | { error: string } {
+  const definition = rawDefinition?.map(canonicalToolName)
+  const request = rawRequest?.map(canonicalToolName)
   const parent = new Set(parentTools)
   const withSkills = (tools: string[]) => {
     const out = [...tools]
