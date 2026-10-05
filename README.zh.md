@@ -142,7 +142,7 @@ yarn dev
 - **Windows**: 10+，支持 NVIDIA/AMD/Intel Arc GPU 加速
 - **Linux**: 大多数发行版均可，支持 GPU 加速
 
-有关详细的兼容性说明，请查看我们的[安装指南](https://jan.ai/docs/desktop/mac)。
+有关详细的兼容性说明，请查看我们的[安装指南](https://jan.ai/docs/desktop/install/mac)。
 
 ## 故障排除 (Troubleshooting)
 
