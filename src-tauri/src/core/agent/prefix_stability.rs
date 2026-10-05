@@ -799,3 +799,45 @@ fn the_default_policy_places_exactly_the_permitted_contributors_in_the_prefix() 
         "the default policy's prefix contributors have to be the permitted list, in registry order"
     );
 }
+
+/// Hide Secrets rewrites the request just before it leaves. It must not move the
+/// cache line: a request that extends an earlier one has to keep the earlier
+/// one's bytes, secret or not, and the system prompt must come through unchanged.
+#[test]
+fn hide_secrets_keeps_the_filtered_prefix_stable_from_turn_to_turn() {
+    const SECRET: &str = "live-value-1234567890";
+    let filter = crate::core::agent::secrets::SecretFilter::for_tests(&[(
+        "OPENAI_API_KEY",
+        SECRET,
+    )]);
+    let project = Project::new("hide-secrets");
+    let tools = advertised(&["read_file"]);
+
+    let first = turn(
+        project.root(),
+        &[user(&format!("my key is {SECRET}"))],
+        DAY,
+        &tools,
+    );
+    let mut history = first.messages.clone();
+    history.push(assistant("noted"));
+    history.push(user(&format!("again: {SECRET}")));
+    let second = turn(project.root(), &history, DAY, &tools);
+
+    let filtered = |request: &Request| -> Request {
+        let body: Value = serde_json::from_str(&request.body).unwrap();
+        let body = filter.filter_request(&body);
+        Request {
+            messages: body["messages"].as_array().unwrap().clone(),
+            body: serde_json::to_string(&body).unwrap(),
+        }
+    };
+    let (a, b) = (filtered(&first), filtered(&second));
+
+    assert!(!a.body.contains(SECRET) && !b.body.contains(SECRET), "the key leaked");
+    assert_eq!(
+        a.messages[0], first.messages[0],
+        "the system prompt is not part of the secret pass unless it holds one"
+    );
+    a.assert_extended_by("turn two after Hide Secrets", &b);
+}

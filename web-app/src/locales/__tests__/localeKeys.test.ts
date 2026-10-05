@@ -3,10 +3,18 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const SRC = resolve(__dirname, '../..')
-const LOCALE_DIR = resolve(__dirname, '../en')
+const LOCALES_ROOT = resolve(__dirname, '..')
 
 /** Namespaces whose keys are asserted to exist. */
-const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat']
+const GUARDED_NAMESPACES = ['setup', 'model-errors', 'common', 'chat', 'tools']
+
+/**
+ * Namespaces every shipped locale must translate in full. The runtime falls
+ * back to English for a missing key, so a gap never breaks the UI; it just
+ * leaves a block of English inside an otherwise translated screen. Add a
+ * namespace here once every locale has caught up with it.
+ */
+const COMPLETE_NAMESPACES = ['tools']
 
 /**
  * Keys the code composes at runtime (`t(`setup:${stage.messageKey}`)`), which a
@@ -77,9 +85,44 @@ function sourceFiles(dir: string, acc: string[] = []): string[] {
   return acc
 }
 
-function loadNamespace(namespace: string): Record<string, unknown> {
-  return JSON.parse(readFileSync(join(LOCALE_DIR, `${namespace}.json`), 'utf8'))
+function loadNamespace(
+  namespace: string,
+  locale = 'en'
+): Record<string, unknown> {
+  return JSON.parse(
+    readFileSync(join(LOCALES_ROOT, locale, `${namespace}.json`), 'utf8')
+  )
 }
+
+/** Every leaf of a bundle as `[dotted.key, value]`. */
+function leaves(
+  bundle: Record<string, unknown>,
+  prefix = ''
+): Array<[string, unknown]> {
+  return Object.entries(bundle).flatMap(([key, value]) =>
+    value && typeof value === 'object'
+      ? leaves(value as Record<string, unknown>, `${prefix}${key}.`)
+      : [[`${prefix}${key}`, value] as [string, unknown]]
+  )
+}
+
+/**
+ * The `{{name}}` interpolations in a string, order-insensitive. Same pattern
+ * as the runtime in i18n/setup.ts, so `{{ tool }}` (which it renders
+ * literally) counts as a dropped placeholder.
+ */
+function placeholders(value: unknown): string[] {
+  return typeof value === 'string'
+    ? [...value.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]).sort()
+    : []
+}
+
+const TRANSLATED_LOCALES = readdirSync(LOCALES_ROOT).filter(
+  (entry) =>
+    entry !== 'en' &&
+    !entry.startsWith('__') &&
+    statSync(join(LOCALES_ROOT, entry)).isDirectory()
+)
 
 function lookup(bundle: Record<string, unknown>, key: string): unknown {
   return key.split('.').reduce<unknown>((node, part) => {
@@ -157,5 +200,49 @@ describe('en locale keys', () => {
       (key) => !referenced.has(key) && !dynamic.has(key)
     )
     expect(unused).toEqual([])
+  })
+})
+
+describe.each(COMPLETE_NAMESPACES)('translated %s locales', (namespace) => {
+  const english = leaves(loadNamespace(namespace))
+
+  it('finds the translated locales', () => {
+    expect(TRANSLATED_LOCALES.length).toBeGreaterThan(0)
+  })
+
+  it.each(TRANSLATED_LOCALES)('%s has every en key', (locale) => {
+    const bundle = loadNamespace(namespace, locale)
+    const missing = english
+      .map(([key]) => key)
+      .filter((key) => lookup(bundle, key) === undefined)
+    expect(missing, `missing from ${locale}/${namespace}.json`).toEqual([])
+  })
+
+  // A key dropped from en, or a typo'd one, would otherwise linger unseen in
+  // every translated file.
+  it.each(TRANSLATED_LOCALES)('%s has no keys en lacks', (locale) => {
+    const known = new Set(english.map(([key]) => key))
+    const extra = leaves(loadNamespace(namespace, locale))
+      .map(([key]) => key)
+      .filter((key) => !known.has(key))
+    expect(extra, `not in en/${namespace}.json`).toEqual([])
+  })
+
+  // A translated string that drops or renames `{{tool}}` renders a sentence
+  // with a hole in it, or the literal braces, in that language only.
+  it.each(TRANSLATED_LOCALES)('%s keeps every en placeholder', (locale) => {
+    const bundle = loadNamespace(namespace, locale)
+    const mismatched = english
+      .filter(([key]) => lookup(bundle, key) !== undefined)
+      .filter(
+        ([key, value]) =>
+          placeholders(lookup(bundle, key)).join() !==
+          placeholders(value).join()
+      )
+      .map(([key]) => key)
+    expect(
+      mismatched,
+      `placeholders differ in ${locale}/${namespace}.json`
+    ).toEqual([])
   })
 })
