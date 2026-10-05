@@ -16,12 +16,20 @@
 use std::path::PathBuf;
 
 /// The body of `Function <name>` or `Section <name>` up to its terminator.
+///
+/// Located by byte search rather than by summing line lengths: a Windows
+/// checkout has CRLF endings, which `lines()` strips without saying how many
+/// bytes it dropped.
 fn nsis_block<'a>(template: &'a str, opener: &str, end: &str) -> &'a str {
-    let start = template
-        .lines()
-        .position(|l| l.trim_end() == opener)
+    let offset = template
+        .match_indices(opener)
+        .map(|(i, _)| i)
+        .find(|&i| {
+            let at_line_start = i == 0 || template.as_bytes()[i - 1] == b'\n';
+            let after = &template[i + opener.len()..];
+            at_line_start && after.trim_start_matches([' ', '\t']).starts_with(['\r', '\n'])
+        })
         .unwrap_or_else(|| panic!("`{opener}` not found in the NSIS template"));
-    let offset: usize = template.lines().take(start).map(|l| l.len() + 1).sum();
     let rest = &template[offset..];
     let stop = rest
         .find(end)
