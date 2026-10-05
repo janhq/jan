@@ -41,9 +41,17 @@ fn the_previous_main_binary_name_is_read_before_the_old_uninstaller_runs() {
     let read = "ReadRegStr $OldMainBinaryName SHCTX \"${UNINSTKEY}\" \"MainBinaryName\"";
 
     let on_init = nsis_block(&template, "Function .onInit", "FunctionEnd");
+    let read_at = on_init
+        .find(read)
+        .expect("`.onInit` must read MainBinaryName into $OldMainBinaryName");
+    // SHCTX names a hive only once MULTIUSER_INIT has picked the install mode
+    // (INSTALLMODE "both"); read before it, the lookup can hit the wrong hive.
+    let context_at = on_init
+        .find("!insertmacro MULTIUSER_INIT")
+        .expect("`.onInit` no longer calls MULTIUSER_INIT; re-check where SHCTX is set");
     assert!(
-        on_init.contains(read),
-        "`.onInit` must read MainBinaryName into $OldMainBinaryName"
+        read_at > context_at,
+        "`.onInit` must read MainBinaryName after MULTIUSER_INIT sets SHCTX"
     );
 
     let install = nsis_block(&template, "Section Install", "SectionEnd");
