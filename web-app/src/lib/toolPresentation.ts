@@ -1,5 +1,6 @@
 import type { ToolUIPart } from 'ai'
 import type { ToolOrigin } from './toolOrigin'
+import { isShellToolName } from './agentTools'
 
 /** The call is still being written or executed: no result yet. */
 export const isToolRunning = (state: ToolUIPart['state']) =>
@@ -13,7 +14,7 @@ export type ToolCallBar =
   | { variant: 'search'; query: string; count?: number }
   | { variant: 'address'; url: string }
   | { variant: 'documents'; query: string; count?: number; fileCount?: number }
-  /** `bash`, presented as a terminal. */
+  /** `shell` (or legacy `bash`), presented as a terminal. */
   | { variant: 'terminal'; command: string }
   /**
    * The workspace tools. `target` is whatever the call is really about -- a path
@@ -127,7 +128,7 @@ export function describeNativeToolCall(
     }
   }
   if (origin.kind === 'agent') {
-    if (toolName === 'bash') {
+    if (isShellToolName(toolName)) {
       return {
         variant: 'terminal',
         command: asString(args.command),
@@ -174,7 +175,7 @@ const TRUNCATION_NOTICE = /\n?\[output truncated[^\]]*\]/
 const SANDBOX_NOTICE = /\n?\[sandbox: ([^\]]*)\]/
 
 /**
- * Split `bash`'s `[exit N]` / `[terminated by signal]` status and its trailing
+ * Split `shell`'s `[exit N]` / `[terminated by signal]` status and its trailing
  * notices off its output (see the tool description in `schema.rs`), so the
  * terminal can show a status of its own instead of leaving markers in the
  * scrollback. Absent or partial markers are normal: the run may still be going.

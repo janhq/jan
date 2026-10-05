@@ -989,8 +989,7 @@ async fn execute_tool_inner(
         ctx = ctx.with_output_sink(sink);
     }
     let (content, diff, images) = handlers::execute_builtin_with_diff(tool, &args, &ctx).await;
-    let is_error =
-        content.starts_with("ERROR") || (name == "bash" && handlers::bash_result_failed(&content));
+    let is_error = handlers::tool_result_failed(tool, &content);
     Ok(ToolResult {
         content,
         diff,
@@ -1415,7 +1414,7 @@ mod tests {
             df.clone(),
             T1.into(),
             None,
-            "bash".into(),
+            "shell".into(),
             json!({"command": "echo hi"}),
             None,
             None,
@@ -1458,7 +1457,7 @@ mod tests {
             df.clone(),
             T1.into(),
             None,
-            "bash".into(),
+            "shell".into(),
             json!({"command": "exec 3<>/dev/tcp/1.1.1.1/53 && echo connected"}),
             None,
             None,

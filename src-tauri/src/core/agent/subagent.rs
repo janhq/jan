@@ -345,7 +345,7 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
                 // restrict a child to a tool it is never offered -- and a child
                 // scoped to *only* those would be left with none. Dropped instead,
                 // so such an agent inherits the full toolset (bash included).
-                "bash" => Some("bash"),
+                "bash" => Some(tauri_plugin_agent_tools::tools::SHELL_TOOL),
                 "edit" => Some("edit"),
                 "write" => Some("write"),
                 "websearch" => Some("web_search"),
@@ -448,9 +448,19 @@ pub fn intersect_allowed_tools(
     request: Option<&[String]>,
     parent: &ToolPermissions,
 ) -> Result<Option<Vec<String>>, SubagentError> {
-    let definition = definition.filter(|d| !d.is_empty());
-    let request = request.filter(|r| !r.is_empty());
-    if let Some(requested) = request {
+    // Former built-in names (`bash`) are read as the current ones, so a
+    // definition file or a model that still says `bash` gets the shell rather
+    // than a refusal or a child with nothing to run.
+    let canonical = |tools: &[String]| -> Vec<String> {
+        tools
+            .iter()
+            .map(|t| tauri_plugin_agent_tools::tools::canonical_tool_name(t).to_string())
+            .collect()
+    };
+    let definition = definition.filter(|d| !d.is_empty()).map(canonical);
+    let request = request.filter(|r| !r.is_empty()).map(canonical);
+    let definition = definition.as_deref();
+    if let Some(requested) = request.as_deref() {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
             if let Some(def) = definition {
@@ -2579,7 +2589,7 @@ pub fn subagent_tool_schemas(
                                     "allowed_tools": {
                                         "type": "array",
                                         "items": { "type": "string" },
-                                        "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs bash, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
+                                        "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
                                     }
                                 },
                                 "required": ["name", "task"]
@@ -2620,7 +2630,7 @@ pub fn subagent_tool_schemas(
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. bash to run commands, write/edit to change files). An empty list is treated as omitted."
+                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. shell to run commands, write/edit to change files). An empty list is treated as omitted."
                         },
                         "scope": { "type": "string", "enum": ["user", "project"], "description": "Where to store it (default 'project')." },
                         "overwrite": { "type": "boolean", "description": "Replace an existing same-name definition in that scope (default false)." }
@@ -3201,6 +3211,22 @@ pub(crate) mod tests {
         let p = perms_denying(&["bash"]);
         let err = intersect_allowed_tools(None, Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
+    }
+
+    /// A definition or request still naming `bash` gets the shell tool under
+    /// its current name, and a parent `deny = ["bash"]` still withholds it.
+    #[test]
+    fn intersect_reads_the_legacy_bash_name_as_the_shell_tool() {
+        let def = vec!["read".to_string(), "bash".to_string()];
+        let req = vec!["bash".to_string()];
+        let p = ToolPermissions::allow_all();
+        let out = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap().unwrap();
+        assert_eq!(out[0], "shell");
+
+        let out = intersect_allowed_tools(Some(&def), None, &perms_denying(&["bash"]))
+            .unwrap()
+            .unwrap();
+        assert!(!out.iter().any(|t| t == "shell" || t == "bash"), "{out:?}");
     }
 
     // ── resolve_dispatch ────────────────────────────────────────────────────

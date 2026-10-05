@@ -352,7 +352,7 @@ allow_write = []
 # credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
 # allows it (true), the desktop masks $HOME. Writes stay in the workspace.
 # allow_home_read = true
-# Whether `bash` runs under OS confinement at all. Unset follows the surface:
+# Whether `shell` runs under OS confinement at all. Unset follows the surface:
 # the CLI runs unconfined unless you pass --sandbox or set sandbox = true in
 # ~/.jan/config.toml; the desktop always confines. Set it here to require
 # confinement for anyone working in this project.

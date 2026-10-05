@@ -138,7 +138,7 @@ export type TerminalWidgetProps = {
 }
 
 /**
- * `bash` rendered as a terminal: the command streams in after a prompt, then its
+ * `shell` rendered as a terminal: the command streams in after a prompt, then its
  * output fills the scrollback below. The trailing `[exit N]` marker becomes a
  * status chip rather than staying in the text.
  *

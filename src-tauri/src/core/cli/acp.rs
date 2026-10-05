@@ -962,11 +962,11 @@ fn plan(list: &TodoList) -> Plan {
 
 /// What kind of work a tool does, for the client's icon and grouping.
 fn tool_kind(name: &str) -> ToolKind {
-    match name {
+    match tauri_plugin_agent_tools::tools::canonical_tool_name(name) {
         "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
         "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
-        "bash" => ToolKind::Execute,
+        tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,
         "web_fetch" | "web_search" => ToolKind::Fetch,
         "dispatch_subagent" | "todo" => ToolKind::Think,
         _ => ToolKind::Other,

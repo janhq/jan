@@ -39,7 +39,7 @@ fn default_served_set_is_read_only() {
     assert!(names.contains(&"skill_write".to_string()));
     assert!(!names.contains(&"write".to_string()));
     assert!(!names.contains(&"edit".to_string()));
-    assert!(!names.contains(&"bash".to_string()));
+    assert!(!names.contains(&"shell".to_string()));
 }
 
 #[test]
@@ -53,7 +53,17 @@ fn opt_in_adds_mutating_tools() {
     let names = tool_names(&JanToolServer::new(opts));
     assert!(names.contains(&"write".to_string()));
     assert!(names.contains(&"edit".to_string()));
-    assert!(names.contains(&"bash".to_string()));
+    assert!(names.contains(&"shell".to_string()));
+}
+
+/// `--only bash`, written before the rename, still selects the shell tool.
+#[test]
+fn only_accepts_the_legacy_bash_name() {
+    let mut opts = options(&PathBuf::from("."));
+    opts.served.allow_exec = true;
+    opts.served.only = vec!["bash".into()];
+    let names = tool_names(&JanToolServer::new(opts));
+    assert_eq!(names, vec!["shell".to_string()]);
 }
 
 #[test]
@@ -362,7 +372,7 @@ async fn list_and_call_round_trip_over_a_stream_transport() {
     let tools = client.list_all_tools().await.expect("tools/list");
     let names: Vec<String> = tools.iter().map(|t| t.name.to_string()).collect();
     assert!(names.contains(&"read".to_string()), "{names:?}");
-    assert!(!names.contains(&"bash".to_string()), "{names:?}");
+    assert!(!names.contains(&"shell".to_string()), "{names:?}");
 
     let result = client
         .call_tool(
@@ -387,7 +397,7 @@ async fn list_and_call_round_trip_over_a_stream_transport() {
     // as a transport failure.
     let denied = client
         .call_tool(
-            CallToolRequestParams::new("bash").with_arguments(
+            CallToolRequestParams::new("shell").with_arguments(
                 serde_json::json!({ "command": "echo nope" })
                     .as_object()
                     .cloned()
@@ -430,7 +440,7 @@ async fn bash_exit_status_decides_is_error() {
     ] {
         let result = client
             .call_tool(
-                CallToolRequestParams::new("bash").with_arguments(
+                CallToolRequestParams::new("shell").with_arguments(
                     serde_json::json!({ "command": command })
                         .as_object()
                         .cloned()

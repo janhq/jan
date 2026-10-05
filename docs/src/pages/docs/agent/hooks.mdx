@@ -13,11 +13,11 @@ prompt is submitted, when a session starts or ends, and before a compaction. The
 stdin as JSON and the command's stdout is its answer.
 
 The point is to make a team policy enforceable rather than merely requested. "Run `cargo fmt` after
-every `edit`", "never let `bash` touch `infra/`", "log every tool call to our audit sink" used to
+every `edit`", "never let `shell` touch `infra/`", "log every tool call to our audit sink" used to
 have only one lever - a line in the system prompt, which the model is free to ignore. A hook is not
 advice. A `PreToolUse` hook that answers `deny` stops the call.
 
-A hook is a shell command, not a plugin runtime. It runs through the same confinement `bash` gets,
+A hook is a shell command, not a plugin runtime. It runs through the same confinement `shell` gets,
 so nothing here is a new execution primitive.
 
 ## A first hook
@@ -82,7 +82,7 @@ shared config does not take the other hooks down with it - it is dropped, with a
 
 ```json
 [
-  { "event": "PreToolUse", "matcher": "bash", "command": "./hooks/audit.sh", "timeout_secs": 10 },
+  { "event": "PreToolUse", "matcher": "shell", "command": "./hooks/audit.sh", "timeout_secs": 10 },
   { "event": "SessionEnd", "command": "./hooks/report.sh" }
 ]
 ```
@@ -121,7 +121,7 @@ event has them:
 {
   "event": "PreToolUse",
   "project_root": "/home/you/code/app",
-  "tool_name": "bash",
+  "tool_name": "shell",
   "tool_input": { "command": "rm -rf infra/" },
   "session_id": "01J9...",
   "message_count": 24
@@ -160,7 +160,7 @@ When a `PreToolUse` hook denies, the model sees the same refusal shape every oth
 the hook's reason attached:
 
 ```
-ERROR: tool 'bash' denied: infra/ is managed by terraform, not by the agent
+ERROR: tool 'shell' denied: infra/ is managed by terraform, not by the agent
 ```
 
 A worked example - refuse shell commands that touch a protected directory:
@@ -168,7 +168,7 @@ A worked example - refuse shell commands that touch a protected directory:
 ```toml
 [[hooks]]
 event = "PreToolUse"
-matcher = "bash"
+matcher = "shell"
 command = "jq -e '.tool_input.command | test(\"infra/\") | not' >/dev/null || echo '{\"decision\":\"deny\",\"reason\":\"infra/ is managed by terraform, not by the agent\"}'"
 ```
 
@@ -209,7 +209,7 @@ Entries dropped while loading - a bad event name, a blank command, an invalid ma
 reported the same way, once per run, before anything fires.
 
 <Callout type="info">
-Hooks run confined exactly the way `bash` does. Under a sandboxed run a hook is sandboxed; on the
+Hooks run confined exactly the way `shell` does. Under a sandboxed run a hook is sandboxed; on the
 CLI, where the sandbox is off by default, a hook runs with your own access. The shell environment is
 the same minimal one, so a hook does not see your secrets unless `[tools] env_passthrough` or
 `[tools] env_set` names them. See [Tool Permissions](/docs/agent/permissions#the-shell-environment).
@@ -257,7 +257,7 @@ description = "End tag, defaults to HEAD"
 ```
 
 The model sees it as `plugin__release-tools__changelog`. The `plugin__<plugin>__<tool>` form is
-mandatory so a plugin cannot shadow a built-in like `bash` or `edit`, or collide with an MCP tool.
+mandatory so a plugin cannot shadow a built-in like `shell` or `edit`, or collide with an MCP tool.
 Names are ASCII alphanumerics, `_` and `-`, may not contain `__`, and the whole qualified name must
 be 64 characters or shorter - several providers reject a longer function name, and reject the entire
 request rather than the one tool. An entry that breaks a rule is dropped; where two plugins declare
@@ -305,7 +305,7 @@ jan cli agent status --project ~/code/app
 "hooks": [
   {
     "event": "PreToolUse",
-    "matcher": "bash",
+    "matcher": "shell",
     "command": "./hooks/audit.sh",
     "timeout_secs": 10,
     "source": "/home/you/.jan/projects/app-1a2b3c4d/plugins/auditor/hooks/hooks.json"

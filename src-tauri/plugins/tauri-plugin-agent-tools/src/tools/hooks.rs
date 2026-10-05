@@ -168,6 +168,9 @@ impl Hook {
         // An unparseable matcher cannot reach here: `HookSet::extend_from`
         // drops such an entry with a notice rather than letting it match
         // nothing forever.
+        // Both sides canonical: the matcher was rewritten at load, and a caller
+        // still holding a former name is matched as the current tool.
+        let tool_name = super::canonical_tool_name(tool_name);
         glob::Pattern::new(&self.matcher)
             .map(|p| p.matches(tool_name))
             .unwrap_or(false)
@@ -251,11 +254,12 @@ impl HookSet {
                 ));
                 continue;
             }
-            let matcher = entry
-                .matcher
-                .unwrap_or_else(|| "*".to_string())
-                .trim()
-                .to_string();
+            // A matcher naming a former built-in (`bash`, or Claude Code's
+            // `Bash`) is stored as the current name, so a hook written before
+            // the rename -- an audit or a deny gate -- keeps firing.
+            let matcher = super::canonical_tool_pattern(
+                entry.matcher.as_deref().unwrap_or("*").trim(),
+            );
             // Checked here, not at match time: `matches` can only answer
             // "no" for a bad pattern, which reads exactly like a hook the user
             // wrote for a tool that was never called.
@@ -685,6 +689,27 @@ mod tests {
         assert_eq!(matched[0].command, "b");
     }
 
+    /// A hook written for the old `bash` name keeps firing for the shell tool;
+    /// a glob is matched as written.
+    #[test]
+    fn a_legacy_bash_matcher_still_fires_for_the_shell_tool() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUse", Some("bash"), "a"),
+                entry("PreToolUse", Some("Bash"), "b"),
+                entry("PreToolUse", Some("sh*"), "c"),
+            ],
+            Path::new("x"),
+        );
+        let fired: Vec<&str> = set
+            .matching(HookEvent::PreToolUse, Some("shell"))
+            .iter()
+            .map(|h| h.command.as_str())
+            .collect();
+        assert_eq!(fired, vec!["a", "b", "c"]);
+    }
+
     #[test]
     fn merge_order_is_the_order_sources_were_added() {
         let mut set = HookSet::new();
@@ -758,7 +783,7 @@ mod tests {
             Path::new("x"),
         );
         let payload = HookPayload {
-            tool_name: Some("bash".to_string()),
+            tool_name: Some("shell".to_string()),
             ..Default::default()
         };
         let outcome = run_hooks(
@@ -790,7 +815,7 @@ mod tests {
             Path::new("x"),
         );
         let payload = HookPayload {
-            tool_name: Some("bash".to_string()),
+            tool_name: Some("shell".to_string()),
             ..Default::default()
         };
         let outcome = run_hooks(
@@ -917,7 +942,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),
@@ -951,7 +976,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),
@@ -991,7 +1016,7 @@ mod tests {
                 &set,
                 HookEvent::PostToolUse,
                 &HookPayload {
-                    tool_name: Some("bash".to_string()),
+                    tool_name: Some("shell".to_string()),
                     tool_result: Some("x".repeat(4 * 1024 * 1024)),
                     ..Default::default()
                 },
@@ -1058,7 +1083,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),

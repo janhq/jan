@@ -134,7 +134,7 @@ const agent = { kind: 'agent' } as const
 
 describe('describeNativeToolCall for agent tools', () => {
   it('builds a terminal from the command', () => {
-    expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
+    expect(describeNativeToolCall(agent, 'shell', { command: 'ls -la' })).toEqual({
       variant: 'terminal',
       command: 'ls -la',
     })
@@ -142,9 +142,18 @@ describe('describeNativeToolCall for agent tools', () => {
 
   // The command streams in like any other argument, so a partial one must show.
   it('accepts a partially streamed command', () => {
-    expect(describeNativeToolCall(agent, 'bash', { command: 'git pu' })).toEqual({
+    expect(describeNativeToolCall(agent, 'shell', { command: 'git pu' })).toEqual({
       variant: 'terminal',
       command: 'git pu',
+    })
+  })
+
+  // Threads saved before the rename carry calls under the old `bash` name;
+  // they must still render as a terminal, not a generic workspace card.
+  it('renders a legacy bash call as a terminal', () => {
+    expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
+      variant: 'terminal',
+      command: 'ls -la',
     })
   })
 

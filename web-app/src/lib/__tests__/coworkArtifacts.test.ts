@@ -180,12 +180,12 @@ describe('artifactsFromTurns', () => {
     expect(artifactsFromTurns([])).toEqual([])
   })
 
-  it('recovers an mp4 a bash download produced (quoted spaces in the name)', () => {
+  it('recovers an mp4 a shell download produced (quoted spaces in the name)', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: {
           command:
             'cd /Users/thinhlpg/Desktop && yt-dlp -f "bv*+ba/b" -o "%(title)s.%(ext)s" "https://youtu.be/x" 2>&1 | tail -30',
@@ -202,12 +202,12 @@ describe('artifactsFromTurns', () => {
     expect(artifacts[0]!.title).toContain('Rick Astley')
   })
 
-  it('recovers a relative mp4 from ls -lh in the bash result', () => {
+  it('recovers a relative mp4 from ls -lh in the shell result', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'cd /p && python3 make.py && ls -lh cat_video.mp4' },
         status: 'done',
         isError: false,
@@ -224,7 +224,7 @@ describe('artifactsFromTurns', () => {
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'cd /p/src && mv cat_video.mp4 /p/cat_video.mp4 && ls -lh /p/cat_video.mp4' },
         status: 'done',
         isError: false,
@@ -241,7 +241,7 @@ describe('artifactsFromTurns', () => {
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'which yt-dlp ffmpeg; ls *.mp4' },
         status: 'done',
         isError: false,
@@ -251,12 +251,12 @@ describe('artifactsFromTurns', () => {
     expect(artifactsFromTurns(turns, '/p')).toEqual([])
   })
 
-  it('ignores errored bash calls', () => {
+  it('ignores errored shell calls', () => {
     const turns = [
       {
         role: 'tool',
         content: '',
-        name: 'bash',
+        name: 'shell',
         args: { command: 'python3 make.py 2>&1 && ls -lh out.mp4' },
         status: 'done',
         isError: true,

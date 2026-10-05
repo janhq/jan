@@ -1,4 +1,5 @@
 import type { CoworkTurn } from '@/types/coworkSession'
+import { isShellToolName } from '@/lib/agentTools'
 
 const MAX_COMMAND_LEN = 60
 
@@ -27,7 +28,6 @@ function humanizeToolName(name: string): string {
 const VERB_BY_TOOL: Record<string, string> = {
   write: 'Writing',
   edit: 'Editing',
-  bash: 'Running',
   read: 'Reading',
   ls: 'Listing',
   find: 'Finding',
@@ -50,13 +50,15 @@ export function toolActivityText(toolName: string, input: unknown): string {
     return name ? `Reading ${name}` : 'Reading skill'
   }
 
+  // Checked before the verb map so the legacy `bash` name in saved threads
+  // shares the one shell branch instead of a second map entry.
+  if (isShellToolName(toolName)) {
+    const command = stringArg(input, 'command')
+    return command ? `Running ${truncate(command, MAX_COMMAND_LEN)}` : 'Running'
+  }
+
   const verb = VERB_BY_TOOL[toolName]
   if (!verb) return humanizeToolName(toolName)
-
-  if (toolName === 'bash') {
-    const command = stringArg(input, 'command')
-    return command ? `${verb} ${truncate(command, MAX_COMMAND_LEN)}` : verb
-  }
 
   const path = stringArg(input, 'path')
   return path ? `${verb} ${basename(path)}` : verb

@@ -61,7 +61,7 @@ export type CoworkPromptOptions = {
    * is the workspace root that relative paths resolve against (#8882). */
   readOnlyFolder: string | null
   planMode: boolean
-  /** False when no OS sandbox enforces, in which case `bash` is not offered. */
+  /** False when no OS sandbox enforces, in which case `shell` is not offered. */
   bashAvailable: boolean
   subagentNames: string[]
   /** Whether `web_search`/`web_fetch` are advertised this run. */
@@ -152,7 +152,7 @@ function workspaceBlock(opts: CoworkPromptOptions): string {
     lines.push(
       '',
       'Shell commands are unavailable on this machine: no OS sandbox is present to',
-      'confine them, so the `bash` tool is not offered. Use the file tools instead.'
+      'confine them, so the `shell` tool is not offered. Use the file tools instead.'
     )
   }
   return lines.join('\n')

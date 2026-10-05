@@ -38,12 +38,12 @@ describe('collectCodeFileDiffs', () => {
       { diff: '@@ edit 1/1 @@\n+    2 | next', source: 'main' },
     ])
   })
-  it('includes only write/edit tool diffs and ignores path-bearing bash output', () => {
+  it('includes only write/edit tool diffs and ignores path-bearing shell output', () => {
     const files = collectCodeFileDiffs(
       [
         edit('src/edit.ts', '+    1 | edit'),
         edit('src/write.ts', '+    1 | write', { name: 'write' }),
-        edit('src/bash.ts', '+    1 | ignored bash diff', { name: 'bash' }),
+        edit('src/bash.ts', '+    1 | ignored shell diff', { name: 'shell' }),
         edit('src/assistant.ts', '+    1 | ignored assistant diff', {
           role: 'assistant',
         }),

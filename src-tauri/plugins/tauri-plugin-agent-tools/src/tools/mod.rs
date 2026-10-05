@@ -633,7 +633,7 @@ pub const BUILTIN_TOOLS: &[BuiltinTool] = &[
         path_args: &["path"],
     },
     BuiltinTool {
-        name: "bash",
+        name: SHELL_TOOL,
         capability: Capability::Exec,
         path_args: &[],
     },
@@ -700,7 +700,43 @@ pub fn is_workspace_tool(name: &str) -> bool {
     )
 }
 
+/// The shell tool's name. It was `bash` until it also ran PowerShell and cmd
+/// on Windows (janhq/jan#9128); see [`canonical_tool_name`] for the old name.
+pub const SHELL_TOOL: &str = "shell";
+
+/// Former names of built-in tools, as `(old, current)`. Only the current name
+/// is advertised; the old one is still read wherever a user or a saved
+/// transcript may have written it.
+const LEGACY_TOOL_NAMES: &[(&str, &str)] = &[("bash", SHELL_TOOL)];
+
+/// `name` with a former built-in name mapped to the current one, otherwise
+/// unchanged. The single place a rename is absorbed: dispatch, permission
+/// lists, hook matchers and subagent tool lists all go through it, so an
+/// existing `deny = ["bash"]` keeps denying the shell rather than quietly
+/// matching nothing.
+pub fn canonical_tool_name(name: &str) -> &str {
+    LEGACY_TOOL_NAMES
+        .iter()
+        .find(|(old, _)| *old == name)
+        .map(|(_, new)| *new)
+        .unwrap_or(name)
+}
+
+/// A user-written tool pattern (an agent.toml `[tools]` entry, a hook
+/// `matcher`) with any former built-in name rewritten to the current one, so
+/// it keeps matching. Only an exact old name is rewritten, never a glob that
+/// happens to contain it: `ba*` is left alone, while `bash` and `Bash` (Claude
+/// Code's spelling, which hook matchers inherit) become `shell`.
+pub fn canonical_tool_pattern(pattern: &str) -> String {
+    let lower = pattern.to_ascii_lowercase();
+    match LEGACY_TOOL_NAMES.iter().find(|(old, _)| *old == lower) {
+        Some((_, new)) => (*new).to_string(),
+        None => pattern.to_string(),
+    }
+}
+
 pub fn lookup(name: &str) -> Option<&'static BuiltinTool> {
+    let name = canonical_tool_name(name);
     BUILTIN_TOOLS.iter().find(|t| t.name == name)
 }
 
@@ -720,10 +756,29 @@ mod tests {
     }
 
     #[test]
-    fn lookup_bash_is_exec_no_paths() {
-        let t = lookup("bash").expect("bash is builtin");
+    fn lookup_shell_is_exec_no_paths() {
+        let t = lookup("shell").expect("shell is builtin");
         assert_eq!(t.capability, Capability::Exec);
         assert!(t.path_args.is_empty());
+    }
+
+    /// A saved transcript or a host that still says `bash` reaches the same
+    /// tool, which reports its current name.
+    #[test]
+    fn the_legacy_bash_name_resolves_to_the_shell_tool() {
+        assert_eq!(lookup("bash").map(|t| t.name), Some(SHELL_TOOL));
+        assert_eq!(canonical_tool_name("bash"), "shell");
+        assert_eq!(canonical_tool_name("read"), "read");
+        assert_eq!(canonical_tool_name("mcp__x__bash"), "mcp__x__bash");
+    }
+
+    #[test]
+    fn only_an_exact_legacy_pattern_is_rewritten() {
+        assert_eq!(canonical_tool_pattern("bash"), "shell");
+        assert_eq!(canonical_tool_pattern("Bash"), "shell");
+        assert_eq!(canonical_tool_pattern("ba*"), "ba*");
+        assert_eq!(canonical_tool_pattern("mcp__*"), "mcp__*");
+        assert_eq!(canonical_tool_pattern("*"), "*");
     }
 
     #[test]
@@ -756,6 +811,6 @@ mod tests {
         assert!(is_workspace_tool("memory_write"));
         assert!(is_workspace_tool("skill_list"));
         assert!(!is_workspace_tool("write"));
-        assert!(!is_workspace_tool("bash"));
+        assert!(!is_workspace_tool("shell"));
     }
 }

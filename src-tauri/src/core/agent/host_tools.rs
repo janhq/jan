@@ -548,6 +548,9 @@ mod tests {
     #[test]
     fn reserved_names_are_refused() {
         for name in [
+            "shell",
+            // The shell tool's former name stays reserved, so a host cannot
+            // capture calls that a transcript or an old config still routes there.
             "bash",
             "read",
             "edit",

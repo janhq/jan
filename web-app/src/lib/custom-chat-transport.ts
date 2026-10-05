@@ -1127,7 +1127,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The main chat offers exactly one built-in agent tool: the sandboxed
       // shell, with no network. The full toolset lives in Cowork. Schemas come
       // from Rust so they are never re-typed here, and `getAgentToolSchemas`
-      // already withholds bash when no sandbox backend can confine it.
+      // already withholds shell when no sandbox backend can confine it.
       try {
         for (const schema of await getAgentToolSchemas()) {
           if (!CHAT_AGENT_TOOL_NAMES.has(schema.function.name)) continue
@@ -1742,7 +1742,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
   /**
    * Static instruction for the one built-in tool chat offers: the sandboxed
-   * shell. Empty when no sandbox backend enforces, because bash is then
+   * shell. Empty when no sandbox backend enforces, because shell is then
    * withheld too — stating limits for a tool that is not offered would only
    * confuse the model, and an empty string keeps the prompt prefix stable.
    */
@@ -1770,7 +1770,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // them by having a command refused.
     return [
       '# Shell',
-      'bash runs commands in an isolated scratch workspace under an OS',
+      'shell runs commands in an isolated scratch workspace under an OS',
       'sandbox: it starts there, can only write there, and cannot read files',
       "in the user's home directory. The workspace belongs to this",
       'conversation alone and is deleted with it, so do not keep anything',

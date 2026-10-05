@@ -3353,13 +3353,16 @@ async fn orchestrate_inner(
         retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
     }
 
-    // Per-run allowlist shared by builtin/subagent/ask advertisement below.
+    // Per-run allowlist shared by builtin/subagent/ask advertisement below. A
+    // former built-in name (`bash`) from a host or a saved subagent definition
+    // is read as the current one, so it still selects the shell tool.
     let allowed_names: Option<std::collections::HashSet<String>> = json_body
         .get("allowed_tools")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|v| v.as_str().map(String::from))
+                .filter_map(|v| v.as_str())
+                .map(|n| tauri_plugin_agent_tools::tools::canonical_tool_name(n).to_string())
                 .collect()
         });
     advertise_local_tools(
@@ -4792,17 +4795,25 @@ async fn run_turn_cycle(
                 parts,
                 details,
             } = outcome;
-            // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
+            // A shell call that exits non-zero isn't prefixed "ERROR" (that
             // convention is reserved for hard tool failures the model must
             // treat as errors), but its failed exit marker still flags the
             // call as failed for display.
-            let is_error = content.starts_with("ERROR")
-                || (tool_names.get(id.as_str()) == Some(&"bash")
-                    && tauri_plugin_agent_tools::tools::handlers::bash_result_failed(&content));
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            let builtin = tauri_plugin_agent_tools::tools::lookup(name);
+            let is_error = match builtin {
+                Some(tool) => {
+                    tauri_plugin_agent_tools::tools::handlers::tool_result_failed(tool, &content)
+                }
+                None => content.starts_with("ERROR"),
+            };
             if name == "todo" {
                 todo_touched_this_batch = true;
-            } else if !is_error && matches!(name, "bash" | "write" | "edit") {
+            } else if !is_error
+                && builtin.is_some_and(|t| {
+                    matches!(t.name, tauri_plugin_agent_tools::tools::SHELL_TOOL | "write" | "edit")
+                })
+            {
                 mutations_since_todo_touch += 1;
             }
             let _ = events.send(StreamEvent::ToolResult {
@@ -10997,7 +11008,7 @@ mod tests {
             .with_sandbox(false)
             .with_output_sink(output_sink(&tx, "call-1"));
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 3; printf 'late\\n'", "timeout": 0}),
             &ctx,
         )

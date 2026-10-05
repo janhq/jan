@@ -296,7 +296,7 @@ describe('intersectAllowedTools', () => {
   it('narrows to the definition, dropping what the parent lacks', () => {
     // The definition's author cannot know the parent's mode, so a tool the
     // parent lacks is dropped rather than raised as an error.
-    const out = intersectAllowedTools(['read', 'bash'], null, parent)
+    const out = intersectAllowedTools(['read', 'shell'], null, parent)
     expect(out).toEqual({ tools: ['read', 'skill_list', 'skill_read'] })
   })
 
@@ -309,9 +309,9 @@ describe('intersectAllowedTools', () => {
   })
 
   it('refuses a request the parent cannot call', () => {
-    // This is what makes plan mode and a withheld `bash` propagate: the parent's
+    // This is what makes plan mode and a withheld `shell` propagate: the parent's
     // advertised set is the ceiling.
-    expect(intersectAllowedTools(null, ['bash'], parent)).toEqual({
+    expect(intersectAllowedTools(null, ['shell'], parent)).toEqual({
       error: expect.stringContaining('not available to this run'),
     })
   })

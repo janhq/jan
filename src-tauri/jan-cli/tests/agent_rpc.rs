@@ -659,7 +659,7 @@ fn a_host_tool_round_trips_with_content_parts() {
     assert_eq!(started["model"], "stub-model", "{started}");
     let tools = started["tools"].as_array().expect("advertised names");
     assert!(tools.iter().any(|t| t == "host__robot_arm_move"), "{started}");
-    assert!(tools.iter().any(|t| t == "bash"), "built-ins stay by default: {started}");
+    assert!(tools.iter().any(|t| t == "shell"), "built-ins stay by default: {started}");
     assert_eq!(started["toolSpecs"][0]["function"]["name"], "host__robot_arm_move");
     assert_eq!(started["toolSpecs"][0]["function"]["parameters"], arm_tool()["parameters"]);
     let session_id = started["sessionId"].as_str().unwrap().to_owned();
