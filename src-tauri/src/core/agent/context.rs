@@ -289,9 +289,16 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         std::env::consts::ARCH
     );
 
-    let shell = std::env::var("SHELL")
-        .or_else(|_| std::env::var("COMSPEC"))
-        .unwrap_or_else(|_| "unknown".to_string());
+    // The shell the tool actually runs, not the user's `$SHELL`/`COMSPEC`: on
+    // Windows those name cmd even when the tool resolved git-bash or
+    // PowerShell, and the model writes its commands for whatever is named here.
+    let resolved = tauri_plugin_agent_tools::tools::proc::shell();
+    let shell = display_path(&resolved.program);
+    let shell_note = resolved
+        .kind
+        .syntax_note()
+        .map(|note| format!("\n{note}"))
+        .unwrap_or_default();
 
     // Where to do temporary work. Named by the one spelling that resolves from
     // both `bash` and the filesystem tools on this platform: `/tmp` where the
@@ -310,7 +317,7 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
         "# Runtime Environment\n\n\
 Work directory: `{cwd}`\n\
 OS: `{os}`\n\
-Shell: `{shell}`{scratch_line}"
+Shell: `{shell}`{shell_note}{scratch_line}"
     )
 }
 
@@ -1210,6 +1217,25 @@ mod tests {
             !block.contains(&format!("Work directory: `{cwd_shown}`")),
             "block must not report the process cwd"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The block names the shell the tool resolved, not `$SHELL`/`COMSPEC`,
+    /// and carries the syntax note exactly when that shell needs one.
+    #[test]
+    fn runtime_environment_block_names_the_resolved_shell() {
+        let root = scratch_project("resolved_shell");
+        std::fs::create_dir_all(&root).unwrap();
+        let block = runtime_environment_block(&root, None);
+        let resolved = tauri_plugin_agent_tools::tools::proc::shell();
+        assert!(
+            block.contains(&format!("Shell: `{}`", display_path(&resolved.program))),
+            "got: {block}"
+        );
+        match resolved.kind.syntax_note() {
+            Some(note) => assert!(block.contains(note)),
+            None => assert!(!block.contains("not bash/POSIX")),
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

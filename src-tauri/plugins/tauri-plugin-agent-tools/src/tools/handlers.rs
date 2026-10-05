@@ -926,10 +926,6 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
-    // The model writes POSIX commands by default, which `cmd` rejects. Surface
-    // the resolved shell so it can adapt when the only shell on a Windows box
-    // is cmd, instead of the tool silently presenting cmd as bash.
-    let shell_description = shell.description;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
@@ -939,14 +935,6 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         // and the hint would name limits that are not in force.
         if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
             out.push_str(&jail::denial_hint(&policy));
-        }
-        if shell_description == "cmd" {
-            out.insert_str(
-                0,
-                "[shell: cmd.exe - no bash is installed. Write commands in cmd syntax \
-                 (e.g. `dir`, `type`, `set`, `mkdir`, `%VAR%` for variables), not \
-                 POSIX/bash. Alternatively install git-bash and this tool will use it.]\n",
-            );
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1492,21 +1480,38 @@ pub async fn render_html_png(
     // headless-new process spawned directly by a non-bundled parent fails its
     // singleton/TCC check with "Multiple targets are not supported in headless
     // mode", while the same invocation via the shell succeeds. The `bash` tool
-    // already relies on this property, so we inherit it here.
-    let profile_quoted = shell_quote(profile.to_str().unwrap_or_default());
-    let shot_quoted = shell_quote(shot.to_str().unwrap_or_default());
-    let url_quoted = shell_quote(&file_url);
-    let chrome_quoted = shell_quote(chrome.to_str().unwrap_or_default());
-    let cmd = format!(
-        "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
-         --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
-         --force-device-scale-factor={scale} \
-         --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
-    );
+    // already relies on this property, so we inherit it here. The quoting below
+    // is POSIX, so a PowerShell or cmd shell (Windows, where the quirk does not
+    // exist) gets Chrome directly with its arguments instead.
+    let chrome_args = [
+        "--headless=new".to_string(),
+        "--disable-gpu".to_string(),
+        "--hide-scrollbars".to_string(),
+        "--no-sandbox".to_string(),
+        "--disable-dev-shm-usage".to_string(),
+        "--no-first-run".to_string(),
+        format!("--user-data-dir={}", profile.display()),
+        format!("--force-device-scale-factor={scale}"),
+        format!("--window-size={width},{height}"),
+        format!("--screenshot={}", shot.display()),
+        file_url.clone(),
+    ];
     let shell = proc::shell();
-    let mut child = match tokio::process::Command::new(shell.program.clone())
-        .args(shell.args.clone())
-        .arg(&cmd)
+    let mut launcher = if shell.kind == proc::ShellKind::Posix {
+        let line = std::iter::once(chrome.to_string_lossy().into_owned())
+            .chain(chrome_args.iter().cloned())
+            .map(|a| shell_quote(&a))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut c = tokio::process::Command::new(&shell.program);
+        c.args(&shell.args).arg(line);
+        c
+    } else {
+        let mut c = tokio::process::Command::new(&chrome);
+        c.args(&chrome_args);
+        c
+    };
+    let mut child = match launcher
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()

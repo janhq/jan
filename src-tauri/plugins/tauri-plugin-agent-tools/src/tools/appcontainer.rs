@@ -134,13 +134,20 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
-/// Join a program and its arguments into a `CreateProcessW` command line.
+/// Join a program and its arguments into a `CreateProcessW` command line. cmd
+/// does not parse its line with `CommandLineToArgvW`, so for cmd the last
+/// argument -- the command -- is appended in cmd's own form instead of quoted.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn command_line(program: &Path, args: &[String]) -> String {
     let mut line = quote_arg(&program.to_string_lossy());
-    for a in args {
+    let cmd = super::proc::kind_of(program) == super::proc::ShellKind::Cmd;
+    for (i, a) in args.iter().enumerate() {
         line.push(' ');
-        line.push_str(&quote_arg(a));
+        if cmd && i + 1 == args.len() {
+            line.push_str(&super::proc::cmd_payload(a));
+        } else {
+            line.push_str(&quote_arg(a));
+        }
     }
     line
 }
@@ -671,7 +678,9 @@ mod win {
         startup.lpAttributeList = attributes;
 
         let mut line = wide(OsStr::new(&command_line(&req.program, &req.args)));
-        let cwd = wide(req.workspace.as_os_str());
+        // The moniker and ACEs keep the path as given; only the shell's working
+        // directory drops the verbatim prefix, which cmd cannot start in.
+        let cwd = wide(super::super::proc::without_verbatim_prefix(&req.workspace).as_os_str());
         // The helper's own environment, which `proc.rs` reduced to
         // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
         // than left to inheritance: see `environment_block`.
@@ -868,6 +877,21 @@ mod tests {
         assert_eq!(
             line,
             r#""C:\Program Files\Git\bin\bash.exe" -c "ls -la && echo \"done\"""#
+        );
+    }
+
+    /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
+    /// are quoted as usual, but the command goes in cmd's `/S` form so its own
+    /// quotes are not turned into `\"`.
+    #[test]
+    fn the_cmd_command_line_hands_the_command_over_in_cmds_form() {
+        let line = command_line(
+            Path::new(r"C:\Windows\System32\cmd.exe"),
+            &["/D".into(), "/S".into(), "/C".into(), r#"echo "a b" && dir"#.into()],
+        );
+        assert_eq!(
+            line,
+            r#"C:\Windows\System32\cmd.exe /D /S /C "echo "a b" && dir""#
         );
     }
 

@@ -25,6 +25,21 @@ pub enum CommandScan {
 const OPAQUE: &[&str] = &[
     "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch",
 ];
+/// Windows shells and PowerShell's run-this-text commands. Their argument is
+/// code in a language this scanner does not parse, so a grant on one of them
+/// must never cover what they run. Matched case-insensitively and without
+/// `.exe`, as Windows and PowerShell both resolve them.
+const WINDOWS_OPAQUE: &[&str] = &[
+    "cmd", "powershell", "pwsh", "invoke-expression", "iex", "invoke-command", "icm",
+    "start-process", "saps", "start",
+];
+
+fn is_windows_opaque(base: &str) -> bool {
+    let lower = base.to_ascii_lowercase();
+    let name = lower.strip_suffix(".exe").unwrap_or(&lower);
+    WINDOWS_OPAQUE.contains(&name)
+}
+
 /// `find` predicates that run an arbitrary command.
 const EXEC_PREDICATES: &[&str] = &["-exec", "-execdir", "-ok", "-okdir"];
 /// POSIX shells: `<shell> -c "<cmd>"` runs `<cmd>`, so we recurse into it.
@@ -261,7 +276,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if base.is_empty() {
             return true;
         }
-        if OPAQUE.contains(&base.as_str()) {
+        if OPAQUE.contains(&base.as_str()) || is_windows_opaque(&base) {
             return false;
         }
         if base == "env" {
@@ -493,6 +508,28 @@ mod tests {
         );
         // plain find (no command-running predicate) resolves normally
         assert_eq!(bases("find . -name '*.rs'"), set(&["find"]));
+    }
+
+    /// On Windows the shell may be PowerShell, so a grant on `powershell` or
+    /// `iex` would cover any code at all; those always prompt, in any case.
+    #[test]
+    fn windows_shells_and_powershell_evaluators_are_opaque() {
+        for command in [
+            "powershell -Command Remove-Item -Recurse C:\\",
+            "PowerShell.exe -c x",
+            "pwsh -c x",
+            "cmd /c del x",
+            "CMD.EXE /c del x",
+            "Invoke-Expression $x",
+            "iex $x",
+            "Invoke-Command { rm x }",
+            "Start-Process notepad",
+            "git status; iex $x",
+        ] {
+            assert_eq!(scan_command(command), CommandScan::Opaque, "{command}");
+        }
+        // An ordinary cmdlet is still a base that a grant can cover.
+        assert_eq!(bases("Get-ChildItem -Recurse"), set(&["Get-ChildItem"]));
     }
 
     #[test]
