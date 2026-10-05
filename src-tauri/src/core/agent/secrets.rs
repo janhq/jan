@@ -213,6 +213,21 @@ fn label_of(name: &str) -> String {
     label.trim_matches('_').to_string()
 }
 
+/// A value shaped like a file path (`/etc/k`, `~/k`, `./k`, `C:\k`, `\\host\k`).
+/// A path is not a secret, and promoting it would rewrite every mention of it.
+fn looks_like_path(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.starts_with('/')
+        || value.starts_with("~/")
+        || value.starts_with("./")
+        || value.starts_with("../")
+        || value.starts_with("\\\\")
+        || (bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && (bytes[2] == b'\\' || bytes[2] == b'/'))
+}
+
 impl SecretFilter {
     fn new(key: [u8; 32], vars: &[(String, String)]) -> Self {
         let mut literals: Vec<(String, String)> = Vec::new();
@@ -224,7 +239,7 @@ impl SecretFilter {
             }
         };
         for (name, value) in vars {
-            if is_secret_name(name) && !value.starts_with('/') {
+            if is_secret_name(name) && !looks_like_path(value) {
                 push(label_of(name), value);
             }
         }
@@ -249,6 +264,12 @@ impl SecretFilter {
                 let before = &value[..whole.start()];
                 let scheme = before.rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '+' && c != '-' && c != '.').next().unwrap_or("");
                 if password.as_str() == user || password.as_str().eq_ignore_ascii_case(scheme) {
+                    continue;
+                }
+                // A password made only of letters reads as a word (`password`),
+                // and as a process-wide literal it would rewrite that word in
+                // every prompt. It stays hidden where it sits in a URL, by shape.
+                if !password.as_str().chars().any(|c| !c.is_ascii_alphabetic()) {
                     continue;
                 }
                 push(label_of(name), password.as_str());
@@ -705,6 +726,42 @@ mod tests {
         assert!(out.starts_with("amqp://guest:$$URLPASSWORD_"), "the user stays, the password goes: {out}");
         assert!(out.ends_with("$$@host/vhost"), "{out}");
         assert_eq!(restore(&out), "amqp://guest:guest@host/vhost");
+    }
+
+    #[test]
+    fn a_path_valued_secret_name_is_not_promoted_to_a_literal() {
+        for path in [
+            r"C:\Users\me\credentials-file.json",
+            "C:/Users/me/credentials-file.json",
+            "~/.config/gcloud/credentials.json",
+            "./secrets/credentials.json",
+            "../secrets/credentials.json",
+            r"\\server\share\credentials.json",
+            "/etc/secrets/credentials.json",
+        ] {
+            let f = filter(&[("GOOGLE_APPLICATION_CREDENTIALS", path)]);
+            let text = format!("read {path} now");
+            assert_eq!(f.hide(&text), text, "{path}");
+        }
+        // A real value in the same kind of variable is still hidden.
+        let f = filter(&[("GOOGLE_APPLICATION_CREDENTIALS", "abc123def456ghi")]);
+        assert!(!f.hide("key abc123def456ghi").contains("abc123def456ghi"));
+    }
+
+    #[test]
+    fn a_letters_only_url_password_is_hidden_in_the_url_only() {
+        for (url, word) in [
+            ("postgres://app:password@localhost/db", "password"),
+            ("mysql://root:SECRETWORD@db/x", "SECRETWORD"),
+        ] {
+            let f = filter(&[("DATABASE_URL", url)]);
+            let prose = format!("the {word} field is required");
+            assert_eq!(f.hide(&prose), prose, "{url}: prose survives");
+            let hidden = f.hide(url);
+            assert!(hidden.contains("$$URLPASSWORD_"), "{hidden}");
+            assert!(!hidden.contains(&format!(":{word}@")), "{url} leaked: {hidden}");
+            assert_eq!(restore(&hidden), url);
+        }
     }
 
     #[test]
