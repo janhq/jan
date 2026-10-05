@@ -19,6 +19,8 @@ No new features are announced in v0.8.5. Work in progress stays in the nightly c
 
 One thing a first launch will notice: the first-run setup is now a guided wizard - welcome, engine setup, a first model, and the consent page - instead of a single screen. It is onboarding rather than a new capability, so it is not a headline; it is written down here so a new install is not a surprise.
 
+The desktop app no longer installs the `jan` command-line agent or adds it to your `PATH`. On Windows, updating from v0.8.4 removes the copy it put there. The CLI is now a separate download; see the [agent quickstart](https://jan.ai/docs/agent/quickstart) to install it.
+
 ---
 
 # Bug Fixes
@@ -42,6 +44,7 @@ One thing a first launch will notice: the first-run setup is now a guided wizard
 - Zoom shortcuts are scoped to chat message text, so zooming a message no longer rescales the whole app.
 - Hub search ranks exact model id matches first.
 - The Windows installer template substitutes `jan_workspace` correctly.
+- On Windows, the Start-menu and desktop shortcuts keep working after the in-app update renames the app executable.
 
 **Agent & Tooling**
 

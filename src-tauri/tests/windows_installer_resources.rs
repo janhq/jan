@@ -15,6 +15,49 @@
 
 use std::path::PathBuf;
 
+/// The body of `Function <name>` or `Section <name>` up to its terminator.
+fn nsis_block<'a>(template: &'a str, opener: &str, end: &str) -> &'a str {
+    let start = template
+        .lines()
+        .position(|l| l.trim_end() == opener)
+        .unwrap_or_else(|| panic!("`{opener}` not found in the NSIS template"));
+    let offset: usize = template.lines().take(start).map(|l| l.len() + 1).sum();
+    let rest = &template[offset..];
+    let stop = rest
+        .find(end)
+        .unwrap_or_else(|| panic!("`{opener}` has no `{end}`"));
+    &rest[..stop]
+}
+
+/// The shortcut retarget on a main-binary rename (`jan.exe` -> `Jan-Desktop.exe`
+/// in 0.8.5, #9125) needs the previous name from the uninstall key. A passive
+/// upgrade runs the old uninstaller from `PageLeaveReinstall`, which deletes that
+/// key before `Section Install` runs, so the name has to be captured in
+/// `.onInit`, while the key still exists. Reading it in `Section Install` finds
+/// nothing and leaves every shortcut pointing at the deleted exe.
+#[test]
+fn the_previous_main_binary_name_is_read_before_the_old_uninstaller_runs() {
+    let template = repo_file("tauri.bundle.windows.nsis.template");
+    let read = "ReadRegStr $OldMainBinaryName SHCTX \"${UNINSTKEY}\" \"MainBinaryName\"";
+
+    let on_init = nsis_block(&template, "Function .onInit", "FunctionEnd");
+    assert!(
+        on_init.contains(read),
+        "`.onInit` must read MainBinaryName into $OldMainBinaryName"
+    );
+
+    let install = nsis_block(&template, "Section Install", "SectionEnd");
+    assert!(
+        !install.contains("ReadRegStr $OldMainBinaryName"),
+        "`Section Install` must not re-read MainBinaryName: by then a passive \
+         upgrade has run the old uninstaller, which deleted the key"
+    );
+    assert!(
+        install.contains("WriteRegStr SHCTX \"${UNINSTKEY}\" \"MainBinaryName\""),
+        "`Section Install` must still record MainBinaryName for the next update"
+    );
+}
+
 fn repo_file(rel: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
     std::fs::read_to_string(&path)
