@@ -25,13 +25,17 @@ pub enum CommandScan {
 const OPAQUE: &[&str] = &[
     "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch",
 ];
-/// Windows shells and PowerShell's run-this-text commands. Their argument is
-/// code in a language this scanner does not parse, so a grant on one of them
-/// must never cover what they run. Matched case-insensitively and without
-/// `.exe`, as Windows and PowerShell both resolve them.
+/// Windows shells, PowerShell's run-this-text commands, and the cmdlets (with
+/// their aliases) that run a `{ ... }` script block. Their argument is code in
+/// a language this scanner does not parse, so a grant on one of them must
+/// never cover what they run: approving `ls | ForEach-Object { $_.Name }`
+/// must not also approve `ls | ForEach-Object { Remove-Item $_ }`. Matched
+/// case-insensitively and without `.exe`, as Windows and PowerShell both
+/// resolve them.
 const WINDOWS_OPAQUE: &[&str] = &[
     "cmd", "powershell", "pwsh", "invoke-expression", "iex", "invoke-command", "icm",
-    "start-process", "saps", "start",
+    "start-process", "saps", "start", "foreach-object", "foreach", "%", "where-object",
+    "where", "?", "start-job", "sajb", "start-threadjob", "invoke-commandinjob",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
@@ -524,6 +528,10 @@ mod tests {
             "iex $x",
             "Invoke-Command { rm x }",
             "Start-Process notepad",
+            "Get-ChildItem | ForEach-Object { Remove-Item $_ }",
+            "ls | % { rm $_ }",
+            "ls | Where-Object { $_.Length -gt 0 }",
+            "Start-Job { rm x }",
             "git status; iex $x",
         ] {
             assert_eq!(scan_command(command), CommandScan::Opaque, "{command}");

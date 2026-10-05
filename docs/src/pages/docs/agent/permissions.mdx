@@ -153,9 +153,11 @@ with `enabled: true` that combination is what withholds `bash` entirely.
 On macOS and Linux the `bash` tool runs `bash` (or `sh` where there is none). On Windows Jan uses
 the first of these that it finds:
 
-1. Git Bash (Git for Windows), from its standard install location or `bash` on `PATH`. The WSL
-   launchers (`System32\bash.exe` and the `WindowsApps` alias) are skipped.
-2. PowerShell 7 (`pwsh`).
+1. Git Bash (Git for Windows) from its standard install location, or else any other `bash` on
+   `PATH`, such as MSYS2's or Cygwin's. The WSL launchers (`System32\bash.exe` and the
+   `WindowsApps` alias) are skipped.
+2. PowerShell 7 (`pwsh`), unless it is only the Microsoft Store alias, which cannot start inside
+   the sandbox.
 3. Windows PowerShell 5.1, which ships with Windows.
 4. `cmd.exe`.
 

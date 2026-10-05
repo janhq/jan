@@ -135,7 +135,14 @@ fn config_for(program: PathBuf) -> ShellConfig {
 /// only 0 or 1, so it is made to report a failing native command's real code,
 /// which the tool output's `[exit N]` line and the model both rely on.
 /// `$LASTEXITCODE` is reset first so a code left by an earlier call cannot
-/// leak in. Output is switched to UTF-8: 5.1 otherwise encodes with the OEM
+/// leak in.
+///
+/// Success is `$?` of the last statement, as in POSIX shells. On failure the
+/// native code is used only when it is non-zero, so a cmdlet failing after a
+/// native command that succeeded still reports 1 rather than 0. PowerShell
+/// does not record which statement set `$LASTEXITCODE`, so when a cmdlet fails
+/// after an earlier native command that failed, the code is that native
+/// command's: still non-zero, possibly not the failing statement's own. Output is switched to UTF-8: 5.1 otherwise encodes with the OEM
 /// code page and mangles every non-ASCII character. The progress stream is
 /// silenced because it is noise in captured output.
 pub fn powershell_script(command: &str) -> String {
@@ -146,7 +153,7 @@ pub fn powershell_script(command: &str) -> String {
          $global:LASTEXITCODE = $null\n\
          {command}\n\
          if ($?) {{ exit 0 }}\n\
-         if ($null -ne $LASTEXITCODE) {{ exit $LASTEXITCODE }}\n\
+         if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}\n\
          exit 1\n"
     )
 }
@@ -179,15 +186,25 @@ pub fn shell() -> &'static ShellConfig {
     SHELL.get_or_init(resolve_shell)
 }
 
+/// True for a Store app-execution alias under `%LOCALAPPDATA%\Microsoft\
+/// WindowsApps` (`bash.exe` for WSL, `pwsh.exe` for a Store PowerShell 7).
+/// An alias is a reparse point that cannot start inside the AppContainer, so
+/// choosing one leaves the sandboxed shell failing every command while a
+/// working shell later in the order goes unused. String-based so it is
+/// testable on any host.
+#[cfg(any(windows, test))]
+fn is_app_execution_alias(path: &Path) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    p.contains("\\microsoft\\windowsapps\\")
+}
+
 /// True for the `bash.exe` shims that launch WSL rather than being a bash:
-/// `System32\bash.exe` and the `WindowsApps` app-execution alias. They need an
-/// installed distro, cannot start inside the AppContainer, and reject `-c`, so
-/// treating either as a bash leaves a box with no working shell at all.
-/// String-based so it is testable on any host.
+/// `System32\bash.exe` and the WindowsApps alias. Beyond the alias problem
+/// they need an installed distro and reject `-c`.
 #[cfg(any(windows, test))]
 fn is_wsl_launcher(path: &Path) -> bool {
     let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
-    p.ends_with("\\system32\\bash.exe") || p.contains("\\microsoft\\windowsapps\\")
+    p.ends_with("\\system32\\bash.exe") || is_app_execution_alias(path)
 }
 
 fn resolve_shell() -> ShellConfig {
@@ -234,7 +251,7 @@ fn resolve_shell() -> ShellConfig {
         // No bash: PowerShell, which every supported Windows ships. 7 (`pwsh`)
         // when installed, else the inbox 5.1 by absolute path so a PATH entry
         // cannot shadow it.
-        if let Some(p) = which("pwsh") {
+        if let Some(p) = which_all("pwsh").into_iter().find(|p| !is_app_execution_alias(p)) {
             return config_for(p);
         }
         let system = std::env::var_os("SystemRoot")
@@ -255,6 +272,9 @@ fn resolve_shell() -> ShellConfig {
 /// Locate an executable on PATH via the platform's own resolver. Also used by
 /// [`super::jail`] to find `bwrap` on distros with no FHS paths (NixOS keeps it
 /// only at a Nix-store path).
+/// Unix only outside tests: Windows resolution needs every match (see
+/// [`which_all`]) to step past the app-execution aliases.
+#[cfg(any(unix, test))]
 pub(crate) fn which(name: &str) -> Option<PathBuf> {
     which_all(name).into_iter().next()
 }
@@ -864,6 +884,16 @@ mod shell_kind_tests {
         assert!(!is_wsl_launcher(Path::new(r"D:\tools\system32x\bash.exe")));
     }
 
+    /// A Store PowerShell 7 is reached through the same kind of alias, so it
+    /// is skipped too; an installed pwsh is not.
+    #[test]
+    fn a_store_pwsh_alias_is_recognised_and_an_installed_pwsh_is_not() {
+        assert!(is_app_execution_alias(Path::new(
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+        )));
+        assert!(!is_app_execution_alias(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe")));
+    }
+
     #[test]
     fn the_verbatim_prefix_is_stripped_only_from_drive_and_unc_paths() {
         assert_eq!(
@@ -945,6 +975,19 @@ mod shell_kind_tests {
 
         let (code, _, _) = run("Get-Item ./definitely-not-here-jan").await;
         assert_eq!(code, Some(1), "a failing cmdlet must not report success");
+
+        // A cmdlet failing after a native command that succeeded: the native
+        // code (0) must not mask the failure.
+        let (code, _, _) = run(
+            "& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 0'; \
+             Get-Item ./definitely-not-here-jan",
+        )
+        .await;
+        assert_eq!(code, Some(1), "a later cmdlet failure must not report 0");
+
+        // The last statement succeeding is success, as in a POSIX shell.
+        let (code, _, _) = run("Get-Item ./definitely-not-here-jan; Write-Output ok").await;
+        assert_eq!(code, Some(0));
 
         // The running PowerShell itself as the native command, so the test does
         // not depend on what else is installed.
