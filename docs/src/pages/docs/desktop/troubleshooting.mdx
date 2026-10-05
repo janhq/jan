@@ -496,20 +496,19 @@ The "Unexpected token" error usually relates to OpenAI API authentication or reg
 
 ## Jan CLI
 
-### Windows: running `jan` opens the Jan application window
+### `jan` is not recognized after updating the desktop app
 
-If typing `jan` in a terminal opens the Jan desktop app instead of the CLI, your system is resolving the `jan` command to the app launcher rather than the CLI binary.
+Since v0.8.5 the desktop app no longer includes the `jan` CLI or adds it to your `Path`. Updating from an earlier version removes the CLI that was bundled with the app. Install the CLI separately by following the [agent quickstart](/docs/agent/quickstart).
 
-To fix this, add the CLI binary directory to your `Path` environment variable:
+On Windows, the update leaves an old entry in your user `Path` that points at a folder with no CLI in it any more. You can remove it:
 
 1. Open **System Properties** → **Advanced** → **Environment Variables**
-2. Under **System variables** (or **User variables**), select **Path** and click **Edit**
-3. Click **New** and add:
+2. Under **User variables**, select **Path** and click **Edit**
+3. Select this entry and click **Delete**:
    ```
    C:\Users\<username>\AppData\Local\Programs\Jan\resources\bin
    ```
-   Replace `<username>` with your Windows username.
-4. Click **OK** to save, then open a new terminal window and try `jan` again. The CLI binary is installed as `jan.exe` inside that directory.
+4. Click **OK** to save, then open a new terminal window.
 
 ## Need Further Support?
 
