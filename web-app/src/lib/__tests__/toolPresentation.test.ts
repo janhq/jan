@@ -242,6 +242,19 @@ describe('parseBashOutput', () => {
     expect(r.sandboxNote).toContain('Network access is disabled')
   })
 
+  it('surfaces hook config notices separately from the body', () => {
+    const r = parseBashOutput(
+      'ok\n[exit 0]\n[hook config: Hook pre_tool_use matcher in /cfg/[x]/hooks.json ' +
+        'names `bash`, which matches nothing]\n[hook config: second]'
+    )
+    expect(r.exit).toBe(0)
+    expect(r.text).toBe('ok')
+    expect(r.configNotes).toEqual([
+      'Hook pre_tool_use matcher in /cfg/[x]/hooks.json names `bash`, which matches nothing',
+      'second',
+    ])
+  })
+
   it('has no sandbox note on an ordinary run', () => {
     expect(parseBashOutput('ok\n[exit 0]').sandboxNote).toBeUndefined()
   })

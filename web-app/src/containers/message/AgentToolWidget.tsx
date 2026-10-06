@@ -9,6 +9,7 @@ import {
   IconBook,
   IconLock,
   IconFilePencil,
+  IconAlertTriangle,
 } from '@tabler/icons-react'
 import { Shimmer } from '@/components/ai-elements/shimmer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -212,6 +213,17 @@ export const TerminalWidget = memo(
               <span>{result.sandboxNote}</span>
             </p>
           )}
+          {/* A stale hook matcher no longer guards this very call, so the user
+              hears it here rather than only through the model. */}
+          {result?.configNotes.map((note) => (
+            <p
+              key={note}
+              className="mt-1 flex items-start gap-1.5 text-muted-foreground/70"
+            >
+              <IconAlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span>{note}</span>
+            </p>
+          ))}
         </div>
       </div>
     )

@@ -445,6 +445,21 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
 /// or that the parent denies, is rejected rather than silently dropped. A
 /// definition-listed tool the parent denies is dropped (the definition author
 /// need not know the parent's policy).
+/// A list naming the shell's old name would hand the child a tool that no
+/// longer exists, so it would silently run without a shell. Refused with the
+/// rename instead, which reaches the model and through it the user. `where_`
+/// names the list the model can actually fix.
+fn refuse_renamed_shell(list: Option<&[String]>, where_: &str) -> Result<(), SubagentError> {
+    match list
+        .into_iter()
+        .flatten()
+        .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
+    {
+        Some(notice) => Err(SubagentError::PermissionDenied(notice)),
+        None => Ok(()),
+    }
+}
+
 pub fn intersect_allowed_tools(
     definition: Option<&[String]>,
     request: Option<&[String]>,
@@ -452,21 +467,8 @@ pub fn intersect_allowed_tools(
 ) -> Result<Option<Vec<String>>, SubagentError> {
     let definition = definition.filter(|d| !d.is_empty());
     let request = request.filter(|r| !r.is_empty());
-    // A list naming the shell's old name would hand the child a tool that no
-    // longer exists, so it would silently run without a shell. Refused with
-    // the rename instead, which reaches the model and through it the user.
-    for (list, where_) in [
-        (definition, "the subagent definition's allowed_tools"),
-        (request, "allowed_tools"),
-    ] {
-        if let Some(notice) = list
-            .into_iter()
-            .flatten()
-            .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
-        {
-            return Err(SubagentError::PermissionDenied(notice));
-        }
-    }
+    refuse_renamed_shell(definition, "the subagent definition's allowed_tools")?;
+    refuse_renamed_shell(request, "allowed_tools")?;
     if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
@@ -655,7 +657,9 @@ fn resolve_dispatch(
         None => {
             // No saved definition: a focused general-purpose subagent defined by
             // its task. The call-site allowlist IS its toolset; only the parent's
-            // deny-list narrows it further.
+            // deny-list narrows it further. The list came from the model's own
+            // call, so a stale entry is reported as that, not as a definition.
+            refuse_renamed_shell(requested.as_deref(), "allowed_tools")?;
             let definition = SubagentDefinition {
                 name: req.name.clone(),
                 description: req.description.clone(),
@@ -3238,6 +3242,22 @@ pub(crate) mod tests {
         assert!(msg.contains("now `shell`"), "{msg}");
         let req = vec!["bash".to_string()];
         assert!(intersect_allowed_tools(None, Some(&req), &p).is_err());
+    }
+
+    /// An ad-hoc dispatch has no definition, so the refusal must name the
+    /// call's own list -- the one the model wrote and can fix.
+    #[test]
+    fn an_ad_hoc_bash_entry_names_the_calls_own_list() {
+        let reg = registry_with("other", None);
+        let Err(SubagentError::PermissionDenied(msg)) = resolve_dispatch_plain(
+            &reg,
+            &req("adhoc", Some(vec!["bash".to_string()])),
+            &ToolPermissions::allow_all(),
+        ) else {
+            panic!("expected a permission error");
+        };
+        assert!(msg.starts_with("allowed_tools names `bash`"), "{msg}");
+        assert!(!msg.contains("definition"), "{msg}");
     }
 
     #[test]

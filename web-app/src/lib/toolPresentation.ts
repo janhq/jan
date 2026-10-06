@@ -166,6 +166,8 @@ export type BashOutput = {
   truncated: boolean
   /** The OS sandbox refused something; explains the limits that applied. */
   sandboxNote?: string
+  /** Config problems the call surfaced, e.g. a hook matcher on a renamed tool. */
+  configNotes: string[]
 }
 
 /** Global: the exit marker is not always last, so every match is considered. */
@@ -173,6 +175,8 @@ const EXIT_LINE = /\n?\[exit (-?\d+)\]/g
 const SIGNAL_LINE = /\n?\[terminated by signal\]/
 const TRUNCATION_NOTICE = /\n?\[output truncated[^\]]*\]/
 const SANDBOX_NOTICE = /\n?\[sandbox: ([^\]]*)\]/
+/** Line-anchored: the notice names a config path, which may contain `]`. */
+const CONFIG_NOTICE = /\n?^\[hook config: (.*)\]$/gm
 
 /**
  * Split `shell`'s `[exit N]` / `[terminated by signal]` status and its trailing
@@ -195,6 +199,7 @@ export function parseBashOutput(output: unknown): BashOutput {
   const truncated = TRUNCATION_NOTICE.test(text)
   const signaled = SIGNAL_LINE.test(text)
   const sandboxNote = text.match(SANDBOX_NOTICE)?.[1]
+  const configNotes = [...text.matchAll(CONFIG_NOTICE)].map((m) => m[1])
   // The last marker is the real one: a command can echo `[exit 0]` itself.
   const exits = [...text.matchAll(EXIT_LINE)]
   const exitMatch = exits.at(-1)
@@ -204,6 +209,7 @@ export function parseBashOutput(output: unknown): BashOutput {
     .replace(SIGNAL_LINE, '')
     .replace(TRUNCATION_NOTICE, '')
     .replace(SANDBOX_NOTICE, '')
+    .replace(CONFIG_NOTICE, '')
 
   return {
     text: body.replace(/\s+$/, ''),
@@ -211,6 +217,7 @@ export function parseBashOutput(output: unknown): BashOutput {
     signaled,
     truncated,
     sandboxNote,
+    configNotes,
   }
 }
 
