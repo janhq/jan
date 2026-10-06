@@ -404,7 +404,7 @@ mod tests {
             ("edit", json!({"path": ".jan/config.toml"})),
             ("ls", json!({"path": ".jan"})),
             ("grep", json!({"pattern": "key", "path": ".jan"})),
-            ("bash", json!({"command": "cat ~/.jan/config.toml"})),
+            ("shell", json!({"command": "cat ~/.jan/config.toml"})),
         ];
         for perms in [ToolPermissions::default(), ToolPermissions::allow_all()] {
             for (tool, args) in &cases {
@@ -492,7 +492,7 @@ mod tests {
         let perms = ToolPermissions::new(PermissionDefault::ReadOnly, &[], &[], &[]);
         let grants = SessionGrants::default();
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "ls"}),
             &GateContext {
                 project_root: &root,
@@ -526,7 +526,7 @@ mod tests {
 
         // Same base command -> allowed without prompting.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "git push"}),
             &GateContext {
                 project_root: &root,
@@ -542,7 +542,7 @@ mod tests {
 
         // A different command still prompts.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "rm -rf /"}),
             &GateContext {
                 project_root: &root,
@@ -572,7 +572,7 @@ mod tests {
             "git status $(rm x)",
         ] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
@@ -602,7 +602,7 @@ mod tests {
         grants.grant_command("git status && rm foo");
         for cmd in ["git push", "rm bar", "rm baz && git pull"] {
             let d = resolve_decision(
-                lookup("bash").unwrap(),
+                lookup("shell").unwrap(),
                 &json!({ "command": cmd }),
                 &GateContext {
                     project_root: &root,
@@ -628,7 +628,7 @@ mod tests {
 
         // Whitespace-normalized identical command is covered.
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo   systemctl restart nginx"}),
             &GateContext {
                 project_root: &root,
@@ -644,7 +644,7 @@ mod tests {
 
         // A different sudo command still prompts (no blanket `sudo` grant).
         let d = resolve_decision(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sudo rm -rf /"}),
             &GateContext {
                 project_root: &root,

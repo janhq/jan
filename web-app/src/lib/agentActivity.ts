@@ -1,4 +1,5 @@
 import type { CoworkTurn } from '@/types/coworkSession'
+import { isRecordedShellCall } from '@/lib/agentTools'
 
 const MAX_COMMAND_LEN = 60
 
@@ -27,7 +28,7 @@ function humanizeToolName(name: string): string {
 const VERB_BY_TOOL: Record<string, string> = {
   write: 'Writing',
   edit: 'Editing',
-  bash: 'Running',
+  shell: 'Running',
   read: 'Reading',
   ls: 'Listing',
   find: 'Finding',
@@ -50,10 +51,10 @@ export function toolActivityText(toolName: string, input: unknown): string {
     return name ? `Reading ${name}` : 'Reading skill'
   }
 
-  const verb = VERB_BY_TOOL[toolName]
+  const verb = VERB_BY_TOOL[isRecordedShellCall(toolName) ? 'shell' : toolName]
   if (!verb) return humanizeToolName(toolName)
 
-  if (toolName === 'bash') {
+  if (isRecordedShellCall(toolName)) {
     const command = stringArg(input, 'command')
     return command ? `${verb} ${truncate(command, MAX_COMMAND_LEN)}` : verb
   }

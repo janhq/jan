@@ -659,7 +659,7 @@ fn a_host_tool_round_trips_with_content_parts() {
     assert_eq!(started["model"], "stub-model", "{started}");
     let tools = started["tools"].as_array().expect("advertised names");
     assert!(tools.iter().any(|t| t == "host__robot_arm_move"), "{started}");
-    assert!(tools.iter().any(|t| t == "bash"), "built-ins stay by default: {started}");
+    assert!(tools.iter().any(|t| t == "shell"), "built-ins stay by default: {started}");
     assert_eq!(started["toolSpecs"][0]["function"]["name"], "host__robot_arm_move");
     assert_eq!(started["toolSpecs"][0]["function"]["parameters"], arm_tool()["parameters"]);
     let session_id = started["sessionId"].as_str().unwrap().to_owned();
@@ -749,7 +749,7 @@ fn a_reserved_host_tool_name_is_refused_as_invalid_tools() {
     rpc.handshake();
     let project = scratch.join("project");
 
-    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"bash"}]}}));
+    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"shell"}]}}));
     assert_eq!(refused["error"]["code"], -32602, "{refused}");
     assert_eq!(refused["error"]["data"]["kind"], "invalid_tools", "{refused}");
     assert!(refused["error"]["message"].as_str().unwrap().contains("reserved"), "{refused}");

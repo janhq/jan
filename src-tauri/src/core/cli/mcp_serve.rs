@@ -81,6 +81,12 @@ pub async fn cli_mcp_serve(
             unknown.join(", ")
         );
     }
+    for notice in unknown
+        .iter()
+        .filter_map(|n| tauri_plugin_agent_tools::tools::renamed_shell_notice(n, "--tool"))
+    {
+        eprintln!("jan mcp serve: {notice}");
+    }
     match transport {
         ServeTransport::Stdio => {
             // stdout is the JSON-RPC stream from here on; the startup notice

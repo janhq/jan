@@ -20,7 +20,7 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # defaults to `default_model` when unset
 # mouse = false                      # disable TUI mouse tracking (scroll wheel,
 #                                     # click-to-expand); on by default
-# sandbox = true                      # run `bash` under OS confinement (same as
+# sandbox = true                      # run `shell` under OS confinement (same as
 #                                     # passing --sandbox); off by default, so
 #                                     # shell commands run with your own access
 # worktree = true                     # run each session in its own git worktree

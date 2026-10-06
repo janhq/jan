@@ -3,12 +3,12 @@
 //! session start and end, before a compaction).
 //!
 //! The point is to make a team policy enforceable rather than merely requested.
-//! "Run `cargo fmt` after every `edit`", "never let `bash` touch `infra/`",
+//! "Run `cargo fmt` after every `edit`", "never let `shell` touch `infra/`",
 //! "log every tool call to our audit sink" had no home before this: the only
 //! lever was the system prompt, which the model is free to ignore.
 //!
 //! A hook is a shell command, not a plugin runtime. It runs through
-//! [`crate::tools::handlers::confined_shell`] -- the very policy `bash` and the
+//! [`crate::tools::handlers::confined_shell`] -- the very policy `shell` and the
 //! `monitor` condition scripts already get -- so nothing here is a new
 //! execution primitive, and a hook under a sandboxed run is confined exactly as
 //! the shell the model drives is. That is also why this module lives in the
@@ -202,6 +202,9 @@ pub struct HookSet {
     /// swallowed, because a hook that silently does not fire is worse than one
     /// that complains -- the user believes their policy is in force.
     load_notices: Vec<String>,
+    /// The subset of `load_notices` from [`super::renamed_shell_notice`].
+    #[serde(skip)]
+    renamed_shell_notices: Vec<String>,
 }
 
 impl HookSet {
@@ -225,6 +228,13 @@ impl HookSet {
     /// See [`Self::load_notices`].
     pub fn load_notices(&self) -> &[String] {
         &self.load_notices
+    }
+
+    /// The load notices for matchers that still name the shell tool's old
+    /// name `bash`. Kept apart so a surface with no run start (the desktop's
+    /// per-call command) can put them on the shell call they no longer guard.
+    pub fn renamed_shell_notices(&self) -> &[String] {
+        &self.renamed_shell_notices
     }
 
     /// Append entries from one source, skipping any whose event name is not
@@ -265,6 +275,13 @@ impl HookSet {
                     event.as_str()
                 ));
                 continue;
+            }
+            // Kept as written, so it starts matching the moment it is renamed,
+            // but said out loud: a guard hook on `bash` no longer fires.
+            let hook_where = format!("Hook {} matcher in {where_}", event.as_str());
+            if let Some(notice) = super::renamed_shell_notice(&matcher, &hook_where) {
+                self.renamed_shell_notices.push(notice.clone());
+                self.load_notices.push(notice);
             }
             self.hooks.push(Hook {
                 event,
@@ -662,7 +679,7 @@ mod tests {
         let mut set = HookSet::new();
         set.extend_from(vec![entry("PreToolUse", None, "true")], Path::new("x"));
         assert_eq!(set.all()[0].matcher, "*");
-        assert!(set.all()[0].matches("bash"));
+        assert!(set.all()[0].matches("shell"));
         assert!(set.all()[0].matches("edit"));
     }
 
@@ -683,6 +700,26 @@ mod tests {
         let matched = set.matching(HookEvent::PreToolUse, Some("memory_write"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "b");
+    }
+
+    /// A matcher on the shell tool's old name is kept, but reported: a guard
+    /// hook on `bash` would otherwise silently stop firing.
+    #[test]
+    fn a_bash_matcher_is_kept_and_reported() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUse", Some("Bash"), "guard"),
+                entry("PreToolUse", Some("shell"), "ok"),
+            ],
+            Path::new("hooks.json"),
+        );
+        assert_eq!(set.load_notices().len(), 1, "{:?}", set.load_notices());
+        let notice = &set.load_notices()[0];
+        assert!(notice.contains("PreToolUse matcher in hooks.json"), "{notice}");
+        assert!(notice.contains("now `shell`"), "{notice}");
+        assert_eq!(set.renamed_shell_notices(), set.load_notices());
+        assert_eq!(set.matching(HookEvent::PreToolUse, Some("shell")).len(), 1);
     }
 
     #[test]
@@ -752,13 +789,13 @@ mod tests {
         set.extend_from(
             vec![entry(
                 "PreToolUse",
-                Some("bash"),
+                Some("shell"),
                 r#"echo '{"decision":"deny","reason":"infra is off limits"}'"#,
             )],
             Path::new("x"),
         );
         let payload = HookPayload {
-            tool_name: Some("bash".to_string()),
+            tool_name: Some("shell".to_string()),
             ..Default::default()
         };
         let outcome = run_hooks(
@@ -790,7 +827,7 @@ mod tests {
             Path::new("x"),
         );
         let payload = HookPayload {
-            tool_name: Some("bash".to_string()),
+            tool_name: Some("shell".to_string()),
             ..Default::default()
         };
         let outcome = run_hooks(
@@ -917,7 +954,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),
@@ -951,7 +988,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),
@@ -991,7 +1028,7 @@ mod tests {
                 &set,
                 HookEvent::PostToolUse,
                 &HookPayload {
-                    tool_name: Some("bash".to_string()),
+                    tool_name: Some("shell".to_string()),
                     tool_result: Some("x".repeat(4 * 1024 * 1024)),
                     ..Default::default()
                 },
@@ -1058,7 +1095,7 @@ mod tests {
             &set,
             HookEvent::PreToolUse,
             &HookPayload {
-                tool_name: Some("bash".to_string()),
+                tool_name: Some("shell".to_string()),
                 ..Default::default()
             },
             &ctx(&root, &store, &empty),

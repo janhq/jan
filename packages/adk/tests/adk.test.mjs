@@ -573,7 +573,7 @@ test('two sessions never see each other’s events', { skip: missingRuntime }, a
   assert.notEqual(fork.id, first.id)
   assert.equal(fork.model, 'stub-model')
   const forked = await fork.getTools()
-  assert.ok(forked.tools.includes('bash'))
+  assert.ok(forked.tools.includes('shell'))
 
 })
 

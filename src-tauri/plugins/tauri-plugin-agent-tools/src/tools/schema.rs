@@ -111,7 +111,7 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "bash",
+                "name": super::SHELL_TOOL,
                 "description": bash_description(super::proc::shell().kind),
                 "parameters": {
                     "type": "object",

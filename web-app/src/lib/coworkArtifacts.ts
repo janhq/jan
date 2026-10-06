@@ -1,6 +1,7 @@
 import { AudioLines, Code2, FileText, ImageIcon, Video } from 'lucide-react'
 import { basenameOf, extensionOf, resolveInRoot } from '@/lib/coworkPreview'
 import type { CoworkTurn } from '@/types/coworkSession'
+import { isRecordedShellCall } from '@/lib/agentTools'
 
 /**
  * Artifacts a run produced, derived from its `write`/`edit` tool calls
@@ -135,9 +136,9 @@ const pathFromInput = (input: unknown): string | undefined => {
 const PATH_TOKEN_RE = /"([^"]+)"|'([^']+)'|(\S+)/g
 
 /**
- * Artifact paths a `bash` turn produced, recovered from its command and output.
+ * Artifact paths a `shell` turn produced, recovered from its command and output.
  *
- * `write` results name their file directly; `bash` does not. Two signals, one
+ * `write` results name their file directly; `shell` does not. Two signals, one
  * rule:
  *
  * 1. A path the command names explicitly (yt-dlp `-o out.mp4`, `ls -lh
@@ -244,7 +245,7 @@ export function artifactsFromTurns(
       if (!path) continue
       const artifact = artifactFor(path)
       if (artifact) byPath.set(path, artifact)
-    } else if (turn.name === 'bash') {
+    } else if (isRecordedShellCall(turn.name ?? '')) {
       // Files made by shell commands (downloads, ffmpeg renders) carry no
       // `write` result; recover them from the command + output pair.
       const command =
