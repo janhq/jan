@@ -38,15 +38,25 @@ $BinaryName = 'jan.exe'
 $NativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 # Native first, then x86_64 under emulation: it is all that pre-ARM64 versions,
 # or a nightly whose ARM leg failed, have to offer.
-$PlatformKeys = if ($NativeArch -eq 'ARM64') { @('windows-aarch64', 'windows-x86_64') }
-                else { @('windows-x86_64') }
+# @() outside the `if`: PowerShell unrolls a one-element array returned from it,
+# which made $PlatformKeys[0] the character 'w' and warned about emulation on x64.
+$PlatformKeys = @(if ($NativeArch -eq 'ARM64') { 'windows-aarch64', 'windows-x86_64' }
+                  else { 'windows-x86_64' })
 
 if (-not $Dir) {
   if ($env:JAN_INSTALL_DIR) {
     $Dir = $env:JAN_INSTALL_DIR
   } else {
-    $Dir = Join-Path $env:LOCALAPPDATA 'Programs\Jan'
+    # Same place as install-jan-agent.sh (and uv's Windows installer). Never the
+    # desktop app's %LOCALAPPDATA%\Programs\Jan: its updater runs the old
+    # uninstaller, which deletes that whole directory, and up to 0.8.4 the
+    # desktop executable there was Jan.exe, which jan.exe would overwrite.
+    $Dir = Join-Path $env:USERPROFILE '.local\bin'
   }
+}
+if ((Test-Path -LiteralPath (Join-Path $Dir 'uninstall.exe')) -and
+    (Test-Path -LiteralPath (Join-Path $Dir 'resources'))) {
+  throw "$Dir looks like the Jan desktop app's install directory, which is replaced on every app update; choose another -Dir"
 }
 
 if ([Environment]::Is64BitOperatingSystem -eq $false) {
@@ -91,8 +101,20 @@ function Install-Binary {
   $onPath = ($env:Path -split ';') -contains $Dir
   if ($AddToPath) {
     if (($userPath -split ';') -notcontains $Dir) {
-      $updated = if ([string]::IsNullOrEmpty($userPath)) { $Dir } else { "$userPath;$Dir" }
-      [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
+      # Edit the raw registry value rather than SetEnvironmentVariable, which
+      # rewrites Path as REG_SZ with every %VAR% expanded (janhq/jan#9096).
+      $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+      try {
+        $raw = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+        $kind = if ($null -ne $key.GetValue('Path')) { $key.GetValueKind('Path') } else { 'ExpandString' }
+        $updated = if ([string]::IsNullOrEmpty($raw)) { $Dir } else { "$($raw.TrimEnd(';'));$Dir" }
+        $key.SetValue('Path', $updated, $kind)
+      } finally {
+        $key.Close()
+      }
+      # Deleting a variable that does not exist changes nothing, but makes .NET
+      # broadcast WM_SETTINGCHANGE so new terminals see the new Path.
+      [Environment]::SetEnvironmentVariable('JAN_INSTALL_PATH_REFRESH', $null, 'User')
       Write-Host "added $Dir to your user PATH; open a new terminal to pick it up"
     } else {
       Write-Host "$Dir is already on your user PATH"
