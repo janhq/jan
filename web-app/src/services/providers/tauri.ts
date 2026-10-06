@@ -9,6 +9,7 @@ import { ModelCapabilities } from '@/types/models'
 import { modelSettings } from '@/lib/predefined'
 import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { fetchWithoutTauriWebviewOrigin } from '@/lib/omitTauriWebviewOrigin'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
 import { getModelCapabilities } from '@/lib/models'
@@ -20,8 +21,9 @@ import { ensureAnthropicHeaders } from '@/lib/remoteModelCatalog'
 
 export class TauriProvidersService extends DefaultProvidersService {
   fetch(): typeof fetch {
-    // Tauri implementation uses Tauri's fetch to avoid CORS issues
-    return fetchTauri as typeof fetch
+    // Tauri fetch avoids CORS; empty Origin omits the webview host so
+    // CORS-strict backends (Ollama) don't 403. See omitTauriWebviewOrigin.
+    return fetchWithoutTauriWebviewOrigin(fetchTauri as typeof fetch)
   }
 
   async getProviders(): Promise<ModelProvider[]> {
@@ -163,13 +165,6 @@ export class TauriProvidersService extends DefaultProvidersService {
           'Content-Type': 'application/json',
         }
 
-        if (
-          provider.base_url.includes('localhost:') ||
-          provider.base_url.includes('127.0.0.1:')
-        ) {
-          headers['Origin'] = 'tauri://localhost'
-        }
-
         if (key) {
           headers['x-api-key'] = key
           headers['Authorization'] = `Bearer ${key}`
@@ -183,7 +178,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
         ensureAnthropicHeaders(provider, headers)
 
-        const response = await fetchTauri(`${provider.base_url}/models`, {
+        const response = await this.fetch()(`${provider.base_url}/models`, {
           method: 'GET',
           headers,
         })
