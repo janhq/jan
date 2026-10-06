@@ -97,7 +97,10 @@ mod windows {
                 "Set-Content -Path rel-b.txt -Value hi; Get-ChildItem rel-b.txt | Out-Null; \
                  Get-Content rel-b.txt; whoami | Out-Null; cmd /c exit 5",
             ),
-            ("cmd", &shells[2].1, "echo hi> rel-c.txt && type rel-c.txt && whoami >NUL && exit 5"),
+            // The external program here is a nested cmd: `whoami >NUL` is
+            // refused ("Access is denied.") in the container, which is not the
+            // workspace behavior this checks.
+            ("cmd", &shells[2].1, "echo hi> rel-c.txt && type rel-c.txt && cmd /c exit 5"),
         ] {
             let (code, out) = rt.block_on(spawn_code(shell, &ws, command));
             assert_eq!(code, Some(5), "{label}: the external program's code comes back: {out}");
