@@ -126,7 +126,19 @@ const WRAPPERS: &[&str] = &[
     "until", "for", "case", "function", "select", "coproc", "!",
 ];
 
+/// Typographic quotes PowerShell accepts as `'` (U+2018-U+201B) and `"`
+/// (U+201C-U+201E), each closing a string any of its class opened.
+const PS_UNICODE_QUOTES: &[char] =
+    &['\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}', '\u{201C}', '\u{201D}', '\u{201E}'];
+
 pub fn scan_command(command: &str) -> CommandScan {
+    // POSIX shells read these as plain characters, so the quote tracking here
+    // (block detection, segment splitting) would disagree with PowerShell about
+    // where a string ends: in `echo 'a\u{2019}; rm x; \u{2019}'` PowerShell runs
+    // `rm`. They are rare in real commands, so prompting costs little.
+    if command.contains(PS_UNICODE_QUOTES) {
+        return CommandScan::Opaque;
+    }
     let mut bases = BTreeSet::new();
     if scan_into(command, &mut bases, 0) {
         CommandScan::Bases(bases)
@@ -378,8 +390,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
                 rhs.extend_from_slice(&tokens[idx + 1..]);
                 return scan_segment(&rhs.join(" "), bases, depth + 1);
             }
-            // A bare `$var` with no operator is not an assignment. It is left
-            // as the base below, so `& $cmd` still prompts.
+        }
+        // A variable as the command (`& $cmd`, `& $env:ComSpec /c ...`) runs
+        // whatever it holds, so a grant on its name would cover every later
+        // value: always prompt.
+        if tokens.get(idx).is_some_and(|t| t.starts_with('$')) {
+            return false;
         }
         if idx >= tokens.len() {
             return true; // only assignments / empty: runs nothing
@@ -657,6 +673,14 @@ mod tests {
             // block after it is live.
             r#"Select-Object -InputObject "C:\" -Property { Remove-Item -Recurse ~ }"#,
             r#"Sort-Object -InputObject "a\" { Remove-Item -Recurse ~ }"#,
+            // PowerShell closes a string at a typographic quote of its class.
+            "Sort-Object -InputObject \"abc\u{201D} { Remove-Item -Recurse ~ } \"\"",
+            "echo 'a\u{2019} ; rm x ; \u{2019}'",
+            // A variable as the command runs whatever it holds.
+            "& $env:ComSpec /c dir",
+            "& $cmd args",
+            "$cmd",
+            "git status; & $x",
         ] {
             assert_eq!(scan_command(command), CommandScan::Opaque, "{command}");
         }
@@ -698,7 +722,8 @@ mod tests {
         ] {
             assert_eq!(bases(command), set(&[base]), "{command}");
         }
-        assert_eq!(bases("$x | rm y"), set(&["$x", "rm"]));
+        // `&` splits segments, so a bare `$x` reads like `& $x`: it prompts.
+        assert_eq!(scan_command("$x | rm y"), CommandScan::Opaque);
         assert!(bases("$x =").is_empty(), "nothing to run, so nothing a grant covers");
     }
 
