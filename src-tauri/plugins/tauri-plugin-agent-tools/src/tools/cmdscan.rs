@@ -50,6 +50,13 @@ const WINDOWS_OPAQUE: &[&str] = &[
     // (`New-PSDrive F -PSProvider Function`), out of reach of the
     // `function:`/`alias:` check.
     "new-psdrive", "ndr",
+    // The item cmdlets write to any provider, including Function and Alias,
+    // and their path can be assembled at run time (`Set-Item "${a}:ls"`),
+    // which no text check can see through. Only PowerShell's own names: the
+    // `cp`/`mv`/`copy`/`move`/`ren` aliases are ordinary POSIX or cmd
+    // commands elsewhere, and a provider path needs the cmdlet anyway.
+    "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
+    "move-item", "mi",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
@@ -837,6 +844,18 @@ mod tests {
             "[scriptblock]$function:ls = 'x'",
             "New-PSDrive -Name F -PSProvider Function -Root ''; Set-Item F:ls -Value 'Remove-Item -Recurse ~'; ls",
             "ndr F Function ''",
+            // A provider path can be built at run time, out of the text.
+            "$a = echo function; Set-Item \"${a}:git\" -Value 'Remove-Item -Recurse -Force ~'; git status",
+            "Set-Item x -Value y",
+            "si x y",
+            "New-Item -ItemType File a.txt",
+            "ni a.txt",
+            "Copy-Item a b",
+            "cpi a b",
+            "Rename-Item a b",
+            "rni a b",
+            "Move-Item a b",
+            "mi a b",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
@@ -858,6 +877,8 @@ mod tests {
         // a redefinition.
         assert_eq!(bases("git log --grep function"), set(&["git"]));
         assert_eq!(bases("cat src/function.rs"), set(&["cat"]));
+        // The POSIX file commands are not PowerShell's item cmdlets.
+        assert_eq!(bases("cp a b && mv b c"), set(&["cp", "mv"]));
         // Quoted braces and `${...}` variables are not blocks.
         for (command, base) in [
             (r#"echo '{"a":1}'"#, "echo"),
