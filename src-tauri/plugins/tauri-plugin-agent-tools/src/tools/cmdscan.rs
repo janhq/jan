@@ -34,7 +34,7 @@ const OPAQUE: &[&str] = &[
 /// resolve them.
 const WINDOWS_OPAQUE: &[&str] = &[
     "cmd", "powershell", "pwsh", "invoke-expression", "iex", "invoke-command", "icm",
-    "start-process", "saps", "start", "foreach-object", "foreach", "%", "where-object",
+    "start-process", "saps", "start", "invoke-item", "ii", "foreach-object", "foreach", "%", "where-object",
     "where", "?", "start-job", "sajb", "start-threadjob", "invoke-commandinjob",
 ];
 
@@ -98,6 +98,51 @@ fn has_block_with(seg: &str, posix_escapes: bool) -> bool {
     false
 }
 
+/// Whether `command` has a backtick outside single quotes. POSIX reads it as a
+/// command substitution, PowerShell as its escape character (`` `' `` is a
+/// literal quote, `` `; `` a literal semicolon), so the two disagree about
+/// where strings and commands end and no single scan is right for both. Inside
+/// single quotes both read it literally. Checked under both quoting rules, as
+/// [`has_block`] is, since `\"` decides whether a `'` is inside a string.
+fn has_live_backtick(command: &str) -> bool {
+    has_live_backtick_with(command, true) || has_live_backtick_with(command, false)
+}
+
+/// [`has_live_backtick`] under one quoting rule; see [`has_block_with`].
+fn has_live_backtick_with(command: &str, posix_escapes: bool) -> bool {
+    let chars: Vec<char> = command.chars().collect();
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        match quote {
+            Some('\'') => {
+                if c == '\'' {
+                    quote = None;
+                }
+            }
+            Some(q) => {
+                if c == '`' {
+                    return true;
+                }
+                if posix_escapes && c == '\\' {
+                    i += 1;
+                } else if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                '`' => return true,
+                '\\' if posix_escapes => i += 1,
+                '\'' | '"' => quote = Some(c),
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    false
+}
+
 /// PowerShell assignment operators, when written as their own token.
 const PS_ASSIGN_OPS: &[&str] = &["=", "+=", "-=", "*=", "/=", "%=", "??="];
 
@@ -136,7 +181,7 @@ pub fn scan_command(command: &str) -> CommandScan {
     // (block detection, segment splitting) would disagree with PowerShell about
     // where a string ends: in `echo 'a\u{2019}; rm x; \u{2019}'` PowerShell runs
     // `rm`. They are rare in real commands, so prompting costs little.
-    if command.contains(PS_UNICODE_QUOTES) {
+    if command.contains(PS_UNICODE_QUOTES) || has_live_backtick(command) {
         return CommandScan::Opaque;
     }
     let mut bases = BTreeSet::new();
@@ -371,6 +416,11 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         {
             idx += 1;
         }
+        // A .NET static call (`[Diagnostics.Process]::Start('x')`) can start
+        // any program or touch any file, whatever its arguments.
+        if tokens.get(idx).is_some_and(|t| t.starts_with('[') && t.contains("::")) {
+            return false;
+        }
         if let Some(rest) = tokens.get(idx).and_then(|t| ps_assignment_rest(t)) {
             let fused_op = tokens[idx].contains('=');
             let spaced_op = !fused_op
@@ -596,7 +646,9 @@ mod tests {
     #[test]
     fn command_substitution_is_scanned() {
         assert_eq!(bases("echo $(rm x)"), set(&["echo", "rm"]));
-        assert_eq!(bases("echo `rm x`"), set(&["echo", "rm"]));
+        // A backtick is a substitution to POSIX and an escape to PowerShell;
+        // no one scan is right for both, so it prompts.
+        assert_eq!(scan_command("echo `rm x`"), CommandScan::Opaque);
     }
 
     #[test]
@@ -676,6 +728,16 @@ mod tests {
             // PowerShell closes a string at a typographic quote of its class.
             "Sort-Object -InputObject \"abc\u{201D} { Remove-Item -Recurse ~ } \"\"",
             "echo 'a\u{2019} ; rm x ; \u{2019}'",
+            // PowerShell's backtick escape: `' is a literal quote, so the
+            // `;` after it is live.
+            "echo `'`' ; Remove-Item -Recurse -Force ~",
+            "echo \"a`\" ; rm x ; \"",
+            "echo a`; rm x",
+            // Starting a program by another name.
+            "[Diagnostics.Process]::Start('x')",
+            "[System.IO.File]::Delete('C:\\x')",
+            "Invoke-Item x.exe",
+            "ii x.exe",
             // A variable as the command runs whatever it holds.
             "& $env:ComSpec /c dir",
             "& $cmd args",
