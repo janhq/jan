@@ -165,11 +165,15 @@ fn assigns_unsafely(args: &[String]) -> bool {
 /// `$((x))` or a bare `(( x ))`. Bash evaluates a variable's value as an
 /// expression there, and an `a[$(rm x)]` in that value runs its command, so
 /// a value read from a file can run code behind granted bases. A `$((...))`
-/// of digits and operators only is plain. Double quotes do not stop it, so
-/// only single-quoted text is skipped.
-fn has_arithmetic(s: &str) -> bool {
+/// of digits and operators only is plain. Expansions run inside double
+/// quotes too, so only single-quoted text is skipped, and a `'` inside double
+/// quotes is literal. Under bash or cmd (`params`), parameter expansions that
+/// evaluate arithmetic count too ([`param_is_arithmetic`]); PowerShell's
+/// `${...}` is only a variable name (`${env:Path}`).
+fn has_arithmetic(s: &str, params: bool) -> bool {
     let chars: Vec<char> = s.chars().collect();
     let mut in_single = false;
+    let mut in_double = false;
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
@@ -179,9 +183,22 @@ fn has_arithmetic(s: &str) -> bool {
             continue;
         }
         match c {
-            '\'' => in_single = true,
+            '\\' => i += 1,
+            '\'' if !in_double => in_single = true,
+            '"' => in_double = !in_double,
+            '$' if params
+                && chars.get(i + 1) == Some(&'{')
+                && param_is_arithmetic(&chars[i + 2..]) =>
+            {
+                return true;
+            }
             '(' if chars.get(i + 1) == Some(&'(') => {
                 if i == 0 || chars[i - 1] != '$' {
+                    // `((` inside double quotes is text, not a command.
+                    if in_double {
+                        i += 1;
+                        continue;
+                    }
                     return true;
                 }
                 let end = skip_balanced(&chars, i + 1).min(chars.len());
@@ -195,6 +212,42 @@ fn has_arithmetic(s: &str) -> bool {
             _ => {}
         }
         i += 1;
+    }
+    false
+}
+
+/// Whether the parameter expansion whose body starts at `body` (just past
+/// `${`) evaluates arithmetic: an array subscript (`${a[$i]}`, `${a[i]}`)
+/// or a substring offset or length (`${x:$n}`, `${x:1:n}`). Bash evaluates
+/// both as expressions, so a variable there can run code. Literal subscripts
+/// (`${a[0]}`, `${a[@]}`) and offsets (`${x:1}`, `${x: -2}`) are plain, as are
+/// the `:-`/`:=`/`:+`/`:?` default operators and pattern operators.
+fn param_is_arithmetic(body: &[char]) -> bool {
+    let mut j = 0;
+    while matches!(body.get(j), Some('#' | '!')) {
+        j += 1;
+    }
+    while body.get(j).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') {
+        j += 1;
+    }
+    if body.get(j) == Some(&'[') {
+        let Some(len) = body[j + 1..].iter().position(|&c| c == ']') else {
+            return true;
+        };
+        let sub = &body[j + 1..j + 1 + len];
+        let literal = sub.iter().all(|c| c.is_ascii_digit())
+            || sub == ['@']
+            || sub == ['*'];
+        if !literal || sub.is_empty() {
+            return true;
+        }
+        j += len + 2;
+    }
+    if body.get(j) == Some(&':') && !matches!(body.get(j + 1), Some('-' | '=' | '+' | '?')) {
+        let end = body[j..].iter().position(|&c| c == '}').map_or(body.len(), |e| j + e);
+        return !body[j + 1..end]
+            .iter()
+            .all(|c| c.is_ascii_digit() || matches!(c, ' ' | '-' | ':'));
     }
     false
 }
@@ -465,7 +518,7 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth
     }
     // Before extraction, which drops `$((...))` and splits on the parens of
     // `(( ))` and `name()`.
-    if has_arithmetic(command) || has_empty_parens(command) {
+    if has_arithmetic(command, kind != ShellKind::PowerShell) || has_empty_parens(command) {
         return false;
     }
     let (outer, subs) = extract_substitutions(command);
@@ -786,8 +839,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         // `printf -v 'a[$(rm x)]'` and `test -v 'a[...]'` evaluate a
         // subscript; `wait -p` assigns to a name.
         let names_a_var = match base.as_str() {
-            "printf" | "test" | "[" | "[[" => args.iter().any(|t| t == "-v"),
-            "wait" => args.iter().any(|t| t == "-p"),
+            // The name may be attached to the flag (`-v'a[$(rm x)]'`), and
+            // `wait`'s flags combine (`-np x`).
+            "printf" | "test" | "[" | "[[" => args.iter().any(|t| t.starts_with("-v")),
+            "wait" => args.iter().any(|t| {
+                t.starts_with('-') && !t.starts_with("--") && t.contains('p')
+            }),
             _ => false,
         };
         if names_a_var {
@@ -1302,6 +1359,12 @@ mod tests {
                 "[[ $n -eq 1 ]] && ls",
                 "[[ -v 'a[$(rm x)]' ]]",
                 "printf -v 'a[$(rm x)]' x",
+                "printf -v'a[$(rm -rf ~)]' x",
+                "wait -np x",
+                "wait -p x",
+                // A `'` inside double quotes does not open a string.
+                "echo \"'\" $(( $(rm -rf ~) )) \"'\"",
+                "echo \"$((x))\"",
                 "read 'a[$(rm x)]'",
                 "a[$(rm x)]=1 ls",
                 // Lookup variables decide which program a name runs.
@@ -1328,6 +1391,10 @@ mod tests {
             plain("export RUST_LOG=debug; echo $HOME", kind, &["echo", "export"]);
             plain("FOO=1 npm run build", kind, &["npm"]);
             plain("echo $((1 + 2))", kind, &["echo"]);
+            plain("echo \"((x))\" '$((x))'", kind, &["echo"]);
+            plain("echo ${a[0]} ${a[@]} ${#a[*]} ${x:1} ${x: -2:1}", kind, &["echo"]);
+            plain("echo ${x:-def} ${x:=d} ${x:+y} ${x//[a-z]/} ${x#*:}", kind, &["echo"]);
+            plain("printf '%s' x; wait -n", kind, &["printf", "wait"]);
             plain("[ -f x ] && cat x", kind, &["[", "cat"]);
             plain("[[ -f x ]]", kind, &["[["]);
             plain("timeout 5 curl u", kind, &["curl"]);
@@ -1341,6 +1408,19 @@ mod tests {
             plain("/usr/bin/git status", kind, &["/usr/bin/git"]);
             plain("ls", kind, &["ls"]);
         }
+        // Subscripts and offsets in a bash parameter expansion are
+        // arithmetic too. In PowerShell `${...}` only names a variable.
+        for command in [
+            "echo ${a[$i]}",
+            "echo ${a[i]}",
+            "echo \"${#a[n]}\"",
+            "echo ${x:$n}",
+            "echo ${x:1:n}",
+            "echo ${a[0]:$n}",
+        ] {
+            opaque(command, ShellKind::Posix);
+        }
+        plain("echo ${a[$i]}", ShellKind::PowerShell, &["echo"]);
         // `set` is `Set-Variable` in PowerShell, and options in bash.
         plain("set -euo pipefail", ShellKind::Posix, &["set"]);
         opaque("set -Name PATH -Value x", ShellKind::PowerShell);
@@ -1370,6 +1450,7 @@ mod tests {
         // Inside double quotes only the variable expands, which is plain.
         plain("Write-Output \"$x.Name\"", ShellKind::PowerShell, &["Write-Output"]);
         plain("Write-Output $env:USERPROFILE", ShellKind::PowerShell, &["Write-Output"]);
+        plain("Write-Output ${env:USERPROFILE}", ShellKind::PowerShell, &["Write-Output"]);
         plain("./build.ps1 -Release", ShellKind::PowerShell, &["./build.ps1"]);
     }
 
