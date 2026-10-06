@@ -37,8 +37,12 @@ const WINDOWS_OPAQUE: &[&str] = &[
     "start-process", "saps", "start", "invoke-item", "ii", "invoke-wmimethod", "iwmi",
     "invoke-cimmethod", "icim", "foreach-object", "foreach", "%", "where-object",
     "where", "?", "start-job", "sajb", "start-threadjob", "invoke-commandinjob",
-    // Hosts that run a program or script named in their arguments.
-    "wsl", "conhost", "cscript", "wscript", "mshta", "rundll32",
+    // Hosts that run a program, script or command line named in their
+    // arguments, or schedule one to run.
+    "wsl", "conhost", "cscript", "wscript", "mshta", "rundll32", "forfiles", "wmic",
+    "schtasks", "at", "runas", "regsvr32", "msiexec", "explorer", "pcalua", "cmstp",
+    "msbuild", "installutil", "regasm", "regsvcs", "certutil", "bitsadmin",
+    "scriptrunner", "sc",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
@@ -476,7 +480,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if base.is_empty() {
             return true;
         }
-        if OPAQUE.contains(&base.as_str()) || is_windows_opaque(&base) {
+        // Windows resolves `SSH` and `ssh.exe` to `ssh`, so the POSIX list is
+        // matched by that name too.
+        if OPAQUE.contains(&base.as_str())
+            || OPAQUE.contains(&windows_name(&base).as_str())
+            || is_windows_opaque(&base)
+        {
             return false;
         }
         if base == "env" {
@@ -770,6 +779,15 @@ mod tests {
             "iwmi -Class Win32_Process -Name Create -ArgumentList calc.exe",
             "Invoke-CimMethod -ClassName Win32_Process -MethodName Create",
             "icim -ClassName Win32_Process -MethodName Create",
+            "ssh.exe host rm -rf ~",
+            "SSH host x",
+            "sudo.exe rm x",
+            "forfiles /c \"cmd /c del @file\"",
+            "wmic process call create calc.exe",
+            "schtasks /create /tr calc.exe /tn x /sc once /st 00:00",
+            "runas /user:x calc.exe",
+            "msiexec /i x.msi",
+            "explorer.exe x.exe",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
