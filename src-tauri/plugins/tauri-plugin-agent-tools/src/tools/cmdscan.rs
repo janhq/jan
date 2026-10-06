@@ -34,7 +34,7 @@ const OPAQUE: &[&str] = &[
 /// resolve them.
 const WINDOWS_OPAQUE: &[&str] = &[
     "cmd", "powershell", "pwsh", "invoke-expression", "iex", "invoke-command", "icm",
-    "start-process", "saps", "start", "invoke-item", "ii", "foreach-object", "foreach", "%", "where-object",
+    "start-process", "saps", "start", "invoke-item", "ii", "invoke-wmimethod", "iwmi", "invoke-cimmethod", "foreach-object", "foreach", "%", "where-object",
     "where", "?", "start-job", "sajb", "start-threadjob", "invoke-commandinjob",
 ];
 
@@ -204,7 +204,14 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool 
             return false;
         }
     }
-    for seg in split_segments(&outer) {
+    // An unquoted `\` escapes the next character in POSIX shells and is a
+    // literal in PowerShell, so in `ls C:\; rm x` PowerShell runs `rm`. When the
+    // two readings split the command differently, one of them hides a command.
+    let segments = split_segments(&outer, true);
+    if segments != split_segments(&outer, false) {
+        return false;
+    }
+    for seg in segments {
         if !scan_segment(&seg, bases, depth) {
             return false;
         }
@@ -337,8 +344,9 @@ fn capture_backtick(chars: &[char], tick: usize) -> (String, usize) {
 
 /// Split on the shell control operators that separate commands, honoring
 /// quotes. `(`/`)` (subshell grouping; substitutions are already removed) also
-/// separate.
-fn split_segments(s: &str) -> Vec<String> {
+/// separate. `posix_escapes`: whether an unquoted `\` escapes the next
+/// character (POSIX) or is a literal (PowerShell).
+fn split_segments(s: &str, posix_escapes: bool) -> Vec<String> {
     let chars: Vec<char> = s.chars().collect();
     let mut segs = Vec::new();
     let mut cur = String::new();
@@ -360,7 +368,7 @@ fn split_segments(s: &str) -> Vec<String> {
                 cur.push(c);
                 i += 1;
             }
-            '\\' if i + 1 < chars.len() => {
+            '\\' if posix_escapes && i + 1 < chars.len() => {
                 cur.push(c);
                 cur.push(chars[i + 1]);
                 i += 2;
@@ -733,11 +741,19 @@ mod tests {
             "echo `'`' ; Remove-Item -Recurse -Force ~",
             "echo \"a`\" ; rm x ; \"",
             "echo a`; rm x",
+            // PowerShell reads `\` literally, so the separator or quote after
+            // it is live.
+            "ls C:\\; Remove-Item -Recurse -Force ~",
+            "ls C:\\| rm x",
+            "echo \\' x '; Remove-Item ~",
             // Starting a program by another name.
             "[Diagnostics.Process]::Start('x')",
             "[System.IO.File]::Delete('C:\\x')",
             "Invoke-Item x.exe",
             "ii x.exe",
+            "Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList calc.exe",
+            "iwmi -Class Win32_Process -Name Create -ArgumentList calc.exe",
+            "Invoke-CimMethod -ClassName Win32_Process -MethodName Create",
             // A variable as the command runs whatever it holds.
             "& $env:ComSpec /c dir",
             "& $cmd args",
