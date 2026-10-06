@@ -66,6 +66,9 @@ mod windows {
         );
         for (label, shell) in &shells {
             let (ok, out) = rt.block_on(spawn(shell, &ws, "echo ok"));
+            if !ok && shell.kind == ShellKind::PowerShell {
+                eprintln!("{label} diagnostics:\n{}", rt.block_on(spawn(shell, &ws, PS_PROBE)).1);
+            }
             assert!(ok, "{label}: a command must start and succeed in the sandbox: {out}");
             assert!(out.contains("ok"), "{label}: output lost: {out}");
             let (ok, out) = rt.block_on(spawn(shell, &ws, "exit 3"));
@@ -78,6 +81,19 @@ mod windows {
 
         let _ = std::fs::remove_dir_all(&ws);
     }
+
+    /// What PowerShell sees of its module search, using only the engine and
+    /// .NET -- no cmdlet a broken module search would fail to find.
+    const PS_PROBE: &str = r#"
+"PSVersion=" + $PSVersionTable.PSVersion
+"PSHOME=" + $PSHOME
+"PSModulePath(env)=" + [Environment]::GetEnvironmentVariable('PSModulePath')
+"LOCALAPPDATA=" + $env:LOCALAPPDATA
+"Personal=" + [Environment]::GetFolderPath('Personal')
+foreach ($p in ($env:PSModulePath -split ';')) { "  dir $p exists=" + [IO.Directory]::Exists($p) }
+"Utility psd1 exists=" + [IO.File]::Exists("$PSHOME\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1")
+try { Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop; "Import-Module ok" } catch { "Import-Module failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message }
+"#;
 
     /// Spawn `command` through the sandbox exactly as the shell tool does:
     /// `jail::wrap` turns the shell into the helper re-exec, and `proc::spawn`
