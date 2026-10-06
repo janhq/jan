@@ -588,11 +588,11 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth
     // `[[ $n -eq 1 ]]` evaluates `$n`'s value as arithmetic. Checked over
     // the whole command, not per segment: segment splitting cuts `[[ ]]` at
     // its own `&&`/`||`, so `[[ x && git -eq $n ]]` would leave the operator
-    // in a segment with no `[[`. A `-eq` elsewhere in a command that has a
-    // `[[` also prompts, which is the safe side.
-    let words = tokenize(command, true);
-    if words.iter().any(|t| t == "[[")
-        && words.iter().any(|t| ARITHMETIC_TESTS.contains(&t.as_str()))
+    // in a segment with no `[[`. A `[[` is found as a substring because a
+    // control operator can be fused to it (`true;[[`). A `-eq` elsewhere in
+    // a command that has a `[[` also prompts, which is the safe side.
+    if command.contains("[[")
+        && tokenize(command, true).iter().any(|t| ARITHMETIC_TESTS.contains(&t.as_str()))
     {
         return false;
     }
@@ -1444,6 +1444,9 @@ mod tests {
                 "[[ -v 'a[$(rm x)]' ]]",
                 "[[ x && git -eq $n ]]",
                 "[[ x || y -lt $n ]] && ls",
+                "true;[[ $n -eq 1 ]]",
+                "true&&[[ $n -gt 1 ]]",
+                "(x)||[[ $n -ne 1 ]]",
                 "echo \"'\"; a=(git [$i]=y); echo \"'\"",
                 "printf -v 'a[$(rm x)]' x",
                 "printf -v'a[$(rm -rf ~)]' x",
