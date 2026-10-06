@@ -153,7 +153,8 @@ test-rust: stub-resources
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-hardware/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-llamacpp/Cargo.toml
 	cargo test --locked --manifest-path src-tauri/utils/Cargo.toml
-	cargo test --locked --manifest-path src-tauri/plugins/tauri-plugin-agent-tools/Cargo.toml --no-default-features --test sandbox_spawn
+	# No --locked: this crate gitignores its Cargo.lock, as rust-check.yml assumes.
+	cargo test --manifest-path src-tauri/plugins/tauri-plugin-agent-tools/Cargo.toml --no-default-features --test sandbox_spawn
 
 # protocol/schema.json is committed, and core::cli::protocol_schema fails when it
 # no longer matches the types that define the channel. This is the fix for that
