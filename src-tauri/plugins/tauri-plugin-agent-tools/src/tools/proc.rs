@@ -116,17 +116,22 @@ pub fn kind_of(program: &Path) -> ShellKind {
     }
 }
 
-/// The config that drives `program` according to its [`kind_of`].
-fn config_for(program: PathBuf) -> ShellConfig {
-    let kind = kind_of(&program);
+/// The fixed arguments a shell of `kind` takes before its command.
+pub fn shell_args(kind: ShellKind) -> Vec<String> {
     let args: &[&str] = match kind {
         ShellKind::Posix => &["-c"],
         ShellKind::PowerShell => POWERSHELL_ARGS,
         ShellKind::Cmd => CMD_ARGS,
     };
+    args.iter().map(|s| s.to_string()).collect()
+}
+
+/// The config that drives `program` according to its [`kind_of`].
+fn config_for(program: PathBuf) -> ShellConfig {
+    let kind = kind_of(&program);
     ShellConfig {
         program,
-        args: args.iter().map(|s| s.to_string()).collect(),
+        args: shell_args(kind),
         kind,
     }
 }
@@ -179,15 +184,15 @@ pub struct ShellEnv<'a> {
 }
 
 /// Resolved shell for this process, computed once. `JAN_AGENT_SHELL` wins;
-/// otherwise a real `bash`, and on Windows without one PowerShell, with `cmd`
-/// only as the last resort.
+/// otherwise `bash` on unix and PowerShell on Windows, with `cmd` only as the
+/// last resort.
 pub fn shell() -> &'static ShellConfig {
     static SHELL: OnceLock<ShellConfig> = OnceLock::new();
     SHELL.get_or_init(resolve_shell)
 }
 
 /// True for a Store app-execution alias under `%LOCALAPPDATA%\Microsoft\
-/// WindowsApps` (`bash.exe` for WSL, `pwsh.exe` for a Store PowerShell 7).
+/// WindowsApps`, such as the Store PowerShell 7's `pwsh.exe`.
 /// An alias is a reparse point that cannot start inside the AppContainer, so
 /// choosing one leaves the sandboxed shell failing every command while a
 /// working shell later in the order goes unused. String-based so it is
@@ -196,15 +201,6 @@ pub fn shell() -> &'static ShellConfig {
 fn is_app_execution_alias(path: &Path) -> bool {
     let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
     p.contains("\\microsoft\\windowsapps\\")
-}
-
-/// True for the `bash.exe` shims that launch WSL rather than being a bash:
-/// `System32\bash.exe` and the WindowsApps alias. Beyond the alias problem
-/// they need an installed distro and reject `-c`.
-#[cfg(any(windows, test))]
-fn is_wsl_launcher(path: &Path) -> bool {
-    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
-    p.ends_with("\\system32\\bash.exe") || is_app_execution_alias(path)
 }
 
 fn resolve_shell() -> ShellConfig {
@@ -233,24 +229,11 @@ fn resolve_shell() -> ShellConfig {
     }
     #[cfg(windows)]
     {
-        // A real bash first, so POSIX hooks and plugin commands -- which run
-        // through this same shell -- keep working where Git for Windows is
-        // installed: the standard install locations, then `bash` on PATH minus
-        // the WSL launchers.
-        for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
-            if let Some(base) = std::env::var_os(var) {
-                let git_bash = PathBuf::from(base).join("Git").join("bin").join("bash.exe");
-                if git_bash.exists() {
-                    return config_for(git_bash);
-                }
-            }
-        }
-        if let Some(p) = which_all("bash").into_iter().find(|p| !is_wsl_launcher(p)) {
-            return config_for(p);
-        }
-        // No bash: PowerShell, which every supported Windows ships. 7 (`pwsh`)
-        // when installed, else the inbox 5.1 by absolute path so a PATH entry
-        // cannot shadow it.
+        // PowerShell, never a bash: the sandbox is an AppContainer, where the
+        // MSYS runtime behind Git Bash cannot create its objects under
+        // `\BaseNamedObjects` and dies at startup (#9101). 7 (`pwsh`) when
+        // installed, else the inbox 5.1 by absolute path so a PATH entry cannot
+        // shadow it.
         if let Some(p) = which_all("pwsh").into_iter().find(|p| !is_app_execution_alias(p)) {
             return config_for(p);
         }
@@ -870,22 +853,8 @@ mod shell_kind_tests {
         assert_eq!(config_for(PathBuf::from("cmd.exe")).args, vec!["/D", "/S", "/C"]);
     }
 
-    /// Both WSL launchers are skipped; a real bash -- including one that only
-    /// lives under a directory named like them -- is not.
-    #[test]
-    fn wsl_launchers_are_recognised_and_real_bashes_are_not() {
-        assert!(is_wsl_launcher(Path::new(r"C:\Windows\System32\bash.exe")));
-        assert!(is_wsl_launcher(Path::new(r"c:\windows\system32\BASH.EXE")));
-        assert!(is_wsl_launcher(Path::new(
-            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\bash.exe"
-        )));
-        assert!(!is_wsl_launcher(Path::new(r"C:\Program Files\Git\bin\bash.exe")));
-        assert!(!is_wsl_launcher(Path::new(r"C:\msys64\usr\bin\bash.exe")));
-        assert!(!is_wsl_launcher(Path::new(r"D:\tools\system32x\bash.exe")));
-    }
-
-    /// A Store PowerShell 7 is reached through the same kind of alias, so it
-    /// is skipped too; an installed pwsh is not.
+    /// A Store PowerShell 7 is an app-execution alias, which cannot start in
+    /// the AppContainer, so it is skipped; an installed pwsh is not.
     #[test]
     fn a_store_pwsh_alias_is_recognised_and_an_installed_pwsh_is_not() {
         assert!(is_app_execution_alias(Path::new(

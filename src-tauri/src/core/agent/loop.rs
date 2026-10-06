@@ -8621,6 +8621,8 @@ mod tests {
 
     /// Phase 2: a plugin-declared tool is dispatched, runs its command with the
     /// call's arguments on stdin, and returns its stdout as the tool result.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_plugin_declared_tool_is_dispatched_and_returns_its_output() {
         let root = hooks_root("plugintool");
@@ -8740,6 +8742,8 @@ mod tests {
     /// A hook that does not deny leaves the MCP call alone, and its input
     /// reaches the hook: a PreToolUse audit hook is useless if it cannot see
     /// what was asked for.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
         let root = hooks_root("mcpallow");
@@ -9449,6 +9453,8 @@ mod tests {
     /// the toolset's `execute_builtin` bracket, so they are pinned here: each
     /// fires, each receives its payload, and each is still live in Plan mode
     /// (unlike the tool events above).
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn session_and_prompt_hooks_fire_with_their_payloads() {
         let root = hooks_root("lifecycle");
@@ -10525,6 +10531,8 @@ mod tests {
     /// already holds delivers a merged background notice carrying a headline
     /// and the matched content, and the pending flag clears once all conditions
     /// are met.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn monitor_match_arrives_as_a_headlined_background_notice() {
         let root = unique_project_root();
@@ -10587,6 +10595,8 @@ mod tests {
     /// fired leaves `background_pending` false (the turn ends and the user can
     /// keep talking), while a queued match still resumes the run, and taking
     /// it clears the flag again.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_session_owned_monitor_does_not_park_the_run_until_it_fires() {
         let root = unique_project_root();
