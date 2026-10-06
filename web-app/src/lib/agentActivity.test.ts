@@ -31,13 +31,6 @@ describe('toolActivityText', () => {
     )
   })
 
-  // Saved threads predate the rename and still name the tool `bash`.
-  it('formats a legacy bash call like shell', () => {
-    expect(toolActivityText('bash', { command: 'ls -la' })).toBe(
-      'Running ls -la'
-    )
-  })
-
   it('truncates long shell commands to 60 chars', () => {
     const long = 'echo ' + 'x'.repeat(100)
     const text = toolActivityText('shell', { command: long })

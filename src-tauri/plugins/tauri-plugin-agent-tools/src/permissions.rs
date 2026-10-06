@@ -32,13 +32,10 @@ pub struct ToolPermissions {
     allow_write: Vec<Pattern>,
 }
 
-/// A former built-in name (`bash`) is compiled as the current one, so a list
-/// written before a rename keeps applying: an old `deny = ["bash"]` that
-/// silently matched nothing would hand the model the shell.
 fn compile(patterns: &[String]) -> Vec<Pattern> {
     patterns
         .iter()
-        .filter_map(|p| Pattern::new(&crate::tools::canonical_tool_pattern(p)).ok())
+        .filter_map(|p| Pattern::new(p).ok())
         .collect()
 }
 
@@ -68,16 +65,12 @@ impl ToolPermissions {
         }
     }
 
-    /// `name` is read through [`crate::tools::canonical_tool_name`] too, so a
-    /// caller still holding the old name is judged as the current tool.
     pub fn is_denied(&self, name: &str) -> bool {
-        let name = crate::tools::canonical_tool_name(name);
         self.deny.iter().any(|p| p.matches(name))
     }
 
     /// Explicit allow-list membership (allow OR allow_write); does NOT consider deny or default.
     pub fn is_allowed(&self, name: &str) -> bool {
-        let name = crate::tools::canonical_tool_name(name);
         self.allow.iter().any(|p| p.matches(name))
             || self.allow_write.iter().any(|p| p.matches(name))
     }
@@ -123,22 +116,6 @@ mod tests {
 
         let perms = ToolPermissions::new(PermissionDefault::Deny, &s(&["mcp.search"]), &[], &[]);
         assert!(perms.advertises_mcp("mcp.search"));
-    }
-
-    /// A list written before the `bash` -> `shell` rename keeps applying to the
-    /// shell tool, in both directions; a glob is matched as written.
-    #[test]
-    fn a_legacy_bash_entry_still_governs_the_shell_tool() {
-        let deny = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["bash"]), &[]);
-        assert!(deny.is_denied("shell"));
-        assert!(deny.is_denied("bash"));
-        assert!(!deny.is_denied("read"));
-
-        let allow = ToolPermissions::new(PermissionDefault::ReadOnly, &s(&["bash"]), &[], &[]);
-        assert!(allow.is_allowed("shell"));
-
-        let glob = ToolPermissions::new(PermissionDefault::Allow, &[], &s(&["ba*"]), &[]);
-        assert!(!glob.is_denied("shell"), "only an exact old name is rewritten");
     }
 
     #[test]

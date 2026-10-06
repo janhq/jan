@@ -994,7 +994,7 @@ mod tests {
     fn a_declaration_error_names_the_entry_or_the_rule() {
         let set = declare_tools(vec![json!({"name":"camera","capability":"read"})]).unwrap();
         assert_eq!(host_names(&set), ["host__camera"]);
-        assert!(declare_tools(vec![json!({"name":"bash"})]).unwrap_err().contains("reserved"));
+        assert!(declare_tools(vec![json!({"name":"shell"})]).unwrap_err().contains("reserved"));
         assert!(declare_tools(vec![json!({"name":"a"}), json!(3)]).unwrap_err().starts_with("tools[1]"));
         assert!(declare_tools(Vec::new()).unwrap().is_empty());
     }

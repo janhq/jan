@@ -137,10 +137,8 @@ event has them:
 | `session_id` | `SessionStart`, `SessionEnd`, `UserPromptSubmit` |
 | `message_count` | `SessionStart`, `UserPromptSubmit`, `PreCompact` |
 
-The shell tool was called `bash` before. A `matcher` that says `bash` (or `Bash`) still selects it,
-but `tool_name` in the payload is always the current name, `shell`. A script that tests the payload
-itself - say a matcher-less audit hook running `jq 'select(.tool_name == "bash")'` - has to test
-for `shell` instead, or it stops matching.
+The shell tool is named `shell` (formerly `bash`). A `matcher` or a script that tests `tool_name`
+for `bash` no longer matches it; change it to `shell`.
 
 ## The answer
 

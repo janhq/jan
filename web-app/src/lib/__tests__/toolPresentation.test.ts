@@ -148,15 +148,6 @@ describe('describeNativeToolCall for agent tools', () => {
     })
   })
 
-  // Threads saved before the rename carry calls under the old `bash` name;
-  // they must still render as a terminal, not a generic workspace card.
-  it('renders a legacy bash call as a terminal', () => {
-    expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
-      variant: 'terminal',
-      command: 'ls -la',
-    })
-  })
-
   it('leads with the pattern for find and grep, path as detail', () => {
     expect(
       describeNativeToolCall(agent, 'grep', { pattern: 'TODO', path: 'src' })

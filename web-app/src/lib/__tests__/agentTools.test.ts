@@ -58,17 +58,6 @@ describe('agentTools', () => {
     expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['shell'])
   })
 
-  // A saved thread's `bash` call is still an agent tool, so its card resolves
-  // an origin and is drawn as a terminal rather than a generic call.
-  it('classifies the legacy bash name as the agent shell', async () => {
-    const { isAgentToolName, canonicalToolName } = await import('../agentTools')
-    expect(isAgentToolName('bash')).toBe(true)
-    expect(isAgentToolName('shell')).toBe(true)
-    expect(isAgentToolName('mcp__x__bash')).toBe(false)
-    expect(canonicalToolName('bash')).toBe('shell')
-    expect(canonicalToolName('read')).toBe('read')
-  })
-
   it('advertises the workspace tools including writes and shell', async () => {
     const { AGENT_TOOL_NAMES } = await import('../agentTools')
     for (const name of ['read', 'ls', 'find', 'grep', 'shell']) {

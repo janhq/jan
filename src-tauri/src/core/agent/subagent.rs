@@ -341,10 +341,12 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
             let jan = match t.to_ascii_lowercase().as_str() {
                 "read" => Some("read"),
                 // Glob/Grep intentionally unmapped: Jan no longer advertises
-                // list/search tools (bash covers them). Mapping them would
+                // list/search tools (shell covers them). Mapping them would
                 // restrict a child to a tool it is never offered -- and a child
                 // scoped to *only* those would be left with none. Dropped instead,
-                // so such an agent inherits the full toolset (bash included).
+                // so such an agent inherits the full toolset (shell included).
+                // Claude Code's own name for its shell, translated like the rest
+                // of this table; Jan itself has no `bash` tool.
                 "bash" => Some(tauri_plugin_agent_tools::tools::SHELL_TOOL),
                 "edit" => Some("edit"),
                 "write" => Some("write"),
@@ -448,19 +450,9 @@ pub fn intersect_allowed_tools(
     request: Option<&[String]>,
     parent: &ToolPermissions,
 ) -> Result<Option<Vec<String>>, SubagentError> {
-    // Former built-in names (`bash`) are read as the current ones, so a
-    // definition file or a model that still says `bash` gets the shell rather
-    // than a refusal or a child with nothing to run.
-    let canonical = |tools: &[String]| -> Vec<String> {
-        tools
-            .iter()
-            .map(|t| tauri_plugin_agent_tools::tools::canonical_tool_name(t).to_string())
-            .collect()
-    };
-    let definition = definition.filter(|d| !d.is_empty()).map(canonical);
-    let request = request.filter(|r| !r.is_empty()).map(canonical);
-    let definition = definition.as_deref();
-    if let Some(requested) = request.as_deref() {
+    let definition = definition.filter(|d| !d.is_empty());
+    let request = request.filter(|r| !r.is_empty());
+    if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
             if let Some(def) = definition {
@@ -3104,6 +3096,17 @@ pub(crate) mod tests {
         ToolPermissions::new(PermissionDefault::ReadOnly, &[], &deny, &[])
     }
 
+    /// A Claude Code agent's `Bash` is translated to Jan's `shell`, so a plugin
+    /// agent scoped to `Read, Bash` keeps a shell rather than losing it.
+    #[test]
+    fn a_claude_bash_tool_maps_to_the_shell_tool() {
+        let tools = vec!["Read".to_string(), "Bash".to_string()];
+        assert_eq!(
+            map_claude_tools(&tools),
+            Some(vec!["read".to_string(), "shell".to_string()])
+        );
+    }
+
     #[test]
     fn intersect_none_none_inherits() {
         let p = ToolPermissions::allow_all();
@@ -3211,22 +3214,6 @@ pub(crate) mod tests {
         let p = perms_denying(&["bash"]);
         let err = intersect_allowed_tools(None, Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
-    }
-
-    /// A definition or request still naming `bash` gets the shell tool under
-    /// its current name, and a parent `deny = ["bash"]` still withholds it.
-    #[test]
-    fn intersect_reads_the_legacy_bash_name_as_the_shell_tool() {
-        let def = vec!["read".to_string(), "bash".to_string()];
-        let req = vec!["bash".to_string()];
-        let p = ToolPermissions::allow_all();
-        let out = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap().unwrap();
-        assert_eq!(out[0], "shell");
-
-        let out = intersect_allowed_tools(Some(&def), None, &perms_denying(&["bash"]))
-            .unwrap()
-            .unwrap();
-        assert!(!out.iter().any(|t| t == "shell" || t == "bash"), "{out:?}");
     }
 
     // ── resolve_dispatch ────────────────────────────────────────────────────

@@ -3353,16 +3353,13 @@ async fn orchestrate_inner(
         retain_advertisable_mcp_tools(&mut openai_tools, &mut tool_to_server, permissions);
     }
 
-    // Per-run allowlist shared by builtin/subagent/ask advertisement below. A
-    // former built-in name (`bash`) from a host or a saved subagent definition
-    // is read as the current one, so it still selects the shell tool.
+    // Per-run allowlist shared by builtin/subagent/ask advertisement below.
     let allowed_names: Option<std::collections::HashSet<String>> = json_body
         .get("allowed_tools")
         .and_then(|v| v.as_array())
         .map(|a| {
             a.iter()
-                .filter_map(|v| v.as_str())
-                .map(|n| tauri_plugin_agent_tools::tools::canonical_tool_name(n).to_string())
+                .filter_map(|v| v.as_str().map(String::from))
                 .collect()
         });
     advertise_local_tools(
@@ -4810,9 +4807,7 @@ async fn run_turn_cycle(
             if name == "todo" {
                 todo_touched_this_batch = true;
             } else if !is_error
-                && builtin.is_some_and(|t| {
-                    matches!(t.name, tauri_plugin_agent_tools::tools::SHELL_TOOL | "write" | "edit")
-                })
+                && matches!(name, tauri_plugin_agent_tools::tools::SHELL_TOOL | "write" | "edit")
             {
                 mutations_since_todo_touch += 1;
             }
@@ -6691,7 +6686,7 @@ mod tests {
         // 13 consecutive mutating calls with no todo touch -- one past the
         // 12-call threshold -- then a clean stop.
         let mut responses: Vec<serde_json::Value> = (0..13)
-            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "shell"))
             .collect();
         responses.push(
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
@@ -6863,7 +6858,7 @@ mod tests {
     async fn mid_run_nudge_does_not_fire_in_plan_mode_or_without_open_todos() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut responses: Vec<serde_json::Value> = (0..13)
-            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "shell"))
             .collect();
         responses.push(
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
@@ -6911,7 +6906,7 @@ mod tests {
         // 6 mutating calls, a todo touch, then 6 more -- neither run alone
         // reaches the 12-call threshold, so no nudge should fire.
         let mut responses: Vec<serde_json::Value> = (0..6)
-            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "shell"))
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
@@ -7302,7 +7297,7 @@ mod tests {
         }
     }
 
-    fn bash_call_completion() -> serde_json::Value {
+    fn shell_call_completion() -> serde_json::Value {
         json!({
             "choices": [{
                 "message": {
@@ -7310,7 +7305,7 @@ mod tests {
                     "tool_calls": [{
                         "id": "call_1",
                         "type": "function",
-                        "function": { "name": "bash", "arguments": "{\"command\":\"false\"}" }
+                        "function": { "name": "shell", "arguments": "{\"command\":\"false\"}" }
                     }]
                 },
                 "finish_reason": "tool_calls"
@@ -7328,7 +7323,7 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         // One request whose usage alone blows a $0.01 ceiling, then a second
         // the loop must never make.
-        let mut expensive = bash_call_completion();
+        let mut expensive = shell_call_completion();
         expensive["usage"] = json!({
             "prompt_tokens": 1_000_000,
             "completion_tokens": 0,
@@ -7457,7 +7452,7 @@ mod tests {
     async fn bash_result_is_error_flag(content: &str) -> bool {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
-            bash_call_completion(),
+            shell_call_completion(),
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
         ]);
         let tool = FixedTool {

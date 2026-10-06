@@ -82,10 +82,9 @@ allow_write = []
 
 `deny` always wins over `allow`. A tool in both lists is denied.
 
-The shell tool used to be called `bash`. That name still works anywhere a tool is named: `allow`,
-`deny`, hook matchers and a subagent's `allowed_tools`. An existing `deny = ["bash"]` keeps
-withholding the shell. Only the exact name is translated, so a glob like `ba*` does not match
-`shell`.
+The shell tool is named `shell`; it used to be `bash`, and that name is no longer recognised.
+Rename `bash` to `shell` wherever you name the tool: `allow`, `deny`, hook matchers and a
+subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing.
 
 ## The shell sandbox
 

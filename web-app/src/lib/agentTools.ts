@@ -69,32 +69,6 @@ export const CHAT_AGENT_TOOL_NAMES = new Set(['shell'])
  */
 const SANDBOX_REQUIRED_TOOLS = new Set(['shell'])
 
-/**
- * Whether a tool call ran the built-in shell. The tool was named `bash` before
- * it became `shell`, and saved threads still carry calls under the old name, so
- * renderers must treat both as the same terminal tool.
- */
-export function isShellToolName(name: string | undefined): boolean {
-  return name === 'shell' || name === 'bash'
-}
-
-/**
- * `name` with the shell's former name mapped to the current one. The desktop
- * port of Rust's `tools::canonical_tool_name`, for user-written tool lists (a
- * saved subagent definition, a dispatch request) that may still say `bash`.
- */
-export function canonicalToolName(name: string): string {
-  return isShellToolName(name) ? 'shell' : name
-}
-
-/**
- * Whether a tool call belongs to the built-in agent toolset. A saved thread's
- * `bash` call counts, so it is still drawn as the terminal it was.
- */
-export function isAgentToolName(name: string): boolean {
-  return AGENT_TOOL_NAMES.has(canonicalToolName(name))
-}
-
 let schemaCache: ToolSchema[] | null = null
 let statusCache: Promise<SandboxStatus> | null = null
 

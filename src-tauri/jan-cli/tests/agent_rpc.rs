@@ -749,7 +749,7 @@ fn a_reserved_host_tool_name_is_refused_as_invalid_tools() {
     rpc.handshake();
     let project = scratch.join("project");
 
-    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"bash"}]}}));
+    let refused = rpc.ask(serde_json::json!({"jsonrpc":"2.0","id":3,"method":"session/start","params":{"cwd":project,"model":"stub-model","tools":[{"name":"shell"}]}}));
     assert_eq!(refused["error"]["code"], -32602, "{refused}");
     assert_eq!(refused["error"]["data"]["kind"], "invalid_tools", "{refused}");
     assert!(refused["error"]["message"].as_str().unwrap().contains("reserved"), "{refused}");

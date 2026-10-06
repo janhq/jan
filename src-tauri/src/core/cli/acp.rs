@@ -962,7 +962,7 @@ fn plan(list: &TodoList) -> Plan {
 
 /// What kind of work a tool does, for the client's icon and grouping.
 fn tool_kind(name: &str) -> ToolKind {
-    match tauri_plugin_agent_tools::tools::canonical_tool_name(name) {
+    match name {
         "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
         "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
@@ -1134,7 +1134,7 @@ mod tests {
         let mut map = map();
         let out = map.map(StreamEvent::ToolCall {
             id: "c".into(),
-            name: "bash".into(),
+            name: "shell".into(),
             args: json!({"command":"cargo test"}),
         });
         let w = wire(&out[0]);

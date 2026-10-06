@@ -66,9 +66,7 @@ impl ServedTools {
         let Some(tool) = lookup(name) else {
             return false;
         };
-        // Compared by canonical name, so `--only bash` written before the
-        // rename still selects the shell tool.
-        if !self.only.is_empty() && !self.only.iter().any(|n| lookup(n).is_some_and(|t| t.name == tool.name)) {
+        if !self.only.is_empty() && !self.only.iter().any(|n| n == name) {
             return false;
         }
         match tool.capability {

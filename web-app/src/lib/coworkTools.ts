@@ -21,8 +21,6 @@ export const PLAN_DENIED_TOOLS = new Set([
   'write',
   'edit',
   'shell',
-  // Legacy name of `shell`: a refusal list must keep refusing it.
-  'bash',
   'memory_write',
   'skill_write',
   'task',

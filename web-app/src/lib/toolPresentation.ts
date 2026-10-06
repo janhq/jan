@@ -1,6 +1,5 @@
 import type { ToolUIPart } from 'ai'
 import type { ToolOrigin } from './toolOrigin'
-import { isShellToolName } from './agentTools'
 
 /** The call is still being written or executed: no result yet. */
 export const isToolRunning = (state: ToolUIPart['state']) =>
@@ -14,7 +13,7 @@ export type ToolCallBar =
   | { variant: 'search'; query: string; count?: number }
   | { variant: 'address'; url: string }
   | { variant: 'documents'; query: string; count?: number; fileCount?: number }
-  /** `shell` (or legacy `bash`), presented as a terminal. */
+  /** `shell`, presented as a terminal. */
   | { variant: 'terminal'; command: string }
   /**
    * The workspace tools. `target` is whatever the call is really about -- a path
@@ -128,7 +127,7 @@ export function describeNativeToolCall(
     }
   }
   if (origin.kind === 'agent') {
-    if (isShellToolName(toolName)) {
+    if (toolName === 'shell') {
       return {
         variant: 'terminal',
         command: asString(args.command),

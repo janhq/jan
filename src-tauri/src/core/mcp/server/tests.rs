@@ -56,20 +56,10 @@ fn opt_in_adds_mutating_tools() {
     assert!(names.contains(&"shell".to_string()));
 }
 
-/// `--only bash`, written before the rename, still selects the shell tool.
-#[test]
-fn only_accepts_the_legacy_bash_name() {
-    let mut opts = options(&PathBuf::from("."));
-    opts.served.allow_exec = true;
-    opts.served.only = vec!["bash".into()];
-    let names = tool_names(&JanToolServer::new(opts));
-    assert_eq!(names, vec!["shell".to_string()]);
-}
-
 #[test]
 fn only_narrows_the_set_but_never_widens_it() {
     let mut opts = options(&PathBuf::from("."));
-    opts.served.only = vec!["read".into(), "bash".into()];
+    opts.served.only = vec!["read".into(), "shell".into()];
     let names = tool_names(&JanToolServer::new(opts));
     assert_eq!(names, vec!["read".to_string()]);
 }

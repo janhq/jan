@@ -3,12 +3,12 @@
 //! session start and end, before a compaction).
 //!
 //! The point is to make a team policy enforceable rather than merely requested.
-//! "Run `cargo fmt` after every `edit`", "never let `bash` touch `infra/`",
+//! "Run `cargo fmt` after every `edit`", "never let `shell` touch `infra/`",
 //! "log every tool call to our audit sink" had no home before this: the only
 //! lever was the system prompt, which the model is free to ignore.
 //!
 //! A hook is a shell command, not a plugin runtime. It runs through
-//! [`crate::tools::handlers::confined_shell`] -- the very policy `bash` and the
+//! [`crate::tools::handlers::confined_shell`] -- the very policy `shell` and the
 //! `monitor` condition scripts already get -- so nothing here is a new
 //! execution primitive, and a hook under a sandboxed run is confined exactly as
 //! the shell the model drives is. That is also why this module lives in the
@@ -168,9 +168,6 @@ impl Hook {
         // An unparseable matcher cannot reach here: `HookSet::extend_from`
         // drops such an entry with a notice rather than letting it match
         // nothing forever.
-        // Both sides canonical: the matcher was rewritten at load, and a caller
-        // still holding a former name is matched as the current tool.
-        let tool_name = super::canonical_tool_name(tool_name);
         glob::Pattern::new(&self.matcher)
             .map(|p| p.matches(tool_name))
             .unwrap_or(false)
@@ -254,12 +251,11 @@ impl HookSet {
                 ));
                 continue;
             }
-            // A matcher naming a former built-in (`bash`, or Claude Code's
-            // `Bash`) is stored as the current name, so a hook written before
-            // the rename -- an audit or a deny gate -- keeps firing.
-            let matcher = super::canonical_tool_pattern(
-                entry.matcher.as_deref().unwrap_or("*").trim(),
-            );
+            let matcher = entry
+                .matcher
+                .unwrap_or_else(|| "*".to_string())
+                .trim()
+                .to_string();
             // Checked here, not at match time: `matches` can only answer
             // "no" for a bad pattern, which reads exactly like a hook the user
             // wrote for a tool that was never called.
@@ -666,7 +662,7 @@ mod tests {
         let mut set = HookSet::new();
         set.extend_from(vec![entry("PreToolUse", None, "true")], Path::new("x"));
         assert_eq!(set.all()[0].matcher, "*");
-        assert!(set.all()[0].matches("bash"));
+        assert!(set.all()[0].matches("shell"));
         assert!(set.all()[0].matches("edit"));
     }
 
@@ -687,27 +683,6 @@ mod tests {
         let matched = set.matching(HookEvent::PreToolUse, Some("memory_write"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "b");
-    }
-
-    /// A hook written for the old `bash` name keeps firing for the shell tool;
-    /// a glob is matched as written.
-    #[test]
-    fn a_legacy_bash_matcher_still_fires_for_the_shell_tool() {
-        let mut set = HookSet::new();
-        set.extend_from(
-            vec![
-                entry("PreToolUse", Some("bash"), "a"),
-                entry("PreToolUse", Some("Bash"), "b"),
-                entry("PreToolUse", Some("sh*"), "c"),
-            ],
-            Path::new("x"),
-        );
-        let fired: Vec<&str> = set
-            .matching(HookEvent::PreToolUse, Some("shell"))
-            .iter()
-            .map(|h| h.command.as_str())
-            .collect();
-        assert_eq!(fired, vec!["a", "b", "c"]);
     }
 
     #[test]
@@ -777,7 +752,7 @@ mod tests {
         set.extend_from(
             vec![entry(
                 "PreToolUse",
-                Some("bash"),
+                Some("shell"),
                 r#"echo '{"decision":"deny","reason":"infra is off limits"}'"#,
             )],
             Path::new("x"),

@@ -316,18 +316,6 @@ describe('intersectAllowedTools', () => {
     })
   })
 
-  it('reads a legacy bash entry as the shell tool', () => {
-    // A definition saved before the rename, and a model that still says
-    // `bash`, both get the shell the parent now advertises.
-    const withShell = [...parent, 'shell']
-    expect(intersectAllowedTools(['read', 'bash'], null, withShell)).toEqual({
-      tools: ['read', 'shell', 'skill_list', 'skill_read'],
-    })
-    expect(intersectAllowedTools(['read', 'bash'], ['bash'], withShell)).toEqual({
-      tools: ['shell', 'skill_list', 'skill_read'],
-    })
-  })
-
   it('never widens past the parent', () => {
     const out = intersectAllowedTools(null, ['read'], parent)
     expect(out).toEqual({ tools: ['read', 'skill_list', 'skill_read'] })
