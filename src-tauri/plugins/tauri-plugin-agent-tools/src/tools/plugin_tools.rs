@@ -419,6 +419,8 @@ mod tests {
 
     /// A capped result the model reads as complete is the failure this note
     /// exists to prevent.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn output_past_the_cap_is_marked_as_truncated() {
         let root = unique_root("truncate");
@@ -496,6 +498,8 @@ mod tests {
         assert_eq!(schema["function"]["parameters"]["required"][0], "path");
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn arguments_reach_the_command_on_stdin_and_stdout_is_the_result() {
         let root = unique_root("exec");
@@ -515,6 +519,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_failing_plugin_tool_returns_an_error_string_not_a_panic() {
         let root = unique_root("execfail");
@@ -568,6 +574,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_silent_success_still_reports_something_to_the_model() {
         let root = unique_root("execsilent");

@@ -41,18 +41,179 @@ pub fn is_reserved_env_key(key: &str) -> bool {
         || key.starts_with("SUDO_")
 }
 
+/// The command language a resolved shell speaks. It decides how the command is
+/// handed over (see [`spawn_with_stdin`]) and what the model is told to write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellKind {
+    /// `bash`/`sh` and anything else that takes `-c <command>`.
+    Posix,
+    /// Windows PowerShell 5.1 (`powershell.exe`) or PowerShell 7 (`pwsh`).
+    PowerShell,
+    /// `cmd.exe`, the last resort on a Windows box with neither.
+    Cmd,
+}
+
+impl ShellKind {
+    /// The sentence that tells the model which syntax to write, for every shell
+    /// that is not the POSIX one it assumes by default. Shared by the tool
+    /// description and the system prompt's runtime block so the two agree.
+    pub fn syntax_note(self) -> Option<&'static str> {
+        match self {
+            ShellKind::Posix => None,
+            ShellKind::PowerShell => Some(
+                "Commands run in PowerShell: write PowerShell syntax (e.g. `Get-ChildItem`, \
+                 `Get-Content`, `$env:VAR`, `;` between statements), not bash/POSIX. \
+                 Relative paths work. For a full path, use `Convert-Path` rather than \
+                 `$PWD` or `Resolve-Path`, which may show a drive other programs cannot open.",
+            ),
+            ShellKind::Cmd => Some(
+                "Commands run in cmd.exe: write cmd syntax (e.g. `dir`, `type`, `set`, \
+                 `%VAR%`), not bash/POSIX.",
+            ),
+        }
+    }
+}
+
 /// How to invoke the host shell. `program` + `args` are fixed; the command
-/// string is appended as the final argv element, or piped to stdin when
-/// `via_stdin` is set (legacy WSL `bash.exe`, which cannot take `-c`).
-/// `description` names the shell for the model (e.g. git-bash vs `cmd`), so it
-/// can adapt command syntax instead of assuming POSIX bash.
+/// string is appended as the final argv element.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShellConfig {
     pub program: PathBuf,
     pub args: Vec<String>,
-    pub via_stdin: bool,
-    /// A short human-readable name of the resolved shell, for the model.
-    pub description: &'static str,
+    /// The language of the shell the command finally runs in. Kept through
+    /// [`super::jail::wrap`], whose wrapper program is not the shell itself.
+    pub kind: ShellKind,
+}
+
+/// Fixed PowerShell arguments, the command following `-Command`. No profile so
+/// a user's `$PROFILE` cannot change or slow every call; non-interactive so a
+/// prompt fails instead of hanging; `Bypass` so a `.ps1` the agent writes can
+/// run on a client whose default policy is `Restricted`. `-EncodedCommand` is
+/// deliberately not used: with redirected output, Windows PowerShell 5.1 then
+/// writes errors and progress to stderr as `#< CLIXML` records.
+const POWERSHELL_ARGS: &[&str] = &[
+    "-NoLogo",
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+];
+
+/// `/D` skips the AutoRun registry hook, as `-NoProfile` does for PowerShell.
+/// `/S` makes cmd strip exactly the outer quote pair [`cmd_payload`] adds, so
+/// the command's own quotes survive whatever it contains.
+const CMD_ARGS: &[&str] = &["/D", "/S", "/C"];
+
+/// Classify a shell by its file name, case-insensitively and with either path
+/// separator, so a `JAN_AGENT_SHELL` pointing at PowerShell or cmd is driven as
+/// one rather than handed `-c`.
+pub fn kind_of(program: &Path) -> ShellKind {
+    let text = program.to_string_lossy();
+    let name = text.rsplit(['/', '\\']).next().unwrap_or(&text).to_ascii_lowercase();
+    match name.strip_suffix(".exe").unwrap_or(&name) {
+        "pwsh" | "powershell" => ShellKind::PowerShell,
+        "cmd" => ShellKind::Cmd,
+        _ => ShellKind::Posix,
+    }
+}
+
+/// The fixed arguments a shell of `kind` takes before its command.
+pub fn shell_args(kind: ShellKind) -> Vec<String> {
+    let args: &[&str] = match kind {
+        ShellKind::Posix => &["-c"],
+        ShellKind::PowerShell => POWERSHELL_ARGS,
+        ShellKind::Cmd => CMD_ARGS,
+    };
+    args.iter().map(|s| s.to_string()).collect()
+}
+
+/// The config that drives `program` according to its [`kind_of`].
+fn config_for(program: PathBuf) -> ShellConfig {
+    let kind = kind_of(&program);
+    ShellConfig {
+        program,
+        args: shell_args(kind),
+        kind,
+    }
+}
+
+/// The inbox modules behind everyday cmdlets: `Get-ChildItem`/`Get-Content`/
+/// `Set-Location` (Management), `Write-Output`/`Select-String`/
+/// `ConvertTo-Json` (Utility), `Get-Acl` (Security), `Expand-Archive`
+/// (Archive). Anything else on 5.1 needs its own `Import-Module`.
+const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
+     Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security, Microsoft.PowerShell.Archive";
+
+/// The script PowerShell is given for `command`. PowerShell's own exit code is
+/// only 0 or 1, so it is made to report a failing native command's real code,
+/// which the tool output's `[exit N]` line and the model both rely on.
+/// `$LASTEXITCODE` is reset first so a code left by an earlier call cannot
+/// leak in.
+///
+/// Success is `$?` of the last statement, as in POSIX shells. On failure the
+/// native code is used only when it is non-zero, so a cmdlet failing after a
+/// native command that succeeded still reports 1 rather than 0. PowerShell
+/// does not record which statement set `$LASTEXITCODE`, so when a cmdlet fails
+/// after an earlier native command that failed, the code is that native
+/// command's: still non-zero, possibly not the failing statement's own.
+///
+/// The command runs inside a function, and the code is handed to
+/// `$host.SetShouldExit` rather than `exit`:
+/// - A top-level `exit` discards formatted output that has not been flushed,
+///   so `Get-Location; Write-Output x` printed nothing.
+/// - An error is reported against the statement that raised it. At top level
+///   that statement is the whole `-Command` text, so 5.1 echoed this wrapper
+///   back with every `Write-Error`; inside the function it is just `jan_cmd`.
+///
+/// Output is switched to UTF-8: 5.1 otherwise encodes with the OEM code page
+/// and mangles every non-ASCII character. The progress stream is silenced
+/// because it is noise in captured output.
+///
+/// Inside the AppContainer two things need help:
+/// - Windows PowerShell 5.1 cannot autoload modules: `Write-Output` is "not
+///   recognized" although `Import-Module` of the same module succeeds, so on
+///   5.1 the core inbox modules are imported explicitly. pwsh 7 autoloads.
+/// - PowerShell starts at `C:\` rather than the working directory it was
+///   given, because it cannot read the workspace's parent folders to resolve
+///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
+///   program then fail. The session first moves to the process's working
+///   directory by its real path. Only if that is refused does it fall back to
+///   a `JanWs:` drive rooted there, which needs no parent access, so the drive
+///   is never used where a real path works. Under the drive, `$PWD` and
+///   `Resolve-Path` read `JanWs:\...`, which a native program cannot open;
+///   [`ShellKind::syntax_note`] tells the model to pass `Convert-Path` output
+///   instead, which is the real path.
+///
+/// A `return` in the command leaves `jan_cmd` before its status line runs, so
+/// the code is then taken after the call: the native code if one was set,
+/// else success.
+pub fn powershell_script(command: &str) -> String {
+    format!(
+        "$ProgressPreference = 'SilentlyContinue'\n\
+         if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
+         try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
+         $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
+         $JanWs = [Environment]::CurrentDirectory\n\
+         try {{ Set-Location -LiteralPath $JanWs -ErrorAction Stop }} catch {{ try {{ $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanWs -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}} }}\n\
+         $global:LASTEXITCODE = $null\n\
+         $JanExit = $null\n\
+         function jan_cmd {{\n\
+         {command}\n\
+         $script:JanExit = if ($?) {{ 0 }} elseif ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }}\n\
+         }}\n\
+         jan_cmd\n\
+         if ($null -eq $JanExit) {{ $JanExit = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 0 }} }}\n\
+         $host.SetShouldExit($JanExit)\n"
+    )
+}
+
+/// The text appended, unescaped, after [`CMD_ARGS`]. cmd does its own quote
+/// handling rather than the `CommandLineToArgvW` rules every argv quoter
+/// follows, so an escaped `\"` reaches it literally; the command is wrapped in
+/// one quote pair that `/S` removes again instead.
+pub fn cmd_payload(command: &str) -> String {
+    format!("\"{command}\"")
 }
 
 /// User-configured additions to the shell's environment, layered on top of the
@@ -67,33 +228,48 @@ pub struct ShellEnv<'a> {
     pub set: &'a [(String, String)],
 }
 
-/// Resolved shell for this process, computed once. Prefers a real `bash`
-/// (matching the tool's name and documented guidance) and falls back to a
-/// POSIX `sh`/`cmd` only when no bash is found.
+/// Resolved shell for this process, computed once. `JAN_AGENT_SHELL` wins;
+/// otherwise `bash` on unix and PowerShell on Windows, with `cmd` only as the
+/// last resort.
 pub fn shell() -> &'static ShellConfig {
     static SHELL: OnceLock<ShellConfig> = OnceLock::new();
     SHELL.get_or_init(resolve_shell)
 }
 
-fn c(program: &str, args: &[&str], description: &'static str) -> ShellConfig {
-    ShellConfig {
-        program: PathBuf::from(program),
-        args: args.iter().map(|s| s.to_string()).collect(),
-        via_stdin: false,
-        description,
-    }
+/// Whether a `pwsh` at `path` can start inside the AppContainer: only under a
+/// Program Files folder (`program_files`), which every container may read.
+/// A per-user install (scoop, a zip under the profile, dotnet tool) has no
+/// such grant and fails at startup with "Failed to resolve full path of the
+/// current executable"; a Store alias is a reparse point that cannot start
+/// either. Both would leave 5.1, which always works, unused.
+#[cfg(any(windows, test))]
+fn container_can_run(path: &Path, program_files: &[PathBuf]) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    !is_app_execution_alias(path)
+        && program_files.iter().any(|root| {
+            let root = root.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+            let root = root.trim_end_matches('\\');
+            !root.is_empty() && p.starts_with(&format!("{root}\\"))
+        })
+}
+
+/// True for a Store app-execution alias under `%LOCALAPPDATA%\Microsoft\
+/// WindowsApps`, such as the Store PowerShell 7's `pwsh.exe`.
+/// An alias is a reparse point that cannot start inside the AppContainer, so
+/// choosing one leaves the sandboxed shell failing every command while a
+/// working shell later in the order goes unused. String-based so it is
+/// testable on any host.
+#[cfg(any(windows, test))]
+fn is_app_execution_alias(path: &Path) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    p.contains("\\microsoft\\windowsapps\\")
 }
 
 fn resolve_shell() -> ShellConfig {
     if let Some(path) = std::env::var_os("JAN_AGENT_SHELL") {
         let p = PathBuf::from(&path);
         if p.exists() {
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "custom",
-            };
+            return config_for(p);
         }
     }
     #[cfg(unix)]
@@ -106,91 +282,74 @@ fn resolve_shell() -> ShellConfig {
         // or `PATH` is degenerate but `/bin/bash` is real (e.g. cron); `/bin/sh`
         // is the guaranteed-POSIX last resort.
         if let Some(p) = which("bash") {
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "bash",
-            };
+            return config_for(p);
         }
         if Path::new("/bin/bash").exists() {
-            return c("/bin/bash", &["-c"], "bash");
+            return config_for(PathBuf::from("/bin/bash"));
         }
-        c("/bin/sh", &["-c"], "sh")
+        config_for(PathBuf::from("/bin/sh"))
     }
     #[cfg(windows)]
     {
-        // Prefer a real bash before ever falling back to cmd, so POSIX command
-        // syntax keeps working. Check the standard git-bash/msys install
-        // locations under the well-known program dirs first, then `bash` on
-        // PATH.
-        for var in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"] {
-            if let Some(base) = std::env::var_os(var) {
-                let git_bash = PathBuf::from(base).join("Git").join("bin").join("bash.exe");
-                if git_bash.exists() {
-                    return ShellConfig {
-                        program: git_bash,
-                        args: vec!["-c".to_string()],
-                        via_stdin: false,
-                        description: "git-bash",
-                    };
-                }
-            }
+        // PowerShell, never a bash: the sandbox is an AppContainer, where the
+        // MSYS runtime behind Git Bash cannot create its objects under
+        // `\BaseNamedObjects` and dies at startup (#9101). 7 (`pwsh`) when
+        // installed under Program Files, else the inbox 5.1 by absolute path so
+        // a PATH entry cannot shadow it.
+        let program_files: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+            .iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from)
+            .collect();
+        if let Some(p) = which_all("pwsh")
+            .into_iter()
+            .find(|p| container_can_run(p, &program_files))
+        {
+            return config_for(p);
         }
-        if let Some(p) = which("bash") {
-            // The WSL launcher is the shim at System32\bash.exe; it rejects
-            // `-c`, so the command must be piped to `bash -s` on stdin. Only
-            // that exact location is treated as WSL, so a real bash that merely
-            // lives under a directory named `system32` is not misrouted to
-            // stdin one-shot mode.
-            let is_wsl = p
-                .file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.eq_ignore_ascii_case("bash.exe"))
-                .unwrap_or(false)
-                && p.parent()
-                    .and_then(|d| d.file_name())
-                    .and_then(|n| n.to_str())
-                    .map(|n| n.eq_ignore_ascii_case("System32"))
-                    .unwrap_or(false);
-            if is_wsl {
-                return ShellConfig {
-                    program: p,
-                    args: vec!["-s".to_string()],
-                    via_stdin: true,
-                    description: "wsl bash",
-                };
-            }
-            return ShellConfig {
-                program: p,
-                args: vec!["-c".to_string()],
-                via_stdin: false,
-                description: "bash",
-            };
+        let system = std::env::var_os("SystemRoot")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+            .join("System32");
+        let powershell = system
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        if powershell.exists() {
+            return config_for(powershell);
         }
-        // No bash anywhere: cmd is the only shell. The model is told this (the
-        // runtime env block reports COMSPEC, and the bash handler's output note
-        // names cmd) so it can write cmd syntax rather than silently passing
-        // POSIX commands that cmd would reject.
-        c("cmd.exe", &["/C"], "cmd")
+        config_for(system.join("cmd.exe"))
     }
 }
 
 /// Locate an executable on PATH via the platform's own resolver. Also used by
 /// [`super::jail`] to find `bwrap` on distros with no FHS paths (NixOS keeps it
 /// only at a Nix-store path).
+/// Unix only outside tests: Windows resolution needs every match (see
+/// [`which_all`]) to step past the app-execution aliases.
+#[cfg(any(unix, test))]
 pub(crate) fn which(name: &str) -> Option<PathBuf> {
+    which_all(name).into_iter().next()
+}
+
+/// Every match for `name` on PATH, in PATH order.
+fn which_all(name: &str) -> Vec<PathBuf> {
     #[cfg(unix)]
     let finder = "which";
     #[cfg(windows)]
     let finder = "where";
-    let out = std::process::Command::new(finder).arg(name).output().ok()?;
+    let Ok(out) = std::process::Command::new(finder).arg(name).output() else {
+        return Vec::new();
+    };
     if !out.status.success() {
-        return None;
+        return Vec::new();
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let first = text.lines().map(str::trim).find(|l| !l.is_empty())?;
-    Some(PathBuf::from(first))
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// Spawn `command` in `cwd` using the resolved shell, as a new process group,
@@ -222,6 +381,12 @@ const SANDBOX_ENV_ALLOW: &[&str] = &[
     "PATHEXT",
     "ProgramFiles",
     "ProgramData",
+    // PowerShell keeps its module-analysis cache under `LOCALAPPDATA`, and
+    // npm, pip and most Windows toolchains resolve per-user state through these.
+    // Locations, not secrets; also unset on unix.
+    "SystemDrive",
+    "LOCALAPPDATA",
+    "APPDATA",
 ];
 
 /// Every spelling of "where temporary files go": POSIX tools read `TMPDIR`,
@@ -392,16 +557,51 @@ pub async fn spawn(
     spawn_with_stdin(cfg, command, cwd, scratch, env, thread, None).await
 }
 
+/// `path` without the `\\?\` verbatim prefix `canonicalize` adds on Windows:
+/// `\\?\C:\x` becomes `C:\x` and `\\?\UNC\srv\share` becomes
+/// `\\srv\share`. cmd refuses a verbatim working directory and silently runs
+/// in `C:\Windows` instead, and tools print the prefix back at the model. Any
+/// other path, including other verbatim forms, is returned unchanged.
+pub fn without_verbatim_prefix(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let b = rest.as_bytes();
+        if b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Append `command` to `cmd` in the form `cfg`'s shell reads it. When `cfg` is a
+/// sandbox wrapper rather than the shell itself, the command travels as a plain
+/// argument and the AppContainer helper re-applies the cmd rule when it builds
+/// the shell's own command line (see `appcontainer::command_line`).
+fn append_command(cmd: &mut Command, cfg: &ShellConfig, command: &str) {
+    match cfg.kind {
+        ShellKind::Posix => {
+            cmd.arg(command);
+        }
+        ShellKind::PowerShell => {
+            cmd.arg(powershell_script(command));
+        }
+        ShellKind::Cmd => {
+            #[cfg(windows)]
+            if kind_of(&cfg.program) == ShellKind::Cmd {
+                cmd.raw_arg(cmd_payload(command));
+                return;
+            }
+            cmd.arg(command);
+        }
+    }
+}
+
 /// [`spawn`] plus a string fed to the child on stdin and then closed. Used by
 /// the hook and plugin-tool runners, whose contract is "JSON in on stdin, JSON
 /// out on stdout".
-///
-/// On a `via_stdin` shell (legacy WSL `bash.exe`, which cannot take `-c`) stdin
-/// already carries the command itself, so the payload is written on the lines
-/// after it. That is still readable -- the shell consumes its script line by
-/// line and leaves the rest of the descriptor to the script -- but it is the
-/// one shell where a hook reading stdin sees the payload only after its own
-/// source text has been consumed.
 ///
 /// The write itself happens on a detached task, so this function returns as
 /// soon as the child is spawned and the caller's timeout covers the whole
@@ -417,9 +617,7 @@ pub async fn spawn_with_stdin(
 ) -> std::io::Result<Child> {
     let mut cmd = Command::new(&cfg.program);
     cmd.args(&cfg.args);
-    if !cfg.via_stdin {
-        cmd.arg(command);
-    }
+    append_command(&mut cmd, cfg, command);
     // Strip every inherited variable, then re-add only the allowlist so the
     // sandboxed process holds no host secrets regardless of which backend wraps
     // it. `current_dir` on the workspace keeps relative work correct.
@@ -459,10 +657,10 @@ pub async fn spawn_with_stdin(
             cmd.env(key, scratch);
         }
     }
-    cmd.current_dir(cwd)
+    cmd.current_dir(without_verbatim_prefix(cwd))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .stdin(if cfg.via_stdin || stdin_payload.is_some() {
+        .stdin(if stdin_payload.is_some() {
             Stdio::piped()
         } else {
             Stdio::null()
@@ -474,7 +672,7 @@ pub async fn spawn_with_stdin(
 
     let mut child = cmd.spawn()?;
 
-    if cfg.via_stdin || stdin_payload.is_some() {
+    if let Some(payload) = stdin_payload {
         if let Some(mut stdin) = child.stdin.take() {
             // Written from a detached task, never awaited here: a payload
             // larger than the pipe buffer blocks until the child reads it, and
@@ -482,22 +680,13 @@ pub async fn spawn_with_stdin(
             // it could arm its timeout. A PostToolUse hook carries a whole tool
             // result, so this is the common size, not a corner case. Detached,
             // the write simply fails when the child is killed or exits.
-            let script = cfg.via_stdin.then(|| command.to_string());
-            let payload = stdin_payload.map(str::to_string);
+            let payload = payload.to_string();
             tokio::spawn(async move {
                 use tokio::io::AsyncWriteExt;
-                if let Some(script) = script {
-                    if stdin.write_all(script.as_bytes()).await.is_err() {
-                        return;
-                    }
-                    let _ = stdin.write_all(b"\n").await;
+                if stdin.write_all(payload.as_bytes()).await.is_err() {
+                    return;
                 }
-                if let Some(payload) = payload {
-                    if stdin.write_all(payload.as_bytes()).await.is_err() {
-                        return;
-                    }
-                    let _ = stdin.write_all(b"\n").await;
-                }
+                let _ = stdin.write_all(b"\n").await;
                 let _ = stdin.shutdown().await;
             });
         }
@@ -688,12 +877,220 @@ mod env_allowlist_tests {
     /// a bare Windows box can actually run a command.
     #[test]
     fn allowlist_has_windows_system_keys() {
-        for key in ["SystemRoot", "windir", "ComSpec", "PATHEXT", "ProgramFiles", "ProgramData"] {
+        for key in [
+            "SystemRoot", "windir", "ComSpec", "PATHEXT", "ProgramFiles", "ProgramData",
+            "SystemDrive", "LOCALAPPDATA", "APPDATA",
+        ] {
             assert!(
                 SANDBOX_ENV_ALLOW.contains(&key),
                 "missing {key} in SANDBOX_ENV_ALLOW"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod shell_kind_tests {
+    use super::*;
+
+    #[test]
+    fn kind_of_reads_the_file_name_on_any_separator_and_case() {
+        for (path, kind) in [
+            ("/bin/bash", ShellKind::Posix),
+            ("/bin/sh", ShellKind::Posix),
+            (r"C:\Program Files\Git\bin\bash.exe", ShellKind::Posix),
+            (r"C:\Program Files\PowerShell\7\pwsh.exe", ShellKind::PowerShell),
+            ("/usr/bin/pwsh", ShellKind::PowerShell),
+            (
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\PowerShell.EXE",
+                ShellKind::PowerShell,
+            ),
+            (r"C:\Windows\System32\cmd.exe", ShellKind::Cmd),
+            ("CMD.EXE", ShellKind::Cmd),
+        ] {
+            assert_eq!(kind_of(Path::new(path)), kind, "{path}");
+        }
+    }
+
+    #[test]
+    fn each_kind_gets_the_arguments_its_shell_reads() {
+        assert_eq!(config_for(PathBuf::from("/bin/bash")).args, vec!["-c"]);
+        let ps = config_for(PathBuf::from("pwsh.exe"));
+        assert_eq!(ps.kind, ShellKind::PowerShell);
+        assert_eq!(ps.args.last().map(String::as_str), Some("-Command"));
+        assert!(ps.args.iter().any(|a| a == "-NoProfile"));
+        assert!(ps.args.iter().any(|a| a == "-NonInteractive"));
+        assert_eq!(config_for(PathBuf::from("cmd.exe")).args, vec!["/D", "/S", "/C"]);
+    }
+
+    /// Only a pwsh under Program Files can start in the AppContainer: a Store
+    /// alias or a per-user install is skipped, so 5.1 is used instead.
+    #[test]
+    fn only_a_program_files_pwsh_is_chosen() {
+        let pf = [PathBuf::from(r"C:\Program Files"), PathBuf::from(r"C:\Program Files (x86)\")];
+        assert!(container_can_run(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe"), &pf));
+        assert!(container_can_run(Path::new(r"c:\program files (x86)\PowerShell\7\pwsh.exe"), &pf));
+        for skipped in [
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe",
+            r"C:\Users\a\scoop\apps\pwsh\current\pwsh.exe",
+            r"C:\Program Files Extra\pwsh.exe",
+            r"D:\tools\pwsh.exe",
+        ] {
+            assert!(!container_can_run(Path::new(skipped), &pf), "{skipped}");
+        }
+        assert!(!container_can_run(Path::new(r"C:\Program Files\pwsh.exe"), &[]));
+    }
+
+    /// A Store PowerShell 7 is an app-execution alias, which cannot start in
+    /// the AppContainer, so it is skipped; an installed pwsh is not.
+    #[test]
+    fn a_store_pwsh_alias_is_recognised_and_an_installed_pwsh_is_not() {
+        assert!(is_app_execution_alias(Path::new(
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe"
+        )));
+        assert!(!is_app_execution_alias(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe")));
+    }
+
+    #[test]
+    fn the_verbatim_prefix_is_stripped_only_from_drive_and_unc_paths() {
+        assert_eq!(
+            without_verbatim_prefix(Path::new(r"\\?\C:\Users\a\proj")),
+            PathBuf::from(r"C:\Users\a\proj")
+        );
+        assert_eq!(
+            without_verbatim_prefix(Path::new(r"\\?\UNC\server\share\proj")),
+            PathBuf::from(r"\\server\share\proj")
+        );
+        for unchanged in [r"C:\Users\a", "/home/a/proj", r"\\?\Volume{abc}\x"] {
+            assert_eq!(without_verbatim_prefix(Path::new(unchanged)), PathBuf::from(unchanged));
+        }
+    }
+
+    /// cmd with `/S` strips exactly the outer pair, so the command's own quotes
+    /// reach it untouched -- the `\"` an argv quoter would produce never does.
+    #[test]
+    fn the_cmd_payload_keeps_the_commands_own_quotes() {
+        let payload = cmd_payload(r#""C:\Program Files\x.exe" "a b" && echo "done""#);
+        assert_eq!(payload, r#"""C:\Program Files\x.exe" "a b" && echo "done"""#);
+        assert!(!payload.contains(r#"\""#));
+    }
+
+    #[test]
+    fn the_powershell_script_runs_the_command_and_reports_its_exit_code() {
+        let script = powershell_script("git status");
+        assert!(script.contains("\ngit status\n"));
+        let (setup, rest) = script.split_once("git status").unwrap();
+        assert!(setup.contains("$global:LASTEXITCODE = $null"), "reset before the command");
+        assert!(
+            setup.contains("Major -lt 6) { Import-Module Microsoft.PowerShell.Management,"),
+            "5.1 imports the core modules it cannot autoload in the sandbox"
+        );
+        assert!(setup.contains("OutputEncoding"));
+        assert!(setup.contains("Set-Location -LiteralPath $JanWs"), "real path first");
+        assert!(setup.contains("Set-Location JanWs:\\"), "the drive only as the fallback");
+        assert!(setup.contains("function jan_cmd {"), "runs inside the function");
+        assert!(rest.contains("elseif ($LASTEXITCODE) { $LASTEXITCODE }"), "real code after it");
+        assert!(rest.contains("$host.SetShouldExit($JanExit)"), "exit without dropping output");
+    }
+
+    /// The syntax note names the language for every non-POSIX shell and is
+    /// absent for POSIX, which the model already assumes.
+    #[test]
+    fn only_non_posix_shells_carry_a_syntax_note() {
+        assert!(ShellKind::Posix.syntax_note().is_none());
+        assert!(ShellKind::PowerShell.syntax_note().unwrap().contains("PowerShell"));
+        assert!(ShellKind::Cmd.syntax_note().unwrap().contains("cmd.exe"));
+    }
+
+    /// Run the PowerShell script through a real `pwsh` when one is installed
+    /// (`JAN_TEST_PWSH`, else `pwsh` on PATH); skipped otherwise. Covers the
+    /// pieces that only an actual PowerShell can prove: quoting survives, a
+    /// native command's exit code comes back, and a failing cmdlet is not 0.
+    #[tokio::test]
+    async fn powershell_runs_commands_and_reports_exit_codes() {
+        let Some(pwsh) = std::env::var_os("JAN_TEST_PWSH")
+            .map(PathBuf::from)
+            .or_else(|| which("pwsh"))
+        else {
+            eprintln!("skipped: no pwsh");
+            return;
+        };
+        let cfg = config_for(pwsh);
+        let run = |command: &'static str| {
+            let cfg = cfg.clone();
+            async move {
+                let child = spawn(&cfg, command, &std::env::temp_dir(), None, ShellEnv::default(), None)
+                    .await
+                    .unwrap();
+                let pid = child.id().unwrap();
+                let out = child.wait_with_output().await.unwrap();
+                unregister(None, pid);
+                (
+                    out.status.code(),
+                    String::from_utf8_lossy(&out.stdout).trim().to_string(),
+                    String::from_utf8_lossy(&out.stderr).to_string(),
+                )
+            }
+        };
+        // Non-ASCII written as escapes to keep the source ASCII; UTF-8 output is
+        // what the script's encoding switch is for.
+        let (code, stdout, _) = run("Write-Output \"say \"\"hi\"\" & 'bye' \u{fc}n\u{ef}\"").await;
+        assert_eq!(code, Some(0));
+        assert_eq!(stdout, "say \"hi\" & 'bye' \u{fc}n\u{ef}");
+
+        let (code, _, _) = run("Get-Item ./definitely-not-here-jan").await;
+        assert_eq!(code, Some(1), "a failing cmdlet must not report success");
+
+        // A cmdlet failing after a native command that succeeded: the native
+        // code (0) must not mask the failure.
+        let (code, _, _) = run(
+            "& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 0'; \
+             Get-Item ./definitely-not-here-jan",
+        )
+        .await;
+        assert_eq!(code, Some(1), "a later cmdlet failure must not report 0");
+
+        // The last statement succeeding is success, as in a POSIX shell.
+        let (code, _, _) = run("Get-Item ./definitely-not-here-jan; Write-Output ok").await;
+        assert_eq!(code, Some(0));
+
+        // The running PowerShell itself as the native command, so the test does
+        // not depend on what else is installed.
+        let (code, _, stderr) =
+            run("& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 7'").await;
+        assert_eq!(code, Some(7), "a native command's own code comes back");
+        assert!(!stderr.contains("CLIXML"), "errors stay plain text: {stderr}");
+
+        // Formatted output is flushed before the process exits.
+        let (code, stdout, _) = run("Get-Location; Write-Output after").await;
+        assert_eq!(code, Some(0));
+        assert!(stdout.contains("after") && stdout.contains("Path"), "{stdout}");
+
+        // An error names the command's own text, never the wrapper's.
+        let (code, _, stderr) = run("Write-Error boom; exit 2").await;
+        assert_eq!(code, Some(2));
+        assert!(stderr.contains("boom"), "{stderr}");
+        assert!(!stderr.contains("SetShouldExit"), "wrapper leaked: {stderr}");
+        assert!(!stderr.contains("ProgressPreference"), "wrapper leaked: {stderr}");
+
+        // A `return` leaves the function early and still reports success.
+        let (code, _, _) = run("if ($true) { return }; Get-Item ./definitely-not-here-jan").await;
+        assert_eq!(code, Some(0), "an early return is not a failure");
+
+        // The location is a real path, not the fallback drive.
+        let (_, stdout, _) = run("$PWD.Provider.Name; $PWD.Path").await;
+        assert!(stdout.starts_with("FileSystem"), "{stdout}");
+        assert!(!stdout.contains("JanWs:"), "{stdout}");
+
+        // Relative paths resolve in the working directory it was started in.
+        let (code, stdout, _) = run("(Convert-Path .).TrimEnd('/', '\\')").await;
+        assert_eq!(code, Some(0));
+        let tmp = std::env::temp_dir();
+        assert_eq!(
+            stdout,
+            tmp.to_string_lossy().trim_end_matches(['/', '\\']),
+            "starts in the working directory"
+        );
     }
 }
 

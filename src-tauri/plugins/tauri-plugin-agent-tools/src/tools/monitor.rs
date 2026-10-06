@@ -661,6 +661,8 @@ mod tests {
         assert_eq!(spec.interval, Duration::from_secs(MAX_INTERVAL_SECS));
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_script_matching_at_start_reports_its_output_and_stops() {
         let dir = unique_root();
@@ -690,6 +692,8 @@ mod tests {
         panic!("the set still reports pending work after the match");
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_later_change_is_caught_by_a_following_poll() {
         let dir = unique_root();
@@ -713,6 +717,8 @@ mod tests {
         assert!(update.text.contains("phase two done"), "{}", update.text);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn snapshot_lists_active_monitors_with_their_poll_count() {
         let dir = unique_root();
@@ -777,6 +783,8 @@ mod tests {
         assert!(!set.has_pending_work());
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn wait_for_notice_wakes_on_a_match() {
         let dir = unique_root();
@@ -801,6 +809,8 @@ mod tests {
         assert!(notices[0].text.contains("a hit at last"));
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_subscriber_gets_updates_instead_of_the_queue() {
         let dir = unique_root();
