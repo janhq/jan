@@ -269,6 +269,33 @@ fn param_evaluates_code(body: &[char]) -> bool {
     }
 }
 
+/// Whether `s` holds a bash compound array assignment, `a=(...)` or
+/// `a+=(...)`, outside single quotes. Bash evaluates each `[key]=` subscript
+/// in it as arithmetic (`a=([$i]=x)`), and segment splitting cuts it apart at
+/// the parens, so the whole form prompts.
+fn has_compound_assignment(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut in_single = false;
+    for (i, &c) in chars.iter().enumerate() {
+        if in_single {
+            in_single = c != '\'';
+            continue;
+        }
+        match c {
+            '\'' => in_single = true,
+            '=' if chars.get(i + 1) == Some(&'(') => {
+                let before = if i > 0 && chars[i - 1] == '+' { i - 1 } else { i };
+                let name_end = before.checked_sub(1).map(|p| chars[p]);
+                if name_end.is_some_and(|p| p.is_ascii_alphanumeric() || p == '_' || p == ']') {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 /// Whether `s` holds a bash function definition header, `name()` or
 /// `name ( )`, outside quotes. Its body may be a subshell or a compound
 /// command rather than a brace group, which [`has_block`] would catch.
@@ -542,7 +569,11 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth
     }
     // Before extraction, which drops `$((...))` and splits on the parens of
     // `(( ))` and `name()`.
-    if has_arithmetic(command, kind != ShellKind::PowerShell) || has_empty_parens(command) {
+    let posix_like = kind != ShellKind::PowerShell;
+    if has_arithmetic(command, posix_like)
+        || has_empty_parens(command)
+        || (posix_like && has_compound_assignment(command))
+    {
         return false;
     }
     let (outer, subs) = extract_substitutions(command);
@@ -799,7 +830,13 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         if tokens.get(idx).is_some_and(|t| t.starts_with('[') && t.contains("::")) {
             return false;
         }
-        if let Some(rest) = tokens.get(idx).and_then(|t| ps_assignment_rest(t)) {
+        // Only PowerShell has `$var = <cmd>` and `[type]$var` assignments. In
+        // bash a leading `$x` or `[k]=v` is a command word (`$x` runs what it
+        // holds) and is opaque below.
+        let ps_assignment = (kind == ShellKind::PowerShell)
+            .then(|| tokens.get(idx).and_then(|t| ps_assignment_rest(t)))
+            .flatten();
+        if let Some(rest) = ps_assignment {
             if ps_target_is_resolution(&tokens[idx]) {
                 return false;
             }
@@ -1319,14 +1356,19 @@ mod tests {
             ("${x} = rm -rf ~", "rm"),
             ("[int]$x=Get-Item a", "Get-Item"),
         ] {
-            for kind in [ShellKind::Posix, ShellKind::PowerShell] {
-                assert_eq!(
-                    scan_command_as(command, kind),
-                    CommandScan::Bases(set(&[base])),
-                    "{command}"
-                );
-            }
+            assert_eq!(
+                scan_command_as(command, ShellKind::PowerShell),
+                CommandScan::Bases(set(&[base])),
+                "{command}"
+            );
+            // Bash has no such assignment: `$x = rm` runs what `$x` holds.
+            assert_eq!(
+                scan_command_as(command, ShellKind::Posix),
+                CommandScan::Opaque,
+                "{command}"
+            );
         }
+        assert_eq!(scan_command_as("[$i]=git", ShellKind::Posix), CommandScan::Opaque);
         // A property or element target can run a setter, so under PowerShell
         // it is not a plain assignment.
         for command in ["$a.b += Remove-Item x", "$a[0] = rm -rf ~", "$a[0]=rm -rf ~"] {
@@ -1338,7 +1380,11 @@ mod tests {
         }
         // `&` splits segments, so a bare `$x` reads like `& $x`: it prompts.
         assert_eq!(scan_command("$x | rm y"), CommandScan::Opaque);
-        assert!(bases("$x =").is_empty(), "nothing to run, so nothing a grant covers");
+        assert_eq!(
+            scan_command_as("$x =", ShellKind::PowerShell),
+            CommandScan::Bases(set(&[])),
+            "nothing to run, so nothing a grant covers"
+        );
     }
 
     /// janhq/jan#9142: a grant covers a segment only while it is a plain
@@ -1450,6 +1496,11 @@ mod tests {
             "echo \"$[x + 1]\"",
             "echo $'\\'' $((x)) $'\\''",
             "echo $'\\'' ; rm -rf ~ ; $'\\''",
+            // A compound array assignment evaluates its `[key]=` subscripts.
+            "read i < f; a=([$i]=git); git status",
+            "a+=([$i]=x)",
+            "declare -A m; m[k]=1; b=(x y)",
+            "FOO=(a) ls",
         ] {
             opaque(command, ShellKind::Posix);
         }
