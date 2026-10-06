@@ -44,6 +44,49 @@ fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&name)
 }
 
+/// Whether `seg` opens or closes a block: a PowerShell script block
+/// (`& { ... }`, the body after `if (...)`/`try`) or a POSIX `{ ...; }` group.
+/// Its contents are not split into segments, so scanning would yield only the
+/// brace or the keyword before it, and a grant on that would cover any block.
+///
+/// Matched on the raw text, outside quotes: `{ rm x }`, `{rm x}`, `try{`,
+/// `}catch{`. A brace pair that opens mid-word is left alone, so `${HOME}` and
+/// `*.{rs,toml}` are not blocks, and neither is quoted JSON or an
+/// `awk '{...}'`/`jq` program.
+fn has_block(seg: &str) -> bool {
+    let chars: Vec<char> = seg.chars().collect();
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '\\' => i += 1,
+            '\'' | '"' => quote = Some(c),
+            // An opening brace that starts a word (`{ rm`, `{rm`) or ends
+            // one (`try{`, `($x){`), or a closing brace that starts one
+            // (`}`, `}catch`). `${HOME}` and `*.{rs,toml}` close a brace
+            // that opened mid-word, so they are not blocks.
+            '{' | '}' => {
+                let starts = i == 0 || chars[i - 1].is_whitespace();
+                let ends = i + 1 == chars.len() || chars[i + 1].is_whitespace();
+                if starts || (c == '{' && ends) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
 /// `find` predicates that run an arbitrary command.
 const EXEC_PREDICATES: &[&str] = &["-exec", "-execdir", "-ok", "-okdir"];
 /// POSIX shells: `<shell> -c "<cmd>"` runs `<cmd>`, so we recurse into it.
@@ -261,6 +304,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
     let tokens = tokenize(seg);
     // Any command-running find predicate makes the whole segment opaque.
     if tokens.iter().any(|t| EXEC_PREDICATES.contains(&t.as_str())) {
+        return false;
+    }
+    // So does a script block or brace group anywhere in it: `try { ... }` and
+    // `if ($x) { ... }` put the block after a keyword the scan would stop at.
+    // `find -exec`'s `{}` placeholder has already made the segment opaque.
+    if has_block(seg) {
         return false;
     }
     let mut idx = 0;
@@ -533,11 +582,30 @@ mod tests {
             "ls | Where-Object { $_.Length -gt 0 }",
             "Start-Job { rm x }",
             "git status; iex $x",
+            // A script block or brace group is code this scanner does not
+            // split, so a grant on one must not cover every other block.
+            "& { Remove-Item -Recurse ~ }",
+            "if ($x) { Remove-Item a }",
+            "try { rm x } catch { }",
+            "{ ls; rm -rf ~; }",
+            "{ls}",
+            "try{ rm x }",
         ] {
             assert_eq!(scan_command(command), CommandScan::Opaque, "{command}");
         }
         // An ordinary cmdlet is still a base that a grant can cover.
         assert_eq!(bases("Get-ChildItem -Recurse"), set(&["Get-ChildItem"]));
+        // Braces inside a word or inside quotes are not blocks.
+        for (command, base) in [
+            (r#"echo '{"a":1}'"#, "echo"),
+            ("jq '{a: .b}' f.json", "jq"),
+            ("awk '{print $1}' f", "awk"),
+            ("echo ${HOME}", "echo"),
+            ("ls *.{rs,toml}", "ls"),
+            (r#"curl -d "{\"x\":1}" u"#, "curl"),
+        ] {
+            assert_eq!(bases(command), set(&[base]), "{command}");
+        }
     }
 
     #[test]

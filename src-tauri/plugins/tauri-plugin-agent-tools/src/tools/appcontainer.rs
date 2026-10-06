@@ -256,6 +256,21 @@ where
 /// under the user profile is the likely cause, and every other failure used to
 /// be told the same thing - which sent the report that prompted this to
 /// reinstall Git for Windows system-wide on a machine that already had it.
+/// The shell's working directory: the long form of `workspace` (`long`, its
+/// canonical path) when that is still a drive path, else `workspace` as given.
+///
+/// The long form fixes an 8.3 short path, which Windows PowerShell 5.1 cannot
+/// expand inside the container. But a workspace on a mapped drive canonicalizes
+/// to `\\?\UNC\server\share\...`, and cmd refuses a UNC working directory
+/// and silently runs in `C:\Windows` instead, so that one keeps its drive path.
+#[cfg(any(windows, test))]
+fn working_dir(workspace: &Path, long: Option<PathBuf>) -> PathBuf {
+    match long.map(|l| super::proc::without_verbatim_prefix(&l)) {
+        Some(l) if !l.to_string_lossy().starts_with(r"\\") => l,
+        _ => workspace.to_path_buf(),
+    }
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
     /// `ERROR_ACCESS_DENIED`.
@@ -684,8 +699,7 @@ mod win {
         // name by listing each parent, which the container may not read, so it
         // fails with access denied. Resolved here, outside the container, and
         // without the verbatim prefix `canonicalize` adds, which cmd refuses.
-        let long = req.workspace.canonicalize().unwrap_or_else(|_| req.workspace.clone());
-        let cwd = wide(super::super::proc::without_verbatim_prefix(&long).as_os_str());
+        let cwd = wide(super::working_dir(&req.workspace, req.workspace.canonicalize().ok()).as_os_str());
         // The helper's own environment, which `proc.rs` reduced to
         // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
         // than left to inheritance: see `environment_block`.
@@ -888,6 +902,23 @@ mod tests {
     /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
     /// are quoted as usual, but the command goes in cmd's `/S` form so its own
     /// quotes are not turned into `\"`.
+    /// A short or verbatim path becomes its long drive form; a mapped drive
+    /// that resolves to UNC keeps its drive letter, which cmd can start in.
+    #[test]
+    fn the_working_dir_is_the_long_form_unless_that_is_unc() {
+        let short = Path::new(r"C:\Users\RUNNER~1\ws");
+        assert_eq!(
+            working_dir(short, Some(PathBuf::from(r"\\?\C:\Users\runneradmin\ws"))),
+            PathBuf::from(r"C:\Users\runneradmin\ws")
+        );
+        let mapped = Path::new(r"Z:\proj");
+        assert_eq!(
+            working_dir(mapped, Some(PathBuf::from(r"\\?\UNC\server\share\proj"))),
+            PathBuf::from(r"Z:\proj")
+        );
+        assert_eq!(working_dir(mapped, None), PathBuf::from(r"Z:\proj"));
+    }
+
     #[test]
     fn the_cmd_command_line_hands_the_command_over_in_cmds_form() {
         let line = command_line(

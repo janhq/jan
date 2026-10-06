@@ -290,8 +290,8 @@ fn runtime_environment_block(project_root: &Path, scratch: Option<&Path>) -> Str
     );
 
     // The shell the tool actually runs, not the user's `$SHELL`/`COMSPEC`: on
-    // Windows those name cmd even when the tool resolved git-bash or
-    // PowerShell, and the model writes its commands for whatever is named here.
+    // Windows those name cmd even when the tool resolved PowerShell, and the
+    // model writes its commands for whatever is named here.
     let resolved = tauri_plugin_agent_tools::tools::proc::shell();
     let shell = display_path(&resolved.program);
     let shell_note = resolved

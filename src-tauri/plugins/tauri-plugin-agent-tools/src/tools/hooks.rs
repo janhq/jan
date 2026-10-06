@@ -603,10 +603,10 @@ mod tests {
         }
     }
 
-    /// Render a path for embedding in a hook's shell command. On Windows the
-    /// resolved shell is git-bash, which eats the backslashes of a native
-    /// `C:\Users\...` path and writes to a mangled name; forward slashes work
-    /// there too, and the quotes keep a path with spaces a single word.
+    /// Render a path for embedding in a hook's shell command. Forward slashes
+    /// and single quotes read the same in bash and PowerShell, so a
+    /// `C:\Users\...` temp path survives either, and the quotes keep a path
+    /// with spaces a single word.
     fn shq(path: &Path) -> String {
         format!("'{}'", path.to_string_lossy().replace('\\', "/"))
     }
