@@ -272,17 +272,27 @@ fn param_evaluates_code(body: &[char]) -> bool {
 /// Whether `s` holds a bash compound array assignment, `a=(...)` or
 /// `a+=(...)`, outside single quotes. Bash evaluates each `[key]=` subscript
 /// in it as arithmetic (`a=([$i]=x)`), and segment splitting cuts it apart at
-/// the parens, so the whole form prompts.
+/// the parens, so the whole form prompts. Applied under every shell: the
+/// form is rare outside bash, and a quote-tracking slip is then never a gap.
 fn has_compound_assignment(s: &str) -> bool {
     let chars: Vec<char> = s.chars().collect();
     let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
     for (i, &c) in chars.iter().enumerate() {
         if in_single {
             in_single = c != '\'';
             continue;
         }
+        if escaped {
+            escaped = false;
+            continue;
+        }
         match c {
-            '\'' => in_single = true,
+            '\\' => escaped = true,
+            // A `'` inside double quotes is a literal, not a string opener.
+            '\'' if !in_double => in_single = true,
+            '"' => in_double = !in_double,
             '=' if chars.get(i + 1) == Some(&'(') => {
                 let before = if i > 0 && chars[i - 1] == '+' { i - 1 } else { i };
                 let name_end = before.checked_sub(1).map(|p| chars[p]);
@@ -569,10 +579,20 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth
     }
     // Before extraction, which drops `$((...))` and splits on the parens of
     // `(( ))` and `name()`.
-    let posix_like = kind != ShellKind::PowerShell;
-    if has_arithmetic(command, posix_like)
+    if has_arithmetic(command, kind != ShellKind::PowerShell)
         || has_empty_parens(command)
-        || (posix_like && has_compound_assignment(command))
+        || has_compound_assignment(command)
+    {
+        return false;
+    }
+    // `[[ $n -eq 1 ]]` evaluates `$n`'s value as arithmetic. Checked over
+    // the whole command, not per segment: segment splitting cuts `[[ ]]` at
+    // its own `&&`/`||`, so `[[ x && git -eq $n ]]` would leave the operator
+    // in a segment with no `[[`. A `-eq` elsewhere in a command that has a
+    // `[[` also prompts, which is the safe side.
+    let words = tokenize(command, true);
+    if words.iter().any(|t| t == "[[")
+        && words.iter().any(|t| ARITHMETIC_TESTS.contains(&t.as_str()))
     {
         return false;
     }
@@ -793,12 +813,6 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         return false;
     }
     if kind == ShellKind::PowerShell && has_member_access(seg) {
-        return false;
-    }
-    // `[[ $n -eq 1 ]]` evaluates `$n`'s value as arithmetic.
-    if tokens.iter().any(|t| t == "[[")
-        && tokens.iter().any(|t| ARITHMETIC_TESTS.contains(&t.as_str()))
-    {
         return false;
     }
     let mut idx = 0;
@@ -1428,6 +1442,9 @@ mod tests {
                 "(( x++ ))",
                 "[[ $n -eq 1 ]] && ls",
                 "[[ -v 'a[$(rm x)]' ]]",
+                "[[ x && git -eq $n ]]",
+                "[[ x || y -lt $n ]] && ls",
+                "echo \"'\"; a=(git [$i]=y); echo \"'\"",
                 "printf -v 'a[$(rm x)]' x",
                 "printf -v'a[$(rm -rf ~)]' x",
                 "wait -np x",
