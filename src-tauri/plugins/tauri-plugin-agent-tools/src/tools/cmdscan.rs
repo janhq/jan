@@ -34,14 +34,21 @@ const OPAQUE: &[&str] = &[
 /// resolve them.
 const WINDOWS_OPAQUE: &[&str] = &[
     "cmd", "powershell", "pwsh", "invoke-expression", "iex", "invoke-command", "icm",
-    "start-process", "saps", "start", "invoke-item", "ii", "invoke-wmimethod", "iwmi", "invoke-cimmethod", "foreach-object", "foreach", "%", "where-object",
+    "start-process", "saps", "start", "invoke-item", "ii", "invoke-wmimethod", "iwmi",
+    "invoke-cimmethod", "icim", "foreach-object", "foreach", "%", "where-object",
     "where", "?", "start-job", "sajb", "start-threadjob", "invoke-commandinjob",
+    // Hosts that run a program or script named in their arguments.
+    "wsl", "conhost", "cscript", "wscript", "mshta", "rundll32",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
+    WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
+}
+
+/// `base` as Windows resolves it: case-insensitive and without `.exe`.
+fn windows_name(base: &str) -> String {
     let lower = base.to_ascii_lowercase();
-    let name = lower.strip_suffix(".exe").unwrap_or(&lower);
-    WINDOWS_OPAQUE.contains(&name)
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
 }
 
 /// Whether `seg` holds a brace outside quotes and outside a `${...}` variable.
@@ -393,7 +400,11 @@ fn split_segments(s: &str, posix_escapes: bool) -> Vec<String> {
 /// Resolve one simple command segment to its base(s). Returns `false` if it is
 /// opaque.
 fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
-    let tokens = tokenize(seg);
+    let tokens = tokenize(seg, true);
+    // PowerShell reads `\` literally, so `C:\Windows\System32\cmd.exe` is
+    // `cmd.exe` to it but an escaped `C:WindowsSystem32cmd.exe` to the POSIX
+    // reading. Both readings must name the same command (checked below).
+    let literal = tokenize(seg, false);
     // Any command-running find predicate makes the whole segment opaque.
     if tokens.iter().any(|t| EXEC_PREDICATES.contains(&t.as_str())) {
         return false;
@@ -459,6 +470,9 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             return true; // only assignments / empty: runs nothing
         }
         let base = strip_base(&tokens[idx]);
+        if literal.len() != tokens.len() || strip_base(&literal[idx]) != base {
+            return false;
+        }
         if base.is_empty() {
             return true;
         }
@@ -477,7 +491,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             }
             continue;
         }
-        if SHELLS.contains(&base.as_str()) {
+        if SHELLS.contains(&base.as_str()) || SHELLS.contains(&windows_name(&base).as_str()) {
             if let Some(p) = tokens[idx + 1..].iter().position(|t| t == "-c") {
                 let c_arg = idx + 1 + p + 1;
                 return match tokens.get(c_arg) {
@@ -508,9 +522,10 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
     }
 }
 
-/// Split a segment into whitespace-delimited tokens, stripping quotes and
-/// resolving backslash escapes.
-fn tokenize(s: &str) -> Vec<String> {
+/// Split a segment into whitespace-delimited tokens, stripping quotes and,
+/// with `posix_escapes`, resolving backslash escapes (else `\` is literal, as
+/// in PowerShell).
+fn tokenize(s: &str, posix_escapes: bool) -> Vec<String> {
     let chars: Vec<char> = s.chars().collect();
     let mut out = Vec::new();
     let mut cur = String::new();
@@ -522,7 +537,7 @@ fn tokenize(s: &str) -> Vec<String> {
         if let Some(q) = quote {
             if c == q {
                 quote = None;
-            } else if c == '\\' && q == '"' && i + 1 < chars.len() {
+            } else if posix_escapes && c == '\\' && q == '"' && i + 1 < chars.len() {
                 cur.push(chars[i + 1]);
                 has = true;
                 i += 2;
@@ -540,7 +555,7 @@ fn tokenize(s: &str) -> Vec<String> {
                 has = true;
                 i += 1;
             }
-            '\\' if i + 1 < chars.len() => {
+            '\\' if posix_escapes && i + 1 < chars.len() => {
                 cur.push(chars[i + 1]);
                 has = true;
                 i += 2;
@@ -754,6 +769,14 @@ mod tests {
             "Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList calc.exe",
             "iwmi -Class Win32_Process -Name Create -ArgumentList calc.exe",
             "Invoke-CimMethod -ClassName Win32_Process -MethodName Create",
+            "icim -ClassName Win32_Process -MethodName Create",
+            "wsl rm -rf ~",
+            "bash.exe -c 'iex x'",
+            "mshta x.hta",
+            "rundll32 x.dll,Entry",
+            // A full path names the same program; PowerShell reads `\` literally.
+            "C:\\Windows\\System32\\cmd.exe /c del /s /q C:\\",
+            "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe -c x",
             // A variable as the command runs whatever it holds.
             "& $env:ComSpec /c dir",
             "& $cmd args",
