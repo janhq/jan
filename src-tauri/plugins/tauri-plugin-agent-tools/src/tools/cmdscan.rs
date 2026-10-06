@@ -50,13 +50,14 @@ const WINDOWS_OPAQUE: &[&str] = &[
     // (`New-PSDrive F -PSProvider Function`), out of reach of the
     // `function:`/`alias:` check.
     "new-psdrive", "ndr",
-    // The item cmdlets write to any provider, including Function and Alias,
-    // and their path can be assembled at run time (`Set-Item "${a}:ls"`),
-    // which no text check can see through. Only PowerShell's own names: the
+    // The item and content cmdlets write to any provider, including Function
+    // and Alias, and their path can be assembled at run time
+    // (`Set-Item "${a}:ls"`), which no text check can see through. Only
+    // PowerShell's own names: the
     // `cp`/`mv`/`copy`/`move`/`ren` aliases are ordinary POSIX or cmd
     // commands elsewhere, and a provider path needs the cmdlet anyway.
     "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
-    "move-item", "mi",
+    "move-item", "mi", "set-content", "add-content", "ac", "clear-content", "clc",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
@@ -856,6 +857,12 @@ mod tests {
             "rni a b",
             "Move-Item a b",
             "mi a b",
+            "$a = echo function; Set-Content \"${a}:git\" 'Remove-Item ~'; git status",
+            "Set-Content a.txt x",
+            "Add-Content a.txt x",
+            "ac a.txt x",
+            "Clear-Content a.txt",
+            "clc a.txt",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
