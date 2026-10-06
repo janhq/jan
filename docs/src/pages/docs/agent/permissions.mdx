@@ -161,8 +161,9 @@ On macOS and Linux the `shell` tool runs `bash` (or `sh` where there is none). O
 PowerShell, never a bash: the sandbox is an AppContainer, and Git Bash's MSYS runtime cannot start
 inside one. Jan uses the first of these that it finds:
 
-1. PowerShell 7 (`pwsh`), unless it is only the Microsoft Store alias, which cannot start inside
-   the sandbox.
+1. PowerShell 7 (`pwsh`), when it is installed under Program Files. The sandbox can only start
+   programs from folders all apps may read, so a `pwsh` from the Microsoft Store, scoop, a zip in
+   your profile or a dotnet tool is skipped in favor of 5.1.
 2. Windows PowerShell 5.1, which ships with Windows.
 3. `cmd.exe`.
 

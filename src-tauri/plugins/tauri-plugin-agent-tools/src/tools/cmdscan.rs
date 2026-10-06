@@ -11,6 +11,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::tools::proc::{self, ShellKind};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum CommandScan {
     /// The full set of base commands this command will execute.
@@ -22,8 +24,10 @@ pub enum CommandScan {
 
 /// Commands whose argument *is* code to run, or that escalate privilege /
 /// reach off-box. We cannot bound what they execute, so they are always opaque.
+/// `alias` and `shopt` belong here too: with `shopt -s expand_aliases`, an
+/// `alias ls='rm -rf ~'` makes a later, already granted `ls` run its value.
 const OPAQUE: &[&str] = &[
-    "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch",
+    "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch", "alias", "shopt",
 ];
 /// Windows shells, PowerShell's run-this-text commands, and the cmdlets (with
 /// their aliases) that run a `{ ... }` script block. Their argument is code in
@@ -43,10 +47,49 @@ const WINDOWS_OPAQUE: &[&str] = &[
     "schtasks", "at", "runas", "regsvr32", "msiexec", "explorer", "pcalua", "cmstp",
     "msbuild", "installutil", "regasm", "regsvcs", "certutil", "bitsadmin",
     "scriptrunner", "sc",
+    // Aliases and functions take effect within the same script, so defining one
+    // changes what a later, already granted base runs (`Set-Alias ls rm; ls`).
+    "set-alias", "sal", "new-alias", "nal", "import-alias", "ipal",
+    // A new drive can mount the Function or Alias provider under any name
+    // (`New-PSDrive F -PSProvider Function`), out of reach of the
+    // `function:`/`alias:` check.
+    "new-psdrive", "ndr",
+    // The item and content cmdlets write to any provider, including Function
+    // and Alias, and their path can be assembled at run time
+    // (`Set-Item "${a}:ls"`), which no text check can see through. Their
+    // `cp`/`mv`/... aliases are handled by `POWERSHELL_ITEM_ALIASES`, since
+    // those names are ordinary file commands outside PowerShell.
+    "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
+    "move-item", "mi", "set-content", "add-content", "ac", "clear-content", "clc",
+    // A module's exported functions join the session and take precedence over
+    // a program of the same name, so importing one can redefine a granted base.
+    "import-module", "ipmo",
 ];
+/// PowerShell's aliases for the item cmdlets above. Under bash or cmd these
+/// are ordinary file commands that a grant may cover; only PowerShell turns
+/// them into `Copy-Item`/`Move-Item`/`Rename-Item`, whose path can be built
+/// at run time (`cp x "${a}:ls"`).
+const POWERSHELL_ITEM_ALIASES: &[&str] = &["cp", "copy", "mv", "move", "ren"];
 
 fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
+}
+
+/// Whether any token names PowerShell's `function:` or `alias:` drive, as a
+/// path or as a variable. Writing there redefines a command for the rest of
+/// the script, as `Set-Alias` does: `Set-Item function:ls ...`,
+/// `New-Item alias:ls ...`, `$function:ls = '...'`.
+///
+/// Matched anywhere in the token, not as a prefix: PowerShell binds
+/// `-AnyParam:value` (aliases and shortened names included), reaches the drive
+/// through provider paths (`...\Function::ls`), and the assignment target may
+/// be typed or braced (`[scriptblock]$function:ls`, `${function:ls}`). A
+/// harmless token that merely mentions `alias:` prompts, which is the safe side.
+fn touches_function_drive(tokens: &[String]) -> bool {
+    tokens.iter().any(|t| {
+        let lower = t.to_ascii_lowercase();
+        lower.contains("function:") || lower.contains("alias:")
+    })
 }
 
 /// `base` as Windows resolves it: case-insensitive and without `.exe`.
@@ -187,7 +230,15 @@ const WRAPPERS: &[&str] = &[
 const PS_UNICODE_QUOTES: &[char] =
     &['\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}', '\u{201C}', '\u{201D}', '\u{201E}'];
 
+/// [`scan_command_as`] for the shell the `shell` tool actually runs.
 pub fn scan_command(command: &str) -> CommandScan {
+    scan_command_as(command, proc::shell().kind)
+}
+
+/// Reduce `command` to the bases it runs under a shell of `kind`. Mostly
+/// shell-independent; `kind` decides only names whose meaning differs between
+/// shells.
+pub fn scan_command_as(command: &str, kind: ShellKind) -> CommandScan {
     // POSIX shells read these as plain characters, so the quote tracking here
     // (block detection, segment splitting) would disagree with PowerShell about
     // where a string ends: in `echo 'a\u{2019}; rm x; \u{2019}'` PowerShell runs
@@ -196,7 +247,7 @@ pub fn scan_command(command: &str) -> CommandScan {
         return CommandScan::Opaque;
     }
     let mut bases = BTreeSet::new();
-    if scan_into(command, &mut bases, 0) {
+    if scan_into(command, &mut bases, kind, 0) {
         CommandScan::Bases(bases)
     } else {
         CommandScan::Opaque
@@ -205,13 +256,13 @@ pub fn scan_command(command: &str) -> CommandScan {
 
 /// Collect the bases of `command` into `bases`. Returns `false` the moment an
 /// opaque construct is hit, which aborts the whole scan.
-fn scan_into(command: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
+fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth: usize) -> bool {
     if depth > 8 {
         return false;
     }
     let (outer, subs) = extract_substitutions(command);
     for sub in subs {
-        if !scan_into(&sub, bases, depth + 1) {
+        if !scan_into(&sub, bases, kind, depth + 1) {
             return false;
         }
     }
@@ -223,7 +274,7 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool 
         return false;
     }
     for seg in segments {
-        if !scan_segment(&seg, bases, depth) {
+        if !scan_segment(&seg, bases, kind, depth) {
             return false;
         }
     }
@@ -403,7 +454,7 @@ fn split_segments(s: &str, posix_escapes: bool) -> Vec<String> {
 
 /// Resolve one simple command segment to its base(s). Returns `false` if it is
 /// opaque.
-fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
+fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth: usize) -> bool {
     let tokens = tokenize(seg, true);
     // PowerShell reads `\` literally, so `C:\Windows\System32\cmd.exe` is
     // `cmd.exe` to it but an escaped `C:WindowsSystem32cmd.exe` to the POSIX
@@ -417,6 +468,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
     // `if ($x) { ... }` put the block after a keyword the scan would stop at.
     // `find -exec`'s `{}` placeholder has already made the segment opaque.
     if has_block(seg) {
+        return false;
+    }
+    // Checked over the whole segment, before an assignment hands its
+    // right-hand side to a rescan: in `$function:ls = '...'` the target is
+    // the redefinition, and only the value would be scanned.
+    if touches_function_drive(&tokens) || touches_function_drive(&literal) {
         return false;
     }
     let mut idx = 0;
@@ -451,7 +508,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             if spaced_op {
                 // `$var = <cmd>`: what follows the operator token.
                 let rhs = tokens[idx + 2..].join(" ");
-                return scan_segment(&rhs, bases, depth + 1);
+                return scan_segment(&rhs, bases, kind, depth + 1);
             }
             if fused_op || !rest.is_empty() {
                 // `$var=<cmd>` / `$var= <cmd>`: the value fused to the
@@ -461,7 +518,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
                     rhs.push(rest.to_string());
                 }
                 rhs.extend_from_slice(&tokens[idx + 1..]);
-                return scan_segment(&rhs.join(" "), bases, depth + 1);
+                return scan_segment(&rhs.join(" "), bases, kind, depth + 1);
             }
         }
         // A variable as the command (`& $cmd`, `& $env:ComSpec /c ...`) runs
@@ -485,6 +542,8 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if OPAQUE.contains(&base.as_str())
             || OPAQUE.contains(&windows_name(&base).as_str())
             || is_windows_opaque(&base)
+            || (kind == ShellKind::PowerShell
+                && POWERSHELL_ITEM_ALIASES.contains(&windows_name(&base).as_str()))
         {
             return false;
         }
@@ -504,7 +563,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             if let Some(p) = tokens[idx + 1..].iter().position(|t| t == "-c") {
                 let c_arg = idx + 1 + p + 1;
                 return match tokens.get(c_arg) {
-                    Some(cmd) => scan_into(cmd, bases, depth + 1),
+                    Some(cmd) => scan_into(cmd, bases, kind, depth + 1),
                     None => false,
                 };
             }
@@ -788,6 +847,50 @@ mod tests {
             "runas /user:x calc.exe",
             "msiexec /i x.msi",
             "explorer.exe x.exe",
+            // An alias or function defined earlier renames a later base.
+            "Set-Alias ls Remove-Item; ls -Recurse -Force ~",
+            "sal ls rm; ls x",
+            "New-Alias ls rm",
+            "nal ls rm",
+            "Set-Item function:ls -Value x",
+            "New-Item -Path alias:ls -Value Remove-Item",
+            // Any colon-bound parameter, alias or shortened name included.
+            "Set-Item -LP:function:ls -Value 'echo a; Remove-Item -Recurse ~'; ls",
+            "Set-Item -PSPath:function:ls -Value x",
+            "Set-Item -Pa:Alias:ls -Value x",
+            "Set-Item Microsoft.PowerShell.Core\\Function::ls -Value x",
+            // The variable namespace redefines the same way.
+            "$function:ls = 'echo hi; Remove-Item -Recurse -Force ~'; ls",
+            "${function:ls} = 'x'; ls",
+            "$Alias:ls = 'Remove-Item'",
+            "[scriptblock]$function:ls = 'x'",
+            "New-PSDrive -Name F -PSProvider Function -Root ''; Set-Item F:ls -Value 'Remove-Item -Recurse ~'; ls",
+            "ndr F Function ''",
+            // A provider path can be built at run time, out of the text.
+            "$a = echo function; Set-Item \"${a}:git\" -Value 'Remove-Item -Recurse -Force ~'; git status",
+            "Set-Item x -Value y",
+            "si x y",
+            "New-Item -ItemType File a.txt",
+            "ni a.txt",
+            "Copy-Item a b",
+            "cpi a b",
+            "Rename-Item a b",
+            "rni a b",
+            "Move-Item a b",
+            "mi a b",
+            "$a = echo function; Set-Content \"${a}:git\" 'Remove-Item ~'; git status",
+            "Set-Content a.txt x",
+            "Add-Content a.txt x",
+            "ac a.txt x",
+            "Clear-Content a.txt",
+            "clc a.txt",
+            // A module's functions shadow a program of the same name.
+            "echo 'function git { rm x }' > x.psm1; Import-Module ./x.psm1; git status",
+            "ipmo ./x.psm1",
+            // A bash alias redefines a later, already granted command.
+            "shopt -s expand_aliases\nalias ls='rm -rf ~'\nls",
+            "alias ls='rm -rf ~'",
+            "shopt -s expand_aliases",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
@@ -805,6 +908,34 @@ mod tests {
         }
         // An ordinary cmdlet is still a base that a grant can cover.
         assert_eq!(bases("Get-ChildItem -Recurse"), set(&["Get-ChildItem"]));
+        // Reading a function or a path that merely ends in `function` is not
+        // a redefinition.
+        assert_eq!(bases("git log --grep function"), set(&["git"]));
+        assert_eq!(bases("cat src/function.rs"), set(&["cat"]));
+        // The POSIX file commands are PowerShell's item cmdlets only under
+        // PowerShell, where a provider path can be built at run time.
+        for kind in [ShellKind::Posix, ShellKind::Cmd] {
+            assert_eq!(
+                scan_command_as("cp a b && mv b c", kind),
+                CommandScan::Bases(set(&["cp", "mv"])),
+                "{kind:?}"
+            );
+        }
+        for command in [
+            "cp a b",
+            "copy a b",
+            "mv a b",
+            "move a b",
+            "ren a b",
+            "CP.exe a b",
+            "$a = echo alias; cp x \"${a}:ls\"; ls",
+        ] {
+            assert_eq!(
+                scan_command_as(command, ShellKind::PowerShell),
+                CommandScan::Opaque,
+                "{command}"
+            );
+        }
         // Quoted braces and `${...}` variables are not blocks.
         for (command, base) in [
             (r#"echo '{"a":1}'"#, "echo"),
