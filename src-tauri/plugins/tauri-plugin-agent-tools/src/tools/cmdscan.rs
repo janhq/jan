@@ -52,14 +52,20 @@ fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
 }
 
-/// Whether any argument names PowerShell's `function:` or `alias:` drive.
-/// Writing there (`Set-Item function:ls { rm }`, `New-Item alias:ls`) redefines
-/// a command for the rest of the script, as `Set-Alias` does.
-fn touches_function_drive(args: &[String]) -> bool {
-    args.iter().any(|a| {
-        let lower = a.to_ascii_lowercase();
-        let path = lower.trim_start_matches("-path:").trim_start_matches("-literalpath:");
-        path.starts_with("function:") || path.starts_with("alias:")
+/// Whether any token names PowerShell's `function:` or `alias:` drive, as a
+/// path or as a variable. Writing there redefines a command for the rest of
+/// the script, as `Set-Alias` does: `Set-Item function:ls ...`,
+/// `New-Item alias:ls ...`, `$function:ls = '...'`.
+///
+/// Matched anywhere in the token, not as a prefix: PowerShell binds
+/// `-AnyParam:value` (aliases and shortened names included), reaches the drive
+/// through provider paths (`...\Function::ls`), and the assignment target may
+/// be typed or braced (`[scriptblock]$function:ls`, `${function:ls}`). A
+/// harmless token that merely mentions `alias:` prompts, which is the safe side.
+fn touches_function_drive(tokens: &[String]) -> bool {
+    tokens.iter().any(|t| {
+        let lower = t.to_ascii_lowercase();
+        lower.contains("function:") || lower.contains("alias:")
     })
 }
 
@@ -433,6 +439,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
     if has_block(seg) {
         return false;
     }
+    // Checked over the whole segment, before an assignment hands its
+    // right-hand side to a rescan: in `$function:ls = '...'` the target is
+    // the redefinition, and only the value would be scanned.
+    if touches_function_drive(&tokens) || touches_function_drive(&literal) {
+        return false;
+    }
     let mut idx = 0;
     let mut guard = 0;
     loop {
@@ -499,7 +511,6 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if OPAQUE.contains(&base.as_str())
             || OPAQUE.contains(&windows_name(&base).as_str())
             || is_windows_opaque(&base)
-            || touches_function_drive(&tokens[idx + 1..])
         {
             return false;
         }
@@ -810,6 +821,16 @@ mod tests {
             "nal ls rm",
             "Set-Item function:ls -Value x",
             "New-Item -Path alias:ls -Value Remove-Item",
+            // Any colon-bound parameter, alias or shortened name included.
+            "Set-Item -LP:function:ls -Value 'echo a; Remove-Item -Recurse ~'; ls",
+            "Set-Item -PSPath:function:ls -Value x",
+            "Set-Item -Pa:Alias:ls -Value x",
+            "Set-Item Microsoft.PowerShell.Core\\Function::ls -Value x",
+            // The variable namespace redefines the same way.
+            "$function:ls = 'echo hi; Remove-Item -Recurse -Force ~'; ls",
+            "${function:ls} = 'x'; ls",
+            "$Alias:ls = 'Remove-Item'",
+            "[scriptblock]$function:ls = 'x'",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
@@ -827,6 +848,10 @@ mod tests {
         }
         // An ordinary cmdlet is still a base that a grant can cover.
         assert_eq!(bases("Get-ChildItem -Recurse"), set(&["Get-ChildItem"]));
+        // Reading a function or a path that merely ends in `function` is not
+        // a redefinition.
+        assert_eq!(bases("git log --grep function"), set(&["git"]));
+        assert_eq!(bases("cat src/function.rs"), set(&["cat"]));
         // Quoted braces and `${...}` variables are not blocks.
         for (command, base) in [
             (r#"echo '{"a":1}'"#, "echo"),
