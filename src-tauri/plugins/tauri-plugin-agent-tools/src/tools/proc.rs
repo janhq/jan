@@ -235,14 +235,13 @@ const TEMP_ENV_KEYS: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 /// `cargo test` binary or incremental artifact can pass a gigabyte on its own.
 /// Caps that low break ordinary work long before they stop abuse. `FSIZE` is a
 /// per-file cap enforced with `SIGXFSZ`, so exceeding it kills the writer rather
-/// than returning an error most tools report clearly.
+/// than returning an error most tools report clearly. Linux `NPROC` is omitted
+/// because the kernel counts it across the entire real UID, so unrelated host
+/// processes can exhaust a limit mounted on one Jan shell. Per-run process-tree
+/// isolation requires a cgroup `pids.max`; until then the child inherits the
+/// launcher's process limit.
 #[cfg(unix)]
 const CHILD_LIMITS: &[(RlimitResource, u64)] = &[
-    // Linux counts NPROC across the entire UID, not one Jan child tree. Keep a
-    // finite fork-bomb guard without making ordinary workstation activity starve
-    // agent-tool shells. macOS inherits its host-managed per-UID ceiling instead.
-    #[cfg(target_os = "linux")]
-    (nix::libc::RLIMIT_NPROC, 8192),
     (nix::libc::RLIMIT_NOFILE, 65536),
     (nix::libc::RLIMIT_FSIZE, 16 * 1024 * 1024 * 1024),
 ];
@@ -258,12 +257,12 @@ type RlimitResource = nix::libc::c_int;
 /// Bound the resource exhaustion a sandboxed command could otherwise trigger on
 /// the host. `bwrap` 0.6.1 (and older) has no `--rlimit`, so instead we clamp the
 /// child's soft limits here, before exec, from the one choke point every backend
-/// funnels through. Linux `NPROC` still constrains fork bombs, while descriptor
-/// exhaustion and disk fill are capped by `NOFILE` and `FSIZE`. The hard limit is
-/// left at the host's value so a command that genuinely needs more can raise its
-/// own soft limit back up. The bwrap wrapper execs `bwrap` itself, which sets up
-/// the namespace and then execs the real shell, so the limits carry over to every
-/// descendant. Linux only; the Windows AppContainer child is limited by its token.
+/// funnels through. Descriptor exhaustion and disk fill are capped by `NOFILE`
+/// and `FSIZE`. The hard limit is left at the host's value so a command that
+/// genuinely needs more can raise its own soft limit back up. The bwrap wrapper
+/// execs `bwrap` itself, which sets up the namespace and then execs the real
+/// shell, so the limits carry over to every descendant. Unix only; the Windows
+/// AppContainer child is limited by its token.
 #[cfg(unix)]
 fn confine_limits(cmd: &mut Command) {
     // `tokio::process::Command::pre_exec` (unix) is the std `pre_exec`; the call
@@ -879,7 +878,7 @@ mod tests {
 
         // Spawn a shell that reports its own soft limits; confine_limits sets
         // each to the target, bounded by whatever hard limit the host allows.
-        // `ulimit -f` reports FSIZE in 1024-byte blocks; `-n` and `-u` are raw.
+        // `ulimit -f` reports FSIZE in 1024-byte blocks; `-n` is a raw count.
         for (name, flag, resource, target, unit) in [
             ("NOFILE", "-n", nix::libc::RLIMIT_NOFILE, 65536_u64, 1_u64),
             (
@@ -889,8 +888,6 @@ mod tests {
                 16 * 1024 * 1024 * 1024,
                 1024,
             ),
-            #[cfg(target_os = "linux")]
-            ("NPROC", "-u", nix::libc::RLIMIT_NPROC, 8192_u64, 1_u64),
         ] {
             let cmd = format!("ulimit {flag}");
             let child = spawn(shell(), &cmd, &tmp(), None, ShellEnv::default(), None).await.unwrap();
@@ -916,6 +913,44 @@ mod tests {
                 "{name} soft limit should be raised to the target, got: {val}"
             );
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn confine_limits_preserves_the_launcher_process_limit() {
+        // NPROC counts every process owned by the real UID. Jan must inherit the
+        // launcher's value so unrelated workstation activity cannot starve one
+        // agent-tool shell at an arbitrary Jan-specific threshold.
+        let mut launcher = nix::libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // # Safety: reads the test process's own limit into a local value.
+        assert_eq!(
+            unsafe { nix::libc::getrlimit(nix::libc::RLIMIT_NPROC, &mut launcher) },
+            0
+        );
+
+        let child = spawn(
+            shell(),
+            "ulimit -u",
+            &tmp(),
+            None,
+            ShellEnv::default(),
+            None,
+        )
+        .await
+        .unwrap();
+        let pid = child.id().unwrap();
+        let out = child.wait_with_output().await.unwrap();
+        unregister(None, pid);
+        let actual = String::from_utf8_lossy(&out.stdout).trim().to_string();
+
+        assert_eq!(
+            actual,
+            launcher.rlim_cur.to_string(),
+            "NPROC soft limit should be inherited from the launcher, got: {actual}"
+        );
     }
 }
 
