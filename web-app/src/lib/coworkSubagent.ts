@@ -471,6 +471,21 @@ export function intersectAllowedTools(
   request: string[] | null | undefined,
   parentTools: string[]
 ): { tools: string[] | null } | { error: string } {
+  // A list naming the shell's old name would silently give the child no
+  // shell, so it is refused with the rename, as the Rust port does.
+  for (const [list, where] of [
+    [definition, "the subagent definition's allowed_tools"],
+    [request, 'allowed_tools'],
+  ] as const) {
+    const old = list?.find((t) => t.trim().toLowerCase() === 'bash')
+    if (old !== undefined) {
+      return {
+        error:
+          `${where} names \`${old.trim()}\`, which matches nothing: the shell tool is ` +
+          'now `shell`. Rename it to `shell` for it to apply.',
+      }
+    }
+  }
   const parent = new Set(parentTools)
   const withSkills = (tools: string[]) => {
     const out = [...tools]

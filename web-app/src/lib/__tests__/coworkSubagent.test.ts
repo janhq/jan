@@ -287,6 +287,22 @@ describe('injectInputs', () => {
 })
 
 describe('intersectAllowedTools', () => {
+  // A list still naming `bash` is refused with the rename, rather than
+  // giving a child that silently has no shell.
+  it('refuses a bash entry with the rename', () => {
+    const parent = ['read', 'shell', 'skill_list', 'skill_read']
+    const fromDefinition = intersectAllowedTools(['read', 'bash'], null, parent)
+    expect(fromDefinition).toEqual({
+      error:
+        "the subagent definition's allowed_tools names `bash`, which matches " +
+        'nothing: the shell tool is now `shell`. Rename it to `shell` for it to apply.',
+    })
+    expect(intersectAllowedTools(null, ['Bash'], parent)).toHaveProperty('error')
+    expect(intersectAllowedTools(['read', 'shell'], ['shell'], parent)).toEqual({
+      tools: ['shell', 'skill_list', 'skill_read'],
+    })
+  })
+
   const parent = ['read', 'grep', 'write', 'skill_list', 'skill_read']
 
   it('inherits the parent set when neither side narrows', () => {
