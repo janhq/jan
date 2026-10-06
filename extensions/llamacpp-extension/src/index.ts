@@ -413,6 +413,25 @@ async function findLlamaServerDir(
 //  - lib/
 //    - e.g. libcudart.so.12
 
+const CHECKPOINT_SETTING_KEYS = new Set([
+  'ctx_checkpoints',
+  'checkpoint_min_step',
+])
+
+function normalizeCheckpointSetting(key: string, value: unknown): unknown {
+  if (!CHECKPOINT_SETTING_KEYS.has(key)) return value
+
+  const numericValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim().length > 0
+        ? Number(value)
+        : value
+  return typeof numericValue === 'number' && Number.isFinite(numericValue)
+    ? Math.floor(numericValue)
+    : value
+}
+
 export default class llamacpp_extension extends AIEngine implements EmbeddingEngine {
   provider: string = 'llamacpp'
   timeout: number = 600
@@ -470,10 +489,11 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
     for (const item of settings) {
       const defaultValue = item.controllerProps.value
       // Use the potentially updated default value from the settings array as the fallback for getSetting
-      loadedConfig[item.key] = await this.getSetting<typeof defaultValue>(
+      const loadedValue = await this.getSetting<typeof defaultValue>(
         item.key,
         defaultValue
       )
+      loadedConfig[item.key] = normalizeCheckpointSetting(item.key, loadedValue)
     }
     this.config = loadedConfig as LlamacppConfig
 
@@ -735,26 +755,37 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
           if (patch?.controllerProps) {
             const nextValue = (patch.controllerProps as { value?: unknown })
               .value
+            const normalizedValue = normalizeCheckpointSetting(
+              s.key,
+              nextValue
+            )
             const prevValue = (s.controllerProps as { value?: unknown }).value
-            if (nextValue !== prevValue) {
-              changed.push({ key: s.key, value: nextValue })
+            if (normalizedValue !== prevValue) {
+              changed.push({ key: s.key, value: normalizedValue })
             }
             return {
               ...s,
-              controllerProps: { ...s.controllerProps, value: nextValue },
+              controllerProps: {
+                ...s.controllerProps,
+                value: normalizedValue,
+              },
             } as SettingComponentProps
           }
           return s
         })
       : ((): SettingComponentProps[] => {
-          const arr = componentProps as SettingComponentProps[]
-          for (const s of arr) {
-            changed.push({
-              key: s.key,
-              value: (s.controllerProps as { value?: unknown })?.value,
-            })
-          }
-          return arr
+          return (componentProps as SettingComponentProps[]).map((s) => {
+            const value = (s.controllerProps as { value?: unknown })?.value
+            const normalizedValue = normalizeCheckpointSetting(s.key, value)
+            changed.push({ key: s.key, value: normalizedValue })
+            return {
+              ...s,
+              controllerProps: {
+                ...s.controllerProps,
+                value: normalizedValue,
+              },
+            } as SettingComponentProps
+          })
         })()
     await writeSettingsFile(updated)
     const previousConfig = { ...this.config }
@@ -1332,7 +1363,8 @@ export default class llamacpp_extension extends AIEngine implements EmbeddingEng
   }
 
   onSettingUpdate<T>(key: string, value: T): void {
-    this.config[key] = value
+    ;(this.config as Record<string, unknown>)[key] =
+      normalizeCheckpointSetting(key, value)
 
     if (key === 'llamacpp_env') {
       this.llamacpp_env = value as string
