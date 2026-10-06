@@ -30,6 +30,9 @@ mod windows {
             Backend::AppContainer,
             "the sandbox must be available on a Windows runner"
         );
+        // Deliberately the raw `TEMP` path: on a runner it is the 8.3
+        // `RUNNER~1` form, as it is for any user with a long name, and the
+        // helper must still give the shell a working directory it can use.
         let ws = std::env::temp_dir().join(format!("jan_sandbox_spawn_{}", std::process::id()));
         std::fs::create_dir_all(&ws).expect("create workspace");
         let rt = tokio::runtime::Runtime::new().expect("runtime");

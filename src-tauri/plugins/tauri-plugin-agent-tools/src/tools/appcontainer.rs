@@ -678,9 +678,14 @@ mod win {
         startup.lpAttributeList = attributes;
 
         let mut line = wide(OsStr::new(&command_line(&req.program, &req.args)));
-        // The moniker and ACEs keep the path as given; only the shell's working
-        // directory drops the verbatim prefix, which cmd cannot start in.
-        let cwd = wide(super::super::proc::without_verbatim_prefix(&req.workspace).as_os_str());
+        // The moniker and ACEs keep the path as given. The shell's working
+        // directory is the long form: a `TEMP`-based workspace is often 8.3
+        // (`C:\Users\RUNNER~1\...`), and Windows PowerShell 5.1 expands a short
+        // name by listing each parent, which the container may not read, so it
+        // fails with access denied. Resolved here, outside the container, and
+        // without the verbatim prefix `canonicalize` adds, which cmd refuses.
+        let long = req.workspace.canonicalize().unwrap_or_else(|_| req.workspace.clone());
+        let cwd = wide(super::super::proc::without_verbatim_prefix(&long).as_os_str());
         // The helper's own environment, which `proc.rs` reduced to
         // `SANDBOX_ENV_ALLOW` before re-exec'ing it. Passed explicitly rather
         // than left to inheritance: see `environment_block`.
