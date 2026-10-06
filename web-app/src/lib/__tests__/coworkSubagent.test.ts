@@ -286,6 +286,22 @@ describe('injectInputs', () => {
   })
 })
 
+describe('resolveSubagent bash refusal', () => {
+  // An ad-hoc dispatch has no definition, so the refusal must name the
+  // call's own list -- the one the model wrote and can fix.
+  it("names the call's own list for an ad-hoc subagent", () => {
+    const out = resolveSubagent(
+      { name: 'adhoc', description: 't', allowed_tools: ['bash'] },
+      [],
+      ['read', 'shell']
+    )
+    expect(out).toHaveProperty('error')
+    const error = (out as { error: string }).error
+    expect(error.startsWith('allowed_tools names `bash`')).toBe(true)
+    expect(error).not.toContain('definition')
+  })
+})
+
 describe('intersectAllowedTools', () => {
   // A list still naming `bash` is refused with the rename, rather than
   // giving a child that silently has no shell.
