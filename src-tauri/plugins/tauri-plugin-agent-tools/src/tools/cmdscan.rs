@@ -11,6 +11,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::tools::proc::{self, ShellKind};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum CommandScan {
     /// The full set of base commands this command will execute.
@@ -59,6 +61,11 @@ const WINDOWS_OPAQUE: &[&str] = &[
     "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
     "move-item", "mi", "set-content", "add-content", "ac", "clear-content", "clc",
 ];
+/// PowerShell's aliases for the item cmdlets above. Under bash or cmd these
+/// are ordinary file commands that a grant may cover; only PowerShell turns
+/// them into `Copy-Item`/`Move-Item`/`Rename-Item`, whose path can be built
+/// at run time (`cp x "${a}:ls"`).
+const POWERSHELL_ITEM_ALIASES: &[&str] = &["cp", "copy", "mv", "move", "ren"];
 
 fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
@@ -219,7 +226,15 @@ const WRAPPERS: &[&str] = &[
 const PS_UNICODE_QUOTES: &[char] =
     &['\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}', '\u{201C}', '\u{201D}', '\u{201E}'];
 
+/// [`scan_command_as`] for the shell the `shell` tool actually runs.
 pub fn scan_command(command: &str) -> CommandScan {
+    scan_command_as(command, proc::shell().kind)
+}
+
+/// Reduce `command` to the bases it runs under a shell of `kind`. Mostly
+/// shell-independent; `kind` decides only names whose meaning differs between
+/// shells.
+pub fn scan_command_as(command: &str, kind: ShellKind) -> CommandScan {
     // POSIX shells read these as plain characters, so the quote tracking here
     // (block detection, segment splitting) would disagree with PowerShell about
     // where a string ends: in `echo 'a\u{2019}; rm x; \u{2019}'` PowerShell runs
@@ -228,7 +243,7 @@ pub fn scan_command(command: &str) -> CommandScan {
         return CommandScan::Opaque;
     }
     let mut bases = BTreeSet::new();
-    if scan_into(command, &mut bases, 0) {
+    if scan_into(command, &mut bases, kind, 0) {
         CommandScan::Bases(bases)
     } else {
         CommandScan::Opaque
@@ -237,13 +252,13 @@ pub fn scan_command(command: &str) -> CommandScan {
 
 /// Collect the bases of `command` into `bases`. Returns `false` the moment an
 /// opaque construct is hit, which aborts the whole scan.
-fn scan_into(command: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
+fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth: usize) -> bool {
     if depth > 8 {
         return false;
     }
     let (outer, subs) = extract_substitutions(command);
     for sub in subs {
-        if !scan_into(&sub, bases, depth + 1) {
+        if !scan_into(&sub, bases, kind, depth + 1) {
             return false;
         }
     }
@@ -255,7 +270,7 @@ fn scan_into(command: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool 
         return false;
     }
     for seg in segments {
-        if !scan_segment(&seg, bases, depth) {
+        if !scan_segment(&seg, bases, kind, depth) {
             return false;
         }
     }
@@ -435,7 +450,7 @@ fn split_segments(s: &str, posix_escapes: bool) -> Vec<String> {
 
 /// Resolve one simple command segment to its base(s). Returns `false` if it is
 /// opaque.
-fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
+fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth: usize) -> bool {
     let tokens = tokenize(seg, true);
     // PowerShell reads `\` literally, so `C:\Windows\System32\cmd.exe` is
     // `cmd.exe` to it but an escaped `C:WindowsSystem32cmd.exe` to the POSIX
@@ -489,7 +504,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             if spaced_op {
                 // `$var = <cmd>`: what follows the operator token.
                 let rhs = tokens[idx + 2..].join(" ");
-                return scan_segment(&rhs, bases, depth + 1);
+                return scan_segment(&rhs, bases, kind, depth + 1);
             }
             if fused_op || !rest.is_empty() {
                 // `$var=<cmd>` / `$var= <cmd>`: the value fused to the
@@ -499,7 +514,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
                     rhs.push(rest.to_string());
                 }
                 rhs.extend_from_slice(&tokens[idx + 1..]);
-                return scan_segment(&rhs.join(" "), bases, depth + 1);
+                return scan_segment(&rhs.join(" "), bases, kind, depth + 1);
             }
         }
         // A variable as the command (`& $cmd`, `& $env:ComSpec /c ...`) runs
@@ -523,6 +538,8 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if OPAQUE.contains(&base.as_str())
             || OPAQUE.contains(&windows_name(&base).as_str())
             || is_windows_opaque(&base)
+            || (kind == ShellKind::PowerShell
+                && POWERSHELL_ITEM_ALIASES.contains(&windows_name(&base).as_str()))
         {
             return false;
         }
@@ -542,7 +559,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
             if let Some(p) = tokens[idx + 1..].iter().position(|t| t == "-c") {
                 let c_arg = idx + 1 + p + 1;
                 return match tokens.get(c_arg) {
-                    Some(cmd) => scan_into(cmd, bases, depth + 1),
+                    Some(cmd) => scan_into(cmd, bases, kind, depth + 1),
                     None => false,
                 };
             }
@@ -884,8 +901,30 @@ mod tests {
         // a redefinition.
         assert_eq!(bases("git log --grep function"), set(&["git"]));
         assert_eq!(bases("cat src/function.rs"), set(&["cat"]));
-        // The POSIX file commands are not PowerShell's item cmdlets.
-        assert_eq!(bases("cp a b && mv b c"), set(&["cp", "mv"]));
+        // The POSIX file commands are PowerShell's item cmdlets only under
+        // PowerShell, where a provider path can be built at run time.
+        for kind in [ShellKind::Posix, ShellKind::Cmd] {
+            assert_eq!(
+                scan_command_as("cp a b && mv b c", kind),
+                CommandScan::Bases(set(&["cp", "mv"])),
+                "{kind:?}"
+            );
+        }
+        for command in [
+            "cp a b",
+            "copy a b",
+            "mv a b",
+            "move a b",
+            "ren a b",
+            "CP.exe a b",
+            "$a = echo alias; cp x \"${a}:ls\"; ls",
+        ] {
+            assert_eq!(
+                scan_command_as(command, ShellKind::PowerShell),
+                CommandScan::Opaque,
+                "{command}"
+            );
+        }
         // Quoted braces and `${...}` variables are not blocks.
         for (command, base) in [
             (r#"echo '{"a":1}'"#, "echo"),
