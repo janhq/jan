@@ -80,6 +80,38 @@ mod windows {
             "Get-ChildItem | Out-Null; 'x' | ConvertTo-Json; echo ok",
         ));
         assert!(ok && out.contains("ok"), "powershell 5.1 core cmdlets: {out}");
+        // Each shell works *in* the workspace: a relative write lands there, a
+        // listing reads it back, and an external program starts. PowerShell
+        // otherwise begins at `C:\`, which the container cannot use, and on
+        // 5.1 then fails every external program ("Cannot find drive").
+        for (label, shell, command) in [
+            (
+                "resolved",
+                &shells[0].1,
+                "Set-Content -Path rel-a.txt -Value hi; Get-ChildItem rel-a.txt | Out-Null; \
+                 Get-Content rel-a.txt; whoami | Out-Null; cmd /c exit 5",
+            ),
+            (
+                "powershell 5.1",
+                &shells[1].1,
+                "Set-Content -Path rel-b.txt -Value hi; Get-ChildItem rel-b.txt | Out-Null; \
+                 Get-Content rel-b.txt; whoami | Out-Null; cmd /c exit 5",
+            ),
+            ("cmd", &shells[2].1, "echo hi> rel-c.txt && type rel-c.txt && whoami >NUL && exit 5"),
+        ] {
+            let (code, out) = rt.block_on(spawn_code(shell, &ws, command));
+            assert_eq!(code, Some(5), "{label}: the external program's code comes back: {out}");
+            assert!(out.contains("hi"), "{label}: relative read failed: {out}");
+        }
+        for name in ["rel-a.txt", "rel-b.txt", "rel-c.txt"] {
+            assert!(ws.join(name).is_file(), "{name} must be written inside the workspace");
+        }
+        // An error names the command, never the wrapper script around it.
+        for (label, shell) in &shells[..2] {
+            let (ok, out) = rt.block_on(spawn(shell, &ws, "Write-Error boom; exit 2"));
+            assert!(!ok && out.contains("boom"), "{label}: {out}");
+            assert!(!out.contains("SetShouldExit"), "{label}: wrapper leaked: {out}");
+        }
         // cmd keeps a command's own quotes rather than seeing them escaped.
         let (ok, out) = rt.block_on(spawn(&shells[2].1, &ws, r#"echo "a b""#));
         assert!(ok && out.contains(r#""a b""#), "cmd quoting: {out}");
@@ -91,6 +123,12 @@ mod windows {
     /// `jail::wrap` turns the shell into the helper re-exec, and `proc::spawn`
     /// clears the environment down to the allowlist before starting it.
     async fn spawn(shell: &ShellConfig, ws: &Path, command: &str) -> (bool, String) {
+        let (code, text) = spawn_code(shell, ws, command).await;
+        (code == Some(0), text)
+    }
+
+    /// [`spawn`] with the exit code itself.
+    async fn spawn_code(shell: &ShellConfig, ws: &Path, command: &str) -> (Option<i32>, String) {
         let policy = Policy::new(ws, false);
         let wrapped = jail::wrap(shell, &policy).expect("AppContainer wrapper");
         let child = proc::spawn(&wrapped, command, ws, None, ShellEnv::default(), None)
@@ -103,6 +141,6 @@ mod windows {
         }
         let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
         text.push_str(&String::from_utf8_lossy(&out.stderr));
-        (out.status.success(), text)
+        (out.status.code(), text)
     }
 }

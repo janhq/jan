@@ -168,9 +168,11 @@ export const TerminalWidget = memo(
             <span
               className={cn(
                 'ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono',
+                // Success is neutral rather than `primary`: the default accent
+                // is an orange-red that read as a failure next to `exit 0`.
                 failed
                   ? 'bg-destructive/10 text-destructive'
-                  : 'bg-primary/10 text-primary'
+                  : 'bg-muted text-muted-foreground'
               )}
             >
               {t('tools:toolCall.exitCode', { code: result.exit })}

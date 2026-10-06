@@ -2979,6 +2979,8 @@ mod tests {
 
     /// A command's output reaches the sink as it is produced, not just in the
     /// returned string -- this is what makes a long command visible while it runs.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_streams_output_to_the_sink() {
         let root = unique_root();
@@ -3014,6 +3016,8 @@ mod tests {
     /// A backgrounded command keeps streaming after the call has returned: the
     /// sink lives in the detached task, which is the whole reason a long job can
     /// show progress while it runs on.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_command_keeps_streaming() {
         let root = unique_root();
@@ -3059,6 +3063,8 @@ mod tests {
     /// run under it) and report again when it really finishes, naming the file
     /// the output was published to. The order matters -- the file is written
     /// before the ping, so reacting to the ping always finds it there.
+    // POSIX command text, and a 1.2s budget a cold PowerShell start can miss.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_command_rings_the_doorbell_when_it_finishes() {
         let root = unique_root();
@@ -3240,6 +3246,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_exit_marker_is_on_its_own_line() {
         let root = unique_root();
@@ -3260,6 +3268,8 @@ mod tests {
     /// Typical command output (well under the caps) must reach the model whole:
     /// lowering the caps for context economy must not start truncating the
     /// everyday `cargo check` / `git status` sized result.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_under_the_cap_survives_intact() {
         let root = unique_root();
@@ -3282,6 +3292,8 @@ mod tests {
 
     /// The counterpart: past the cap the notice appears. Pinned just above
     /// 64KB so the test fails if the cap drifts back up to the old 256KB.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_past_the_byte_cap_is_truncated() {
         let root = unique_root();
@@ -3307,6 +3319,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_cr_progress_is_collapsed_not_truncated() {
         let root = unique_root();
@@ -3331,6 +3345,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_overflow_spills_to_readable_temp_file() {
         let root = unique_root();
@@ -3372,6 +3388,8 @@ mod tests {
     /// scratch and be advertised by the one name that works from both the fs
     /// tools and the shell, so the `read` the note asks for actually finds it.
     /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_spill_is_readable_when_a_scratch_is_set() {
         let root = unique_root();
@@ -3467,6 +3485,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_line_overflow_keeps_the_tail_not_the_head() {
         let root = unique_root();
@@ -3491,6 +3511,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_strips_control_chars_but_keeps_text() {
         let root = unique_root();
@@ -3511,6 +3533,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_command_reading_stdin_does_not_hang() {
         let root = unique_root();

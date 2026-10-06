@@ -859,6 +859,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_payload_reaches_the_hook_on_stdin() {
         let root = unique_root("payload");
@@ -1130,6 +1132,8 @@ mod tests {
 
     /// PostToolUse sees the result the tool produced, and its own "deny" is
     /// ignored: the call already happened, so there is nothing left to stop.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn posttooluse_through_execute_builtin_sees_the_result() {
         let root = unique_root("builtinpost");

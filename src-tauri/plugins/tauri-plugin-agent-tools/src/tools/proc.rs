@@ -154,26 +154,45 @@ const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
 /// native command that succeeded still reports 1 rather than 0. PowerShell
 /// does not record which statement set `$LASTEXITCODE`, so when a cmdlet fails
 /// after an earlier native command that failed, the code is that native
-/// command's: still non-zero, possibly not the failing statement's own. Output is switched to UTF-8: 5.1 otherwise encodes with the OEM
-/// code page and mangles every non-ASCII character. The progress stream is
-/// silenced because it is noise in captured output.
+/// command's: still non-zero, possibly not the failing statement's own.
 ///
-/// Windows PowerShell 5.1 cannot autoload modules inside the AppContainer:
-/// `echo`/`Write-Output` is "not recognized" although `Import-Module` of the
-/// same module succeeds, and moving or disabling the analysis cache or
-/// trimming `PSModulePath` does not help. So on 5.1 the core inbox modules are
-/// imported explicitly; pwsh 7 autoloads fine and skips this.
+/// The command runs inside a function, and the code is handed to
+/// `$host.SetShouldExit` rather than `exit`:
+/// - A top-level `exit` discards formatted output that has not been flushed,
+///   so `Get-Location; Write-Output x` printed nothing.
+/// - An error is reported against the statement that raised it. At top level
+///   that statement is the whole `-Command` text, so 5.1 echoed this wrapper
+///   back with every `Write-Error`; inside the function it is just `jan_cmd`.
+///
+/// Output is switched to UTF-8: 5.1 otherwise encodes with the OEM code page
+/// and mangles every non-ASCII character. The progress stream is silenced
+/// because it is noise in captured output.
+///
+/// Inside the AppContainer two things need help:
+/// - Windows PowerShell 5.1 cannot autoload modules: `Write-Output` is "not
+///   recognized" although `Import-Module` of the same module succeeds, so on
+///   5.1 the core inbox modules are imported explicitly. pwsh 7 autoloads.
+/// - PowerShell starts at `C:\` rather than the working directory it was
+///   given, because it cannot read the workspace's parent folders to resolve
+///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
+///   program then fail. A `JanWs:` drive rooted at the process's working
+///   directory needs no parent access, so the session starts there. Outside a
+///   sandbox it is the same directory, so this is harmless.
 pub fn powershell_script(command: &str) -> String {
     format!(
         "$ProgressPreference = 'SilentlyContinue'\n\
          if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
          try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
+         try {{ $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root ([Environment]::CurrentDirectory) -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}}\n\
          $global:LASTEXITCODE = $null\n\
+         $JanExit = 1\n\
+         function jan_cmd {{\n\
          {command}\n\
-         if ($?) {{ exit 0 }}\n\
-         if ($LASTEXITCODE) {{ exit $LASTEXITCODE }}\n\
-         exit 1\n"
+         $script:JanExit = if ($?) {{ 0 }} elseif ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }}\n\
+         }}\n\
+         jan_cmd\n\
+         $host.SetShouldExit($JanExit)\n"
     )
 }
 
@@ -203,6 +222,23 @@ pub struct ShellEnv<'a> {
 pub fn shell() -> &'static ShellConfig {
     static SHELL: OnceLock<ShellConfig> = OnceLock::new();
     SHELL.get_or_init(resolve_shell)
+}
+
+/// Whether a `pwsh` at `path` can start inside the AppContainer: only under a
+/// Program Files folder (`program_files`), which every container may read.
+/// A per-user install (scoop, a zip under the profile, dotnet tool) has no
+/// such grant and fails at startup with "Failed to resolve full path of the
+/// current executable"; a Store alias is a reparse point that cannot start
+/// either. Both would leave 5.1, which always works, unused.
+#[cfg(any(windows, test))]
+fn container_can_run(path: &Path, program_files: &[PathBuf]) -> bool {
+    let p = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+    !is_app_execution_alias(path)
+        && program_files.iter().any(|root| {
+            let root = root.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+            let root = root.trim_end_matches('\\');
+            !root.is_empty() && p.starts_with(&format!("{root}\\"))
+        })
 }
 
 /// True for a Store app-execution alias under `%LOCALAPPDATA%\Microsoft\
@@ -246,9 +282,17 @@ fn resolve_shell() -> ShellConfig {
         // PowerShell, never a bash: the sandbox is an AppContainer, where the
         // MSYS runtime behind Git Bash cannot create its objects under
         // `\BaseNamedObjects` and dies at startup (#9101). 7 (`pwsh`) when
-        // installed, else the inbox 5.1 by absolute path so a PATH entry cannot
-        // shadow it.
-        if let Some(p) = which_all("pwsh").into_iter().find(|p| !is_app_execution_alias(p)) {
+        // installed under Program Files, else the inbox 5.1 by absolute path so
+        // a PATH entry cannot shadow it.
+        let program_files: Vec<PathBuf> = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+            .iter()
+            .filter_map(std::env::var_os)
+            .map(PathBuf::from)
+            .collect();
+        if let Some(p) = which_all("pwsh")
+            .into_iter()
+            .find(|p| container_can_run(p, &program_files))
+        {
             return config_for(p);
         }
         let system = std::env::var_os("SystemRoot")
@@ -867,6 +911,24 @@ mod shell_kind_tests {
         assert_eq!(config_for(PathBuf::from("cmd.exe")).args, vec!["/D", "/S", "/C"]);
     }
 
+    /// Only a pwsh under Program Files can start in the AppContainer: a Store
+    /// alias or a per-user install is skipped, so 5.1 is used instead.
+    #[test]
+    fn only_a_program_files_pwsh_is_chosen() {
+        let pf = [PathBuf::from(r"C:\Program Files"), PathBuf::from(r"C:\Program Files (x86)\")];
+        assert!(container_can_run(Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe"), &pf));
+        assert!(container_can_run(Path::new(r"c:\program files (x86)\PowerShell\7\pwsh.exe"), &pf));
+        for skipped in [
+            r"C:\Users\a\AppData\Local\Microsoft\WindowsApps\pwsh.exe",
+            r"C:\Users\a\scoop\apps\pwsh\current\pwsh.exe",
+            r"C:\Program Files Extra\pwsh.exe",
+            r"D:\tools\pwsh.exe",
+        ] {
+            assert!(!container_can_run(Path::new(skipped), &pf), "{skipped}");
+        }
+        assert!(!container_can_run(Path::new(r"C:\Program Files\pwsh.exe"), &[]));
+    }
+
     /// A Store PowerShell 7 is an app-execution alias, which cannot start in
     /// the AppContainer, so it is skipped; an installed pwsh is not.
     #[test]
@@ -912,7 +974,10 @@ mod shell_kind_tests {
             "5.1 imports the core modules it cannot autoload in the sandbox"
         );
         assert!(setup.contains("OutputEncoding"));
-        assert!(rest.contains("exit $LASTEXITCODE"), "real code reported after it");
+        assert!(setup.contains("Set-Location JanWs:\\"), "starts in the workspace drive");
+        assert!(setup.contains("function jan_cmd {"), "runs inside the function");
+        assert!(rest.contains("elseif ($LASTEXITCODE) { $LASTEXITCODE }"), "real code after it");
+        assert!(rest.contains("$host.SetShouldExit($JanExit)"), "exit without dropping output");
     }
 
     /// The syntax note names the language for every non-POSIX shell and is
@@ -982,6 +1047,28 @@ mod shell_kind_tests {
             run("& (Get-Process -Id $PID).Path -NoProfile -Command 'exit 7'").await;
         assert_eq!(code, Some(7), "a native command's own code comes back");
         assert!(!stderr.contains("CLIXML"), "errors stay plain text: {stderr}");
+
+        // Formatted output is flushed before the process exits.
+        let (code, stdout, _) = run("Get-Location; Write-Output after").await;
+        assert_eq!(code, Some(0));
+        assert!(stdout.contains("after") && stdout.contains("Path"), "{stdout}");
+
+        // An error names the command's own text, never the wrapper's.
+        let (code, _, stderr) = run("Write-Error boom; exit 2").await;
+        assert_eq!(code, Some(2));
+        assert!(stderr.contains("boom"), "{stderr}");
+        assert!(!stderr.contains("SetShouldExit"), "wrapper leaked: {stderr}");
+        assert!(!stderr.contains("ProgressPreference"), "wrapper leaked: {stderr}");
+
+        // Relative paths resolve in the working directory it was started in.
+        let (code, stdout, _) = run("(Convert-Path .).TrimEnd('/', '\\')").await;
+        assert_eq!(code, Some(0));
+        let tmp = std::env::temp_dir();
+        assert_eq!(
+            stdout,
+            tmp.to_string_lossy().trim_end_matches(['/', '\\']),
+            "starts in the working directory"
+        );
     }
 }
 
