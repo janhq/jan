@@ -55,14 +55,23 @@ fn is_windows_opaque(base: &str) -> bool {
 /// would need a PowerShell parser. Quoted braces (JSON, `awk '{...}'`, `jq`)
 /// and `${HOME}` are not blocks.
 fn has_block(seg: &str) -> bool {
+    // POSIX shells read `\"` inside a double-quoted string as an escaped quote;
+    // PowerShell reads it as a literal backslash that closes the string. A
+    // brace one reading keeps inside quotes can be live under the other, so
+    // either reading finding a block is enough.
+    has_block_with(seg, true) || has_block_with(seg, false)
+}
+
+/// [`has_block`] under one quoting rule: whether `\` escapes a quote inside
+/// a double-quoted string (`posix_escapes`) or is literal, as in PowerShell.
+fn has_block_with(seg: &str, posix_escapes: bool) -> bool {
     let chars: Vec<char> = seg.chars().collect();
     let mut quote: Option<char> = None;
     let mut i = 0;
     while i < chars.len() {
         let c = chars[i];
         if let Some(q) = quote {
-            // `\"` stays inside a double-quoted string.
-            if c == '\\' && q == '"' {
+            if posix_escapes && c == '\\' && q == '"' {
                 i += 1;
             } else if c == q {
                 quote = None;
@@ -71,7 +80,7 @@ fn has_block(seg: &str) -> bool {
             continue;
         }
         match c {
-            '\\' => i += 1,
+            '\\' if posix_escapes => i += 1,
             '\'' | '"' => quote = Some(c),
             // `${NAME}` (and `${NAME:-x}`) is a variable, not a block: skip to
             // its closing brace. A `${` that never closes counts as a block.
@@ -92,27 +101,17 @@ fn has_block(seg: &str) -> bool {
 /// PowerShell assignment operators, when written as their own token.
 const PS_ASSIGN_OPS: &[&str] = &["=", "+=", "-=", "*=", "/=", "%=", "??="];
 
-/// For a `$` variable token (`$var`, `$a.b`, `$env:X`), what follows the
-/// assignment operator fused to it: `Some("rm")` for `$x=rm`, `Some("")` for
-/// `$x=` or a bare `$x` (the caller tells those apart, and checks for a
-/// following operator token). `None` when the token is not a `$` variable, or
-/// carries something other than an assignment operator.
+/// For a token that can start a PowerShell assignment target -- a variable
+/// (`$x`, `$a.b`, `$env:X`, `${x}`, `$a[0]`) or a typed one (`[int]$x`) --
+/// what follows a fused `=`: `Some("rm")` for `$x=rm`, `Some("")` for `$x=`
+/// or a bare target (the caller then checks for an operator token). `None`
+/// for anything else. Compound operators (`+=`, `??=`) end in the same `=`,
+/// and PowerShell compares with `-eq`, so the first `=` is the operator.
 fn ps_assignment_rest(token: &str) -> Option<&str> {
-    let rest = token.strip_prefix('$')?;
-    let name_end = rest
-        .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | ':' | '.')))
-        .unwrap_or(rest.len());
-    if name_end == 0 {
+    if !(token.starts_with('$') || token.starts_with('[')) {
         return None;
     }
-    let after = &rest[name_end..];
-    if after.is_empty() {
-        return Some("");
-    }
-    // Longest operator first, so `??=` is not read as a fused `?` value.
-    let mut ops: Vec<&str> = PS_ASSIGN_OPS.to_vec();
-    ops.sort_by_key(|op| std::cmp::Reverse(op.len()));
-    ops.into_iter().find_map(|op| after.strip_prefix(op).map(Some)).flatten()
+    Some(token.find('=').map_or("", |eq| &token[eq + 1..]))
 }
 
 /// `find` predicates that run an arbitrary command.
@@ -354,9 +353,14 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         // the command is the right-hand side, so that is what gets scanned.
         // Using `$var` as the base would let a grant on it cover any command
         // assigned to it.
+        // A bare type cast before the target (`[string] $x = ...`).
+        if tokens.get(idx).is_some_and(|t| t.starts_with('[') && t.ends_with(']'))
+            && tokens.get(idx + 1).is_some_and(|t| t.starts_with('$'))
+        {
+            idx += 1;
+        }
         if let Some(rest) = tokens.get(idx).and_then(|t| ps_assignment_rest(t)) {
-            let bare = tokens[idx].trim_start_matches('$');
-            let fused_op = PS_ASSIGN_OPS.iter().any(|op| bare.ends_with(op));
+            let fused_op = tokens[idx].contains('=');
             let spaced_op = !fused_op
                 && tokens.get(idx + 1).is_some_and(|t| PS_ASSIGN_OPS.contains(&t.as_str()));
             if spaced_op {
@@ -649,6 +653,10 @@ mod tests {
             "ls | %{a}{b}",
             "try{a}finally{b}",
             "ls *.{rs,toml}",
+            // PowerShell does not escape `\"`: the string closes there, so the
+            // block after it is live.
+            r#"Select-Object -InputObject "C:\" -Property { Remove-Item -Recurse ~ }"#,
+            r#"Sort-Object -InputObject "a\" { Remove-Item -Recurse ~ }"#,
         ] {
             assert_eq!(scan_command(command), CommandScan::Opaque, "{command}");
         }
@@ -677,6 +685,16 @@ mod tests {
             ("$x= rm -rf ~", "rm"),
             ("$a.b += Remove-Item x", "Remove-Item"),
             ("$x ??= Get-Item a", "Get-Item"),
+        ] {
+            assert_eq!(bases(command), set(&[base]), "{command}");
+        }
+        for (command, base) in [
+            ("[string]$x = rm -rf ~", "rm"),
+            ("[int] $x = Remove-Item a", "Remove-Item"),
+            ("${x} = rm -rf ~", "rm"),
+            ("$a[0] = rm -rf ~", "rm"),
+            ("$a[0]=rm -rf ~", "rm"),
+            ("[int]$x=Get-Item a", "Get-Item"),
         ] {
             assert_eq!(bases(command), set(&[base]), "{command}");
         }

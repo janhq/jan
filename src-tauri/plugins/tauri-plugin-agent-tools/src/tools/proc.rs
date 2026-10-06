@@ -62,7 +62,9 @@ impl ShellKind {
             ShellKind::Posix => None,
             ShellKind::PowerShell => Some(
                 "Commands run in PowerShell: write PowerShell syntax (e.g. `Get-ChildItem`, \
-                 `Get-Content`, `$env:VAR`, `;` between statements), not bash/POSIX.",
+                 `Get-Content`, `$env:VAR`, `;` between statements), not bash/POSIX. \
+                 Relative paths work. For a full path, use `Convert-Path` rather than \
+                 `$PWD` or `Resolve-Path`, which may show a drive other programs cannot open.",
             ),
             ShellKind::Cmd => Some(
                 "Commands run in cmd.exe: write cmd syntax (e.g. `dir`, `type`, `set`, \
@@ -175,23 +177,33 @@ const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
 /// - PowerShell starts at `C:\` rather than the working directory it was
 ///   given, because it cannot read the workspace's parent folders to resolve
 ///   the path; relative paths, `Get-ChildItem` and, on 5.1, every external
-///   program then fail. A `JanWs:` drive rooted at the process's working
-///   directory needs no parent access, so the session starts there. Outside a
-///   sandbox it is the same directory, so this is harmless.
+///   program then fail. The session first moves to the process's working
+///   directory by its real path. Only if that is refused does it fall back to
+///   a `JanWs:` drive rooted there, which needs no parent access, so the drive
+///   is never used where a real path works. Under the drive, `$PWD` and
+///   `Resolve-Path` read `JanWs:\...`, which a native program cannot open;
+///   [`ShellKind::syntax_note`] tells the model to pass `Convert-Path` output
+///   instead, which is the real path.
+///
+/// A `return` in the command leaves `jan_cmd` before its status line runs, so
+/// the code is then taken after the call: the native code if one was set,
+/// else success.
 pub fn powershell_script(command: &str) -> String {
     format!(
         "$ProgressPreference = 'SilentlyContinue'\n\
          if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
          try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
-         try {{ $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root ([Environment]::CurrentDirectory) -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}}\n\
+         $JanWs = [Environment]::CurrentDirectory\n\
+         try {{ Set-Location -LiteralPath $JanWs -ErrorAction Stop }} catch {{ try {{ $null = New-PSDrive -Name JanWs -PSProvider FileSystem -Root $JanWs -Scope Global -ErrorAction Stop; Set-Location JanWs:\\ }} catch {{}} }}\n\
          $global:LASTEXITCODE = $null\n\
-         $JanExit = 1\n\
+         $JanExit = $null\n\
          function jan_cmd {{\n\
          {command}\n\
          $script:JanExit = if ($?) {{ 0 }} elseif ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 1 }}\n\
          }}\n\
          jan_cmd\n\
+         if ($null -eq $JanExit) {{ $JanExit = if ($LASTEXITCODE) {{ $LASTEXITCODE }} else {{ 0 }} }}\n\
          $host.SetShouldExit($JanExit)\n"
     )
 }
@@ -974,7 +986,8 @@ mod shell_kind_tests {
             "5.1 imports the core modules it cannot autoload in the sandbox"
         );
         assert!(setup.contains("OutputEncoding"));
-        assert!(setup.contains("Set-Location JanWs:\\"), "starts in the workspace drive");
+        assert!(setup.contains("Set-Location -LiteralPath $JanWs"), "real path first");
+        assert!(setup.contains("Set-Location JanWs:\\"), "the drive only as the fallback");
         assert!(setup.contains("function jan_cmd {"), "runs inside the function");
         assert!(rest.contains("elseif ($LASTEXITCODE) { $LASTEXITCODE }"), "real code after it");
         assert!(rest.contains("$host.SetShouldExit($JanExit)"), "exit without dropping output");
@@ -1059,6 +1072,15 @@ mod shell_kind_tests {
         assert!(stderr.contains("boom"), "{stderr}");
         assert!(!stderr.contains("SetShouldExit"), "wrapper leaked: {stderr}");
         assert!(!stderr.contains("ProgressPreference"), "wrapper leaked: {stderr}");
+
+        // A `return` leaves the function early and still reports success.
+        let (code, _, _) = run("if ($true) { return }; Get-Item ./definitely-not-here-jan").await;
+        assert_eq!(code, Some(0), "an early return is not a failure");
+
+        // The location is a real path, not the fallback drive.
+        let (_, stdout, _) = run("$PWD.Provider.Name; $PWD.Path").await;
+        assert!(stdout.starts_with("FileSystem"), "{stdout}");
+        assert!(!stdout.contains("JanWs:"), "{stdout}");
 
         // Relative paths resolve in the working directory it was started in.
         let (code, stdout, _) = run("(Convert-Path .).TrimEnd('/', '\\')").await;

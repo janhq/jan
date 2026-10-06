@@ -251,11 +251,6 @@ where
     block
 }
 
-/// The message for a confined spawn that never started. The advice is keyed to
-/// the error: `ERROR_ACCESS_DENIED` is the one case where a shell installed
-/// under the user profile is the likely cause, and every other failure used to
-/// be told the same thing - which sent the report that prompted this to
-/// reinstall Git for Windows system-wide on a machine that already had it.
 /// The shell's working directory: the long form of `workspace` (`long`, its
 /// canonical path) when that is still a drive path, else `workspace` as given.
 ///
@@ -271,6 +266,11 @@ fn working_dir(workspace: &Path, long: Option<PathBuf>) -> PathBuf {
     }
 }
 
+/// The message for a confined spawn that never started. The advice is keyed to
+/// the error: `ERROR_ACCESS_DENIED` is the one case where a shell installed
+/// under the user profile is the likely cause, and every other failure used to
+/// be told the same thing - which sent one report to reinstall a shell that
+/// was already installed system-wide.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
     /// `ERROR_ACCESS_DENIED`.
@@ -281,8 +281,9 @@ fn spawn_failure(program: &Path, error: &std::io::Error) -> String {
     match error.raw_os_error() {
         Some(DENIED) => format!(
             "could not start {} inside the sandbox: {error}. A shell installed \
-             under your user profile is unreadable to the sandbox; install \
-             Git for Windows system-wide instead.",
+             under your user profile is unreadable to the sandbox; install it \
+             system-wide (under Program Files), or unset JAN_AGENT_SHELL to use \
+             the built-in Windows PowerShell.",
             program.display()
         ),
         Some(ENVVAR_NOT_FOUND) => format!(
@@ -899,9 +900,6 @@ mod tests {
         );
     }
 
-    /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
-    /// are quoted as usual, but the command goes in cmd's `/S` form so its own
-    /// quotes are not turned into `\"`.
     /// A short or verbatim path becomes its long drive form; a mapped drive
     /// that resolves to UNC keeps its drive letter, which cmd can start in.
     #[test]
@@ -919,6 +917,9 @@ mod tests {
         assert_eq!(working_dir(mapped, None), PathBuf::from(r"Z:\proj"));
     }
 
+    /// cmd reads its own line, not `CommandLineToArgvW`'s: its fixed switches
+    /// are quoted as usual, but the command goes in cmd's `/S` form so its own
+    /// quotes are not turned into `\"`.
     #[test]
     fn the_cmd_command_line_hands_the_command_over_in_cmds_form() {
         let line = command_line(
