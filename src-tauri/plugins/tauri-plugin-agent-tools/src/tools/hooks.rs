@@ -202,6 +202,9 @@ pub struct HookSet {
     /// swallowed, because a hook that silently does not fire is worse than one
     /// that complains -- the user believes their policy is in force.
     load_notices: Vec<String>,
+    /// The subset of `load_notices` from [`super::renamed_shell_notice`].
+    #[serde(skip)]
+    renamed_shell_notices: Vec<String>,
 }
 
 impl HookSet {
@@ -225,6 +228,13 @@ impl HookSet {
     /// See [`Self::load_notices`].
     pub fn load_notices(&self) -> &[String] {
         &self.load_notices
+    }
+
+    /// The load notices for matchers that still name the shell tool's old
+    /// name `bash`. Kept apart so a surface with no run start (the desktop's
+    /// per-call command) can put them on the shell call they no longer guard.
+    pub fn renamed_shell_notices(&self) -> &[String] {
+        &self.renamed_shell_notices
     }
 
     /// Append entries from one source, skipping any whose event name is not
@@ -270,6 +280,7 @@ impl HookSet {
             // but said out loud: a guard hook on `bash` no longer fires.
             let hook_where = format!("Hook {} matcher in {where_}", event.as_str());
             if let Some(notice) = super::renamed_shell_notice(&matcher, &hook_where) {
+                self.renamed_shell_notices.push(notice.clone());
                 self.load_notices.push(notice);
             }
             self.hooks.push(Hook {
@@ -707,6 +718,7 @@ mod tests {
         let notice = &set.load_notices()[0];
         assert!(notice.contains("PreToolUse matcher in hooks.json"), "{notice}");
         assert!(notice.contains("now `shell`"), "{notice}");
+        assert_eq!(set.renamed_shell_notices(), set.load_notices());
         assert_eq!(set.matching(HookEvent::PreToolUse, Some("shell")).len(), 1);
     }
 
