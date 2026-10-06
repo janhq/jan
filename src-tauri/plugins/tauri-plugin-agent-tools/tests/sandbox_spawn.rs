@@ -68,6 +68,25 @@ mod windows {
             let (ok, out) = rt.block_on(spawn(shell, &ws, "echo ok"));
             if !ok && shell.kind == ShellKind::PowerShell {
                 eprintln!("{label} diagnostics:\n{}", rt.block_on(spawn(shell, &ws, PS_PROBE)).1);
+                // Explicit Import-Module works where autoload does not, so try
+                // each candidate fix for autoload in the same run.
+                let cache = ws.join("ps-analysis-cache");
+                let cache = cache.to_string_lossy().into_owned();
+                let modules = shell
+                    .program
+                    .parent()
+                    .map(|p| p.join("Modules").to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let variants: [Variant; 4] = [
+                    ("analysis cache in the workspace", vec![("PSModuleAnalysisCachePath".into(), cache)], "echo ok"),
+                    ("analysis cache off", vec![("PSModuleAnalysisCachePath".into(), "NUL".into())], "echo ok"),
+                    ("PSModulePath = PSHOME only", vec![("PSModulePath".into(), modules)], "echo ok"),
+                    ("explicit import", vec![], "Import-Module Microsoft.PowerShell.Utility; echo ok"),
+                ];
+                for (name, set, command) in &variants {
+                    let (ok, out) = rt.block_on(spawn_with(shell, &ws, command, set));
+                    eprintln!("{label} variant [{name}]: ok={ok} out={}", out.trim());
+                }
             }
             assert!(ok, "{label}: a command must start and succeed in the sandbox: {out}");
             assert!(out.contains("ok"), "{label}: output lost: {out}");
@@ -82,6 +101,9 @@ mod windows {
         let _ = std::fs::remove_dir_all(&ws);
     }
 
+    /// A diagnostic re-run: its label, extra environment, and command.
+    type Variant<'a> = (&'a str, Vec<(String, String)>, &'a str);
+
     /// What PowerShell sees of its module search, using only the engine and
     /// .NET -- no cmdlet a broken module search would fail to find.
     const PS_PROBE: &str = r#"
@@ -90,6 +112,10 @@ mod windows {
 "PSModulePath(env)=" + [Environment]::GetEnvironmentVariable('PSModulePath')
 "LOCALAPPDATA=" + $env:LOCALAPPDATA
 "Personal=" + [Environment]::GetFolderPath('Personal')
+"LanguageMode=" + $ExecutionContext.SessionState.LanguageMode
+"AutoLoad=" + $PSModuleAutoLoadingPreference
+"CacheDir exists=" + [IO.Directory]::Exists("$env:LOCALAPPDATA\Microsoft\Windows\PowerShell")
+try { Get-Command Write-Output -ErrorAction Stop | Out-Null; "Get-Command ok" } catch { "Get-Command failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message }
 foreach ($p in ($env:PSModulePath -split ';')) { "  dir $p exists=" + [IO.Directory]::Exists($p) }
 "Utility psd1 exists=" + [IO.File]::Exists("$PSHOME\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1")
 try { Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop; "Import-Module ok" } catch { "Import-Module failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message }
@@ -99,9 +125,20 @@ try { Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop; "Import-Modu
     /// `jail::wrap` turns the shell into the helper re-exec, and `proc::spawn`
     /// clears the environment down to the allowlist before starting it.
     async fn spawn(shell: &ShellConfig, ws: &Path, command: &str) -> (bool, String) {
+        spawn_with(shell, ws, command, &[]).await
+    }
+
+    /// [`spawn`] with extra variables set in the shell's environment.
+    async fn spawn_with(
+        shell: &ShellConfig,
+        ws: &Path,
+        command: &str,
+        set: &[(String, String)],
+    ) -> (bool, String) {
         let policy = Policy::new(ws, false);
         let wrapped = jail::wrap(shell, &policy).expect("AppContainer wrapper");
-        let child = proc::spawn(&wrapped, command, ws, None, ShellEnv::default(), None)
+        let env = ShellEnv { passthrough: &[], set };
+        let child = proc::spawn(&wrapped, command, ws, None, env, None)
             .await
             .expect("spawn the helper");
         let pid = child.id();
