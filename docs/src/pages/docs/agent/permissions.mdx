@@ -148,6 +148,21 @@ permanently would leave no way to run a single command without it.
 `backend` is the confinement that *would* be used. `none` means none is available on this machine -
 with `enabled: true` that combination is what withholds `bash` entirely.
 
+### Which shell runs commands
+
+On macOS and Linux the `bash` tool runs `bash` (or `sh` where there is none). On Windows it runs
+PowerShell, never a bash: the sandbox is an AppContainer, and Git Bash's MSYS runtime cannot start
+inside one. Jan uses the first of these that it finds:
+
+1. PowerShell 7 (`pwsh`), unless it is only the Microsoft Store alias, which cannot start inside
+   the sandbox.
+2. Windows PowerShell 5.1, which ships with Windows.
+3. `cmd.exe`.
+
+The model is told which shell it has, so it writes PowerShell or cmd syntax when that is what
+runs. Hooks and plugin tools use the same shell. To force a specific shell, set
+`JAN_AGENT_SHELL` to its full path.
+
 ### The shell environment
 
 The shell does **not** inherit your full environment. Jan starts it from a minimal base -
