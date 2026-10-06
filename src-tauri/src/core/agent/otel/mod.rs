@@ -58,11 +58,14 @@ const ERROR_CAP: usize = 512;
 /// The wait before retrying an export the collector asked to be retried,
 /// when it did not say how long.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
-/// The longest `Retry-After` honoured; a longer one drops the batch instead.
+/// The longest `Retry-After` honoured; a longer one counts as a failed export.
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 /// Telemetry capabilities this build reports in `jan cli agent status`.
-pub const CAPABILITIES: &[&str] = &[];
+/// `otlp-delta`: `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta` is
+/// honoured and every metric point carries `session.id`, so a backend that
+/// sums delta points per session can fold them.
+pub const CAPABILITIES: &[&str] = &["otlp-delta"];
 
 /// Per-token prices for `(provider, model)`, when the catalog knows them.
 pub type Pricer = Box<dyn Fn(Option<&str>, &str) -> Option<TokenRates> + Send + Sync>;
@@ -626,6 +629,16 @@ fn random_ids() -> ([u8; 16], [u8; 8]) {
     }
 }
 
+/// What one metrics export took out of [`State`]: the series it cleared or
+/// evicted and the window it closed. Handed back to [`State::export_failed`]
+/// when the export never reached the collector, so nothing is lost with it.
+pub struct Exported {
+    counters: BTreeMap<SeriesKey, f64>,
+    closed_sessions: HashSet<String>,
+    last_export_nanos: u64,
+    dropped_reported: u64,
+}
+
 /// Everything the worker folds signals into. Pure: no I/O, so the mapping from
 /// events to metrics and logs is testable without a collector.
 pub struct State {
@@ -1043,7 +1056,11 @@ impl State {
                 self.log(wall, "jan_agent.api_request", false, session.as_deref(), child.as_ref(), fields);
             }
             EventSignal::Step => {
-                let mut attrs = Vec::new();
+                // Carries the run's session like every other point, so a
+                // backend that groups by `session.id` never sees a turn with
+                // no session to put it in.
+                let session = self.session_of(&run);
+                let mut attrs = self.session_attr(session.as_deref());
                 attrs.push(metric_attr("agent", if child.is_some() { "subagent" } else { "main" }));
                 self.add("jan_agent.turn.count", attrs, 1.0);
             }
@@ -1207,8 +1224,16 @@ impl State {
             ),
         };
         let mut by_name: BTreeMap<&'static str, Vec<Point>> = BTreeMap::new();
-        let dropped_key = ("jan_agent.telemetry.dropped", Vec::new());
-        let dropped_entry = (dropped > 0).then_some((&dropped_key, dropped as f64));
+        // A delta window's drops go under the session it happened in, like
+        // every other point. A cumulative total stays process-wide: moving a
+        // running total between sessions' series would count it twice.
+        let dropped_attrs = match temporality {
+            Temporality::Delta => self.session_attr(self.main_session.as_deref()),
+            Temporality::Cumulative => Vec::new(),
+        };
+        let dropped_key = ("jan_agent.telemetry.dropped", dropped_attrs);
+        let dropped_entry =
+            (dropped > 0 && self.dropped_reportable()).then_some((&dropped_key, dropped as f64));
         for ((name, attrs), value) in self
             .counters
             .iter()
@@ -1246,28 +1271,67 @@ impl State {
             .collect()
     }
 
+    /// Whether a delta window's drops can be exported now. With session ids
+    /// on, they wait for a session to carry them rather than go out as the
+    /// only point with none, which a backend grouping by `session.id` would
+    /// file as a session of its own; the count is kept until then.
+    fn dropped_reportable(&self) -> bool {
+        self.cfg.temporality == Temporality::Cumulative
+            || !self.cfg.metrics_session_id
+            || self.main_session.is_some()
+    }
+
     /// The snapshot [`State::metrics`] took at `now` was handed to the
     /// exporter. Delta starts the next window here, empty; cumulative drops
     /// the series of sessions closed since the last export, whose final
     /// values that snapshot carried, so a long-lived host's series stay
-    /// bounded by its live sessions.
-    pub fn exported(&mut self, now: u64, dropped: u64) {
+    /// bounded by its live sessions. What it took comes back as an
+    /// [`Exported`], for [`State::export_failed`] if the export never landed.
+    pub fn exported(&mut self, now: u64, dropped: u64) -> Exported {
+        let mut taken = Exported {
+            counters: BTreeMap::new(),
+            closed_sessions: HashSet::new(),
+            last_export_nanos: self.last_export_nanos,
+            dropped_reported: self.dropped_reported,
+        };
         match self.cfg.temporality {
             Temporality::Delta => {
-                self.counters.clear();
+                taken.counters = std::mem::take(&mut self.counters);
                 self.last_export_nanos = now;
-                self.dropped_reported = dropped;
+                if self.dropped_reportable() {
+                    self.dropped_reported = dropped;
+                }
             }
             Temporality::Cumulative => {
                 let closed = std::mem::take(&mut self.closed_sessions);
                 if !closed.is_empty() {
-                    self.counters.retain(|(_, attrs), _| {
-                        !attrs
-                            .iter()
-                            .any(|(k, v)| k == "session.id" && closed.contains(v))
-                    });
+                    let (gone, kept): (BTreeMap<_, _>, BTreeMap<_, _>) = std::mem::take(&mut self.counters)
+                        .into_iter()
+                        .partition(|((_, attrs), _)| {
+                            attrs.iter().any(|(k, v)| k == "session.id" && closed.contains(v))
+                        });
+                    self.counters = kept;
+                    taken.counters = gone;
                 }
+                taken.closed_sessions = closed;
             }
+        }
+        taken
+    }
+
+    /// The export [`State::exported`] was handed to never reached the
+    /// collector: put back what it took, so the next export carries it. A
+    /// delta window resumes from where the failed one started, with what
+    /// accrued meanwhile added on; a closed session's cumulative series wait
+    /// for the next export to carry their final values.
+    pub fn export_failed(&mut self, taken: Exported) {
+        for (key, value) in taken.counters {
+            *self.counters.entry(key).or_insert(0.0) += value;
+        }
+        self.closed_sessions.extend(taken.closed_sessions);
+        if self.cfg.temporality == Temporality::Delta {
+            self.last_export_nanos = taken.last_export_nanos;
+            self.dropped_reported = taken.dropped_reported;
         }
     }
 }
@@ -1385,12 +1449,20 @@ impl Worker {
             return;
         }
         self.metrics_dirty = false;
-        self.state.exported(now, dropped);
+        let taken = self.state.exported(now, dropped);
         let body = target.protocol.encode(
             || encode::metrics_json(&self.origin, &metrics),
             || encode::metrics_proto(&self.origin, &metrics),
         );
-        self.post(&target, body, "metrics").await;
+        if !self.post(&target, body, "metrics").await {
+            // No 2xx: a delta window that was cleared would otherwise be lost
+            // for good, so the next export carries it again. An export that
+            // did land but whose answer never came back is then counted twice;
+            // that is rarer, and smaller, than losing every failed window.
+            self.state.export_failed(taken);
+            self.metrics_dirty = true;
+            log::debug!("telemetry: metrics kept for the next export");
+        }
     }
 
     async fn export_logs(&mut self) {
@@ -1427,7 +1499,9 @@ impl Worker {
     /// retried: no collector is listening, and waiting on one would only hold
     /// up the process's exit. Failures are the collector's problem, not the
     /// run's: logged at debug (never the URL's headers) and otherwise ignored.
-    async fn post(&self, target: &Target, body: Vec<u8>, signal: &str) {
+    /// Returns whether the collector accepted the batch, so metrics can keep
+    /// a window whose export failed.
+    async fn post(&self, target: &Target, body: Vec<u8>, signal: &str) -> bool {
         let mut request = self
             .client
             .post(&target.url)
@@ -1439,7 +1513,7 @@ impl Worker {
         // A byte body clones by reference count, so the retry copies nothing.
         let retry = request.try_clone();
         let delay = match request.send().await {
-            Ok(response) if response.status().is_success() => return,
+            Ok(response) if response.status().is_success() => return true,
             Ok(response) => {
                 let status = response.status();
                 let retry_after =
@@ -1453,14 +1527,18 @@ impl Worker {
                 None
             }
         };
-        let (Some(delay), Some(retry)) = (delay, retry) else { return };
+        let (Some(delay), Some(retry)) = (delay, retry) else { return false };
         tokio::time::sleep(delay).await;
         match retry.send().await {
-            Ok(response) if response.status().is_success() => {}
+            Ok(response) if response.status().is_success() => true,
             Ok(response) => {
-                log::debug!("telemetry: {signal} export rejected on retry, dropped: HTTP {}", response.status())
+                log::debug!("telemetry: {signal} export rejected on retry: HTTP {}", response.status());
+                false
             }
-            Err(e) => log::debug!("telemetry: {signal} export failed on retry, dropped: {}", e.without_url()),
+            Err(e) => {
+                log::debug!("telemetry: {signal} export failed on retry: {}", e.without_url());
+                false
+            }
         }
     }
 }
