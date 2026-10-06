@@ -8,6 +8,15 @@
 //! `xargs`, `find -exec`, `sudo`, ...) are reported as [`CommandScan::Opaque`]
 //! so the gate always prompts for them. The scan fails safe: any construct it
 //! cannot resolve degrades toward prompting, never toward silent allow.
+//!
+//! A grant on a base only means something while that name still resolves to
+//! the program the user approved. So a segment yields bases only when it is a
+//! plain invocation: a literal command word with arguments that the shell
+//! expands but never evaluates as code. Anything that can change what a name
+//! resolves to (aliases, functions, `hash`, `PATH`, modules), or that
+//! evaluates text from a variable (bash arithmetic, PowerShell member calls),
+//! makes the command opaque. A path stays part of its base: `./ls` is not
+//! `ls`, and a grant on one does not cover the other.
 
 use std::collections::BTreeSet;
 
@@ -28,7 +37,37 @@ pub enum CommandScan {
 /// `alias ls='rm -rf ~'` makes a later, already granted `ls` run its value.
 const OPAQUE: &[&str] = &[
     "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch", "alias", "shopt",
+    // Defining a function renames a later base; PowerShell's `filter` too.
+    "function", "filter",
+    // The bash builtins (a closed set) that redefine a name or run text as
+    // code: `hash -p /bin/rm ls` and `enable -f x.so ls` repoint `ls`; `trap`,
+    // `bind -x`, `complete -C`, `compgen -C` and `fc` run their argument;
+    // `declare`/`typeset`/`local`/`readonly`/`let`/`getopts`/`mapfile`
+    // assign through names whose `a[...]` subscript bash evaluates, running
+    // any `$(...)` in it.
+    "hash", "enable", "trap", "bind", "complete", "compgen", "compopt", "fc", "declare",
+    "typeset", "local", "readonly", "let", "getopts", "mapfile", "readarray",
 ];
+/// Builtins that assign to the variable names in their arguments. Plain when
+/// every name is an ordinary one: not one of [`RESOLUTION_VARS`] and with no
+/// `[...]` subscript, which bash evaluates as arithmetic.
+const ASSIGNING_BUILTINS: &[&str] = &["export", "unset", "read", "set"];
+/// Shell and loader variables that decide which program a name runs, or that
+/// run code on their own (`BASH_ENV`, `PS4` under `set -x`). Assigning one
+/// changes what an already granted base means. Matched case-insensitively.
+const RESOLUTION_VARS: &[&str] = &[
+    "path", "pathext", "comspec", "psmodulepath", "bash_env", "env", "bashopts",
+    "shellopts", "ps4", "prompt_command", "ifs", "execignore", "bash_loadables_path",
+];
+/// Prefixes of [`RESOLUTION_VARS`]: the dynamic loaders' preload and search
+/// variables, and bash's exported functions.
+const RESOLUTION_VAR_PREFIXES: &[&str] = &["ld_", "dyld_", "bash_func_"];
+/// PowerShell variables that change what a later command does:
+/// `$PSDefaultParameterValues` adds parameters to every call of a cmdlet.
+const PS_RESOLUTION_VARS: &[&str] = &["psdefaultparametervalues", "psmoduleautoloadingpreference"];
+/// `[[ ]]` operators that evaluate an operand as arithmetic (or, for `-v`, a
+/// subscript), which runs any `$(...)` in a variable's value.
+const ARITHMETIC_TESTS: &[&str] = &["-eq", "-ne", "-lt", "-le", "-gt", "-ge", "-v"];
 /// Windows shells, PowerShell's run-this-text commands, and the cmdlets (with
 /// their aliases) that run a `{ ... }` script block. Their argument is code in
 /// a language this scanner does not parse, so a grant on one of them must
@@ -57,19 +96,288 @@ const WINDOWS_OPAQUE: &[&str] = &[
     // The item and content cmdlets write to any provider, including Function
     // and Alias, and their path can be assembled at run time
     // (`Set-Item "${a}:ls"`), which no text check can see through. Their
-    // `cp`/`mv`/... aliases are handled by `POWERSHELL_ITEM_ALIASES`, since
+    // `cp`/`mv`/... aliases are handled by `POWERSHELL_ONLY_OPAQUE`, since
     // those names are ordinary file commands outside PowerShell.
     "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
     "move-item", "mi", "set-content", "add-content", "ac", "clear-content", "clc",
     // A module's exported functions join the session and take precedence over
     // a program of the same name, so importing one can redefine a granted base.
     "import-module", "ipmo",
+    // A variable can be named at run time (`Set-Variable -Name $n`), and a
+    // compiled type or a ScriptProperty runs code on a later member access.
+    "set-variable", "sv", "new-variable", "nv", "add-type", "update-typedata",
+    // cmd's `path` sets `PATH`.
+    "path",
 ];
-/// PowerShell's aliases for the item cmdlets above. Under bash or cmd these
-/// are ordinary file commands that a grant may cover; only PowerShell turns
-/// them into `Copy-Item`/`Move-Item`/`Rename-Item`, whose path can be built
-/// at run time (`cp x "${a}:ls"`).
-const POWERSHELL_ITEM_ALIASES: &[&str] = &["cp", "copy", "mv", "move", "ren"];
+/// Names that are ordinary commands under bash or cmd but PowerShell aliases
+/// of opaque cmdlets: `cp`/`copy`/`mv`/`move`/`ren` are the item cmdlets,
+/// whose path can be built at run time (`cp x "${a}:ls"`), and `set` is
+/// `Set-Variable`.
+const POWERSHELL_ONLY_OPAQUE: &[&str] = &["cp", "copy", "mv", "move", "ren", "set"];
+
+/// Whether assigning `name` (a variable name, optionally `+=`-suffixed or
+/// with an `env:` drive) can change what a granted base runs.
+fn is_resolution_var(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let lower = lower.trim_end_matches('+');
+    let lower = lower.strip_prefix("env:").unwrap_or(lower);
+    RESOLUTION_VARS.contains(&lower) || RESOLUTION_VAR_PREFIXES.iter().any(|p| lower.starts_with(p))
+}
+
+/// Whether a `NAME=value` token assigns one of [`RESOLUTION_VARS`].
+fn assigns_resolution_var(token: &str) -> bool {
+    token.split_once('=').is_some_and(|(name, _)| is_resolution_var(name))
+}
+
+/// Whether a PowerShell assignment target (`$env:PATH`, `${global:x}`,
+/// `[string]$env:Path`) is a variable that changes what a later command runs.
+fn ps_target_is_resolution(token: &str) -> bool {
+    let token = match token.strip_prefix('[') {
+        Some(cast) => cast.split_once(']').map_or("", |(_, rest)| rest),
+        None => token,
+    };
+    let target = token.trim_start_matches('$').trim_start_matches('{').to_ascii_lowercase();
+    let name: String = target
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == ':')
+        .collect();
+    let name = ["global:", "script:", "local:", "private:"]
+        .iter()
+        .find_map(|scope| name.strip_prefix(scope))
+        .unwrap_or(&name);
+    match name.strip_prefix("env:") {
+        Some(var) => is_resolution_var(var),
+        None => PS_RESOLUTION_VARS.contains(&name),
+    }
+}
+
+/// Whether an [`ASSIGNING_BUILTINS`] call assigns anything but an ordinary
+/// variable: one of [`RESOLUTION_VARS`] (`export PATH=...`, cmd's
+/// `set PATH=...`), or a subscripted name (`read 'a[$(rm x)]'`).
+fn assigns_unsafely(args: &[String]) -> bool {
+    args.iter().any(|t| {
+        let name = t.split_once('=').map_or(t.as_str(), |(name, _)| name);
+        name.contains('[') || is_resolution_var(name)
+    })
+}
+
+/// Whether `s` holds a bash arithmetic evaluation that can read a variable:
+/// `$((x))` or a bare `(( x ))`. Bash evaluates a variable's value as an
+/// expression there, and an `a[$(rm x)]` in that value runs its command, so
+/// a value read from a file can run code behind granted bases. A `$((...))`
+/// of digits and operators only is plain. Expansions run inside double
+/// quotes too, so only single-quoted text is skipped, and a `'` inside double
+/// quotes is literal. Under bash or cmd (`params`), parameter expansions that
+/// evaluate code count too ([`param_evaluates_code`]); PowerShell's
+/// `${...}` is only a variable name (`${env:Path}`).
+fn has_arithmetic(s: &str, params: bool) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if in_single {
+            in_single = c != '\'';
+            i += 1;
+            continue;
+        }
+        match c {
+            '\\' => i += 1,
+            '\'' if !in_double => in_single = true,
+            '"' => in_double = !in_double,
+            '$' if params
+                && chars.get(i + 1) == Some(&'{')
+                && param_evaluates_code(&chars[i + 2..]) =>
+            {
+                return true;
+            }
+            // Bash's legacy `$[expr]` arithmetic.
+            '$' if chars.get(i + 1) == Some(&'[') => return true,
+            '(' if chars.get(i + 1) == Some(&'(') => {
+                if i == 0 || chars[i - 1] != '$' {
+                    // `((` inside double quotes is text, not a command.
+                    if in_double {
+                        i += 1;
+                        continue;
+                    }
+                    return true;
+                }
+                let end = skip_balanced(&chars, i + 1).min(chars.len());
+                let literal = |ch: &char| ch.is_ascii_digit() || " +-*/%()".contains(*ch);
+                if !chars[i + 2..end].iter().all(literal) {
+                    return true;
+                }
+                i = end;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
+
+/// Whether the parameter expansion whose body starts at `body` (just past
+/// `${`) can evaluate a variable's value as code. Only known-plain forms
+/// pass: a name (or `#name` for its length) with an optional literal
+/// subscript (`${a[0]}`, `${a[@]}`), then `}`, a literal substring offset
+/// (`${x:1}`, `${x: -2:1}`), a default operator (`:-`, `-`, `:=`, ...) or a
+/// pattern operator (`#`, `%`, `/`, `^`, `,`). Everything else is code:
+/// subscripts and offsets that read a variable are arithmetic (`${a[$i]}`,
+/// `${x:$n}`), `${!x}` resolves a name held in `x` (an `a[$(...)]` there
+/// runs), and `${x@P}` runs the `$(...)` in `x`'s value.
+fn param_evaluates_code(body: &[char]) -> bool {
+    let mut j = 0;
+    if body.first() == Some(&'#') && body.get(1).is_some_and(|c| *c != '}') {
+        j += 1;
+    }
+    let name_start = j;
+    while body.get(j).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') {
+        j += 1;
+    }
+    // A special parameter (`${#}`, `${?}`, `${@}`), never `!`.
+    if j == name_start {
+        if !matches!(body.get(j), Some('@' | '*' | '#' | '?' | '$' | '-')) {
+            return true;
+        }
+        j += 1;
+    }
+    if body.get(j) == Some(&'[') {
+        let Some(len) = body[j + 1..].iter().position(|&c| c == ']') else {
+            return true;
+        };
+        let sub = &body[j + 1..j + 1 + len];
+        let literal = sub.iter().all(|c| c.is_ascii_digit())
+            || sub == ['@']
+            || sub == ['*'];
+        if !literal || sub.is_empty() {
+            return true;
+        }
+        j += len + 2;
+    }
+    match body.get(j) {
+        Some('}' | '-' | '=' | '+' | '?' | '#' | '%' | '/' | '^' | ',') => false,
+        Some(':') if matches!(body.get(j + 1), Some('-' | '=' | '+' | '?')) => false,
+        Some(':') => {
+            let end = body[j..].iter().position(|&c| c == '}').map_or(body.len(), |e| j + e);
+            !body[j + 1..end]
+                .iter()
+                .all(|c| c.is_ascii_digit() || matches!(c, ' ' | '-' | ':'))
+        }
+        _ => true,
+    }
+}
+
+/// Whether `s` holds a bash compound array assignment, `a=(...)` or
+/// `a+=(...)`, outside single quotes. Bash evaluates each `[key]=` subscript
+/// in it as arithmetic (`a=([$i]=x)`), and segment splitting cuts it apart at
+/// the parens, so the whole form prompts. Applied under every shell: the
+/// form is rare outside bash, and a quote-tracking slip is then never a gap.
+fn has_compound_assignment(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut in_single = false;
+    let mut in_double = false;
+    let mut escaped = false;
+    for (i, &c) in chars.iter().enumerate() {
+        if in_single {
+            in_single = c != '\'';
+            continue;
+        }
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' => escaped = true,
+            // A `'` inside double quotes is a literal, not a string opener.
+            '\'' if !in_double => in_single = true,
+            '"' => in_double = !in_double,
+            '=' if chars.get(i + 1) == Some(&'(') => {
+                let before = if i > 0 && chars[i - 1] == '+' { i - 1 } else { i };
+                let name_end = before.checked_sub(1).map(|p| chars[p]);
+                if name_end.is_some_and(|p| p.is_ascii_alphanumeric() || p == '_' || p == ']') {
+                    return true;
+                }
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether `s` holds a bash function definition header, `name()` or
+/// `name ( )`, outside quotes. Its body may be a subshell or a compound
+/// command rather than a brace group, which [`has_block`] would catch.
+fn has_empty_parens(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut quote: Option<char> = None;
+    for (i, &c) in chars.iter().enumerate() {
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '(' if chars[i + 1..].iter().find(|ch| !ch.is_whitespace()) == Some(&')') => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Whether a PowerShell segment reads a member, index or method of a
+/// variable outside quotes (`$x.Invoke()`, `$a[0]`, `$t::Run()`). In argument
+/// mode PowerShell evaluates these, and a property or method can run code
+/// (`$ExecutionContext.InvokeCommand.InvokeScript(...)`). Inside double
+/// quotes only the variable itself expands, so those are plain.
+fn has_member_access(seg: &str) -> bool {
+    let chars: Vec<char> = seg.chars().collect();
+    let mut quote: Option<char> = None;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '\'' | '"' => quote = Some(c),
+            '$' => {
+                let mut j = i + 1;
+                if chars.get(j) == Some(&'{') {
+                    match chars[j..].iter().position(|&ch| ch == '}') {
+                        Some(end) => j += end + 1,
+                        None => return true,
+                    }
+                } else {
+                    while j < chars.len()
+                        && (chars[j].is_ascii_alphanumeric()
+                            || chars[j] == '_'
+                            || (chars[j] == ':' && chars.get(j + 1) != Some(&':')))
+                    {
+                        j += 1;
+                    }
+                }
+                if matches!(chars.get(j), Some('.' | '[' | '(' | ':')) {
+                    return true;
+                }
+                i = j;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    false
+}
 
 fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
@@ -222,8 +530,10 @@ const SHELLS: &[&str] = &["sh", "bash", "dash", "zsh", "ksh", "ash"];
 const WRAPPERS: &[&str] = &[
     "nice", "nohup", "setsid", "time", "timeout", "stdbuf", "ionice", "chrt",
     "command", "builtin", "exec", "then", "else", "elif", "do", "if", "while",
-    "until", "for", "case", "function", "select", "coproc", "!",
+    "until", "for", "case", "select", "coproc", "!",
 ];
+/// [`WRAPPERS`] with a flag that takes a separate value.
+const VALUE_FLAG_WRAPPERS: &[&str] = &["nice", "timeout", "stdbuf", "ionice", "chrt", "exec"];
 
 /// Typographic quotes PowerShell accepts as `'` (U+2018-U+201B) and `"`
 /// (U+201C-U+201E), each closing a string any of its class opened.
@@ -246,6 +556,13 @@ pub fn scan_command_as(command: &str, kind: ShellKind) -> CommandScan {
     if command.contains(PS_UNICODE_QUOTES) || has_live_backtick(command) {
         return CommandScan::Opaque;
     }
+    // Bash's ANSI-C quoting (`$'\''`) lets `\'` escape a quote inside a
+    // single-quoted string, which every quote tracker here reads as the
+    // string's end. Matched anywhere, even inside quotes, since telling those
+    // apart needs the same tracking: `echo 'cost $'` prompts, harmlessly.
+    if command.contains("$'") {
+        return CommandScan::Opaque;
+    }
     let mut bases = BTreeSet::new();
     if scan_into(command, &mut bases, kind, 0) {
         CommandScan::Bases(bases)
@@ -258,6 +575,25 @@ pub fn scan_command_as(command: &str, kind: ShellKind) -> CommandScan {
 /// opaque construct is hit, which aborts the whole scan.
 fn scan_into(command: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth: usize) -> bool {
     if depth > 8 {
+        return false;
+    }
+    // Before extraction, which drops `$((...))` and splits on the parens of
+    // `(( ))` and `name()`.
+    if has_arithmetic(command, kind != ShellKind::PowerShell)
+        || has_empty_parens(command)
+        || has_compound_assignment(command)
+    {
+        return false;
+    }
+    // `[[ $n -eq 1 ]]` evaluates `$n`'s value as arithmetic. Checked over
+    // the whole command, not per segment: segment splitting cuts `[[ ]]` at
+    // its own `&&`/`||`, so `[[ x && git -eq $n ]]` would leave the operator
+    // in a segment with no `[[`. A `[[` is found as a substring because a
+    // control operator can be fused to it (`true;[[`). A `-eq` elsewhere in
+    // a command that has a `[[` also prompts, which is the safe side.
+    if command.contains("[[")
+        && tokenize(command, true).iter().any(|t| ARITHMETIC_TESTS.contains(&t.as_str()))
+    {
         return false;
     }
     let (outer, subs) = extract_substitutions(command);
@@ -476,6 +812,9 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
     if touches_function_drive(&tokens) || touches_function_drive(&literal) {
         return false;
     }
+    if kind == ShellKind::PowerShell && has_member_access(seg) {
+        return false;
+    }
     let mut idx = 0;
     let mut guard = 0;
     loop {
@@ -484,6 +823,10 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
             return false;
         }
         while idx < tokens.len() && is_assignment(&tokens[idx]) {
+            // `PATH=/tmp/x ls` runs a different `ls`.
+            if assigns_resolution_var(&tokens[idx]) {
+                return false;
+            }
             idx += 1;
         }
         // PowerShell `$var = <command>` (also `$a.b = ...`, `+=`, `$x=cmd`):
@@ -501,7 +844,16 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         if tokens.get(idx).is_some_and(|t| t.starts_with('[') && t.contains("::")) {
             return false;
         }
-        if let Some(rest) = tokens.get(idx).and_then(|t| ps_assignment_rest(t)) {
+        // Only PowerShell has `$var = <cmd>` and `[type]$var` assignments. In
+        // bash a leading `$x` or `[k]=v` is a command word (`$x` runs what it
+        // holds) and is opaque below.
+        let ps_assignment = (kind == ShellKind::PowerShell)
+            .then(|| tokens.get(idx).and_then(|t| ps_assignment_rest(t)))
+            .flatten();
+        if let Some(rest) = ps_assignment {
+            if ps_target_is_resolution(&tokens[idx]) {
+                return false;
+            }
             let fused_op = tokens[idx].contains('=');
             let spaced_op = !fused_op
                 && tokens.get(idx + 1).is_some_and(|t| PS_ASSIGN_OPS.contains(&t.as_str()));
@@ -537,19 +889,48 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
         if base.is_empty() {
             return true;
         }
+        // An assignment the skip above did not take (`a[$i]=x`, `PS4+=x`):
+        // bash evaluates the subscript, and an appended value is code too.
+        // A command word built at run time (`l$x`, `/bin/r?`) names whatever
+        // it expands to, so a grant on its text would cover every value.
+        let word = tokens[idx].as_str();
+        if word != "[" && word != "[[" && word.contains(['=', '$', '*', '?', '[']) {
+            return false;
+        }
         // Windows resolves `SSH` and `ssh.exe` to `ssh`, so the POSIX list is
         // matched by that name too.
         if OPAQUE.contains(&base.as_str())
             || OPAQUE.contains(&windows_name(&base).as_str())
             || is_windows_opaque(&base)
             || (kind == ShellKind::PowerShell
-                && POWERSHELL_ITEM_ALIASES.contains(&windows_name(&base).as_str()))
+                && POWERSHELL_ONLY_OPAQUE.contains(&windows_name(&base).as_str()))
         {
+            return false;
+        }
+        let args = &tokens[idx + 1..];
+        if ASSIGNING_BUILTINS.contains(&windows_name(&base).as_str()) && assigns_unsafely(args) {
+            return false;
+        }
+        // `printf -v 'a[$(rm x)]'` and `test -v 'a[...]'` evaluate a
+        // subscript; `wait -p` assigns to a name.
+        let names_a_var = match base.as_str() {
+            // The name may be attached to the flag (`-v'a[$(rm x)]'`), and
+            // `wait`'s flags combine (`-np x`).
+            "printf" | "test" | "[" | "[[" => args.iter().any(|t| t.starts_with("-v")),
+            "wait" => args.iter().any(|t| {
+                t.starts_with('-') && !t.starts_with("--") && t.contains('p')
+            }),
+            _ => false,
+        };
+        if names_a_var {
             return false;
         }
         if base == "env" {
             idx += 1;
             while idx < tokens.len() && is_assignment(&tokens[idx]) {
+                if assigns_resolution_var(&tokens[idx]) {
+                    return false;
+                }
                 idx += 1;
             }
             // `env -flag ...` can consume the command with a value-flag we can't
@@ -576,8 +957,27 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
             // any inline assignments to reach the wrapped command.
             while idx < tokens.len() {
                 let t = &tokens[idx];
-                let numeric = t.chars().next().is_some_and(|c| c.is_ascii_digit());
-                if t.starts_with('-') || numeric || is_assignment(t) {
+                let numeric = |t: &str| t.chars().next().is_some_and(|c| c.is_ascii_digit());
+                if is_assignment(t) && assigns_resolution_var(t) {
+                    return false;
+                }
+                if t == "--" {
+                    idx += 1;
+                    break;
+                }
+                // A bare flag followed by a word may take that word as its
+                // value (`timeout -s KILL 5 rm`, `exec -a ls rm`), so which
+                // token is the command is ambiguous. Attached values
+                // (`-oL`, `--signal=KILL`) are not.
+                let bare_flag = (t.len() == 2 && t.starts_with('-') && !numeric(&t[1..]))
+                    || (t.starts_with("--") && !t.contains('='));
+                if bare_flag
+                    && VALUE_FLAG_WRAPPERS.contains(&base.as_str())
+                    && tokens.get(idx + 1).is_some_and(|n| !n.starts_with('-') && !numeric(n))
+                {
+                    return false;
+                }
+                if t.starts_with('-') || numeric(t) || is_assignment(t) {
                     idx += 1;
                 } else {
                     break;
@@ -585,7 +985,14 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
             }
             continue;
         }
-        bases.insert(base);
+        // A path names one file, not whatever a bare name resolves to, so it
+        // stays part of the base: a grant on `ls` must not cover `./ls`.
+        // (A `\` path already prompts: the two readings of `\` disagree.)
+        if literal[idx].contains('/') {
+            bases.insert(literal[idx].clone());
+        } else {
+            bases.insert(base);
+        }
         return true;
     }
 }
@@ -691,8 +1098,8 @@ mod tests {
     }
 
     #[test]
-    fn strips_directory_prefix() {
-        assert_eq!(bases("/usr/bin/git commit -m x"), set(&["git"]));
+    fn a_path_is_its_own_base() {
+        assert_eq!(bases("/usr/bin/git commit -m x"), set(&["/usr/bin/git"]));
     }
 
     #[test]
@@ -957,24 +1364,198 @@ mod tests {
             ("$files = Get-ChildItem", "Get-ChildItem"),
             ("$x=rm -rf ~", "rm"),
             ("$x= rm -rf ~", "rm"),
-            ("$a.b += Remove-Item x", "Remove-Item"),
             ("$x ??= Get-Item a", "Get-Item"),
-        ] {
-            assert_eq!(bases(command), set(&[base]), "{command}");
-        }
-        for (command, base) in [
             ("[string]$x = rm -rf ~", "rm"),
             ("[int] $x = Remove-Item a", "Remove-Item"),
             ("${x} = rm -rf ~", "rm"),
-            ("$a[0] = rm -rf ~", "rm"),
-            ("$a[0]=rm -rf ~", "rm"),
             ("[int]$x=Get-Item a", "Get-Item"),
         ] {
-            assert_eq!(bases(command), set(&[base]), "{command}");
+            assert_eq!(
+                scan_command_as(command, ShellKind::PowerShell),
+                CommandScan::Bases(set(&[base])),
+                "{command}"
+            );
+            // Bash has no such assignment: `$x = rm` runs what `$x` holds.
+            assert_eq!(
+                scan_command_as(command, ShellKind::Posix),
+                CommandScan::Opaque,
+                "{command}"
+            );
+        }
+        assert_eq!(scan_command_as("[$i]=git", ShellKind::Posix), CommandScan::Opaque);
+        // A property or element target can run a setter, so under PowerShell
+        // it is not a plain assignment.
+        for command in ["$a.b += Remove-Item x", "$a[0] = rm -rf ~", "$a[0]=rm -rf ~"] {
+            assert_eq!(
+                scan_command_as(command, ShellKind::PowerShell),
+                CommandScan::Opaque,
+                "{command}"
+            );
         }
         // `&` splits segments, so a bare `$x` reads like `& $x`: it prompts.
         assert_eq!(scan_command("$x | rm y"), CommandScan::Opaque);
-        assert!(bases("$x =").is_empty(), "nothing to run, so nothing a grant covers");
+        assert_eq!(
+            scan_command_as("$x =", ShellKind::PowerShell),
+            CommandScan::Bases(set(&[])),
+            "nothing to run, so nothing a grant covers"
+        );
+    }
+
+    /// janhq/jan#9142: a grant covers a segment only while it is a plain
+    /// invocation. Every way to change what a granted name runs, or to run a
+    /// variable's value as code, prompts instead.
+    #[test]
+    fn only_plain_invocations_are_covered_by_a_grant() {
+        let opaque = |command: &str, kind: ShellKind| {
+            assert_eq!(scan_command_as(command, kind), CommandScan::Opaque, "{command} ({kind:?})");
+        };
+        let plain = |command: &str, kind: ShellKind, expected: &[&str]| {
+            assert_eq!(
+                scan_command_as(command, kind),
+                CommandScan::Bases(set(expected)),
+                "{command} ({kind:?})"
+            );
+        };
+        for kind in [ShellKind::Posix, ShellKind::PowerShell, ShellKind::Cmd] {
+            for command in [
+                // Function definitions, with any body.
+                "function git { rm -rf ~; }; git status",
+                "function git ( rm -rf ~ ); git status",
+                "git() ( rm -rf ~ ); git status",
+                "git () ( rm -rf ~ )",
+                "filter git { rm x }",
+                // Builtins that repoint a name or run their argument.
+                "hash -p /bin/rm ls; ls -rf ~",
+                "enable -f ./x.so ls; ls",
+                "trap 'rm -rf ~' EXIT; ls",
+                "bind -x '\"a\": rm x'",
+                "complete -C 'rm x' ls",
+                "fc -s ls=rm",
+                "declare -n x=y",
+                "typeset a",
+                "local x=1",
+                "readonly x=1",
+                "let x=1",
+                "mapfile -t a < f",
+                // Arithmetic evaluates a variable's value as code.
+                "echo $((x + 1))",
+                "(( x++ ))",
+                "[[ $n -eq 1 ]] && ls",
+                "[[ -v 'a[$(rm x)]' ]]",
+                "[[ x && git -eq $n ]]",
+                "[[ x || y -lt $n ]] && ls",
+                "true;[[ $n -eq 1 ]]",
+                "true&&[[ $n -gt 1 ]]",
+                "(x)||[[ $n -ne 1 ]]",
+                "echo \"'\"; a=(git [$i]=y); echo \"'\"",
+                "printf -v 'a[$(rm x)]' x",
+                "printf -v'a[$(rm -rf ~)]' x",
+                "wait -np x",
+                "wait -p x",
+                // A `'` inside double quotes does not open a string.
+                "echo \"'\" $(( $(rm -rf ~) )) \"'\"",
+                "echo \"$((x))\"",
+                "read 'a[$(rm x)]'",
+                "a[$(rm x)]=1 ls",
+                // Lookup variables decide which program a name runs.
+                "PATH=/tmp/evil:$PATH ls",
+                "export PATH=/tmp/evil",
+                "export BASH_ENV=./x.sh; bash x",
+                "LD_PRELOAD=./x.so ls",
+                "env PATH=/tmp ls",
+                "unset PATH",
+                "nice PATH=/tmp ls",
+                "set PATH=C:\\evil",
+                "path C:\\evil",
+                // A command word built at run time.
+                "l$x -la",
+                "/bin/r? x",
+                // A wrapper flag may take the next word as its value.
+                "timeout -s KILL 5 rm x",
+                "exec -a ls rm x",
+            ] {
+                opaque(command, kind);
+            }
+            // The ordinary, everyday commands are still plain.
+            plain("git status && cargo test -- --nocapture", kind, &["cargo", "git"]);
+            plain("export RUST_LOG=debug; echo $HOME", kind, &["echo", "export"]);
+            plain("FOO=1 npm run build", kind, &["npm"]);
+            plain("echo $((1 + 2))", kind, &["echo"]);
+            plain("echo \"((x))\" '$((x))'", kind, &["echo"]);
+            plain("echo ${a[0]} ${a[@]} ${#a[*]} ${x:1} ${x: -2:1}", kind, &["echo"]);
+            plain("echo ${x:-def} ${x:=d} ${x:+y} ${x//[a-z]/} ${x#*:}", kind, &["echo"]);
+            plain("echo ${#x} ${#} ${?} ${@} ${x%.*} ${x^^} ${x,} ${x-d}", kind, &["echo"]);
+            plain("printf '%s' x; wait -n", kind, &["printf", "wait"]);
+            plain("[ -f x ] && cat x", kind, &["[", "cat"]);
+            plain("[[ -f x ]]", kind, &["[["]);
+            plain("timeout 5 curl u", kind, &["curl"]);
+            plain("timeout --signal=KILL 5 curl u", kind, &["curl"]);
+            plain("nice -n 10 make", kind, &["make"]);
+            plain("stdbuf -oL make", kind, &["make"]);
+            plain("read -r line < f", kind, &["read"]);
+            plain("echo \"$(git rev-parse HEAD)\"", kind, &["echo", "git"]);
+            // A path stays the base: `./ls` is not the granted `ls`.
+            plain("./ls -la", kind, &["./ls"]);
+            plain("/usr/bin/git status", kind, &["/usr/bin/git"]);
+            plain("ls", kind, &["ls"]);
+        }
+        // Subscripts and offsets in a bash parameter expansion are
+        // arithmetic too. In PowerShell `${...}` only names a variable.
+        for command in [
+            "echo ${a[$i]}",
+            "echo ${a[i]}",
+            "echo \"${#a[n]}\"",
+            "echo ${x:$n}",
+            "echo ${x:1:n}",
+            "echo ${a[0]:$n}",
+            "read x < f; echo ${x@P}",
+            "echo \"${x@P}\"",
+            "echo ${!x}",
+            "echo ${!pre*}",
+            "echo $[x]",
+            "echo \"$[x + 1]\"",
+            "echo $'\\'' $((x)) $'\\''",
+            "echo $'\\'' ; rm -rf ~ ; $'\\''",
+            // A compound array assignment evaluates its `[key]=` subscripts.
+            "read i < f; a=([$i]=git); git status",
+            "a+=([$i]=x)",
+            "declare -A m; m[k]=1; b=(x y)",
+            "FOO=(a) ls",
+        ] {
+            opaque(command, ShellKind::Posix);
+        }
+        plain("echo ${a[$i]}", ShellKind::PowerShell, &["echo"]);
+        // `set` is `Set-Variable` in PowerShell, and options in bash.
+        plain("set -euo pipefail", ShellKind::Posix, &["set"]);
+        opaque("set -Name PATH -Value x", ShellKind::PowerShell);
+        // PowerShell: a member access can run code, and these variables
+        // change what a later command does.
+        for command in [
+            "$ExecutionContext.InvokeCommand.InvokeScript('rm x')",
+            "echo $ExecutionContext.InvokeCommand.InvokeScript('rm x')",
+            "Write-Output $x.Invoke()",
+            "Write-Output ${x}.Invoke()",
+            "echo $t::Run()",
+            "Set-Variable -Name PATH -Value x",
+            "sv x y",
+            "New-Variable x y",
+            "Add-Type -TypeDefinition $src",
+            "Update-TypeData -TypeName x -MemberType ScriptProperty",
+            "$env:PATH = 'C:\\evil'; git status",
+            "$env:Path += ';C:\\evil'",
+            "[string]$env:PATH = 'x'",
+            "$global:PSDefaultParameterValues = @{}",
+            "$PSDefaultParameterValues['*:Path'] = 'x'",
+            "${env:PATH} = 'x'",
+            "C:\\tools\\l$x.exe",
+        ] {
+            opaque(command, ShellKind::PowerShell);
+        }
+        // Inside double quotes only the variable expands, which is plain.
+        plain("Write-Output \"$x.Name\"", ShellKind::PowerShell, &["Write-Output"]);
+        plain("Write-Output $env:USERPROFILE", ShellKind::PowerShell, &["Write-Output"]);
+        plain("Write-Output ${env:USERPROFILE}", ShellKind::PowerShell, &["Write-Output"]);
+        plain("./build.ps1 -Release", ShellKind::PowerShell, &["./build.ps1"]);
     }
 
     #[test]
