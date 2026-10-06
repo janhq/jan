@@ -43,10 +43,24 @@ const WINDOWS_OPAQUE: &[&str] = &[
     "schtasks", "at", "runas", "regsvr32", "msiexec", "explorer", "pcalua", "cmstp",
     "msbuild", "installutil", "regasm", "regsvcs", "certutil", "bitsadmin",
     "scriptrunner", "sc",
+    // Aliases and functions take effect within the same script, so defining one
+    // changes what a later, already granted base runs (`Set-Alias ls rm; ls`).
+    "set-alias", "sal", "new-alias", "nal", "import-alias", "ipal",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
     WINDOWS_OPAQUE.contains(&windows_name(base).as_str())
+}
+
+/// Whether any argument names PowerShell's `function:` or `alias:` drive.
+/// Writing there (`Set-Item function:ls { rm }`, `New-Item alias:ls`) redefines
+/// a command for the rest of the script, as `Set-Alias` does.
+fn touches_function_drive(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        let lower = a.to_ascii_lowercase();
+        let path = lower.trim_start_matches("-path:").trim_start_matches("-literalpath:");
+        path.starts_with("function:") || path.starts_with("alias:")
+    })
 }
 
 /// `base` as Windows resolves it: case-insensitive and without `.exe`.
@@ -485,6 +499,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, depth: usize) -> bool {
         if OPAQUE.contains(&base.as_str())
             || OPAQUE.contains(&windows_name(&base).as_str())
             || is_windows_opaque(&base)
+            || touches_function_drive(&tokens[idx + 1..])
         {
             return false;
         }
@@ -788,6 +803,13 @@ mod tests {
             "runas /user:x calc.exe",
             "msiexec /i x.msi",
             "explorer.exe x.exe",
+            // An alias or function defined earlier renames a later base.
+            "Set-Alias ls Remove-Item; ls -Recurse -Force ~",
+            "sal ls rm; ls x",
+            "New-Alias ls rm",
+            "nal ls rm",
+            "Set-Item function:ls -Value x",
+            "New-Item -Path alias:ls -Value Remove-Item",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
