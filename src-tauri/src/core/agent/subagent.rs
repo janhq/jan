@@ -427,6 +427,21 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
     out
 }
 
+/// A list naming the shell's old name would hand the child a tool that no
+/// longer exists, so it would silently run without a shell. Refused with the
+/// rename instead, which reaches the model and through it the user. `where_`
+/// names the list the model can actually fix.
+fn refuse_renamed_shell(list: Option<&[String]>, where_: &str) -> Result<(), SubagentError> {
+    match list
+        .into_iter()
+        .flatten()
+        .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
+    {
+        Some(notice) => Err(SubagentError::PermissionDenied(notice)),
+        None => Ok(()),
+    }
+}
+
 /// Effective tool allowlist for a subagent dispatch: the intersection of the
 /// definition's `allowed_tools`, the call-site override, and the parent's
 /// permissions, plus the always-on `skill_list`/`skill_read` pair. Deny (from
@@ -445,21 +460,6 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
 /// or that the parent denies, is rejected rather than silently dropped. A
 /// definition-listed tool the parent denies is dropped (the definition author
 /// need not know the parent's policy).
-/// A list naming the shell's old name would hand the child a tool that no
-/// longer exists, so it would silently run without a shell. Refused with the
-/// rename instead, which reaches the model and through it the user. `where_`
-/// names the list the model can actually fix.
-fn refuse_renamed_shell(list: Option<&[String]>, where_: &str) -> Result<(), SubagentError> {
-    match list
-        .into_iter()
-        .flatten()
-        .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
-    {
-        Some(notice) => Err(SubagentError::PermissionDenied(notice)),
-        None => Ok(()),
-    }
-}
-
 pub fn intersect_allowed_tools(
     definition: Option<&[String]>,
     request: Option<&[String]>,
