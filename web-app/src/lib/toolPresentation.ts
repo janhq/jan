@@ -1,5 +1,6 @@
 import type { ToolUIPart } from 'ai'
 import type { ToolOrigin } from './toolOrigin'
+import { isRecordedShellCall } from '@/lib/agentTools'
 
 /** The call is still being written or executed: no result yet. */
 export const isToolRunning = (state: ToolUIPart['state']) =>
@@ -127,7 +128,7 @@ export function describeNativeToolCall(
     }
   }
   if (origin.kind === 'agent') {
-    if (toolName === 'shell') {
+    if (isRecordedShellCall(toolName)) {
       return {
         variant: 'terminal',
         command: asString(args.command),

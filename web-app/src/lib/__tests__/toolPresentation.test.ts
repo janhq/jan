@@ -140,6 +140,15 @@ describe('describeNativeToolCall for agent tools', () => {
     })
   })
 
+  // Threads saved before the rename carry calls under the old `bash` name;
+  // they still render as a terminal.
+  it('renders a saved bash call as a terminal', () => {
+    expect(describeNativeToolCall(agent, 'bash', { command: 'ls -la' })).toEqual({
+      variant: 'terminal',
+      command: 'ls -la',
+    })
+  })
+
   // The command streams in like any other argument, so a partial one must show.
   it('accepts a partially streamed command', () => {
     expect(describeNativeToolCall(agent, 'shell', { command: 'git pu' })).toEqual({

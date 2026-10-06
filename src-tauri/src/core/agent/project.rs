@@ -513,6 +513,11 @@ pub(crate) struct RunSettings {
     /// like the `[agent]` section it comes from.
     #[cfg(feature = "cli")]
     pub worktree: Option<bool>,
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
+    /// shell tool's old name `bash`, which now matches nothing. Reported at run
+    /// start with the hook-load notices, so a deny rule that stopped applying
+    /// does not do so silently.
+    pub tool_notices: Vec<String>,
 }
 
 /// A missing or malformed config yields defaults rather than an error: a project
@@ -521,6 +526,7 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
     let Ok(cfg) = load_agent_config(project_root) else {
         return RunSettings::default();
     };
+    let tool_notices = renamed_tool_notices(&cfg.tools);
     RunSettings {
         enabled_skills: cfg.skills.enabled,
         allow_network: cfg.tools.allow_network,
@@ -528,10 +534,27 @@ pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
         sandbox: cfg.tools.sandbox,
         env_passthrough: cfg.tools.env_passthrough,
         env_set: cfg.tools.env_set.into_iter().collect(),
+        tool_notices,
         prompt: PromptPolicy::new(cfg.prompt.default, cfg.prompt.prefix_allow),
         #[cfg(feature = "cli")]
         worktree: cfg.agent.worktree,
     }
+}
+
+/// See [`RunSettings::tool_notices`].
+fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
+    [
+        ("[tools] allow", &tools.allow),
+        ("[tools] deny", &tools.deny),
+        ("[tools] allow_write", &tools.allow_write),
+    ]
+    .into_iter()
+    .flat_map(|(where_, list)| {
+        list.iter().filter_map(move |name| {
+            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+        })
+    })
+    .collect()
 }
 
 pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
@@ -761,6 +784,15 @@ mod tests {
         let dir = crate::core::agent::project::store_root(root);
         std::fs::create_dir_all(&dir).expect("create agent dir");
         std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
+    }
+
+    #[test]
+    fn a_tools_list_naming_bash_is_reported() {
+        let root = unique_root("renamed_bash");
+        write_agent_toml(&root, "[tools]\ndeny = [\"bash\", \"web_*\"]\nallow = [\"shell\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
     }
 
     #[test]

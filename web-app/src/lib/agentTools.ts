@@ -56,6 +56,15 @@ export const AGENT_TOOL_NAMES = new Set([
 ])
 
 /**
+ * Whether a recorded tool call ran the shell, for *displaying saved history*
+ * only. Turns saved before the tool was renamed carry its old name `bash`; they
+ * keep their terminal view and artifacts. Nothing dispatches or allows `bash`:
+ * the sets above and below name only `shell`.
+ */
+export const isRecordedShellCall = (toolName: string): boolean =>
+  toolName === 'shell' || toolName === 'bash'
+
+/**
  * The subset the main chat surface advertises and dispatches: the sandboxed
  * shell alone, with no network. The full toolset above is Cowork's — chat is a
  * conversation that occasionally runs a command, not an agent surface.

@@ -202,6 +202,23 @@ describe('artifactsFromTurns', () => {
     expect(artifacts[0]!.title).toContain('Rick Astley')
   })
 
+  // Sessions saved before the rename name the shell `bash`; their files must
+  // not vanish from the library.
+  it('recovers artifacts from a saved bash turn', () => {
+    const turns = [
+      {
+        role: 'tool',
+        content: '',
+        name: 'bash',
+        args: { command: 'yt-dlp -o "clip.mp4" "https://youtu.be/x"' },
+        status: 'done',
+        isError: false,
+        result: '[download] Destination: /p/clip.mp4\n[download] 100% of 1MiB',
+      } as CoworkTurn,
+    ]
+    expect(artifactsFromTurns(turns, '/p').map((a) => a.path)).toEqual(['/p/clip.mp4'])
+  })
+
   it('recovers a relative mp4 from ls -lh in the shell result', () => {
     const turns = [
       {

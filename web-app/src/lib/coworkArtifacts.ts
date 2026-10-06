@@ -1,6 +1,7 @@
 import { AudioLines, Code2, FileText, ImageIcon, Video } from 'lucide-react'
 import { basenameOf, extensionOf, resolveInRoot } from '@/lib/coworkPreview'
 import type { CoworkTurn } from '@/types/coworkSession'
+import { isRecordedShellCall } from '@/lib/agentTools'
 
 /**
  * Artifacts a run produced, derived from its `write`/`edit` tool calls
@@ -244,7 +245,7 @@ export function artifactsFromTurns(
       if (!path) continue
       const artifact = artifactFor(path)
       if (artifact) byPath.set(path, artifact)
-    } else if (turn.name === 'shell') {
+    } else if (isRecordedShellCall(turn.name ?? '')) {
       // Files made by shell commands (downloads, ffmpeg renders) carry no
       // `write` result; recover them from the command + output pair.
       const command =

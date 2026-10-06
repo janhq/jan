@@ -58,6 +58,18 @@ describe('agentTools', () => {
     expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['shell'])
   })
 
+  // `bash` is recognised only when reading saved history; nothing dispatches
+  // or advertises it.
+  it('reads a saved bash call as the shell without accepting bash', async () => {
+    const { isRecordedShellCall, AGENT_TOOL_NAMES, CHAT_AGENT_TOOL_NAMES } =
+      await import('../agentTools')
+    expect(isRecordedShellCall('bash')).toBe(true)
+    expect(isRecordedShellCall('shell')).toBe(true)
+    expect(isRecordedShellCall('mcp__x__bash')).toBe(false)
+    expect(AGENT_TOOL_NAMES.has('bash')).toBe(false)
+    expect(CHAT_AGENT_TOOL_NAMES.has('bash')).toBe(false)
+  })
+
   it('advertises the workspace tools including writes and shell', async () => {
     const { AGENT_TOOL_NAMES } = await import('../agentTools')
     for (const name of ['read', 'ls', 'find', 'grep', 'shell']) {

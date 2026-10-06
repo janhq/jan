@@ -266,6 +266,12 @@ impl HookSet {
                 ));
                 continue;
             }
+            // Kept as written, so it starts matching the moment it is renamed,
+            // but said out loud: a guard hook on `bash` no longer fires.
+            let hook_where = format!("Hook {} matcher in {where_}", event.as_str());
+            if let Some(notice) = super::renamed_shell_notice(&matcher, &hook_where) {
+                self.load_notices.push(notice);
+            }
             self.hooks.push(Hook {
                 event,
                 matcher,
@@ -683,6 +689,25 @@ mod tests {
         let matched = set.matching(HookEvent::PreToolUse, Some("memory_write"));
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0].command, "b");
+    }
+
+    /// A matcher on the shell tool's old name is kept, but reported: a guard
+    /// hook on `bash` would otherwise silently stop firing.
+    #[test]
+    fn a_bash_matcher_is_kept_and_reported() {
+        let mut set = HookSet::new();
+        set.extend_from(
+            vec![
+                entry("PreToolUse", Some("Bash"), "guard"),
+                entry("PreToolUse", Some("shell"), "ok"),
+            ],
+            Path::new("hooks.json"),
+        );
+        assert_eq!(set.load_notices().len(), 1, "{:?}", set.load_notices());
+        let notice = &set.load_notices()[0];
+        assert!(notice.contains("PreToolUse matcher in hooks.json"), "{notice}");
+        assert!(notice.contains("now `shell`"), "{notice}");
+        assert_eq!(set.matching(HookEvent::PreToolUse, Some("shell")).len(), 1);
     }
 
     #[test]

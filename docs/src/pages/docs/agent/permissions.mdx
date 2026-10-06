@@ -84,7 +84,8 @@ allow_write = []
 
 The shell tool is named `shell`; it used to be `bash`, and that name is no longer recognised.
 Rename `bash` to `shell` wherever you name the tool: `allow`, `deny`, hook matchers and a
-subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing.
+subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing. Jan warns about each such
+entry when a run starts, and refuses a subagent whose `allowed_tools` still says `bash`.
 
 ## The shell sandbox
 

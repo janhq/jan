@@ -452,6 +452,21 @@ pub fn intersect_allowed_tools(
 ) -> Result<Option<Vec<String>>, SubagentError> {
     let definition = definition.filter(|d| !d.is_empty());
     let request = request.filter(|r| !r.is_empty());
+    // A list naming the shell's old name would hand the child a tool that no
+    // longer exists, so it would silently run without a shell. Refused with
+    // the rename instead, which reaches the model and through it the user.
+    for (list, where_) in [
+        (definition, "the subagent definition's allowed_tools"),
+        (request, "allowed_tools"),
+    ] {
+        if let Some(notice) = list
+            .into_iter()
+            .flatten()
+            .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
+        {
+            return Err(SubagentError::PermissionDenied(notice));
+        }
+    }
     if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
@@ -3202,16 +3217,33 @@ pub(crate) mod tests {
     #[test]
     fn intersect_request_outside_definition_is_rejected() {
         let def = vec!["read".to_string()];
-        let req = vec!["bash".to_string()];
+        let req = vec!["shell".to_string()];
         let p = ToolPermissions::allow_all();
         let err = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 
+    /// A list still naming `bash` is refused with the rename, rather than
+    /// giving a child that silently has no shell.
+    #[test]
+    fn a_bash_entry_is_refused_with_the_rename() {
+        let def = vec!["read".to_string(), "bash".to_string()];
+        let p = ToolPermissions::allow_all();
+        let SubagentError::PermissionDenied(msg) =
+            intersect_allowed_tools(Some(&def), None, &p).unwrap_err()
+        else {
+            panic!("expected a permission error");
+        };
+        assert!(msg.contains("definition's allowed_tools names `bash`"), "{msg}");
+        assert!(msg.contains("now `shell`"), "{msg}");
+        let req = vec!["bash".to_string()];
+        assert!(intersect_allowed_tools(None, Some(&req), &p).is_err());
+    }
+
     #[test]
     fn intersect_request_denied_by_parent_is_rejected() {
-        let req = vec!["bash".to_string()];
-        let p = perms_denying(&["bash"]);
+        let req = vec!["shell".to_string()];
+        let p = perms_denying(&["shell"]);
         let err = intersect_allowed_tools(None, Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
@@ -3505,7 +3537,7 @@ pub(crate) mod tests {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["shell".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 

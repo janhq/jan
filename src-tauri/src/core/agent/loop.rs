@@ -806,6 +806,8 @@ struct ResolvedSettings {
     /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
     /// rest so composition and `agent status` answer from one parse.
     prompt: PromptPolicy,
+    /// See `project::RunSettings::tool_notices`.
+    tool_notices: Vec<String>,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -824,6 +826,7 @@ fn resolve_run_settings(
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
         prompt: settings.prompt,
+        tool_notices: settings.tool_notices,
     }
 }
 
@@ -3482,6 +3485,7 @@ async fn orchestrate_inner(
         }
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
+        let tool_notices = settings.tool_notices;
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root,
@@ -3529,12 +3533,14 @@ async fn orchestrate_inner(
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
-        // watches a hook never run and has nothing to tell them why.
+        // watches a hook never run and has nothing to tell them why. `[tools]`
+        // entries naming the shell's old name ride along for the same reason.
         {
             let dropped: Vec<BackgroundNotice> = tools
                 .hooks
                 .load_notices()
                 .iter()
+                .chain(&tool_notices)
                 .map(|message| {
                     log::warn!("agent: {message}");
                     BackgroundNotice {

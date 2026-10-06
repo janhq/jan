@@ -704,6 +704,21 @@ pub fn is_workspace_tool(name: &str) -> bool {
 /// (janhq/jan#9128).
 pub const SHELL_TOOL: &str = "shell";
 
+/// The notice for a user-written tool name or pattern that is `bash`, the
+/// shell tool's former name, in any case. Such an entry matches nothing now,
+/// and for a deny rule or a guarding hook that means it silently stopped
+/// applying. Nothing is translated -- `bash` is not an alias -- the user is only
+/// told, once, at load. `where_` names the setting, e.g. "[tools] deny".
+pub fn renamed_shell_notice(name: &str, where_: &str) -> Option<String> {
+    name.trim().eq_ignore_ascii_case("bash").then(|| {
+        format!(
+            "{where_} names `{}`, which matches nothing: the shell tool is now `{SHELL_TOOL}`. \
+             Rename it to `{SHELL_TOOL}` for it to apply.",
+            name.trim()
+        )
+    })
+}
+
 pub fn lookup(name: &str) -> Option<&'static BuiltinTool> {
     BUILTIN_TOOLS.iter().find(|t| t.name == name)
 }
@@ -734,6 +749,17 @@ mod tests {
     #[test]
     fn bash_is_not_a_builtin() {
         assert!(lookup("bash").is_none());
+    }
+
+    /// Only the old name is flagged, in any case; `shell` and globs are not.
+    #[test]
+    fn only_the_old_shell_name_gets_a_rename_notice() {
+        let notice = renamed_shell_notice("Bash", "[tools] deny").expect("flagged");
+        assert!(notice.contains("[tools] deny names `Bash`"), "{notice}");
+        assert!(notice.contains("now `shell`"), "{notice}");
+        for other in ["shell", "ba*", "*", "mcp__x__bash", "read"] {
+            assert!(renamed_shell_notice(other, "x").is_none(), "{other}");
+        }
     }
 
     #[test]

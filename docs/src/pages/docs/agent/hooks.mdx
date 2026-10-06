@@ -138,7 +138,8 @@ event has them:
 | `message_count` | `SessionStart`, `UserPromptSubmit`, `PreCompact` |
 
 The shell tool is named `shell` (formerly `bash`). A `matcher` or a script that tests `tool_name`
-for `bash` no longer matches it; change it to `shell`.
+for `bash` no longer matches it; change it to `shell`. A `bash` matcher is reported when the run
+starts. A script's `tool_name` check cannot be, so search your hooks for it.
 
 ## The answer
 
