@@ -966,7 +966,8 @@ fn tool_kind(name: &str) -> ToolKind {
         "read" | "ls" | "memory_read" | "memory_list" | "skill_read" | "skill_list" => ToolKind::Read,
         "edit" | "write" | "memory_write" | "skill_write" => ToolKind::Edit,
         "grep" | "find" => ToolKind::Search,
-        "bash" => ToolKind::Execute,
+        // `bash` is the shell's pre-rename name, still in replayed history.
+        "bash" | tauri_plugin_agent_tools::tools::SHELL_TOOL => ToolKind::Execute,
         "web_fetch" | "web_search" => ToolKind::Fetch,
         "dispatch_subagent" | "todo" => ToolKind::Think,
         _ => ToolKind::Other,
@@ -1134,7 +1135,7 @@ mod tests {
         let mut map = map();
         let out = map.map(StreamEvent::ToolCall {
             id: "c".into(),
-            name: "bash".into(),
+            name: "shell".into(),
             args: json!({"command":"cargo test"}),
         });
         let w = wire(&out[0]);

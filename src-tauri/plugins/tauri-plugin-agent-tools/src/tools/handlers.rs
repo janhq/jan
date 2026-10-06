@@ -230,7 +230,7 @@ async fn execute_text(
             )
             .await
         }
-        "bash" => bash(args, ctx).await,
+        crate::tools::SHELL_TOOL => bash(args, ctx).await,
         "find" => find(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
@@ -858,7 +858,7 @@ pub(crate) fn confined_shell(
         // the command the whole machine, which is never what the caller asked for.
         let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
             return Err(
-                "ERROR: bash is unavailable because no OS sandbox could be established on \
+                "ERROR: the shell tool is unavailable because no OS sandbox could be established on \
                  this system. Use the read/ls/find/grep tools instead."
                     .to_string(),
             );
@@ -1256,7 +1256,16 @@ impl BashCapture {
     }
 }
 
-/// True when a `bash` tool result reports failure via its exit marker: a
+/// Whether a built-in call's result is a failure: an `ERROR` prefix for any
+/// tool, or a failed exit marker from the exec tool. Keyed on the capability
+/// rather than a tool name, so the agent loop, the desktop command and the MCP
+/// server share one rule that a rename cannot leave behind.
+pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
+    content.starts_with("ERROR")
+        || (tool.capability == super::Capability::Exec && bash_result_failed(content))
+}
+
+/// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
 /// [`BashCapture::finish`] on its own line and a truncation note may follow it,
 /// so scan every line rather than only the tail. Model-facing content is
@@ -2996,7 +3005,7 @@ mod tests {
             .with_sandbox(false)
             .with_output_sink(sink);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'one\ntwo\n'"}),
             &ctx,
         )
@@ -3034,7 +3043,7 @@ mod tests {
             .with_output_sink(sink);
         // timeout 0 => backgrounds immediately, before the command prints.
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.2; printf 'late\n'", "timeout": 0}),
             &ctx,
         )
@@ -3075,7 +3084,7 @@ mod tests {
             move |e: crate::tools::ShellEvent| seen.lock().unwrap().push(e),
         ));
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.3; echo done; exit 3", "timeout": 0}),
             &ctx,
         )
@@ -3130,7 +3139,7 @@ mod tests {
     async fn backgrounding_without_a_doorbell_still_tells_the_model_to_read_the_file() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 2", "timeout": 0}),
             &root,
         )
@@ -3147,7 +3156,7 @@ mod tests {
     async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 2", "timeout": 0}),
             &root,
         )
@@ -3165,7 +3174,7 @@ mod tests {
     async fn backgrounded_output_lands_in_the_reported_file() {
         let root = unique_root();
         let started = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.2; echo done", "timeout": 0}),
             &root,
         )
@@ -3198,7 +3207,7 @@ mod tests {
     #[tokio::test]
     async fn bash_missing_command_errors() {
         let root = unique_root();
-        let out = execute_builtin(lookup("bash").unwrap(), &json!({}), &root).await;
+        let out = execute_builtin(lookup("shell").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3220,7 +3229,7 @@ mod tests {
     async fn bash_nonzero_exit_is_not_error() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo hi; exit 3"}),
             &root,
         )
@@ -3235,7 +3244,7 @@ mod tests {
     async fn bash_success_emits_exit_0_marker() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo done"}),
             &root,
         )
@@ -3253,7 +3262,7 @@ mod tests {
         let root = unique_root();
         // stderr-only output with no trailing newline (mirrors `git push`).
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'to remote' 1>&2"}),
             &root,
         )
@@ -3275,7 +3284,7 @@ mod tests {
         let root = unique_root();
         // ~32KB over 500 lines: half the byte cap, a quarter of the line cap.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 500); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3299,7 +3308,7 @@ mod tests {
         let root = unique_root();
         // ~128KB over 2000 lines of 64 chars: over the byte cap, at the line cap.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 2000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3328,7 +3337,7 @@ mod tests {
         // \r (no \n). Raw bytes exceed the byte cap, but only the final redraw
         // is visible, so the model must see it intact with no truncation notice.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 30000); do printf 'Receiving objects: %d\\r' \"$i\"; done 1>&2"}),
             &root,
         )
@@ -3353,7 +3362,7 @@ mod tests {
         // ~1MB of output: over the bash cap, so it must spill to a temp file
         // and tell the agent how to read the rest.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3397,7 +3406,7 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &ctx,
         )
@@ -3439,7 +3448,7 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo unconfined"}),
             &ctx,
         )
@@ -3493,7 +3502,7 @@ mod tests {
         // 12000 short lines: well over the line cap. Tail truncation must keep
         // the LAST lines (final result/errors) and drop the earliest ones.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 12000); do echo \"L$i\"; done"}),
             &root,
         )
@@ -3518,7 +3527,7 @@ mod tests {
         let root = unique_root();
         // NUL and bell around visible text plus an ANSI color escape.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'a\\000b\\007\\033[31mred\\033[0m\\n'"}),
             &root,
         )
@@ -3543,7 +3552,7 @@ mod tests {
         // password prompt). The failure/output comes back as a normal result.
         let out = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            execute_builtin(lookup("bash").unwrap(), &json!({"command": "cat"}), &root),
+            execute_builtin(lookup("shell").unwrap(), &json!({"command": "cat"}), &root),
         )
         .await
         .expect("must not hang on stdin read");
@@ -3555,7 +3564,7 @@ mod tests {
     async fn bash_missing_working_dir_errors() {
         let root = unique_root().join("does-not-exist");
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo hi"}),
             &root,
         )

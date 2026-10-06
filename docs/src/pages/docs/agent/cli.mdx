@@ -295,7 +295,7 @@ Each tool is advertised to the model as `host__<name>`. A name that is not ASCII
 original name is appended so names that sanitize alike stay distinct. `yam.move_ee_ik` is
 advertised as `host__yam_move_ee_ik_<hash>`. The mapping is deterministic, and `init.tool_specs`
 shows the name the model will call. Still refused: an empty name, a name with a control character,
-a built-in's name (`bash`, `read`, ...), and two declarations that land on the same advertised name.
+a built-in's name (`shell`, `read`, ...), and two declarations that land on the same advertised name.
 
 When the model calls one, the run emits a `tool_request` and waits:
 
@@ -394,7 +394,7 @@ The first line of a `stream-json` run is always an `init` record, printed before
 event:
 
 ```json
-{"type":"init","protocol_version":1,"session_id":"3f7a91c2-4e5d-4a6b-8c7d-0e1f2a3b4c5d","model":"tokamak-1-preview","cwd":"/home/me/app","tools":["read","write","bash","host__robot_arm_move"],"tool_specs":[{"type":"function","function":{"name":"host__robot_arm_move","description":"Move the arm.","parameters":{"type":"object"}}}],"input_kinds":["user","abort","permission","tool_result"],"input_content_parts":{"mime_types":["image/png","image/jpeg","image/gif","image/webp"],"max_image_bytes":5242880,"max_message_image_bytes":10485760,"max_images":8,"max_line_bytes":16777216,"max_echo_bytes":4096}}
+{"type":"init","protocol_version":1,"session_id":"3f7a91c2-4e5d-4a6b-8c7d-0e1f2a3b4c5d","model":"tokamak-1-preview","cwd":"/home/me/app","tools":["read","write","shell","host__robot_arm_move"],"tool_specs":[{"type":"function","function":{"name":"host__robot_arm_move","description":"Move the arm.","parameters":{"type":"object"}}}],"input_kinds":["user","abort","permission","tool_result"],"input_content_parts":{"mime_types":["image/png","image/jpeg","image/gif","image/webp"],"max_image_bytes":5242880,"max_message_image_bytes":10485760,"max_images":8,"max_line_bytes":16777216,"max_echo_bytes":4096}}
 ```
 
 | Field | Notes |
@@ -736,7 +736,7 @@ jan mcp serve --tool read --tool grep       # narrow the set
 | `--port <PORT>` | Port for `http`. Defaults to an ephemeral one |
 | `--token <TOKEN>` | Bearer token for `http`. One is generated and printed if omitted |
 | `--allow-write` | Offer `write` and `edit`, confined to the project root |
-| `--allow-exec` | Offer `bash`, under the same OS sandbox the agent's shell uses |
+| `--allow-exec` | Offer `shell`, under the same OS sandbox the agent's shell uses |
 | `--tool <NAME>` | Serve only these tools. Repeatable; never widens what the flags above permit |
 
 The default set touches no project file, and the two classes that can change the machine are opt-in:

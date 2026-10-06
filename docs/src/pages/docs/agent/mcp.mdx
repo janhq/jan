@@ -155,7 +155,7 @@ rather than a person who can answer a permission prompt:
 | Flag | Adds |
 | --- | --- |
 | `--allow-write` | `write` and `edit`, confined to the project root |
-| `--allow-exec` | `bash`, under the same OS sandbox the agent's shell uses |
+| `--allow-exec` | `shell`, under the same OS sandbox the agent's shell uses |
 | `--tool NAME` | Narrows the set to these names; never widens what the flags above permit |
 
 Anything that would otherwise wait for an approval returns an error instead of blocking, so a peer

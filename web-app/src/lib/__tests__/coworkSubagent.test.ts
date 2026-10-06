@@ -286,7 +286,39 @@ describe('injectInputs', () => {
   })
 })
 
+describe('resolveSubagent bash refusal', () => {
+  // An ad-hoc dispatch has no definition, so the refusal must name the
+  // call's own list -- the one the model wrote and can fix.
+  it("names the call's own list for an ad-hoc subagent", () => {
+    const out = resolveSubagent(
+      { name: 'adhoc', description: 't', allowed_tools: ['bash'] },
+      [],
+      ['read', 'shell']
+    )
+    expect(out).toHaveProperty('error')
+    const error = (out as { error: string }).error
+    expect(error.startsWith('allowed_tools names `bash`')).toBe(true)
+    expect(error).not.toContain('definition')
+  })
+})
+
 describe('intersectAllowedTools', () => {
+  // A list still naming `bash` is refused with the rename, rather than
+  // giving a child that silently has no shell.
+  it('refuses a bash entry with the rename', () => {
+    const parent = ['read', 'shell', 'skill_list', 'skill_read']
+    const fromDefinition = intersectAllowedTools(['read', 'bash'], null, parent)
+    expect(fromDefinition).toEqual({
+      error:
+        "the subagent definition's allowed_tools names `bash`, which matches " +
+        'nothing: the shell tool is now `shell`. Rename it to `shell` for it to apply.',
+    })
+    expect(intersectAllowedTools(null, ['Bash'], parent)).toHaveProperty('error')
+    expect(intersectAllowedTools(['read', 'shell'], ['shell'], parent)).toEqual({
+      tools: ['shell', 'skill_list', 'skill_read'],
+    })
+  })
+
   const parent = ['read', 'grep', 'write', 'skill_list', 'skill_read']
 
   it('inherits the parent set when neither side narrows', () => {
@@ -296,7 +328,7 @@ describe('intersectAllowedTools', () => {
   it('narrows to the definition, dropping what the parent lacks', () => {
     // The definition's author cannot know the parent's mode, so a tool the
     // parent lacks is dropped rather than raised as an error.
-    const out = intersectAllowedTools(['read', 'bash'], null, parent)
+    const out = intersectAllowedTools(['read', 'shell'], null, parent)
     expect(out).toEqual({ tools: ['read', 'skill_list', 'skill_read'] })
   })
 
@@ -309,9 +341,9 @@ describe('intersectAllowedTools', () => {
   })
 
   it('refuses a request the parent cannot call', () => {
-    // This is what makes plan mode and a withheld `bash` propagate: the parent's
+    // This is what makes plan mode and a withheld `shell` propagate: the parent's
     // advertised set is the ceiling.
-    expect(intersectAllowedTools(null, ['bash'], parent)).toEqual({
+    expect(intersectAllowedTools(null, ['shell'], parent)).toEqual({
       error: expect.stringContaining('not available to this run'),
     })
   })
