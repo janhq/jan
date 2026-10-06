@@ -57,8 +57,9 @@ version and compatible runtime. Use it rather than the moving latest manifest.
 
 ## Install the runtime
 
-For a first run, the hosted installer puts the latest nightly `jan` on your PATH, which also gives
-you `jan login`:
+For a first run, the hosted installer puts the latest nightly `jan` in `~/.local/bin`, which also
+gives you `jan login`. Make sure that directory is on your PATH; on Windows, see the
+[Agent quickstart](/docs/agent/quickstart) for the `-AddToPath` form:
 
 ```bash
 curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash    # macOS / Linux
