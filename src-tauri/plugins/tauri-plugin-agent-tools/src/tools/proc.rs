@@ -136,6 +136,13 @@ fn config_for(program: PathBuf) -> ShellConfig {
     }
 }
 
+/// The inbox modules behind everyday cmdlets: `Get-ChildItem`/`Get-Content`/
+/// `Set-Location` (Management), `Write-Output`/`Select-String`/
+/// `ConvertTo-Json` (Utility), `Get-Acl` (Security), `Expand-Archive`
+/// (Archive). Anything else on 5.1 needs its own `Import-Module`.
+const POWERSHELL_CORE_MODULES: &str = "Microsoft.PowerShell.Management, \
+     Microsoft.PowerShell.Utility, Microsoft.PowerShell.Security, Microsoft.PowerShell.Archive";
+
 /// The script PowerShell is given for `command`. PowerShell's own exit code is
 /// only 0 or 1, so it is made to report a failing native command's real code,
 /// which the tool output's `[exit N]` line and the model both rely on.
@@ -150,9 +157,16 @@ fn config_for(program: PathBuf) -> ShellConfig {
 /// command's: still non-zero, possibly not the failing statement's own. Output is switched to UTF-8: 5.1 otherwise encodes with the OEM
 /// code page and mangles every non-ASCII character. The progress stream is
 /// silenced because it is noise in captured output.
+///
+/// Windows PowerShell 5.1 cannot autoload modules inside the AppContainer:
+/// `echo`/`Write-Output` is "not recognized" although `Import-Module` of the
+/// same module succeeds, and moving or disabling the analysis cache or
+/// trimming `PSModulePath` does not help. So on 5.1 the core inbox modules are
+/// imported explicitly; pwsh 7 autoloads fine and skips this.
 pub fn powershell_script(command: &str) -> String {
     format!(
         "$ProgressPreference = 'SilentlyContinue'\n\
+         if ($PSVersionTable.PSVersion.Major -lt 6) {{ Import-Module {POWERSHELL_CORE_MODULES} -ErrorAction SilentlyContinue }}\n\
          try {{ [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) }} catch {{}}\n\
          $OutputEncoding = [System.Text.UTF8Encoding]::new($false)\n\
          $global:LASTEXITCODE = $null\n\
@@ -893,6 +907,10 @@ mod shell_kind_tests {
         assert!(script.contains("\ngit status\n"));
         let (setup, rest) = script.split_once("git status").unwrap();
         assert!(setup.contains("$global:LASTEXITCODE = $null"), "reset before the command");
+        assert!(
+            setup.contains("Major -lt 6) { Import-Module Microsoft.PowerShell.Management,"),
+            "5.1 imports the core modules it cannot autoload in the sandbox"
+        );
         assert!(setup.contains("OutputEncoding"));
         assert!(rest.contains("exit $LASTEXITCODE"), "real code reported after it");
     }

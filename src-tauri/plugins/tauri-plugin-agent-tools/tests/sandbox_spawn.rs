@@ -66,34 +66,20 @@ mod windows {
         );
         for (label, shell) in &shells {
             let (ok, out) = rt.block_on(spawn(shell, &ws, "echo ok"));
-            if !ok && shell.kind == ShellKind::PowerShell {
-                eprintln!("{label} diagnostics:\n{}", rt.block_on(spawn(shell, &ws, PS_PROBE)).1);
-                // Explicit Import-Module works where autoload does not, so try
-                // each candidate fix for autoload in the same run.
-                let cache = ws.join("ps-analysis-cache");
-                let cache = cache.to_string_lossy().into_owned();
-                let modules = shell
-                    .program
-                    .parent()
-                    .map(|p| p.join("Modules").to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                let variants: [Variant; 4] = [
-                    ("analysis cache in the workspace", vec![("PSModuleAnalysisCachePath".into(), cache)], "echo ok"),
-                    ("analysis cache off", vec![("PSModuleAnalysisCachePath".into(), "NUL".into())], "echo ok"),
-                    ("PSModulePath = PSHOME only", vec![("PSModulePath".into(), modules)], "echo ok"),
-                    ("explicit import", vec![], "Import-Module Microsoft.PowerShell.Utility; echo ok"),
-                ];
-                for (name, set, command) in &variants {
-                    let (ok, out) = rt.block_on(spawn_with(shell, &ws, command, set));
-                    eprintln!("{label} variant [{name}]: ok={ok} out={}", out.trim());
-                }
-            }
             assert!(ok, "{label}: a command must start and succeed in the sandbox: {out}");
             assert!(out.contains("ok"), "{label}: output lost: {out}");
             let (ok, out) = rt.block_on(spawn(shell, &ws, "exit 3"));
             assert!(!ok, "{label}: a failing command must report failure: {out}");
             eprintln!("sandbox_spawn: {label} ({}) ok", shell.program.display());
         }
+        // Windows PowerShell 5.1 cannot autoload modules in the container, so
+        // cmdlets from each imported inbox module must still resolve.
+        let (ok, out) = rt.block_on(spawn(
+            &shells[1].1,
+            &ws,
+            "Get-ChildItem | Out-Null; 'x' | ConvertTo-Json; echo ok",
+        ));
+        assert!(ok && out.contains("ok"), "powershell 5.1 core cmdlets: {out}");
         // cmd keeps a command's own quotes rather than seeing them escaped.
         let (ok, out) = rt.block_on(spawn(&shells[2].1, &ws, r#"echo "a b""#));
         assert!(ok && out.contains(r#""a b""#), "cmd quoting: {out}");
@@ -101,44 +87,13 @@ mod windows {
         let _ = std::fs::remove_dir_all(&ws);
     }
 
-    /// A diagnostic re-run: its label, extra environment, and command.
-    type Variant<'a> = (&'a str, Vec<(String, String)>, &'a str);
-
-    /// What PowerShell sees of its module search, using only the engine and
-    /// .NET -- no cmdlet a broken module search would fail to find.
-    const PS_PROBE: &str = r#"
-"PSVersion=" + $PSVersionTable.PSVersion
-"PSHOME=" + $PSHOME
-"PSModulePath(env)=" + [Environment]::GetEnvironmentVariable('PSModulePath')
-"LOCALAPPDATA=" + $env:LOCALAPPDATA
-"Personal=" + [Environment]::GetFolderPath('Personal')
-"LanguageMode=" + $ExecutionContext.SessionState.LanguageMode
-"AutoLoad=" + $PSModuleAutoLoadingPreference
-"CacheDir exists=" + [IO.Directory]::Exists("$env:LOCALAPPDATA\Microsoft\Windows\PowerShell")
-try { Get-Command Write-Output -ErrorAction Stop | Out-Null; "Get-Command ok" } catch { "Get-Command failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message }
-foreach ($p in ($env:PSModulePath -split ';')) { "  dir $p exists=" + [IO.Directory]::Exists($p) }
-"Utility psd1 exists=" + [IO.File]::Exists("$PSHOME\Modules\Microsoft.PowerShell.Utility\Microsoft.PowerShell.Utility.psd1")
-try { Import-Module Microsoft.PowerShell.Utility -ErrorAction Stop; "Import-Module ok" } catch { "Import-Module failed: " + $_.Exception.GetType().FullName + ": " + $_.Exception.Message }
-"#;
-
     /// Spawn `command` through the sandbox exactly as the shell tool does:
     /// `jail::wrap` turns the shell into the helper re-exec, and `proc::spawn`
     /// clears the environment down to the allowlist before starting it.
     async fn spawn(shell: &ShellConfig, ws: &Path, command: &str) -> (bool, String) {
-        spawn_with(shell, ws, command, &[]).await
-    }
-
-    /// [`spawn`] with extra variables set in the shell's environment.
-    async fn spawn_with(
-        shell: &ShellConfig,
-        ws: &Path,
-        command: &str,
-        set: &[(String, String)],
-    ) -> (bool, String) {
         let policy = Policy::new(ws, false);
         let wrapped = jail::wrap(shell, &policy).expect("AppContainer wrapper");
-        let env = ShellEnv { passthrough: &[], set };
-        let child = proc::spawn(&wrapped, command, ws, None, env, None)
+        let child = proc::spawn(&wrapped, command, ws, None, ShellEnv::default(), None)
             .await
             .expect("spawn the helper");
         let pid = child.id();
