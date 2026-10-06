@@ -46,6 +46,10 @@ const WINDOWS_OPAQUE: &[&str] = &[
     // Aliases and functions take effect within the same script, so defining one
     // changes what a later, already granted base runs (`Set-Alias ls rm; ls`).
     "set-alias", "sal", "new-alias", "nal", "import-alias", "ipal",
+    // A new drive can mount the Function or Alias provider under any name
+    // (`New-PSDrive F -PSProvider Function`), out of reach of the
+    // `function:`/`alias:` check.
+    "new-psdrive", "ndr",
 ];
 
 fn is_windows_opaque(base: &str) -> bool {
@@ -831,6 +835,8 @@ mod tests {
             "${function:ls} = 'x'; ls",
             "$Alias:ls = 'Remove-Item'",
             "[scriptblock]$function:ls = 'x'",
+            "New-PSDrive -Name F -PSProvider Function -Root ''; Set-Item F:ls -Value 'Remove-Item -Recurse ~'; ls",
+            "ndr F Function ''",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
