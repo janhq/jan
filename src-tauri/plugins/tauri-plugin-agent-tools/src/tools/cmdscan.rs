@@ -168,7 +168,7 @@ fn assigns_unsafely(args: &[String]) -> bool {
 /// of digits and operators only is plain. Expansions run inside double
 /// quotes too, so only single-quoted text is skipped, and a `'` inside double
 /// quotes is literal. Under bash or cmd (`params`), parameter expansions that
-/// evaluate arithmetic count too ([`param_is_arithmetic`]); PowerShell's
+/// evaluate code count too ([`param_evaluates_code`]); PowerShell's
 /// `${...}` is only a variable name (`${env:Path}`).
 fn has_arithmetic(s: &str, params: bool) -> bool {
     let chars: Vec<char> = s.chars().collect();
@@ -188,10 +188,12 @@ fn has_arithmetic(s: &str, params: bool) -> bool {
             '"' => in_double = !in_double,
             '$' if params
                 && chars.get(i + 1) == Some(&'{')
-                && param_is_arithmetic(&chars[i + 2..]) =>
+                && param_evaluates_code(&chars[i + 2..]) =>
             {
                 return true;
             }
+            // Bash's legacy `$[expr]` arithmetic.
+            '$' if chars.get(i + 1) == Some(&'[') => return true,
             '(' if chars.get(i + 1) == Some(&'(') => {
                 if i == 0 || chars[i - 1] != '$' {
                     // `((` inside double quotes is text, not a command.
@@ -217,17 +219,28 @@ fn has_arithmetic(s: &str, params: bool) -> bool {
 }
 
 /// Whether the parameter expansion whose body starts at `body` (just past
-/// `${`) evaluates arithmetic: an array subscript (`${a[$i]}`, `${a[i]}`)
-/// or a substring offset or length (`${x:$n}`, `${x:1:n}`). Bash evaluates
-/// both as expressions, so a variable there can run code. Literal subscripts
-/// (`${a[0]}`, `${a[@]}`) and offsets (`${x:1}`, `${x: -2}`) are plain, as are
-/// the `:-`/`:=`/`:+`/`:?` default operators and pattern operators.
-fn param_is_arithmetic(body: &[char]) -> bool {
+/// `${`) can evaluate a variable's value as code. Only known-plain forms
+/// pass: a name (or `#name` for its length) with an optional literal
+/// subscript (`${a[0]}`, `${a[@]}`), then `}`, a literal substring offset
+/// (`${x:1}`, `${x: -2:1}`), a default operator (`:-`, `-`, `:=`, ...) or a
+/// pattern operator (`#`, `%`, `/`, `^`, `,`). Everything else is code:
+/// subscripts and offsets that read a variable are arithmetic (`${a[$i]}`,
+/// `${x:$n}`), `${!x}` resolves a name held in `x` (an `a[$(...)]` there
+/// runs), and `${x@P}` runs the `$(...)` in `x`'s value.
+fn param_evaluates_code(body: &[char]) -> bool {
     let mut j = 0;
-    while matches!(body.get(j), Some('#' | '!')) {
+    if body.first() == Some(&'#') && body.get(1).is_some_and(|c| *c != '}') {
         j += 1;
     }
+    let name_start = j;
     while body.get(j).is_some_and(|c| c.is_ascii_alphanumeric() || *c == '_') {
+        j += 1;
+    }
+    // A special parameter (`${#}`, `${?}`, `${@}`), never `!`.
+    if j == name_start {
+        if !matches!(body.get(j), Some('@' | '*' | '#' | '?' | '$' | '-')) {
+            return true;
+        }
         j += 1;
     }
     if body.get(j) == Some(&'[') {
@@ -243,13 +256,17 @@ fn param_is_arithmetic(body: &[char]) -> bool {
         }
         j += len + 2;
     }
-    if body.get(j) == Some(&':') && !matches!(body.get(j + 1), Some('-' | '=' | '+' | '?')) {
-        let end = body[j..].iter().position(|&c| c == '}').map_or(body.len(), |e| j + e);
-        return !body[j + 1..end]
-            .iter()
-            .all(|c| c.is_ascii_digit() || matches!(c, ' ' | '-' | ':'));
+    match body.get(j) {
+        Some('}' | '-' | '=' | '+' | '?' | '#' | '%' | '/' | '^' | ',') => false,
+        Some(':') if matches!(body.get(j + 1), Some('-' | '=' | '+' | '?')) => false,
+        Some(':') => {
+            let end = body[j..].iter().position(|&c| c == '}').map_or(body.len(), |e| j + e);
+            !body[j + 1..end]
+                .iter()
+                .all(|c| c.is_ascii_digit() || matches!(c, ' ' | '-' | ':'))
+        }
+        _ => true,
     }
-    false
 }
 
 /// Whether `s` holds a bash function definition header, `name()` or
@@ -500,6 +517,13 @@ pub fn scan_command_as(command: &str, kind: ShellKind) -> CommandScan {
     // where a string ends: in `echo 'a\u{2019}; rm x; \u{2019}'` PowerShell runs
     // `rm`. They are rare in real commands, so prompting costs little.
     if command.contains(PS_UNICODE_QUOTES) || has_live_backtick(command) {
+        return CommandScan::Opaque;
+    }
+    // Bash's ANSI-C quoting (`$'\''`) lets `\'` escape a quote inside a
+    // single-quoted string, which every quote tracker here reads as the
+    // string's end. Matched anywhere, even inside quotes, since telling those
+    // apart needs the same tracking: `echo 'cost $'` prompts, harmlessly.
+    if command.contains("$'") {
         return CommandScan::Opaque;
     }
     let mut bases = BTreeSet::new();
@@ -1394,6 +1418,7 @@ mod tests {
             plain("echo \"((x))\" '$((x))'", kind, &["echo"]);
             plain("echo ${a[0]} ${a[@]} ${#a[*]} ${x:1} ${x: -2:1}", kind, &["echo"]);
             plain("echo ${x:-def} ${x:=d} ${x:+y} ${x//[a-z]/} ${x#*:}", kind, &["echo"]);
+            plain("echo ${#x} ${#} ${?} ${@} ${x%.*} ${x^^} ${x,} ${x-d}", kind, &["echo"]);
             plain("printf '%s' x; wait -n", kind, &["printf", "wait"]);
             plain("[ -f x ] && cat x", kind, &["[", "cat"]);
             plain("[[ -f x ]]", kind, &["[["]);
@@ -1417,6 +1442,14 @@ mod tests {
             "echo ${x:$n}",
             "echo ${x:1:n}",
             "echo ${a[0]:$n}",
+            "read x < f; echo ${x@P}",
+            "echo \"${x@P}\"",
+            "echo ${!x}",
+            "echo ${!pre*}",
+            "echo $[x]",
+            "echo \"$[x + 1]\"",
+            "echo $'\\'' $((x)) $'\\''",
+            "echo $'\\'' ; rm -rf ~ ; $'\\''",
         ] {
             opaque(command, ShellKind::Posix);
         }
