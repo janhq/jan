@@ -24,8 +24,10 @@ pub enum CommandScan {
 
 /// Commands whose argument *is* code to run, or that escalate privilege /
 /// reach off-box. We cannot bound what they execute, so they are always opaque.
+/// `alias` and `shopt` belong here too: with `shopt -s expand_aliases`, an
+/// `alias ls='rm -rf ~'` makes a later, already granted `ls` run its value.
 const OPAQUE: &[&str] = &[
-    "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch",
+    "eval", "xargs", "source", ".", "sudo", "su", "doas", "ssh", "watch", "alias", "shopt",
 ];
 /// Windows shells, PowerShell's run-this-text commands, and the cmdlets (with
 /// their aliases) that run a `{ ... }` script block. Their argument is code in
@@ -54,12 +56,14 @@ const WINDOWS_OPAQUE: &[&str] = &[
     "new-psdrive", "ndr",
     // The item and content cmdlets write to any provider, including Function
     // and Alias, and their path can be assembled at run time
-    // (`Set-Item "${a}:ls"`), which no text check can see through. Only
-    // PowerShell's own names: the
-    // `cp`/`mv`/`copy`/`move`/`ren` aliases are ordinary POSIX or cmd
-    // commands elsewhere, and a provider path needs the cmdlet anyway.
+    // (`Set-Item "${a}:ls"`), which no text check can see through. Their
+    // `cp`/`mv`/... aliases are handled by `POWERSHELL_ITEM_ALIASES`, since
+    // those names are ordinary file commands outside PowerShell.
     "set-item", "si", "new-item", "ni", "copy-item", "cpi", "rename-item", "rni",
     "move-item", "mi", "set-content", "add-content", "ac", "clear-content", "clc",
+    // A module's exported functions join the session and take precedence over
+    // a program of the same name, so importing one can redefine a granted base.
+    "import-module", "ipmo",
 ];
 /// PowerShell's aliases for the item cmdlets above. Under bash or cmd these
 /// are ordinary file commands that a grant may cover; only PowerShell turns
@@ -880,6 +884,13 @@ mod tests {
             "ac a.txt x",
             "Clear-Content a.txt",
             "clc a.txt",
+            // A module's functions shadow a program of the same name.
+            "echo 'function git { rm x }' > x.psm1; Import-Module ./x.psm1; git status",
+            "ipmo ./x.psm1",
+            // A bash alias redefines a later, already granted command.
+            "shopt -s expand_aliases\nalias ls='rm -rf ~'\nls",
+            "alias ls='rm -rf ~'",
+            "shopt -s expand_aliases",
             "wsl rm -rf ~",
             "bash.exe -c 'iex x'",
             "mshta x.hta",
