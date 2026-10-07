@@ -409,6 +409,20 @@ fn windows_name(base: &str) -> String {
     lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
 }
 
+/// GNU `time`'s getopt spec is `+af:o:pqvV`: only `-f`/`--format` and
+/// `-o`/`--output` take a separate value; `-a`, `-p`, `-q`, `-v`, `-V` do
+/// not and may combine into one cluster (`-aqvV`). Whether `t` is entirely
+/// made of those no-value flags, so anything else (an unknown flag, a
+/// cluster containing `f` or `o`, or a `--` abbreviation of `--format`/
+/// `--output` such as `--out`) is treated as ambiguous rather than missed.
+fn is_time_plain_flag(t: &str) -> bool {
+    const LONG: &[&str] = &["--append", "--portability", "--quiet", "--verbose", "--version"];
+    if let Some(short) = t.strip_prefix('-').filter(|s| !s.starts_with('-')) {
+        return !short.is_empty() && short.chars().all(|c| "apqvV".contains(c));
+    }
+    LONG.contains(&t)
+}
+
 /// Whether `seg` holds a brace outside quotes and outside a `${...}` variable.
 /// Such a brace is a PowerShell script block (`& { ... }`, `%{ ... }`,
 /// `try{...}finally{...}`) or a POSIX `{ ...; }` group, whose contents are not
@@ -972,12 +986,12 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
                 // A bare flag followed by a word may take that word as its
                 // value (`timeout -s KILL 5 rm`, `exec -a ls rm`), so which
                 // token is the command is ambiguous. Attached values
-                // (`-oL`, `--signal=KILL`) are not. `time` only takes a
-                // separate value after `-o`/`--output` (GNU `time -p`, `-v`
-                // are plain flags), so it is checked by name rather than
-                // shape: otherwise `time -p ls` would wrongly turn opaque.
+                // (`-oL`, `--signal=KILL`) are not. `time` is checked by
+                // `is_time_plain_flag` instead, which whitelists its
+                // no-value flags so unknown/combined/abbreviated spellings
+                // default to ambiguous rather than being missed.
                 let value_flag = if base.as_str() == "time" {
-                    t == "-o" || t == "--output"
+                    t.starts_with('-') && !is_time_plain_flag(t)
                 } else {
                     (t.len() == 2 && t.starts_with('-') && !numeric(&t[1..]))
                         || (t.starts_with("--") && !t.contains('='))
@@ -1480,10 +1494,18 @@ mod tests {
                 "path C:\\evil",
                 // janhq/jan#9149: `time -o FILE cmd` writes to `FILE` and
                 // runs `cmd`, not `FILE`; `-o` must not be skipped as an
-                // ordinary flag.
+                // ordinary flag. `-f`/`--format` take a value too, and so
+                // does `-o` combined into a short-flag cluster (`-ao`) or
+                // spelled as a getopt_long abbreviation (`--out`).
                 "time -o ls rm -rf ~",
                 "command time -o ls rm -rf ~",
                 "/usr/bin/time -o ls rm x",
+                "time -f ls rm -rf ~",
+                "time -ao ls rm -rf ~",
+                "time --out ls rm -rf ~",
+                "time --format ls rm -rf ~",
+                "time --forma ls rm -rf ~",
+                "time -zo ls rm -rf ~",
                 // A command word built at run time.
                 "l$x -la",
                 "/bin/r? x",
@@ -1509,9 +1531,11 @@ mod tests {
             plain("timeout --signal=KILL 5 curl u", kind, &["curl"]);
             plain("nice -n 10 make", kind, &["make"]);
             plain("stdbuf -oL make", kind, &["make"]);
-            // janhq/jan#9149: `-p` is an ordinary flag, not the `-o` output
-            // flag, so `time` still yields its wrapped command.
+            // janhq/jan#9149: `time`'s no-value flags still yield its
+            // wrapped command.
             plain("time -p ls", kind, &["ls"]);
+            plain("time -aqvV ls", kind, &["ls"]);
+            plain("time --verbose ls", kind, &["ls"]);
             plain("read -r line < f", kind, &["read"]);
             plain("echo \"$(git rev-parse HEAD)\"", kind, &["echo", "git"]);
             // A path stays the base: `./ls` is not the granted `ls`.
