@@ -12,13 +12,19 @@
 //! - it is `llama-server`,
 //! - it was started with `--models-preset <data folder>/llamacpp/router.preset.ini`,
 //!   the preset file Jan writes, so it belongs to this data folder,
-//! - its parent is gone or is not a Jan process, so a Jan that is still running
-//!   (another instance, or this one) keeps its engine. That includes a detached
-//!   `jan serve` from 0.8.4, which keeps its router as a live child.
+//! - its parent is gone, is not a Jan process, or cannot be the process that
+//!   started it (see below), so a Jan that is still running (another instance,
+//!   or this one) keeps its engine. That includes a detached `jan serve` from
+//!   0.8.4, which keeps its router as a live child.
 //!
-//! Its descendants, the per-model children the router spawns, go with it. A
-//! process counts as a descendant only if it started no earlier than the parent
-//! it names, because Windows never reparents and reuses pids.
+//! Its descendants, the per-model children the router spawns, go with it.
+//!
+//! Windows never reparents and reuses pids, so a pid in a parent link can name
+//! a different, later process. Start times settle it: a process counts as a
+//! descendant only if it started no earlier than the parent it names, and a
+//! parent that started after its child is not its owner. When a start time is
+//! unknown the order cannot be told: a router keeps its Jan, and a process is
+//! never swept as a child on that evidence.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -87,13 +93,33 @@ fn is_jan(name: &str) -> bool {
     name.to_ascii_lowercase().contains("jan")
 }
 
-/// Orphaned when the parent no longer exists, was adopted by init (pid 1), or is
-/// something other than Jan. The last case covers a systemd user session
-/// adopting the process on Linux, where the new parent is not pid 1.
+/// Whether `parent` could really be the parent of `child`: a parent cannot have
+/// started after its child. Windows never reparents and reuses pids, so the
+/// pid an old Jan had can be handed to a process started later, such as the
+/// freshly launched new Jan. When either start time is unknown (0) the order
+/// cannot be told and the parent is given the benefit of the doubt.
+fn could_be_parent(parent: &ProcInfo, child: &ProcInfo) -> bool {
+    parent.start_time == 0 || child.start_time == 0 || parent.start_time <= child.start_time
+}
+
+/// Whether `child` is provably a child of `parent`: it started no earlier than
+/// the parent it names. An unknown start time (0) on either side proves
+/// nothing, so the process is not treated as a child and is never killed on
+/// that evidence.
+fn is_child_of(child: &ProcInfo, parent: &ProcInfo) -> bool {
+    child.start_time != 0 && parent.start_time != 0 && child.start_time >= parent.start_time
+}
+
+/// Orphaned when the parent no longer exists, was adopted by init (pid 1), is
+/// something other than Jan, or cannot be the process that started it. The
+/// third case covers a systemd user session adopting the process on Linux,
+/// where the new parent is not pid 1.
 fn is_orphaned(proc: &ProcInfo, by_pid: &HashMap<u32, &ProcInfo>) -> bool {
     match proc.parent {
         None | Some(1) => true,
-        Some(parent) => by_pid.get(&parent).is_none_or(|p| !is_jan(&p.name)),
+        Some(parent) => by_pid
+            .get(&parent)
+            .is_none_or(|p| !is_jan(&p.name) || !could_be_parent(p, proc)),
     }
 }
 
@@ -127,14 +153,13 @@ pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> 
         let Some(parent_pid) = p.parent else {
             continue;
         };
-        // A child cannot be older than its parent. Windows never reparents and
-        // reuses pids, so a live process can name a long-dead parent whose pid
-        // a router has since taken; without this check it would be swept as
-        // that router's child. An unknown start time (0) is left alone.
-        let started_after_parent = by_pid
+        // Windows never reparents and reuses pids, so a live process can name a
+        // long-dead parent whose pid a router has since taken; without this
+        // check it would be swept as that router's child.
+        let is_child = by_pid
             .get(&parent_pid)
-            .is_some_and(|parent| p.start_time >= parent.start_time);
-        if started_after_parent {
+            .is_some_and(|parent| is_child_of(p, parent));
+        if is_child {
             children.entry(parent_pid).or_default().push(p.pid);
         }
     }
@@ -250,18 +275,24 @@ mod tests {
     #[test]
     fn a_router_adopted_by_init_is_swept_with_its_children_first() {
         let procs = [
-            router(200, Some(1)),
-            proc(
-                201,
-                Some(200),
-                "llama-server",
-                &["llama-server", "-m", "a.gguf"],
+            started_at(router(200, Some(1)), 100),
+            started_at(
+                proc(
+                    201,
+                    Some(200),
+                    "llama-server",
+                    &["llama-server", "-m", "a.gguf"],
+                ),
+                200,
             ),
-            proc(
-                202,
-                Some(200),
-                "llama-server",
-                &["llama-server", "-m", "b.gguf"],
+            started_at(
+                proc(
+                    202,
+                    Some(200),
+                    "llama-server",
+                    &["llama-server", "-m", "b.gguf"],
+                ),
+                200,
             ),
         ];
         let victims = sweep(&procs);
@@ -404,5 +435,59 @@ mod tests {
         let mut victims = sweep(&procs);
         victims.sort_unstable();
         assert_eq!(victims, vec![200, 301]);
+    }
+
+    #[test]
+    fn a_jan_that_started_after_the_router_is_not_its_owner() {
+        // Windows handed the old Jan's pid to the freshly launched new Jan.exe,
+        // which started after the router and so cannot be its parent.
+        let procs = [
+            started_at(proc(50, Some(1), "Jan.exe", &["Jan.exe"]), 900),
+            started_at(router(200, Some(50)), 500),
+        ];
+        assert_eq!(sweep(&procs), vec![200]);
+    }
+
+    #[test]
+    fn a_jan_that_started_before_the_router_still_owns_it() {
+        let procs = [
+            started_at(proc(50, Some(1), "Jan.exe", &["Jan.exe"]), 100),
+            started_at(router(200, Some(50)), 500),
+        ];
+        assert!(sweep(&procs).is_empty());
+    }
+
+    #[test]
+    fn a_router_with_an_unknown_start_time_takes_no_live_process_with_it() {
+        // With the router's own start time unknown, every process naming its
+        // pid would otherwise count as started after it.
+        let procs = [
+            router(200, Some(1)),
+            started_at(proc(300, Some(200), "explorer.exe", &["explorer.exe"]), 100),
+            started_at(
+                proc(
+                    301,
+                    Some(200),
+                    "llama-server",
+                    &["llama-server", "-m", "a.gguf"],
+                ),
+                600,
+            ),
+        ];
+        assert_eq!(sweep(&procs), vec![200]);
+    }
+
+    #[test]
+    fn a_process_with_an_unknown_start_time_is_not_taken_as_a_child() {
+        let procs = [
+            started_at(router(200, Some(1)), 500),
+            proc(
+                301,
+                Some(200),
+                "llama-server",
+                &["llama-server", "-m", "a.gguf"],
+            ),
+        ];
+        assert_eq!(sweep(&procs), vec![200]);
     }
 }
