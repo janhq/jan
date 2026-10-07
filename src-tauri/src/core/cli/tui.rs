@@ -7947,7 +7947,8 @@ fn user_bubble_bg_for(light: bool) -> Color {
 }
 
 fn user_bubble_bg() -> Color {
-    user_bubble_bg_for(theme::is_light())
+    let t = theme::Theme::current();
+    t.fit(user_bubble_bg_for(t.light))
 }
 
 /// User-turn text: the inverse of the bubble background so the message keeps
@@ -7965,7 +7966,8 @@ fn user_bubble_fg_for(light: bool) -> Color {
 }
 
 fn user_bubble_fg() -> Color {
-    user_bubble_fg_for(theme::is_light())
+    let t = theme::Theme::current();
+    t.fit(user_bubble_fg_for(t.light))
 }
 
 /// Tint a run of gutter rows as one filled bubble: every span carries the
@@ -7989,12 +7991,11 @@ fn band_rows(lines: Vec<Line<'static>>, bg: Color) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn diff_add_bg() -> Color {
-    diff_bg(true, theme::is_light())
-}
-
-fn diff_del_bg() -> Color {
-    diff_bg(false, theme::is_light())
+/// The band behind a changed diff row at the theme's depth, or `None` on a
+/// 16-colour terminal, where the row is told apart by a red/green foreground
+/// instead (see `Theme::subtle`).
+fn diff_band(added: bool, t: theme::Theme) -> Option<Color> {
+    t.subtle(diff_bg(added, t.light))
 }
 
 /// Selection style shared by every arrow-navigable list (ask, permission, slash
@@ -8026,6 +8027,19 @@ fn diff_lines(
     gutter: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
+    diff_lines_in(theme::Theme::current(), diff, width, max_rows, gutter, lang)
+}
+
+/// `diff_lines` for an explicit theme, so each colour depth is tested without
+/// the process-wide state.
+fn diff_lines_in(
+    t: theme::Theme,
+    diff: &str,
+    width: usize,
+    max_rows: usize,
+    gutter: &'static str,
+    lang: Option<&str>,
+) -> Vec<Line<'static>> {
     let max = panel_inner(width, gutter);
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(max_rows);
@@ -8050,11 +8064,12 @@ fn diff_lines(
             rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
             continue;
         }
-        let bg = match marker.as_bytes().first() {
-            Some(b'-') => Some(diff_del_bg()),
-            Some(b'+') => Some(diff_add_bg()),
+        let change = match marker.as_bytes().first() {
+            Some(b'-') => Some(Color::Red),
+            Some(b'+') => Some(Color::Green),
             _ => None,
         };
+        let bg = change.and_then(|c| diff_band(c == Color::Green, t));
         let mut spans = Vec::with_capacity(2);
         if !marker.is_empty() {
             // On a tinted row the marker takes the strong colour and the code
@@ -8066,11 +8081,16 @@ fn diff_lines(
             };
             spans.push(Span::styled(marker.to_string(), marker_style));
         }
-        match &highlighted {
-            Some(h) => spans.extend(h[i].iter().cloned()),
+        match (&highlighted, change) {
+            // Without a band the foreground is all that says what changed, so
+            // it wins over the syntax colours.
+            (_, Some(fg)) if bg.is_none() => {
+                spans.push(Span::styled(body.to_string(), Style::new().fg(fg)))
+            }
+            (Some(h), _) => spans.extend(h[i].iter().cloned()),
             // Dimming an unhighlighted body would fight the tint behind it.
-            None if bg.is_some() => spans.push(Span::raw(body.to_string())),
-            None => spans.push(Span::styled(body.to_string(), Style::new().dim())),
+            (None, _) if bg.is_some() => spans.push(Span::raw(body.to_string())),
+            (None, _) => spans.push(Span::styled(body.to_string(), Style::new().dim())),
         }
         // The tint rides on the line so `boxed_panel` can carry it across the
         // padding too, making the band reach the right border.
@@ -30010,6 +30030,74 @@ mod tests {
                 "add and remove must differ (light={light})"
             );
         }
+    }
+
+    /// The diff bands follow the colour depth: RGB on truecolor, the nearest
+    /// palette index on 256 colours, and no band at all on 16.
+    #[test]
+    fn diff_bands_fit_each_colour_depth() {
+        use super::diff_band;
+        use super::theme::{ColorDepth, Theme};
+        use ratatui::style::Color;
+        let at = |light, depth| Theme { light, depth };
+        for light in [false, true] {
+            for added in [false, true] {
+                let tc = diff_band(added, at(light, ColorDepth::Truecolor));
+                assert!(matches!(tc, Some(Color::Rgb(..))), "{tc:?}");
+                let idx = diff_band(added, at(light, ColorDepth::Ansi256));
+                assert!(matches!(idx, Some(Color::Indexed(16..=255))), "{idx:?}");
+                assert_eq!(diff_band(added, at(light, ColorDepth::Ansi16)), None);
+            }
+            assert_ne!(
+                diff_band(true, at(light, ColorDepth::Ansi256)),
+                diff_band(false, at(light, ColorDepth::Ansi256)),
+                "add and remove must differ on 256 colours (light={light})"
+            );
+        }
+    }
+
+    /// A 16-colour diff drops the band and says what changed with a plain
+    /// red/green foreground, over the syntax colours, so nothing on the row is
+    /// a colour code the terminal cannot show.
+    #[test]
+    fn sixteen_colour_diff_rows_are_foreground_only() {
+        use super::diff_lines_in;
+        use super::theme::{ColorDepth, Theme};
+        use ratatui::style::Color;
+        let diff = "     1 | fn main() {\n-    2 |     let x = 1;\n+    2 |     let y = 2;";
+        let t = Theme { light: false, depth: ColorDepth::Ansi16 };
+        let out = diff_lines_in(t, diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
+        for (needle, fg) in [("let x = 1;", Color::Red), ("let y = 2;", Color::Green)] {
+            let row = diff_row(&out, needle);
+            assert_eq!(row.style.bg, None, "16-colour row was banded: {row:?}");
+            assert!(row.spans.iter().all(|s| s.style.bg.is_none()));
+            let body = row
+                .spans
+                .iter()
+                .find(|s| s.content.contains(needle))
+                .unwrap_or_else(|| panic!("no body span in {row:?}"));
+            assert_eq!(body.style.fg, Some(fg), "{needle:?}");
+        }
+        // Context rows take their token colours from `highlight`, which reads
+        // the process-wide theme; the changed rows and every band are this
+        // function's own.
+        let no_codes = ["let x = 1;", "let y = 2;"]
+            .iter()
+            .flat_map(|n| diff_row(&out, n).spans)
+            .flat_map(|s| [s.style.fg, s.style.bg])
+            .chain(out.iter().flat_map(|l| l.spans.iter().map(|s| s.style.bg)))
+            .all(|c| !matches!(c, Some(Color::Rgb(..) | Color::Indexed(..))));
+        assert!(no_codes, "a 16-colour diff emitted an RGB or indexed colour");
+
+        // On 256 colours the band is an index and the code keeps its tokens.
+        let t = Theme { light: false, depth: ColorDepth::Ansi256 };
+        let out = diff_lines_in(t, diff, 80, DIFF_MAX_ROWS, "", Some("src/main.rs"));
+        assert!(
+            row_backgrounds(&out, "let y = 2;")
+                .iter()
+                .all(|bg| matches!(bg, Some(Color::Indexed(_)))),
+            "256-colour row not banded by an index"
+        );
     }
 
     /// The user bubble flips with the terminal theme like the diff bands do.
