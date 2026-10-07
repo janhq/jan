@@ -151,6 +151,98 @@ pub(super) fn strong_accent() -> Color {
     Theme::current().strong_accent()
 }
 
+/// A named chrome colour: what a border, title, hint or badge means, not which
+/// hue it is. Every panel reads these instead of picking an ANSI name per call
+/// site, so related elements (all input-waiting borders, all warnings) share
+/// one colour and retheme together.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Role {
+    /// Interactive emphasis: titles, selections, running tool labels.
+    Accent,
+    /// The border of a panel that only shows state.
+    BorderIdle,
+    /// The border of a panel waiting for the user's input.
+    BorderActive,
+    /// Needs attention: approvals, a zero cache hit, a parked run.
+    Warning,
+    /// Done or healthy.
+    Success,
+    /// Secondary text: hints, counts, separators.
+    Muted,
+}
+
+impl Role {
+    /// The truecolor value per background. Light values are deeper so they keep
+    /// contrast on white; dark values are softer so they do not glare.
+    pub(super) fn rgb(self, light: bool) -> Color {
+        let (r, g, b) = match (self, light) {
+            (Role::Accent | Role::BorderActive, false) => (86, 182, 194),
+            (Role::Accent | Role::BorderActive, true) => (0, 110, 130),
+            (Role::BorderIdle, false) => (92, 99, 112),
+            (Role::BorderIdle, true) => (160, 166, 178),
+            (Role::Warning, false) => (229, 192, 123),
+            (Role::Warning, true) => (154, 103, 0),
+            (Role::Success, false) => (152, 195, 121),
+            (Role::Success, true) => (36, 128, 60),
+            (Role::Muted, false) => (128, 128, 128),
+            (Role::Muted, true) => (110, 110, 110),
+        };
+        Color::Rgb(r, g, b)
+    }
+
+    /// The named colour on a 16-colour terminal. Chosen by meaning rather than
+    /// by nearest RGB (which would grey out the softer accents), and safe on
+    /// either background because the user's palette already tunes the names.
+    fn ansi16(self) -> Color {
+        match self {
+            Role::Accent | Role::BorderActive => Color::Cyan,
+            Role::BorderIdle | Role::Muted => Color::DarkGray,
+            Role::Warning => Color::Yellow,
+            Role::Success => Color::Green,
+        }
+    }
+}
+
+impl Theme {
+    /// The colour of `role` fitted to this theme and depth.
+    pub(super) fn role(self, role: Role) -> Color {
+        match self.depth {
+            ColorDepth::Ansi16 => role.ansi16(),
+            _ => self.fit(role.rgb(self.light)),
+        }
+    }
+}
+
+/// Interactive emphasis: panel titles, selections, the running tool label.
+pub(super) fn accent() -> Color {
+    Theme::current().role(Role::Accent)
+}
+
+/// The border of a panel that only shows state (todo, subagents).
+pub(super) fn border_idle() -> Color {
+    Theme::current().role(Role::BorderIdle)
+}
+
+/// The border of a panel waiting for input (pickers, approvals, settings).
+pub(super) fn border_active() -> Color {
+    Theme::current().role(Role::BorderActive)
+}
+
+/// Needs attention.
+pub(super) fn warning() -> Color {
+    Theme::current().role(Role::Warning)
+}
+
+/// Done or healthy.
+pub(super) fn success() -> Color {
+    Theme::current().role(Role::Success)
+}
+
+/// Secondary text: hints, counts, separators.
+pub(super) fn muted() -> Color {
+    Theme::current().role(Role::Muted)
+}
+
 fn set_is_light(value: bool) {
     IS_LIGHT.store(value, Ordering::Relaxed);
 }
@@ -623,6 +715,82 @@ mod tests {
         assert_eq!(t(true, ColorDepth::Ansi256), Color::Indexed(130));
         assert_eq!(t(false, ColorDepth::Ansi16), Color::Yellow);
         assert_eq!(t(true, ColorDepth::Ansi16), Color::Yellow);
+    }
+
+    const ROLES: [Role; 6] = [
+        Role::Accent,
+        Role::BorderIdle,
+        Role::BorderActive,
+        Role::Warning,
+        Role::Success,
+        Role::Muted,
+    ];
+
+    #[test]
+    fn palette_is_rgb_per_background_on_truecolor() {
+        for role in ROLES {
+            let dark = theme(false, ColorDepth::Truecolor).role(role);
+            let light = theme(true, ColorDepth::Truecolor).role(role);
+            assert_eq!(dark, role.rgb(false), "{role:?}");
+            assert_eq!(light, role.rgb(true), "{role:?}");
+            assert_ne!(dark, light, "{role:?} must differ per background");
+        }
+    }
+
+    #[test]
+    fn palette_light_values_are_darker_than_dark_values() {
+        let lum = |c: Color| match c {
+            Color::Rgb(r, g, b) => 299 * r as u32 + 587 * g as u32 + 114 * b as u32,
+            other => panic!("not rgb: {other:?}"),
+        };
+        for role in ROLES {
+            if role == Role::BorderIdle {
+                // An idle border recedes: lighter than text on white.
+                continue;
+            }
+            assert!(lum(role.rgb(true)) < lum(role.rgb(false)), "{role:?}");
+        }
+    }
+
+    #[test]
+    fn palette_is_indexed_on_256_colours() {
+        for light in [false, true] {
+            for role in ROLES {
+                let c = theme(light, ColorDepth::Ansi256).role(role);
+                assert!(matches!(c, Color::Indexed(_)), "{role:?} light={light}: {c:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn palette_is_named_on_sixteen_colours() {
+        for light in [false, true] {
+            let t = |role| theme(light, ColorDepth::Ansi16).role(role);
+            assert_eq!(t(Role::Accent), Color::Cyan);
+            assert_eq!(t(Role::BorderActive), Color::Cyan);
+            assert_eq!(t(Role::BorderIdle), Color::DarkGray);
+            assert_eq!(t(Role::Warning), Color::Yellow);
+            assert_eq!(t(Role::Success), Color::Green);
+            assert_eq!(t(Role::Muted), Color::DarkGray);
+        }
+    }
+
+    #[test]
+    fn palette_functions_read_the_current_theme() {
+        let light16 = theme(true, ColorDepth::Ansi16);
+        with_theme(light16, || {
+            assert_eq!(accent(), Color::Cyan);
+            assert_eq!(border_idle(), Color::DarkGray);
+            assert_eq!(border_active(), Color::Cyan);
+            assert_eq!(warning(), Color::Yellow);
+            assert_eq!(success(), Color::Green);
+            assert_eq!(muted(), Color::DarkGray);
+        });
+        with_theme(theme(true, ColorDepth::Truecolor), || {
+            assert_eq!(accent(), Role::Accent.rgb(true));
+            assert_eq!(warning(), Role::Warning.rgb(true));
+        });
+        assert_eq!(accent(), Role::Accent.rgb(false), "default is dark truecolor");
     }
 
     #[test]
