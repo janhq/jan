@@ -93,11 +93,19 @@ fn is_orphaned(proc: &ProcInfo, by_pid: &HashMap<u32, &ProcInfo>) -> bool {
 }
 
 /// `root` and everything below it, each process listed before its children.
+///
+/// Each pid is listed once. Windows never reparents and reuses pids, so a dead
+/// parent's pid can be taken by one of its own later children, which makes the
+/// parent links a cycle.
 fn with_descendants(root: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
     let mut order = vec![root];
     let mut next = 0;
     while let Some(&pid) = order.get(next) {
-        order.extend(children.get(&pid).into_iter().flatten().copied());
+        for &child in children.get(&pid).into_iter().flatten() {
+            if !order.contains(&child) {
+                order.push(child);
+            }
+        }
         next += 1;
     }
     order
@@ -327,5 +335,23 @@ mod tests {
             &PathBuf::from("C:\\Users\\u\\AppData\\Roaming\\Jan\\data"),
         );
         assert_eq!(victims, vec![200]);
+    }
+
+    #[test]
+    fn a_parent_cycle_from_pid_reuse_terminates() {
+        // Windows never reparents and reuses pids: the router's dead parent's
+        // pid was taken by one of the router's own later children.
+        let procs = [
+            router(200, Some(201)),
+            proc(
+                201,
+                Some(200),
+                "llama-server",
+                &["llama-server", "-m", "a.gguf"],
+            ),
+        ];
+        let mut victims = sweep(&procs);
+        victims.sort_unstable();
+        assert_eq!(victims, vec![200, 201]);
     }
 }
