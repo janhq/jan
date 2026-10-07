@@ -373,6 +373,19 @@ pub fn run() {
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
 
+            // A Jan up to 0.8.4 leaves its llama-server router running across an
+            // in-app update; that version cannot be fixed, so reap it here.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            {
+                let data_folder = get_jan_data_folder_path(app.handle().clone());
+                tauri::async_runtime::spawn_blocking(move || {
+                    let killed = core::system::orphans::sweep_orphaned_engines(&data_folder);
+                    if killed > 0 {
+                        log::warn!("Reaped {killed} engine process(es) left by a previous Jan");
+                    }
+                });
+            }
+
             // Start migration
             let mut store_path = get_jan_data_folder_path(app.handle().clone());
             store_path.push("store.json");
