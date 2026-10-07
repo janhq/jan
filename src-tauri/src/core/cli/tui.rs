@@ -10165,10 +10165,10 @@ fn could_become_think_tag(s: &str) -> bool {
 }
 
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
-/// matching close has not yet streamed). Used to show `[thinking]` while
-/// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
+/// matching close has not yet streamed). The live path folds this in token by
+/// token (`BufScan`); this full scan is the reference it is tested against.
+#[cfg(test)]
 fn thinking_open(text: &str) -> bool {
-    #[cfg(test)]
     tally(&THINK_SCANS);
     if !think_tags_parsed() {
         return false;
