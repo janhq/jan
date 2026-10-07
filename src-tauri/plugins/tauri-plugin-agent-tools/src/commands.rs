@@ -1424,6 +1424,10 @@ mod tests {
     /// the OS can confine it and is refused when it cannot. Asserting both arms
     /// keeps the fallback honest on hosts (and CI images) with no backend.
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
     async fn bash_runs_only_when_the_sandbox_can_enforce() {
         let data = unique_data_folder();
         let df = data.to_string_lossy().to_string();
