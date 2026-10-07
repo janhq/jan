@@ -13,6 +13,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use nix::pty::{openpty, Winsize};
 use nix::sys::termios::{tcgetattr, LocalFlags};
@@ -25,6 +26,10 @@ fn scratch_home() -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+/// Generous for a debug build on a loaded CI runner; a healthy run exits in
+/// well under a second.
+const EXIT_DEADLINE: Duration = Duration::from_secs(60);
 
 #[test]
 fn panic_after_raw_mode_leaves_the_terminal_clean() {
@@ -77,11 +82,28 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
         output
     });
 
-    let status = child
-        .wait_with_output()
-        .expect("wait for the panicking jan process");
+    // Bounded: if the trigger ever stops firing, the TUI would sit in its
+    // input loop forever and hang CI instead of failing. Killing the child
+    // closes the last slave fd, which also ends the reader with EIO.
+    let mut child = child;
+    let deadline = Instant::now() + EXIT_DEADLINE;
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("poll the jan process") {
+            break Some(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    };
     let output = reader.join().expect("read terminal output");
     let text = String::from_utf8_lossy(&output);
+    let Some(status) = status else {
+        let _ = std::fs::remove_dir_all(&home);
+        panic!("jan did not exit within {EXIT_DEADLINE:?} of the induced panic: {text}");
+    };
 
     let _ = std::fs::remove_dir_all(&home);
 
@@ -91,7 +113,7 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
     // the exit code itself, but a successful exit would mean the panic never
     // fired and the test is not exercising anything.
     assert!(
-        !status.status.success(),
+        !status.success(),
         "the induced panic did not abort the process; stderr/stdout: {text}"
     );
 
@@ -106,10 +128,10 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
         termios.local_flags
     );
 
-    // Private modes `startup_modes`/`restore_terminal_modes` toggle, in the
-    // order the panic hook writes them: bracketed paste, mouse tracking (SGR +
-    // drag + buttons), alternate scroll's own save/restore pair, the alternate
-    // screen buffer, and the Kitty keyboard protocol push/pop.
+    // Private modes `run` turns on at startup and `restore_terminal_modes`
+    // turns off: bracketed paste, mouse tracking (buttons, drag, SGR
+    // coordinates), the alternate screen buffer and the Kitty keyboard
+    // protocol push/pop.
     let enabled = [
         ("bracketed paste enabled", "\x1b[?2004h"),
         ("mouse buttons+wheel enabled", "\x1b[?1000h"),
@@ -125,6 +147,14 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
         );
     }
 
+    // The last enable `run` writes before the panic trigger. Every restore
+    // sequence must come after it, proving the hook -- not some earlier code
+    // path -- is what turned each mode back off.
+    let last_enable_at = enabled
+        .iter()
+        .map(|(_, seq)| text.rfind(seq).expect("checked present above"))
+        .max()
+        .expect("non-empty");
     let restored = [
         ("bracketed paste disabled", "\x1b[?2004l"),
         ("mouse buttons+wheel disabled", "\x1b[?1000l"),
@@ -135,25 +165,12 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
         ("cursor shown", "\x1b[?25h"),
     ];
     for (label, seq) in restored {
+        let at = text.rfind(seq).unwrap_or_else(|| {
+            panic!("expected the panic hook to have {label} ({seq:?}): {text}")
+        });
         assert!(
-            text.contains(seq),
-            "expected the panic hook to have {label} ({seq:?}): {text}"
+            at > last_enable_at,
+            "{label} ({seq:?}) must follow the last startup mode, not precede it: {text}"
         );
     }
-
-    // Order matters as much as presence: every disable sequence must appear
-    // after the panic was induced (i.e. after Kitty keys were turned on, the
-    // last mode `run` enables before the test's panic trigger), proving the
-    // hook -- not some earlier/unrelated code path -- is what restored them.
-    let kitty_on_at = text.find("\x1b[>5u").expect("kitty on");
-    let kitty_off_at = text.rfind("\x1b[<u").expect("kitty off");
-    assert!(
-        kitty_off_at > kitty_on_at,
-        "the restore sequence must follow the panic trigger: {text}"
-    );
-    let alt_screen_leave_at = text.rfind("\x1b[?1049l").expect("alt screen left");
-    assert!(
-        alt_screen_leave_at > kitty_on_at,
-        "leaving the alternate screen must follow the panic trigger too: {text}"
-    );
 }
