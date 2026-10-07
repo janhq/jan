@@ -1008,7 +1008,8 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
                         // never end.
                         format!(
                             " You do not have to wait or poll for it: you are notified \
-                             automatically when it finishes, so carry on with other work or you can end your turn. \
+                             automatically when it finishes, so carry on with other work \
+                             or end your turn. \
                              If it is still running after about {}s you are told that \
                              instead, and the run is free to end -- the file still appears \
                              when the command eventually finishes.",
