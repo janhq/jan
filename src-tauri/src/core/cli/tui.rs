@@ -10023,7 +10023,16 @@ pub async fn run(
     // resolved so it caches the right variant.
     tokio::task::spawn_blocking(highlight::warm);
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(|e| e.to_string())?;
+    // A startup error past `enable_raw_mode` returns to `main`, which prints it
+    // and exits: restore first, the same as the clean and panic exits, or the
+    // message lands on a raw-mode alternate screen.
+    let abort_startup = |e: io::Error| {
+        release_terminal();
+        restore_terminal_modes();
+        log::set_max_level(prev_log_level);
+        e.to_string()
+    };
+    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(abort_startup)?;
     let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
     let _ = stdout.write_all(modes.as_bytes());
     let _ = stdout.flush();
@@ -10039,7 +10048,7 @@ pub async fn run(
         panic!("JAN_TUI_PANIC_AFTER_RAW_MODE");
     }
     let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
+    let mut terminal = Terminal::new(backend).map_err(abort_startup)?;
 
     // A git repo enables workspace snapshots (rewind can restore files); a
     // non-repo runs exactly as before with conversation-only rewind. With a
