@@ -1,0 +1,151 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+|┌──────────────────────────────────────┐|
+|│ @@ -1,0 +1,30 @@                     │|
+|│ +line 00 of a long generated block … │|
+|│ +line 01 of a long generated block … │|
+|│ +line 02 of a long generated block … │|
+|│ +line 03 of a long generated block … │|
+|│ +line 04 of a long generated block … │|
+|│ +line 05 of a long generated block … │|
+|│ +line 06 of a long generated block … │|
+|│ +line 07 of a long generated block … │|
+|│ +line 08 of a long generated block … │|
+|│ +line 09 of a long generated block … │|
+|│ +line 10 of a long generated block … │|
+|│ +line 11 of a long generated block … │|
+|│ +line 12 of a long generated block … │|
+|│ +line 13 of a long generated block … │|
+|│ +line 14 of a long generated block … │|
+|│ +line 15 of a long generated block … │|
+|│ +line 16 of a long generated block … │|
+|│ +line 17 of a long generated block … │|
+|│ +line 18 of a long generated block … │|
+|│ (+11 more)                           │|
+|└──────────────────────────────────────┘|
+
+ 0 0..40 fg=DarkGray
+ 1 0..2 fg=DarkGray
+ 1 2..18 fg=Cyan mod=DIM
+ 1 18..40 fg=DarkGray
+ 2 0..1 fg=DarkGray
+ 2 1..2 fg=DarkGray bg=#163420
+ 2 2..3 fg=Green bg=#163420 mod=BOLD
+ 2 3..38 bg=#163420
+ 2 38..39 fg=DarkGray bg=#163420
+ 2 39..40 fg=DarkGray
+ 3 0..1 fg=DarkGray
+ 3 1..2 fg=DarkGray bg=#163420
+ 3 2..3 fg=Green bg=#163420 mod=BOLD
+ 3 3..38 bg=#163420
+ 3 38..39 fg=DarkGray bg=#163420
+ 3 39..40 fg=DarkGray
+ 4 0..1 fg=DarkGray
+ 4 1..2 fg=DarkGray bg=#163420
+ 4 2..3 fg=Green bg=#163420 mod=BOLD
+ 4 3..38 bg=#163420
+ 4 38..39 fg=DarkGray bg=#163420
+ 4 39..40 fg=DarkGray
+ 5 0..1 fg=DarkGray
+ 5 1..2 fg=DarkGray bg=#163420
+ 5 2..3 fg=Green bg=#163420 mod=BOLD
+ 5 3..38 bg=#163420
+ 5 38..39 fg=DarkGray bg=#163420
+ 5 39..40 fg=DarkGray
+ 6 0..1 fg=DarkGray
+ 6 1..2 fg=DarkGray bg=#163420
+ 6 2..3 fg=Green bg=#163420 mod=BOLD
+ 6 3..38 bg=#163420
+ 6 38..39 fg=DarkGray bg=#163420
+ 6 39..40 fg=DarkGray
+ 7 0..1 fg=DarkGray
+ 7 1..2 fg=DarkGray bg=#163420
+ 7 2..3 fg=Green bg=#163420 mod=BOLD
+ 7 3..38 bg=#163420
+ 7 38..39 fg=DarkGray bg=#163420
+ 7 39..40 fg=DarkGray
+ 8 0..1 fg=DarkGray
+ 8 1..2 fg=DarkGray bg=#163420
+ 8 2..3 fg=Green bg=#163420 mod=BOLD
+ 8 3..38 bg=#163420
+ 8 38..39 fg=DarkGray bg=#163420
+ 8 39..40 fg=DarkGray
+ 9 0..1 fg=DarkGray
+ 9 1..2 fg=DarkGray bg=#163420
+ 9 2..3 fg=Green bg=#163420 mod=BOLD
+ 9 3..38 bg=#163420
+ 9 38..39 fg=DarkGray bg=#163420
+ 9 39..40 fg=DarkGray
+10 0..1 fg=DarkGray
+10 1..2 fg=DarkGray bg=#163420
+10 2..3 fg=Green bg=#163420 mod=BOLD
+10 3..38 bg=#163420
+10 38..39 fg=DarkGray bg=#163420
+10 39..40 fg=DarkGray
+11 0..1 fg=DarkGray
+11 1..2 fg=DarkGray bg=#163420
+11 2..3 fg=Green bg=#163420 mod=BOLD
+11 3..38 bg=#163420
+11 38..39 fg=DarkGray bg=#163420
+11 39..40 fg=DarkGray
+12 0..1 fg=DarkGray
+12 1..2 fg=DarkGray bg=#163420
+12 2..3 fg=Green bg=#163420 mod=BOLD
+12 3..38 bg=#163420
+12 38..39 fg=DarkGray bg=#163420
+12 39..40 fg=DarkGray
+13 0..1 fg=DarkGray
+13 1..2 fg=DarkGray bg=#163420
+13 2..3 fg=Green bg=#163420 mod=BOLD
+13 3..38 bg=#163420
+13 38..39 fg=DarkGray bg=#163420
+13 39..40 fg=DarkGray
+14 0..1 fg=DarkGray
+14 1..2 fg=DarkGray bg=#163420
+14 2..3 fg=Green bg=#163420 mod=BOLD
+14 3..38 bg=#163420
+14 38..39 fg=DarkGray bg=#163420
+14 39..40 fg=DarkGray
+15 0..1 fg=DarkGray
+15 1..2 fg=DarkGray bg=#163420
+15 2..3 fg=Green bg=#163420 mod=BOLD
+15 3..38 bg=#163420
+15 38..39 fg=DarkGray bg=#163420
+15 39..40 fg=DarkGray
+16 0..1 fg=DarkGray
+16 1..2 fg=DarkGray bg=#163420
+16 2..3 fg=Green bg=#163420 mod=BOLD
+16 3..38 bg=#163420
+16 38..39 fg=DarkGray bg=#163420
+16 39..40 fg=DarkGray
+17 0..1 fg=DarkGray
+17 1..2 fg=DarkGray bg=#163420
+17 2..3 fg=Green bg=#163420 mod=BOLD
+17 3..38 bg=#163420
+17 38..39 fg=DarkGray bg=#163420
+17 39..40 fg=DarkGray
+18 0..1 fg=DarkGray
+18 1..2 fg=DarkGray bg=#163420
+18 2..3 fg=Green bg=#163420 mod=BOLD
+18 3..38 bg=#163420
+18 38..39 fg=DarkGray bg=#163420
+18 39..40 fg=DarkGray
+19 0..1 fg=DarkGray
+19 1..2 fg=DarkGray bg=#163420
+19 2..3 fg=Green bg=#163420 mod=BOLD
+19 3..38 bg=#163420
+19 38..39 fg=DarkGray bg=#163420
+19 39..40 fg=DarkGray
+20 0..1 fg=DarkGray
+20 1..2 fg=DarkGray bg=#163420
+20 2..3 fg=Green bg=#163420 mod=BOLD
+20 3..38 bg=#163420
+20 38..39 fg=DarkGray bg=#163420
+20 39..40 fg=DarkGray
+21 0..2 fg=DarkGray
+21 2..12 mod=DIM
+21 12..40 fg=DarkGray
+22 0..40 fg=DarkGray

@@ -1,0 +1,50 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    [work|
+|────────────────────────────────────────────────────────────|
+|                                                            |
+|                                                            |
+|                                                            |
+| build it                                                   |
+|                                                            |
+|Todos · 0/2   /todo                                         |
+| ☐ routes                                                   |
+| ☐ auth                                                     |
+|≡ 1 agent                                                   |
+|• api-review  2t · 2r                                       |
+|   review the file                                          |
+|   read src/mod_1.rs                                        |
+|────────────────────────────────────────────────────────────|
+|• working… (Esc to cancel, type to steer the agent)         |
+|                                                            |
+| Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all   |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=Yellow
+ 0 55..60 fg=Cyan mod=BOLD
+ 5 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 5 1..9 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 5 9..10 bg=#282C3A
+ 7 0..5 fg=Cyan mod=BOLD
+ 7 5..11 mod=DIM
+ 7 11..19 fg=DarkGray
+ 8 1..9 fg=Cyan
+ 9 1..7 mod=DIM
+10 0..2 fg=Magenta
+10 2..9 fg=Magenta mod=BOLD
+11 0..12 fg=Magenta
+11 12..21 fg=DarkGray
+12 3..18 mod=DIM | ITALIC
+13 3..20 mod=DIM
+15 0..2 fg=Cyan
+15 2..51 mod=DIM | ITALIC
+17 1..11 fg=Cyan mod=BOLD
+17 11..18 mod=DIM
+17 21..30 fg=Cyan mod=BOLD
+17 30..37 mod=DIM
+17 40..46 fg=Cyan mod=BOLD
+17 46..57 mod=DIM

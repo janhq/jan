@@ -43713,4 +43713,6 @@ mod tests {
         assert!(KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-F")));
         assert!(KEY_BINDINGS.iter().any(|(k, _)| k.contains("n / N")));
     }
+
+    mod snapshot;
 }

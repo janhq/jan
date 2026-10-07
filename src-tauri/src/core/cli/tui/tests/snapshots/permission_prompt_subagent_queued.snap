@@ -1,0 +1,60 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    [working]        |
+|────────────────────────────────────────────────────────────────────────|
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|                                                                        |
+|┌ permission required (1 of 2) ────────────────────────────────────────┐|
+|│subagent scout is asking:                                             │|
+|│write wants write                                                     │|
+|│on notes.md                                                           │|
+|│▶ Allow once                                                          │|
+|│  Deny                                                                │|
+|└──────────────────────────────────────────────────────────────────────┘|
+|• working… (Esc to cancel, type to steer the agent)                     |
+|                                                                        |
+| ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                  |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=Yellow
+ 0 55..64 fg=Cyan mod=BOLD
+ 8 0..1 fg=Yellow
+ 8 1..31 fg=Black bg=Yellow mod=BOLD
+ 8 31..72 fg=Yellow
+ 9 0..1 fg=Yellow
+ 9 1..10 fg=DarkGray
+ 9 10..15 fg=Magenta mod=BOLD
+ 9 15..26 fg=DarkGray
+ 9 71..72 fg=Yellow
+10 0..1 fg=Yellow
+10 1..6 fg=Cyan mod=BOLD
+10 6..13 fg=DarkGray
+10 13..18 fg=Yellow mod=BOLD
+10 71..72 fg=Yellow
+11 0..1 fg=Yellow
+11 1..4 fg=DarkGray
+11 71..72 fg=Yellow
+12 0..1 fg=Yellow
+12 1..71 fg=Cyan mod=BOLD
+12 71..72 fg=Yellow
+13 0..1 fg=Yellow
+13 71..72 fg=Yellow
+14 0..72 fg=Yellow
+15 0..2 fg=Cyan
+15 2..51 mod=DIM | ITALIC
+17 1..4 fg=Yellow mod=BOLD
+17 4..11 mod=DIM
+17 14..19 fg=Yellow mod=BOLD
+17 19..27 mod=DIM
+17 30..33 fg=Yellow mod=BOLD
+17 33..38 mod=DIM
+17 41..47 fg=Yellow mod=BOLD
+17 47..54 mod=DIM

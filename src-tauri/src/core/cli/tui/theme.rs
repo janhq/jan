@@ -54,9 +54,35 @@ pub(super) struct Theme {
 /// their background, one value serves both themes.
 const STRONG_ACCENT_ANSI16: Color = Color::Yellow;
 
+#[cfg(test)]
+thread_local! {
+    /// Per-test override, like `motion::with_mode`: a snapshot test pins its
+    /// own thread's theme instead of racing others on the shared statics.
+    /// Deliberately not consulted by `is_light`, which seeds the process-wide
+    /// syntect theme once: an override seen there would leak into every later
+    /// test in the process.
+    static THEME_OVERRIDE: std::cell::Cell<Option<Theme>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with `theme` as this thread's resolved theme.
+#[cfg(test)]
+pub(super) fn with_theme<T>(theme: Theme, f: impl FnOnce() -> T) -> T {
+    THEME_OVERRIDE.with(|c| c.set(Some(theme)));
+    let out = f();
+    THEME_OVERRIDE.with(|c| c.set(None));
+    out
+}
+
 impl Theme {
     /// The theme resolved at startup (dark truecolor before resolution).
     pub(super) fn current() -> Self {
+        #[cfg(test)]
+        {
+            if let Some(over) = THEME_OVERRIDE.with(std::cell::Cell::get) {
+                return over;
+            }
+        }
         Self {
             light: is_light(),
             depth: ColorDepth::from_u8(DEPTH.load(Ordering::Relaxed)),

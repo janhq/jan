@@ -1,0 +1,12 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+| 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback  cache 0%  [ready]                              |
+
+ 0 0..2 fg=Yellow
+ 0 3..14 mod=BOLD
+ 0 14..29 fg=Yellow
+ 0 53..61 fg=Red mod=BOLD
+ 0 63..70 fg=Green

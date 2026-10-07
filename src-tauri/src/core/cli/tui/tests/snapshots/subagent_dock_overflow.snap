@@ -1,0 +1,19 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+|≡ 5 agents                                                              |
+|• kv-review  4t · 4r · 50.0% · 75% cached                               |
+|• perf-scan  3t · 3r · 15.6% · 0% cached                                |
+|  +3 more · /agents                                                     |
+
+ 0 0..2 fg=Magenta
+ 0 2..10 fg=Magenta mod=BOLD
+ 1 0..11 fg=Magenta
+ 1 11..41 fg=DarkGray
+ 2 0..11 fg=Magenta
+ 2 11..28 fg=DarkGray
+ 2 28..40 fg=Red
+ 3 0..12 fg=DarkGray
+ 3 12..19 fg=Cyan

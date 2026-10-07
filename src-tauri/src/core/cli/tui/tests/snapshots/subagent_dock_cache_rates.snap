@@ -1,0 +1,37 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 163
+expression: render_snapshot(buf)
+---
+|≡ 5 agents                                                              |
+|• kv-review  4t · 4r · 50.0% · 75% cached                               |
+|   read src/mod_3.rs                                                    |
+|• perf-scan  3t · 3r · 15.6% · 0% cached                                |
+|   read src/mod_2.rs                                                    |
+|• lint-fix  1t · 1r · 3.9%                                              |
+|   read src/mod_0.rs                                                    |
+|· docs-writer  queued (1)                                               |
+|   review the file                                                      |
+|· collector  phase 2 · waiting                                          |
+|   review the file                                                      |
+
+ 0 0..2 fg=Magenta
+ 0 2..10 fg=Magenta mod=BOLD
+ 1 0..11 fg=Magenta
+ 1 11..41 fg=DarkGray
+ 2 3..20 mod=DIM
+ 3 0..11 fg=Magenta
+ 3 11..28 fg=DarkGray
+ 3 28..40 fg=Red
+ 4 3..20 mod=DIM
+ 5 0..10 fg=Magenta
+ 5 10..26 fg=DarkGray
+ 6 3..20 mod=DIM
+ 7 0..2 fg=Magenta
+ 7 2..13 fg=Magenta mod=DIM
+ 7 13..25 fg=Yellow
+ 8 3..18 mod=DIM | ITALIC
+ 9 0..2 fg=Magenta
+ 9 2..11 fg=Magenta mod=DIM
+ 9 11..30 fg=Yellow
+10 3..18 mod=DIM | ITALIC
