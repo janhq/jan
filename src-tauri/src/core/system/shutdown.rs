@@ -66,7 +66,40 @@ pub async fn shutdown_cleanup<R: Runtime>(app: &AppHandle<R>) {
 /// untouched. On Windows `tauri-plugin-updater` exits the process as soon as
 /// the installer is launched and offers no hook this crate can register, so
 /// this has to happen before `install()`.
+///
+/// If the installer then fails the app keeps running, and `restart_mcp_servers`
+/// restarts whatever is in `mcp_active_servers`. The teardown empties that map,
+/// so it is put back here: the servers stay stopped, but a failed install can
+/// bring them back.
 #[tauri::command]
 pub async fn shutdown_for_update<R: Runtime>(app: AppHandle<R>) {
+    let state = app.state::<AppState>();
+    let active_servers = state.mcp_active_servers.lock().await.clone();
+
     shutdown_cleanup(&app).await;
+
+    *state.mcp_active_servers.lock().await = active_servers;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::test::mock_app;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_servers_that_were_active_survive_for_a_restart_after_a_failed_install() {
+        let app = mock_app();
+        app.manage(AppState::default());
+        let state = app.state::<AppState>();
+        state
+            .mcp_active_servers
+            .lock()
+            .await
+            .insert("files".to_string(), serde_json::json!({ "command": "npx" }));
+
+        shutdown_for_update(app.handle().clone()).await;
+
+        let active = state.mcp_active_servers.lock().await;
+        assert!(active.contains_key("files"), "{active:?}");
+    }
 }
