@@ -1,6 +1,5 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
 |≡ 5 agents                                                              |
@@ -18,20 +17,20 @@ expression: render_snapshot(buf)
  0 0..2 fg=Magenta
  0 2..10 fg=Magenta mod=BOLD
  1 0..11 fg=Magenta
- 1 11..41 fg=DarkGray
+ 1 11..41 fg=#808080
  2 3..20 mod=DIM
  3 0..11 fg=Magenta
- 3 11..28 fg=DarkGray
- 3 28..40 fg=Red
+ 3 11..28 fg=#808080
+ 3 28..40 fg=#E5C07B
  4 3..20 mod=DIM
  5 0..10 fg=Magenta
- 5 10..26 fg=DarkGray
+ 5 10..26 fg=#808080
  6 3..20 mod=DIM
  7 0..2 fg=Magenta
  7 2..13 fg=Magenta mod=DIM
- 7 13..25 fg=Yellow
+ 7 13..25 fg=#E5C07B
  8 3..18 mod=DIM | ITALIC
  9 0..2 fg=Magenta
  9 2..11 fg=Magenta mod=DIM
- 9 11..30 fg=Yellow
+ 9 11..30 fg=#E5C07B
 10 3..18 mod=DIM | ITALIC

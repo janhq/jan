@@ -527,7 +527,7 @@ fn shown(def: &AgentSettingDef, value: Option<&str>) -> String {
 /// The dock's contents at `width`: the diff grouped by file, what was refused,
 /// the permission warning, and the confirmation line.
 pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(super::theme::muted());
     let max = width.max(1) as usize;
     let mut out: Vec<Line<'static>> = Vec::new();
     let mut push = |spans: Vec<Span<'static>>| {
@@ -556,7 +556,7 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
                 Span::raw(" -> "),
                 Span::styled(
                     shown(change.def, change.new_value.as_deref()),
-                    Style::new().cyan(),
+                    Style::new().fg(super::theme::accent()),
                 ),
             ];
             if !change.reason.is_empty() {
@@ -568,7 +568,7 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
     for line in &proposal.refused {
         push(vec![Span::styled(
             format!("refused: {line}"),
-            Style::new().yellow(),
+            Style::new().fg(super::theme::warning()),
         )]);
     }
     if let Some(note) = &proposal.note {
@@ -603,7 +603,7 @@ pub(super) fn draw(f: &mut Frame, area: Rect, proposal: &VibeProposal) {
     let block = super::panel_block(super::theme::border_active())
         .title(Span::styled(
             " vibe-setting: proposed changes ",
-            Style::new().on_cyan().black().bold(),
+            super::title_style(super::theme::border_active()),
         ));
     f.render_widget(Clear, area);
     let inner = block.inner(area);

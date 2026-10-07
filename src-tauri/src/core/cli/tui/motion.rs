@@ -18,7 +18,7 @@ use std::time::Duration;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use super::theme::{ColorDepth, Theme};
+use super::theme::{channels, strong_accent_rgb, ColorDepth, Role, Theme};
 
 /// Whether the TUI animates or holds every element still.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,37 +159,52 @@ pub(super) fn frame_time(frame: usize) -> Duration {
     Duration::from_millis((frame as u64).saturating_mul(super::SPINNER_ADVANCE_MS))
 }
 
-/// The hue a sweep brightens: the text's resting colour approximated in RGB,
-/// and the colour the crest peaks at. Characters outside the crest keep the
-/// caller's own style untouched, so only the crest ever uses these values.
+/// The hue a sweep brightens: the palette colour the text rests in, and the
+/// colour the crest peaks at. Characters outside the crest keep the caller's
+/// own style untouched, so only the crest ever uses these values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Tint {
     /// Dim default-foreground text: the working words.
     Muted,
-    /// The orange reasoning accent: the thinking words.
+    /// The orange strong accent: the thinking words.
+    Strong,
+    /// The palette accent of a running tool label.
     Accent,
-    /// The cyan of a running tool label.
-    Cyan,
-    /// The yellow of the `[thinking]` badge.
-    Yellow,
+    /// The palette warning colour of the `[thinking]` badge.
+    Warning,
 }
 
 type Rgb = (u8, u8, u8);
 
+/// How far the crest travels from the resting colour toward white (dark
+/// background) or black (light background, where deeper reads as brighter).
+const CREST_LIFT_DARK: f32 = 0.75;
+const CREST_LIFT_LIGHT: f32 = 0.6;
+
 impl Tint {
-    /// `(rest, crest)`. A dark background brightens toward white; a light one
-    /// deepens toward black, which is what reads as "brighter" on white.
+    /// The resting colour, straight from the palette so a sweep never drifts
+    /// from the static style it animates.
+    fn rest(self, light: bool) -> Rgb {
+        let color = match self {
+            Tint::Muted => Role::Muted.rgb(light),
+            Tint::Strong => strong_accent_rgb(light),
+            Tint::Accent => Role::Accent.rgb(light),
+            Tint::Warning => Role::Warning.rgb(light),
+        };
+        // Every palette entry is RGB; mid-grey keeps a sweep visible should
+        // one ever become a named colour.
+        channels(color).unwrap_or((128, 128, 128))
+    }
+
+    /// `(rest, crest)`.
     fn colors(self, light: bool) -> (Rgb, Rgb) {
-        match (self, light) {
-            (Tint::Muted, false) => ((128, 128, 128), (240, 240, 240)),
-            (Tint::Muted, true) => ((140, 140, 140), (20, 20, 20)),
-            (Tint::Accent, false) => ((255, 165, 0), (255, 235, 180)),
-            (Tint::Accent, true) => ((180, 83, 9), (80, 30, 0)),
-            (Tint::Cyan, false) => ((0, 160, 170), (190, 255, 255)),
-            (Tint::Cyan, true) => ((0, 120, 130), (0, 40, 50)),
-            (Tint::Yellow, false) => ((205, 205, 0), (255, 255, 200)),
-            (Tint::Yellow, true) => ((150, 120, 0), (60, 45, 0)),
-        }
+        let rest = self.rest(light);
+        let peak = if light {
+            blend(rest, (0, 0, 0), CREST_LIFT_LIGHT)
+        } else {
+            blend(rest, (255, 255, 255), CREST_LIFT_DARK)
+        };
+        (rest, peak)
     }
 }
 
@@ -379,7 +394,7 @@ mod tests {
     fn the_sweep_is_a_pure_function_of_time() {
         let style = Style::new().cyan();
         let at = |ms: u64| {
-            shimmer("working", style, Tint::Cyan, Duration::from_millis(ms), MotionMode::Animated, DARK_TC)
+            shimmer("working", style, Tint::Accent, Duration::from_millis(ms), MotionMode::Animated, DARK_TC)
         };
         assert_eq!(at(700), at(700), "deterministic");
         assert_eq!(at(700), at(700 + SWEEP.as_millis() as u64), "periodic");
@@ -393,7 +408,7 @@ mod tests {
             let spans = shimmer(
                 "thinking",
                 Style::new().yellow(),
-                Tint::Yellow,
+                Tint::Warning,
                 Duration::from_millis(ms),
                 MotionMode::Animated,
                 DARK_TC,
@@ -415,7 +430,7 @@ mod tests {
         assert!((0..8).all(|i| crest(i, 8, Duration::ZERO) == 0.0));
 
         let style = Style::new().cyan();
-        let spans = shimmer("abcdefgh", style, Tint::Cyan, t, MotionMode::Animated, DARK_TC);
+        let spans = shimmer("abcdefgh", style, Tint::Accent, t, MotionMode::Animated, DARK_TC);
         let styles = per_char_styles(&spans);
         assert_eq!(styles[0], style, "outside the crest");
         assert_ne!(styles[4], style, "under the crest");
@@ -440,7 +455,7 @@ mod tests {
             let spans = shimmer(
                 "thinking",
                 style,
-                Tint::Yellow,
+                Tint::Warning,
                 Duration::from_millis(ms),
                 MotionMode::Reduced,
                 DARK_TC,
@@ -456,7 +471,7 @@ mod tests {
         let spans = shimmer(
             "working",
             style,
-            Tint::Cyan,
+            Tint::Accent,
             Duration::from_millis(1000),
             MotionMode::Animated,
             theme,
@@ -471,7 +486,7 @@ mod tests {
         let spans = shimmer(
             "abcdefgh",
             Style::new(),
-            Tint::Accent,
+            Tint::Strong,
             Duration::from_millis(1000),
             MotionMode::Animated,
             theme,
@@ -491,14 +506,14 @@ mod tests {
             Line::from(vec![Span::styled("| ", gutter), Span::styled("efgh", label)]),
         ];
         let t = Duration::from_millis(1000); // head at char 4: the second row
-        let out = shimmer_styled(lines.clone(), label, Tint::Cyan, t, MotionMode::Animated, DARK_TC);
+        let out = shimmer_styled(lines.clone(), label, Tint::Accent, t, MotionMode::Animated, DARK_TC);
         for (a, b) in lines.iter().zip(&out) {
             assert_eq!(text_of(&a.spans), text_of(&b.spans));
             assert_eq!(b.spans[0].style, gutter, "gutter untouched");
         }
         assert_ne!(per_char_styles(&out[1].spans[1..])[0], label, "crest on row two");
 
-        let still = shimmer_styled(lines.clone(), label, Tint::Cyan, t, MotionMode::Reduced, DARK_TC);
+        let still = shimmer_styled(lines.clone(), label, Tint::Accent, t, MotionMode::Reduced, DARK_TC);
         assert_eq!(still, lines);
     }
 

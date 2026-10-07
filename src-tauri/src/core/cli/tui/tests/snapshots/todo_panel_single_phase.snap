@@ -1,6 +1,5 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    [working]                |
@@ -22,25 +21,25 @@ expression: render_snapshot(buf)
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
- 0 14..29 fg=Yellow
- 0 55..64 fg=Cyan mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#56B6C2 mod=BOLD
  5 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
  5 1..8 fg=#E9ECF2 bg=#282C3A mod=BOLD
  5 8..9 bg=#282C3A
- 7 0..5 fg=Cyan mod=BOLD
+ 7 0..5 fg=#56B6C2 mod=BOLD
  7 5..11 mod=DIM
- 7 11..19 fg=DarkGray
+ 7 11..19 fg=#808080
  8 1..21 mod=DIM | CROSSED_OUT
- 9 1..18 fg=Cyan
+ 9 1..18 fg=#56B6C2
 10 1..17 mod=DIM
 11 1..21 fg=Red mod=CROSSED_OUT
-13 0..2 fg=Cyan
+13 0..2 fg=#56B6C2
 13 2..51 mod=DIM | ITALIC
-15 0..1 fg=DarkGray
-15 2..17 fg=DarkGray
-15 24..34 fg=Cyan mod=BOLD
+15 0..1 fg=#808080
+15 2..17 fg=#808080
+15 24..34 fg=#56B6C2 mod=BOLD
 15 34..41 mod=DIM
-15 44..53 fg=Cyan mod=BOLD
+15 44..53 fg=#56B6C2 mod=BOLD
 15 53..60 mod=DIM
-15 63..69 fg=Cyan mod=BOLD
+15 63..69 fg=#56B6C2 mod=BOLD
 15 69..80 mod=DIM

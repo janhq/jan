@@ -21,8 +21,8 @@ expression: render_snapshot(buf)
 
  0 0..2 fg=Yellow
  0 3..14 mod=BOLD
- 0 14..29 fg=Yellow
- 0 55..64 fg=Cyan mod=BOLD
+ 0 14..29 fg=#E5C07B
+ 0 55..64 fg=#56B6C2 mod=BOLD
  1 0..90 fg=#56B6C2
  2 0..1 fg=#56B6C2
  2 2..88 fg=Cyan mod=BOLD
@@ -43,6 +43,6 @@ expression: render_snapshot(buf)
  9 89..90 fg=#56B6C2
 10 0..90 fg=#56B6C2
 13 0..10 mod=DIM | ITALIC
-15 0..1 fg=DarkGray
-15 2..17 fg=DarkGray
+15 0..1 fg=#808080
+15 2..17 fg=#808080
 15 33..90 mod=DIM

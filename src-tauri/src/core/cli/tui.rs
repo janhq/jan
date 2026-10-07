@@ -4139,7 +4139,7 @@ impl App {
     /// reasoning has happened recently this turn.
     fn reasoning_status(&self) -> Option<(String, Style)> {
         if self.reasoning_open() {
-            Some(("thinking".to_string(), Style::new().yellow().bold()))
+            Some(("thinking".to_string(), Style::new().fg(theme::warning()).bold()))
         } else {
             // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
             // block closed, so a long tool call or answer prose falls back to the
@@ -4147,7 +4147,7 @@ impl App {
             match (self.thought_for, self.thought_for_since) {
                 (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => Some((
                     format!("thought for {}", format_elapsed(d.as_secs())),
-                    Style::new().yellow(),
+                    Style::new().fg(theme::warning()),
                 )),
                 _ => None,
             }
@@ -8277,6 +8277,11 @@ fn panel_inner_width(width: u16) -> u16 {
     width.saturating_sub(PANEL_INSET)
 }
 
+/// A panel title: a filled tab in the panel's border colour.
+fn title_style(fill: Color) -> Style {
+    Style::new().bg(fill).fg(theme::on_fill()).bold()
+}
+
 /// The frame every bordered panel shares: rounded corners in a palette
 /// colour, and a column of padding so text never sits flush on the border.
 /// Only horizontal padding, so a panel's row budget is unchanged.
@@ -9267,7 +9272,7 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
     motion::shimmer_styled(
         rows,
         label,
-        motion::Tint::Cyan,
+        motion::Tint::Accent,
         motion::frame_time(spinner_frame),
         mode,
         theme::Theme::current(),
@@ -14594,7 +14599,7 @@ fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
 
 /// The message dock's contents at `width`.
 fn agent_message_lines(prompt: &AgentMessagePrompt, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(1) as usize;
     let mut lines: Vec<Line<'static>> = wrap_text(
         "Delivered at the subagent's next step, after any tool call in flight, as a \
@@ -14640,7 +14645,7 @@ fn draw_agent_message(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Agent
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" message subagent: {} ", prompt.name),
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -15995,20 +16000,20 @@ async fn plugin_command(app: &mut App, arg: &str) {
                     return;
                 }
                 for p in &plugins {
-                    app.push(Line::styled(summary_line(p), Style::new().cyan().bold()));
+                    app.push(Line::styled(summary_line(p), Style::new().fg(theme::accent()).bold()));
                 }
                 // Surface unsatisfied setup requirements right in the list:
                 // a plugin whose key is missing explains itself here.
                 for (plugin, var, _) in crate::core::agent::plugins::missing_plugin_env(&root) {
                     app.push(Line::styled(
                         format!("  {plugin}: key missing ({var}) - /plugin setup {plugin}"),
-                        Style::new().yellow(),
+                        Style::new().fg(theme::warning()),
                     ));
                 }
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
                     Some((directory, p)) => {
-                        app.push(Line::styled(summary_line(&p), Style::new().cyan().bold()));
+                        app.push(Line::styled(summary_line(&p), Style::new().fg(theme::accent()).bold()));
                         if !p.description.is_empty() {
                             app.push(Line::styled(
                                 format!("  {}", p.description),
@@ -16103,7 +16108,7 @@ async fn plugin_command(app: &mut App, arg: &str) {
                 for e in &entries {
                     app.push(Line::styled(
                         format!("plugin {}", e.name),
-                        Style::new().cyan().bold(),
+                        Style::new().fg(theme::accent()).bold(),
                     ));
                     app.push(Line::styled(
                         format!("  {}  ({})", e.description, e.repo),
@@ -16844,7 +16849,7 @@ fn agent_detail_lines(
     width: u16,
     height: u16,
 ) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let Some(panel) = run_id.and_then(|id| subagents.iter().find(|p| p.run_id == id)) else {
         return vec![Line::styled(
             "this subagent has finished. Press Esc to go back.".to_string(),
@@ -16896,7 +16901,7 @@ fn agent_detail_lines(
 /// call as a tool row with its outcome tag and a one-line result summary, and
 /// the user's own steering messages as user lines.
 fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = (width.max(8) as usize).saturating_sub(2);
     let repeats = trailing_repeat(&panel.calls);
     let mut out: Vec<Line<'static>> = Vec::new();
@@ -16918,9 +16923,9 @@ fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
             }
             ChildLogEntry::Call { label, result, .. } => {
                 let (tag, tag_style) = match result {
-                    None => ("\u{25b8}", Style::new().cyan()),
+                    None => ("\u{25b8}", Style::new().fg(theme::accent())),
                     Some((_, true)) => ("\u{2717}", Style::new().red()),
-                    Some((_, false)) => ("\u{2713}", Style::new().green()),
+                    Some((_, false)) => ("\u{2713}", Style::new().fg(theme::success())),
                 };
                 out.extend(tool_row_lines(
                     tag,
@@ -17048,11 +17053,11 @@ fn mcp_detail_lines(
 ) -> Vec<Line<'static>> {
     use crate::core::mcp::oauth::AuthStatus;
     let server = &detail.server;
-    let dim = Style::new().dark_gray();
-    let good = Style::new().green();
+    let dim = Style::new().fg(theme::muted());
+    let good = Style::new().fg(theme::success());
     let bad = Style::new().red();
-    let warn = Style::new().yellow();
-    let busy = Style::new().cyan().bold();
+    let warn = Style::new().fg(theme::warning());
+    let busy = Style::new().fg(theme::accent()).bold();
 
     // A sign-in in flight for *this* server takes over the Auth row and pins the
     // consent url below, so its progress is on the screen the user is looking at.
@@ -17140,7 +17145,7 @@ fn mcp_detail_lines(
     let mut out = vec![
         Line::from(Span::styled(
             server.name.clone(),
-            Style::new().cyan().bold(),
+            Style::new().fg(theme::accent()).bold(),
         )),
         Line::raw(""),
     ];
@@ -17175,7 +17180,7 @@ fn mcp_detail_lines(
 }
 
 fn tools_span(tools: &ToolsState) -> Span<'static> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     match tools {
         ToolsState::Unavailable => Span::styled("- connect to list", dim),
         ToolsState::Loading => Span::styled("listing...", dim),
@@ -17331,11 +17336,11 @@ fn show_login_approval(app: &mut App, session: &super::device_auth::Session) {
     app.note("sign in to Tokamak in your browser - confirm this code matches:");
     app.system_detail(vec![Span::styled(
         session.user_code.clone(),
-        Style::new().cyan().bold(),
+        Style::new().fg(theme::accent()).bold(),
     )]);
     app.system_detail(vec![Span::styled(
         session.authorize_url.clone(),
-        Style::new().cyan(),
+        Style::new().fg(theme::accent()),
     )]);
     app.login = Some(LoginPrompt {
         stage: LoginStage::Approving {
@@ -17390,7 +17395,7 @@ fn resolve_mcp_browser(app: &mut App, open: bool) {
         app.note("open this URL to finish signing in:");
         app.system_detail(vec![Span::styled(
             confirm.url.clone(),
-            Style::new().cyan(),
+            Style::new().fg(theme::accent()),
         )]);
     }
 }
@@ -17506,7 +17511,7 @@ fn open_login_prompt(app: &mut App, provider: &str) {
     app.note(&format!("sign in to {} with an API key:", definition.name));
     app.system_detail(vec![Span::styled(
         definition.api_key.keys_url,
-        Style::new().cyan(),
+        Style::new().fg(theme::accent()),
     )]);
     app.login = Some(LoginPrompt::new(provider));
 }
@@ -19441,9 +19446,9 @@ fn draw(f: &mut Frame, app: &mut App) {
     for name in orphaned {
         tail.push(tool_row(
             frame,
-            Style::new().cyan(),
+            Style::new().fg(theme::accent()),
             &format!("Awaiting subagent: {name}"),
-            Style::new().cyan().dim(),
+            Style::new().fg(theme::accent()).dim(),
         ));
     }
     // In-progress tool calls whose arguments are still streaming: a throbber
@@ -19624,7 +19629,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         let block = panel_block(theme::border_active())
             .title(Span::styled(
                 format!(" {} ", readout.title()),
-                Style::new().on_cyan().black().bold(),
+                title_style(theme::border_active()),
             ));
         let inner = block.inner(rect);
         if rect.width > 0 && rect.height > 0 {
@@ -19803,7 +19808,7 @@ fn draw(f: &mut Frame, app: &mut App) {
 fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     // Whole seconds until the auto-select deadline, rounded up (ceil) so a
     // still-live prompt reads `1s` rather than `0s`. `None` once the deadline
     // has passed (the resolution event is imminent or already dropped this
@@ -19821,7 +19826,7 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
     }
     let title = format!(" {} ", parts.join(" \u{b7} "));
     let block = panel_block(theme::border_active())
-        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+        .title(Span::styled(title, title_style(theme::border_active())));
     let inner = block.inner(area);
     let question = ask.question_lines(inner.width);
     let items = ask.option_lines(inner.width);
@@ -19864,9 +19869,9 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
 
     let help = if ask.editing_custom {
         Line::from(vec![
-            Span::styled("Other: ", Style::new().cyan()),
+            Span::styled("Other: ", Style::new().fg(theme::accent())),
             Span::raw(ask.custom_input.clone()),
-            Span::styled("\u{2588}", Style::new().cyan()),
+            Span::styled("\u{2588}", Style::new().fg(theme::accent())),
         ])
     } else {
         Line::styled(
@@ -19899,14 +19904,14 @@ fn safe_url_origin_path(raw: &str) -> String {
 fn draw_account_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AccountLoginPrompt) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let provider = prompt.provider_id();
     let name = crate::core::cli::auth::provider_by_id(provider)
         .map_or("provider", |definition| definition.name);
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" {name} sign-in "),
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
     let mut lines = vec![
         Line::styled("open the browser to continue", dim),
@@ -19914,14 +19919,14 @@ fn draw_account_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Accou
             Span::styled("authorization: ", dim),
             Span::styled(
                 safe_url_origin_path(&prompt.login.authorization_url),
-                Style::new().cyan(),
+                Style::new().fg(theme::accent()),
             ),
         ]),
         Line::from(vec![
             Span::styled("callback: ", dim),
             Span::styled(
                 safe_url_origin_path(&prompt.login.redirect_uri),
-                Style::new().cyan(),
+                Style::new().fg(theme::accent()),
             ),
         ]),
     ];
@@ -19931,7 +19936,7 @@ fn draw_account_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Accou
     lines.push(Line::from(vec![
         Span::styled("authorization code or redirect URL: ", Style::new().bold()),
         Span::raw(prompt.masked()),
-        Span::styled("█", Style::new().cyan()),
+        Span::styled("█", Style::new().fg(theme::accent())),
     ]));
     lines.push(Line::styled(
         if prompt.submitting {
@@ -19959,13 +19964,13 @@ const LOGIN_PROMPT_ROWS: u16 = 5;
 /// carries an arbitrary-length upstream message, and it is the one line in
 /// there the user has to be able to read.
 fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(1) as usize;
     let lead = match &prompt.stage {
         LoginStage::Connecting => vec![Span::styled("starting browser sign-in...", dim)],
         LoginStage::Approving { authorize_url, .. } => vec![
             Span::styled("approve at ", dim),
-            Span::styled(authorize_url.clone(), Style::new().cyan()),
+            Span::styled(authorize_url.clone(), Style::new().fg(theme::accent())),
         ],
         LoginStage::Paste { .. } => {
             let keys_url = crate::core::cli::auth::provider_by_id(&prompt.provider)
@@ -19973,7 +19978,7 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
                 .unwrap_or_default();
             vec![
                 Span::styled("get a key at ", dim),
-                Span::styled(keys_url, Style::new().cyan()),
+                Span::styled(keys_url, Style::new().fg(theme::accent())),
             ]
         }
     };
@@ -19986,7 +19991,7 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     if let LoginStage::Approving { user_code, .. } = &prompt.stage {
         lines.push(Line::from(vec![
             Span::styled("code: ", dim),
-            Span::styled(user_code.clone(), Style::new().cyan().bold()),
+            Span::styled(user_code.clone(), Style::new().fg(theme::accent()).bold()),
         ]));
     }
     if let Some(error) = &prompt.error {
@@ -20000,7 +20005,7 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
     if prompt.unconfirmed_url().is_some() {
         lines.push(Line::styled(
             "open this page in your browser?".to_string(),
-            Style::new().yellow(),
+            Style::new().fg(theme::warning()),
         ));
         lines.push(Line::styled(
             "Enter open · n skip · Esc cancel".to_string(),
@@ -20013,7 +20018,7 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
         LoginStage::Approving { .. } => {
             lines.push(Line::styled(
                 "waiting for approval...".to_string(),
-                Style::new().yellow(),
+                Style::new().fg(theme::warning()),
             ));
             lines.push(Line::styled(
                 "approve from any device · Esc cancel".to_string(),
@@ -20023,7 +20028,7 @@ fn login_prompt_lines(prompt: &LoginPrompt, width: u16) -> Vec<Line<'static>> {
         LoginStage::Paste { .. } if prompt.verifying => {
             lines.push(Line::styled(
                 "verifying...".to_string(),
-                Style::new().yellow(),
+                Style::new().fg(theme::warning()),
             ));
             lines.push(Line::styled("Esc cancel".to_string(), dim));
         }
@@ -20058,7 +20063,7 @@ fn field_lines(
     let mut rows = wrap_text(value, value_style, width.saturating_sub(lead_w + 1).max(1));
     rows.last_mut()
         .expect("wrap_text yields at least one row")
-        .push(Span::styled("█", Style::new().cyan()));
+        .push(Span::styled("█", Style::new().fg(theme::accent())));
     gutter_lines(rows, lead, vec![Span::raw(" ".repeat(lead_w))])
 }
 
@@ -20066,12 +20071,12 @@ fn field_lines(
 /// way as `login_prompt_lines` -- the URL is the long line that has to be
 /// readable, since declining means opening it by hand.
 fn browser_confirm_lines(confirm: &BrowserConfirm, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(1) as usize;
     let mut lines: Vec<Line<'static>> = wrap_spans_hard(
         vec![
             Span::styled(format!("{} at ", confirm.purpose), dim),
-            Span::styled(confirm.url.clone(), Style::new().cyan()),
+            Span::styled(confirm.url.clone(), Style::new().fg(theme::accent())),
         ],
         max,
     )
@@ -20080,7 +20085,7 @@ fn browser_confirm_lines(confirm: &BrowserConfirm, width: u16) -> Vec<Line<'stat
     .collect();
     lines.push(Line::styled(
         "open this page in your browser?".to_string(),
-        Style::new().yellow(),
+        Style::new().fg(theme::warning()),
     ));
     lines.push(Line::styled(
         "Enter open · n skip · Esc skip".to_string(),
@@ -20117,7 +20122,7 @@ fn draw_browser_confirm(f: &mut Frame, area: ratatui::layout::Rect, confirm: &Br
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             " open a browser? ",
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
 
     f.render_widget(Clear, area);
@@ -20139,7 +20144,7 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
                 crate::core::cli::auth::provider_by_id(&prompt.provider)
                     .map_or("provider", |definition| definition.name)
             ),
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
 
     f.render_widget(Clear, area);
@@ -20159,7 +20164,7 @@ fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Plugin
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" plugin setup: {} ", prompt.plugin),
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
 
     f.render_widget(Clear, area);
@@ -20174,7 +20179,7 @@ fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Plugin
 /// The `/plugin setup` box's contents. The width parameter mirrors the other
 /// prompt-line builders (call sites size the dock from the row count).
 fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let mut lines: Vec<Line<'static>> = Vec::new();
     let total = prompt.entries.len();
     match prompt.entry() {
@@ -20187,7 +20192,7 @@ fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'stat
                     prompt.current + 1,
                     total
                 ),
-                Style::new().cyan().bold(),
+                Style::new().fg(theme::accent()).bold(),
             )));
             if entry.url.is_empty() {
                 lines.push(Line::from(Span::styled(
@@ -20197,14 +20202,14 @@ fn plugin_setup_lines(prompt: &PluginSetupPrompt, _width: u16) -> Vec<Line<'stat
             } else {
                 lines.push(Line::from(vec![
                     Span::styled("get it at: ", dim),
-                    Span::styled(entry.url.clone(), Style::new().cyan()),
+                    Span::styled(entry.url.clone(), Style::new().fg(theme::accent())),
                 ]));
             }
         }
         None => {
             lines.push(Line::from(Span::styled(
                 format!("{} setup complete", prompt.plugin),
-                Style::new().cyan().bold(),
+                Style::new().fg(theme::accent()).bold(),
             )));
         }
     }
@@ -20239,7 +20244,7 @@ fn draw_settings_prompt(
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" agent settings: {} ", prompt.def().key),
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
 
     f.render_widget(Clear, area);
@@ -20259,7 +20264,7 @@ fn settings_prompt_lines(
     toml_path: &std::path::Path,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let def = prompt.def();
     let max = width.max(1) as usize;
     let wrapped = |spans: Vec<Span<'static>>| {
@@ -20274,7 +20279,7 @@ fn settings_prompt_lines(
         Span::styled("   current: ", dim),
         Span::styled(
             current_agent_value(toml_path, def.key).unwrap_or_else(|| "unset".to_string()),
-            Style::new().cyan(),
+            Style::new().fg(theme::accent()),
         ),
     ]);
     let meta = match def.kind {
@@ -20332,7 +20337,7 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
         " mcp server: add "
     };
     let block = panel_block(theme::border_active())
-        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+        .title(Span::styled(title, title_style(theme::border_active())));
 
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -20345,7 +20350,7 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
 /// args string or an env/headers blob easily outruns the box, and clipping the
 /// field you are editing leaves no way to see what you entered.
 fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(1) as usize;
     let mut lines = Vec::new();
     for field in prompt.visible_fields() {
@@ -20378,7 +20383,7 @@ fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
                 let mut spans = lead;
                 spans.push(Span::styled(
                     toggle.to_string(),
-                    if selected { Style::new().cyan() } else { dim },
+                    if selected { Style::new().fg(theme::accent()) } else { dim },
                 ));
                 lines.push(Line::from(spans));
             }
@@ -20413,14 +20418,14 @@ fn mcp_prompt_lines(prompt: &McpPrompt, width: u16) -> Vec<Line<'static>> {
 fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &ProviderPrompt) {
     use ratatui::widgets::Clear;
 
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let title = if prompt.editing.is_some() {
         " provider: edit "
     } else {
         " provider: add "
     };
     let block = panel_block(theme::border_active())
-        .title(Span::styled(title, Style::new().on_cyan().black().bold()));
+        .title(Span::styled(title, title_style(theme::border_active())));
 
     let mut lines = Vec::new();
     for field in ProviderPrompt::FIELD_ORDER {
@@ -20439,14 +20444,14 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
         } else if read_only {
             // A renamed provider would orphan its config entry and lose the
             // API key, so the name is fixed while editing.
-            Style::new().dark_gray()
+            Style::new().fg(theme::muted())
         } else {
             dim
         };
         let mut spans = vec![Span::styled(format!("{marker}{label}: "), style)];
         spans.push(Span::styled(value, style));
         if selected {
-            spans.push(Span::styled("█", Style::new().cyan()));
+            spans.push(Span::styled("█", Style::new().fg(theme::accent())));
         }
         lines.push(Line::from(spans));
     }
@@ -20479,12 +20484,12 @@ fn draw_slash_hints(
 ) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let items: Vec<ListItem> = matches
         .iter()
         .map(|m| match m {
             SlashMatch::Command(c) => {
-                let mut spans = vec![Span::styled(c.name, Style::new().cyan().bold())];
+                let mut spans = vec![Span::styled(c.name, Style::new().fg(theme::accent()).bold())];
                 if !c.hint.is_empty() {
                     spans.push(Span::styled(format!(" {}", c.hint), dim));
                 }
@@ -20506,13 +20511,13 @@ fn draw_slash_hints(
                     description.clone()
                 };
                 let mut spans = vec![
-                    Span::styled(name.clone(), Style::new().green().bold()),
+                    Span::styled(name.clone(), Style::new().fg(theme::success()).bold()),
                     Span::styled(format!("  {desc}"), dim),
                 ];
                 if !hints.is_empty() {
                     spans.push(Span::styled(
                         format!("  [{}]", hints.join(" ")),
-                        Style::new().dark_gray(),
+                        Style::new().fg(theme::muted()),
                     ));
                 }
                 ListItem::new(Line::from(spans))
@@ -20553,14 +20558,14 @@ fn draw_path_hints(
 ) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let items: Vec<ListItem> = entries
         .iter()
         .map(|e| {
             let icon = if e.is_dir {
-                Span::styled("", Style::new().yellow())
+                Span::styled("", Style::new().fg(theme::warning()))
             } else {
-                Span::styled("", Style::new().cyan())
+                Span::styled("", Style::new().fg(theme::accent()))
             };
             let mut spans = vec![
                 icon,
@@ -20603,7 +20608,7 @@ fn draw_permission(
         " permission required ".to_string()
     };
     let block = panel_block(theme::warning())
-        .title(Span::styled(title, Style::new().on_yellow().black().bold()));
+        .title(Span::styled(title, title_style(theme::warning())));
     let inner = block.inner(area);
     f.render_widget(Clear, area);
     f.render_widget(block, area);
@@ -20655,7 +20660,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     let block = panel_block(theme::border_active())
         .title(Span::styled(
             " Models ",
-            Style::new().on_cyan().black().bold(),
+            title_style(theme::border_active()),
         ));
     f.render_widget(Clear, area);
     let inner = block.inner(area);
@@ -20671,7 +20676,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
         rows[1].width as usize,
     );
     f.render_widget(
-        Paragraph::new(Line::styled(help, Style::new().dark_gray())),
+        Paragraph::new(Line::styled(help, Style::new().fg(theme::muted()))),
         rows[1],
     );
     if body.width == 0 || body.height == 0 {
@@ -20724,7 +20729,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     f.render_stateful_widget(scopes, panes[0], &mut scope_state);
 
     let divider = (0..panes[1].height)
-        .map(|_| Line::styled("│", Style::new().dark_gray()))
+        .map(|_| Line::styled("│", Style::new().fg(theme::muted())))
         .collect::<Vec<_>>();
     f.render_widget(Paragraph::new(divider), panes[1]);
 
@@ -20763,7 +20768,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     f.render_widget(
         Paragraph::new(Line::from(vec![Span::styled(
             search,
-            Style::new().dark_gray(),
+            Style::new().fg(theme::muted()),
         )])),
         right_rows[1],
     );
@@ -20811,7 +20816,7 @@ fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_mo
     f.render_widget(
         Paragraph::new(Line::styled(
             truncate(&detail, right_rows[3].width as usize),
-            Style::new().dark_gray(),
+            Style::new().fg(theme::muted()),
         )),
         right_rows[3],
     );
@@ -20838,20 +20843,20 @@ fn draw_picker(
             let mut spans = Vec::new();
             if let Some(on) = it.checkbox {
                 let (mark, style) = if on {
-                    ("[x] ", Style::new().green())
+                    ("[x] ", Style::new().fg(theme::success()))
                 } else {
-                    ("[ ] ", Style::new().dark_gray())
+                    ("[ ] ", Style::new().fg(theme::muted()))
                 };
                 spans.push(Span::styled(mark, style));
             }
             if picker.kind == PickerKind::PluginSetup {
                 spans.push(Span::raw(it.label.clone()));
                 if let Some(hint) = &it.hint {
-                    spans.push(Span::styled(format!("  {hint}"), Style::new().dark_gray()));
+                    spans.push(Span::styled(format!("  {hint}"), Style::new().fg(theme::muted())));
                 }
             } else {
                 if let Some(hint) = &it.hint {
-                    spans.push(Span::styled(format!("{hint}  "), Style::new().dark_gray()));
+                    spans.push(Span::styled(format!("{hint}  "), Style::new().fg(theme::muted())));
                 }
                 spans.push(Span::raw(it.label.clone()));
             }
@@ -20883,7 +20888,7 @@ fn draw_picker(
         );
         if picker.items.is_empty() {
             f.render_widget(
-                Paragraph::new(" No plugins match").style(Style::new().dark_gray()),
+                Paragraph::new(" No plugins match").style(Style::new().fg(theme::muted())),
                 rows[1],
             );
         } else {
@@ -20933,7 +20938,7 @@ fn draw_picker(
                     format!("default: {default} · valid: true | false · current: {current}")
                 }
             };
-            let dim = Style::new().dark_gray();
+            let dim = Style::new().fg(theme::muted());
             f.render_widget(
                 Paragraph::new(vec![
                     Line::styled(def.desc.to_string(), dim),
@@ -21053,7 +21058,7 @@ fn agents_column(
     if panels.is_empty() || rows == 0 {
         return Vec::new();
     }
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
         Span::styled("≡ ", Style::new().magenta()),
@@ -21097,7 +21102,7 @@ fn agents_column(
                     Some(p) => format!("  phase {p} · waiting"),
                     None => "  waiting".to_string(),
                 },
-                Style::new().yellow(),
+                Style::new().fg(theme::warning()),
             ));
         } else if panel.queued {
             // Parked on the `max_parallel_subagents` cap; the child has not
@@ -21108,7 +21113,7 @@ fn agents_column(
             ));
             spans.push(Span::styled(
                 format!("  queued ({})", panel.waiting),
-                Style::new().yellow(),
+                Style::new().fg(theme::warning()),
             ));
         } else {
             spans.push(Span::styled(
@@ -21133,9 +21138,9 @@ fn agents_column(
                 stats.push_str(&format!(" · {pct:.1}%"));
             }
             spans.push(Span::styled(stats, dim));
-            // Its own span so a zero hit can turn red, as the header rate does.
+            // Its own span so a zero hit stands out, as the header rate does.
             if let Some(pct) = panel.cache_hit_rate() {
-                let style = if pct == 0.0 { Style::new().red() } else { dim };
+                let style = if pct == 0.0 { Style::new().fg(theme::warning()) } else { dim };
                 spans.push(Span::styled(format!(" · {pct:.0}% cached"), style));
             }
         }
@@ -21161,7 +21166,7 @@ fn agents_column(
             match panel.active.as_mut() {
                 Some(call) => Some((
                     format!("{frame} {}", call.activity_label()),
-                    Style::new().cyan().dim(),
+                    Style::new().fg(theme::accent()).dim(),
                 )),
                 None => panel
                     .calls
@@ -21208,7 +21213,7 @@ fn agents_column(
         if hinted.chars().count() <= max {
             out.push(Line::from(vec![
                 Span::styled(format!("  +{hidden} more · "), dim),
-                Span::styled("/agents", Style::new().cyan()),
+                Span::styled("/agents", Style::new().fg(theme::accent())),
             ]));
         } else {
             out.push(Line::from(vec![Span::styled(
@@ -21236,7 +21241,7 @@ fn compact_tokens(n: u64) -> String {
 fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) -> Line<'static> {
     let secs = elapsed.as_secs_f64();
     let rate = tokens_per_second(output_tokens, elapsed.as_millis() as u64);
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let mut spans = vec![Span::styled(local_timestamp(), dim)];
     for (glyph, value) in [
         ("↑", compact_tokens(prompt_tokens)),
@@ -21296,13 +21301,13 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     } else if app.run_compacting.is_some() {
         ("compacting".to_string(), Style::new().magenta().bold())
     } else if app.retrying.is_some() {
-        ("retrying".to_string(), Style::new().yellow().bold())
+        ("retrying".to_string(), Style::new().fg(theme::warning()).bold())
     } else if app.mcp_auth.is_some() {
         // A sign-in runs while the model is otherwise idle; the badge stands in
         // for `[ready]` so the pending auth is visible even off the `/mcp` screen.
-        (format!("{} signing in", app.spinner()), Style::new().cyan().bold())
+        (format!("{} signing in", app.spinner()), Style::new().fg(theme::accent()).bold())
     } else if app.status == Status::Idle {
-        ("ready".to_string(), Style::new().green())
+        ("ready".to_string(), Style::new().fg(theme::success()))
     } else if app.status == Status::Parked {
         // The model is done and the loop waits on background work; a
         // `[working]` badge over an idle model would misreport it.
@@ -21311,17 +21316,17 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         } else {
             "watching"
         };
-        (label.to_string(), Style::new().cyan())
+        (label.to_string(), Style::new().fg(theme::accent()))
     } else if !app.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
         // generic 'working'. [thinking] while a  block streams; [thought for
         // Ns] for the rest of the turn once it closes.
         match app.reasoning_status() {
             Some(s) => s,
-            None => ("working".to_string(), Style::new().cyan().bold()),
+            None => ("working".to_string(), Style::new().fg(theme::accent()).bold()),
         }
     } else {
-        ("working".to_string(), Style::new().cyan().bold())
+        ("working".to_string(), Style::new().fg(theme::accent()).bold())
     };
     let turn = match app.turn {
         (0, _) => String::new(),
@@ -21353,7 +21358,7 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     // as set, so the display always matches what is sent upstream.
     spans.push(Span::styled(
         format!("  effort {}", app.reasoning_effort),
-        Style::new().yellow(),
+        Style::new().fg(theme::warning()),
     ));
     // Wall-clock (local) segment, mirroring the reference status line's leading
     // HH:MM. Shown only while a run is active: a clock that ticks once per
@@ -21401,7 +21406,7 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         let style = if pct == 0.0 {
             Style::new().red().bold()
         } else {
-            Style::new().cyan()
+            Style::new().fg(theme::accent())
         };
         spans.push(Span::styled(format!("cache {pct:.0}%{scope}"), style));
     }
@@ -21418,9 +21423,9 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         let (label, gstyle) = match goal.status {
             GoalStatus::Active => (
                 format!("  ◎ /goal active {}", fmt_duration(goal.elapsed_secs())),
-                Style::new().cyan().bold(),
+                Style::new().fg(theme::accent()).bold(),
             ),
-            GoalStatus::Achieved => ("  ◎ /goal done".to_string(), Style::new().green()),
+            GoalStatus::Achieved => ("  ◎ /goal done".to_string(), Style::new().fg(theme::success())),
         };
         spans.push(Span::styled(label, gstyle));
     }
@@ -21441,7 +21446,7 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         spans.extend(motion::shimmer(
             &status,
             style,
-            motion::Tint::Yellow,
+            motion::Tint::Warning,
             motion::frame_time(app.spinner_frame),
             motion::mode(),
             theme::Theme::current(),
@@ -21460,7 +21465,7 @@ fn todo_task_row(task: &crate::core::agent::todo::TodoItem, max: usize) -> Line<
     use crate::core::agent::todo::TodoStatus;
     let (glyph, style) = match task.status {
         TodoStatus::Pending => ("☐", Style::new().dim()),
-        TodoStatus::InProgress => ("☐", Style::new().cyan()),
+        TodoStatus::InProgress => ("☐", Style::new().fg(theme::accent())),
         TodoStatus::Completed => ("☑", Style::new().dim().add_modifier(Modifier::CROSSED_OUT)),
         TodoStatus::Abandoned => ("☒", Style::new().red().add_modifier(Modifier::CROSSED_OUT)),
     };
@@ -21515,11 +21520,11 @@ fn phase_position(todos: &crate::core::agent::todo::TodoList) -> usize {
 /// Todos · 1/2 · backend 1/3   /todo
 /// ```
 fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
-    let mut spans = vec![Span::styled("Todos", Style::new().cyan().bold())];
+    let mut spans = vec![Span::styled("Todos", Style::new().fg(theme::accent()).bold())];
     if todos.phases.len() > 1 {
         spans.push(Span::styled(
             format!(" · {}/{}", phase_position(todos), todos.phases.len()),
-            Style::new().cyan(),
+            Style::new().fg(theme::accent()),
         ));
     }
     // The phase in flight, or the last one, so a finished plan still reports.
@@ -21535,7 +21540,7 @@ fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
     }
     spans.push(Span::styled(
         "   /todo".to_string(),
-        Style::new().dark_gray(),
+        Style::new().fg(theme::muted()),
     ));
     Line::from(spans)
 }
@@ -21579,7 +21584,7 @@ fn todo_column(
     if hidden > 0 {
         lines.push(Line::from(vec![Span::styled(
             format!("  +{hidden} more"),
-            Style::new().dark_gray(),
+            Style::new().fg(theme::muted()),
         )]));
     }
     lines.truncate(rows);
@@ -21608,7 +21613,7 @@ fn join_columns(
             let pad = (left_w as usize).saturating_sub(spans_width(&l.spans));
             let mut spans = l.spans;
             spans.push(Span::raw(" ".repeat(pad)));
-            spans.push(Span::styled(" │ ", Style::new().dark_gray()));
+            spans.push(Span::styled(" │ ", Style::new().fg(theme::muted())));
             spans.extend(r.spans);
             Line::from(spans)
         })
@@ -21713,13 +21718,13 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
     if monitors.is_empty() || rows == 0 {
         return Vec::new();
     }
-    let dim = Style::new().dark_gray();
+    let dim = Style::new().fg(theme::muted());
     let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
-        Span::styled("◔ ", Style::new().cyan()),
+        Span::styled("◔ ", Style::new().fg(theme::accent())),
         Span::styled(
             pluralize("monitor", monitors.len()),
-            Style::new().cyan().bold(),
+            Style::new().fg(theme::accent()).bold(),
         ),
     ])];
     let body = rows - 1;
@@ -21736,10 +21741,10 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
         let stats = format!("  {} polls", monitor.polls);
         let label = format!("{} {}", monitor.monitor_id, monitor.name);
         out.push(Line::from(vec![
-            Span::styled("◔ ", Style::new().cyan()),
+            Span::styled("◔ ", Style::new().fg(theme::accent())),
             Span::styled(
                 truncate(&label, max.saturating_sub(2 + stats.len())),
-                Style::new().cyan(),
+                Style::new().fg(theme::accent()),
             ),
             Span::styled(stats, dim),
         ]));
@@ -21790,7 +21795,7 @@ fn input_box_height(app: &App, width: u16) -> u16 {
 /// reversed space forms the block). Wrapping is left to the Paragraph so long
 /// single lines fold within the box width.
 fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
-    let arrow = Span::styled("> ", Style::new().cyan().bold());
+    let arrow = Span::styled("> ", Style::new().fg(theme::accent()).bold());
     let segments: Vec<&str> = input.split('\n').collect();
     let last = segments.len() - 1;
     // Locate the segment + in-segment byte offset holding the caret.
@@ -21866,7 +21871,7 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
             // Same theme-aware accent as markdown bold, so reasoning reads
             // consistently on light and dark terminals.
             Style::new().fg(theme::strong_accent()).italic(),
-            motion::Tint::Accent,
+            motion::Tint::Strong,
         )
     } else {
         (
@@ -21886,7 +21891,7 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
         }
         (Some(_), motion::MotionMode::Reduced) => Line::from(Span::styled(message, style)),
         (None, _) => Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+            Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::accent())),
             Span::styled(message, style),
         ]),
     };
@@ -21948,7 +21953,7 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
         // Without this the row reads "working" through up to the whole retry
         // budget, indistinguishable from a slow model.
         Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
+            Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::warning())),
             Span::styled(retry_wait_label(wait, Instant::now()), Style::new().dim().italic()),
         ]))
         .block(block)
@@ -21961,10 +21966,10 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().yellow()),
+                Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::warning())),
                 Span::styled(
                     format!("⏳ Pending ({n}) — /cancel to remove, type to steer"),
-                    Style::new().yellow(),
+                    Style::new().fg(theme::warning()),
                 ),
             ]))
             .block(block)
@@ -21986,7 +21991,7 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             "Type here to chat with agent"
         };
         let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("> ", Style::new().cyan().bold()),
+            Span::styled("> ", Style::new().fg(theme::accent()).bold()),
             Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
             Span::raw(" "),
             Span::styled(placeholder, Style::new().dim().italic()),
@@ -22034,13 +22039,13 @@ fn tilde_path(path: &std::path::Path) -> String {
 /// Working-dir + branch spans, the left half of the dock row.
 fn path_spans(app: &App) -> Vec<Span<'static>> {
     let mut spans = vec![
-        Span::styled("📂 ", Style::new().dark_gray()),
-        Span::styled(tilde_path(&app.project_root), Style::new().dark_gray()),
+        Span::styled("📂 ", Style::new().fg(theme::muted())),
+        Span::styled(tilde_path(&app.project_root), Style::new().fg(theme::muted())),
     ];
     if let Some(branch) = app.git_branch.as_ref() {
         spans.push(Span::styled(
             format!(" ⎇ {}", branch),
-            Style::new().dark_gray(),
+            Style::new().fg(theme::muted()),
         ));
     }
     spans
@@ -22074,7 +22079,7 @@ fn dock_line(app: &App, width: u16) -> Paragraph<'static> {
 fn footer_spans(app: &App) -> Vec<Span<'static>> {
     if !app.pending_queue.is_empty() {
         return hint_spans(
-            Style::new().yellow().bold(),
+            Style::new().fg(theme::warning()).bold(),
             &[
                 ("↑/↓", "select"),
                 ("Enter", "confirm"),
@@ -22093,17 +22098,17 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         let plural = if lines == 1 { "" } else { "s" };
         return vec![Span::styled(
             format!(" copied {lines} line{plural}"),
-            Style::new().green().bold(),
+            Style::new().fg(theme::success()).bold(),
         )];
     }
-    let key_style = Style::new().cyan().bold();
+    let key_style = Style::new().fg(theme::accent()).bold();
     // While a search is on, its position (or its miss) is the state worth
     // reporting, and Esc ends the search before it would cancel anything.
     if let Some(find) = &app.find {
         let mut spans = match find.current {
             Some(i) => vec![Span::styled(
                 format!(" find \"{}\" {}/{}", find.term, i + 1, find.hits.len()),
-                Style::new().yellow().bold(),
+                Style::new().fg(theme::warning()).bold(),
             )],
             None => vec![Span::styled(
                 format!(" no match for \"{}\"", find.term),
@@ -22157,7 +22162,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
             0,
             Span::styled(
                 format!("⏳ Pending ({queue_count})  "),
-                Style::new().yellow().bold(),
+                Style::new().fg(theme::warning()).bold(),
             ),
         );
     }
@@ -34378,10 +34383,10 @@ mod tests {
         assert!(!items[0].label.contains("cached"), "{}", items[0].label);
     }
 
-    /// A reported zero is the expensive state, so it renders, in the alarm
-    /// colour.
+    /// A reported zero is the expensive state, so it renders, in the palette's
+    /// warning colour.
     #[test]
-    fn subagent_zero_cache_rate_is_red() {
+    fn subagent_zero_cache_rate_is_a_warning() {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
         child_usage(&mut app, "r0", 1_000, Some(0));
@@ -34391,7 +34396,7 @@ mod tests {
             .flat_map(|l| l.spans.iter())
             .find(|s| s.content.contains("0% cached"))
             .expect("a zero rate is shown");
-        assert_eq!(span.style.fg, Some(Color::Red), "{span:?}");
+        assert_eq!(span.style.fg, Some(super::theme::warning()), "{span:?}");
     }
 
     /// Child cache reads stay out of the parent's session counters: the header
@@ -38513,11 +38518,6 @@ mod tests {
             text: "<think>pondering".into(),
         });
         assert!(app.is_thinking());
-        let rgb = |spans: &[ratatui::text::Span<'static>]| {
-            spans
-                .iter()
-                .any(|s| matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..))))
-        };
         let text = |spans: &[ratatui::text::Span<'static>]| -> String {
             spans.iter().map(|s| s.content.as_ref()).collect()
         };
@@ -38528,9 +38528,16 @@ mod tests {
             let spans = with_mode(MotionMode::Animated, || header_spans(&app));
             assert!(text(&spans).contains("[thinking]"), "frame {frame}");
             widths.insert(spans_width(&spans));
-            moved |= rgb(&spans);
             let still = with_mode(MotionMode::Reduced, || header_spans(&app));
-            assert!(!rgb(&still), "reduced motion is static at frame {frame}");
+            moved |= spans != still;
+            // Static means the badge is one style: no crest anywhere in it.
+            let badge: std::collections::HashSet<_> = still
+                .iter()
+                .skip_while(|s| s.content != "[")
+                .take_while(|s| s.content != "]")
+                .map(|s| s.style)
+                .collect();
+            assert_eq!(badge.len(), 1, "reduced motion is static at frame {frame}");
             assert_eq!(text(&still), text(&spans), "same text in both modes");
         }
         assert!(moved, "the crest crossed the badge");

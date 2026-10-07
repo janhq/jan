@@ -146,6 +146,20 @@ fn strong_accent_for(light: bool) -> Color {
     }
 }
 
+/// RGB channels of a colour, for code that blends between palette colours.
+/// The palette is defined in RGB, so `None` only for a named colour.
+pub(super) fn channels(color: Color) -> Option<(u8, u8, u8)> {
+    match color {
+        Color::Rgb(r, g, b) => Some((r, g, b)),
+        _ => None,
+    }
+}
+
+/// The orange strong accent's truecolor value for a background.
+pub(super) fn strong_accent_rgb(light: bool) -> Color {
+    strong_accent_for(light)
+}
+
 /// Theme-aware orange accent. Reads the resolved theme live, like the diff bands.
 pub(super) fn strong_accent() -> Color {
     Theme::current().strong_accent()
@@ -211,6 +225,22 @@ impl Theme {
             _ => self.fit(role.rgb(self.light)),
         }
     }
+
+    /// Text drawn on a filled palette colour (a panel title, a badge). The
+    /// light palette is deep enough that white reads on it; the dark palette
+    /// and the user's 16 named colours are bright, so black does.
+    pub(super) fn on_fill(self) -> Color {
+        if self.light && self.depth != ColorDepth::Ansi16 {
+            Color::White
+        } else {
+            Color::Black
+        }
+    }
+}
+
+/// Text drawn on a filled palette colour.
+pub(super) fn on_fill() -> Color {
+    Theme::current().on_fill()
 }
 
 /// Interactive emphasis: panel titles, selections, the running tool label.
@@ -773,6 +803,15 @@ mod tests {
             assert_eq!(t(Role::Success), Color::Green);
             assert_eq!(t(Role::Muted), Color::DarkGray);
         }
+    }
+
+    #[test]
+    fn fill_text_contrasts_with_the_palette() {
+        assert_eq!(theme(false, ColorDepth::Truecolor).on_fill(), Color::Black);
+        assert_eq!(theme(true, ColorDepth::Truecolor).on_fill(), Color::White);
+        assert_eq!(theme(true, ColorDepth::Ansi256).on_fill(), Color::White);
+        assert_eq!(theme(true, ColorDepth::Ansi16).on_fill(), Color::Black);
+        assert_eq!(theme(false, ColorDepth::Ansi16).on_fill(), Color::Black);
     }
 
     #[test]
