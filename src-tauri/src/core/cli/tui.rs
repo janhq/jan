@@ -145,22 +145,21 @@ fn use_synchronized_output() -> bool {
     sync_output_for(super::terminal_setup::identify(|k| std::env::var(k).ok()))
 }
 
-/// Everything `run` turns on between `enable_raw_mode` and the first frame,
-/// undone in one write. Shared by the clean-shutdown path and the panic hook
-/// (`install_panic_hook`) so the two can never drift: whichever one runs, the
-/// shell gets back exactly what it had -- no raw mode, no alternate screen, no
-/// mouse tracking, no Kitty keyboard protocol, alternate scroll restored, and a
-/// visible cursor. Plain writes rather than `execute!`/`Terminal`, since the
-/// panic hook has no `&mut Terminal` to hand (the panic can land while one is
-/// borrowed) and raw mode's own disable is independent of stdout entirely.
-///
-/// Best-effort: a panic is already an error path, and a second one here (an
-/// already-closed stdout, say) must not stop the first panic's message from
-/// reaching the terminal, so every step is `let _ =`.
-fn restore_terminal_modes() {
-    let _ = disable_raw_mode();
-    let mut stdout = io::stdout();
-    let _ = stdout.write_all(
+/// Every terminal mode the session runs under, short of raw mode itself: the
+/// alternate screen, bracketed paste, then `startup_modes`. The one entry point
+/// for both startup and resuming from a suspend, so a resumed session gets back
+/// exactly what it started with; `write_restore` is its inverse.
+fn enter_terminal_modes(out: &mut impl Write, mouse: bool) -> io::Result<()> {
+    execute!(out, EnterAlternateScreen, EnableBracketedPaste)?;
+    out.write_all(startup_modes(mouse).as_bytes())?;
+    out.flush()
+}
+
+/// Undo `enter_terminal_modes` in one write. Mouse tracking is turned off
+/// whether or not it was on, which is harmless and keeps this independent of
+/// the config. Best-effort, see `restore_terminal_modes`.
+fn write_restore(out: &mut impl Write) {
+    let _ = out.write_all(
         format!(
             "{END_SYNC_UPDATE}{DISABLE_BRACKETED_PASTE}{DISABLE_MOUSE_CAPTURE}\
              {KITTY_KEYS_OFF}{}{LEAVE_ALT_SCREEN}",
@@ -168,8 +167,101 @@ fn restore_terminal_modes() {
         )
         .as_bytes(),
     );
-    let _ = stdout.write_all(SHOW_CURSOR.as_bytes());
+    let _ = out.write_all(SHOW_CURSOR.as_bytes());
+}
+
+/// Everything `run` turns on between `enable_raw_mode` and the first frame,
+/// undone in one write. Shared by the clean-shutdown path, the panic hook
+/// (`install_panic_hook`) and the Ctrl-Z suspend (`suspend_to_shell`) so they
+/// can never drift: whichever one runs, the shell gets back exactly what it
+/// had -- no raw mode, no alternate screen, no mouse tracking, no Kitty
+/// keyboard protocol, alternate scroll restored, and a visible cursor. Plain
+/// writes rather than `Terminal`, since the panic hook has no `&mut Terminal`
+/// to hand (the panic can land while one is borrowed) and raw mode's own
+/// disable is independent of stdout entirely.
+///
+/// Best-effort: a panic is already an error path, and a second one here (an
+/// already-closed stdout, say) must not stop the first panic's message from
+/// reaching the terminal, so every step is `let _ =`.
+fn restore_terminal_modes() {
+    let _ = disable_raw_mode();
+    let mut stdout = io::stdout();
+    write_restore(&mut stdout);
     let _ = stdout.flush();
+}
+
+/// Raw mode clears `ISIG`, so the terminal never turns Ctrl-Z into SIGTSTP:
+/// it arrives as an ordinary key, and job control is the app's to do.
+#[cfg(unix)]
+fn is_suspend_key(key: &KeyEvent) -> bool {
+    key.kind == KeyEventKind::Press
+        && key.modifiers.contains(KeyModifiers::CONTROL)
+        && key.code == KeyCode::Char('z')
+}
+
+/// Hand the terminal back to the shell and stop, as Ctrl-Z does to any cooked
+/// program, then take it back once `fg` (or any SIGCONT) resumes the process.
+/// SIGSTOP rather than SIGTSTP: `chat_loop` catches SIGTSTP (`stop_signal`) so
+/// an external `kill -TSTP` restores the terminal first, and a caught signal no
+/// longer stops anything. A self-sent stop takes effect before `kill` returns,
+/// so the line after it runs on resume. It goes to the whole process group
+/// (pid 0), as the terminal's own Ctrl-Z would, so a wrapper `jan` was
+/// launched through stops with it and the shell sees the job stop.
+/// `enable_raw_mode` re-reads the termios rather than reusing the pre-suspend
+/// one: the shell owned the terminal in between. The caller owes a full
+/// repaint, since the alternate screen comes back blank.
+#[cfg(unix)]
+fn suspend_to_shell(mouse: bool) -> io::Result<()> {
+    use nix::sys::signal::{kill, Signal};
+    use nix::unistd::Pid;
+    restore_terminal_modes();
+    let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
+    enable_raw_mode()?;
+    enter_terminal_modes(&mut io::stdout(), mouse)?;
+    stopped
+}
+
+/// Suspend from the render loop, noting a failure in the transcript rather
+/// than ending the session over it.
+#[cfg(unix)]
+fn suspend_session(app: &mut App, mouse: bool) {
+    if let Err(e) = suspend_to_shell(mouse) {
+        app.note(&format!("could not suspend: {e}"));
+    }
+    app.request_repaint();
+}
+
+/// SIGTSTP from outside (`kill -TSTP`, a job-control `stop`) would otherwise
+/// stop the process with every mode still on and the shell unusable. Caught
+/// here, it takes the same path as Ctrl-Z. `None` where it cannot be caught.
+#[cfg(unix)]
+type StopSignal = Option<tokio::signal::unix::Signal>;
+#[cfg(not(unix))]
+type StopSignal = Option<std::convert::Infallible>;
+
+#[cfg(unix)]
+fn stop_signal() -> StopSignal {
+    use tokio::signal::unix::{signal, SignalKind};
+    signal(SignalKind::from_raw(nix::sys::signal::Signal::SIGTSTP as i32)).ok()
+}
+#[cfg(not(unix))]
+fn stop_signal() -> StopSignal {
+    None
+}
+
+/// Resolve once per external SIGTSTP; pends forever when there is no handler.
+async fn await_stop_signal(signal: &mut StopSignal) {
+    #[cfg(unix)]
+    if let Some(s) = signal.as_mut() {
+        if s.recv().await.is_some() {
+            return;
+        }
+        // The stream ended: never fire again.
+        *signal = None;
+    }
+    #[cfg(not(unix))]
+    let _ = signal;
+    pending().await
 }
 
 /// Raw escape sequences standing in for the `crossterm::Command` types used
@@ -10058,10 +10150,8 @@ pub async fn run(
         log::set_max_level(prev_log_level);
         e.to_string()
     };
-    execute!(stdout, EnterAlternateScreen, EnableBracketedPaste).map_err(abort_startup)?;
-    let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
-    let _ = stdout.write_all(modes.as_bytes());
-    let _ = stdout.flush();
+    let mouse = crate::core::agent::global_config::mouse_enabled();
+    enter_terminal_modes(&mut stdout, mouse).map_err(abort_startup)?;
     // Test-only hook for the real-PTY panic-recovery integration test
     // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
     // fires, but only a genuine panic on a genuine terminal, with every mode
@@ -10196,6 +10286,7 @@ pub async fn run(
         initial_task,
         mcp_task,
         &mcp_servers,
+        mouse,
     )
     .await;
 
@@ -10338,7 +10429,12 @@ async fn chat_loop<B: Backend>(
     initial_task: Option<String>,
     mut mcp_task: Option<tokio::task::JoinHandle<crate::core::cli::mcp::ConnectOutcome>>,
     mcp_servers: &crate::core::state::SharedMcpServers,
+    mouse: bool,
 ) -> Result<(), String> {
+    // Only a suspend re-enters the startup modes from inside the loop.
+    #[cfg(not(unix))]
+    let _ = mouse;
+    let mut stop = stop_signal();
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
     // Cloned out of `app` so the select arm below can await it while other
@@ -10727,6 +10823,11 @@ async fn chat_loop<B: Backend>(
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
+                            #[cfg(unix)]
+                            if is_suspend_key(&key) {
+                                suspend_session(app, mouse);
+                                continue;
+                            }
                             // Typing moves the content under a highlight, and the
                             // copy already happened on release.
                             app.clear_selection();
@@ -10747,6 +10848,10 @@ async fn chat_loop<B: Backend>(
                         _ => {}
                     }
                 }
+            }
+            _ = await_stop_signal(&mut stop) => {
+                #[cfg(unix)]
+                suspend_session(app, mouse);
             }
             _ = branch_poll.tick() => {
                 if branch_task.is_none() {
@@ -13366,6 +13471,8 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
     ("Ctrl-L", "Redraw the screen (repairs a broadcast over it)"),
+    #[cfg(unix)]
+    ("Ctrl-Z", "Suspend to the shell (resume with fg)"),
     ("Shift+Tab", "Cycle reasoning effort (low/medium/high)"),
     ("Alt+T", "Toggle reasoning effort (low / last)"),
     (
@@ -33149,6 +33256,53 @@ mod tests {
         assert!(!other, "a job thread must not release the terminal");
         assert!(super::release_terminal(), "the owner releases it");
         assert!(!super::release_terminal(), "and only once");
+    }
+
+    /// Startup, resume-after-suspend and every restore (clean exit, startup
+    /// error, panic, suspend) go through one enter/restore pair, so each mode
+    /// the enter turns on must have its disable in the restore.
+    #[test]
+    fn every_entered_mode_has_its_restore() {
+        for mouse in [true, false] {
+            let mut entered = Vec::new();
+            super::enter_terminal_modes(&mut entered, mouse).unwrap();
+            let entered = String::from_utf8(entered).unwrap();
+            let mut restored = Vec::new();
+            super::write_restore(&mut restored);
+            let restored = String::from_utf8(restored).unwrap();
+
+            assert!(entered.contains("\x1b[?1049h"), "alternate screen");
+            assert!(restored.contains("\x1b[?1049l"));
+            assert!(entered.contains("\x1b[?2004h"), "bracketed paste");
+            assert!(restored.contains("\x1b[?2004l"));
+            assert!(entered.contains(KITTY_KEYS_ON) && restored.contains(KITTY_KEYS_OFF));
+            assert!(entered.contains(alt_scroll_save_off()));
+            assert!(restored.contains(alt_scroll_restore()));
+            assert_eq!(entered.contains(MOUSE_TRACK_ON), mouse, "mouse={mouse}");
+            for seq in ["\x1b[?1000l", "\x1b[?1002l", "\x1b[?1006l"] {
+                assert!(restored.contains(seq), "mouse off is unconditional: {seq:?}");
+            }
+            assert!(restored.ends_with("\x1b[?25h"), "cursor shown last: {restored:?}");
+            assert!(restored.starts_with("\x1b[?2026l"), "held frame ended first");
+        }
+    }
+
+    /// Raw mode keeps the terminal from turning Ctrl-Z into SIGTSTP, so it
+    /// arrives as a key: only that press suspends, not a plain `z` or a
+    /// release, and it is not advertised as anything else.
+    #[cfg(unix)]
+    #[test]
+    fn only_ctrl_z_press_suspends() {
+        let ctrl_z = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::CONTROL);
+        assert!(super::is_suspend_key(&ctrl_z));
+        assert!(!super::is_suspend_key(&KeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::NONE
+        )));
+        let mut release = ctrl_z;
+        release.kind = KeyEventKind::Release;
+        assert!(!super::is_suspend_key(&release));
+        assert!(KEY_BINDINGS.iter().any(|(k, d)| *k == "Ctrl-Z" && d.contains("fg")));
     }
 
     /// Keyboard enhancement is not the mouse: it goes out whether or not

@@ -33,10 +33,11 @@ env_logger = "0.11"
 serde_json = "1.0"
 tokio = { version = "1", features = ["full"] }
 
-# Real-PTY panic-recovery test (tests/tui_panic.rs): nix's safe `openpty`
-# keeps the test free of `unsafe`. Pinned to the version ../Cargo.toml uses.
+# Real-PTY tests (tests/tui_panic.rs, tests/tui_suspend.rs): nix's safe
+# `openpty`, `kill` and `waitpid` keep them free of `unsafe`. Pinned to the
+# version ../Cargo.toml uses.
 [target.'cfg(unix)'.dev-dependencies]
-nix = { version = "=0.30.1", features = ["term"] }
+nix = { version = "=0.30.1", features = ["term", "signal", "process"] }
 
 # Mirror the desktop crate's release profile: the CLI inherited it while it was a
 # bin of ../Cargo.toml, and a standalone crate would otherwise fall back to the
