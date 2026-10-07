@@ -19,14 +19,13 @@ use super::path_refs;
 
 use ratatui::crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, Event, KeyCode,
-        KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        self, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+        MouseButton, MouseEvent, MouseEventKind,
     },
     execute,
-    style::Print,
     terminal::{
         disable_raw_mode, enable_raw_mode, BeginSynchronizedUpdate, EndSynchronizedUpdate,
-        EnterAlternateScreen, LeaveAlternateScreen,
+        EnterAlternateScreen,
     },
 };
 use ratatui::prelude::*;
@@ -145,6 +144,62 @@ fn sync_output_for(kind: super::terminal_setup::Kind) -> bool {
 fn use_synchronized_output() -> bool {
     sync_output_for(super::terminal_setup::identify(|k| std::env::var(k).ok()))
 }
+
+/// Everything `run` turns on between `enable_raw_mode` and the first frame,
+/// undone in one write. Shared by the clean-shutdown path and the panic hook
+/// (`install_panic_hook`) so the two can never drift: whichever one runs, the
+/// shell gets back exactly what it had -- no raw mode, no alternate screen, no
+/// mouse tracking, no Kitty keyboard protocol, alternate scroll restored, and a
+/// visible cursor. Plain writes rather than `execute!`/`Terminal`, since the
+/// panic hook has no `&mut Terminal` to hand (the panic can land while one is
+/// borrowed) and raw mode's own disable is independent of stdout entirely.
+///
+/// Best-effort: a panic is already an error path, and a second one here (an
+/// already-closed stdout, say) must not stop the first panic's message from
+/// reaching the terminal, so every step is `let _ =`.
+fn restore_terminal_modes() {
+    let _ = disable_raw_mode();
+    let mut stdout = io::stdout();
+    let _ = stdout.write_all(
+        format!(
+            "{DISABLE_BRACKETED_PASTE}{DISABLE_MOUSE_CAPTURE}{KITTY_KEYS_OFF}{}{LEAVE_ALT_SCREEN}",
+            alt_scroll_restore(),
+        )
+        .as_bytes(),
+    );
+    let _ = stdout.write_all(SHOW_CURSOR.as_bytes());
+    let _ = stdout.flush();
+}
+
+/// Raw escape sequences standing in for the `crossterm::Command` types used
+/// elsewhere (`DisableBracketedPaste`, `DisableMouseCapture`,
+/// `LeaveAlternateScreen`, cursor show): `restore_terminal_modes` has no
+/// `impl Write` the `Command` trait can target other than `Stdout` directly,
+/// and writing the bytes once here keeps the panic hook and the normal exit
+/// path byte-for-byte identical.
+const DISABLE_BRACKETED_PASTE: &str = "\x1b[?2004l";
+const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
+const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
+const SHOW_CURSOR: &str = "\x1b[?25h";
+
+/// Install a panic hook that restores the terminal before the default hook
+/// prints the panic message, so the message lands on a normal, scrollable
+/// screen instead of being swallowed by the alternate buffer or mangled by
+/// raw mode's disabled line-editing. Call once, after `enable_raw_mode` and
+/// before `EnterAlternateScreen`, so every panic from that point on -- in the
+/// render loop, in a key handler, anywhere on this thread or one it spawns --
+/// is caught by this hook rather than the default one. Does not call
+/// `std::process::exit`: unwinding continues exactly as it would have, so a
+/// panic inside a `catch_unwind` boundary (there are none on the render loop
+/// today, but a future one would work correctly) is not short-circuited.
+fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        restore_terminal_modes();
+        default_hook(info);
+    }));
+}
+
 /// How long the dock advertises a finished copy.
 const COPY_NOTICE: Duration = Duration::from_millis(1500);
 /// Terminals cap the OSC 52 payload they will accept; past this the sequence is
@@ -9931,6 +9986,10 @@ pub async fn run(
     log::set_max_level(log::LevelFilter::Off);
 
     enable_raw_mode().map_err(|e| e.to_string())?;
+    // From here a panic must not leave the shell in raw mode / the alternate
+    // screen / mouse-tracking / Kitty keys: install before anything else that
+    // can panic runs, so every failure from this point is caught by it.
+    install_panic_hook();
     // Under raw mode (so an OSC 11 reply is not echoed) but before the alternate
     // screen, so a query the terminal ignores leaves no stray bytes on the frame.
     theme::resolve_and_apply(theme_pref);
@@ -9944,6 +10003,15 @@ pub async fn run(
     let modes = startup_modes(crate::core::agent::global_config::mouse_enabled());
     let _ = stdout.write_all(modes.as_bytes());
     let _ = stdout.flush();
+    // Test-only hook for the real-PTY panic-recovery integration test
+    // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
+    // fires, but only a genuine panic on a genuine terminal, with every mode
+    // above already turned on, proves the terminal is actually left clean.
+    // Gated on an env var rather than `#[cfg(test)]`, since the assertion runs
+    // in the release-profile binary the test spawns as a subprocess.
+    if std::env::var_os("JAN_TUI_PANIC_AFTER_RAW_MODE").is_some() {
+        panic!("JAN_TUI_PANIC_AFTER_RAW_MODE");
+    }
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).map_err(|e| e.to_string())?;
 
@@ -10074,16 +10142,7 @@ pub async fn run(
     // process that exits now would lose it, and with it that turn's resume.
     app.join_journal();
 
-    let _ = disable_raw_mode();
-    let _ = execute!(
-        terminal.backend_mut(),
-        DisableBracketedPaste,
-        DisableMouseCapture,
-        Print(KITTY_KEYS_OFF),
-        Print(alt_scroll_restore()),
-        LeaveAlternateScreen,
-    );
-    let _ = terminal.show_cursor();
+    restore_terminal_modes();
     log::set_max_level(prev_log_level);
     // The session is closed: leave a copyable continuation command on the real
     // terminal, the same line the non-interactive path prints after a save.
