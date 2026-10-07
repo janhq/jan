@@ -2252,6 +2252,10 @@ struct App {
     /// reasoning with prose in emission order, and what lets `reasoning_open`
     /// tell "still reasoning" from "prose has started".
     reasoning_segs: Vec<ReasoningSeg>,
+    /// What `assistant_buf` has said so far (answer started, think block
+    /// open), folded in as tokens append; see `BufScan`. Reset wherever the
+    /// buffer is cleared or replaced.
+    buf_scan: RefCell<BufScan>,
     /// The current run of consecutive collapsible tool calls, rendered as one
     /// transcript row that updates in real time and finalizes to a short summary.
     /// edit/write are excluded (they render their own diff panel).
@@ -3064,6 +3068,7 @@ impl App {
             journal_writer: None,
             assistant_buf: String::new(),
             reasoning_segs: Vec::new(),
+            buf_scan: RefCell::new(BufScan::default()),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
@@ -3327,6 +3332,7 @@ impl App {
         self.reveal = None;
         self.find = None;
         self.assistant_buf.clear();
+        self.reset_buf_scan();
         self.reasoning_segs.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
@@ -3498,6 +3504,7 @@ impl App {
         let segs = std::mem::take(&mut self.reasoning_segs);
         let prose = self.assistant_buf.trim_end().to_string();
         self.assistant_buf.clear();
+        self.reset_buf_scan();
         // How long this turn's reasoning took, for the `Thought for Ns` label:
         // an open block being closed by this flush (a mid-block tool call) is
         // still timing on `thinking_since`; one that closed earlier (prose
@@ -4147,7 +4154,7 @@ impl App {
     /// (`reasoning_content` providers). The tail check is what closes the window
     /// when prose starts, since native segments live on until the next flush.
     fn reasoning_open(&self) -> bool {
-        thinking_open(&self.assistant_buf)
+        self.scan_buf().think_open
             || self
                 .reasoning_segs
                 .last()
@@ -4475,6 +4482,24 @@ impl App {
         self.cursor += text.len();
         self.reset_slash_hint();
         self.refresh_path_hints();
+    }
+
+    /// Forget what `buf_scan` folded in. Every site that clears or replaces
+    /// `assistant_buf` (rather than appending to it) must call this.
+    fn reset_buf_scan(&mut self) {
+        *self.buf_scan.get_mut() = BufScan::default();
+    }
+
+    /// `buf_scan` brought up to date with `assistant_buf`.
+    fn scan_buf(&self) -> BufScan {
+        let mut scan = self.buf_scan.borrow_mut();
+        scan.sync(&self.assistant_buf);
+        scan.clone()
+    }
+
+    /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
+    fn answer_started(&self) -> bool {
+        self.scan_buf().answer
     }
 
     /// Delete the char before the caret (Backspace).
@@ -6021,7 +6046,7 @@ impl App {
                 // it lands above the streaming response. Reasoning tokens must
                 // not trigger this, or every call by a reasoning model splits
                 // into its own row.
-                if self.tool_group.is_some() && has_answer_text(&self.assistant_buf) {
+                if self.tool_group.is_some() && self.answer_started() {
                     self.finalize_tool_group();
                 }
             }
@@ -6047,7 +6072,7 @@ impl App {
                 // has produced answer prose; a turn that only reasoned or only
                 // called tools keeps the group open so the next turn's calls
                 // keep folding into one summary row instead of a row per turn.
-                if has_answer_text(&self.assistant_buf) {
+                if self.answer_started() {
                     self.flush_assistant();
                 }
                 self.starting.clear();
@@ -9779,6 +9804,97 @@ fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
     }
     out.extend(split_reasoning(&prose[last..]));
     out
+}
+
+/// `has_answer_text` and `thinking_open` for a buffer that only grows,
+/// folded in one append at a time. Both used to rescan the whole reply on every
+/// token (and `has_answer_text` once per transcript row per frame), which is
+/// quadratic over a long reply.
+///
+/// Bytes before `resume` are settled: no `<think>` tag can start there any
+/// more. Text from `resume` on is rescanned each time because it is a `<` that
+/// may yet grow into a tag (`<thi` becomes `<think>` on the next token), and
+/// until it does it counts as plain text, exactly as the full scan sees it.
+#[derive(Clone, Debug, Default)]
+struct BufScan {
+    /// Whether the scan ran with tags parsed; a flip of the gate rescans.
+    gate: bool,
+    /// `assistant_buf.len()` at the last sync, and the bytes just before it,
+    /// so a buffer replaced rather than appended to is noticed and rescanned.
+    len: usize,
+    tail: Vec<u8>,
+    resume: usize,
+    /// Inside a think block at `resume`.
+    in_think: bool,
+    /// Non-blank answer text seen before `resume`.
+    settled_answer: bool,
+    /// The results for the whole buffer at `len`.
+    answer: bool,
+    think_open: bool,
+}
+
+/// How many trailing bytes `BufScan` keeps to recognize its own buffer.
+const BUF_SCAN_TAIL: usize = 32;
+
+impl BufScan {
+    fn sync(&mut self, buf: &str) {
+        let gate = think_tags_parsed();
+        let same = gate == self.gate
+            && buf.len() >= self.len
+            && buf.as_bytes()[self.len - self.tail.len()..self.len] == self.tail[..];
+        if same && buf.len() == self.len {
+            return;
+        }
+        if !same {
+            *self = BufScan {
+                gate,
+                ..BufScan::default()
+            };
+        }
+        if gate {
+            self.fold(buf);
+        } else {
+            // With tags off the whole buffer is one answer run.
+            self.answer = !buf.trim().is_empty();
+            self.think_open = false;
+        }
+        self.len = buf.len();
+        self.tail = buf.as_bytes()[buf.len().saturating_sub(BUF_SCAN_TAIL)..].to_vec();
+    }
+
+    fn fold(&mut self, buf: &str) {
+        let start = self.resume;
+        let text = &buf[start..];
+        let mut last = 0;
+        for m in think_re().find_iter(text) {
+            if !self.in_think && !text[last..m.start()].trim().is_empty() {
+                self.settled_answer = true;
+            }
+            self.in_think = !m.as_str().starts_with("</");
+            last = m.end();
+        }
+        // A trailing `<` the stream may still complete into a tag stays
+        // unsettled; anything else after the last tag is final.
+        let pending = text[last..]
+            .rfind('<')
+            .map(|i| last + i)
+            .filter(|&i| could_become_think_tag(&text[i..]))
+            .unwrap_or(text.len());
+        if !self.in_think && !text[last..pending].trim().is_empty() {
+            self.settled_answer = true;
+        }
+        self.resume = start + pending;
+        self.think_open = self.in_think;
+        self.answer = self.settled_answer || (!self.in_think && pending < text.len());
+    }
+}
+
+/// Whether `s` (starting at a `<`) is a prefix of some `think_re` match, so
+/// more streamed text could still turn it into a tag.
+fn could_become_think_tag(s: &str) -> bool {
+    let rest = s.strip_prefix('<').unwrap_or(s);
+    let rest = rest.strip_prefix('/').unwrap_or(rest);
+    rest.chars().all(|c| c.is_ascii_alphabetic() || c == ':')
 }
 
 /// True if `text` ends inside an unclosed ` think>` block (an opening tag whose
@@ -18684,6 +18800,7 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 reasoning_ms,
             } => {
                 app.assistant_buf = text.clone();
+                app.reset_buf_scan();
                 app.reasoning_segs = reasoning.clone();
                 // Seed the recorded duration so the replay stamps the same
                 // `Thought for Ns`; flush reads it via `thought_for`. Cleared
@@ -18751,6 +18868,7 @@ fn rebuild_transcript(app: &mut App) {
     app.reveal = None;
     app.find = None;
     app.assistant_buf.clear();
+    app.reset_buf_scan();
     app.reasoning_segs.clear();
     app.last_kind = Kind::None;
     if !app.display_log.is_empty() {
@@ -18833,6 +18951,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.reveal = None;
     app.find = None;
     app.assistant_buf.clear();
+    app.reset_buf_scan();
     app.reasoning_segs.clear();
     app.turn = (0, 0);
     app.scrollback = 0;
@@ -19275,7 +19394,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // than the scaffolding that produced it. (`finalize_tool_group` closes the
     // open group on that same first prose token, so it is already a trace member.)
     let last_answer = app.last_answer_idx();
-    let answer_started = has_answer_text(&app.assistant_buf);
+    let answer_started = app.answer_started();
     let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
     for run in app.trace_runs() {
         let finished = answer_started || last_answer.is_some_and(|a| run.end < a);

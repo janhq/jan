@@ -254,3 +254,78 @@ fn a_tab_only_paste_leaves_the_input_untouched() {
     assert!(app.input.is_empty());
     assert!(app.slash_dismissed, "no edit, so the popup stays dismissed");
 }
+
+/// Streaming a reply token by token must not rescan the whole buffer per
+/// token: the answer/think state is folded in as text appends.
+#[test]
+fn streaming_tokens_does_not_rescan_the_reply() {
+    let mut app = test_app();
+    app.status = Status::Running;
+    app.apply(StreamEvent::ToolCall {
+        id: "c1".into(),
+        name: "grep".into(),
+        args: json!({ "pattern": "x" }),
+    });
+    take(&ANSWER_SCANS);
+    take(&THINK_SCANS);
+    for token in chunks(&streamed_reply(8 * 1024), 40) {
+        app.apply(StreamEvent::Token { text: token });
+    }
+    assert_eq!(take(&ANSWER_SCANS), 0);
+    assert_eq!(take(&THINK_SCANS), 0);
+}
+
+/// The incremental state agrees with the full-buffer scans at every prefix of
+/// awkward inputs: tags split across tokens, a `<` that never becomes a tag,
+/// namespaced tags, whitespace-only answers, and the gate off.
+#[test]
+fn incremental_buffer_scan_matches_the_full_scan() {
+    let cases = [
+        "<think>a</think>  \n answer <b> and <thinking more",
+        "<mm:think>x</mm:think>\n\n<think>y",
+        "pre <th<think>in</think> post </think> <",
+        "   \n<think></think>   <think>open",
+        "a < b and c<d> <:think>q</:think>z",
+    ];
+    for gate in [true, false] {
+        for case in cases {
+            for size in [1, 2, 3, 7] {
+                let mut scan = super::super::BufScan::default();
+                let mut buf = String::new();
+                for piece in chunks(case, size) {
+                    buf.push_str(&piece);
+                    let mut check = || {
+                        scan.sync(&buf);
+                        (scan.answer, scan.think_open)
+                    };
+                    let want = || {
+                        (
+                            super::super::has_answer_text(&buf),
+                            super::super::thinking_open(&buf),
+                        )
+                    };
+                    let (got, want) = if gate {
+                        (check(), want())
+                    } else {
+                        without_think_tags(|| (check(), want()))
+                    };
+                    assert_eq!(got, want, "gate {gate}, prefix {buf:?}");
+                }
+            }
+        }
+    }
+}
+
+/// A buffer replaced in place (not appended to) is noticed and rescanned.
+#[test]
+fn a_replaced_buffer_is_rescanned() {
+    let mut app = test_app();
+    app.assistant_buf = "<think>weighing options".into();
+    assert!(!app.answer_started());
+    assert!(app.reasoning_open());
+    app.assistant_buf = "<think>weighing options</think>yes, ok".into();
+    assert!(app.answer_started());
+    app.assistant_buf = "here is the answer, and it is long".into();
+    assert!(app.answer_started());
+    assert!(!app.reasoning_open());
+}
