@@ -230,7 +230,7 @@ async fn execute_text(
             )
             .await
         }
-        "bash" => bash(args, ctx).await,
+        crate::tools::SHELL_TOOL => bash(args, ctx).await,
         "find" => find(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         "grep" => grep(args, project_root, scratch, ctx.read_roots, ctx.hidden_root).await,
         // Memory and skills live in the store root, not the sandbox: they must
@@ -858,7 +858,7 @@ pub(crate) fn confined_shell(
         // the command the whole machine, which is never what the caller asked for.
         let Some(wrapped) = jail::wrap(proc::shell(), &policy) else {
             return Err(
-                "ERROR: bash is unavailable because no OS sandbox could be established on \
+                "ERROR: the shell tool is unavailable because no OS sandbox could be established on \
                  this system. Use the read/ls/find/grep tools instead."
                     .to_string(),
             );
@@ -926,10 +926,6 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
     // collecting output after this call has already returned.
     let sink = ctx.on_output.clone();
     let sandboxed = ctx.sandbox;
-    // The model writes POSIX commands by default, which `cmd` rejects. Surface
-    // the resolved shell so it can adapt when the only shell on a Windows box
-    // is cmd, instead of the tool silently presenting cmd as bash.
-    let shell_description = shell.description;
     tokio::spawn(async move {
         let mut out = collect_and_format(child, spill_scratch, sink).await;
         // Appended inside the task so a backgrounded job carries the hint too.
@@ -939,14 +935,6 @@ async fn bash(args: &serde_json::Value, ctx: &ToolContext<'_>) -> String {
         // and the hint would name limits that are not in force.
         if sandboxed && bash_result_failed(&out) && jail::looks_denied(&out) {
             out.push_str(&jail::denial_hint(&policy));
-        }
-        if shell_description == "cmd" {
-            out.insert_str(
-                0,
-                "[shell: cmd.exe - no bash is installed. Write commands in cmd syntax \
-                 (e.g. `dir`, `type`, `set`, `mkdir`, `%VAR%` for variables), not \
-                 POSIX/bash. Alternatively install git-bash and this tool will use it.]\n",
-            );
         }
         if let Some(pid) = pid {
             proc::unregister(thread_owned.as_deref(), pid);
@@ -1268,7 +1256,16 @@ impl BashCapture {
     }
 }
 
-/// True when a `bash` tool result reports failure via its exit marker: a
+/// Whether a built-in call's result is a failure: an `ERROR` prefix for any
+/// tool, or a failed exit marker from the exec tool. Keyed on the capability
+/// rather than a tool name, so the agent loop, the desktop command and the MCP
+/// server share one rule that a rename cannot leave behind.
+pub fn tool_result_failed(tool: &BuiltinTool, content: &str) -> bool {
+    content.starts_with("ERROR")
+        || (tool.capability == super::Capability::Exec && bash_result_failed(content))
+}
+
+/// True when a shell tool result reports failure via its exit marker: a
 /// non-zero `[exit N]` or a signal termination. The marker is emitted by
 /// [`BashCapture::finish`] on its own line and a truncation note may follow it,
 /// so scan every line rather than only the tail. Model-facing content is
@@ -1492,21 +1489,38 @@ pub async fn render_html_png(
     // headless-new process spawned directly by a non-bundled parent fails its
     // singleton/TCC check with "Multiple targets are not supported in headless
     // mode", while the same invocation via the shell succeeds. The `bash` tool
-    // already relies on this property, so we inherit it here.
-    let profile_quoted = shell_quote(profile.to_str().unwrap_or_default());
-    let shot_quoted = shell_quote(shot.to_str().unwrap_or_default());
-    let url_quoted = shell_quote(&file_url);
-    let chrome_quoted = shell_quote(chrome.to_str().unwrap_or_default());
-    let cmd = format!(
-        "{chrome_quoted} --headless=new --disable-gpu --hide-scrollbars --no-sandbox \
-         --disable-dev-shm-usage --no-first-run --user-data-dir={profile_quoted} \
-         --force-device-scale-factor={scale} \
-         --window-size={width},{height} --screenshot={shot_quoted} {url_quoted}"
-    );
+    // already relies on this property, so we inherit it here. The quoting below
+    // is POSIX, so a PowerShell or cmd shell (Windows, where the quirk does not
+    // exist) gets Chrome directly with its arguments instead.
+    let chrome_args = [
+        "--headless=new".to_string(),
+        "--disable-gpu".to_string(),
+        "--hide-scrollbars".to_string(),
+        "--no-sandbox".to_string(),
+        "--disable-dev-shm-usage".to_string(),
+        "--no-first-run".to_string(),
+        format!("--user-data-dir={}", profile.display()),
+        format!("--force-device-scale-factor={scale}"),
+        format!("--window-size={width},{height}"),
+        format!("--screenshot={}", shot.display()),
+        file_url.clone(),
+    ];
     let shell = proc::shell();
-    let mut child = match tokio::process::Command::new(shell.program.clone())
-        .args(shell.args.clone())
-        .arg(&cmd)
+    let mut launcher = if shell.kind == proc::ShellKind::Posix {
+        let line = std::iter::once(chrome.to_string_lossy().into_owned())
+            .chain(chrome_args.iter().cloned())
+            .map(|a| shell_quote(&a))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut c = tokio::process::Command::new(&shell.program);
+        c.args(&shell.args).arg(line);
+        c
+    } else {
+        let mut c = tokio::process::Command::new(&chrome);
+        c.args(&chrome_args);
+        c
+    };
+    let mut child = match launcher
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -2974,6 +2988,8 @@ mod tests {
 
     /// A command's output reaches the sink as it is produced, not just in the
     /// returned string -- this is what makes a long command visible while it runs.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_streams_output_to_the_sink() {
         let root = unique_root();
@@ -2989,7 +3005,7 @@ mod tests {
             .with_sandbox(false)
             .with_output_sink(sink);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'one\ntwo\n'"}),
             &ctx,
         )
@@ -3009,6 +3025,8 @@ mod tests {
     /// A backgrounded command keeps streaming after the call has returned: the
     /// sink lives in the detached task, which is the whole reason a long job can
     /// show progress while it runs on.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_command_keeps_streaming() {
         let root = unique_root();
@@ -3025,7 +3043,7 @@ mod tests {
             .with_output_sink(sink);
         // timeout 0 => backgrounds immediately, before the command prints.
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.2; printf 'late\n'", "timeout": 0}),
             &ctx,
         )
@@ -3054,6 +3072,8 @@ mod tests {
     /// run under it) and report again when it really finishes, naming the file
     /// the output was published to. The order matters -- the file is written
     /// before the ping, so reacting to the ping always finds it there.
+    // POSIX command text, and a 1.2s budget a cold PowerShell start can miss.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_backgrounded_command_rings_the_doorbell_when_it_finishes() {
         let root = unique_root();
@@ -3064,7 +3084,7 @@ mod tests {
             move |e: crate::tools::ShellEvent| seen.lock().unwrap().push(e),
         ));
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.3; echo done; exit 3", "timeout": 0}),
             &ctx,
         )
@@ -3119,7 +3139,7 @@ mod tests {
     async fn backgrounding_without_a_doorbell_still_tells_the_model_to_read_the_file() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 2", "timeout": 0}),
             &root,
         )
@@ -3136,7 +3156,7 @@ mod tests {
     async fn bash_exceeding_timeout_backgrounds_instead_of_erroring() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 2", "timeout": 0}),
             &root,
         )
@@ -3154,7 +3174,7 @@ mod tests {
     async fn backgrounded_output_lands_in_the_reported_file() {
         let root = unique_root();
         let started = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 0.2; echo done", "timeout": 0}),
             &root,
         )
@@ -3187,7 +3207,7 @@ mod tests {
     #[tokio::test]
     async fn bash_missing_command_errors() {
         let root = unique_root();
-        let out = execute_builtin(lookup("bash").unwrap(), &json!({}), &root).await;
+        let out = execute_builtin(lookup("shell").unwrap(), &json!({}), &root).await;
         assert!(out.starts_with("ERROR: missing required argument"), "{out}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3209,7 +3229,7 @@ mod tests {
     async fn bash_nonzero_exit_is_not_error() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo hi; exit 3"}),
             &root,
         )
@@ -3224,7 +3244,7 @@ mod tests {
     async fn bash_success_emits_exit_0_marker() {
         let root = unique_root();
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo done"}),
             &root,
         )
@@ -3235,12 +3255,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_exit_marker_is_on_its_own_line() {
         let root = unique_root();
         // stderr-only output with no trailing newline (mirrors `git push`).
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'to remote' 1>&2"}),
             &root,
         )
@@ -3255,12 +3277,14 @@ mod tests {
     /// Typical command output (well under the caps) must reach the model whole:
     /// lowering the caps for context economy must not start truncating the
     /// everyday `cargo check` / `git status` sized result.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_under_the_cap_survives_intact() {
         let root = unique_root();
         // ~32KB over 500 lines: half the byte cap, a quarter of the line cap.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 500); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3277,12 +3301,14 @@ mod tests {
 
     /// The counterpart: past the cap the notice appears. Pinned just above
     /// 64KB so the test fails if the cap drifts back up to the old 256KB.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_past_the_byte_cap_is_truncated() {
         let root = unique_root();
         // ~128KB over 2000 lines of 64 chars: over the byte cap, at the line cap.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 2000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3302,6 +3328,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_cr_progress_is_collapsed_not_truncated() {
         let root = unique_root();
@@ -3309,7 +3337,7 @@ mod tests {
         // \r (no \n). Raw bytes exceed the byte cap, but only the final redraw
         // is visible, so the model must see it intact with no truncation notice.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 30000); do printf 'Receiving objects: %d\\r' \"$i\"; done 1>&2"}),
             &root,
         )
@@ -3326,13 +3354,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_output_overflow_spills_to_readable_temp_file() {
         let root = unique_root();
         // ~1MB of output: over the bash cap, so it must spill to a temp file
         // and tell the agent how to read the rest.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &root,
         )
@@ -3367,6 +3397,8 @@ mod tests {
     /// scratch and be advertised by the one name that works from both the fs
     /// tools and the shell, so the `read` the note asks for actually finds it.
     /// The no-scratch case above cannot catch this -- there `/tmp` is not remapped.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_spill_is_readable_when_a_scratch_is_set() {
         let root = unique_root();
@@ -3374,7 +3406,7 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_scratch_root(&scratch);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 16000); do printf '%064d\\n' \"$i\"; done"}),
             &ctx,
         )
@@ -3416,7 +3448,7 @@ mod tests {
         let store = crate::workspace::project_store(&root);
         let ctx = ToolContext::new(&root, &store, &[]).with_sandbox(false);
         let out = super::execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo unconfined"}),
             &ctx,
         )
@@ -3462,13 +3494,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(&scratch);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_line_overflow_keeps_the_tail_not_the_head() {
         let root = unique_root();
         // 12000 short lines: well over the line cap. Tail truncation must keep
         // the LAST lines (final result/errors) and drop the earliest ones.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "for i in $(seq 1 12000); do echo \"L$i\"; done"}),
             &root,
         )
@@ -3486,12 +3520,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_strips_control_chars_but_keeps_text() {
         let root = unique_root();
         // NUL and bell around visible text plus an ANSI color escape.
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "printf 'a\\000b\\007\\033[31mred\\033[0m\\n'"}),
             &root,
         )
@@ -3506,6 +3542,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn bash_command_reading_stdin_does_not_hang() {
         let root = unique_root();
@@ -3514,7 +3552,7 @@ mod tests {
         // password prompt). The failure/output comes back as a normal result.
         let out = tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            execute_builtin(lookup("bash").unwrap(), &json!({"command": "cat"}), &root),
+            execute_builtin(lookup("shell").unwrap(), &json!({"command": "cat"}), &root),
         )
         .await
         .expect("must not hang on stdin read");
@@ -3526,7 +3564,7 @@ mod tests {
     async fn bash_missing_working_dir_errors() {
         let root = unique_root().join("does-not-exist");
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "echo hi"}),
             &root,
         )

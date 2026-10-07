@@ -806,6 +806,8 @@ struct ResolvedSettings {
     /// `[prompt]`: where each system-prompt composer may sit. Resolved with the
     /// rest so composition and `agent status` answer from one parse.
     prompt: PromptPolicy,
+    /// See `project::RunSettings::tool_notices`.
+    tool_notices: Vec<String>,
 }
 
 /// Kept out of the invoker's struct literal so it is reachable from a test.
@@ -824,6 +826,7 @@ fn resolve_run_settings(
         env_passthrough: resolve_env_passthrough(settings.env_passthrough),
         env_set: resolve_env_set(settings.env_set),
         prompt: settings.prompt,
+        tool_notices: settings.tool_notices,
     }
 }
 
@@ -3482,6 +3485,7 @@ async fn orchestrate_inner(
         }
         let (store_root, memory_home, cross_project) =
             crate::core::agent::project::memory_roots(root);
+        let tool_notices = settings.tool_notices;
         let tools = CompositeToolInvoker {
             mcp: mcp_tools,
             store_root,
@@ -3529,12 +3533,14 @@ async fn orchestrate_inner(
         };
         // Entries dropped while loading the hook files are reported once here,
         // before anything fires: a user whose matcher is a bad glob otherwise
-        // watches a hook never run and has nothing to tell them why.
+        // watches a hook never run and has nothing to tell them why. `[tools]`
+        // entries naming the shell's old name ride along for the same reason.
         {
             let dropped: Vec<BackgroundNotice> = tools
                 .hooks
                 .load_notices()
                 .iter()
+                .chain(&tool_notices)
                 .map(|message| {
                     log::warn!("agent: {message}");
                     BackgroundNotice {
@@ -4792,17 +4798,23 @@ async fn run_turn_cycle(
                 parts,
                 details,
             } = outcome;
-            // A `bash` call that exits non-zero isn't prefixed "ERROR" (that
+            // A shell call that exits non-zero isn't prefixed "ERROR" (that
             // convention is reserved for hard tool failures the model must
             // treat as errors), but its failed exit marker still flags the
             // call as failed for display.
-            let is_error = content.starts_with("ERROR")
-                || (tool_names.get(id.as_str()) == Some(&"bash")
-                    && tauri_plugin_agent_tools::tools::handlers::bash_result_failed(&content));
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
+            let builtin = tauri_plugin_agent_tools::tools::lookup(name);
+            let is_error = match builtin {
+                Some(tool) => {
+                    tauri_plugin_agent_tools::tools::handlers::tool_result_failed(tool, &content)
+                }
+                None => content.starts_with("ERROR"),
+            };
             if name == "todo" {
                 todo_touched_this_batch = true;
-            } else if !is_error && matches!(name, "bash" | "write" | "edit") {
+            } else if !is_error
+                && matches!(name, tauri_plugin_agent_tools::tools::SHELL_TOOL | "write" | "edit")
+            {
                 mutations_since_todo_touch += 1;
             }
             let _ = events.send(StreamEvent::ToolResult {
@@ -6680,7 +6692,7 @@ mod tests {
         // 13 consecutive mutating calls with no todo touch -- one past the
         // 12-call threshold -- then a clean stop.
         let mut responses: Vec<serde_json::Value> = (0..13)
-            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "shell"))
             .collect();
         responses.push(
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
@@ -6852,7 +6864,7 @@ mod tests {
     async fn mid_run_nudge_does_not_fire_in_plan_mode_or_without_open_todos() {
         let (tx, _rx) = mpsc::unbounded_channel();
         let mut responses: Vec<serde_json::Value> = (0..13)
-            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("call_{i}"), "shell"))
             .collect();
         responses.push(
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
@@ -6900,7 +6912,7 @@ mod tests {
         // 6 mutating calls, a todo touch, then 6 more -- neither run alone
         // reaches the 12-call threshold, so no nudge should fire.
         let mut responses: Vec<serde_json::Value> = (0..6)
-            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "bash"))
+            .map(|i| mutating_tool_call_completion(&format!("a{i}"), "shell"))
             .collect();
         responses.push(mutating_tool_call_completion("mid", "todo"));
         responses.extend((0..6).map(|i| mutating_tool_call_completion(&format!("b{i}"), "edit")));
@@ -7291,7 +7303,7 @@ mod tests {
         }
     }
 
-    fn bash_call_completion() -> serde_json::Value {
+    fn shell_call_completion() -> serde_json::Value {
         json!({
             "choices": [{
                 "message": {
@@ -7299,7 +7311,7 @@ mod tests {
                     "tool_calls": [{
                         "id": "call_1",
                         "type": "function",
-                        "function": { "name": "bash", "arguments": "{\"command\":\"false\"}" }
+                        "function": { "name": "shell", "arguments": "{\"command\":\"false\"}" }
                     }]
                 },
                 "finish_reason": "tool_calls"
@@ -7317,7 +7329,7 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         // One request whose usage alone blows a $0.01 ceiling, then a second
         // the loop must never make.
-        let mut expensive = bash_call_completion();
+        let mut expensive = shell_call_completion();
         expensive["usage"] = json!({
             "prompt_tokens": 1_000_000,
             "completion_tokens": 0,
@@ -7446,7 +7458,7 @@ mod tests {
     async fn bash_result_is_error_flag(content: &str) -> bool {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let model = MockModel::new(vec![
-            bash_call_completion(),
+            shell_call_completion(),
             json!({ "choices": [{ "message": { "content": "done" }, "finish_reason": "stop" }] }),
         ]);
         let tool = FixedTool {
@@ -8621,6 +8633,8 @@ mod tests {
 
     /// Phase 2: a plugin-declared tool is dispatched, runs its command with the
     /// call's arguments on stdin, and returns its stdout as the tool result.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_plugin_declared_tool_is_dispatched_and_returns_its_output() {
         let root = hooks_root("plugintool");
@@ -8740,6 +8754,8 @@ mod tests {
     /// A hook that does not deny leaves the MCP call alone, and its input
     /// reaches the hook: a PreToolUse audit hook is useless if it cannot see
     /// what was asked for.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_mcp_pretooluse_hook_sees_the_call_and_may_let_it_through() {
         let root = hooks_root("mcpallow");
@@ -9449,6 +9465,8 @@ mod tests {
     /// the toolset's `execute_builtin` bracket, so they are pinned here: each
     /// fires, each receives its payload, and each is still live in Plan mode
     /// (unlike the tool events above).
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn session_and_prompt_hooks_fire_with_their_payloads() {
         let root = hooks_root("lifecycle");
@@ -10525,6 +10543,8 @@ mod tests {
     /// already holds delivers a merged background notice carrying a headline
     /// and the matched content, and the pending flag clears once all conditions
     /// are met.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn monitor_match_arrives_as_a_headlined_background_notice() {
         let root = unique_project_root();
@@ -10587,6 +10607,8 @@ mod tests {
     /// fired leaves `background_pending` false (the turn ends and the user can
     /// keep talking), while a queued match still resumes the run, and taking
     /// it clears the flag again.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_session_owned_monitor_does_not_park_the_run_until_it_fires() {
         let root = unique_project_root();
@@ -10987,7 +11009,7 @@ mod tests {
             .with_sandbox(false)
             .with_output_sink(output_sink(&tx, "call-1"));
         let out = execute_builtin(
-            lookup("bash").unwrap(),
+            lookup("shell").unwrap(),
             &json!({"command": "sleep 3; printf 'late\\n'", "timeout": 0}),
             &ctx,
         )

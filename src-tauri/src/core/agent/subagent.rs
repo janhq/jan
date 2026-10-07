@@ -341,11 +341,13 @@ fn map_claude_tools(tools: &[String]) -> Option<Vec<String>> {
             let jan = match t.to_ascii_lowercase().as_str() {
                 "read" => Some("read"),
                 // Glob/Grep intentionally unmapped: Jan no longer advertises
-                // list/search tools (bash covers them). Mapping them would
+                // list/search tools (shell covers them). Mapping them would
                 // restrict a child to a tool it is never offered -- and a child
                 // scoped to *only* those would be left with none. Dropped instead,
-                // so such an agent inherits the full toolset (bash included).
-                "bash" => Some("bash"),
+                // so such an agent inherits the full toolset (shell included).
+                // Claude Code's own name for its shell, translated like the rest
+                // of this table; Jan itself has no `bash` tool.
+                "bash" => Some(tauri_plugin_agent_tools::tools::SHELL_TOOL),
                 "edit" => Some("edit"),
                 "write" => Some("write"),
                 "websearch" => Some("web_search"),
@@ -425,6 +427,21 @@ fn with_skill_tools(tools: &[String], parent: &ToolPermissions) -> Vec<String> {
     out
 }
 
+/// A list naming the shell's old name would hand the child a tool that no
+/// longer exists, so it would silently run without a shell. Refused with the
+/// rename instead, which reaches the model and through it the user. `where_`
+/// names the list the model can actually fix.
+fn refuse_renamed_shell(list: Option<&[String]>, where_: &str) -> Result<(), SubagentError> {
+    match list
+        .into_iter()
+        .flatten()
+        .find_map(|t| tauri_plugin_agent_tools::tools::renamed_shell_notice(t, where_))
+    {
+        Some(notice) => Err(SubagentError::PermissionDenied(notice)),
+        None => Ok(()),
+    }
+}
+
 /// Effective tool allowlist for a subagent dispatch: the intersection of the
 /// definition's `allowed_tools`, the call-site override, and the parent's
 /// permissions, plus the always-on `skill_list`/`skill_read` pair. Deny (from
@@ -450,6 +467,8 @@ pub fn intersect_allowed_tools(
 ) -> Result<Option<Vec<String>>, SubagentError> {
     let definition = definition.filter(|d| !d.is_empty());
     let request = request.filter(|r| !r.is_empty());
+    refuse_renamed_shell(definition, "the subagent definition's allowed_tools")?;
+    refuse_renamed_shell(request, "allowed_tools")?;
     if let Some(requested) = request {
         let mut effective = Vec::with_capacity(requested.len());
         for tool in requested {
@@ -638,7 +657,9 @@ fn resolve_dispatch(
         None => {
             // No saved definition: a focused general-purpose subagent defined by
             // its task. The call-site allowlist IS its toolset; only the parent's
-            // deny-list narrows it further.
+            // deny-list narrows it further. The list came from the model's own
+            // call, so a stale entry is reported as that, not as a definition.
+            refuse_renamed_shell(requested.as_deref(), "allowed_tools")?;
             let definition = SubagentDefinition {
                 name: req.name.clone(),
                 description: req.description.clone(),
@@ -2579,7 +2600,7 @@ pub fn subagent_tool_schemas(
                                     "allowed_tools": {
                                         "type": "array",
                                         "items": { "type": "string" },
-                                        "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs bash, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
+                                        "description": "Optional tool allowlist. OMIT to give the subagent the parent's full toolset (the usual choice -- one that runs tests needs shell, one that edits needs write). Provide a list ONLY to restrict it; for a saved subagent it further narrows that subagent's own tools (never widens). An empty list is treated as omitted."
                                     }
                                 },
                                 "required": ["name", "task"]
@@ -2620,7 +2641,7 @@ pub fn subagent_tool_schemas(
                         "allowed_tools": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. bash to run commands, write/edit to change files). An empty list is treated as omitted."
+                            "description": "Optional default tool allowlist. OMIT to let the subagent inherit the full toolset when dispatched (the usual choice); list tools ONLY to restrict it, and then include everything its job needs (e.g. shell to run commands, write/edit to change files). An empty list is treated as omitted."
                         },
                         "scope": { "type": "string", "enum": ["user", "project"], "description": "Where to store it (default 'project')." },
                         "overwrite": { "type": "boolean", "description": "Replace an existing same-name definition in that scope (default false)." }
@@ -3094,6 +3115,17 @@ pub(crate) mod tests {
         ToolPermissions::new(PermissionDefault::ReadOnly, &[], &deny, &[])
     }
 
+    /// A Claude Code agent's `Bash` is translated to Jan's `shell`, so a plugin
+    /// agent scoped to `Read, Bash` keeps a shell rather than losing it.
+    #[test]
+    fn a_claude_bash_tool_maps_to_the_shell_tool() {
+        let tools = vec!["Read".to_string(), "Bash".to_string()];
+        assert_eq!(
+            map_claude_tools(&tools),
+            Some(vec!["read".to_string(), "shell".to_string()])
+        );
+    }
+
     #[test]
     fn intersect_none_none_inherits() {
         let p = ToolPermissions::allow_all();
@@ -3189,16 +3221,49 @@ pub(crate) mod tests {
     #[test]
     fn intersect_request_outside_definition_is_rejected() {
         let def = vec!["read".to_string()];
-        let req = vec!["bash".to_string()];
+        let req = vec!["shell".to_string()];
         let p = ToolPermissions::allow_all();
         let err = intersect_allowed_tools(Some(&def), Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 
+    /// A list still naming `bash` is refused with the rename, rather than
+    /// giving a child that silently has no shell.
+    #[test]
+    fn a_bash_entry_is_refused_with_the_rename() {
+        let def = vec!["read".to_string(), "bash".to_string()];
+        let p = ToolPermissions::allow_all();
+        let SubagentError::PermissionDenied(msg) =
+            intersect_allowed_tools(Some(&def), None, &p).unwrap_err()
+        else {
+            panic!("expected a permission error");
+        };
+        assert!(msg.contains("definition's allowed_tools names `bash`"), "{msg}");
+        assert!(msg.contains("now `shell`"), "{msg}");
+        let req = vec!["bash".to_string()];
+        assert!(intersect_allowed_tools(None, Some(&req), &p).is_err());
+    }
+
+    /// An ad-hoc dispatch has no definition, so the refusal must name the
+    /// call's own list -- the one the model wrote and can fix.
+    #[test]
+    fn an_ad_hoc_bash_entry_names_the_calls_own_list() {
+        let reg = registry_with("other", None);
+        let Err(SubagentError::PermissionDenied(msg)) = resolve_dispatch_plain(
+            &reg,
+            &req("adhoc", Some(vec!["bash".to_string()])),
+            &ToolPermissions::allow_all(),
+        ) else {
+            panic!("expected a permission error");
+        };
+        assert!(msg.starts_with("allowed_tools names `bash`"), "{msg}");
+        assert!(!msg.contains("definition"), "{msg}");
+    }
+
     #[test]
     fn intersect_request_denied_by_parent_is_rejected() {
-        let req = vec!["bash".to_string()];
-        let p = perms_denying(&["bash"]);
+        let req = vec!["shell".to_string()];
+        let p = perms_denying(&["shell"]);
         let err = intersect_allowed_tools(None, Some(&req), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
@@ -3492,7 +3557,7 @@ pub(crate) mod tests {
         let reg = registry_with("reviewer", Some(vec!["read".to_string()]));
         let p = ToolPermissions::allow_all();
         let err =
-            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["bash".to_string()])), &p).unwrap_err();
+            resolve_dispatch_plain(&reg, &req("reviewer", Some(vec!["shell".to_string()])), &p).unwrap_err();
         assert!(matches!(err, SubagentError::PermissionDenied(_)));
     }
 

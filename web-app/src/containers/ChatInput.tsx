@@ -865,7 +865,7 @@ const ChatInput = memo(function ChatInput({
       }
       cancelToolCall?.()
       // Aborting the stream/loop only discards a pending tool result; a running
-      // or backgrounded bash keeps executing until its session's shells are
+      // or backgrounded shell keeps executing until its session's shells are
       // killed. Chat's tool thread_id is the chat thread id.
       void cancelAgentThreadBash(threadId)
     },

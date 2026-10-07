@@ -9,6 +9,20 @@
 
 use serde_json::{json, Value};
 
+/// The `bash` tool's description before any shell-specific note.
+const BASH_DESCRIPTION: &str = "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background instead of erroring or being killed, and this call returns the path to a file where its full output will be written once it finishes; read that file (with the read tool) to collect the result. The file appears only when the command is done, so its presence means the output is complete.";
+
+/// The `bash` description for a shell of `kind`. The model writes POSIX by
+/// default, so a PowerShell or cmd host says so up front rather than letting the
+/// first command fail. Fixed per process (the shell is resolved once), so the
+/// tool array stays byte-identical across turns.
+pub fn bash_description(kind: super::proc::ShellKind) -> String {
+    match kind.syntax_note() {
+        Some(note) => format!("{note} {BASH_DESCRIPTION}"),
+        None => BASH_DESCRIPTION.to_string(),
+    }
+}
+
 /// OpenAI function schemas for the built-in tools, one per `BUILTIN_TOOLS`
 /// entry. `screenshot` is desktop-only (`feature = "tauri"`), so the headless
 /// CLI advertises one fewer.
@@ -97,8 +111,8 @@ pub fn builtin_tool_schemas() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
-                "name": "bash",
-                "description": "Run a shell command in the project root. Returns combined stdout and stderr, followed by a final `[exit N]` line (or `[terminated by signal]`). Judge success by that exit code, not by whether there is text on stderr: many commands (e.g. `git push`) write normal status to stderr on success, so `[exit 0]` means it worked. The output is COMPLETE and verbatim: trust it and do not re-run a command to double-check. It is truncated only when it exceeds 2000 lines or 64KB, and only then is an explicit `[output truncated ...]` notice appended with a temp-file path holding the full output; when truncated the LAST lines are kept (so the final result and errors stay visible). Absent that notice, you have the full output. If the command doesn't finish within `timeout` seconds (default 30), it keeps running in the background instead of erroring or being killed, and this call returns the path to a file where its full output will be written once it finishes; read that file (with the read tool) to collect the result. The file appears only when the command is done, so its presence means the output is complete.",
+                "name": super::SHELL_TOOL,
+                "description": bash_description(super::proc::shell().kind),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -342,6 +356,19 @@ mod tests {
         let once = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         let twice = serde_json::to_string(&builtin_tool_schemas()).unwrap();
         assert_eq!(once, twice);
+    }
+
+    /// A PowerShell or cmd host says so before the generic text, so the model
+    /// reads it before writing a command; a POSIX host is unchanged.
+    #[test]
+    fn the_bash_description_leads_with_the_shells_syntax() {
+        use crate::tools::proc::ShellKind;
+        assert_eq!(bash_description(ShellKind::Posix), BASH_DESCRIPTION);
+        for kind in [ShellKind::PowerShell, ShellKind::Cmd] {
+            let d = bash_description(kind);
+            assert!(d.starts_with(kind.syntax_note().unwrap()), "{d}");
+            assert!(d.ends_with(BASH_DESCRIPTION));
+        }
     }
 
     /// The search schemas name the arguments the handlers actually read; a

@@ -538,6 +538,8 @@ mod tests {
     /// The `PreCompact` call site: the hook runs, and it is told how much
     /// conversation is about to be summarized away -- the one fact a hook that
     /// archives a transcript needs.
+    // POSIX command text: Windows runs PowerShell.
+    #[cfg(unix)]
     #[tokio::test]
     async fn pre_compact_hooks_fire_with_the_message_count() {
         let root = std::env::temp_dir().join(format!(

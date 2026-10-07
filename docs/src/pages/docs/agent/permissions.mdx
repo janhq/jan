@@ -21,7 +21,7 @@ Reads are free. Writes and shell commands stop and ask:
    n  no
 ```
 
-For `write` and `edit` you see a diff first. For `bash` you see the exact command.
+For `write` and `edit` you see a diff first. For `shell` you see the exact command.
 
 `a` grants that capability for the rest of the session. Nothing is written to disk, so a new session
 starts cautious again - a grant can't leak into tomorrow.
@@ -34,7 +34,7 @@ Every tool maps to one capability, and approval applies at that level rather tha
 | --- | --- | --- |
 | Read | `read`, `ls`, `find`, `grep`, `web_search`, `web_fetch`, `memory_read`, `memory_list`, `skill_read`, `skill_list` | Allowed |
 | Write | `write`, `edit`, `memory_write`, `skill_write` | Prompts |
-| Exec | `bash` | Prompts |
+| Exec | `shell` | Prompts |
 
 So approving `a` on a shell command allows further shell commands, not just that one. That's the
 trade for not being asked twenty times during a test loop - and the reason to prefer `y` when you
@@ -43,7 +43,7 @@ only meant one.
 ## Path checks
 
 Tools that take a path have it checked against the project root, so a write outside the project is
-refused before it happens. `bash` has no path argument and runs in the project root; a command you
+refused before it happens. `shell` has no path argument and runs in the project root; a command you
 approve can still reach outside, which is why plan mode exists as the hard boundary.
 
 A symbolic link is followed only while it stays inside the project (or the session scratch). Links
@@ -82,6 +82,13 @@ allow_write = []
 
 `deny` always wins over `allow`. A tool in both lists is denied.
 
+The shell tool is named `shell`; it used to be `bash`, and that name is no longer recognised.
+Rename `bash` to `shell` wherever you name the tool: `allow`, `deny`, hook matchers and a
+subagent's `allowed_tools`. An old `deny = ["bash"]` matches nothing. The `jan` CLI warns about
+each such `[tools]` entry when a run starts (the desktop app does not read `[tools]`), and every
+surface refuses a subagent whose `allowed_tools` still says `bash`. `jan mcp serve --tool bash`
+says so too.
+
 ## The shell sandbox
 
 Jan can run shell commands under OS confinement - bubblewrap on Linux, Seatbelt on macOS,
@@ -101,7 +108,7 @@ Whether it is on depends on the surface:
 
 | Surface | Sandbox | Can it be changed? |
 | --- | --- | --- |
-| Desktop chat agent | Always on | No. If no sandbox can be established, `bash` is withheld rather than run unconfined |
+| Desktop chat agent | Always on | No. If no sandbox can be established, `shell` is withheld rather than run unconfined |
 | `jan` CLI and console | **Off by default** | Yes, see below |
 
 The CLI runs unconfined because it is a coding agent in your own project, started from your own
@@ -146,7 +153,23 @@ permanently would leave no way to run a single command without it.
 ```
 
 `backend` is the confinement that *would* be used. `none` means none is available on this machine -
-with `enabled: true` that combination is what withholds `bash` entirely.
+with `enabled: true` that combination is what withholds `shell` entirely.
+
+### Which shell runs commands
+
+On macOS and Linux the `shell` tool runs `bash` (or `sh` where there is none). On Windows it runs
+PowerShell, never a bash: the sandbox is an AppContainer, and Git Bash's MSYS runtime cannot start
+inside one. Jan uses the first of these that it finds:
+
+1. PowerShell 7 (`pwsh`), when it is installed under Program Files. The sandbox can only start
+   programs from folders all apps may read, so a `pwsh` from the Microsoft Store, scoop, a zip in
+   your profile or a dotnet tool is skipped in favor of 5.1.
+2. Windows PowerShell 5.1, which ships with Windows.
+3. `cmd.exe`.
+
+The model is told which shell it has, so it writes PowerShell or cmd syntax when that is what
+runs. Hooks and plugin tools use the same shell. To force a specific shell, set
+`JAN_AGENT_SHELL` to its full path.
 
 ### The shell environment
 

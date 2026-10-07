@@ -308,7 +308,7 @@ enum McpServeCommands {
         /// Also serve the mutating filesystem tools (write, edit), confined to the project root
         #[arg(long)]
         allow_write: bool,
-        /// Also serve bash (runs under the same OS sandbox the agent's shell does)
+        /// Also serve the shell tool (runs under the same OS sandbox as the agent)
         #[arg(long)]
         allow_exec: bool,
         /// Serve only these tools, repeatable; never widens what the allow flags permit

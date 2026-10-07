@@ -53,18 +53,30 @@ describe('agentTools', () => {
   // The chat surface offers the sandboxed shell alone; everything else is
   // Cowork's. A chat set that grew a write tool would hand the main interface
   // an agent toolset it no longer advertises a workspace for.
-  it('restricts the chat subset to bash', async () => {
+  it('restricts the chat subset to shell', async () => {
     const { CHAT_AGENT_TOOL_NAMES } = await import('../agentTools')
-    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['bash'])
+    expect([...CHAT_AGENT_TOOL_NAMES]).toEqual(['shell'])
   })
 
-  it('advertises the workspace tools including writes and bash', async () => {
+  // `bash` is recognised only when reading saved history; nothing dispatches
+  // or advertises it.
+  it('reads a saved bash call as the shell without accepting bash', async () => {
+    const { isRecordedShellCall, AGENT_TOOL_NAMES, CHAT_AGENT_TOOL_NAMES } =
+      await import('../agentTools')
+    expect(isRecordedShellCall('bash')).toBe(true)
+    expect(isRecordedShellCall('shell')).toBe(true)
+    expect(isRecordedShellCall('mcp__x__bash')).toBe(false)
+    expect(AGENT_TOOL_NAMES.has('bash')).toBe(false)
+    expect(CHAT_AGENT_TOOL_NAMES.has('bash')).toBe(false)
+  })
+
+  it('advertises the workspace tools including writes and shell', async () => {
     const { AGENT_TOOL_NAMES } = await import('../agentTools')
-    for (const name of ['read', 'ls', 'find', 'grep', 'bash']) {
+    for (const name of ['read', 'ls', 'find', 'grep', 'shell']) {
       expect(AGENT_TOOL_NAMES.has(name)).toBe(true)
     }
     // write/edit can only touch the thread's ephemeral sandbox, so they are
-    // allowed there without a prompt -- withholding them while bash can write
+    // allowed there without a prompt -- withholding them while shell can write
     // the same files would be a restriction a sibling tool bypasses.
     for (const name of ['write', 'edit']) {
       expect(AGENT_TOOL_NAMES.has(name)).toBe(true)
@@ -132,26 +144,26 @@ describe('agentTools', () => {
     ).toBeUndefined()
   })
 
-  it('offers bash when the sandbox can enforce', async () => {
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+  it('offers shell when the sandbox can enforce', async () => {
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
-    expect(names).toEqual(['read', 'bash'])
+    expect(names).toEqual(['read', 'shell'])
   })
 
   // Offering a tool the executor will always refuse wastes a model turn, so an
-  // unconfinable host must not see bash at all.
-  it('withholds bash when no sandbox backend exists', async () => {
+  // unconfinable host must not see shell at all.
+  it('withholds shell when no sandbox backend exists', async () => {
     sandboxStatus.mockResolvedValue({ backend: 'none', enforces: false })
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas } = await import('../agentTools')
     const names = (await getAgentToolSchemas()).map((s) => s.function.name)
     expect(names).toEqual(['read'])
   })
 
-  it('withholds bash when the sandbox probe itself fails', async () => {
+  it('withholds shell when the sandbox probe itself fails', async () => {
     sandboxStatus.mockRejectedValue(new Error('probe exploded'))
-    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('bash')])
+    toolSchemas.mockResolvedValue([schemaFor('read'), schemaFor('shell')])
     const { getAgentToolSchemas, sandboxEnforces } = await import(
       '../agentTools'
     )
@@ -164,11 +176,11 @@ describe('agentTools', () => {
   it('keeps the sandbox network closed unless the caller opens it', async () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
-    await executeAgentTool('bash', { command: 'ls' }, 'thread-1')
+    await executeAgentTool('shell', { command: 'ls' }, 'thread-1')
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
       'thread-1',
-      'bash',
+      'shell',
       { command: 'ls' },
       undefined,
       undefined,
@@ -184,7 +196,7 @@ describe('agentTools', () => {
     executeTool.mockResolvedValue({ content: '', diff: null, isError: false })
     const { executeAgentTool } = await import('../agentTools')
     await executeAgentTool(
-      'bash',
+      'shell',
       { command: 'ls' },
       'thread-1',
       undefined,
@@ -194,7 +206,7 @@ describe('agentTools', () => {
     expect(executeTool).toHaveBeenLastCalledWith(
       '/data',
       'thread-1',
-      'bash',
+      'shell',
       { command: 'ls' },
       undefined,
       undefined,

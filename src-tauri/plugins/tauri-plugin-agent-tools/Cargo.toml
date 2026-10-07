@@ -130,3 +130,10 @@ windows-sys = { version = "0.60.2", features = [
   "Win32_System_Memory",
   "Win32_System_Threading",
 ] }
+
+# Real shells started inside the Windows sandbox. Its own `main`, because the
+# sandbox re-execs the running binary as its helper and libtest would answer
+# that re-exec by running the suite again.
+[[test]]
+name = "sandbox_spawn"
+harness = false
