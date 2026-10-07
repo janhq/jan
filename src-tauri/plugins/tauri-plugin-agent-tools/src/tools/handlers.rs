@@ -2402,6 +2402,8 @@ mod tests {
     async fn write_reports_resolved_path_when_it_escapes_the_project() {
         let root = unique_root();
         let outside = root.parent().unwrap().join("jan_escape_probe.txt");
+        // A probe left by an aborted run would turn this into a "No change" write.
+        let _ = std::fs::remove_file(&outside);
         let out = execute_builtin(
             lookup("write").unwrap(),
             &json!({"path": "../jan_escape_probe.txt", "content": "x"}),
@@ -2409,11 +2411,24 @@ mod tests {
         )
         .await;
         assert!(outside.exists(), "precondition: the write escapes the root");
+        assert!(!out.contains(".."), "must not echo the raw path: {out}");
+        // Compare the named path by what it resolves to, not by spelling: on
+        // Windows the message uses `/` separators, and the temp dir may be
+        // spelled with an 8.3 short name on one side and not the other.
+        let shown = out
+            .strip_prefix("Created ")
+            .and_then(|rest| rest.rsplit_once(" ("))
+            .map(|(path, _)| path)
+            .unwrap_or_else(|| panic!("unexpected message shape: {out}"));
         assert!(
-            out.contains(outside.to_str().unwrap()),
+            Path::new(shown).is_absolute(),
+            "an escape is named by its absolute path, got: {out}"
+        );
+        assert_eq!(
+            std::fs::canonicalize(shown).ok(),
+            std::fs::canonicalize(&outside).ok(),
             "must name the real destination, got: {out}"
         );
-        assert!(!out.contains(".."), "must not echo the raw path: {out}");
         let _ = std::fs::remove_file(&outside);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -3171,6 +3186,10 @@ mod tests {
     /// output lands there when the command finishes, so the agent reads that file
     /// to collect the result instead of a second tool call.
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
     async fn backgrounded_output_lands_in_the_reported_file() {
         let root = unique_root();
         let started = execute_builtin(
@@ -3226,6 +3245,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
     async fn bash_nonzero_exit_is_not_error() {
         let root = unique_root();
         let out = execute_builtin(
@@ -3241,6 +3264,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        windows,
+        ignore = "re-execs the test binary as the AppContainer helper; covered by tests/sandbox_spawn.rs"
+    )]
     async fn bash_success_emits_exit_0_marker() {
         let root = unique_root();
         let out = execute_builtin(

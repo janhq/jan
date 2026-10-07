@@ -1085,11 +1085,13 @@ mod shell_kind_tests {
         // Relative paths resolve in the working directory it was started in.
         let (code, stdout, _) = run("(Convert-Path .).TrimEnd('/', '\\')").await;
         assert_eq!(code, Some(0));
+        // Compared resolved: PowerShell reports the physical path, so on macOS
+        // the `/var` temp dir comes back as `/private/var`.
         let tmp = std::env::temp_dir();
         assert_eq!(
-            stdout,
-            tmp.to_string_lossy().trim_end_matches(['/', '\\']),
-            "starts in the working directory"
+            std::fs::canonicalize(&stdout).ok(),
+            std::fs::canonicalize(&tmp).ok(),
+            "starts in the working directory: {stdout}"
         );
     }
 }
