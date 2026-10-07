@@ -636,6 +636,30 @@ const LOCAL_ENGINE_PROVIDERS: Record<string, true> = {
  mlx: true,
 }
 
+const LOOPBACK_HOSTS: Record<string, true> = {
+ localhost: true,
+ '127.0.0.1': true,
+ '[::1]': true,
+}
+
+/**
+ * Jan's own engines and any server on this machine (Ollama, LM Studio, a
+ * local llama-server). Their 5xx is deterministic and a retry re-runs the
+ * whole prompt, so such requests are not retried.
+ */
+export function isLocalChatServer(
+ providerId: string,
+ baseUrl: string | undefined
+): boolean {
+ if (LOCAL_ENGINE_PROVIDERS[providerId]) return true
+ if (!baseUrl) return false
+ try {
+  return !!LOOPBACK_HOSTS[new URL(baseUrl).hostname]
+ } catch {
+  return false
+ }
+}
+
 const TOOL_RESPONSE_ONLY = /^<tool_response>[\s\S]*<\/tool_response>$/
 
 /**
@@ -1511,10 +1535,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    model: this.model,
    messages: modelMessages,
    abortSignal: options.abortSignal,
-   // A 5xx from Jan's own engine is deterministic and re-runs the whole
-   // prompt, so fail at once. Hosted providers keep the SDK's two backoff
-   // retries for transient 429/5xx.
-   maxRetries: LOCAL_ENGINE_PROVIDERS[providerId] ? 0 : 2,
+   // Hosted providers keep the SDK's two backoff retries for transient
+   // 429/5xx; local servers fail at once (see isLocalChatServer).
+   maxRetries: isLocalChatServer(providerId, provider.base_url) ? 0 : 2,
    tools: shouldEnableTools ? this.tools : undefined,
    toolChoice: shouldEnableTools ? 'auto' : undefined,
    system: effectiveSystem,
