@@ -10,7 +10,8 @@
 //! timing.
 
 use super::super::{
-    ANSWER_SCANS, MD_PARSES, PATH_HINT_REFRESHES, ROW_CLONES, THINK_SCANS, TRACE_RUN_SCANS,
+    AGENT_TOML_READS, ANSWER_SCANS, MD_PARSES, PATH_HINT_REFRESHES, ROW_CLONES, THINK_SCANS,
+    TRACE_RUN_SCANS,
 };
 use super::*;
 use ratatui::backend::TestBackend;
@@ -438,4 +439,70 @@ fn the_tail_separator_check_copies_no_row() {
     draw_on(&mut term, &mut app);
     let streaming = take(&ROW_CLONES);
     assert!(streaming <= idle, "streaming frame copied {streaming} rows, idle {idle}");
+}
+
+/// A search reads every row in place: no row is copied out of its cache.
+#[test]
+fn find_scans_rows_without_copying_them() {
+    let mut app = long_session(200);
+    render_rows(&mut app, 100, 30);
+    take(&ROW_CLONES);
+    app.start_find("lorem");
+    app.find_step(true);
+    assert_eq!(take(&ROW_CLONES), 0);
+    assert!(app.find.as_ref().is_some_and(|f| f.hits.len() > 40));
+}
+
+/// The indexed lookup returns what the linear one did for every row,
+/// including rows that own no region and the still-running group.
+#[test]
+fn region_index_lookup_matches_a_linear_search() {
+    let mut app = long_session(60);
+    app.apply(StreamEvent::ToolCall {
+        id: "live".into(),
+        name: "grep".into(),
+        args: json!({ "pattern": "x" }),
+    });
+    let index = app.region_index();
+    for i in 0..app.transcript.len() + 2 {
+        let linear = app
+            .groups
+            .iter()
+            .find(|g| g.idx == i)
+            .or(app.tool_group.as_ref().filter(|g| g.idx == i))
+            .map(|g| super::super::group_detail_lines(g, 80))
+            .or_else(|| {
+                app.reasoning_blocks
+                    .iter()
+                    .find(|r| r.idx == i)
+                    .map(|b| b.detail.clone())
+            })
+            .or_else(|| {
+                app.subagent_blocks
+                    .iter()
+                    .find(|b| b.idx == i)
+                    .map(|b| b.detail_lines(80))
+            });
+        assert_eq!(app.region_detail_in(&index, i, 80), linear, "row {i}");
+    }
+}
+
+/// Typing a slash command reads agent.toml once, not once per keystroke, and
+/// an edit to the file is still picked up on the next keystroke.
+#[test]
+fn slash_typing_reads_agent_toml_only_when_it_changes() {
+    let (mut app, root) = skill_test_app("deploy", "How to deploy.");
+    let toml = crate::core::agent::project::store_root(&root).join("agent.toml");
+    std::fs::write(&toml, "[agent]\n").unwrap();
+    take(&AGENT_TOML_READS);
+    for typed in ["/d", "/de", "/dep", "/depl"] {
+        app.input = typed.into();
+        assert!(app.slash_matches().iter().any(|m| m.name() == "/deploy"));
+    }
+    assert_eq!(take(&AGENT_TOML_READS), 1);
+    std::fs::write(&toml, "[agent]\n[skills]\nenabled = [\"other\"]\n").unwrap();
+    app.input = "/dep".into();
+    assert!(!app.slash_matches().iter().any(|m| m.name() == "/deploy"));
+    assert_eq!(take(&AGENT_TOML_READS), 1);
+    let _ = std::fs::remove_dir_all(&root);
 }

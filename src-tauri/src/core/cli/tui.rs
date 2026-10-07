@@ -2371,6 +2371,9 @@ struct App {
     /// Filesystem-backed slash matches cached for the unchanged input buffer.
     /// Rendering asks for these every tick, so discovery must not run per frame.
     slash_matches_cache: RefCell<Option<(String, Vec<SlashMatch>)>>,
+    /// `[skills].enabled` as last read, keyed on agent.toml's stamp; see
+    /// `enabled_skills`.
+    enabled_skills_cache: RefCell<Option<(Option<FileStamp>, Vec<String>)>>,
     /// File-path hint entries matching the current `@query` in the input buffer.
     path_hints: Vec<PathHintItem>,
     /// Highlighted row in the path-hint popup (clamped to matches).
@@ -3134,6 +3137,7 @@ impl App {
             slash_selected: 0,
             slash_dismissed: false,
             slash_matches_cache: RefCell::new(None),
+            enabled_skills_cache: RefCell::new(None),
             slash_catalog,
             path_hints: Vec::new(),
             path_hint_selected: 0,
@@ -4261,27 +4265,56 @@ impl App {
     /// block, a subagent's call list), or `None` when the row owns no region.
     /// Shared by `draw` and the search scan, so a match found in the detail is
     /// on the line `draw` puts there.
-    fn region_detail(&self, i: usize, width: u16) -> Option<Vec<Line<'static>>> {
+    ///
+    /// Takes a `region_index` so a caller asking about many rows (the search
+    /// scan, a frame with many expanded rows) builds it once.
+    fn region_detail_in(
+        &self,
+        index: &RegionIndex,
+        i: usize,
+        width: u16,
+    ) -> Option<Vec<Line<'static>>> {
         let running_group = self.tool_group.as_ref().filter(|g| g.idx == i);
-        self.groups
-            .iter()
-            .find(|g| g.idx == i)
+        index
+            .groups
+            .get(&i)
+            .map(|&pos| &self.groups[pos])
             // The still-running group isn't finalized into `groups` yet, but its
             // row is already clickable/expandable like any other.
             .or(running_group)
             .map(|group| group_detail_lines(group, width))
             .or_else(|| {
-                self.reasoning_blocks
-                    .iter()
-                    .find(|r| r.idx == i)
-                    .map(|block| block.detail.clone())
+                index
+                    .reasoning
+                    .get(&i)
+                    .map(|&pos| self.reasoning_blocks[pos].detail.clone())
             })
             .or_else(|| {
-                self.subagent_blocks
-                    .iter()
-                    .find(|b| b.idx == i)
-                    .map(|block| block.detail_lines(width))
+                index
+                    .subagents
+                    .get(&i)
+                    .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
             })
+    }
+
+    /// Where each row's region lives in `groups`, `reasoning_blocks` and
+    /// `subagent_blocks`, so a caller asking about many rows (the search scan,
+    /// a frame with many expanded rows) does one lookup per row instead of
+    /// three linear searches. The first entry for an index wins, as the
+    /// searches' `find` did.
+    fn region_index(&self) -> RegionIndex {
+        fn first_by_idx(idxs: impl Iterator<Item = usize>) -> HashMap<usize, usize> {
+            let mut map = HashMap::new();
+            for (pos, idx) in idxs.enumerate() {
+                map.entry(idx).or_insert(pos);
+            }
+            map
+        }
+        RegionIndex {
+            groups: first_by_idx(self.groups.iter().map(|g| g.idx)),
+            reasoning: first_by_idx(self.reasoning_blocks.iter().map(|r| r.idx)),
+            subagents: first_by_idx(self.subagent_blocks.iter().map(|b| b.idx)),
+        }
     }
 
     /// Every committed line matching `needle`, top to bottom. Scans what the
@@ -4298,9 +4331,15 @@ impl App {
                 }
             }
         };
+        let index = self.region_index();
         for (i, row) in self.transcript.iter().enumerate() {
-            scan(i, false, &row.lines(width));
-            if let Some(detail) = self.region_detail(i, width) {
+            // Read in place: copying every row of the session out of its cache
+            // on each `/find` and `n` was most of the scan's cost.
+            row.fill(width);
+            if let Some(cached) = row.cache.borrow().as_ref() {
+                scan(i, false, &cached.lines);
+            }
+            if let Some(detail) = self.region_detail_in(&index, i, width) {
                 scan(i, true, &detail);
             }
         }
@@ -4614,6 +4653,30 @@ impl App {
         !self.pending_queue.is_empty() || !self.ask_queue.is_empty()
     }
 
+    /// The `[skills].enabled` whitelist the slash popup filters by. Every
+    /// keystroke after `/` misses the match cache, and each miss used to read
+    /// and parse agent.toml; now it costs a stat, and the file is re-read only
+    /// when its modification time or size moved, so an edit made while the
+    /// TUI runs still shows on the next keystroke.
+    fn enabled_skills(&self) -> Vec<String> {
+        let path = crate::core::agent::project::agent_toml_path(&self.project_root);
+        let stamp = FileStamp::of(&path);
+        if let Some((seen, enabled)) = self.enabled_skills_cache.borrow().as_ref() {
+            if *seen == stamp {
+                return enabled.clone();
+            }
+        }
+        #[cfg(test)]
+        tally(&AGENT_TOML_READS);
+        let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
+            .ok()
+            .map(|c| c.skills.enabled)
+            .unwrap_or_default();
+        self.enabled_skills_cache
+            .replace(Some((stamp, enabled.clone())));
+        enabled
+    }
+
     fn refresh_slash_catalog(&mut self) {
         self.slash_catalog = SlashCatalog::load(&self.project_root);
         self.slash_matches_cache.replace(None);
@@ -4669,12 +4732,7 @@ impl App {
             .collect();
         let skill_colon = self.input.starts_with("/skill:");
         let command_colon = self.input.starts_with("/command:");
-        #[cfg(test)]
-        tally(&AGENT_TOML_READS);
-        let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
-            .ok()
-            .map(|c| c.skills.enabled)
-            .unwrap_or_default();
+        let enabled = self.enabled_skills();
         // Plugin commands sit between built-ins and skills in precedence.
         // Short-form ownership: a command's plain name is claimed by the
         // command - a skill of the same name loses its short form (explicit
@@ -9965,6 +10023,31 @@ impl BufScan {
         self.think_open = self.in_think;
         self.answer = self.settled_answer || (!self.in_think && pending < text.len());
     }
+}
+
+/// What identifies one version of a file without reading it: modification
+/// time and size. `None` from `of` when the file is missing or unreadable.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct FileStamp {
+    modified: std::time::SystemTime,
+    len: u64,
+}
+
+impl FileStamp {
+    fn of(path: &std::path::Path) -> Option<FileStamp> {
+        let meta = std::fs::metadata(path).ok()?;
+        Some(FileStamp {
+            modified: meta.modified().ok()?,
+            len: meta.len(),
+        })
+    }
+}
+
+/// Row index -> position in each region list; see `App::region_index`.
+struct RegionIndex {
+    groups: HashMap<usize, usize>,
+    reasoning: HashMap<usize, usize>,
+    subagents: HashMap<usize, usize>,
 }
 
 /// Everything besides the buffer and the reasoning segments that the live
@@ -19527,6 +19610,9 @@ fn draw(f: &mut Frame, app: &mut App) {
         })
         .map(|r| r.end)
         .collect();
+    // Built on the first expanded row, so a frame with nothing expanded pays
+    // nothing and one with many expanded pays one pass, not one per row.
+    let mut region_index: Option<RegionIndex> = None;
     for (i, row) in app.transcript.iter().enumerate() {
         // A collapsed trace shows a single header at its start and hides the
         // rest of its rows.
@@ -19634,7 +19720,8 @@ fn draw(f: &mut Frame, app: &mut App) {
                     .find(|r| r.idx == i)
                     .map(|block| reasoning_tail_lines(&block.source, width))
             } else {
-                app.region_detail(i, width)
+                let index = region_index.get_or_insert_with(|| app.region_index());
+                app.region_detail_in(index, i, width)
             };
             if let Some(detail) = detail {
                 if find_hit.is_some_and(|h| h.row == i && h.detail) {
