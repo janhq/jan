@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // ---- Module mocks ----------------------------------------------------------
@@ -21,6 +21,7 @@ const hoisted = vi.hoisted(() => ({
     downloadedBytes: 0,
     totalBytes: 0,
   },
+  downloadAndInstallUpdateMock: vi.fn(),
   navigateMock: vi.fn(),
   toastMock: {
     success: vi.fn(),
@@ -45,7 +46,10 @@ vi.mock('@/hooks/useDownloadStore', () => {
 })
 
 vi.mock('@/hooks/useAppUpdater', () => ({
-  useAppUpdater: () => ({ updateState: hoisted.updateState }),
+  useAppUpdater: () => ({
+    updateState: hoisted.updateState,
+    downloadAndInstallUpdate: hoisted.downloadAndInstallUpdateMock,
+  }),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -221,14 +225,57 @@ describe('DownloadManagement', () => {
 
   it('on app update download success, shows success toast', () => {
     render(<DownloadManagement />)
-    hoisted.eventHandlers['auds']()
+    act(() => hoisted.eventHandlers['auds']())
     expect(hoisted.toastMock.success).toHaveBeenCalled()
   })
 
-  it('on app update download error, shows error toast', () => {
+  it('shows update failure details and offers a persistent retry', () => {
     render(<DownloadManagement />)
-    hoisted.eventHandlers['aude']()
-    expect(hoisted.toastMock.error).toHaveBeenCalled()
+    act(() => {
+      hoisted.eventHandlers['aude']({
+        message: 'Signature verification failed',
+      })
+    })
+
+    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
+      'common:toast.appUpdateDownloadFailed.title',
+      expect.objectContaining({
+        description: 'Signature verification failed',
+        duration: Number.POSITIVE_INFINITY,
+        closeButton: true,
+        action: expect.objectContaining({
+          label: 'updater:retry',
+          onClick: expect.any(Function),
+        }),
+      })
+    )
+
+    const [, options] = hoisted.toastMock.error.mock.calls[0]
+    options.action.onClick()
+    expect(hoisted.downloadAndInstallUpdateMock).toHaveBeenCalledOnce()
+  })
+
+  it('does not offer a download retry after installation when restart fails', () => {
+    render(<DownloadManagement />)
+
+    act(() => {
+      hoisted.eventHandlers['aude']({
+        message: 'Update installed, but the app could not restart',
+        retryable: false,
+      })
+    })
+
+    expect(hoisted.toastMock.error).toHaveBeenCalledWith(
+      'updater:restartFailed',
+      expect.objectContaining({
+        description: 'Update installed, but the app could not restart',
+        duration: Number.POSITIVE_INFINITY,
+        closeButton: true,
+      })
+    )
+
+    const [, options] = hoisted.toastMock.error.mock.calls[0]
+    expect(options.action).toBeUndefined()
   })
 
   it('pauses a model download and marks it paused', async () => {

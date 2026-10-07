@@ -6,5 +6,7 @@
   "hideReleaseNotes": "रिलीज़ नोट्स छिपाएँ",
   "remindMeLater": "बाद में याद दिलाएँ",
   "downloading": "डाउनलोड हो रहा है...",
-  "updateNow": "अभी अपडेट करें"
+  "updateNow": "अभी अपडेट करें",
+  "retry": "पुनः प्रयास करें",
+  "restartFailed": "फिर से शुरू नहीं हो सका"
 }

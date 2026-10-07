@@ -28,7 +28,7 @@ export function DownloadManagement() {
     setPaused,
     addLocalDownloadingModel,
   } = useDownloadStore()
-  const { updateState } = useAppUpdater()
+  const { updateState, downloadAndInstallUpdate } = useAppUpdater()
 
   const [appUpdateState, setAppUpdateState] = useState({
     isDownloading: false,
@@ -74,15 +74,36 @@ export function DownloadManagement() {
     })
   }, [t])
 
-  const onAppUpdateDownloadError = useCallback(() => {
-    setAppUpdateState((prev) => ({
-      ...prev,
-      isDownloading: false,
-    }))
-    toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
-      description: t('common:toast.appUpdateDownloadFailed.description'),
-    })
-  }, [t])
+  const onAppUpdateDownloadError = useCallback(
+    (data: { message: string; retryable?: boolean }) => {
+      setAppUpdateState((prev) => ({
+        ...prev,
+        isDownloading: false,
+      }))
+      const retryable = data.retryable !== false
+      toast.error(
+        t(
+          retryable
+            ? 'common:toast.appUpdateDownloadFailed.title'
+            : 'updater:restartFailed'
+        ),
+        {
+          description: data.message,
+          duration: Number.POSITIVE_INFINITY,
+          closeButton: true,
+          ...(retryable && {
+            action: {
+              label: t('updater:retry'),
+              onClick: () => {
+                void downloadAndInstallUpdate()
+              },
+            },
+          }),
+        }
+      )
+    },
+    [downloadAndInstallUpdate, t]
+  )
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
