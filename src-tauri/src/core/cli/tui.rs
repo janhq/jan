@@ -19372,7 +19372,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         // inlines every block, so this only touches the default-folded case.
         let active_reasoning = app.status == Status::Running
             && !app.show_reasoning
-            && !has_answer_text(&app.assistant_buf)
+            && !answer_started
             && last_answer.is_none_or(|a| i > a)
             && app
                 .reasoning_blocks

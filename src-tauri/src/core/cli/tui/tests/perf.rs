@@ -213,3 +213,21 @@ fn tui_perf_report() {
     println!("  /find + 20 n      {:.1} ms  ({hits} hits)", ms(find_time));
     println!("  resize 120->100   {:.1} ms", ms(resize));
 }
+
+/// The active-reasoning check in `draw` runs per transcript row; the answer
+/// scan it needs is the same for every row, so a frame must do it at most
+/// once rather than once per row of history.
+#[test]
+fn a_streaming_frame_scans_the_reply_at_most_once() {
+    let mut app = long_session(200);
+    app.status = Status::Running;
+    app.apply(StreamEvent::Token {
+        text: "<think>weighing it</think>The answer so far".into(),
+    });
+    let mut term = terminal(100, 30);
+    draw_on(&mut term, &mut app);
+    take(&ANSWER_SCANS);
+    draw_on(&mut term, &mut app);
+    let scans = take(&ANSWER_SCANS);
+    assert!(scans <= 1, "one frame scanned the reply {scans} times");
+}
