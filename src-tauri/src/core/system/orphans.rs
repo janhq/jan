@@ -13,9 +13,12 @@
 //! - it was started with `--models-preset <data folder>/llamacpp/router.preset.ini`,
 //!   the preset file Jan writes, so it belongs to this data folder,
 //! - its parent is gone or is not a Jan process, so a Jan that is still running
-//!   (another instance, or this one) keeps its engine.
+//!   (another instance, or this one) keeps its engine. That includes a detached
+//!   `jan serve` from 0.8.4, which keeps its router as a live child.
 //!
-//! Its descendants, the per-model children the router spawns, go with it.
+//! Its descendants, the per-model children the router spawns, go with it. A
+//! process counts as a descendant only if it started no earlier than the parent
+//! it names, because Windows never reparents and reuses pids.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -34,6 +37,8 @@ pub struct ProcInfo {
     pub parent: Option<u32>,
     pub name: String,
     pub cmd: Vec<String>,
+    /// Seconds since the epoch; 0 when the OS would not say.
+    pub start_time: u64,
 }
 
 fn normalize(path: &str) -> String {
@@ -119,8 +124,18 @@ pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> 
 
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     for p in procs {
-        if let Some(parent) = p.parent {
-            children.entry(parent).or_default().push(p.pid);
+        let Some(parent_pid) = p.parent else {
+            continue;
+        };
+        // A child cannot be older than its parent. Windows never reparents and
+        // reuses pids, so a live process can name a long-dead parent whose pid
+        // a router has since taken; without this check it would be swept as
+        // that router's child. An unknown start time (0) is left alone.
+        let started_after_parent = by_pid
+            .get(&parent_pid)
+            .is_some_and(|parent| p.start_time >= parent.start_time);
+        if started_after_parent {
+            children.entry(parent_pid).or_default().push(p.pid);
         }
     }
 
@@ -162,6 +177,7 @@ pub fn sweep_orphaned_engines(data_folder: &Path) -> usize {
             pid: p.pid().as_u32(),
             parent: p.parent().map(Pid::as_u32),
             name: p.name().to_string_lossy().into_owned(),
+            start_time: p.start_time(),
             cmd: p
                 .cmd()
                 .iter()
@@ -202,6 +218,7 @@ mod tests {
             pid,
             parent,
             name: name.to_string(),
+            start_time: 0,
             cmd: cmd.iter().map(|s| s.to_string()).collect(),
         }
     }
@@ -223,6 +240,11 @@ mod tests {
 
     fn sweep(procs: &[ProcInfo]) -> Vec<u32> {
         orphaned_engine_pids(procs, &PathBuf::from(DATA))
+    }
+
+    fn started_at(mut p: ProcInfo, start_time: u64) -> ProcInfo {
+        p.start_time = start_time;
+        p
     }
 
     #[test]
@@ -249,7 +271,9 @@ mod tests {
 
     #[test]
     fn a_router_whose_jan_is_still_running_is_left_alone() {
-        for jan in ["Jan", "jan", "Jan.exe", "Jan-Desktop.exe"] {
+        // `jan-cli` is the 0.8.4 CLI: `jan serve --detach` keeps its router as
+        // a live child, so a detached server is not an orphan.
+        for jan in ["Jan", "jan", "Jan.exe", "Jan-Desktop.exe", "jan-cli"] {
             let procs = [proc(50, Some(1), jan, &[jan]), router(200, Some(50))];
             assert!(sweep(&procs).is_empty(), "{jan} still owns its engine");
         }
@@ -342,16 +366,43 @@ mod tests {
         // Windows never reparents and reuses pids: the router's dead parent's
         // pid was taken by one of the router's own later children.
         let procs = [
-            router(200, Some(201)),
-            proc(
-                201,
-                Some(200),
-                "llama-server",
-                &["llama-server", "-m", "a.gguf"],
+            started_at(router(200, Some(201)), 100),
+            started_at(
+                proc(
+                    201,
+                    Some(200),
+                    "llama-server",
+                    &["llama-server", "-m", "a.gguf"],
+                ),
+                200,
             ),
         ];
         let mut victims = sweep(&procs);
         victims.sort_unstable();
         assert_eq!(victims, vec![200, 201]);
+    }
+
+    #[test]
+    fn a_live_process_naming_a_reused_parent_pid_is_not_a_child() {
+        // Windows never reparents: explorer.exe still names the pid of a
+        // process that died long ago, and an orphaned router has since been
+        // given that pid. Explorer started before the router, so it is not
+        // the router's child and must not be swept.
+        let procs = [
+            started_at(router(200, Some(1)), 500),
+            started_at(proc(300, Some(200), "explorer.exe", &["explorer.exe"]), 100),
+            started_at(
+                proc(
+                    301,
+                    Some(200),
+                    "llama-server",
+                    &["llama-server", "-m", "a.gguf"],
+                ),
+                600,
+            ),
+        ];
+        let mut victims = sweep(&procs);
+        victims.sort_unstable();
+        assert_eq!(victims, vec![200, 301]);
     }
 }
