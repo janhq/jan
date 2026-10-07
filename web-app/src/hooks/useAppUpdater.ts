@@ -168,10 +168,10 @@ export const useAppUpdater = () => {
 
       let downloaded = 0
       let contentLength = 0
+
       // The engine, MCP servers and agent shells are stopped by the updater
       // service once the download has verified, not here: a failed download
       // must not take them down.
-
       await getServiceHub().updater().downloadAndInstallWithProgress((event) => {
         switch (event.event) {
           case 'Started':
