@@ -403,6 +403,36 @@ mod tests {
     }
 
     #[test]
+    fn verbatim_prefixed_preset_paths_match() {
+        // 0.8.4 starts its router with `\\?\C:\...`, the form the sweep exists
+        // to reap; `\\?\UNC\` is the same rule for a data folder on a share.
+        for (pid, preset, data) in [
+            (
+                200,
+                "\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan\\data\\llamacpp\\router.preset.ini",
+                "C:\\Users\\u\\AppData\\Roaming\\Jan\\data",
+            ),
+            (
+                201,
+                "\\\\?\\UNC\\srv\\share\\Jan\\data\\llamacpp\\router.preset.ini",
+                "\\\\srv\\share\\Jan\\data",
+            ),
+        ] {
+            let router = proc(
+                pid,
+                Some(4242),
+                "llama-server.exe",
+                &["llama-server.exe", "--models-preset", preset],
+            );
+            assert_eq!(
+                orphaned_engine_pids(&[router], &PathBuf::from(data)),
+                vec![pid],
+                "{preset}"
+            );
+        }
+    }
+
+    #[test]
     fn a_parent_cycle_from_pid_reuse_terminates() {
         // Windows never reparents and reuses pids: the router's dead parent's
         // pid was taken by one of the router's own later children.

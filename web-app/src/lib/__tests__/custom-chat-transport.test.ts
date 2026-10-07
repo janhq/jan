@@ -6,6 +6,7 @@ import {
   coalesceMessagesForAlternation,
   effectiveContextWindow,
   hasGenuineUserQuery,
+  isLocalChatServer,
   extractContextInfoFromError,
   normalizeToolInputSchema,
   resolveOrphanToolCalls,
@@ -14,6 +15,7 @@ import {
   unwrapRetryError,
 } from '../custom-chat-transport'
 import { encodeToolImageSentinel } from '../tool-image-sentinel'
+import { encodeAudioSentinel } from '../audio-sentinel'
 
 const userMsg = (id: string, text: string): UIMessage =>
   ({
@@ -481,6 +483,39 @@ describe('coalesceMessagesForAlternation', () => {
     expect(out.map((m) => m.id)).toEqual(['u1', 'a1', 'u3'])
   })
 
+  it("carries a dropped turn's attachments forward, but not its question", () => {
+    const image = {
+      type: 'file',
+      mediaType: 'image/png',
+      url: 'data:image/png;base64,AAA',
+    } as unknown as UIMessage['parts'][number]
+    const audio = { type: 'text', text: encodeAudioSentinel('wav', 'UklG') }
+    const docs =
+      '[ATTACHED_FILES]\n- file_id: f1, name: a.pdf\n[/ATTACHED_FILES]'
+    const input: UIMessage[] = [
+      {
+        id: 'u1',
+        role: 'user',
+        parts: [
+          { type: 'text', text: `failed question\n\n${docs}` },
+          image,
+          audio,
+        ],
+      } as UIMessage,
+      assistantMsg('a1', []),
+      userMsg('u2', 'what is in it?'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out).toHaveLength(1)
+    expect(out[0].id).toBe('u2')
+    expect(out[0].parts).toEqual([
+      { type: 'text', text: docs },
+      image,
+      audio,
+      { type: 'text', text: 'what is in it?' },
+    ])
+  })
+
   it('keeps assistant messages with real content', () => {
     const input = [
       userMsg('u1', 'q'),
@@ -812,5 +847,27 @@ describe('hasGenuineUserQuery', () => {
         userMsg('u2', 'Summarize the result'),
       ])
     ).toBe(true)
+  })
+})
+
+describe('isLocalChatServer', () => {
+  it.each([
+    ['llamacpp', undefined],
+    ['mlx', undefined],
+    ['custom', 'http://localhost:11434/v1'],
+    ['custom', 'http://127.0.0.1:8080/v1'],
+    ['custom', 'http://[::1]:1234/v1'],
+  ])('treats %s at %s as local (no retries)', (provider, baseUrl) => {
+    expect(isLocalChatServer(provider, baseUrl)).toBe(true)
+  })
+
+  it.each([
+    ['openai', 'https://api.openai.com/v1'],
+    ['custom', 'http://192.168.1.5:1234/v1'],
+    ['custom', 'https://localhost.example.com/v1'],
+    ['custom', undefined],
+    ['custom', 'not a url'],
+  ])('treats %s at %s as hosted (SDK retries)', (provider, baseUrl) => {
+    expect(isLocalChatServer(provider, baseUrl)).toBe(false)
   })
 })
