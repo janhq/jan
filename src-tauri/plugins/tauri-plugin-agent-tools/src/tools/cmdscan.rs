@@ -51,7 +51,7 @@ const OPAQUE: &[&str] = &[
 /// Builtins that assign to the variable names in their arguments. Plain when
 /// every name is an ordinary one: not one of [`RESOLUTION_VARS`] and with no
 /// `[...]` subscript, which bash evaluates as arithmetic.
-const ASSIGNING_BUILTINS: &[&str] = &["export", "unset", "read", "set"];
+const ASSIGNING_BUILTINS: &[&str] = &["export", "unset", "read", "set", "setx"];
 /// Shell and loader variables that decide which program a name runs, or that
 /// run code on their own (`BASH_ENV`, `PS4` under `set -x`). Assigning one
 /// changes what an already granted base means. Matched case-insensitively.
@@ -116,9 +116,12 @@ const WINDOWS_OPAQUE: &[&str] = &[
 const POWERSHELL_ONLY_OPAQUE: &[&str] = &["cp", "copy", "mv", "move", "ren", "set"];
 
 /// Whether assigning `name` (a variable name, optionally `+=`-suffixed or
-/// with an `env:` drive) can change what a granted base runs.
+/// with an `env:` drive) can change what a granted base runs. `^` is cmd's
+/// escape character and is stripped from every token before cmd acts on it,
+/// so `PA^TH` sets `PATH`; matching on the literal text would miss that.
 fn is_resolution_var(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
+    let unescaped: String = name.chars().filter(|&c| c != '^').collect();
+    let lower = unescaped.to_ascii_lowercase();
     let lower = lower.trim_end_matches('+');
     let lower = lower.strip_prefix("env:").unwrap_or(lower);
     RESOLUTION_VARS.contains(&lower) || RESOLUTION_VAR_PREFIXES.iter().any(|p| lower.starts_with(p))
@@ -533,7 +536,8 @@ const WRAPPERS: &[&str] = &[
     "until", "for", "case", "select", "coproc", "!",
 ];
 /// [`WRAPPERS`] with a flag that takes a separate value.
-const VALUE_FLAG_WRAPPERS: &[&str] = &["nice", "timeout", "stdbuf", "ionice", "chrt", "exec"];
+const VALUE_FLAG_WRAPPERS: &[&str] =
+    &["nice", "timeout", "stdbuf", "ionice", "chrt", "exec", "time"];
 
 /// Typographic quotes PowerShell accepts as `'` (U+2018-U+201B) and `"`
 /// (U+201C-U+201E), each closing a string any of its class opened.
@@ -968,10 +972,17 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
                 // A bare flag followed by a word may take that word as its
                 // value (`timeout -s KILL 5 rm`, `exec -a ls rm`), so which
                 // token is the command is ambiguous. Attached values
-                // (`-oL`, `--signal=KILL`) are not.
-                let bare_flag = (t.len() == 2 && t.starts_with('-') && !numeric(&t[1..]))
-                    || (t.starts_with("--") && !t.contains('='));
-                if bare_flag
+                // (`-oL`, `--signal=KILL`) are not. `time` only takes a
+                // separate value after `-o`/`--output` (GNU `time -p`, `-v`
+                // are plain flags), so it is checked by name rather than
+                // shape: otherwise `time -p ls` would wrongly turn opaque.
+                let value_flag = if base.as_str() == "time" {
+                    t == "-o" || t == "--output"
+                } else {
+                    (t.len() == 2 && t.starts_with('-') && !numeric(&t[1..]))
+                        || (t.starts_with("--") && !t.contains('='))
+                };
+                if value_flag
                     && VALUE_FLAG_WRAPPERS.contains(&base.as_str())
                     && tokens.get(idx + 1).is_some_and(|n| !n.starts_with('-') && !numeric(n))
                 {
@@ -1467,6 +1478,12 @@ mod tests {
                 "nice PATH=/tmp ls",
                 "set PATH=C:\\evil",
                 "path C:\\evil",
+                // janhq/jan#9149: `time -o FILE cmd` writes to `FILE` and
+                // runs `cmd`, not `FILE`; `-o` must not be skipped as an
+                // ordinary flag.
+                "time -o ls rm -rf ~",
+                "command time -o ls rm -rf ~",
+                "/usr/bin/time -o ls rm x",
                 // A command word built at run time.
                 "l$x -la",
                 "/bin/r? x",
@@ -1492,6 +1509,9 @@ mod tests {
             plain("timeout --signal=KILL 5 curl u", kind, &["curl"]);
             plain("nice -n 10 make", kind, &["make"]);
             plain("stdbuf -oL make", kind, &["make"]);
+            // janhq/jan#9149: `-p` is an ordinary flag, not the `-o` output
+            // flag, so `time` still yields its wrapped command.
+            plain("time -p ls", kind, &["ls"]);
             plain("read -r line < f", kind, &["read"]);
             plain("echo \"$(git rev-parse HEAD)\"", kind, &["echo", "git"]);
             // A path stays the base: `./ls` is not the granted `ls`.
@@ -1556,6 +1576,25 @@ mod tests {
         plain("Write-Output $env:USERPROFILE", ShellKind::PowerShell, &["Write-Output"]);
         plain("Write-Output ${env:USERPROFILE}", ShellKind::PowerShell, &["Write-Output"]);
         plain("./build.ps1 -Release", ShellKind::PowerShell, &["./build.ps1"]);
+    }
+
+    /// janhq/jan#9149: cmd strips `^` from every token before acting on it,
+    /// so `set PA^TH=...` and `setx` can still change `PATH` even though the
+    /// literal assignment name does not match `PATH`.
+    #[test]
+    fn cmd_caret_and_setx_assignments_are_opaque() {
+        for command in [
+            "set PA^TH=C:\\evil& git status",
+            "setx PATH C:\\evil & git status",
+            "setx PA^TH C:\\evil & git status",
+        ] {
+            assert_eq!(scan_command_as(command, ShellKind::Cmd), CommandScan::Opaque, "{command}");
+        }
+        // The un-escaped, quoted form was already caught before #9149.
+        assert_eq!(
+            scan_command_as("set \"PATH=C:\\evil\" & git status", ShellKind::Cmd),
+            CommandScan::Opaque
+        );
     }
 
     #[test]
