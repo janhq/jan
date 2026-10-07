@@ -29,6 +29,10 @@ Jan no longer downloads a llama.cpp backend for your machine on first run or whe
 
 Backends downloaded by earlier versions, in `llamacpp/backends` (and `llamacpp/lib`, if present) inside your Jan data folder, are no longer used and are safe to delete.
 
+**Local models no longer run on Intel Macs.**
+
+Intel-based Macs have not been supported since v0.8.0, and the bundled engine is built for Apple Silicon only. On an Intel Mac, Jan v0.8.5 still opens and works with remote and custom providers, but llama.cpp models will not load. If you rely on local models on an Intel Mac, stay on v0.8.4.
+
 **The desktop executable is now `Jan-Desktop`.**
 
 The app is still called Jan, and its menu entries, shortcuts and `Jan.app` bundle keep working, but the executable inside was renamed. On Linux the `.deb` installs `/usr/bin/Jan-Desktop` instead of `/usr/bin/Jan`, and on macOS it is `Jan.app/Contents/MacOS/Jan-Desktop`; scripts that launch the old path need updating. On Windows, the in-app update moves the Start-menu and desktop shortcuts to the new executable.
