@@ -66,6 +66,12 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # thread_retention_days / max_threads.
 #                                     # Off by default: nothing is deleted
 #
+# [tui]
+# animations = false                  # hold the TUI still: no shimmer, a
+#                                     # static glyph for the throbber and the
+#                                     # wave. On by default; the OS reduce-
+#                                     # motion setting also turns it off
+#
 # [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
 # enabled = true                      # usage metrics and events to YOUR
 #                                     # collector (OTEL_EXPORTER_OTLP_* env);
@@ -193,6 +199,10 @@ struct GlobalConfigToml {
     /// but a human appending to the file would not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[tui]` -- terminal UI display preferences that are not worth a root
+    /// key each. A table, so declared after the plain values.
+    #[serde(default, skip_serializing_if = "TuiSection::is_empty")]
+    tui: TuiSection,
     /// `[telemetry]` -- opt-in OTLP export (`core::agent::otel`). A table, so
     /// declared after the plain values and before `providers`.
     #[serde(default, skip_serializing_if = "TelemetrySection::is_empty")]
@@ -209,6 +219,20 @@ struct GlobalConfigToml {
     experimental: ExperimentalSection,
     #[serde(default)]
     providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[tui]` in `~/.jan/config.toml`. Each key is `None` when unset.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+struct TuiSection {
+    /// Animate the TUI (shimmer, throbbers, the wave). `None` = on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    animations: Option<bool>,
+}
+
+impl TuiSection {
+    fn is_empty(&self) -> bool {
+        self.animations.is_none()
+    }
 }
 
 /// `[experimental]` in `~/.jan/config.toml`. Each key is `None` when unset,
@@ -411,6 +435,18 @@ pub(crate) fn mouse_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.mouse)
+        .unwrap_or(true)
+}
+
+/// Whether the TUI animates (`[tui] animations` in `~/.jan/config.toml`),
+/// defaulting to on. Off holds every animated element on its static fallback.
+/// A display preference must never block startup, so an unreadable config
+/// yields the default. CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn animations_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.tui.animations)
         .unwrap_or(true)
 }
 
@@ -982,6 +1018,30 @@ mod tests {
             assert_eq!(telemetry_setting(), Some(true));
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert_eq!(telemetry_setting(), None, "fails open to unset");
+        });
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn animations_default_on_and_read_the_tui_table() {
+        with_temp_home(|_| {
+            assert!(animations_enabled(), "missing file -> animated");
+            let path = ensure_global_config().expect("ensure");
+            assert!(animations_enabled(), "scaffolded file -> animated");
+
+            std::fs::write(&path, "[tui]\nanimations = false\n").unwrap();
+            assert!(!animations_enabled());
+            // A provider write keeps the table.
+            set_provider("p", ProviderUpdate::default()).unwrap();
+            assert!(!animations_enabled(), "survives a rewrite");
+            std::fs::write(&path, "[tui]\nanimations = true\n").unwrap();
+            assert!(animations_enabled());
+            // A root key of the same name is not the switch.
+            std::fs::write(&path, "animations = false\n").unwrap();
+            assert!(animations_enabled(), "only [tui] animations counts");
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(animations_enabled(), "an unreadable config keeps the default");
         });
     }
 

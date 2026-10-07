@@ -36,6 +36,7 @@ use tokio::task::JoinHandle;
 mod find;
 mod highlight;
 mod markdown;
+mod motion;
 mod theme;
 mod vibe_setting;
 
@@ -6772,7 +6773,7 @@ impl App {
     /// by the render loop, so every animated row in a frame shows the same
     /// glyph and they turn together instead of drifting apart.
     fn spinner(&self) -> &'static str {
-        SPINNER[self.spinner_frame % SPINNER.len()]
+        motion::spinner(self.spinner_frame, motion::mode())
     }
 
     /// Flush the current turn and return its text as the final assistant answer.
@@ -9227,17 +9228,29 @@ fn trace_done_line() -> Line<'static> {
 /// they approved -- and the row does not re-lay itself out the instant the call
 /// resolves. The elapsed badge is dark rather than dim cyan: at the tail of a
 /// wrapped command it has to read as chrome, not as another argument.
+///
+/// While in flight the label also carries a brightness sweep (colour only, so
+/// the wrap is the committed row's); the finished row is the plain one.
 fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-    let frame = SPINNER[spinner_frame % SPINNER.len()];
+    let mode = motion::mode();
+    let label = Style::new().cyan().dim();
     let elapsed = group.started.elapsed().as_secs();
-    tool_row_lines(
-        frame,
+    let rows = tool_row_lines(
+        motion::spinner(spinner_frame, mode),
         Style::new().cyan(),
         &group.activity(),
-        Style::new().cyan().dim(),
+        label,
         TOOL_ROW_RESERVE,
         width,
         Some((format!("({elapsed}s)"), Style::new().dark_gray())),
+    );
+    motion::shimmer_styled(
+        rows,
+        label,
+        motion::Tint::Cyan,
+        motion::frame_time(spinner_frame),
+        mode,
+        theme::Theme::current(),
     )
 }
 
@@ -9317,7 +9330,7 @@ fn running_terminal_lines(
     width: u16,
 ) -> Vec<Line<'static>> {
     let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
-    let frame = SPINNER[spinner_frame % SPINNER.len()];
+    let frame = motion::spinner(spinner_frame, motion::mode());
     rows.push(Line::from(vec![
         Span::styled(format!("{frame} "), Style::new().cyan()),
         Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
@@ -10299,6 +10312,7 @@ pub async fn run(
     // Under raw mode (so an OSC 11 reply is not echoed) but before the alternate
     // screen, so a query the terminal ignores leaves no stray bytes on the frame.
     theme::resolve_and_apply(theme_pref);
+    motion::init(crate::core::agent::global_config::animations_enabled());
     // Deserializing syntect's syntax/theme dumps takes tens of milliseconds.
     // Doing it here, off the render loop, keeps the first code block of a
     // response from stalling a frame mid-stream. Spawned after the theme is
@@ -10982,8 +10996,11 @@ async fn chat_loop<B: Backend>(
                 // whole frames if a tick stalled (a burst of deltas / slow term).
                 app.advance_spinner(Instant::now());
                 // Animate the working-title spinner on the same cadence; the
-                // OSC 9999 payload is not re-sent, only the title frame.
-                app.agent_status.animate();
+                // OSC 9999 payload is not re-sent, only the title frame. Held
+                // on its current frame when motion is reduced.
+                if motion::mode() == motion::MotionMode::Animated {
+                    app.agent_status.animate();
+                }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
@@ -19150,7 +19167,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             app.agent_detail.as_deref(),
             app.spinner(),
         );
-        f.render_widget(input_box(app), chunks[2]);
+        f.render_widget(input_box(app, chunks[2].width), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         // The `/mcp` sign-in confirm lives here too: the picker path returns
         // before the overlay chain below, so without this the "open a browser?"
@@ -19557,7 +19574,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let Some(lines) = panel_lines {
         f.render_widget(Paragraph::new(lines), panel_area);
     }
-    f.render_widget(input_box(app).scroll((input_scroll, 0)), chunks[2]);
+    f.render_widget(input_box(app, chunks[2].width).scroll((input_scroll, 0)), chunks[2]);
     f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
     // A readout (`/context`, `/usage`) docks above the input box, where every
     // other prompt in this TUI lives -- `/login`, `/settings`, `/mcp`, the
@@ -21247,43 +21264,17 @@ fn local_timestamp() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
 }
 
+/// Compact elapsed time: `12s`, `1m 05s`, `1h 02m`. The zero-padded second
+/// field keeps the width steady within a minute, so text after it does not
+/// jitter as the seconds tick.
 fn format_elapsed(secs: u64) -> String {
     if secs < 60 {
         format!("{secs}s")
     } else if secs < 3600 {
-        format!("{}m{:02}s", secs / 60, secs % 60)
+        format!("{}m {:02}s", secs / 60, secs % 60)
     } else {
-        format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60)
+        format!("{}h {:02}m", secs / 3600, (secs % 3600) / 60)
     }
-}
-
-/// Frames the shimmer rests between sweeps, so the wave reads as a pulse
-/// rather than a continuously scrolling band.
-const SHIMMER_PAUSE: usize = 4;
-
-/// Sweep a crest across `text`, one character per spinner frame: `palette` is
-/// `[crest, trail, base]`, applied to the character under the crest, the one
-/// behind it, and everything else.
-///
-/// Folded reasoning is the one stretch of a run that produces no output at all
-/// -- no prose, no tool rows, nothing moving -- so the badge is the only thing
-/// that can say the model is still going. The sweep animates in place, without
-/// changing the text's width, so nothing to its left shifts as it runs.
-fn shimmer_spans(text: &str, palette: [Style; 3], frame: usize) -> Vec<Span<'static>> {
-    let chars: Vec<char> = text.chars().collect();
-    let head = frame % (chars.len() + SHIMMER_PAUSE);
-    chars
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let style = match head.checked_sub(i) {
-                Some(0) => palette[0],
-                Some(1) => palette[1],
-                _ => palette[2],
-            };
-            Span::styled(c.to_string(), style)
-        })
-        .collect()
 }
 
 /// Resolve the display label for `model`: the `provider/model` pair when the
@@ -21451,15 +21442,17 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
     }
     spans.push(Span::raw("  "));
     if app.is_thinking() {
+        // Folded reasoning is the one stretch of a run that puts nothing on
+        // screen, so the badge carries the motion. Colour only: the brackets
+        // and the word hold their cells.
         spans.push(Span::styled("[", style));
-        spans.extend(shimmer_spans(
+        spans.extend(motion::shimmer(
             &status,
-            [
-                Style::new().yellow().bold(),
-                Style::new().yellow(),
-                Style::new().yellow().dim(),
-            ],
-            app.spinner_frame,
+            style,
+            motion::Tint::Yellow,
+            motion::frame_time(app.spinner_frame),
+            motion::mode(),
+            theme::Theme::current(),
         ));
         spans.push(Span::styled("]", style));
     } else {
@@ -21855,7 +21848,82 @@ fn input_content_lines(input: &str, cursor: usize) -> Vec<Line<'static>> {
         .collect()
 }
 
-fn input_box(app: &App) -> Paragraph<'static> {
+/// The steer hint on the working row, longest first: the row drops to the next
+/// one down when the terminal is too narrow, and to none at all past the last,
+/// rather than letting the edge clip it mid-word. The key is the one
+/// `handle_key` actually cancels a run on.
+const WORKING_HINTS: [&str; 2] = [
+    " (Esc to cancel, type to steer the agent)",
+    " (Esc to cancel)",
+];
+
+/// The running row: throbber (or wave), action word, elapsed time and the
+/// cancel hint, always one row. What does not fit `width` is dropped in order
+/// of importance -- the long hint, then the short one, then the elapsed time --
+/// so the row never wraps or changes height.
+fn working_row(app: &App, width: u16) -> Line<'static> {
+    let mode = motion::mode();
+    // The spinner carries the fast motion; the action word turns over on a
+    // slower cadence, cycling "working" synonyms -- or "thinking" synonyms in
+    // orange while a reasoning block streams -- so the row reads alive without
+    // shifting under the eye.
+    let step = app.spinner_frame / WORD_ROTATE_FRAMES;
+    let (word, style, tint) = if app.reasoning_open() {
+        (
+            THINKING_WORDS[step % THINKING_WORDS.len()],
+            // Same theme-aware accent as markdown bold, so reasoning reads
+            // consistently on light and dark terminals.
+            Style::new().fg(theme::strong_accent()).italic(),
+            motion::Tint::Accent,
+        )
+    } else {
+        (
+            WORKING_WORDS[step % WORKING_WORDS.len()],
+            Style::new().dim().italic(),
+            motion::Tint::Muted,
+        )
+    };
+    // With `wave` set, the glyph travels along the action word in place of the
+    // leading throbber: one moving thing per row, not two. Reduced motion
+    // keeps the word and drops the traveller, so the row is as wide as it is
+    // animated.
+    let message = format!("{word}…");
+    let lead = match (wave_glyph(), mode) {
+        (Some(glyph), motion::MotionMode::Animated) => {
+            wave_sweep_line(&message, &glyph, app.spinner_frame, style)
+        }
+        (Some(_), motion::MotionMode::Reduced) => Line::from(Span::styled(message, style)),
+        (None, _) => Line::from(vec![
+            Span::styled(format!("{} ", app.spinner()), Style::new().cyan()),
+            Span::styled(message, style),
+        ]),
+    };
+    let mut spans = motion::shimmer_styled(
+        vec![lead],
+        style,
+        tint,
+        motion::frame_time(app.spinner_frame),
+        mode,
+        theme::Theme::current(),
+    )
+    .remove(0)
+    .spans;
+    let room = width as usize;
+    let elapsed = app
+        .run_started
+        .map(|t| Span::styled(format!(" {}", format_elapsed(t.elapsed().as_secs())), Style::new().dim()))
+        .filter(|e| spans_width(&spans) + e.width() <= room);
+    if let Some(e) = elapsed {
+        spans.push(e);
+    }
+    let used = spans_width(&spans);
+    if let Some(hint) = WORKING_HINTS.iter().find(|h| used + h.len() <= room) {
+        spans.push(Span::styled(*hint, Style::new().dim().italic()));
+    }
+    Line::from(spans)
+}
+
+fn input_box(app: &App, width: u16) -> Paragraph<'static> {
     let block = Block::default();
     if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
         // Compaction puts nothing in the transcript while it runs, so the input
@@ -21897,45 +21965,7 @@ fn input_box(app: &App) -> Paragraph<'static> {
     } else if app.status == Status::Running && app.input.is_empty() {
         // Show queue status when running with empty input
         if app.message_queue.is_empty() {
-            // The spinner carries the fast motion; the action word turns over
-            // on a slower cadence, cycling "working" synonyms -- or "thinking"
-            // synonyms in orange while a reasoning block streams -- so the row
-            // reads alive without shifting under the eye.
-            let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-            let (word, style) = if app.reasoning_open() {
-                (
-                    THINKING_WORDS[step % THINKING_WORDS.len()],
-                    // Same theme-aware accent as markdown bold, so reasoning
-                    // reads consistently on light and dark terminals.
-                    Style::new().fg(theme::strong_accent()).italic(),
-                )
-            } else {
-                (
-                    WORKING_WORDS[step % WORKING_WORDS.len()],
-                    Style::new().dim().italic(),
-                )
-            };
-            // With `wave` set, the glyph travels along the action word in place
-            // of the leading throbber: one moving thing per row, not two.
-            let message = format!("{word}…");
-            let mut spans = Vec::with_capacity(6);
-            match wave_glyph() {
-                Some(glyph) => {
-                    spans.extend(wave_sweep_line(&message, &glyph, app.spinner_frame, style).spans)
-                }
-                None => {
-                    spans.push(Span::styled(
-                        format!("{} ", app.spinner()),
-                        Style::new().cyan(),
-                    ));
-                    spans.push(Span::styled(message, style));
-                }
-            }
-            spans.push(Span::styled(
-                " (Esc to cancel, type to steer the agent)",
-                Style::new().dim().italic(),
-            ));
-            Paragraph::new(Line::from(spans)).block(block)
+            Paragraph::new(working_row(app, width)).block(block)
         } else {
             let n = app.message_queue.len();
             Paragraph::new(Line::from(vec![
@@ -22695,7 +22725,7 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "4242", "pid rides in value for the stop action");
         assert!(items[0].label.contains("sleep 9000"), "{}", items[0].label);
-        assert!(items[0].label.contains("1m05s"), "elapsed shown: {}", items[0].label);
+        assert!(items[0].label.contains("1m 05s"), "elapsed shown: {}", items[0].label);
     }
 
     #[test]
@@ -38479,40 +38509,142 @@ mod tests {
     }
 
     /// Folded reasoning puts nothing on screen, so the badge has to carry the
-    /// motion: a crest sweeps the word, one character per spinner frame, and
-    /// wraps back to the start after a pause.
+    /// motion: a brightness sweep crosses the word with the text held still.
+    /// Reduced motion keeps the badge's own flat style.
     #[test]
-    fn thinking_badge_shimmers_across_its_frames() {
-        use ratatui::style::{Modifier, Style};
-        let palette = [
-            Style::new().yellow().bold(),
-            Style::new().yellow(),
-            Style::new().yellow().dim(),
-        ];
-        let crest_at = |frame: usize| {
-            let spans = super::shimmer_spans("thinking", palette, frame);
-            // The text is intact and unmoved at every frame; only style changes.
-            let text: String = spans.iter().map(|s| s.content.as_ref()).collect::<String>();
-            assert_eq!(text, "thinking", "frame {frame} must not move the label");
+    fn thinking_badge_shimmers_unless_motion_is_reduced() {
+        use super::motion::{with_mode, MotionMode};
+        let mut app = test_app();
+        app.stream_reasoning = false;
+        app.submit_user("hi".into());
+        app.apply(StreamEvent::Token {
+            text: "<think>pondering".into(),
+        });
+        assert!(app.is_thinking());
+        let rgb = |spans: &[ratatui::text::Span<'static>]| {
             spans
                 .iter()
-                .position(|s| s.style.add_modifier.contains(Modifier::BOLD))
+                .any(|s| matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..))))
         };
+        let text = |spans: &[ratatui::text::Span<'static>]| -> String {
+            spans.iter().map(|s| s.content.as_ref()).collect()
+        };
+        let mut moved = false;
+        let mut widths = std::collections::HashSet::new();
+        for frame in 0..30 {
+            app.spinner_frame = frame;
+            let spans = with_mode(MotionMode::Animated, || header_spans(&app));
+            assert!(text(&spans).contains("[thinking]"), "frame {frame}");
+            widths.insert(spans_width(&spans));
+            moved |= rgb(&spans);
+            let still = with_mode(MotionMode::Reduced, || header_spans(&app));
+            assert!(!rgb(&still), "reduced motion is static at frame {frame}");
+            assert_eq!(text(&still), text(&spans), "same text in both modes");
+        }
+        assert!(moved, "the crest crossed the badge");
+        assert_eq!(widths.len(), 1, "the header never changes width");
+    }
 
-        assert_eq!(crest_at(0), Some(0));
+    #[test]
+    fn elapsed_time_is_compact() {
+        use super::format_elapsed;
+        assert_eq!(format_elapsed(0), "0s");
+        assert_eq!(format_elapsed(12), "12s");
+        assert_eq!(format_elapsed(59), "59s");
+        assert_eq!(format_elapsed(60), "1m 00s");
+        assert_eq!(format_elapsed(65), "1m 05s");
+        assert_eq!(format_elapsed(3599), "59m 59s");
+        assert_eq!(format_elapsed(3600), "1h 00m");
+        assert_eq!(format_elapsed(3720), "1h 02m");
+    }
+
+    /// The working row carries the elapsed time and the cancel hint on one
+    /// row, is exactly as wide in both motion modes, and sheds the hint, then
+    /// the elapsed time, as the terminal narrows instead of wrapping.
+    #[test]
+    fn the_working_row_keeps_its_width_and_degrades_by_width() {
+        use super::motion::{with_mode, MotionMode};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.run_started = Some(Instant::now() - Duration::from_secs(65));
+        let text = |line: &Line<'static>| -> String {
+            line.spans.iter().map(|s| s.content.as_ref()).collect()
+        };
+        for glyph in [None, Some("\u{1f44b}")] {
+            with_wave_glyph(glyph, || {
+                for frame in [0, 7, 19] {
+                    app.spinner_frame = frame;
+                    let moving = with_mode(MotionMode::Animated, || super::working_row(&app, 120));
+                    let still = with_mode(MotionMode::Reduced, || super::working_row(&app, 120));
+                    assert_eq!(
+                        spans_width(&moving.spans),
+                        spans_width(&still.spans),
+                        "glyph {glyph:?} frame {frame}: {:?} vs {:?}",
+                        text(&moving),
+                        text(&still)
+                    );
+                    assert!(text(&moving).contains("1m 05s"), "{}", text(&moving));
+                    assert!(text(&moving).contains("Esc to cancel, type to steer"));
+                }
+            });
+        }
+        app.spinner_frame = 0;
+        with_wave_glyph(None, || {
+            for width in 0..120u16 {
+                let row = super::working_row(&app, width);
+                let t = text(&row);
+                if t.contains("cancel") || t.contains("1m 05s") {
+                    let w = spans_width(&row.spans);
+                    assert!(w <= width as usize, "optional parts must fit: {width}: {t}");
+                }
+            }
+            // "<glyph> working... 1m 05s" is 17 cells; the short hint adds 16.
+            let mid = text(&super::working_row(&app, 34));
+            assert!(mid.contains("(Esc to cancel)") && !mid.contains("steer"), "{mid}");
+            let narrow = text(&super::working_row(&app, 22));
+            assert!(narrow.contains("1m 05s") && !narrow.contains("Esc"), "{narrow}");
+            let tiny = text(&super::working_row(&app, 12));
+            assert!(!tiny.contains("1m"), "{tiny}");
+        });
+        // Rendered: still one row in the input box.
+        let rows = with_wave_glyph(None, || render_rows(&mut app, 40, 12));
         assert_eq!(
-            crest_at(3),
-            Some(3),
-            "the crest advances one char per frame"
+            rows.iter().filter(|r| r.contains("Esc to cancel")).count(),
+            1,
+            "{rows:#?}"
         );
-        // Past the end of the word the crest is off-screen (the pause), then
-        // the cycle restarts.
-        assert_eq!(crest_at(8), None, "pause between sweeps");
-        assert_eq!(
-            crest_at(8 + super::SHIMMER_PAUSE),
-            Some(0),
-            "sweep restarts"
-        );
+    }
+
+    /// A running tool label shimmers and spins; reduced motion holds a static
+    /// glyph and the plain label. Either way the text is the same.
+    #[test]
+    fn a_running_tool_row_animates_only_with_motion() {
+        use super::motion::{with_mode, MotionMode, STATIC_GLYPH};
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "grep".into(),
+            args: json!({ "pattern": "needle" }),
+        });
+        let group = app.tool_group.as_ref().expect("open group");
+        assert!(group.is_running());
+        let rgb = |lines: &[Line<'static>]| {
+            lines.iter().flat_map(|l| l.spans.iter()).any(|s| {
+                matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))
+            })
+        };
+        let mut moved = false;
+        for frame in 0..30 {
+            let moving = with_mode(MotionMode::Animated, || running_group_rows(group, frame, 80));
+            let still = with_mode(MotionMode::Reduced, || running_group_rows(group, frame, 80));
+            let strip = |ls: &[Line<'static>]| lines_text(ls).replace(SPINNER[frame % SPINNER.len()], STATIC_GLYPH);
+            assert_eq!(strip(&moving), lines_text(&still), "frame {frame}");
+            assert!(lines_text(&still).contains(STATIC_GLYPH));
+            assert!(!rgb(&still));
+            moved |= rgb(&moving);
+        }
+        assert!(moved, "the label shimmered while in flight");
     }
 
     /// The animation is scoped to the state that needs it: a folded, streaming

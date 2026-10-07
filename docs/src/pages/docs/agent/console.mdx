@@ -63,7 +63,10 @@ Type while it's working and your message queues rather than being dropped - see
 ### The working row
 
 While a turn runs, the input row shows an action word that turns over every few seconds, with a 👋
-sweeping back and forth along it, so a long turn does not read as a hung UI.
+sweeping back and forth along it, so a long turn does not read as a hung UI. A brightness sweep
+crosses the word, and after it come the turn's elapsed time (`12s`, `1m 05s`, `1h 02m`) and the
+key that cancels it, <kbd>Esc</kbd>. On a narrow terminal the row drops the long hint first, then
+the short one, then the elapsed time, so it always stays one line.
 
 Pick a different glyph from `/settings > wave`, or set it in `~/.jan/config.toml` directly:
 
@@ -82,6 +85,25 @@ To go back to the plain Braille throbber - if your terminal lacks the font and d
 missing-character box - clear the field in `/settings` and save. That writes `wave = ""`, which is
 the off switch. Pressing <kbd>x</kbd> on the row is the other direction: it removes the key, so the
 default 👋 comes back.
+
+### Motion
+
+The working row, the `[thinking]` badge and a running tool row animate: a throbber turns and a
+brightness sweep crosses the label. The sweep changes colour only, never width, so nothing beside
+it moves. It is skipped on a 16-colour terminal, which has no shades in between to sweep through.
+
+To hold everything still, set this in `~/.jan/config.toml`:
+
+```toml
+[tui]
+animations = false
+```
+
+The throbber then shows a static `•`, the wave glyph is dropped, and every label keeps its resting
+colour. Jan also turns animations off at launch when the OS asks for reduced motion: on macOS
+(System Settings > Accessibility > Display > Reduce motion) and on GNOME-family Linux desktops
+(animations off). Windows is not detected yet, so use the key there. Restart Jan after changing
+either.
 
 ### The prompt-cache hit rate
 
