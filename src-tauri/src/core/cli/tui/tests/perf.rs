@@ -231,3 +231,26 @@ fn a_streaming_frame_scans_the_reply_at_most_once() {
     let scans = take(&ANSWER_SCANS);
     assert!(scans <= 1, "one frame scanned the reply {scans} times");
 }
+
+/// A paste is one edit: one insert and one path-hint refresh, however long.
+#[test]
+fn a_paste_refreshes_path_hints_once() {
+    let mut app = test_app();
+    app.input = "ab".into();
+    app.cursor = 1;
+    take(&PATH_HINT_REFRESHES);
+    route_paste_event(&mut app, Event::Paste("x\ty @src".repeat(500)));
+    assert_eq!(take(&PATH_HINT_REFRESHES), 1);
+    assert_eq!(app.input, format!("a{}b", "xy @src".repeat(500)));
+    assert_eq!(app.cursor, 1 + "xy @src".len() * 500);
+}
+
+/// A paste of nothing but tabs is no edit at all, as it was char by char.
+#[test]
+fn a_tab_only_paste_leaves_the_input_untouched() {
+    let mut app = test_app();
+    app.slash_dismissed = true;
+    route_paste_event(&mut app, Event::Paste("\t\t".into()));
+    assert!(app.input.is_empty());
+    assert!(app.slash_dismissed, "no edit, so the popup stays dismissed");
+}

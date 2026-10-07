@@ -4461,6 +4461,22 @@ impl App {
         self.refresh_path_hints();
     }
 
+    /// `input_insert` for a whole string, as one edit. A paste used to go
+    /// through `input_insert` per char, each shifting the rest of the input and
+    /// re-scanning it for an `@path`, which is quadratic and hangs on a large
+    /// paste. The hint state each per-char call left behind was overwritten by
+    /// the next, so refreshing once at the end lands on the same state.
+    fn input_insert_str(&mut self, text: &str) {
+        let text: String = text.chars().filter(|&c| c != '\t').collect();
+        if text.is_empty() {
+            return;
+        }
+        self.input.insert_str(self.cursor, &text);
+        self.cursor += text.len();
+        self.reset_slash_hint();
+        self.refresh_path_hints();
+    }
+
     /// Delete the char before the caret (Backspace).
     fn input_backspace(&mut self) {
         if let Some(prev) = self.input[..self.cursor].chars().next_back() {
@@ -11648,9 +11664,7 @@ fn route_paste_event(app: &mut App, event: Event) {
     } else if !app.ask_queue.is_empty() {
         handle_ask_paste(app, &text);
     } else {
-        for c in text.chars() {
-            app.input_insert(c);
-        }
+        app.input_insert_str(&text);
     }
 }
 
