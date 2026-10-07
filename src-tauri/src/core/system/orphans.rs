@@ -28,7 +28,7 @@ const PRESET_FLAG: &str = "--models-preset";
 
 /// The slice of a process the matcher needs, so it can be tested without
 /// spawning anything.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ProcInfo {
     pub pid: u32,
     pub parent: Option<u32>,
@@ -92,6 +92,17 @@ fn is_orphaned(proc: &ProcInfo, by_pid: &HashMap<u32, &ProcInfo>) -> bool {
     }
 }
 
+/// `root` and everything below it, each process listed before its children.
+fn with_descendants(root: u32, children: &HashMap<u32, Vec<u32>>) -> Vec<u32> {
+    let mut order = vec![root];
+    let mut next = 0;
+    while let Some(&pid) = order.get(next) {
+        order.extend(children.get(&pid).into_iter().flatten().copied());
+        next += 1;
+    }
+    order
+}
+
 /// Pids to kill, children before their router.
 pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> {
     let llamacpp_dir = normalize(&data_folder.join("llamacpp").to_string_lossy());
@@ -111,17 +122,8 @@ pub fn orphaned_engine_pids(procs: &[ProcInfo], data_folder: &Path) -> Vec<u32> 
         .iter()
         .filter(|p| is_jan_router(p, llamacpp_dir) && is_orphaned(p, &by_pid))
     {
-        // Post-order walk: descendants first, so killing the router never
-        // leaves a child to be adopted.
-        let mut order = vec![router.pid];
-        let mut i = 0;
-        while i < order.len() {
-            if let Some(kids) = children.get(&order[i]) {
-                order.extend(kids.iter().copied());
-            }
-            i += 1;
-        }
-        for pid in order.into_iter().rev() {
+        // Reversed, so killing the router never leaves a child to be adopted.
+        for pid in with_descendants(router.pid, &children).into_iter().rev() {
             if seen.insert(pid) {
                 victims.push(pid);
             }
