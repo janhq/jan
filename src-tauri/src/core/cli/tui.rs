@@ -2819,6 +2819,14 @@ struct SubagentPanel {
     /// mark of how full its window is, which is the number worth watching --
     /// a subagent silently filling its context is the failure this surfaces.
     prompt_tokens: u64,
+    /// Prompt and cached tokens summed over every request the child reported
+    /// usage for, so its cache hit rate is a share of tokens rather than a
+    /// mean of per-request percentages.
+    total_prompt_tokens: u64,
+    total_cached_tokens: u64,
+    /// Whether the child's route ever reported a cache field. Without it, a
+    /// route that says nothing about caching would read as a 0% hit.
+    cache_reported: bool,
     /// The call the child is currently assembling, if any. Without this a
     /// child streaming a large `write` reports nothing at all for the whole
     /// request -- no completed tool call yet, so a stats line frozen at
@@ -2891,6 +2899,13 @@ fn push_child_prose(prose: &mut String, text: &str) {
 }
 
 impl SubagentPanel {
+    /// The child's cumulative prompt-cache hit rate, `None` until its route
+    /// has reported a cache field (the same rule `/context` follows).
+    fn cache_hit_rate(&self) -> Option<f64> {
+        (self.cache_reported && self.total_prompt_tokens > 0)
+            .then(|| cache_hit_percent(self.total_cached_tokens, self.total_prompt_tokens))
+    }
+
     fn push_log(&mut self, entry: ChildLogEntry) {
         self.log.push(entry);
         if self.log.len() > CHILD_LOG_MAX {
@@ -6252,6 +6267,9 @@ impl App {
                         calls: Vec::new(),
                         requests: 0,
                         prompt_tokens: 0,
+                        total_prompt_tokens: 0,
+                        total_cached_tokens: 0,
+                        cache_reported: false,
                         active: None,
                         queued: false,
                         waiting: 0,
@@ -6289,6 +6307,9 @@ impl App {
                         calls: Vec::new(),
                         requests: 0,
                         prompt_tokens: 0,
+                        total_prompt_tokens: 0,
+                        total_cached_tokens: 0,
+                        cache_reported: false,
                         active: None,
                         queued: false,
                         waiting: 0,
@@ -6330,6 +6351,9 @@ impl App {
                         calls: Vec::new(),
                         requests: 0,
                         prompt_tokens: 0,
+                        total_prompt_tokens: 0,
+                        total_cached_tokens: 0,
+                        cache_reported: false,
                         active: None,
                         queued: true,
                         waiting,
@@ -6576,10 +6600,10 @@ impl App {
                     panel.requests += 1;
                 }
             }
-            // The child's own context high-water mark, and deliberately nothing
-            // else: its cache reads stay out of the `session_*` counters and so
-            // out of the header rate, which describes the parent conversation's
-            // prefix (a child has its own). `--output-format json` is the
+            // The child's own context high-water mark and its own cache totals,
+            // kept on its panel: its cache reads stay out of the `session_*`
+            // counters and so out of the header rate, which describes the parent
+            // conversation's prefix (a child has its own). `--output-format json` is the
             // surface that folds child usage in, because that figure is a bill
             // rather than a rate.
             StreamEvent::TurnUsage {
@@ -6588,6 +6612,11 @@ impl App {
             } => {
                 if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
+                    panel.total_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
+                    panel.total_cached_tokens += usage.cached_tokens.unwrap_or(0);
+                    if usage.cached_tokens.is_some() {
+                        panel.cache_reported = true;
+                    }
                 }
                 // A child's requests are billed to the same account, so its
                 // execution ids are as lookup-worthy as the parent's.
@@ -16708,7 +16737,8 @@ fn background_shell_picker_items(
         .collect()
 }
 
-/// One row per running subagent (`name  ·  Nt · w-K  ·  <activity>`), or a
+/// One row per running subagent (`name  ·  Nt  ·  NN% cached  ·  <activity>`,
+/// the rate only once the child's route reports a cache field), or a
 /// single watermark row when the fan-out is empty. The row `value` is the
 /// child's `run_id`, which Enter drills into.
 fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
@@ -16723,9 +16753,13 @@ fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
     subagents
         .iter()
         .map(|p| {
+            let cache = p
+                .cache_hit_rate()
+                .map(|pct| format!("  ·  {pct:.0}% cached"))
+                .unwrap_or_default();
             PickerItem {
                 label: format!(
-                    "{}  ·  {}t  ·  {}",
+                    "{}  ·  {}t{cache}  ·  {}",
                     p.name,
                     p.calls.len(),
                     panel_activity_summary(p)
@@ -16790,6 +16824,9 @@ fn agent_detail_lines(
     let mut stats = format!("{} tools · {} req", panel.calls.len(), panel.requests);
     if panel.queued {
         stats.push_str(&format!(" · queued ({})", panel.waiting));
+    }
+    if let Some(pct) = panel.cache_hit_rate() {
+        stats.push_str(&format!(" · {pct:.0}% cached"));
     }
     out.push(Line::styled(stats, dim));
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
@@ -21087,6 +21124,11 @@ fn agents_column(
                 stats.push_str(&format!(" · {pct:.1}%"));
             }
             spans.push(Span::styled(stats, dim));
+            // Its own span so a zero hit can turn red, as the header rate does.
+            if let Some(pct) = panel.cache_hit_rate() {
+                let style = if pct == 0.0 { Style::new().red() } else { dim };
+                spans.push(Span::styled(format!(" · {pct:.0}% cached"), style));
+            }
         }
         out.push(Line::from(spans));
 
@@ -22264,6 +22306,9 @@ mod tests {
             calls: calls.into_iter().map(String::from).collect(),
             requests: 0,
             prompt_tokens: 0,
+            total_prompt_tokens: 0,
+            total_cached_tokens: 0,
+            cache_reported: false,
             active: None,
             queued: false,
             waiting: 0,
@@ -34259,6 +34304,86 @@ mod tests {
             name: name.into(),
             event: Box::new(event),
         });
+    }
+
+    fn child_usage(app: &mut App, run_id: &str, prompt: u64, cached: Option<u64>) {
+        subagent_event(
+            app,
+            run_id,
+            "alpha",
+            StreamEvent::TurnUsage {
+                usage: Usage {
+                    prompt_tokens: Some(prompt),
+                    cached_tokens: cached,
+                    ..Default::default()
+                },
+                execution_id: None,
+            },
+        );
+    }
+
+    /// A child's hit rate is a token share over all its requests (3000 of
+    /// 4000), not a mean of per-request rates (which would read 66%), and it
+    /// shows on both the inline panel and the `/agents` row.
+    #[test]
+    fn subagent_cache_rate_is_a_cumulative_token_share() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        child_usage(&mut app, "r0", 1_000, Some(500));
+        child_usage(&mut app, "r0", 3_000, Some(2_500));
+        let out = render_rows(&mut app, 120, 20).join("\n");
+        assert!(out.contains(" · 75% cached"), "{out}");
+        let items = agent_picker_items(&app.subagents);
+        assert!(items[0].label.contains("75% cached"), "{}", items[0].label);
+        let detail = agent_detail_lines(&app.subagents, Some("r0"), 80, 20)
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(detail.contains("75% cached"), "{detail}");
+    }
+
+    /// A child that never reports a cache field shows no rate at all -- never a
+    /// `0%` the provider did not claim.
+    #[test]
+    fn subagent_cache_rate_is_hidden_when_never_reported() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        child_usage(&mut app, "r0", 1_000, None);
+        let out = render_rows(&mut app, 120, 20).join("\n");
+        assert!(!out.contains("cached"), "{out}");
+        let items = agent_picker_items(&app.subagents);
+        assert!(!items[0].label.contains("cached"), "{}", items[0].label);
+    }
+
+    /// A reported zero is the expensive state, so it renders, in the alarm
+    /// colour.
+    #[test]
+    fn subagent_zero_cache_rate_is_red() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        child_usage(&mut app, "r0", 1_000, Some(0));
+        let lines = agents_column(&mut app.subagents, 200_000, 120, 8, "-");
+        let span = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("0% cached"))
+            .expect("a zero rate is shown");
+        assert_eq!(span.style.fg, Some(Color::Red), "{span:?}");
+    }
+
+    /// Child cache reads stay out of the parent's session counters: the header
+    /// rate describes the parent conversation's prefix, not the children's.
+    #[test]
+    fn subagent_cache_reads_leave_the_parent_rate_alone() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        child_usage(&mut app, "r0", 1_000, Some(900));
+        assert_eq!(app.session_cached_tokens, 0);
+        assert_eq!(app.session_prompt_tokens, 0);
+        assert!(!app.session_cache_reported);
+        let header: String = header_spans(&app).iter().map(|s| s.content.to_string()).collect();
+        assert!(!header.contains("cache"), "{header}");
     }
 
     /// A compaction the running turn makes shows a throbber while the
