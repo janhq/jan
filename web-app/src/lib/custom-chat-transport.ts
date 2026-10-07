@@ -72,6 +72,7 @@ import {
   parseVideoDataUrl,
 } from '@/lib/video-sentinel'
 import { isPredefinedRemoteProvider } from '@/lib/providerCaps'
+import { PING_OPEN } from '@/lib/coworkPing'
 import { paramsSettings } from '@/lib/predefinedParams'
 import { CHAT_SLOT_ID } from '@/constants/models'
 import { createStepMetadata } from '@/lib/stepMetadata'
@@ -387,7 +388,8 @@ function isAssistantMessageEmpty(message: UIMessage): boolean {
  * in the earlier bubble, so a follow-up like "what is in it?" must still reach
  * the model with them. By this point images are `file` parts, audio and video
  * are sentinel-only text parts, and documents are an [ATTACHED_FILES] block
- * (plus any inlined contents) appended after the question text.
+ * (plus any inlined contents) appended after the question text. Cowork pings
+ * are carried too.
  */
 function carryAttachmentsForward(
   dropped: UIMessage['parts'],
@@ -398,7 +400,13 @@ function carryAttachmentsForward(
     if (part.type === 'file') {
       attachments.push(part)
     } else if (part.type === 'text' && typeof part.text === 'string') {
-      if (hasAudioSentinel(part.text) || hasVideoSentinel(part.text)) {
+      // Cowork's <SYSTEM> pings (finished subagents) ride as their own user
+      // turn; they are context the model has not seen yet, not a question.
+      if (
+        hasAudioSentinel(part.text) ||
+        hasVideoSentinel(part.text) ||
+        part.text.trimStart().startsWith(PING_OPEN)
+      ) {
         attachments.push(part)
         continue
       }
@@ -679,7 +687,8 @@ const LOCAL_ENGINE_PROVIDERS: Record<string, true> = {
 
 const LOOPBACK_HOSTS: Record<string, true> = {
   localhost: true,
-  '127.0.0.1': true,
+  // What some local servers print as their listen address.
+  '0.0.0.0': true,
   // URL.hostname keeps the brackets on IPv6 literals.
   '[::1]': true,
 }
@@ -696,7 +705,9 @@ export function isLocalChatServer(
   if (LOCAL_ENGINE_PROVIDERS[providerId]) return true
   if (!baseUrl) return false
   try {
-    return !!LOOPBACK_HOSTS[new URL(baseUrl).hostname]
+    const host = new URL(baseUrl).hostname
+    // URL has already normalised IPv4, so 127.0.0.0/8 is a prefix match.
+    return !!LOOPBACK_HOSTS[host] || /^127\.\d+\.\d+\.\d+$/.test(host)
   } catch {
     return false
   }

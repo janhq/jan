@@ -516,6 +516,25 @@ describe('coalesceMessagesForAlternation', () => {
     ])
   })
 
+  it('carries a Cowork ping turn forward into the next user message', () => {
+    const ping = {
+      type: 'text',
+      text: '<SYSTEM>\nsubagent a1 finished\n</SYSTEM>',
+    }
+    const input: UIMessage[] = [
+      userMsg('u1', 'start'),
+      assistantMsg('a1', [{ type: 'text', text: 'ok' }] as UIMessage['parts']),
+      { id: 'ping-2', role: 'user', parts: [ping] } as UIMessage,
+      userMsg('u2', 'what did it find?'),
+    ]
+    const out = coalesceMessagesForAlternation(input)
+    expect(out.map((m) => m.id)).toEqual(['u1', 'a1', 'u2'])
+    expect(out[2].parts).toEqual([
+      ping,
+      { type: 'text', text: 'what did it find?' },
+    ])
+  })
+
   it('keeps assistant messages with real content', () => {
     const input = [
       userMsg('u1', 'q'),
@@ -856,6 +875,8 @@ describe('isLocalChatServer', () => {
     ['mlx', undefined],
     ['custom', 'http://localhost:11434/v1'],
     ['custom', 'http://127.0.0.1:8080/v1'],
+    ['custom', 'http://127.0.0.2:8080/v1'],
+    ['custom', 'http://0.0.0.0:1234/v1'],
     ['custom', 'http://[::1]:1234/v1'],
   ])('treats %s at %s as local (no retries)', (provider, baseUrl) => {
     expect(isLocalChatServer(provider, baseUrl)).toBe(true)
@@ -865,6 +886,7 @@ describe('isLocalChatServer', () => {
     ['openai', 'https://api.openai.com/v1'],
     ['custom', 'http://192.168.1.5:1234/v1'],
     ['custom', 'https://localhost.example.com/v1'],
+    ['custom', 'http://127.example.com/v1'],
     ['custom', undefined],
     ['custom', 'not a url'],
   ])('treats %s at %s as hosted (SDK retries)', (provider, baseUrl) => {
