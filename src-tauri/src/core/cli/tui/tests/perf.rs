@@ -10,10 +10,12 @@
 //! timing.
 
 use super::super::{
-    ANSWER_SCANS, MD_PARSES, PATH_HINT_REFRESHES, THINK_SCANS,
+    ANSWER_SCANS, MD_PARSES, PATH_HINT_REFRESHES, ROW_CLONES, THINK_SCANS, TRACE_RUN_SCANS,
 };
 use super::*;
 use ratatui::backend::TestBackend;
+use ratatui::text::Span;
+use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Terminal;
 
 /// Read and zero one of the work counters.
@@ -353,4 +355,87 @@ fn an_unchanged_live_tail_is_not_reparsed() {
     // A new width is a new layout.
     render_rows(&mut app, 60, 24);
     assert!(take(&MD_PARSES) > 0, "a resize must re-render the tail");
+}
+
+/// The wrapped-height fast path agrees with ratatui's own count on lines at,
+/// under and over the width, with wide, zero-width and control graphemes.
+#[test]
+fn wrapped_height_fast_path_matches_line_count() {
+    let samples = [
+        "",
+        " ",
+        "plain words that may or may not wrap here",
+        "exactly-ten",
+        "abcdefghij",
+        "abcdefghi\u{301}",
+        "abcdefghij\u{301}",
+        "\u{4e2d}\u{6587}\u{5b57}\u{7b26}\u{4e32}",
+        "a\u{4e2d}\u{6587}\u{5b57}\u{7b26}\u{4e32}",
+        "tab\there\r\nand\u{1b} esc",
+        "trailing spaces          ",
+        "\u{200b}\u{200b}abcdefghij",
+        "nbsp\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}\u{a0}x",
+        "\u{1f600}\u{1f600}\u{1f600}\u{1f600}\u{1f600}",
+        "\u{ff9e}\u{ff9e}\u{ff9e}abcdefg",
+    ];
+    for width in [1u16, 2, 5, 9, 10, 11, 40] {
+        for text in samples {
+            for split in [false, true] {
+                let line = if split && text.len() > 3 {
+                    let at = text.char_indices().nth(2).map_or(0, |(i, _)| i);
+                    Line::from(vec![
+                        Span::raw(text[..at].to_string()),
+                        Span::styled(text[at..].to_string(), Style::new().bold()),
+                    ])
+                } else {
+                    Line::raw(text.to_string())
+                };
+                let want = Paragraph::new(vec![line.clone()])
+                    .wrap(Wrap { trim: false })
+                    .line_count(width) as u16;
+                let got = super::super::wrapped_height_of(&[line], width);
+                assert_eq!(got, want, "width {width}, {text:?}, split {split}");
+            }
+        }
+    }
+}
+
+/// A frame builds the trace runs once, and checking whether the body ends on
+/// a blank copies no row out of the cache beyond the visible ones.
+#[test]
+fn a_frame_builds_trace_runs_once() {
+    let mut app = long_session(200);
+    let mut term = terminal(100, 30);
+    draw_on(&mut term, &mut app);
+    take(&TRACE_RUN_SCANS);
+    draw_on(&mut term, &mut app);
+    assert_eq!(take(&TRACE_RUN_SCANS), 1);
+}
+
+/// The blank-separator check above a streaming tail reads the last row in
+/// place: with the last row on screen anyway, a frame copies the same rows
+/// whether or not a tail is streaming.
+#[test]
+fn the_tail_separator_check_copies_no_row() {
+    let mut app = long_session(200);
+    let mut term = terminal(100, 30);
+    draw_on(&mut term, &mut app);
+    take(&ROW_CLONES);
+    draw_on(&mut term, &mut app);
+    let idle = take(&ROW_CLONES);
+    app.status = Status::Running;
+    app.apply(StreamEvent::ToolCall {
+        id: "z".into(),
+        name: "grep".into(),
+        args: json!({ "pattern": "x" }),
+    });
+    app.finalize_tool_group();
+    app.apply(StreamEvent::Token {
+        text: "<think>still".into(),
+    });
+    draw_on(&mut term, &mut app);
+    take(&ROW_CLONES);
+    draw_on(&mut term, &mut app);
+    let streaming = take(&ROW_CLONES);
+    assert!(streaming <= idle, "streaming frame copied {streaming} rows, idle {idle}");
 }

@@ -1605,10 +1605,48 @@ fn tally(counter: &'static std::thread::LocalKey<std::cell::Cell<usize>>) {
 /// a run of rows equals measuring their concatenation -- which is what lets
 /// `draw` add up cached per-row heights instead of wrapping the whole session.
 fn wrapped_height(lines: Vec<Line<'static>>, width: u16) -> u16 {
-    Paragraph::new(lines)
+    wrapped_height_of(&lines, width)
+}
+
+/// `wrapped_height` without taking ownership: the word wrapper is only run
+/// (on a copy) when some line might wrap. Every other line is one row, which
+/// is the common case for pre-wrapped markdown, panels and the streaming tail.
+fn wrapped_height_of(lines: &[Line<'static>], width: u16) -> u16 {
+    let width = width.max(1);
+    if lines.iter().all(|line| fits_one_row(line, width)) {
+        return lines.len().min(u16::MAX as usize) as u16;
+    }
+    Paragraph::new(lines.to_vec())
         .wrap(Wrap { trim: false })
-        .line_count(width.max(1))
+        .line_count(width)
         .min(u16::MAX as usize) as u16
+}
+
+/// Whether ratatui's word wrapper (`trim: false`) is certain to emit `line`
+/// as exactly one row at `width`. Cells are counted the way the wrapper counts
+/// them: per grapheme, control characters dropped. Shorter than the width
+/// never breaks. Exactly the width only stays one row when no grapheme is zero
+/// cells wide, since the wrapper closes a full row before looking at a
+/// zero-width grapheme that follows it. Anything else is left to the wrapper.
+fn fits_one_row(line: &Line<'_>, width: u16) -> bool {
+    use ratatui::buffer::CellWidth;
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut cells: usize = 0;
+    let mut zero_width = false;
+    for span in &line.spans {
+        for g in span.content.graphemes(true) {
+            if g.contains(char::is_control) {
+                continue;
+            }
+            let w = g.cell_width() as usize;
+            zero_width |= w == 0;
+            cells += w;
+            if cells > width as usize {
+                return false;
+            }
+        }
+    }
+    cells < width as usize || !zero_width
 }
 
 /// One committed transcript entry. Width-dependent entries keep their *source*
@@ -1727,7 +1765,7 @@ impl Row {
             return;
         }
         let lines = self.kind.render(width);
-        let height = wrapped_height(lines.clone(), width);
+        let height = wrapped_height_of(&lines, width);
         *self.cache.borrow_mut() = Some(RowRender {
             width,
             lines,
@@ -19288,7 +19326,7 @@ impl Segment {
     fn eager(idx: Option<usize>, lines: Vec<Line<'static>>, width: u16) -> Segment {
         Segment {
             idx,
-            height: wrapped_height(lines.clone(), width),
+            height: wrapped_height_of(&lines, width),
             lines: Some(lines),
         }
     }
@@ -19301,9 +19339,15 @@ fn trailing_blank(tail: &[Line<'static>], transcript: &[Row], width: u16) -> boo
     let blank = |line: &Line<'static>| line.spans.iter().all(|s| s.content.trim().is_empty());
     match tail.last() {
         Some(line) => blank(line),
-        None => transcript
-            .last()
-            .is_none_or(|row| row.lines(width).last().is_none_or(blank)),
+        // Read through the row cache rather than `lines`, which would copy the
+        // whole last row (a long answer) every frame to look at one line.
+        None => transcript.last().is_none_or(|row| {
+            row.fill(width);
+            row.cache
+                .borrow()
+                .as_ref()
+                .is_none_or(|r| r.lines.last().is_none_or(blank))
+        }),
     }
 }
 
@@ -19459,8 +19503,10 @@ fn draw(f: &mut Frame, app: &mut App) {
     // open group on that same first prose token, so it is already a trace member.)
     let last_answer = app.last_answer_idx();
     let answer_started = app.answer_started();
+    // Built once: it sorts every group and reasoning block in the session.
+    let trace_runs = app.trace_runs();
     let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
-    for run in app.trace_runs() {
+    for run in trace_runs.iter().copied() {
         let finished = answer_started || last_answer.is_some_and(|a| run.end < a);
         if finished && !app.expanded_traces.contains(&run.start) {
             collapsed_headers.insert(run.start, run);
@@ -19474,8 +19520,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // after its last row, keyed by that row's index. The live rail's terminal is
     // its current step, and a folded trace shows only its header, so neither gets
     // one.
-    let expanded_trace_ends: std::collections::HashSet<usize> = app
-        .trace_runs()
+    let expanded_trace_ends: std::collections::HashSet<usize> = trace_runs
         .iter()
         .filter(|r| {
             last_answer.is_some_and(|a| r.end < a) && app.expanded_traces.contains(&r.start)
