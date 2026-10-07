@@ -69,6 +69,7 @@ macro_rules! invoke_commands_with_extras {
         core::server::provider_secrets::get_secret,
         // System commands
         core::system::commands::relaunch,
+        core::system::shutdown::shutdown_for_update,
         core::system::commands::open_app_directory,
         core::system::commands::factory_reset,
         core::system::commands::take_pending_webdata_reset,
@@ -499,10 +500,6 @@ pub fn run() {
         if let RunEvent::Exit = event {
             let app_handle = app.clone();
 
-            // Drain any debounced settings writes before the process dies so
-            // jan CLI never reads a stale settings.json.
-            core::app::settings_store::flush_settings();
-
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 if let Some(window) = app_handle.get_webview_window("main") {
@@ -527,39 +524,9 @@ pub fn run() {
 
             // Run cleanup synchronously and WAIT for it to complete
             tokio::task::block_in_place(|| {
-                tauri::async_runtime::block_on(async {
-                    use crate::core::mcp::helpers::background_cleanup_mcp_servers;
-                    use tauri_plugin_llamacpp::cleanup_llama_processes;
-
-                    let state = app_handle.state::<AppState>();
-
-                    // Increase timeout to 10 seconds and log if it times out
-                    let cleanup_future = background_cleanup_mcp_servers(&app_handle, &state);
-                    match tokio::time::timeout(tokio::time::Duration::from_secs(10), cleanup_future)
-                        .await
-                    {
-                        Ok(_) => log::info!("MCP cleanup completed successfully"),
-                        Err(_) => log::warn!("MCP cleanup timed out after 10 seconds"),
-                    }
-
-                    if let Err(e) = cleanup_llama_processes(app_handle.clone()).await {
-                        log::warn!("Failed to shut down the llama.cpp engine: {}", e);
-                    } else {
-                        log::info!("llama.cpp engine shut down successfully");
-                    }
-
-                    #[cfg(target_os = "macos")]
-                    {
-                        use tauri_plugin_mlx::cleanup_mlx_processes;
-                        if let Err(e) = cleanup_mlx_processes(app_handle.clone()).await {
-                            log::warn!("Failed to cleanup MLX processes: {}", e);
-                        } else {
-                            log::info!("MLX processes cleaned up successfully");
-                        }
-                    }
-
-                    log::info!("App cleanup completed");
-                });
+                tauri::async_runtime::block_on(core::system::shutdown::shutdown_cleanup(
+                    &app_handle,
+                ))
             });
         }
     });
