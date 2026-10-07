@@ -48,7 +48,17 @@ pub struct ProcInfo {
 }
 
 fn normalize(path: &str) -> String {
-    path.replace('\\', "/").to_ascii_lowercase()
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    // `\\?\C:\...` and `\\?\UNC\server\share\...` name the same file as their plain
+    // form. 0.8.4 passes its preset path in the verbatim form, so without this
+    // the sweep never recognises the engine it exists to reap.
+    if let Some(rest) = path.strip_prefix("//?/unc/") {
+        format!("//{rest}")
+    } else if let Some(rest) = path.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        path
+    }
 }
 
 fn is_router_binary(name: &str) -> bool {
@@ -390,6 +400,36 @@ mod tests {
             &PathBuf::from("C:\\Users\\u\\AppData\\Roaming\\Jan\\data"),
         );
         assert_eq!(victims, vec![200]);
+    }
+
+    #[test]
+    fn verbatim_prefixed_preset_paths_match() {
+        // 0.8.4 starts its router with `\\?\C:\...`, the form the sweep exists
+        // to reap; `\\?\UNC\` is the same rule for a data folder on a share.
+        for (pid, preset, data) in [
+            (
+                200,
+                "\\\\?\\C:\\Users\\u\\AppData\\Roaming\\Jan\\data\\llamacpp\\router.preset.ini",
+                "C:\\Users\\u\\AppData\\Roaming\\Jan\\data",
+            ),
+            (
+                201,
+                "\\\\?\\UNC\\srv\\share\\Jan\\data\\llamacpp\\router.preset.ini",
+                "\\\\srv\\share\\Jan\\data",
+            ),
+        ] {
+            let router = proc(
+                pid,
+                Some(4242),
+                "llama-server.exe",
+                &["llama-server.exe", "--models-preset", preset],
+            );
+            assert_eq!(
+                orphaned_engine_pids(&[router], &PathBuf::from(data)),
+                vec![pid],
+                "{preset}"
+            );
+        }
     }
 
     #[test]
