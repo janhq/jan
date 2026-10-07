@@ -162,7 +162,17 @@ export class TauriUpdaterService extends DefaultUpdaterService {
         }
       })
       await invoke('shutdown_for_update')
-      await update.install()
+      try {
+        await update.install()
+      } catch (installError) {
+        // The app is still running, so bring back what `shutdown_for_update`
+        // stopped. The engine restarts on the next model load, MCP servers do
+        // not, and a failed restart must not hide the install error.
+        await invoke('restart_mcp_servers').catch((restartError) => {
+          console.warn('Could not restart MCP servers after a failed install:', restartError)
+        })
+        throw installError
+      }
     } catch (error) {
       console.error('Error downloading update with progress in Tauri:', error)
       throw error

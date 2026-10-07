@@ -272,6 +272,42 @@ describe('TauriUpdaterService', () => {
       errorSpy.mockRestore()
     })
 
+    it('restarts the MCP servers when the installer fails after the shutdown', async () => {
+      const err = new Error('install failed')
+      vi.mocked(invoke).mockResolvedValue(undefined)
+      vi.mocked(check).mockResolvedValueOnce({
+        version: '2.0.0',
+        download: vi.fn().mockResolvedValue(undefined),
+        install: vi.fn().mockRejectedValue(err),
+      } as unknown as Update)
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      await expect(svc.downloadAndInstallWithProgress(vi.fn())).rejects.toBe(err)
+      expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual([
+        'shutdown_for_update',
+        'restart_mcp_servers',
+      ])
+      errorSpy.mockRestore()
+    })
+
+    it('reports the install error when restarting the MCP servers fails too', async () => {
+      const err = new Error('install failed')
+      vi.mocked(invoke).mockImplementation(async (command: string) => {
+        if (command === 'restart_mcp_servers') throw new Error('restart failed')
+      })
+      vi.mocked(check).mockResolvedValueOnce({
+        version: '2.0.0',
+        download: vi.fn().mockResolvedValue(undefined),
+        install: vi.fn().mockRejectedValue(err),
+      } as unknown as Update)
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await expect(svc.downloadAndInstallWithProgress(vi.fn())).rejects.toBe(err)
+      errorSpy.mockRestore()
+      warnSpy.mockRestore()
+    })
+
     it('handles errors in progress callback gracefully', async () => {
       const download = vi.fn().mockImplementation(async (cb) => {
         cb({ event: 'Started' })
