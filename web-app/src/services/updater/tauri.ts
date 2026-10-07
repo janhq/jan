@@ -147,8 +147,13 @@ export class TauriUpdaterService extends DefaultUpdaterService {
         throw new Error('No update available')
       }
 
-      // Use Tauri's downloadAndInstall with progress callback
-      await update.downloadAndInstall((event) => {
+      // Download and verify first, then stop everything the app started, then
+      // run the installer. `downloadAndInstall` would exit the process (Windows)
+      // or swap the bundle (macOS/Linux) without raising `RunEvent::Exit`, so
+      // the engine, MCP servers and agent shells would be left running. The
+      // cleanup sits between the two so a failed download or signature check
+      // leaves the running app untouched.
+      await update.download((event) => {
         try {
           // Forward the event to the callback
           progressCallback(event as UpdateProgressEvent)
@@ -156,6 +161,18 @@ export class TauriUpdaterService extends DefaultUpdaterService {
           console.warn('Error in download progress callback:', callbackError)
         }
       })
+      await invoke('shutdown_for_update')
+      try {
+        await update.install()
+      } catch (installError) {
+        // The app is still running, so bring back what `shutdown_for_update`
+        // stopped. The engine restarts on the next model load, MCP servers do
+        // not, and a failed restart must not hide the install error.
+        await invoke('restart_mcp_servers').catch((restartError) => {
+          console.warn('Could not restart MCP servers after a failed install:', restartError)
+        })
+        throw installError
+      }
     } catch (error) {
       console.error('Error downloading update with progress in Tauri:', error)
       throw error
