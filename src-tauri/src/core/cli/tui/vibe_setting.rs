@@ -14,7 +14,7 @@
 //! tool permissions needs a typed `yes` rather than a single key.
 
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::Paragraph;
 use serde_json::{json, Value};
 
 use super::{
@@ -600,9 +600,7 @@ pub(super) fn lines(proposal: &VibeProposal, width: u16) -> Vec<Line<'static>> {
 
 pub(super) fn draw(f: &mut Frame, area: Rect, proposal: &VibeProposal) {
     use ratatui::widgets::Clear;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = super::panel_block(super::theme::border_active())
         .title(Span::styled(
             " vibe-setting: proposed changes ",
             Style::new().on_cyan().black().bold(),

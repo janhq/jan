@@ -1,63 +1,62 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
-|┌ Models ──────────────────────────────────────────────────────────────────────┐|
-|│  All models               5│All available models                             │|
-|│  tokamak                  1│⌕ █                                              │|
-|│  anthropic                2│  tokamak / tokamak-1-preview                    │|
-|│  openai                   2│  anthropic / claude-haiku-4-5                   │|
-|│                            │  anthropic / claude-sonnet-4-5                  │|
-|│                            │▶ openai / gpt-5-mini                            │|
-|│                            │  openai / gpt-5.1                               │|
-|│                            │                                                 │|
-|│                            │                                                 │|
-|│                            │                                                 │|
-|│                            │openai/gpt-5-mini · current                      │|
-|│Enter choose · Left/Right panes · Up/Down move · type to search · Ctrl-R refr…│|
-|└──────────────────────────────────────────────────────────────────────────────┘|
+|╭ Models ──────────────────────────────────────────────────────────────────────╮|
+|│   All models               5│All available models                            │|
+|│   tokamak                  1│⌕ █                                             │|
+|│   anthropic                2│  tokamak / tokamak-1-preview                   │|
+|│   openai                   2│  anthropic / claude-haiku-4-5                  │|
+|│                             │  anthropic / claude-sonnet-4-5                 │|
+|│                             │▶ openai / gpt-5-mini                           │|
+|│                             │  openai / gpt-5.1                              │|
+|│                             │                                                │|
+|│                             │                                                │|
+|│                             │                                                │|
+|│                             │openai/gpt-5-mini · current                     │|
+|│ Enter choose · Left/Right panes · Up/Down move · type to search · Ctrl-R re… │|
+|╰──────────────────────────────────────────────────────────────────────────────╯|
 
- 0 0..1 fg=Cyan
+ 0 0..1 fg=#56B6C2
  0 1..9 fg=Black bg=Cyan mod=BOLD
- 0 9..80 fg=Cyan
- 1 0..1 fg=Cyan
- 1 3..29 mod=REVERSED
- 1 29..30 fg=DarkGray
- 1 30..50 mod=BOLD
- 1 79..80 fg=Cyan
- 2 0..1 fg=Cyan
- 2 29..33 fg=DarkGray
- 2 79..80 fg=Cyan
- 3 0..1 fg=Cyan
- 3 29..30 fg=DarkGray
- 3 79..80 fg=Cyan
- 4 0..1 fg=Cyan
- 4 29..30 fg=DarkGray
- 4 79..80 fg=Cyan
- 5 0..1 fg=Cyan
- 5 29..30 fg=DarkGray
- 5 79..80 fg=Cyan
- 6 0..1 fg=Cyan
- 6 29..30 fg=DarkGray
- 6 30..79 mod=BOLD | REVERSED
- 6 79..80 fg=Cyan
- 7 0..1 fg=Cyan
- 7 29..30 fg=DarkGray
- 7 79..80 fg=Cyan
- 8 0..1 fg=Cyan
- 8 29..30 fg=DarkGray
- 8 79..80 fg=Cyan
- 9 0..1 fg=Cyan
- 9 29..30 fg=DarkGray
- 9 79..80 fg=Cyan
-10 0..1 fg=Cyan
-10 29..30 fg=DarkGray
-10 79..80 fg=Cyan
-11 0..1 fg=Cyan
-11 29..57 fg=DarkGray
-11 79..80 fg=Cyan
-12 0..1 fg=Cyan
-12 1..79 fg=DarkGray
-12 79..80 fg=Cyan
-13 0..80 fg=Cyan
+ 0 9..80 fg=#56B6C2
+ 1 0..1 fg=#56B6C2
+ 1 4..30 mod=REVERSED
+ 1 30..31 fg=DarkGray
+ 1 31..51 mod=BOLD
+ 1 79..80 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 30..34 fg=DarkGray
+ 2 79..80 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 30..31 fg=DarkGray
+ 3 79..80 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 30..31 fg=DarkGray
+ 4 79..80 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 30..31 fg=DarkGray
+ 5 79..80 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 30..31 fg=DarkGray
+ 6 31..78 mod=BOLD | REVERSED
+ 6 79..80 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 30..31 fg=DarkGray
+ 7 79..80 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 30..31 fg=DarkGray
+ 8 79..80 fg=#56B6C2
+ 9 0..1 fg=#56B6C2
+ 9 30..31 fg=DarkGray
+ 9 79..80 fg=#56B6C2
+10 0..1 fg=#56B6C2
+10 30..31 fg=DarkGray
+10 79..80 fg=#56B6C2
+11 0..1 fg=#56B6C2
+11 30..58 fg=DarkGray
+11 79..80 fg=#56B6C2
+12 0..1 fg=#56B6C2
+12 2..78 fg=DarkGray
+12 79..80 fg=#56B6C2
+13 0..80 fg=#56B6C2

@@ -1,19 +1,18 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    [working]                          |
-|┌ subagents ─────────────────────────────────────────────────────────────────────────────┐|
-|│▶ kv-review  ·  4t  ·  75% cached  ·  read src/mod_3.rs                                 │|
-|│  perf-scan  ·  3t  ·  0% cached  ·  read src/mod_2.rs                                  │|
-|│  lint-fix  ·  1t  ·  read src/mod_0.rs                                                 │|
-|│  docs-writer  ·  0t  ·  queued (1)                                                     │|
-|│  collector  ·  0t  ·  phase 2 (waiting)                                                │|
+|╭ subagents ─────────────────────────────────────────────────────────────────────────────╮|
+|│ ▶ kv-review  ·  4t  ·  75% cached  ·  read src/mod_3.rs                                │|
+|│   perf-scan  ·  3t  ·  0% cached  ·  read src/mod_2.rs                                 │|
+|│   lint-fix  ·  1t  ·  read src/mod_0.rs                                                │|
+|│   docs-writer  ·  0t  ·  queued (1)                                                    │|
+|│   collector  ·  0t  ·  phase 2 (waiting)                                               │|
 |│                                                                                        │|
 |│                                                                                        │|
 |│                                                                                        │|
-|└────────────────────────────────────────────────────────────────────────────────────────┘|
+|╰────────────────────────────────────────────────────────────────────────────────────────╯|
 |                                                                                          |
 |──────────────────────────────────────────────────────────────────────────────────────────|
 |selecting…                                                                                |
@@ -24,7 +23,25 @@ expression: render_snapshot(buf)
  0 3..14 mod=BOLD
  0 14..29 fg=Yellow
  0 55..64 fg=Cyan mod=BOLD
- 2 1..89 fg=Cyan mod=BOLD
+ 1 0..90 fg=#56B6C2
+ 2 0..1 fg=#56B6C2
+ 2 2..88 fg=Cyan mod=BOLD
+ 2 89..90 fg=#56B6C2
+ 3 0..1 fg=#56B6C2
+ 3 89..90 fg=#56B6C2
+ 4 0..1 fg=#56B6C2
+ 4 89..90 fg=#56B6C2
+ 5 0..1 fg=#56B6C2
+ 5 89..90 fg=#56B6C2
+ 6 0..1 fg=#56B6C2
+ 6 89..90 fg=#56B6C2
+ 7 0..1 fg=#56B6C2
+ 7 89..90 fg=#56B6C2
+ 8 0..1 fg=#56B6C2
+ 8 89..90 fg=#56B6C2
+ 9 0..1 fg=#56B6C2
+ 9 89..90 fg=#56B6C2
+10 0..90 fg=#56B6C2
 13 0..10 mod=DIM | ITALIC
 15 0..1 fg=DarkGray
 15 2..17 fg=DarkGray

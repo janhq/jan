@@ -1999,7 +1999,7 @@ impl PendingAsk {
     /// Rows the whole box needs at `width`: borders, question, every option and
     /// the help line.
     fn box_height(&self, width: u16) -> u16 {
-        let inner = width.saturating_sub(2);
+        let inner = panel_inner_width(width);
         let options: usize = self.option_lines(inner).iter().map(|item| item.len()).sum();
         let question = self.question_lines(inner).len();
         (question + options + 3).min(u16::MAX as usize) as u16
@@ -8267,6 +8267,26 @@ fn select_style() -> Style {
 }
 
 const SELECT_MARK: &str = "\u{25b6} ";
+
+/// Columns a [`panel_block`] takes from its area: a border and one column of
+/// padding on each side. Docks size their content to `width - PANEL_INSET`.
+const PANEL_INSET: u16 = 4;
+
+/// The width content gets inside a [`panel_block`] of outer `width`.
+fn panel_inner_width(width: u16) -> u16 {
+    width.saturating_sub(PANEL_INSET)
+}
+
+/// The frame every bordered panel shares: rounded corners in a palette
+/// colour, and a column of padding so text never sits flush on the border.
+/// Only horizontal padding, so a panel's row budget is unchanged.
+fn panel_block(border: Color) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_style(Style::new().fg(border))
+        .padding(ratatui::widgets::Padding::horizontal(1))
+}
 
 /// Render focused-diff text as a boxed panel: a light rule frames the change,
 /// `+` rows on a green background and `-` rows on a red one across the whole row
@@ -14605,7 +14625,7 @@ fn agent_message_rect(
     body: ratatui::layout::Rect,
     input: ratatui::layout::Rect,
 ) -> ratatui::layout::Rect {
-    let height = (agent_message_lines(prompt, input.width.saturating_sub(2)).len() as u16 + 2)
+    let height = (agent_message_lines(prompt, panel_inner_width(input.width)).len() as u16 + 2)
         .min(body.height);
     ratatui::layout::Rect {
         x: input.x,
@@ -14617,9 +14637,7 @@ fn agent_message_rect(
 
 fn draw_agent_message(f: &mut Frame, area: ratatui::layout::Rect, prompt: &AgentMessagePrompt) {
     use ratatui::widgets::Clear;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" message subagent: {} ", prompt.name),
             Style::new().on_cyan().black().bold(),
@@ -19593,7 +19611,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         // so content is laid out at the *inner* width -- using the outer width
         // would push the context rail's right edge under the border and
         // silently clip it.
-        let content_w = chunks[2].width.saturating_sub(2).max(1);
+        let content_w = panel_inner_width(chunks[2].width).max(1);
         let lines = readout_lines(app, readout, content_w as usize);
         let height = (lines.len() as u16 + 2).min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
@@ -19603,9 +19621,7 @@ fn draw(f: &mut Frame, app: &mut App) {
             width: chunks[2].width,
             height,
         };
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::new().cyan())
+        let block = panel_block(theme::border_active())
             .title(Span::styled(
                 format!(" {} ", readout.title()),
                 Style::new().on_cyan().black().bold(),
@@ -19646,7 +19662,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         draw_login(f, rect, prompt);
     } else if let Some(prompt) = &app.plugin_setup {
         let height =
-            (plugin_setup_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+            (plugin_setup_lines(prompt, panel_inner_width(chunks[2].width)).len() as u16 + 2)
                 .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
@@ -19659,7 +19675,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else if let Some(confirm) = &app.browser_confirm {
         draw_browser_confirm_overlay(f, confirm, chunks[2], chunks[1]);
     } else if let Some(proposal) = &app.vibe_confirm {
-        let height = (vibe_setting::lines(proposal, chunks[2].width.saturating_sub(2)).len()
+        let height = (vibe_setting::lines(proposal, panel_inner_width(chunks[2].width)).len()
             as u16
             + 2)
         .min(chunks[1].height);
@@ -19673,7 +19689,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         vibe_setting::draw(f, rect, proposal);
     } else if let Some(prompt) = &app.settings_prompt {
         let toml_path = app.agent_dir.join("agent.toml");
-        let height = (settings_prompt_lines(prompt, &toml_path, chunks[2].width.saturating_sub(2))
+        let height = (settings_prompt_lines(prompt, &toml_path, panel_inner_width(chunks[2].width))
             .len() as u16
             + 2)
         .min(chunks[1].height);
@@ -19688,7 +19704,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     } else if let Some(prompt) = &app.agent_message {
         draw_agent_message(f, agent_message_rect(prompt, chunks[1], chunks[2]), prompt);
     } else if let Some(prompt) = &app.mcp_prompt {
-        let height = (mcp_prompt_lines(prompt, chunks[2].width.saturating_sub(2)).len() as u16 + 2)
+        let height = (mcp_prompt_lines(prompt, panel_inner_width(chunks[2].width)).len() as u16 + 2)
             .min(chunks[1].height);
         let y = chunks[2].y.saturating_sub(height).max(chunks[1].y);
         let rect = ratatui::layout::Rect {
@@ -19721,7 +19737,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         };
         draw_ask(f, rect, ask, queue_len);
     } else if let Some(pending) = app.pending() {
-        let inner_w = chunks[2].width.saturating_sub(2);
+        let inner_w = panel_inner_width(chunks[2].width);
         let detail_rows = pending.detail_lines(inner_w).len() as u16;
         let diff_rows = pending.diff_preview(inner_w).len() as u16;
         let height =
@@ -19804,9 +19820,7 @@ fn draw_ask(f: &mut Frame, area: Rect, ask: &mut PendingAsk, queue_len: usize) {
         parts.push(format!("{secs}s"));
     }
     let title = format!(" {} ", parts.join(" \u{b7} "));
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
     let inner = block.inner(area);
     let question = ask.question_lines(inner.width);
@@ -19889,9 +19903,7 @@ fn draw_account_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Accou
     let provider = prompt.provider_id();
     let name = crate::core::cli::auth::provider_by_id(provider)
         .map_or("provider", |definition| definition.name);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" {name} sign-in "),
             Style::new().on_cyan().black().bold(),
@@ -20087,7 +20099,7 @@ fn draw_browser_confirm_overlay(
     input: ratatui::layout::Rect,
     body: ratatui::layout::Rect,
 ) {
-    let height = (browser_confirm_lines(confirm, input.width.saturating_sub(2)).len() as u16 + 2)
+    let height = (browser_confirm_lines(confirm, panel_inner_width(input.width)).len() as u16 + 2)
         .min(body.height);
     let y = input.y.saturating_sub(height).max(body.y);
     let rect = ratatui::layout::Rect {
@@ -20102,9 +20114,7 @@ fn draw_browser_confirm_overlay(
 fn draw_browser_confirm(f: &mut Frame, area: ratatui::layout::Rect, confirm: &BrowserConfirm) {
     use ratatui::widgets::Clear;
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             " open a browser? ",
             Style::new().on_cyan().black().bold(),
@@ -20122,9 +20132,7 @@ fn draw_browser_confirm(f: &mut Frame, area: ratatui::layout::Rect, confirm: &Br
 fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) {
     use ratatui::widgets::Clear;
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(
                 " {} sign-in ",
@@ -20148,9 +20156,7 @@ fn draw_login(f: &mut Frame, area: ratatui::layout::Rect, prompt: &LoginPrompt) 
 fn draw_plugin_setup(f: &mut Frame, area: ratatui::layout::Rect, prompt: &PluginSetupPrompt) {
     use ratatui::widgets::Clear;
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" plugin setup: {} ", prompt.plugin),
             Style::new().on_cyan().black().bold(),
@@ -20230,9 +20236,7 @@ fn draw_settings_prompt(
 ) {
     use ratatui::widgets::Clear;
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             format!(" agent settings: {} ", prompt.def().key),
             Style::new().on_cyan().black().bold(),
@@ -20327,9 +20331,7 @@ fn draw_mcp_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &McpPromp
     } else {
         " mcp server: add "
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
 
     f.render_widget(Clear, area);
@@ -20417,9 +20419,7 @@ fn draw_provider_prompt(f: &mut Frame, area: ratatui::layout::Rect, prompt: &Pro
     } else {
         " provider: add "
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(title, Style::new().on_cyan().black().bold()));
 
     let mut lines = Vec::new();
@@ -20530,9 +20530,7 @@ fn draw_slash_hints(
             }
         })
         .collect();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().dark_gray())
+    let block = panel_block(theme::border_idle())
         .title(Span::styled(" commands + skills ", Style::new().dim()));
     f.render_widget(Clear, area);
     let list = List::new(items)
@@ -20576,9 +20574,7 @@ fn draw_path_hints(
             ListItem::new(Line::from(spans))
         })
         .collect();
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().dark_gray())
+    let block = panel_block(theme::border_idle())
         .title(Span::styled(" path ", dim));
     f.render_widget(Clear, area);
     let list = List::new(items)
@@ -20606,9 +20602,7 @@ fn draw_permission(
     } else {
         " permission required ".to_string()
     };
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().yellow())
+    let block = panel_block(theme::warning())
         .title(Span::styled(title, Style::new().on_yellow().black().bold()));
     let inner = block.inner(area);
     f.render_widget(Clear, area);
@@ -20658,9 +20652,7 @@ fn count_label(label: &str, count: usize, width: u16) -> String {
 fn draw_model_picker(f: &mut Frame, area: Rect, picker: &ModelPicker, current_model: &str) {
     use ratatui::widgets::{Clear, List, ListItem, ListState};
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::new().cyan())
+    let block = panel_block(theme::border_active())
         .title(Span::styled(
             " Models ",
             Style::new().on_cyan().black().bold(),
@@ -20867,7 +20859,7 @@ fn draw_picker(
         })
         .collect();
     let list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(picker.title()))
+        .block(panel_block(theme::border_active()).title(picker.title()))
         .highlight_style(select_style())
         .highlight_symbol(SELECT_MARK);
     let mut state = ListState::default();
@@ -20878,7 +20870,7 @@ fn draw_picker(
     // rows themselves stay terse (`key  = value`) because the detail footer
     // explains what each knob does.
     if let Some(search) = &picker.search {
-        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let block = panel_block(theme::border_active()).title(picker.title());
         let inner = block.inner(area);
         f.render_widget(block, area);
         let rows = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(inner);
@@ -20957,7 +20949,7 @@ fn draw_picker(
     } else if let (PickerKind::McpServer, Some(detail)) = (picker.kind, mcp_detail) {
         // The info block and the actions share one border: they are one screen,
         // and two stacked frames would read as two unrelated panels.
-        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let block = panel_block(theme::border_active()).title(picker.title());
         let inner = block.inner(area);
         f.render_widget(block, area);
 
@@ -20983,7 +20975,7 @@ fn draw_picker(
         // One subagent's live detail: rendered from the panels, not the picker
         // rows, so it updates in place as the child works and empties when it
         // finishes.
-        let block = Block::default().borders(Borders::ALL).title(picker.title());
+        let block = panel_block(theme::border_active()).title(picker.title());
         let inner = block.inner(area);
         f.render_widget(block, area);
         let lines = agent_detail_lines(subagents, agent_detail, inner.width, inner.height);
