@@ -329,3 +329,28 @@ fn a_replaced_buffer_is_rescanned() {
     assert!(app.answer_started());
     assert!(!app.reasoning_open());
 }
+
+/// A redraw with the reply unchanged (a spinner tick mid-stream) reuses the
+/// rendered tail instead of re-parsing its markdown; new text re-renders it.
+#[test]
+fn an_unchanged_live_tail_is_not_reparsed() {
+    let mut app = test_app();
+    app.status = Status::Running;
+    app.apply(StreamEvent::Token {
+        text: "# Title\n\nSome **bold** answer text.\n".into(),
+    });
+    let mut term = terminal(80, 24);
+    draw_on(&mut term, &mut app);
+    take(&MD_PARSES);
+    draw_on(&mut term, &mut app);
+    assert_eq!(take(&MD_PARSES), 0, "an unchanged tail was re-parsed");
+    app.apply(StreamEvent::Token {
+        text: "More.".into(),
+    });
+    let shown = render_rows(&mut app, 80, 24).join("\n");
+    assert!(shown.contains("answer text. More."), "{shown}");
+    assert!(take(&MD_PARSES) > 0, "new text must re-render the tail");
+    // A new width is a new layout.
+    render_rows(&mut app, 60, 24);
+    assert!(take(&MD_PARSES) > 0, "a resize must re-render the tail");
+}

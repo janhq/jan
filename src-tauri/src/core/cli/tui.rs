@@ -2256,6 +2256,9 @@ struct App {
     /// open), folded in as tokens append; see `BufScan`. Reset wherever the
     /// buffer is cleared or replaced.
     buf_scan: RefCell<BufScan>,
+    /// The streaming tail as last rendered, reused while nothing it is built
+    /// from changed; see `LiveTail`.
+    live_tail: RefCell<Option<LiveTail>>,
     /// The current run of consecutive collapsible tool calls, rendered as one
     /// transcript row that updates in real time and finalizes to a short summary.
     /// edit/write are excluded (they render their own diff panel).
@@ -3069,6 +3072,7 @@ impl App {
             assistant_buf: String::new(),
             reasoning_segs: Vec::new(),
             buf_scan: RefCell::new(BufScan::default()),
+            live_tail: RefCell::new(None),
             tool_group: None,
             grouped_ids: std::collections::HashSet::new(),
             groups: Vec::new(),
@@ -4495,6 +4499,42 @@ impl App {
         let mut scan = self.buf_scan.borrow_mut();
         scan.sync(&self.assistant_buf);
         scan.clone()
+    }
+
+    /// The streaming tail's lines and the kinds of its first and last runs,
+    /// rendered once per change rather than once per frame. A spinner-only
+    /// frame mid-reply used to re-parse the whole reply's markdown (and split
+    /// its reasoning three more times for the kinds).
+    fn live_tail(&self, width: u16) -> (Vec<Line<'static>>, Option<Kind>, Option<Kind>) {
+        let key = LiveTailKey {
+            width,
+            fold: !self.show_reasoning,
+            stream: self.stream_reasoning,
+            gate: think_tags_parsed(),
+            theme: theme::Theme::current(),
+        };
+        let mut cache = self.live_tail.borrow_mut();
+        let hit = cache.as_ref().is_some_and(|c| {
+            c.key == key && c.prose == self.assistant_buf && c.segs == self.reasoning_segs
+        });
+        if !hit {
+            *cache = Some(LiveTail {
+                key,
+                prose: self.assistant_buf.clone(),
+                segs: self.reasoning_segs.clone(),
+                lines: live_assistant_lines(
+                    &self.assistant_buf,
+                    &self.reasoning_segs,
+                    width,
+                    key.fold,
+                    key.stream,
+                ),
+                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs),
+                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs),
+            });
+        }
+        let tail = cache.as_ref().expect("filled above");
+        (tail.lines.clone(), tail.leading, tail.trailing)
     }
 
     /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
@@ -9887,6 +9927,30 @@ impl BufScan {
         self.think_open = self.in_think;
         self.answer = self.settled_answer || (!self.in_think && pending < text.len());
     }
+}
+
+/// Everything besides the buffer and the reasoning segments that the live
+/// tail's rendering reads.
+#[derive(Clone, Copy, PartialEq)]
+struct LiveTailKey {
+    width: u16,
+    fold: bool,
+    stream: bool,
+    gate: bool,
+    theme: theme::Theme,
+}
+
+/// One rendering of the streaming tail. Keyed on the full source, compared
+/// byte for byte: a compare is a memcmp, far cheaper than the markdown parse
+/// it saves, and unlike a length key it cannot be fooled by a buffer that was
+/// replaced rather than appended to.
+struct LiveTail {
+    key: LiveTailKey,
+    prose: String,
+    segs: Vec<ReasoningSeg>,
+    lines: Vec<Line<'static>>,
+    leading: Option<Kind>,
+    trailing: Option<Kind>,
 }
 
 /// Whether `s` (starting at a `<`) is a prefix of some `think_re` match, so
@@ -19552,23 +19616,18 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Streaming prose and the awaiting throbbers have no transcript index; they
     // are rebuilt every frame and ride along as one trailing segment.
     let mut tail: Vec<Line<'static>> = Vec::new();
+    let mut live_trailing = None;
     if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
         // Native reasoning is placed beside the live prose by its offset, so the
         // shared renderer dims/folds it exactly like inline-tag providers.
-        let live = live_assistant_lines(
-            &app.assistant_buf,
-            &app.reasoning_segs,
-            width,
-            !app.show_reasoning,
-            app.stream_reasoning,
-        );
+        let (live, live_leading, trailing) = app.live_tail(width);
+        live_trailing = trailing;
         if !live.is_empty() {
             // Mirror `gap` so the separator above the live block matches what
             // its commit will emit: a band change (prose after a tool call) gets
             // a blank, but streaming reasoning shares the tool band and gets
             // none, so a tool call runs straight into the reasoning below it.
-            let leading = live_leading_kind(&app.assistant_buf, &app.reasoning_segs)
-                .unwrap_or(Kind::Prose);
+            let leading = live_leading.unwrap_or(Kind::Prose);
             if band(app.last_kind) != band(leading)
                 && !trailing_blank(&tail, &app.transcript, width)
             {
@@ -19598,7 +19657,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     let preceding_kind = if tail.is_empty() {
         app.last_kind
     } else {
-        live_trailing_kind(&app.assistant_buf, &app.reasoning_segs).unwrap_or(Kind::Prose)
+        live_trailing.unwrap_or(Kind::Prose)
     };
     if (!orphaned.is_empty() || !app.starting.is_empty())
         && band(preceding_kind) != band(Kind::Tool)
