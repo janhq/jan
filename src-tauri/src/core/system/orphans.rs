@@ -48,7 +48,17 @@ pub struct ProcInfo {
 }
 
 fn normalize(path: &str) -> String {
-    path.replace('\\', "/").to_ascii_lowercase()
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    // `\\?\C:\...` and `\\?\UNC\server\share\...` name the same file as their plain
+    // form. 0.8.4 passes its preset path in the verbatim form, so without this
+    // the sweep never recognises the engine it exists to reap.
+    if let Some(rest) = path.strip_prefix("//?/unc/") {
+        format!("//{rest}")
+    } else if let Some(rest) = path.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        path
+    }
 }
 
 fn is_router_binary(name: &str) -> bool {
