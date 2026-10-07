@@ -506,3 +506,106 @@ fn slash_typing_reads_agent_toml_only_when_it_changes() {
     assert_eq!(take(&AGENT_TOML_READS), 1);
     let _ = std::fs::remove_dir_all(&root);
 }
+
+fn gate(dirty: bool, urgent: bool, animating: bool, since_ms: u64) -> super::super::FrameGate {
+    super::super::FrameGate {
+        dirty,
+        urgent,
+        animating,
+        animated_last: false,
+        since_last: Some(Duration::from_millis(since_ms)),
+    }
+}
+
+/// An idle, unchanged session draws nothing between safety redraws, and the
+/// first frame always draws.
+#[test]
+fn a_still_frame_is_skipped_until_the_safety_redraw() {
+    assert!(super::super::FrameGate::default().due(), "first frame");
+    assert!(!gate(false, false, false, 50).due());
+    assert!(!gate(false, false, false, 999).due());
+    assert!(gate(false, false, false, 1000).due(), "safety redraw");
+}
+
+/// Output alone is capped at one frame per 16ms; input and resizes are not,
+/// and anything animating keeps drawing on the tick.
+#[test]
+fn output_frames_are_capped_and_input_is_not() {
+    assert!(!gate(true, false, false, 5).due(), "output inside the cap");
+    assert!(gate(true, false, false, 16).due(), "output after the cap");
+    assert!(gate(true, true, false, 1).due(), "input draws at once");
+    assert!(gate(false, false, true, 50).due(), "an animation draws on its tick");
+    let mut ending = gate(false, false, false, 50);
+    ending.animated_last = true;
+    assert!(ending.due(), "the frame after an animation stops still draws");
+}
+
+/// The session is still only when nothing on screen moves with time; each
+/// time-driven state the draw path reads keeps frames coming.
+#[test]
+fn animating_lists_every_time_driven_state() {
+    let mut app = test_app();
+    assert!(!app.animating(), "a fresh idle session is still");
+    fn toggles(app: &mut App, name: &str, set: &dyn Fn(&mut App), clear: &dyn Fn(&mut App)) {
+        set(app);
+        assert!(app.animating(), "{name} must keep frames coming");
+        clear(app);
+        assert!(!app.animating(), "{name} cleared, yet still animating");
+    }
+    let mut check = |name: &str, set: &dyn Fn(&mut App), clear: &dyn Fn(&mut App)| {
+        toggles(&mut app, name, set, clear)
+    };
+    check(
+        "a running turn",
+        &|a| a.status = Status::Running,
+        &|a| a.status = Status::Idle,
+    );
+    check(
+        "a parked run",
+        &|a| a.status = Status::Parked,
+        &|a| a.status = Status::Idle,
+    );
+    check(
+        "the run clock",
+        &|a| a.run_started = Some(Instant::now()),
+        &|a| a.run_started = None,
+    );
+    check(
+        "compaction",
+        &|a| a.compacting = Some(super::super::CompactKind::Manual),
+        &|a| a.compacting = None,
+    );
+    check(
+        "mid-run compaction",
+        &|a| a.run_compacting = Some(Instant::now()),
+        &|a| a.run_compacting = None,
+    );
+    check(
+        "a copy notice",
+        &|a| a.copied = Some((Instant::now(), 2)),
+        &|a| a.copied = None,
+    );
+    check(
+        "a streaming tool call",
+        &|a| {
+            a.apply(StreamEvent::ToolCallStarted {
+                id: "s".into(),
+                name: "write".into(),
+            })
+        },
+        &|a| a.starting.clear(),
+    );
+    check(
+        "an awaited child",
+        &|a| a.awaiting.push(("c".into(), "r".into(), "child".into())),
+        &|a| a.awaiting.clear(),
+    );
+    check(
+        "a drag-select",
+        &|a| a.selection = Some(Selection::new((0, 0), SelectionMode::Linear)),
+        &|a| a.selection = None,
+    );
+    // An expired notice shows nothing and so needs no frames.
+    app.copied = Some((Instant::now() - Duration::from_secs(5), 2));
+    assert!(!app.animating(), "an expired copy notice");
+}

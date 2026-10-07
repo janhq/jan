@@ -3461,6 +3461,48 @@ impl App {
         std::mem::take(&mut self.repaint)
     }
 
+    /// Whether the next frame can differ from the last one with no event at
+    /// all, only because time passed. The loop skips drawing an unchanged,
+    /// still frame, so every clock- or frame-driven thing `draw` reads must be
+    /// listed here, or it freezes until the next event (at most
+    /// `FRAME_SAFETY_REDRAW` late):
+    ///
+    /// - a live run (Running or Parked, or a run clock still set): spinner,
+    ///   shimmer, wave, rotating action word, elapsed time and the header
+    ///   wall clock, the `[thinking]` / `thought for` badges and their TTL, the
+    ///   lingering reasoning step's fold timer, a running tool group's clock
+    ///   and live shell boxes, and the retry countdown;
+    /// - compaction (manual or mid-run), whose row shows a spinner and clock;
+    /// - an MCP sign-in, whose badge and detail row spin;
+    /// - subagent panels, monitors, background shells, awaited children and
+    ///   streaming tool-call throbbers, which all animate in the dock/tail;
+    /// - an active `/goal`, whose header chip counts seconds;
+    /// - an `ask` with a timeout, whose title counts down;
+    /// - the `copied N lines` notice until it expires;
+    /// - a closed todo plan until it hides itself;
+    /// - a drag-select, which auto-scrolls while held past an edge.
+    fn animating(&self) -> bool {
+        self.status != Status::Idle
+            || self.run_started.is_some()
+            || self.compacting.is_some()
+            || self.run_compacting.is_some()
+            || self.retrying.is_some()
+            || self.mcp_auth.is_some()
+            || !self.subagents.is_empty()
+            || !self.monitors.is_empty()
+            || !self.bg_shells.is_empty()
+            || !self.awaiting.is_empty()
+            || !self.starting.is_empty()
+            || self.tool_group.as_ref().is_some_and(|g| g.is_running())
+            || self.goal.as_ref().is_some_and(|g| {
+                g.status == crate::core::agent::goal::GoalStatus::Active
+            })
+            || self.ask_queue.iter().any(|a| a.deadline.is_some())
+            || self.copy_notice().is_some()
+            || (self.todos_closed_at.is_some() && !self.todos_expired())
+            || self.selection.as_ref().is_some_and(|s| s.dragging)
+    }
+
     /// Line count of a copy recent enough to still advertise, if any.
     fn copy_notice(&self) -> Option<usize> {
         self.copied
@@ -10025,6 +10067,46 @@ impl BufScan {
     }
 }
 
+/// Minimum spacing between frames drawn for output alone (tokens, subagent
+/// events). Input and resizes draw at once. A fast stream used to draw once
+/// per received batch, with no upper bound; this caps it near 60 frames/s.
+const FRAME_MIN_INTERVAL: Duration = Duration::from_millis(16);
+
+/// Longest a still frame goes without being redrawn, so a time-based state
+/// `App::animating` failed to list still catches up within a second.
+const FRAME_SAFETY_REDRAW: Duration = Duration::from_secs(1);
+
+/// What the render loop knows when deciding whether to draw.
+#[derive(Clone, Copy, Debug, Default)]
+struct FrameGate {
+    /// Some state changed since the last frame (an event was handled).
+    dirty: bool,
+    /// The change was input or a resize: draw now, regardless of the cap.
+    urgent: bool,
+    /// `App::animating` now, and when the last frame was drawn. The second
+    /// keeps one more frame coming after a timer runs out, so the frame
+    /// showing it gone is drawn too.
+    animating: bool,
+    animated_last: bool,
+    /// Time since the last frame; `None` before the first.
+    since_last: Option<Duration>,
+}
+
+impl FrameGate {
+    fn due(&self) -> bool {
+        let Some(since) = self.since_last else {
+            return true;
+        };
+        if since >= FRAME_SAFETY_REDRAW {
+            return true;
+        }
+        if !(self.dirty || self.animating || self.animated_last) {
+            return false;
+        }
+        self.urgent || since >= FRAME_MIN_INTERVAL
+    }
+}
+
 /// What identifies one version of a file without reading it: modification
 /// time and size. `None` from `of` when the file is missing or unreadable.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -10987,6 +11069,15 @@ async fn chat_loop<B: Backend>(
     let mut stop = stop_signal();
     let mut current: Option<CurrentRun> = None;
     let mut ticker = tokio::time::interval(Duration::from_millis(50));
+    // A slow frame must not be followed by a burst of catch-up ticks, each a
+    // full frame of its own; the spinner already catches up by wall time.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    // Frame pacing (see `FrameGate`): what changed since the last frame, and
+    // when that frame was drawn.
+    let mut dirty = true;
+    let mut urgent = false;
+    let mut animated_last = false;
+    let mut last_frame: Option<Instant> = None;
     // Cloned out of `app` so the select arm below can await it while other
     // arms borrow `app` mutably.
     let monitor_set = app.monitor_set.clone();
@@ -11333,15 +11424,6 @@ async fn chat_loop<B: Backend>(
         // buffer and emits ANSI only for changed cells. Skipped under kitty,
         // whose resize handling drops the frame behind a held synchronized
         // frame (see `use_synchronized_output`).
-        if sync_output {
-            let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
-        }
-        // Clear inside the synchronized frame too, so the terminal never
-        // presents an empty screen between clearing and repainting. Kitty
-        // still skips synchronized output, as it does for ordinary draws.
-        if app.take_repaint() {
-            apply_repaint(terminal);
-        }
         // Refresh the detached-shell list from the process registry here, in the
         // live loop, rather than inside `draw`: the registry is process-global, so
         // reading it from the render path would couple every render test to
@@ -11351,19 +11433,56 @@ async fn chat_loop<B: Backend>(
             .into_iter()
             .filter(|s| s.backgrounded)
             .collect();
-        let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
-        if sync_output {
-            let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+        // Skip a frame that would come out identical: nothing handled since the
+        // last one and nothing on screen moving with time. ratatui would emit
+        // no cells for it, but the frame still costs a full layout and writes
+        // the synchronized-output markers and a cursor hide, which wake the
+        // terminal (and tmux) twenty times a second on an idle session.
+        let gate = FrameGate {
+            dirty: dirty || app.repaint,
+            urgent: urgent || app.repaint,
+            animating: app.animating(),
+            animated_last,
+            since_last: last_frame.map(|t| t.elapsed()),
+        };
+        let draw_now = gate.due();
+        if draw_now {
+            if sync_output {
+                let _ = execute!(io::stdout(), BeginSynchronizedUpdate);
+            }
+            // Clear inside the synchronized frame too, so the terminal never
+            // presents an empty screen between clearing and repainting. Kitty
+            // still skips synchronized output, as it does for ordinary draws.
+            if app.take_repaint() {
+                apply_repaint(terminal);
+            }
+            let draw_result = terminal.draw(|f| draw(f, app)).map_err(|e| e.to_string());
+            if sync_output {
+                let _ = execute!(io::stdout(), EndSynchronizedUpdate);
+            }
+            draw_result?;
+            // Outside the synchronized block: `draw` only extracts the text, so the
+            // OSC 52 write can't land in the middle of a frame.
+            if let Some(text) = app.copy_request.take() {
+                copy_to_clipboard(&text);
+            }
+            last_frame = Some(Instant::now());
+            animated_last = gate.animating;
+            dirty = false;
+            urgent = false;
         }
-        draw_result?;
-        // Outside the synchronized block: `draw` only extracts the text, so the
-        // OSC 52 write can't land in the middle of a frame.
-        if let Some(text) = app.copy_request.take() {
-            copy_to_clipboard(&text);
-        }
+        // An output-only change held back by the frame cap is drawn once the
+        // cap has passed, not on whatever wakes the loop next.
+        let deferred = (!draw_now && gate.dirty).then(|| {
+            FRAME_MIN_INTERVAL.saturating_sub(gate.since_last.unwrap_or_default())
+        });
+        // Every arm but a bare tick changed something; the tick only counts
+        // when it carried input.
+        let mut idle_tick = false;
 
         tokio::select! {
             _ = ticker.tick() => {
+                idle_tick = true;
                 // Advance the throbber at its own fixed cadence, catching up
                 // whole frames if a tick stalled (a burst of deltas / slow term).
                 app.advance_spinner(Instant::now());
@@ -11374,6 +11493,10 @@ async fn chat_loop<B: Backend>(
                     app.agent_status.animate();
                 }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
+                    // Input draws at once, past the frame cap: typing must not
+                    // wait on output pacing.
+                    idle_tick = false;
+                    urgent = true;
                     match event::read() {
                         Ok(Event::Key(key)) => {
                             #[cfg(unix)]
@@ -11557,7 +11680,21 @@ async fn chat_loop<B: Backend>(
             // nothing about the run that dispatched it.
             Some(ev) = session_events.recv() => {
                 apply_stream_event(app, Some(ev), &mut current).await;
+                // Drained like the run's own channel, so a fan-out of children
+                // streaming at once costs one frame per burst, not per token.
+                let mut applied = 1;
+                while applied < EVENT_DRAIN_MAX {
+                    let Ok(ev) = session_events.try_recv() else {
+                        break;
+                    };
+                    apply_stream_event(app, Some(ev), &mut current).await;
+                    applied += 1;
+                }
             }
+            _ = tokio::time::sleep(deferred.unwrap_or_default()), if deferred.is_some() => {}
+        }
+        if !idle_tick {
+            dirty = true;
         }
     }
 
