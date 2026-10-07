@@ -6,6 +6,7 @@ import {
 import { Progress } from '@/components/ui/progress'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useAppUpdateDownload } from '@/stores/app-update-download-store'
+import { useAppUpdater } from '@/hooks/useAppUpdater'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { events, AppEvent, ServiceKeys } from '@janhq/core'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
@@ -31,6 +32,7 @@ export function DownloadManagement() {
   } = useDownloadStore()
   const appUpdateState = useAppUpdateDownload()
   const setAppUpdateState = appUpdateState.update
+  const { downloadAndInstallUpdate } = useAppUpdater()
 
   const onAppUpdateDownloadUpdate = useCallback(
     (data: {
@@ -58,12 +60,33 @@ export function DownloadManagement() {
     })
   }, [t, setAppUpdateState])
 
-  const onAppUpdateDownloadError = useCallback(() => {
-    setAppUpdateState({ isDownloading: false })
-    toast.error(t('common:toast.appUpdateDownloadFailed.title'), {
-      description: t('common:toast.appUpdateDownloadFailed.description'),
-    })
-  }, [t, setAppUpdateState])
+  const onAppUpdateDownloadError = useCallback(
+    (data: { message: string; retryable?: boolean }) => {
+      setAppUpdateState({ isDownloading: false })
+      const retryable = data.retryable !== false
+      toast.error(
+        t(
+          retryable
+            ? 'common:toast.appUpdateDownloadFailed.title'
+            : 'updater:restartFailed'
+        ),
+        {
+          description: data.message,
+          duration: Number.POSITIVE_INFINITY,
+          closeButton: true,
+          ...(retryable && {
+            action: {
+              label: t('updater:retry'),
+              onClick: () => {
+                void downloadAndInstallUpdate()
+              },
+            },
+          }),
+        }
+      )
+    },
+    [downloadAndInstallUpdate, setAppUpdateState, t]
+  )
 
   const downloadProcesses = useMemo(() => {
     // Get downloads with progress data
