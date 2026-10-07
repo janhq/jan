@@ -7,8 +7,8 @@ expression: render_snapshot(buf)
 |• perf-scan  3t · 3r · 15.6% · 0% cached                                |
 |  +3 more · /agents                                                     |
 
- 0 0..2 fg=Magenta
- 0 2..10 fg=Magenta mod=BOLD
+ 0 0..2 fg=#56B6C2
+ 0 2..10 fg=#56B6C2 mod=BOLD
  1 0..11 fg=Magenta
  1 11..41 fg=#808080
  2 0..11 fg=Magenta

@@ -14,8 +14,8 @@ expression: render_snapshot(buf)
 |· collector  phase 2 · waiting                                          |
 |   review the file                                                      |
 
- 0 0..2 fg=Magenta
- 0 2..10 fg=Magenta mod=BOLD
+ 0 0..2 fg=#56B6C2
+ 0 2..10 fg=#56B6C2 mod=BOLD
  1 0..11 fg=Magenta
  1 11..41 fg=#808080
  2 3..20 mod=DIM

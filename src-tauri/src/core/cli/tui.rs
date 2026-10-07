@@ -21061,10 +21061,10 @@ fn agents_column(
     let dim = Style::new().fg(theme::muted());
     let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
-        Span::styled("≡ ", Style::new().magenta()),
+        Span::styled(AGENT_PANEL_GLYPH, Style::new().fg(theme::accent())),
         Span::styled(
             pluralize("agent", panels.len()),
-            Style::new().magenta().bold(),
+            Style::new().fg(theme::accent()).bold(),
         ),
     ])];
 
@@ -21291,6 +21291,16 @@ fn provider_label_for_model(
     }
 }
 
+/// Status badge glyphs: filled when settled, a ringed dot while the model
+/// runs, hollow while the run is parked on background work.
+const STATUS_GLYPH_IDLE: &str = "\u{25cf}";
+const STATUS_GLYPH_RUNNING: &str = "\u{25c9}";
+const STATUS_GLYPH_PARKED: &str = "\u{25cb}";
+
+/// Header glyphs of the docked panels, paired with the accent like the badge.
+const TODO_PANEL_GLYPH: &str = "\u{2713} ";
+const AGENT_PANEL_GLYPH: &str = "\u{2261} ";
+
 fn header(app: &App) -> Paragraph<'static> {
     Paragraph::new(Line::from(header_spans(app)))
 }
@@ -21438,6 +21448,18 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
         ));
     }
     spans.push(Span::raw("  "));
+    // One glyph per run state, in the badge's own colour, so the state reads
+    // by shape as well as by word and colour. Every glyph is one cell, so a
+    // state change moves nothing but the label.
+    let glyph = match app.status {
+        Status::Idle => STATUS_GLYPH_IDLE,
+        Status::Running => STATUS_GLYPH_RUNNING,
+        Status::Parked => STATUS_GLYPH_PARKED,
+    };
+    spans.push(Span::styled(
+        format!("{glyph} "),
+        style.remove_modifier(Modifier::BOLD),
+    ));
     if app.is_thinking() {
         // Folded reasoning is the one stretch of a run that puts nothing on
         // screen, so the badge carries the motion. Colour only: the brackets
@@ -21520,7 +21542,10 @@ fn phase_position(todos: &crate::core::agent::todo::TodoList) -> usize {
 /// Todos · 1/2 · backend 1/3   /todo
 /// ```
 fn todo_pin(todos: &crate::core::agent::todo::TodoList) -> Line<'static> {
-    let mut spans = vec![Span::styled("Todos", Style::new().fg(theme::accent()).bold())];
+    let mut spans = vec![
+        Span::styled(TODO_PANEL_GLYPH, Style::new().fg(theme::accent())),
+        Span::styled("Todos", Style::new().fg(theme::accent()).bold()),
+    ];
     if todos.phases.len() > 1 {
         spans.push(Span::styled(
             format!(" · {}/{}", phase_position(todos), todos.phases.len()),
@@ -38839,6 +38864,37 @@ mod tests {
         );
         assert!(rows[input + 1].trim().is_empty());
         assert!(rows.last().unwrap().contains("/tmp/repo"));
+    }
+
+    /// Every state glyph is one cell, so switching state never shifts the
+    /// badge, and each state has its own shape.
+    #[test]
+    fn status_and_panel_glyphs_are_one_cell_and_distinct() {
+        use unicode_width::UnicodeWidthStr;
+        let states = [
+            super::STATUS_GLYPH_IDLE,
+            super::STATUS_GLYPH_RUNNING,
+            super::STATUS_GLYPH_PARKED,
+        ];
+        for glyph in states {
+            assert_eq!(glyph.width(), 1, "{glyph}");
+        }
+        assert_eq!(states.iter().collect::<std::collections::HashSet<_>>().len(), 3);
+        assert_eq!(super::TODO_PANEL_GLYPH.width(), super::AGENT_PANEL_GLYPH.width());
+        assert_eq!(super::TODO_PANEL_GLYPH.width(), 2, "glyph plus a space");
+    }
+
+    #[test]
+    fn the_status_glyph_follows_the_run_state() {
+        let mut app = test_app();
+        let badge = |app: &App| -> String {
+            header_spans(app).iter().map(|s| s.content.as_ref()).collect()
+        };
+        assert!(badge(&app).contains(&format!("{} [ready]", super::STATUS_GLYPH_IDLE)));
+        app.status = Status::Parked;
+        assert!(badge(&app).contains(&format!("{} [waiting]", super::STATUS_GLYPH_PARKED)));
+        app.status = Status::Running;
+        assert!(badge(&app).contains(&format!("{} [working]", super::STATUS_GLYPH_RUNNING)));
     }
 
     /// The pin answers "where are we now" in one line, and carries the hint
