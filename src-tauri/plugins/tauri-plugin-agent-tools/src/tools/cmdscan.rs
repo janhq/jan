@@ -154,9 +154,19 @@ fn ps_target_is_resolution(token: &str) -> bool {
 /// Whether an [`ASSIGNING_BUILTINS`] call assigns anything but an ordinary
 /// variable: one of [`RESOLUTION_VARS`] (`export PATH=...`, cmd's
 /// `set PATH=...`), or a subscripted name (`read 'a[$(rm x)]'`).
-fn assigns_unsafely(args: &[String]) -> bool {
+fn assigns_unsafely(args: &[String], kind: ShellKind) -> bool {
     args.iter().any(|t| {
         let name = t.split_once('=').map_or(t.as_str(), |(name, _)| name);
+        // cmd strips `^` from a name before running it, so `set PA^TH=...`
+        // assigns `PATH` (janhq/jan#9149). POSIX shells and PowerShell read
+        // `^` literally, so only normalize it under Cmd.
+        let normalized;
+        let name = if kind == ShellKind::Cmd {
+            normalized = name.replace('^', "");
+            normalized.as_str()
+        } else {
+            name
+        };
         name.contains('[') || is_resolution_var(name)
     })
 }
@@ -533,7 +543,7 @@ const WRAPPERS: &[&str] = &[
     "until", "for", "case", "select", "coproc", "!",
 ];
 /// [`WRAPPERS`] with a flag that takes a separate value.
-const VALUE_FLAG_WRAPPERS: &[&str] = &["nice", "timeout", "stdbuf", "ionice", "chrt", "exec"];
+const VALUE_FLAG_WRAPPERS: &[&str] = &["nice", "time", "timeout", "stdbuf", "ionice", "chrt", "exec"];
 
 /// Typographic quotes PowerShell accepts as `'` (U+2018-U+201B) and `"`
 /// (U+201C-U+201E), each closing a string any of its class opened.
@@ -908,7 +918,7 @@ fn scan_segment(seg: &str, bases: &mut BTreeSet<String>, kind: ShellKind, depth:
             return false;
         }
         let args = &tokens[idx + 1..];
-        if ASSIGNING_BUILTINS.contains(&windows_name(&base).as_str()) && assigns_unsafely(args) {
+        if ASSIGNING_BUILTINS.contains(&windows_name(&base).as_str()) && assigns_unsafely(args, kind) {
             return false;
         }
         // `printf -v 'a[$(rm x)]'` and `test -v 'a[...]'` evaluate a
@@ -1556,6 +1566,38 @@ mod tests {
         plain("Write-Output $env:USERPROFILE", ShellKind::PowerShell, &["Write-Output"]);
         plain("Write-Output ${env:USERPROFILE}", ShellKind::PowerShell, &["Write-Output"]);
         plain("./build.ps1 -Release", ShellKind::PowerShell, &["./build.ps1"]);
+    }
+
+    /// janhq/jan#9149: `time -o` takes its value as the output file and runs
+    /// the *next* word, so a grant on the filename must not cover the real
+    /// command; and cmd strips `^` from names, so `set PA^TH=...` assigns
+    /// `PATH` and must prompt rather than scan as plain.
+    #[test]
+    fn grant_cannot_hide_behind_time_output_flag_or_cmd_caret_escapes() {
+        // `time -o FILE` writes timing output to FILE and runs the next word.
+        assert_eq!(
+            scan_command_as("time -o ls rm -rf ~", ShellKind::Posix),
+            CommandScan::Opaque
+        );
+        assert_eq!(
+            scan_command_as("time -o FILE cmd", ShellKind::Posix),
+            CommandScan::Opaque
+        );
+        // `time` without a value-taking flag still unwraps to the command.
+        assert_eq!(
+            scan_command_as("time ls -la", ShellKind::Posix),
+            CommandScan::Bases(set(&["ls"]))
+        );
+        // cmd strips `^`: `PA^TH` assigns PATH, so the scan must prompt.
+        assert_eq!(
+            scan_command_as("set PA^TH=C:\\evil& git status", ShellKind::Cmd),
+            CommandScan::Opaque
+        );
+        // POSIX shells read `^` literally: unchanged behavior there.
+        assert_eq!(
+            scan_command_as("set PA^TH=C:\\evil& git status", ShellKind::Posix),
+            CommandScan::Bases(set(&["git", "set"]))
+        );
     }
 
     #[test]
