@@ -33,6 +33,7 @@ use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+mod find;
 mod highlight;
 mod markdown;
 mod theme;
@@ -2280,6 +2281,10 @@ struct App {
     /// Transcript row of a region to scroll into view on the next draw (set when
     /// expanding one that may sit above the pinned-to-bottom viewport).
     reveal: Option<usize>,
+    /// Active `/find` search, `None` when there is none. Display-only: it never
+    /// edits `transcript` or `display_log`, and moves the view only through
+    /// `draw` (see `find::Find::jump`).
+    find: Option<find::Find>,
     input: String,
     /// Composer entries submitted this session, oldest first, for Up/Down recall.
     input_history: Vec<String>,
@@ -3037,6 +3042,7 @@ impl App {
             last_non_low_effort: "medium".into(),
             expanded: std::collections::HashSet::new(),
             reveal: None,
+            find: None,
             input: String::new(),
             input_history: Vec::new(),
             recall_pos: None,
@@ -3283,6 +3289,7 @@ impl App {
         self.shell_set.take_notices();
         self.expanded.clear();
         self.reveal = None;
+        self.find = None;
         self.assistant_buf.clear();
         self.reasoning_segs.clear();
         self.message_queue.clear();
@@ -4160,6 +4167,131 @@ impl App {
             // The regions sit above the answer that follows; scroll the latest
             // into view rather than staying pinned to the bottom.
             self.reveal = all.iter().copied().max();
+        }
+    }
+
+    /// The lines folded region `i` expands to (a tool group's calls, a reasoning
+    /// block, a subagent's call list), or `None` when the row owns no region.
+    /// Shared by `draw` and the search scan, so a match found in the detail is
+    /// on the line `draw` puts there.
+    fn region_detail(&self, i: usize, width: u16) -> Option<Vec<Line<'static>>> {
+        let running_group = self.tool_group.as_ref().filter(|g| g.idx == i);
+        self.groups
+            .iter()
+            .find(|g| g.idx == i)
+            // The still-running group isn't finalized into `groups` yet, but its
+            // row is already clickable/expandable like any other.
+            .or(running_group)
+            .map(|group| group_detail_lines(group, width))
+            .or_else(|| {
+                self.reasoning_blocks
+                    .iter()
+                    .find(|r| r.idx == i)
+                    .map(|block| block.detail.clone())
+            })
+            .or_else(|| {
+                self.subagent_blocks
+                    .iter()
+                    .find(|b| b.idx == i)
+                    .map(|block| block.detail_lines(width))
+            })
+    }
+
+    /// Every committed line matching `needle`, top to bottom. Scans what the
+    /// rows render to, folded detail included, rather than only what is on
+    /// screen: the transcript is built from `display_log`, so this covers the
+    /// whole session. The streaming tail is not committed yet and is skipped.
+    fn find_hits(&self, needle: &str) -> Vec<find::Hit> {
+        let width = self.render_width();
+        let mut hits = Vec::new();
+        let mut scan = |row: usize, detail: bool, lines: &[Line<'static>]| {
+            for (line, l) in lines.iter().enumerate() {
+                if !find::match_ranges(&find::line_text(l), needle).is_empty() {
+                    hits.push(find::Hit { row, detail, line });
+                }
+            }
+        };
+        for (i, row) in self.transcript.iter().enumerate() {
+            scan(i, false, &row.lines(width));
+            if let Some(detail) = self.region_detail(i, width) {
+                scan(i, true, &detail);
+            }
+        }
+        hits
+    }
+
+    /// Unfold whatever hides `hit` (a folded trace, a collapsed region) and owe
+    /// the next draw a jump to it. Unfolding sticks after the search ends, the
+    /// same as a click would.
+    fn reveal_hit(&mut self, hit: find::Hit) {
+        if let Some(run) = self
+            .trace_runs()
+            .into_iter()
+            .find(|r| r.start <= hit.row && hit.row <= r.end)
+        {
+            self.expanded_traces.insert(run.start);
+        }
+        if hit.detail {
+            self.expanded.insert(hit.row);
+        }
+        if let Some(find) = self.find.as_mut() {
+            find.jump = true;
+        }
+    }
+
+    /// `/find <term>`: search the transcript and jump to the match nearest the
+    /// view. A miss is kept as state (rather than a transcript note) so the dock
+    /// can report it without snapping the view back to the bottom.
+    fn start_find(&mut self, term: &str) {
+        let Some(needle) = find::needle(term) else {
+            self.note("usage: /find <term>   (n/N next/previous, Esc clears)");
+            return;
+        };
+        let hits = self.find_hits(&needle);
+        // The lowest row on screen in the last draw; before any draw, the whole
+        // transcript counts as above the view.
+        let bottom = self
+            .row_index
+            .iter()
+            .rev()
+            .find_map(|r| *r)
+            .unwrap_or(self.transcript.len());
+        let current = find::nearest(&hits, bottom);
+        let hit = current.and_then(|i| hits.get(i).copied());
+        self.find = Some(find::Find {
+            term: term.trim().to_string(),
+            hits,
+            current,
+            jump: false,
+        });
+        if let Some(hit) = hit {
+            self.reveal_hit(hit);
+        }
+    }
+
+    /// `n` (`forward`) / `N`: move to the next/previous match, wrapping at the
+    /// ends. Rescans first, so rows that landed since the search began count.
+    fn find_step(&mut self, forward: bool) {
+        let Some(find) = self.find.as_ref() else {
+            return;
+        };
+        let Some(needle) = find::needle(&find.term) else {
+            return;
+        };
+        let from = find.current_hit();
+        let hits = self.find_hits(&needle);
+        let current = match from {
+            Some(from) => find::step(&hits, from, forward),
+            // Nothing matched before; anything that does now is a fresh start.
+            None => find::nearest(&hits, self.transcript.len()),
+        };
+        let hit = current.and_then(|i| hits.get(i).copied());
+        if let Some(find) = self.find.as_mut() {
+            find.hits = hits;
+            find.current = current;
+        }
+        if let Some(hit) = hit {
+            self.reveal_hit(hit);
         }
     }
 
@@ -6592,6 +6724,9 @@ impl App {
         self.turn_cache_write_tokens = 0;
         self.turn_cache_reported = false;
         self.scrollback = 0;
+        // A new turn pins the view to the bottom to follow it, so a search
+        // left behind would highlight text the user has moved on from.
+        self.find = None;
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         // A fresh turn starts with no active reasoning.
@@ -12765,6 +12900,25 @@ async fn handle_key(
     // resumed, so it disarms a pending second-Ctrl-C exit.
     app.exit_armed = false;
 
+    // An active search owns Esc (ahead of cancel and rewind, so the first Esc
+    // only ends the search) and, while the input is empty, `n`/`N`. Once
+    // anything is typed those letters are text again, so a search can never
+    // swallow a message being written.
+    if app.find.is_some() {
+        match key.code {
+            KeyCode::Esc => {
+                app.find = None;
+                app.last_esc = None;
+                return;
+            }
+            KeyCode::Char(c @ ('n' | 'N')) if !ctrl && !alt && app.input.is_empty() => {
+                app.find_step(c == 'n');
+                return;
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
         KeyCode::Esc => {
             // Esc cancels a run or clears typed input; it never quits (that's
@@ -12820,6 +12974,12 @@ async fn handle_key(
         KeyCode::Char('a') if ctrl => app.cursor_line_start(),
         KeyCode::Char('e') if ctrl => app.cursor_line_end(),
         KeyCode::Char('b') if ctrl => app.cursor_left(),
+        // On an empty input there is no character to move over, so Ctrl-F is
+        // free to mean "find" and prompts for the term in the composer.
+        KeyCode::Char('f') if ctrl && app.input.is_empty() => {
+            app.input = "/find ".to_string();
+            app.cursor = app.input.len();
+        }
         KeyCode::Char('f') if ctrl => app.cursor_right(),
         KeyCode::Char('h') if ctrl => app.input_backspace(),
         KeyCode::Char('w') if ctrl => app.delete_unix_word_left(),
@@ -13214,6 +13374,12 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: None,
     },
     SlashCommand {
+        name: "/find",
+        hint: "<term>",
+        description: "Search the transcript; n/N step through matches, Esc clears",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/goal",
         hint: "[condition|clear]",
         description: "Keep working until a condition is met (bare: status)",
@@ -13468,6 +13634,8 @@ const KEY_BINDINGS: &[(&str, &str)] = &[
         "Recall sent messages and drafts (scrolls while typing)",
     ),
     ("PgUp/PgDn", "Scroll the transcript"),
+    ("Ctrl-F", "Search the transcript (on an empty input)"),
+    ("n / N", "Next / previous match (search on, input empty)"),
     ("Ctrl-O", "Expand or collapse all tool calls"),
     ("Ctrl-V", "Paste an image from the clipboard"),
     ("Ctrl-L", "Redraw the screen (repairs a broadcast over it)"),
@@ -13533,6 +13701,7 @@ async fn run_command(
         }
         "compact" => compact_command(app),
         "context" => context_command(app),
+        "find" => app.start_find(arg),
         "usage" => usage_command(app, arg),
         "threads" | "list" => match super::list_threads_in(&app.agent_dir) {
             Ok(threads) if threads.is_empty() => {
@@ -18459,6 +18628,7 @@ fn rebuild_transcript(app: &mut App) {
     app.subagent_blocks.clear();
     app.expanded.clear();
     app.reveal = None;
+    app.find = None;
     app.assistant_buf.clear();
     app.reasoning_segs.clear();
     app.last_kind = Kind::None;
@@ -18540,6 +18710,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
     app.shell_set.take_notices();
     app.expanded.clear();
     app.reveal = None;
+    app.find = None;
     app.assistant_buf.clear();
     app.reasoning_segs.clear();
     app.turn = (0, 0);
@@ -18967,6 +19138,13 @@ fn draw(f: &mut Frame, app: &mut App) {
     let mut segs: Vec<Segment> = Vec::with_capacity(app.transcript.len() + 8);
     let mut content_h: u16 = 0;
     let mut reveal_at: Option<u16> = None;
+    // The current search match: which segment holds it, and (on the frame that
+    // owes the jump) where that segment starts, in wrapped lines.
+    let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
+    let find_jump = app.find.as_ref().is_some_and(|f| f.jump);
+    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
+    let mut find_seg: Option<usize> = None;
+    let mut find_at: Option<u16> = None;
     let frame = app.spinner();
     // A finished trace (an answer follows) folds its run of reasoning/tool rows
     // to one static `Thought/Worked` header unless the user expanded it. The
@@ -19071,6 +19249,12 @@ fn draw(f: &mut Frame, app: &mut App) {
                 lines: None,
             },
         };
+        if find_hit.is_some_and(|h| h.row == i && !h.detail) {
+            find_seg = Some(segs.len());
+            if find_jump {
+                find_at = Some(content_h);
+            }
+        }
         content_h = content_h.saturating_add(seg.height);
         segs.push(seg);
         // The newest reasoning step lingers expanded for a grace window after it
@@ -19092,34 +19276,24 @@ fn draw(f: &mut Frame, app: &mut App) {
             // click anywhere in an expanded block collapses it -- not just on
             // its header row, which may have scrolled out of view once the
             // block grew past the viewport (long reasoning, many tool calls).
-            let running_group = app.tool_group.as_ref().filter(|g| g.idx == i);
-            let detail = app
-                .groups
-                .iter()
-                .find(|g| g.idx == i)
-                // The still-running group isn't finalized into `groups` yet,
-                // but its row is already clickable/expandable like any other.
-                .or(running_group)
-                .map(|group| group_detail_lines(group, width))
-                .or_else(|| {
-                    app.reasoning_blocks.iter().find(|r| r.idx == i).map(|block| {
-                        // A lingering active step shows the same bounded scrolling
-                        // tail the live stream did; a manual expand (click, Ctrl-O)
-                        // shows the whole thing.
-                        if active_reasoning && !app.expanded.contains(&i) {
-                            reasoning_tail_lines(&block.source, width)
-                        } else {
-                            block.detail.clone()
-                        }
-                    })
-                })
-                .or_else(|| {
-                    app.subagent_blocks
-                        .iter()
-                        .find(|b| b.idx == i)
-                        .map(|block| block.detail_lines(width))
-                });
+            // A lingering active step shows the same bounded scrolling tail the
+            // live stream did; a manual expand (click, Ctrl-O) shows the whole
+            // thing.
+            let detail = if active_reasoning && !app.expanded.contains(&i) {
+                app.reasoning_blocks
+                    .iter()
+                    .find(|r| r.idx == i)
+                    .map(|block| reasoning_tail_lines(&block.source, width))
+            } else {
+                app.region_detail(i, width)
+            };
             if let Some(detail) = detail {
+                if find_hit.is_some_and(|h| h.row == i && h.detail) {
+                    find_seg = Some(segs.len());
+                    if find_jump {
+                        find_at = Some(content_h);
+                    }
+                }
                 let seg = Segment::eager(Some(i), detail, width);
                 content_h = content_h.saturating_add(seg.height);
                 segs.push(seg);
@@ -19226,6 +19400,8 @@ fn draw(f: &mut Frame, app: &mut App) {
             },
         );
         reveal_at = reveal_at.map(|n| n.saturating_add(pad));
+        find_at = find_at.map(|n| n.saturating_add(pad));
+        find_seg = find_seg.map(|n| n + 1);
     }
     let total = content_h.saturating_add(pad);
     let max_back = total.saturating_sub(inner_h);
@@ -19235,6 +19411,33 @@ fn draw(f: &mut Frame, app: &mut App) {
         app.scrollback = max_back.saturating_sub(target);
     }
     app.reveal = None;
+    if let (Some(start), Some(hit)) = (find_at, find_hit) {
+        // Down to the matching line inside its segment, measured with the same
+        // wrap the body uses. Only on the jump frame, so the lines above it are
+        // cloned once per `n`/`N`, not every frame.
+        let above = segs
+            .get(find_seg.unwrap_or(usize::MAX))
+            .map(|seg| match &seg.lines {
+                Some(lines) => lines[..hit.line.min(lines.len())].to_vec(),
+                None => app
+                    .transcript
+                    .get(hit.row)
+                    .map(|row| {
+                        let mut lines = row.lines(width);
+                        lines.truncate(hit.line);
+                        lines
+                    })
+                    .unwrap_or_default(),
+            })
+            .map_or(0, |lines| wrapped_height(lines, width));
+        // A third of the way down rather than the top edge, so what led up to
+        // the match is on screen with it.
+        let target = start.saturating_add(above).saturating_sub(inner_h / 3);
+        app.scrollback = max_back.saturating_sub(target);
+    }
+    if let Some(find) = app.find.as_mut() {
+        find.jump = false;
+    }
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
 
@@ -19249,11 +19452,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     let mut row_index: Vec<Option<usize>> = Vec::with_capacity(inner_h as usize);
     let mut first_start: Option<u16> = None;
     let mut at: u16 = 0;
-    for seg in segs {
+    for (n, seg) in segs.into_iter().enumerate() {
         let seg_end = at.saturating_add(seg.height);
         if seg_end > scroll && at < end {
             first_start.get_or_insert(at);
-            visible.extend(match seg.lines {
+            let lines = match seg.lines {
                 Some(lines) => lines,
                 // Committed rows are cloned out of the cache only here.
                 None => seg
@@ -19261,7 +19464,17 @@ fn draw(f: &mut Frame, app: &mut App) {
                     .and_then(|i| app.transcript.get(i))
                     .map(|row| row.lines(width))
                     .unwrap_or_default(),
-            });
+            };
+            // Search highlights are painted onto the lines already being
+            // materialized, so only the viewport pays for them and the row
+            // cache never holds a highlighted copy.
+            match &find_needle {
+                Some(needle) => visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
+                    let current = find_seg == Some(n) && find_hit.is_some_and(|h| h.line == li);
+                    find::highlight_line(line, needle, current)
+                })),
+                None => visible.extend(lines),
+            }
             let visible_rows = seg_end.min(end).saturating_sub(at.max(scroll));
             row_index.extend(std::iter::repeat_n(seg.idx, visible_rows as usize));
         }
@@ -21820,6 +22033,28 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         )];
     }
     let key_style = Style::new().cyan().bold();
+    // While a search is on, its position (or its miss) is the state worth
+    // reporting, and Esc ends the search before it would cancel anything.
+    if let Some(find) = &app.find {
+        let mut spans = match find.current {
+            Some(i) => vec![Span::styled(
+                format!(" find \"{}\" {}/{}", find.term, i + 1, find.hits.len()),
+                Style::new().yellow().bold(),
+            )],
+            None => vec![Span::styled(
+                format!(" no match for \"{}\"", find.term),
+                Style::new().red().bold(),
+            )],
+        };
+        let keys: &[(&str, &str)] = if find.current.is_some() {
+            &[("n/N", "next/prev"), ("Esc", "clear")]
+        } else {
+            &[("Esc", "clear")]
+        };
+        spans.push(Span::raw("  "));
+        spans.extend(hint_spans(key_style, keys));
+        return spans;
+    }
     let mut spans = match app.status {
         // Parked keeps the cancel hint: nothing is generating, but the run is
         // open and Esc is still what ends it (and its background work).
@@ -43020,5 +43255,205 @@ mod tests {
             assert_eq!(tokamak.base_url.as_deref(), Some("https://api-stag.tokamak.sh/v1"));
             assert!(tokamak.models.is_empty(), "not the native roster");
         });
+    }
+
+    /// Render `app` into a test terminal and return the buffer, for the
+    /// transcript search tests that need to see both text and highlight styles.
+    fn find_frame(app: &mut App, w: u16, h: u16) -> Buffer {
+        use ratatui::{backend::TestBackend, Terminal};
+        let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+        terminal.draw(|f| super::draw(f, app)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    fn frame_text(buf: &Buffer) -> String {
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// A finished turn whose answer is long enough that its first line sits
+    /// well above a 12-row viewport pinned to the bottom.
+    fn long_answer_app() -> TestApp {
+        let mut app = test_app();
+        app.submit_user("hi".to_string());
+        app.apply(StreamEvent::Token {
+            text: "needle at top\n".into(),
+        });
+        for i in 0..40 {
+            app.apply(StreamEvent::Token {
+                text: format!("answer line {i}\n"),
+            });
+        }
+        app.on_done("stop".into(), None);
+        app
+    }
+
+    fn footer_text(app: &App) -> String {
+        super::footer_spans(app)
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn find_jumps_to_an_offscreen_match_and_highlights_it() {
+        let mut app = long_answer_app();
+        let before = frame_text(&find_frame(&mut app, 60, 12));
+        assert!(!before.contains("needle"), "match starts off-screen: {before}");
+
+        // Case-insensitive: the term is typed in capitals.
+        run_command(&mut app, "find NEEDLE", &no_mcp()).await;
+        let buf = find_frame(&mut app, 60, 12);
+        let text = frame_text(&buf);
+        assert!(text.contains("needle at top"), "viewport moved to the match: {text}");
+        // By cell, not by byte: the gutter glyphs left of it are multibyte.
+        let (x, y) = (0..buf.area.height)
+            .find_map(|y| {
+                let cells: Vec<&str> = (0..buf.area.width).map(|x| buf[(x, y)].symbol()).collect();
+                (0..cells.len().saturating_sub(5))
+                    .find(|&x| cells[x..x + 6].concat() == "needle")
+                    .map(|x| (x as u16, y))
+            })
+            .unwrap();
+        assert_eq!(
+            buf[(x, y)].style().bg,
+            Some(Color::Yellow),
+            "the current match is highlighted"
+        );
+        assert!(footer_text(&app).contains("1/1"), "{}", footer_text(&app));
+    }
+
+    #[tokio::test]
+    async fn find_with_no_match_reports_it_distinctly() {
+        let mut app = long_answer_app();
+        let rows = app.transcript.len();
+        run_command(&mut app, "find zzz-not-here", &no_mcp()).await;
+        let find = app.find.as_ref().expect("a failed search still shows state");
+        assert!(find.current.is_none());
+        let footer = footer_text(&app);
+        assert!(footer.contains("no match"), "{footer}");
+        assert!(footer.contains("zzz-not-here"), "{footer}");
+        // Reported in the dock, not as a transcript note that would also snap
+        // the view back to the bottom.
+        assert_eq!(app.transcript.len(), rows);
+    }
+
+    #[tokio::test]
+    async fn n_and_shift_n_step_through_matches_and_wrap() {
+        let mut app = test_app();
+        for word in ["alpha one", "beta", "alpha two", "alpha three"] {
+            app.note(word);
+        }
+        run_command(&mut app, "find alpha", &no_mcp()).await;
+        let at = |app: &App| {
+            let f = app.find.as_ref().unwrap();
+            (f.current.unwrap(), f.hits.len())
+        };
+        // Never drawn, so the whole transcript counts as above the view: the
+        // search lands on the newest match.
+        assert_eq!(at(&app), (2, 3));
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        assert_eq!(at(&app), (0, 3), "next wraps past the last match");
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        assert_eq!(at(&app), (1, 3));
+        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        assert_eq!(at(&app), (0, 3));
+        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        assert_eq!(at(&app), (2, 3), "previous wraps past the first match");
+        assert!(app.input.is_empty(), "n/N never reach the composer");
+
+        // With text in the composer, n is typing again.
+        type_key_chars(&mut app, "x").await;
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        assert_eq!(app.input, "xn");
+        assert_eq!(at(&app), (2, 3), "typing does not move the search");
+    }
+
+    #[tokio::test]
+    async fn search_leaves_display_log_and_scroll_alone_except_the_viewport() {
+        let mut app = long_answer_app();
+        let log = app.display_log.clone();
+        let rows = app.transcript.len();
+        app.scrollback = 3;
+        run_command(&mut app, "find answer line", &no_mcp()).await;
+        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        assert_eq!(app.scrollback, 3, "only the draw moves the viewport");
+        press_esc(&mut app).await;
+        assert!(app.find.is_none());
+        assert_eq!(app.scrollback, 3, "clearing leaves the view where it was");
+        assert_eq!(app.display_log, log);
+        assert_eq!(app.transcript.len(), rows);
+    }
+
+    #[tokio::test]
+    async fn esc_and_a_new_turn_clear_the_search() {
+        let mut app = long_answer_app();
+        run_command(&mut app, "find needle", &no_mcp()).await;
+        let _ = find_frame(&mut app, 60, 12);
+        press_esc(&mut app).await;
+        assert!(app.find.is_none());
+        assert!(app.last_esc.is_none(), "clearing a search does not arm rewind");
+        let buf = find_frame(&mut app, 60, 12);
+        let lit = (0..buf.area.height)
+            .any(|y| (0..buf.area.width).any(|x| buf[(x, y)].style().bg == Some(Color::Yellow)));
+        assert!(!lit, "highlight is gone");
+
+        run_command(&mut app, "find needle", &no_mcp()).await;
+        assert!(app.find.is_some());
+        app.submit_user("next question".to_string());
+        assert!(app.find.is_none(), "a new turn clears the search");
+    }
+
+    #[tokio::test]
+    async fn ctrl_f_prompts_for_a_term_only_on_an_empty_input() {
+        let mut app = long_answer_app();
+        press(&mut app, KeyCode::Char('f'), KeyModifiers::CONTROL).await;
+        assert_eq!(app.input, "/find ");
+        type_key_chars(&mut app, "needle").await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        assert!(app.find.as_ref().is_some_and(|f| f.current.is_some()));
+    }
+
+    #[tokio::test]
+    async fn find_reaches_folded_tool_output_and_unfolds_it() {
+        let mut app = test_app();
+        app.submit_user("go".to_string());
+        app.apply(StreamEvent::ToolCall {
+            id: "c1".into(),
+            name: "bash".into(),
+            args: json!({ "command": "ls" }),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "c1".into(),
+            content: "secret-output-xyz".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.apply(StreamEvent::Token {
+            text: "done".into(),
+        });
+        app.on_done("stop".into(), None);
+        let folded = frame_text(&find_frame(&mut app, 60, 20));
+        assert!(!folded.contains("secret-output"), "{folded}");
+
+        run_command(&mut app, "find secret-output", &no_mcp()).await;
+        let hit = app.find.as_ref().unwrap().current_hit().unwrap();
+        assert!(hit.detail, "the match is in the folded detail");
+        let shown = frame_text(&find_frame(&mut app, 60, 20));
+        assert!(shown.contains("secret-output-xyz"), "{shown}");
+    }
+
+    #[test]
+    fn find_is_a_listed_command_and_keybinding() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/find"));
+        assert!(KEY_BINDINGS.iter().any(|(k, _)| k.contains("Ctrl-F")));
+        assert!(KEY_BINDINGS.iter().any(|(k, _)| k.contains("n / N")));
     }
 }

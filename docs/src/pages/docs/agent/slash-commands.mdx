@@ -57,6 +57,7 @@ See [Sessions](/docs/agent/sessions).
 | `/cancel [N]` | Cancel queued messages. Bare: all, or an index |
 | `/agents` | Inspect running subagents: each one's stats and current activity. Select one and press `m` to message it or `x` to stop it |
 | `/shells` (alias `/jobs`) | Inspect and stop background shell commands the agent left running |
+| `/find <term>` | Search the whole transcript (case-insensitive) and jump to the nearest match, unfolding it if needed. <kbd>n</kbd> / <kbd>N</kbd> step to the next / previous match, wrapping at the ends, while the input is empty; <kbd>Esc</kbd> or the next message clears it. A miss is reported in the footer |
 
 See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-todos), and
 [Context and compaction](/docs/agent/context).
