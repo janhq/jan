@@ -162,7 +162,8 @@ fn restore_terminal_modes() {
     let mut stdout = io::stdout();
     let _ = stdout.write_all(
         format!(
-            "{DISABLE_BRACKETED_PASTE}{DISABLE_MOUSE_CAPTURE}{KITTY_KEYS_OFF}{}{LEAVE_ALT_SCREEN}",
+            "{END_SYNC_UPDATE}{DISABLE_BRACKETED_PASTE}{DISABLE_MOUSE_CAPTURE}\
+             {KITTY_KEYS_OFF}{}{LEAVE_ALT_SCREEN}",
             alt_scroll_restore(),
         )
         .as_bytes(),
@@ -177,6 +178,11 @@ fn restore_terminal_modes() {
 /// `impl Write` the `Command` trait can target other than `Stdout` directly,
 /// and writing the bytes once here keeps the panic hook and the normal exit
 /// path byte-for-byte identical.
+/// First, because a panic inside `terminal.draw` lands between the loop's
+/// `BeginSynchronizedUpdate` and its `EndSynchronizedUpdate`: with the frame
+/// still held, the terminal would sit on everything below -- restore and panic
+/// message alike -- until its own sync timeout. A no-op when no frame is open.
+const END_SYNC_UPDATE: &str = "\x1b[?2026l";
 const DISABLE_BRACKETED_PASTE: &str = "\x1b[?2004l";
 const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";

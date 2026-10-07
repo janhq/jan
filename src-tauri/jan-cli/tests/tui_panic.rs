@@ -163,6 +163,9 @@ fn panic_after_raw_mode_leaves_the_terminal_clean() {
         ("alternate screen left", "\x1b[?1049l"),
         ("Kitty keyboard protocol popped", "\x1b[<u"),
         ("cursor shown", "\x1b[?25h"),
+        // A panic inside `terminal.draw` would otherwise leave a synchronized
+        // frame held over the restore and the panic message.
+        ("synchronized update ended", "\x1b[?2026l"),
     ];
     for (label, seq) in restored {
         let at = text.rfind(seq).unwrap_or_else(|| {
