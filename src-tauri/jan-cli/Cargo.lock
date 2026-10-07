@@ -2551,6 +2551,7 @@ dependencies = [
  "clap",
  "console",
  "env_logger",
+ "nix 0.30.1",
  "serde_json",
  "tauri-plugin-agent-tools",
  "tokio",
