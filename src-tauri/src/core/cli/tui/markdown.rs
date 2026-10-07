@@ -280,6 +280,8 @@ pub(super) fn reasoning_summary_row(dur: Option<std::time::Duration>) -> Line<'s
 pub(super) fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
     use pulldown_cmark::{Event, Options, Parser, Tag};
 
+    #[cfg(test)]
+    super::tally(&super::MD_PARSES);
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_STRIKETHROUGH);
     opts.insert(Options::ENABLE_TASKLISTS);

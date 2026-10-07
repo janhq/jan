@@ -1577,6 +1577,26 @@ thread_local! {
     /// Counts `Row::lines` calls, so a test can assert that `draw` materializes
     /// a viewport's worth of rows rather than the whole transcript.
     static ROW_CLONES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Full-buffer `has_answer_text` scans. The streaming paths must stay
+    /// linear in the reply, so the perf tests pin how many run per frame/token.
+    static ANSWER_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// Full-buffer `thinking_open` scans, for the same reason.
+    static THINK_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// `format_markdown_lines` parses: a redraw of an unchanged buffer must
+    /// not re-parse the live tail.
+    static MD_PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// `refresh_path_hints` calls: a paste must refresh once, not per char.
+    static PATH_HINT_REFRESHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// `agent.toml` reads made by the slash popup.
+    static AGENT_TOML_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    /// `trace_runs` rebuilds, which sort every group and reasoning block.
+    static TRACE_RUN_SCANS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Bump one of the test-only work counters above.
+#[cfg(test)]
+fn tally(counter: &'static std::thread::LocalKey<std::cell::Cell<usize>>) {
+    counter.with(|n| n.set(n.get() + 1));
 }
 
 /// Rows a `Paragraph` occupies once it word-wraps `lines` at `width`, measured
@@ -3670,6 +3690,8 @@ impl App {
     /// reasoning blocks and tool groups; the still-running group is the active
     /// tail and never part of a collapsible run.
     fn trace_runs(&self) -> Vec<TraceRun> {
+        #[cfg(test)]
+        tally(&TRACE_RUN_SCANS);
         let mut members: Vec<(usize, bool)> = Vec::new();
         for g in &self.groups {
             members.push((g.idx, true));
@@ -4528,6 +4550,8 @@ impl App {
             .collect();
         let skill_colon = self.input.starts_with("/skill:");
         let command_colon = self.input.starts_with("/command:");
+        #[cfg(test)]
+        tally(&AGENT_TOML_READS);
         let enabled = crate::core::agent::project::load_agent_config(&self.project_root)
             .ok()
             .map(|c| c.skills.enabled)
@@ -4728,6 +4752,8 @@ impl App {
 
     /// Refresh path hints from the input buffer: detect `@query`, search files.
     fn refresh_path_hints(&mut self) {
+        #[cfg(test)]
+        tally(&PATH_HINT_REFRESHES);
         if self.path_hint_dismissed || !self.accepts_input() {
             self.path_hints.clear();
             return;
@@ -9479,6 +9505,8 @@ fn pluralize(noun: &str, n: usize) -> String {
 /// not end the run (a reasoning model thinks before every call), only real
 /// answer text does.
 fn has_answer_text(buf: &str) -> bool {
+    #[cfg(test)]
+    tally(&ANSWER_SCANS);
     split_reasoning(buf)
         .iter()
         .any(|(reasoning, seg)| !reasoning && !seg.trim().is_empty())
@@ -9741,6 +9769,8 @@ fn assistant_runs(prose: &str, segs: &[ReasoningSeg]) -> Vec<(bool, String)> {
 /// matching close has not yet streamed). Used to show `[thinking]` while
 /// reasoning streams. Re-uses the same tag matcher as `split_reasoning`.
 fn thinking_open(text: &str) -> bool {
+    #[cfg(test)]
+    tally(&THINK_SCANS);
     if !think_tags_parsed() {
         return false;
     }
@@ -43769,5 +43799,6 @@ mod tests {
         assert!(KEY_BINDINGS.iter().any(|(k, _)| k.contains("n / N")));
     }
 
+    mod perf;
     mod snapshot;
 }
