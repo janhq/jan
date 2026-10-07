@@ -182,20 +182,44 @@ const DISABLE_MOUSE_CAPTURE: &str = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 const LEAVE_ALT_SCREEN: &str = "\x1b[?1049l";
 const SHOW_CURSOR: &str = "\x1b[?25h";
 
+/// The thread running the render loop while it owns the terminal's modes, or
+/// `None` once they have been restored. Panic hooks are process-wide, but only
+/// a panic on this thread ends the session: a spawned job's panic surfaces as a
+/// `JoinError` the loop shrugs off (`await_mcp_job`, `await_context`, ...), and
+/// tearing the modes down under a TUI that keeps drawing would wreck it. A job
+/// panic the loop does propagate re-panics here, on the owning thread.
+static TERMINAL_OWNER: std::sync::Mutex<Option<std::thread::ThreadId>> =
+    std::sync::Mutex::new(None);
+
+/// Give up the terminal if the current thread owns it, reporting whether it
+/// did. Taking the slot makes the restore run once: a clean exit releases it,
+/// so a later panic (or a second one while unwinding) leaves the shell alone.
+fn release_terminal() -> bool {
+    // A poisoned lock still holds a valid id; the hook must not panic on it.
+    let mut owner = TERMINAL_OWNER.lock().unwrap_or_else(|e| e.into_inner());
+    if *owner == Some(std::thread::current().id()) {
+        *owner = None;
+        true
+    } else {
+        false
+    }
+}
+
 /// Install a panic hook that restores the terminal before the default hook
 /// prints the panic message, so the message lands on a normal, scrollable
 /// screen instead of being swallowed by the alternate buffer or mangled by
 /// raw mode's disabled line-editing. Call once, after `enable_raw_mode` and
-/// before `EnterAlternateScreen`, so every panic from that point on -- in the
-/// render loop, in a key handler, anywhere on this thread or one it spawns --
-/// is caught by this hook rather than the default one. Does not call
-/// `std::process::exit`: unwinding continues exactly as it would have, so a
-/// panic inside a `catch_unwind` boundary (there are none on the render loop
-/// today, but a future one would work correctly) is not short-circuited.
+/// before `EnterAlternateScreen`, on the thread that runs the render loop; it
+/// claims the terminal for that thread (`TERMINAL_OWNER`). Does not call
+/// `std::process::exit`: unwinding continues exactly as it would have.
 fn install_panic_hook() {
+    *TERMINAL_OWNER.lock().unwrap_or_else(|e| e.into_inner()) =
+        Some(std::thread::current().id());
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        restore_terminal_modes();
+        if release_terminal() {
+            restore_terminal_modes();
+        }
         default_hook(info);
     }));
 }
@@ -10007,8 +10031,10 @@ pub async fn run(
     // (`jan-cli/tests/tui_panic.rs`): an in-memory unit test can prove the hook
     // fires, but only a genuine panic on a genuine terminal, with every mode
     // above already turned on, proves the terminal is actually left clean.
-    // Gated on an env var rather than `#[cfg(test)]`, since the assertion runs
-    // in the release-profile binary the test spawns as a subprocess.
+    // Gated on an env var rather than `#[cfg(test)]`: the test spawns the real
+    // `jan` binary (`CARGO_BIN_EXE_jan`), which is never built with cfg(test),
+    // so the trigger ships in every build. Setting it only crashes the caller's
+    // own session.
     if std::env::var_os("JAN_TUI_PANIC_AFTER_RAW_MODE").is_some() {
         panic!("JAN_TUI_PANIC_AFTER_RAW_MODE");
     }
@@ -10142,6 +10168,7 @@ pub async fn run(
     // process that exits now would lose it, and with it that turn's resume.
     app.join_journal();
 
+    release_terminal();
     restore_terminal_modes();
     log::set_max_level(prev_log_level);
     // The session is closed: leave a copyable continuation command on the real
@@ -33007,6 +33034,18 @@ mod tests {
         assert_eq!(flags & 2, 0, "event types would add releases and repeats");
         assert_eq!(flags & 8, 0, "all-keys-as-escapes would reroute plain text");
         assert_eq!(KITTY_KEYS_OFF, "\x1b[<u", "the push must be popped on exit");
+    }
+
+    /// Only the render-loop thread's panic restores the terminal: a spawned
+    /// job's panic is a `JoinError` the loop survives, so it must not tear the
+    /// modes down under a live TUI. And the restore happens once.
+    #[test]
+    fn only_the_owning_thread_releases_the_terminal() {
+        *super::TERMINAL_OWNER.lock().unwrap() = Some(std::thread::current().id());
+        let other = std::thread::spawn(super::release_terminal).join().unwrap();
+        assert!(!other, "a job thread must not release the terminal");
+        assert!(super::release_terminal(), "the owner releases it");
+        assert!(!super::release_terminal(), "and only once");
     }
 
     /// Keyboard enhancement is not the mouse: it goes out whether or not
