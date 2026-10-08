@@ -932,9 +932,25 @@ pub(crate) fn assemble_tool_array(
         tool_sort_key(a_server, a_tool).cmp(&tool_sort_key(b_server, b_tool))
     });
 
-    let mut openai_tools = Vec::with_capacity(flattened.len());
+    // One name, one definition. A collision resolves to the last server in sort
+    // order (what `tool_to_server` always did), and only that server's
+    // definition is advertised: the one the model reads is the one its call
+    // routes to, and no provider sees two functions with the same name.
+    let mut winner: HashMap<String, String> = HashMap::new();
+    for (server_name, tool_name, _) in &flattened {
+        if let Some(previous) = winner.insert(tool_name.clone(), server_name.clone()) {
+            log::warn!(
+                "MCP tool name collision: \"{tool_name}\" is exposed by both \"{previous}\" and \"{server_name}\"; advertising only the definition from \"{server_name}\""
+            );
+        }
+    }
+
+    let mut openai_tools = Vec::with_capacity(winner.len());
     let mut tool_to_server: HashMap<String, String> = HashMap::new();
     for (server_name, tool_name, tool) in flattened {
+        if winner.get(&tool_name) != Some(&server_name) {
+            continue;
+        }
         tool_to_server.insert(tool_name, server_name);
         openai_tools.push(tool);
     }
@@ -2108,10 +2124,10 @@ mod tests {
         assert_eq!(advertised_names(&first), ["read", "write", "commit"]);
     }
 
-    /// Two servers exposing the same tool name is a pre-existing collision the
-    /// array does not dedupe - but which server wins `tool_to_server` used to
-    /// depend on iteration order, so the same call could route to either one
-    /// across restarts. Sorting makes it the last server by name, always.
+    /// Two servers exposing the same tool name collide: the array carries one
+    /// definition, and which server wins used to depend on iteration order, so
+    /// the same call could route to either one across restarts. Sorting makes
+    /// it the last server by name, always.
     #[test]
     fn a_tool_name_exposed_by_two_servers_routes_the_same_way_every_run() {
         let listings = |flipped: bool| {
@@ -2131,11 +2147,54 @@ mod tests {
             serde_json::to_string(&first).unwrap(),
             serde_json::to_string(&second).unwrap()
         );
-        assert_eq!(advertised_names(&first), ["search", "search"]);
+        assert_eq!(advertised_names(&first), ["search"]);
         assert_eq!(first_map.get("search").unwrap(), "zed");
         assert_eq!(first_map, second_map);
     }
 
+    /// Regression for janhq/jan#8975: the advertised array must never carry the
+    /// same `function.name` twice. A strict provider rejects the request, and a
+    /// lenient one keeps one definition that the routing table may not point at.
+    #[test]
+    fn the_advertised_array_has_unique_names_and_matches_the_routing_table() {
+        let described = |name: &str, description: &str| -> RenderedTool {
+            let (name, mut tool) = rendered(name);
+            tool["function"]["description"] = json!(description);
+            (name, tool)
+        };
+        let (tools, tool_to_server) = assemble_tool_array(vec![
+            (
+                "fs".to_string(),
+                vec![
+                    described("search", "Search the filesystem"),
+                    rendered("read"),
+                ],
+            ),
+            (
+                "zed".to_string(),
+                vec![described("search", "Search the open editor buffer")],
+            ),
+        ]);
+
+        let mut names = advertised_names(&tools);
+        names.sort();
+        let mut unique = names.clone();
+        unique.dedup();
+        assert_eq!(names, unique, "duplicate function names on the wire");
+        assert_eq!(tool_to_server.len(), tools.len());
+
+        // The definition the model reads must belong to the server the call
+        // routes to: `zed` owns `search` in the routing table.
+        assert_eq!(tool_to_server["search"], "zed");
+        let search = tools
+            .iter()
+            .find(|t| t["function"]["name"] == "search")
+            .unwrap();
+        assert_eq!(
+            search["function"]["description"],
+            "Search the open editor buffer"
+        );
+    }
     #[test]
     fn tool_to_server_stays_consistent_with_the_reordered_array() {
         let (tools, tool_to_server) = assemble_tool_array(vec![
