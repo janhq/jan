@@ -59,26 +59,21 @@ are all shared, so anything you set up in one is already there in the other.
 
 ## Install
 
-<Callout type="warning">
-Jan Agent is a preview. The installer on `dev` pulls from the `agent-nightly` channel - expect
-nightly-quality builds.
-</Callout>
-
 <Tabs items={['macOS / Linux', 'Windows']}>
   <Tabs.Tab>
 ```bash
-curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
+curl -fsSL https://catalog.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```
   </Tabs.Tab>
   <Tabs.Tab>
 ```powershell
-irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
+irm https://catalog.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
 
 Installs to `%USERPROFILE%\.local\bin`. To also add it to your user `PATH`:
 
 ```powershell
-& ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
+& ([scriptblock]::Create((irm https://catalog.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
 ```
   </Tabs.Tab>
 </Tabs>

@@ -26,17 +26,12 @@ for one model provider.
 
 <Steps>
 
-### Install Nightly
-
-<Callout type="warning">
-Jan Agent is a preview. The installer on `dev` pulls from the `agent-nightly` channel - expect
-nightly-quality builds.
-</Callout>
+### Install
 
 <Tabs items={['macOS / Linux', 'Windows']}>
   <Tabs.Tab>
 ```bash
-curl -fsSL https://delta.jan.ai/jan-cli/install-jan-agent.sh | bash
+curl -fsSL https://catalog.jan.ai/jan-cli/install-jan-agent.sh | bash
 ```
 
 Installs to `~/.local/bin` by default. Override it with `JAN_INSTALL_DIR=/usr/local/bin`, and make
@@ -44,14 +39,14 @@ sure the directory is on your `PATH`.
   </Tabs.Tab>
   <Tabs.Tab>
 ```powershell
-irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1 | iex
+irm https://catalog.jan.ai/jan-cli/install-jan-agent.ps1 | iex
 ```
 
 Installs to `%USERPROFILE%\.local\bin`, which isn't on your `PATH` by default. To install and add
 it to your user `PATH` in one go, then open a new terminal:
 
 ```powershell
-& ([scriptblock]::Create((irm https://delta.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
+& ([scriptblock]::Create((irm https://catalog.jan.ai/jan-cli/install-jan-agent.ps1))) -AddToPath
 ```
   </Tabs.Tab>
 </Tabs>
@@ -196,7 +191,7 @@ jan --task "fix the failing test in tests/auth"
 
 **`jan: command not found`** - the install directory isn't on your `PATH`. The installer prints a
 note when it detects this. Add `~/.local/bin` to your shell profile. On Windows, re-run the installer
-with `-AddToPath` (see [Install Nightly](#install-nightly)) and open a new terminal. If the installer warns that
+with `-AddToPath` (see [Install](#install)) and open a new terminal. If the installer warns that
 another `jan` comes first on your `PATH`, remove the entry it names.
 
 **"no providers configured"** - run `jan config set --provider <id> --api-key <key>`, or `jan login`
