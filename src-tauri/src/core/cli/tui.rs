@@ -429,6 +429,51 @@ const SYSTEM_GLYPH: &str = "•";
 const WARN_GLYPH: &str = "⚠";
 const ERROR_GLYPH: &str = "■";
 
+/// Gutter glyph for a monitor: the dock, `/monitors` and a match row share it.
+const MONITOR_GLYPH: &str = "◔";
+
+/// What a background ping's headline reports, so each kind gets the row its
+/// news deserves rather than every ping reading as the same dim note.
+///
+/// Read off the headline because the headline is all `StreamEvent::Notice`
+/// carries, and that event is published wire protocol (`protocol/schema.json`
+/// and the generated ADK types): a display-only styling hint is not worth a
+/// protocol change. The producers expose the exact words matched here, and a
+/// test builds every headline through them, so a rewording fails a test
+/// instead of quietly restyling the row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum NoticeKind {
+    MonitorMatched,
+    MonitorTimedOut,
+    ShellFinished,
+    ShellFailed,
+    /// Anything else (a hook notice, a still-running shell): a plain note.
+    Other,
+}
+
+impl NoticeKind {
+    fn of(headline: &str) -> Self {
+        use tauri_plugin_agent_tools::tools::monitor::{MATCHED_OUTCOME, TIMED_OUT_OUTCOME};
+        use crate::core::agent::bg_shell::{FAILED_PREFIX, FINISHED_PREFIX};
+        let outcome = |word: &str| {
+            headline
+                .strip_suffix(word)
+                .is_some_and(|rest| rest.ends_with("' "))
+        };
+        if headline.starts_with("Monitor ") && outcome(MATCHED_OUTCOME) {
+            NoticeKind::MonitorMatched
+        } else if headline.starts_with("Monitor ") && outcome(TIMED_OUT_OUTCOME) {
+            NoticeKind::MonitorTimedOut
+        } else if headline.starts_with(FAILED_PREFIX) {
+            NoticeKind::ShellFailed
+        } else if headline.starts_with(FINISHED_PREFIX) {
+            NoticeKind::ShellFinished
+        } else {
+            NoticeKind::Other
+        }
+    }
+}
+
 /// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
 const GOAL_GLYPH: &str = "◎";
 
@@ -663,6 +708,8 @@ enum PickerKind {
     /// `/shells`: the background-shell inspector. Lists commands the `bash` tool
     /// detached (outran their timeout, still running), each stoppable with `x`.
     BackgroundShells,
+    /// `/monitors`: the session's running monitors, each stoppable with `x`.
+    Monitors,
 }
 
 /// Interactive list overlay (`/resume`, `/login`, `/mcp`, etc.): rows with a
@@ -725,6 +772,7 @@ impl Picker {
             PickerKind::Agents => " subagents ",
             PickerKind::AgentDetail => " subagent ",
             PickerKind::BackgroundShells => " background shells ",
+            PickerKind::Monitors => " monitors ",
         }
     }
 
@@ -751,7 +799,9 @@ impl Picker {
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
             PickerKind::AgentDetail => " PgUp/PgDn scroll   m message   x stop   Esc back",
-            PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
+            PickerKind::BackgroundShells | PickerKind::Monitors => {
+                " ↑/↓ select   x stop   Esc close"
+            }
         }
     }
 }
@@ -5114,6 +5164,43 @@ impl App {
         self.system(Level::Info, text);
     }
 
+    /// A background ping's headline, as the row its `NoticeKind` calls for: a
+    /// monitor match under the monitor glyph, a timeout or a failed command as
+    /// a warning, a finished command as a finished tool row. `who` names the
+    /// subagent the ping came from, ahead of the headline.
+    fn notice(&mut self, text: &str, who: Option<&str>) {
+        let body = match who {
+            Some(name) => format!("{name}: {text}"),
+            None => text.to_string(),
+        };
+        match NoticeKind::of(text) {
+            NoticeKind::MonitorMatched => {
+                self.scrollback = 0;
+                self.transcript.gap(Kind::Meta);
+                self.transcript.push_row(RowKind::System {
+                    glyph: MONITOR_GLYPH,
+                    cont: " ",
+                    gutter: Style::new().fg(theme::accent()),
+                    body: vec![Span::raw(body)],
+                    bg: None,
+                });
+            }
+            NoticeKind::MonitorTimedOut | NoticeKind::ShellFailed => {
+                self.system(Level::Warn, &body)
+            }
+            NoticeKind::ShellFinished => {
+                self.scrollback = 0;
+                self.transcript.gap(Kind::Tool);
+                self.transcript.push_row(RowKind::Tool {
+                    state: ToolState::Success,
+                    label: body,
+                    reserve: TOOL_ROW_RESERVE,
+                });
+            }
+            NoticeKind::Other => self.note(&body),
+        }
+    }
+
     /// A body row of a multi-line system block (`/help`, `/threads`, a goal
     /// status), under the header its `system*` call pushed. The gutter keeps
     /// running so the block reads as one unit instead of leaving its body
@@ -5255,7 +5342,7 @@ impl App {
             return;
         }
         for notice in &notices {
-            self.note(&notice.headline);
+            self.notice(&notice.headline, None);
         }
         if self.model.is_empty() {
             self.note("monitor update dropped: not signed in, run /login first");
@@ -5283,7 +5370,7 @@ impl App {
             return;
         }
         for notice in &shells {
-            self.note(&notice.headline);
+            self.notice(&notice.headline, None);
         }
         if self.model.is_empty() {
             self.note("background update dropped: not signed in, run /login first");
@@ -7355,7 +7442,7 @@ impl App {
             StreamEvent::Notice { text } => {
                 self.transcript.finalize_tool_group();
                 self.transcript.flush_assistant();
-                self.note(&text);
+                self.notice(&text, None);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
             // The live countdown carries every attempt; the transcript notes
@@ -7612,7 +7699,8 @@ impl App {
             // user's business as the parent's: dropping it made a child's
             // compaction invisible.
             StreamEvent::Notice { text } => {
-                self.note(&format!("{name}: {text}"));
+                let who: &str = name;
+                self.notice(&text, Some(who));
             }
             // The live countdown belongs to the parent's request; a child's
             // retry gets the same one-line note the parent's first retry does.
@@ -14279,6 +14367,16 @@ async fn handle_key(
                     None => {}
                 }
             }
+            // `/monitors`: `x` stops the selected monitor through the same
+            // stop the model's `monitor` tool uses, and reports its answer.
+            KeyCode::Char('x') if picker.kind == PickerKind::Monitors => {
+                let id = picker.items[picker.selected].value.clone();
+                if !id.is_empty() {
+                    let report = app.monitor_set.stop(&id);
+                    app.monitors = app.monitor_set.snapshot();
+                    app.note(&report);
+                }
+            }
             // Collection picker: Space toggles the selected plugin, Enter hands
             // the checked set to the loop (see `plugin_select_request`). Rows
             // already installed stay displayed but are not toggleable -- checking
@@ -14389,7 +14487,8 @@ async fn handle_key(
                     // acted on with `x` (stop), not Enter.
                     PickerKind::Agents
                     | PickerKind::AgentDetail
-                    | PickerKind::BackgroundShells => {}
+                    | PickerKind::BackgroundShells
+                    | PickerKind::Monitors => {}
                     PickerKind::PluginConnect => {}
                 }
             }
@@ -15109,6 +15208,18 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
         alias_of: Some("/shells"),
     },
     SlashCommand {
+        name: "/stop",
+        hint: "",
+        description: "Stop every background shell command the agent left running",
+        alias_of: None,
+    },
+    SlashCommand {
+        name: "/monitors",
+        hint: "",
+        description: "Inspect and stop the monitors watching for a condition",
+        alias_of: None,
+    },
+    SlashCommand {
         name: "/plugin",
         hint: "[list|install <spec>|remove <name>|search [query]|setup [name]]",
         description: "Manage plugins: install, list/remove, search, or choose a plugin to set up its API keys and MCP connections",
@@ -15372,6 +15483,8 @@ async fn run_command(
         "mcp" => open_mcp_picker(app, mcp_servers).await,
         "agents" => open_agents_picker(app),
         "shells" | "jobs" => open_background_shells_picker(app),
+        "stop" => stop_background_shells(app),
+        "monitors" => open_monitors_picker(app),
         "plugin" => plugin_command(app, arg).await,
         "reload" => reload_command(app, arg),
         "skills" => skills_command(app),
@@ -18231,34 +18344,111 @@ fn open_background_shells_picker(app: &mut App) {
     });
 }
 
-/// One row per detached background shell (`<elapsed>  <command>`), whose `value`
-/// is the real pid so `x` can stop it. A single watermark row when nothing is
-/// backgrounded. `shells` is `App::bg_shells` (already filtered to backgrounded
-/// and refreshed off the render path), so this stays a pure render function.
+/// `/stop`: stop every background shell the user can see listed, where `x` in
+/// `/shells` stops one. `kill` skips a pid that already finished, so the
+/// frame `bg_shells` may lag the registry by cannot stop the wrong one.
+fn stop_background_shells(app: &mut App) {
+    let stopped = std::mem::take(&mut app.bg_shells)
+        .into_iter()
+        .filter(|s| tauri_plugin_agent_tools::tools::proc::kill(s.pid))
+        .count();
+    if stopped == 0 {
+        app.note("no background shells running");
+    } else {
+        app.note(&format!("Stopping {}.", pluralize("background shell", stopped)));
+    }
+}
+
+/// The lone dim row a live inspector shows when it has nothing to list. Its
+/// empty `value` is what the stop keys read as "nothing selected".
+fn watermark_item(label: &str) -> PickerItem {
+    PickerItem {
+        label: label.to_string(),
+        value: String::new(),
+        hint: None,
+        checkbox: None,
+        spans: Some(vec![Span::styled(
+            label.to_string(),
+            Style::new().fg(theme::muted()),
+        )]),
+    }
+}
+
+/// A live inspector row drawn from styled spans, whose plain text is what a
+/// search matches against.
+fn styled_item(value: String, spans: Vec<Span<'static>>) -> PickerItem {
+    PickerItem {
+        label: spans.iter().map(|s| s.content.as_ref()).collect(),
+        value,
+        hint: None,
+        checkbox: None,
+        spans: Some(spans),
+    }
+}
+
+/// One row per detached background shell (`• <command>  <elapsed>`), whose
+/// `value` is the real pid so `x` can stop it. A single watermark row when
+/// nothing is backgrounded. `shells` is `App::bg_shells` (already filtered to
+/// backgrounded and refreshed off the render path), so this stays a pure
+/// render function.
 fn background_shell_picker_items(
     shells: &[tauri_plugin_agent_tools::tools::proc::ShellInfo],
 ) -> Vec<PickerItem> {
     if shells.is_empty() {
-        return vec![PickerItem {
-            label: "no background shells running".to_string(),
-            value: String::new(),
-            hint: None,
-            checkbox: None,
-            spans: None,
-        }];
+        return vec![watermark_item("no background shells running")];
     }
+    let accent = Style::new().fg(theme::accent());
     shells
         .iter()
-        .map(|s| PickerItem {
-            label: format!(
-                "{}  {}",
-                format_elapsed(s.elapsed_secs),
-                single_line(&s.command)
-            ),
-            value: s.pid.to_string(),
-            hint: Some("running".to_string()),
-            checkbox: None,
-            spans: None,
+        .map(|s| {
+            styled_item(
+                s.pid.to_string(),
+                vec![
+                    Span::styled(TOOL_BULLET, accent),
+                    Span::styled(single_line(&s.command), accent),
+                    Span::styled(
+                        format!("  {}", format_elapsed(s.elapsed_secs)),
+                        Style::new().fg(theme::muted()),
+                    ),
+                ],
+            )
+        })
+        .collect()
+}
+
+/// Open the `/monitors` inspector. Rebuilt from `App::monitors` every frame
+/// (see `draw`), so a monitor that matches or is stopped drops out in place.
+fn open_monitors_picker(app: &mut App) {
+    app.picker = Some(Picker {
+        kind: PickerKind::Monitors,
+        items: monitor_picker_items(&app.monitors),
+        selected: 0,
+        search: None,
+        armed_delete: None,
+    });
+}
+
+/// One row per running monitor (`◔ mon-1  build  12 polls  <script>`), whose
+/// `value` is the monitor id `x` stops; a watermark row when none are up.
+fn monitor_picker_items(monitors: &[MonitorSnapshot]) -> Vec<PickerItem> {
+    if monitors.is_empty() {
+        return vec![watermark_item("no monitors running")];
+    }
+    let accent = Style::new().fg(theme::accent());
+    let dim = Style::new().fg(theme::muted());
+    monitors
+        .iter()
+        .map(|m| {
+            styled_item(
+                m.monitor_id.clone(),
+                vec![
+                    Span::styled(format!("{MONITOR_GLYPH} "), accent),
+                    Span::styled(m.monitor_id.clone(), accent),
+                    Span::raw(format!("  {}", m.name)),
+                    Span::styled(format!("  {}", pluralize("poll", m.polls as usize)), dim),
+                    Span::styled(format!("  {}", single_line(&m.script)), dim),
+                ],
+            )
         })
         .collect()
 }
@@ -18304,13 +18494,7 @@ fn agent_picker_items(
             spans.push(Span::raw("  "));
         }
         spans.extend(tail);
-        PickerItem {
-            label: spans.iter().map(|s| s.content.as_ref()).collect(),
-            value: p.run_id.clone(),
-            hint: None,
-            checkbox: None,
-            spans: Some(spans),
-        }
+        styled_item(p.run_id.clone(), spans)
     };
     let mut items = Vec::new();
     for p in subagents.iter_mut() {
@@ -20710,6 +20894,8 @@ fn draw(f: &mut Frame, app: &mut App) {
     // pulling content into view a row per frame.
     autoscroll_selection(app);
     let input_h = input_box_height(app, f.area().width);
+    let shells_line = bg_shells_row(app, f.area().width);
+    let shells_h = u16::from(shells_line.is_some());
     // Live state -- the plan and the running fan-out -- is docked, not woven
     // into the transcript: it describes *now*, and it is what the eye wants
     // right where the typing happens. Built at most once per frame, since its
@@ -20720,7 +20906,7 @@ fn draw(f: &mut Frame, app: &mut App) {
         .is_none()
         .then(|| {
             let width = f.area().width.max(1);
-            status_panel(app, width, panel_budget(f.area().height, input_h))
+            status_panel(app, width, panel_budget(f.area().height, input_h + shells_h))
         })
         .filter(|l| !l.is_empty());
     let panel_h = panel_lines.as_ref().map_or(0, |l| l.len() as u16);
@@ -20741,12 +20927,16 @@ fn draw(f: &mut Frame, app: &mut App) {
         Constraint::Length(TRANSCRIPT_BOTTOM_PAD), // 2: air
         Constraint::Length(panel_h),               // 3: status panel
         Constraint::Length(1),                     // 4: separator rule
-        Constraint::Length(input_h),               // 5: input
-        Constraint::Length(1),                     // 6: path + key hints
+        Constraint::Length(shells_h),              // 5: background shells
+        Constraint::Length(input_h),               // 6: input
+        Constraint::Length(1),                     // 7: path + key hints
     ])
     .split(f.area());
     let panel_area = raw[3];
-    let chunks = [raw[0], raw[1], raw[5], raw[6]];
+    let chunks = [raw[0], raw[1], raw[6], raw[7]];
+    if let Some(line) = shells_line {
+        f.render_widget(Paragraph::new(line), raw[5]);
+    }
 
     f.render_widget(header(app), chunks[0]);
     // Drawn for every path (picker included) so the dock always reads the same.
@@ -20773,12 +20963,14 @@ fn draw(f: &mut Frame, app: &mut App) {
     // The /shells inspector is likewise live: rebuild from the refreshed
     // `bg_shells` each frame so a shell that finished or was just stopped drops
     // out. (`bg_shells` is refreshed off the render path; see the loop.)
-    if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::BackgroundShells) {
-        let items = background_shell_picker_items(&app.bg_shells);
-        if let Some(p) = app.picker.as_mut() {
-            p.selected = p.selected.min(items.len().saturating_sub(1));
-            p.items = items;
-        }
+    let live_items = match app.picker.as_ref().map(|p| p.kind) {
+        Some(PickerKind::BackgroundShells) => Some(background_shell_picker_items(&app.bg_shells)),
+        Some(PickerKind::Monitors) => Some(monitor_picker_items(&app.monitors)),
+        _ => None,
+    };
+    if let (Some(items), Some(p)) = (live_items, app.picker.as_mut()) {
+        p.selected = p.selected.min(items.len().saturating_sub(1));
+        p.items = items;
     }
     if let Some(kind) = app.picker.as_ref().map(|p| p.kind) {
         app.row_index.clear();
@@ -22356,7 +22548,6 @@ fn agents_column(
     if panels.is_empty() || rows == 0 {
         return Vec::new();
     }
-    let dim = Style::new().fg(theme::muted());
     let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
         Span::styled(AGENT_PANEL_GLYPH, Style::new().fg(theme::accent())),
@@ -22431,23 +22622,27 @@ fn agents_column(
     if hidden > 0 {
         // The overflow row points at the `/agents` inspector, which lists the
         // whole live fan-out with per-agent detail -- the dock only has room for
-        // the newest few. Compact form when the (often half-width) column can't
-        // fit the hint.
-        let hinted = format!("  +{hidden} more · /agents");
-        if hinted.chars().count() <= max {
-            out.push(Line::from(vec![
-                Span::styled(format!("  +{hidden} more · "), dim),
-                Span::styled("/agents", Style::new().fg(theme::accent())),
-            ]));
-        } else {
-            out.push(Line::from(vec![Span::styled(
-                format!("  +{hidden} more running"),
-                dim,
-            )]));
-        }
+        // the newest few.
+        out.push(overflow_row(hidden, "/agents", "running", max));
     }
     out.truncate(rows);
     out
+}
+
+/// A dock column's overflow row: `+N more · /command`, naming the inspector
+/// that lists the rest, or the compact `+N more {fallback}` when the (often
+/// half-width) column cannot fit the command.
+fn overflow_row(hidden: usize, command: &str, fallback: &str, max: usize) -> Line<'static> {
+    let dim = Style::new().fg(theme::muted());
+    let lead = format!("  +{hidden} more · ");
+    if lead.chars().count() + command.chars().count() <= max {
+        Line::from(vec![
+            Span::styled(lead, dim),
+            Span::styled(command.to_string(), Style::new().fg(theme::accent())),
+        ])
+    } else {
+        Line::from(Span::styled(format!("  +{hidden} more {fallback}"), dim))
+    }
 }
 
 /// Token counts as `43K` / `1.1K` / `840` -- three significant characters, so a
@@ -22984,7 +23179,7 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
     let dim = Style::new().fg(theme::muted());
     let max = width.max(8) as usize;
     let mut out = vec![Line::from(vec![
-        Span::styled("◔ ", Style::new().fg(theme::accent())),
+        Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
         Span::styled(
             pluralize("monitor", monitors.len()),
             Style::new().fg(theme::accent()).bold(),
@@ -22999,12 +23194,15 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
             monitors.len() - body.saturating_sub(1),
         )
     };
-    let detail = (body - shown).checked_div(shown).is_some_and(|n| n >= 1);
+    // The overflow row takes its line first, or a script line would push it
+    // past `rows` and the hidden monitors would go uncounted.
+    let spare = (body - shown).saturating_sub(usize::from(hidden > 0));
+    let detail = spare.checked_div(shown).is_some_and(|n| n >= 1);
     for monitor in monitors.iter().take(shown) {
-        let stats = format!("  {} polls", monitor.polls);
+        let stats = format!("  {}", pluralize("poll", monitor.polls as usize));
         let label = format!("{} {}", monitor.monitor_id, monitor.name);
         out.push(Line::from(vec![
-            Span::styled("◔ ", Style::new().fg(theme::accent())),
+            Span::styled(format!("{MONITOR_GLYPH} "), Style::new().fg(theme::accent())),
             Span::styled(
                 truncate(&label, max.saturating_sub(2 + stats.len())),
                 Style::new().fg(theme::accent()),
@@ -23019,10 +23217,7 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
         }
     }
     if hidden > 0 {
-        out.push(Line::from(vec![Span::styled(
-            format!("  +{hidden} more watching"),
-            dim,
-        )]));
+        out.push(overflow_row(hidden, "/monitors", "watching", max));
     }
     out.truncate(rows);
     out
@@ -23030,6 +23225,50 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
 
 /// Max content rows the input box grows to before it scrolls internally.
 const MAX_INPUT_ROWS: u16 = 8;
+
+/// `1 background shell running · /shells to view · /stop to close`: the dim
+/// row over the input while the agent has commands running in the background,
+/// cut to `width` (the commands go before the words, so a narrow terminal
+/// still says how many are running).
+///
+/// `None` with nothing backgrounded, behind a picker, and while the working
+/// row shows: a turn's input dock is one row tall by rule (see
+/// `working_row`), so a shell backgrounded mid-turn must not make it jump.
+/// The working row carries the count then instead (`bg_shells_count`).
+fn bg_shells_row(app: &App, width: u16) -> Option<Line<'static>> {
+    let n = app.bg_shells.len();
+    if n == 0 || app.picker.is_some() || working_row_shown(app) {
+        return None;
+    }
+    let dim = Style::new().fg(theme::muted());
+    let accent = Style::new().fg(theme::accent());
+    let spans = vec![
+        Span::styled(format!(" {} running · ", pluralize("background shell", n)), dim),
+        Span::styled("/shells", accent),
+        Span::styled(" to view · ", dim),
+        Span::styled("/stop", accent),
+        Span::styled(" to close", dim),
+    ];
+    Some(Line::from(clip_spans(spans, width as usize)))
+}
+
+/// Whether the input row is the running turn's shimmering working row.
+fn working_row_shown(app: &App) -> bool {
+    app.status == Status::Running
+        && app.input.is_empty()
+        && app.message_queue.is_empty()
+        && app.picker.is_none()
+        && app.compacting.is_none()
+        && app.run_compacting.is_none()
+        && app.retrying.is_none()
+}
+
+/// The working row's ` · 1 bg shell` while background shells run, the
+/// compact stand-in for `bg_shells_row`, which yields to the working row.
+fn bg_shells_count(app: &App) -> Option<String> {
+    let n = app.bg_shells.len();
+    (n > 0).then(|| format!(" · {}", pluralize("bg shell", n)))
+}
 
 /// Rows the message box occupies: 1 content row for the idle/working
 /// placeholder, the parked row with its detail rows (`parked_rows`), or the
@@ -23159,6 +23398,12 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     )
     .remove(0)
     .spans;
+    if let Some(count) = bg_shells_count(app) {
+        let room = (width as usize).saturating_sub(spans_width(&spans));
+        if count.chars().count() <= room {
+            spans.push(Span::styled(count, Style::new().fg(theme::muted())));
+        }
+    }
     push_fitting_hint(&mut spans, &WORKING_HINTS, width);
     Line::from(spans)
 }
@@ -23499,19 +23744,8 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         // the other states.
         Status::Idle => vec![Span::raw(" ")],
     };
-    // Standing indicators lead the row in both states, newest concern leftmost:
-    // pending queue, then background shells still running unattended.
-    let bg_shells = app.bg_shells.len();
-    if bg_shells > 0 {
-        let plural = if bg_shells == 1 { "" } else { "s" };
-        spans.insert(
-            0,
-            Span::styled(
-                format!("⚙ {bg_shells} bg shell{plural} · /shells  "),
-                Style::new().magenta().bold(),
-            ),
-        );
-    }
+    // A pending queue leads the row in every state. Background shells have
+    // their own row over the input (`bg_shells_row`).
     let queue_count = app.message_queue.len();
     if queue_count > 0 {
         spans.insert(
@@ -23578,8 +23812,9 @@ mod tests {
         SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_picker_items, agents_column, background_shell_picker_items, cache_summary_lines,
-        open_agents_picker, retry_wait_label, RetryWait, SubagentPanel, CHILD_RESULT_MAX,
+        agent_picker_items, agents_column, background_shell_picker_items, bg_shells_row,
+        cache_summary_lines, monitor_picker_items, monitors_column, open_agents_picker,
+        open_background_shells_picker, open_monitors_picker, NoticeKind, retry_wait_label, RetryWait, SubagentPanel, CHILD_RESULT_MAX,
         CHILD_ROWS_MAX,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
@@ -24396,6 +24631,150 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert!(items[0].label.contains("no background shells"));
         assert!(items[0].value.is_empty());
+    }
+
+    #[test]
+    fn stop_and_monitors_commands_are_registered() {
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/stop"));
+        assert!(SLASH_COMMANDS.iter().any(|c| c.name == "/monitors"));
+    }
+
+    /// `/stop` stops every listed shell and says how many; a second `/stop`
+    /// has nothing left to stop.
+    #[tokio::test]
+    async fn stop_command_stops_every_background_shell() {
+        use tauri_plugin_agent_tools::tools::proc;
+        // Pids no live process group can own, registered under a bucket of
+        // their own so no other test's shells are listed or stopped.
+        let thread = Some("stop-command-test");
+        let pids = [i32::MAX as u32 - 7, i32::MAX as u32 - 8];
+        let mut app = test_app();
+        for pid in pids {
+            proc::register(thread, pid, "sleep 9000");
+            proc::mark_backgrounded(thread, pid);
+            app.bg_shells.push(proc::ShellInfo {
+                pid,
+                command: "sleep 9000".into(),
+                elapsed_secs: 1,
+                backgrounded: true,
+            });
+        }
+        run_command(&mut app, "stop", &no_mcp()).await;
+        assert!(
+            transcript_text(&app).contains("Stopping 2 background shells."),
+            "{}",
+            transcript_text(&app)
+        );
+        assert!(app.bg_shells.is_empty());
+        assert!(proc::snapshot().iter().all(|s| !pids.contains(&s.pid)), "unregistered");
+        run_command(&mut app, "stop", &no_mcp()).await;
+        assert!(transcript_text(&app).contains("no background shells running"));
+    }
+
+    /// Every background headline, built by its real producer, maps to the row
+    /// kind it is styled as: rewording a producer fails here rather than
+    /// quietly turning a failure back into a dim note.
+    #[test]
+    fn notice_kinds_classify_the_real_headlines() {
+        use crate::core::agent::bg_shell::{headline, still_running_headline};
+        use tauri_plugin_agent_tools::tools::monitor::headline as monitor_headline;
+        use tauri_plugin_agent_tools::tools::ShellDone;
+        let done = |failed| ShellDone {
+            id: 1,
+            command: "make build".into(),
+            elapsed_secs: 12,
+            output_path: None,
+            failed,
+        };
+        let cases = [
+            (monitor_headline("mon-1", "build", true), NoticeKind::MonitorMatched),
+            (monitor_headline("mon-1", "build", false), NoticeKind::MonitorTimedOut),
+            // A name that itself ends in an outcome word must not fool it.
+            (
+                monitor_headline("mon-2", "wait until matched", false),
+                NoticeKind::MonitorTimedOut,
+            ),
+            (headline(&done(false)), NoticeKind::ShellFinished),
+            (headline(&done(true)), NoticeKind::ShellFailed),
+            (still_running_headline("npm run dev"), NoticeKind::Other),
+            ("hook 'fmt' failed: exit 2".to_string(), NoticeKind::Other),
+        ];
+        for (text, kind) in cases {
+            assert_eq!(NoticeKind::of(&text), kind, "{text}");
+        }
+    }
+
+    /// Each kind lands as its own row: a match under the monitor glyph, a
+    /// timeout and a failure as warnings, a finished command as a tool row.
+    #[test]
+    fn background_notices_render_by_kind() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        for text in [
+            "Monitor mon-1: 'build' matched",
+            "Monitor mon-2: 'boot' timed out",
+            "Background command failed after 3s: make test",
+            "Background command finished after 12s: make build",
+        ] {
+            app.apply(StreamEvent::Notice { text: text.into() });
+        }
+        let rows = render_rows(&mut app, 80, 20);
+        let has = |needle: &str| rows.iter().any(|r| r.contains(needle));
+        assert!(has("◔ Monitor mon-1: 'build' matched"), "{rows:#?}");
+        assert!(has("⚠ Monitor mon-2: 'boot' timed out"), "{rows:#?}");
+        assert!(has("⚠ Background command failed after 3s"), "{rows:#?}");
+        assert!(has("• Background command finished after 12s"), "{rows:#?}");
+    }
+
+    /// `x` in `/monitors` stops the selected monitor through the monitor set.
+    #[tokio::test]
+    async fn monitors_picker_stops_the_selected_monitor() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        app.monitor_set
+            .start(
+                session_monitor_spec("false"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        app.monitors = app.monitor_set.snapshot();
+        run_command(&mut app, "monitors", &no_mcp()).await;
+        let picker = app.picker.as_ref().expect("picker open");
+        assert_eq!(picker.kind, PickerKind::Monitors);
+        assert!(picker.items[0].label.contains("mon-1"), "{}", picker.items[0].label);
+        press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE).await;
+        assert!(app.monitors.is_empty(), "stopped and undocked");
+        assert!(
+            transcript_text(&app).contains("Monitor mon-1"),
+            "{}",
+            transcript_text(&app)
+        );
+        let items = monitor_picker_items(&app.monitors);
+        assert_eq!(items[0].label, "no monitors running");
+        assert!(items[0].value.is_empty());
+    }
+
+    /// The shells row sits over an idle input, but a running turn keeps its
+    /// one-row dock and folds the count into the working row instead.
+    #[test]
+    fn bg_shells_row_yields_to_the_working_row() {
+        let mut app = test_app();
+        app.bg_shells.push(tauri_plugin_agent_tools::tools::proc::ShellInfo {
+            pid: 1,
+            command: "sleep 9000".into(),
+            elapsed_secs: 1,
+            backgrounded: true,
+        });
+        let idle = render_rows(&mut app, 80, 12);
+        assert!(
+            idle.iter().any(|r| r.contains("1 background shell running · /shells to view · /stop to close")),
+            "{idle:#?}"
+        );
+        app.submit_user("go".into());
+        let running = render_rows(&mut app, 80, 12);
+        assert!(!running.iter().any(|r| r.contains("background shell running")), "{running:#?}");
+        assert!(running.iter().any(|r| r.contains("· 1 bg shell")), "{running:#?}");
+        assert!(bg_shells_row(&app, 80).is_none());
     }
 
     fn steering_request(

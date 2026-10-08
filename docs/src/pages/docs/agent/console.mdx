@@ -130,6 +130,24 @@ generated, and it shows no elapsed time: that stays in the header. The footer re
 A subagent that finishes during the wait leaves its `• Finished NAME` row below the answer, and the
 agent picks up from there.
 
+### Monitors and background shells
+
+A monitor that matches leaves a `◔ Monitor mon-1: 'build' matched` row; one that times out leaves a
+`⚠` warning instead. When a command the agent sent to the background ends, it leaves a tool row
+(`• Background command finished after 12s: make build`), or a `⚠` warning if it failed. If the dock
+has no room for every monitor, its last row reads `+N more · /monitors`. `/monitors` lists all of
+them, and <kbd>x</kbd> stops the selected one.
+
+While commands run in the background, a dim row sits above the input:
+
+```
+2 background shells running · /shells to view · /stop to close
+```
+
+During a turn the row is hidden so the input area keeps its height, and the working row ends with
+`· 2 bg shells` instead. `/shells` lists the commands; <kbd>x</kbd> stops one, and `/stop` stops
+all of them.
+
 ### Motion
 
 The working row and the `[thinking]` badge animate: a brightness sweep crosses the label. A

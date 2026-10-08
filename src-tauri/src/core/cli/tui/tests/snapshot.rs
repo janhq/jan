@@ -512,6 +512,76 @@ fn agents_inspector_lists_the_fan_out() {
     assert_buffer("agents_inspector_list", &frame(&mut app, DARK, 90, 16));
 }
 
+// ---- Monitors and background shells ----------------------------------------
+
+fn shell(pid: u32, command: &str, elapsed_secs: u64) -> tauri_plugin_agent_tools::tools::proc::ShellInfo {
+    tauri_plugin_agent_tools::tools::proc::ShellInfo {
+        pid,
+        command: command.into(),
+        elapsed_secs,
+        backgrounded: true,
+    }
+}
+
+#[test]
+fn monitors_inspector_lists_the_monitors() {
+    let mut app = snapshot_app();
+    app.monitors = vec![
+        monitor("mon-1", "build", "grep -m1 OK build.log", 12),
+        monitor("mon-2", "boot", "curl -sf localhost:1337/health", 1),
+    ];
+    open_monitors_picker(&mut app);
+    assert_buffer("monitors_inspector_list", &frame(&mut app, DARK, 80, 10));
+}
+
+#[test]
+fn monitors_inspector_empty() {
+    let mut app = snapshot_app();
+    open_monitors_picker(&mut app);
+    assert_buffer("monitors_inspector_empty", &frame(&mut app, DARK, 60, 9));
+}
+
+#[test]
+fn monitor_dock_overflow_points_at_monitors() {
+    let monitors: Vec<MonitorSnapshot> = (1..=4)
+        .map(|n| monitor(&format!("mon-{n}"), "build", "grep OK build.log", n))
+        .collect();
+    let buf = pinned(DARK, || lines_buffer(monitors_column(&monitors, 40, 3), 40));
+    assert_buffer("monitor_dock_overflow", &buf);
+}
+
+#[test]
+fn shells_inspector_lists_the_shells() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "cargo build --release", 7)];
+    open_background_shells_picker(&mut app);
+    assert_buffer("shells_inspector_list", &frame(&mut app, DARK, 80, 10));
+}
+
+/// The idle dock with two background shells: the dim row over the input.
+#[test]
+fn bg_shells_row_over_the_input() {
+    let mut app = snapshot_app();
+    app.bg_shells = vec![shell(4242, "npm run dev", 65), shell(4343, "tail -f app.log", 7)];
+    assert_buffer("bg_shells_row", &frame(&mut app, DARK, 80, 8));
+}
+
+/// Background pings, each as the row its kind calls for.
+#[test]
+fn transcript_background_notices() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "watch the build");
+    for text in [
+        "Monitor mon-1: 'build' matched",
+        "Monitor mon-2: 'boot' timed out",
+        "Background command failed after 3s: make test",
+        "Background command finished after 12s: make build",
+    ] {
+        app.apply(StreamEvent::Notice { text: text.into() });
+    }
+    assert_buffer("transcript_background_notices", &body(&mut app));
+}
+
 /// Feed `event` to the running child `kv-review`, as its stream would.
 fn child(app: &mut App, event: StreamEvent) {
     app.apply(StreamEvent::Subagent {
