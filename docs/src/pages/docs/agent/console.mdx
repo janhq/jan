@@ -29,7 +29,9 @@ jan --task "..."    # with a first message already sent
  › add a --version flag
 
 
- • Read 3 files
+ • Explored
+   └ Read cli.rs, main.rs
+     Search version in src
  • Edited src/cli.rs
 
  • Done - the flag is wired up and documented.
@@ -66,6 +68,16 @@ runs, then turns green when it succeeds, red when it fails, and yellow when the 
 before it finished. A result or diff hangs off the row beneath a dim `└`.
 <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to expand just that one. Once the
 answer arrives, the tool calls before it fold into a single `• Worked · N steps` row.
+
+Calls that only look around - reading files, listing directories, searching, reading memory notes
+or skills - share one row, `• Exploring` while any is in flight and `• Explored` once they finish,
+with one line per action beneath it: `Read cli.rs, main.rs` (consecutive reads merge, and a file
+gets its full path only when another one shares its name), `Search version in src`, `List docs`.
+A search that matched nothing says `(no matches)`; a call that failed adds a red `(failed)` and the
+row's header counts them: `• Explored · 1 failed`. Past four actions the rest fold into
+`… +N more`, which <kbd>Ctrl</kbd>+<kbd>O</kbd> opens up along with each call's output. A run that
+mixes in anything else (a command, a web search) keeps a counted summary such as
+`• Read 2 files; ran 1 command`.
 
 A shell command shows as `• Running cargo test (12s)`, with its output streaming in beneath it as
 it prints - the newest five lines, under a dim `… +N earlier lines` count once there are more. A

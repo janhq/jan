@@ -1334,6 +1334,48 @@ struct GroupedCall {
     /// (and its output) after the result lands -- until the group folds. `None`
     /// for non-shell calls, which contribute no shell rows.
     command: Option<String>,
+    /// What this call explored, when it is a read-only exploration call. A
+    /// group made only of these renders as an `Explored` row listing them.
+    explore: Option<Explore>,
+}
+
+/// A read-only exploration call, reduced to what its `Explored` child row
+/// names. See `explore_of` for which tools qualify.
+#[derive(Clone, Debug, PartialEq)]
+enum Explore {
+    /// A file (`noun` is `None`) or a memory note/skill read by name.
+    Read {
+        noun: Option<&'static str>,
+        target: String,
+    },
+    Search {
+        query: String,
+        scope: Option<String>,
+    },
+    List {
+        target: String,
+    },
+}
+
+/// How one `Explored` child row ended. An in-flight call reads as `Ok` so the
+/// row it renders as running is the row it resolves to.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ExploreOutcome {
+    Ok,
+    /// A search that ran fine and matched nothing: worth saying, not an error.
+    Empty,
+    Failed,
+}
+
+/// One child row of an `Explored` group: consecutive successful reads of the
+/// same kind merge into one action naming every target.
+#[derive(Clone, Debug, PartialEq)]
+struct ExploreAction {
+    verb: &'static str,
+    noun: Option<&'static str>,
+    items: Vec<String>,
+    scope: Option<String>,
+    outcome: ExploreOutcome,
 }
 
 /// A run of consecutive collapsible tool calls folded into one transcript row.
@@ -1359,6 +1401,12 @@ struct ToolGroup {
 }
 
 impl ToolGroup {
+    /// Whether every call is a read-only exploration call, so the group renders
+    /// as an `Explored` row listing them rather than a counted summary.
+    fn explored(&self) -> bool {
+        self.calls.iter().all(|c| c.explore.is_some())
+    }
+
     /// Whether any call is still awaiting its `ToolResult`. A group can stay
     /// open with every call resolved so future calls keep folding into it; the
     /// throbber must not show while that's the case. Results within a batch can
@@ -1402,6 +1450,24 @@ impl ToolGroup {
     /// summary. The label is stored untruncated; `Row::Tool` clamps it to the
     /// current draw width.
     fn row(&self, state: GroupRow) -> Row {
+        if self.explored() {
+            let failed = explore_failures(&self.calls);
+            let state = if state == GroupRow::Open && self.is_running() {
+                ToolState::Running
+            } else if failed > 0 {
+                ToolState::Failure
+            } else if state == GroupRow::Aborted && self.is_running() {
+                ToolState::Interrupted
+            } else {
+                ToolState::Success
+            };
+            return RowKind::Explored {
+                state,
+                failed,
+                actions: explore_actions(&self.calls),
+            }
+            .into();
+        }
         if state == GroupRow::Open && self.is_running() {
             return RowKind::Tool {
                 state: ToolState::Running,
@@ -1774,6 +1840,13 @@ enum RowKind {
         label: String,
         reserve: u16,
     },
+    /// A group of read-only exploration calls: an `Explored` header over one
+    /// child row per action (see `explored_lines`).
+    Explored {
+        state: ToolState,
+        failed: usize,
+        actions: Vec<ExploreAction>,
+    },
     /// A tool result summary plus its optional diff body, hung off the
     /// call row above as its first child. `content` is `None` when the call row
     /// already says the same thing.
@@ -1897,6 +1970,18 @@ impl RowKind {
                 width,
                 Vec::new(),
             ),
+            RowKind::Explored {
+                state,
+                failed,
+                actions,
+            } => {
+                let verb = if *state == ToolState::Running {
+                    "Exploring"
+                } else {
+                    "Explored"
+                };
+                explored_lines(state.bullet(), verb, *failed, actions, Vec::new(), width)
+            }
             RowKind::Result {
                 is_error,
                 content,
@@ -3710,12 +3795,19 @@ impl App {
 
     /// Fold a collapsible tool call into the current group row (extending it and
     /// updating its live status) or open a new group row.
-    fn push_grouped_call(&mut self, id: &str, name: &str, label: String, done: String) {
+    fn push_grouped_call(
+        &mut self,
+        id: &str,
+        name: &str,
+        args: &serde_json::Value,
+        label: String,
+        done: String,
+    ) {
         let (noun, is_read) = tool_kind(name);
         self.grouped_ids.insert(id.to_string());
         let call = GroupedCall {
             id: id.to_string(),
-            activity: label.clone(),
+            activity: label,
             done: done.clone(),
             content: None,
             is_error: false,
@@ -3723,6 +3815,7 @@ impl App {
             // Set for shell calls (track_bash_command ran first). Kept on the call
             // so the shell rows survive the result clearing `bash_commands`.
             command: self.bash_commands.get(id).cloned(),
+            explore: explore_of(name, args),
         };
         let extend = self
             .tool_group
@@ -3736,19 +3829,16 @@ impl App {
             return;
         }
         self.gap(Kind::Tool);
-        self.push_row(RowKind::Tool {
-            state: ToolState::Running,
-            label,
-            reserve: TOOL_ROW_RESERVE,
-        });
-        self.tool_group = Some(ToolGroup {
-            idx: self.transcript.len() - 1,
+        let group = ToolGroup {
+            idx: self.transcript.len(),
             first_done: done,
             nouns: vec![(noun, is_read)],
             calls: vec![call],
             started: Instant::now(),
             last_result_error: None,
-        });
+        };
+        self.push_row(group.row(GroupRow::Open));
+        self.tool_group = Some(group);
     }
 
     /// Rewrite the open group's row for its current state, leaving it open so
@@ -6336,7 +6426,7 @@ impl App {
                         done,
                     });
                 } else {
-                    self.push_grouped_call(&id, &name, label, done);
+                    self.push_grouped_call(&id, &name, &args, label, done);
                 }
             }
             StreamEvent::ToolResult {
@@ -9533,8 +9623,12 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let mut out: Vec<Line<'static>> = Vec::new();
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
-    // summary is a counted breakdown) need the per-call headers.
-    let show_headers = group.calls.len() > 1;
+    // summary is a counted breakdown) need the per-call headers. An `Explored`
+    // row already ends on its tree of actions, so its detail always names each
+    // call and carries that tree on rather than opening a second corner.
+    let explored = group.explored();
+    let show_headers = group.calls.len() > 1 || explored;
+    let first = |out: &Vec<Line<'static>>| out.is_empty() && !explored;
     for call in &group.calls {
         if show_headers {
             let state = match call.content {
@@ -9543,7 +9637,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
             };
             out.extend(gutter_lines(
                 wrap_spans_hard(verb_first_spans(&call.done, Style::new()), max),
-                vec![child_prefix(out.is_empty()), state.bullet()],
+                vec![child_prefix(first(&out)), state.bullet()],
                 vec![Span::raw(TREE_NESTED)],
             ));
         }
@@ -9563,7 +9657,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
         let lead = if show_headers {
             Span::raw(TREE_NESTED)
         } else {
-            child_prefix(out.is_empty())
+            child_prefix(first(&out))
         };
         out.extend(gutter_lines(rows, vec![lead], vec![Span::raw(indent)]));
         if let Some(diff) = &call.diff {
@@ -9586,6 +9680,189 @@ fn tool_kind(name: &str) -> (&'static str, bool) {
         "bash" | "shell" | "exec" => ("command", false),
         _ => ("tool call", false),
     }
+}
+
+/// What a read-only exploration call names on its `Explored` child row, or
+/// `None` for any call that is not one (a command, a write, the web), which
+/// keeps its group on the counted summary.
+fn explore_of(name: &str, args: &serde_json::Value) -> Option<Explore> {
+    let s = |k: &str| {
+        args.get(k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .unwrap_or("")
+            .to_string()
+    };
+    // `.` is the tools' own default, so naming it would only add noise.
+    let scope = || Some(s("path")).filter(|p| !p.is_empty() && p != ".");
+    let named = |noun| Explore::Read {
+        noun: Some(noun),
+        target: s("name").trim_end_matches(".md").to_string(),
+    };
+    match name {
+        "read" => Some(Explore::Read {
+            noun: None,
+            target: s("path"),
+        }),
+        "list" | "ls" => Some(Explore::List {
+            target: scope().unwrap_or_else(|| ".".to_string()),
+        }),
+        "grep" | "search" | "find" | "glob" => Some(Explore::Search {
+            query: s("pattern"),
+            scope: scope(),
+        }),
+        "memory_read" => Some(named("memory")),
+        "skill_read" => Some(named("skill")),
+        "memory_list" => Some(Explore::List {
+            target: "memory notes".to_string(),
+        }),
+        "skill_list" => Some(Explore::List {
+            target: "skills".to_string(),
+        }),
+        _ => None,
+    }
+}
+
+/// Calls in an exploration group whose result came back as an error.
+fn explore_failures(calls: &[GroupedCall]) -> usize {
+    calls
+        .iter()
+        .filter(|c| c.content.is_some() && c.is_error)
+        .count()
+}
+
+/// The child rows of an `Explored` group, in call order. Consecutive
+/// successful reads of one kind merge into a single `Read a, b` row (a file
+/// read twice is named once); a failed read stands alone so its suffix names
+/// only it. Files go by their name unless another path in the group shares it.
+fn explore_actions(calls: &[GroupedCall]) -> Vec<ExploreAction> {
+    let file_name = |p: &str| {
+        std::path::Path::new(p)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(p)
+            .to_string()
+    };
+    let paths: Vec<&str> = calls
+        .iter()
+        .filter_map(|c| match &c.explore {
+            Some(Explore::Read { noun: None, target }) => Some(target.as_str()),
+            _ => None,
+        })
+        .collect();
+    let shown = |p: &str| {
+        let base = file_name(p);
+        if paths.iter().any(|q| *q != p && file_name(q) == base) {
+            p.to_string()
+        } else {
+            base
+        }
+    };
+    let mut out: Vec<ExploreAction> = Vec::new();
+    for call in calls {
+        let Some(explore) = &call.explore else {
+            continue;
+        };
+        let outcome = match &call.content {
+            Some(_) if call.is_error => ExploreOutcome::Failed,
+            Some(content)
+                if matches!(explore, Explore::Search { .. })
+                    && content.trim() == "No matches." =>
+            {
+                ExploreOutcome::Empty
+            }
+            _ => ExploreOutcome::Ok,
+        };
+        let (verb, noun, item, scope) = match explore {
+            Explore::Read { noun, target } => {
+                let item = if noun.is_none() {
+                    shown(target)
+                } else {
+                    target.clone()
+                };
+                ("Read", *noun, item, None)
+            }
+            Explore::Search { query, scope } => ("Search", None, query.clone(), scope.clone()),
+            Explore::List { target } => ("List", None, target.clone(), None),
+        };
+        if verb == "Read" && outcome == ExploreOutcome::Ok {
+            if let Some(last) = out.last_mut().filter(|a| {
+                a.verb == "Read" && a.noun == noun && a.outcome == ExploreOutcome::Ok
+            }) {
+                if !last.items.contains(&item) {
+                    last.items.push(item);
+                }
+                continue;
+            }
+        }
+        out.push(ExploreAction {
+            verb,
+            noun,
+            items: vec![item],
+            scope,
+            outcome,
+        });
+    }
+    out
+}
+
+/// Child rows an `Explored` header shows before the rest fold into a count.
+const EXPLORE_MAX_ROWS: usize = 4;
+
+/// An exploration group: `bullet` and the bold `verb` (`Exploring` while a call
+/// is in flight, `Explored` after), a red failure count, then one child row per
+/// action under the tree, capped at `EXPLORE_MAX_ROWS` plus a count of the rest.
+/// The running and finished forms differ only in the header, so the rows below
+/// do not move as the group resolves.
+fn explored_lines(
+    bullet: Span<'static>,
+    verb: &'static str,
+    failed: usize,
+    actions: &[ExploreAction],
+    suffix: Vec<Span<'static>>,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let mut head = vec![bullet, Span::styled(verb, Style::new().bold())];
+    if failed > 0 {
+        head.push(Span::styled(format!(" \u{b7} {failed} failed"), Style::new().red()));
+    }
+    head.extend(suffix);
+    let mut out = vec![Line::from(head)];
+    let dim = Style::new().dark_gray();
+    let max = (width as usize).saturating_sub(TREE_REST.len() + 2).max(1);
+    for (i, action) in actions.iter().take(EXPLORE_MAX_ROWS).enumerate() {
+        let mut spans = vec![Span::styled(action.verb, Style::new().fg(theme::accent()))];
+        if let Some(noun) = action.noun {
+            spans.push(Span::raw(format!(" {noun}:")));
+        }
+        for (n, item) in action.items.iter().filter(|t| !t.is_empty()).enumerate() {
+            if n > 0 {
+                spans.push(Span::styled(",", dim));
+            }
+            spans.push(Span::raw(format!(" {item}")));
+        }
+        if let Some(scope) = &action.scope {
+            spans.push(Span::styled(" in ", dim));
+            spans.push(Span::raw(scope.clone()));
+        }
+        match action.outcome {
+            ExploreOutcome::Ok => {}
+            ExploreOutcome::Empty => spans.push(Span::styled(" (no matches)", dim)),
+            ExploreOutcome::Failed => spans.push(Span::styled(" (failed)", Style::new().red())),
+        }
+        out.extend(gutter_lines(
+            wrap_spans_hard(spans, max),
+            vec![child_prefix(i == 0)],
+            vec![Span::raw(TREE_REST)],
+        ));
+    }
+    if actions.len() > EXPLORE_MAX_ROWS {
+        out.push(Line::from(Span::styled(
+            format!("{TREE_REST}\u{2026} +{} more", actions.len() - EXPLORE_MAX_ROWS),
+            dim,
+        )));
+    }
+    out
 }
 
 /// Short sentence summarizing a finished tool group, e.g. "Read 3 memory notes,
@@ -9639,13 +9916,24 @@ fn trace_done_line() -> Line<'static> {
 /// the wrap is the committed row's); the finished row is the plain one.
 fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
     let elapsed = group.started.elapsed().as_secs();
+    let badge = vec![Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray())];
+    if group.explored() {
+        return explored_lines(
+            running_bullet(spinner_frame),
+            "Exploring",
+            explore_failures(&group.calls),
+            &explore_actions(&group.calls),
+            badge,
+            width,
+        );
+    }
     tool_row_lines(
         running_bullet(spinner_frame),
         &group.activity(),
         Style::new(),
         TOOL_ROW_RESERVE,
         width,
-        vec![Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray())],
+        badge,
     )
 }
 
@@ -23743,7 +24031,7 @@ mod tests {
     fn tool_state(row: &Row) -> Option<ToolState> {
         fn of(kind: &RowKind) -> Option<ToolState> {
             match kind {
-                RowKind::Tool { state, .. } => Some(*state),
+                RowKind::Tool { state, .. } | RowKind::Explored { state, .. } => Some(*state),
                 RowKind::Resolved { call, .. } => of(call),
                 _ => None,
             }
@@ -31750,10 +32038,12 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
+        // A command makes this a mixed group, which keeps the counted summary;
+        // an all-exploration group reports every failure on its header instead.
         app.apply(StreamEvent::ToolCall {
             id: "c2".into(),
-            name: "read".into(),
-            args: json!({ "path": "main.rs" }),
+            name: "bash".into(),
+            args: json!({ "command": "cat main.rs" }),
         });
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -31914,26 +32204,32 @@ mod tests {
                 diff: None,
             });
         }
-        // All four folded into a single running row with a live counter.
+        // All four folded into a single row listing what they explored.
         let tool_rows = app
             .transcript
             .iter()
-            .filter(|r| row_text(r).contains("Reading") || row_text(r).contains("Read "))
+            .filter(|r| row_text(r).contains("Explor"))
             .count();
         assert_eq!(tool_rows, 1);
-        // Every call has reported, so the row already reads as a finished
-        // breakdown -- not "<latest> (4)", and not still-running until the
-        // model speaks.
+        // Every call has reported, so the row already reads as finished -- not
+        // still-running until the model speaks -- and the two note reads share
+        // one child row.
+        let listed = "• Explored\n  └ List memory notes\n    List skills\n    \
+                      Read memory: project-overview, top-p";
         let row = row_text(app.transcript.last().unwrap());
-        assert!(row.contains("• Read 3 memory notes, 1 skill"), "row: {row}");
+        assert_eq!(row, listed);
         assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
         // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
-        let row = row_text(app.transcript.last().unwrap());
-        assert!(row.contains("• Read 3 memory notes, 1 skill"), "row: {row}");
-        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
+        let row = app
+            .transcript
+            .iter()
+            .find(|r| row_text(r).starts_with("• Explored"))
+            .expect("the group row");
+        assert_eq!(row_text(row), listed);
+        assert_eq!(tool_state(row), Some(ToolState::Success));
     }
 
     #[test]
@@ -32022,8 +32318,210 @@ mod tests {
         });
         let group = app.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 2, 80));
-        assert!(text.starts_with("• Searching"), "{text}");
+        assert!(text.starts_with("• Exploring"), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
+    }
+
+    /// Feed `calls` (id, tool, args, result, is_error) through the stream as
+    /// one batch: every call first, then every result, as the loop emits them.
+    fn explore_batch(app: &mut App, calls: &[(&str, &str, serde_json::Value, &str, bool)]) {
+        for (id, name, args, ..) in calls {
+            app.apply(StreamEvent::ToolCall {
+                id: (*id).into(),
+                name: (*name).into(),
+                args: args.clone(),
+            });
+        }
+        for (id, _, _, content, is_error) in calls {
+            app.apply(StreamEvent::ToolResult {
+                id: (*id).into(),
+                content: (*content).into(),
+                is_error: *is_error,
+                diff: None,
+            });
+        }
+        app.finalize_tool_group();
+    }
+
+    /// The first closed group's row: its text and its rendered lines.
+    fn explored_row(app: &App) -> (String, Vec<Line<'static>>) {
+        let row = &app.transcript[app.groups[0].idx];
+        (row_text(row), row.lines(80))
+    }
+
+    #[test]
+    fn explored_row_merges_consecutive_reads_and_names_each_file_once() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "src/a.rs" }), "a", false),
+                ("c2", "read", json!({ "path": "src/b.rs" }), "b", false),
+                ("c3", "read", json!({ "path": "src/a.rs" }), "a", false),
+                ("c4", "grep", json!({ "pattern": "fn x", "path": "src" }), "a.rs:1", false),
+                ("c5", "read", json!({ "path": "src/c.rs" }), "c", false),
+                ("c6", "ls", json!({ "path": "docs" }), "x.md", false),
+            ],
+        );
+        let (text, lines) = explored_row(&app);
+        assert_eq!(
+            text,
+            "• Explored\n  └ Read a.rs, b.rs\n    Search fn x in src\n    \
+             Read c.rs\n    List docs"
+        );
+        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Success));
+        // The verb is the accent colour; separators and ` in ` are chrome.
+        let dim = Style::new().dark_gray();
+        let span = |line: usize, text: &str| {
+            lines[line]
+                .spans
+                .iter()
+                .find(|s| s.content == text)
+                .map(|s| s.style)
+                .unwrap_or_else(|| panic!("no {text:?} on line {line}"))
+        };
+        assert_eq!(span(1, "Read"), Style::new().fg(super::theme::accent()));
+        assert_eq!(span(1, ","), dim);
+        assert_eq!(span(2, " in "), dim);
+    }
+
+    #[test]
+    fn explored_row_spells_out_paths_whose_file_names_collide() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "src/cli/mod.rs" }), "a", false),
+                ("c2", "read", json!({ "path": "src/agent/mod.rs" }), "b", false),
+                ("c3", "read", json!({ "path": "src/lib.rs" }), "c", false),
+            ],
+        );
+        let (text, _) = explored_row(&app);
+        assert_eq!(
+            text,
+            "• Explored\n  └ Read src/cli/mod.rs, src/agent/mod.rs, lib.rs"
+        );
+    }
+
+    #[test]
+    fn explored_row_marks_each_failed_action_and_counts_them_on_the_header() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "a.rs" }), "a", false),
+                ("c2", "read", json!({ "path": "gone.rs" }), "ERROR: no such file", true),
+                ("c3", "read", json!({ "path": "b.rs" }), "b", false),
+            ],
+        );
+        let (text, lines) = explored_row(&app);
+        // The failed read breaks the merge, so its suffix names only it.
+        assert_eq!(
+            text,
+            "• Explored · 1 failed\n  └ Read a.rs\n    Read gone.rs (failed)\n    Read b.rs"
+        );
+        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Failure));
+        let red = Style::new().red();
+        assert!(lines[0].spans.iter().any(|s| s.content == " · 1 failed" && s.style == red));
+        assert!(lines[2].spans.iter().any(|s| s.content == " (failed)" && s.style == red));
+    }
+
+    #[test]
+    fn explored_search_without_matches_is_noted_not_failed() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[("c1", "grep", json!({ "pattern": "nowhere" }), "No matches.", false)],
+        );
+        let (text, lines) = explored_row(&app);
+        assert_eq!(text, "• Explored\n  └ Search nowhere (no matches)");
+        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Success));
+        let note = lines[1]
+            .spans
+            .iter()
+            .find(|s| s.content == " (no matches)")
+            .expect("the note");
+        assert_eq!(note.style, Style::new().dark_gray());
+    }
+
+    #[test]
+    fn explored_row_caps_its_children_and_expands_to_every_call() {
+        let mut app = test_app();
+        let calls: Vec<(String, serde_json::Value)> = (0..6)
+            .map(|i| (format!("c{i}"), json!({ "pattern": format!("needle{i}") })))
+            .collect();
+        let batch: Vec<_> = calls
+            .iter()
+            .map(|(id, args)| (id.as_str(), "grep", args.clone(), "hit", false))
+            .collect();
+        explore_batch(&mut app, &batch);
+        let (text, lines) = explored_row(&app);
+        assert_eq!(
+            text,
+            "• Explored\n  └ Search needle0\n    Search needle1\n    Search needle2\n    \
+             Search needle3\n    … +2 more"
+        );
+        assert_eq!(lines[5].spans[0].style, Style::new().dark_gray());
+        // Ctrl-O shows every call with its result, carried on the same tree.
+        let detail = lines_text(&group_detail_lines(&app.groups[0], 80));
+        assert!(detail.contains("Searched") && detail.contains("hit"), "{detail}");
+        assert_eq!(detail.matches("Searched").count(), 6, "{detail}");
+        assert!(!detail.contains('└'), "{detail}");
+    }
+
+    #[test]
+    fn explored_running_form_lays_out_the_rows_it_resolves_to() {
+        let mut app = test_app();
+        let calls = [
+            ("c1", "read", json!({ "path": "a.rs" })),
+            ("c2", "read", json!({ "path": "b.rs" })),
+            ("c3", "grep", json!({ "pattern": "x" })),
+        ];
+        for (id, name, args) in calls {
+            app.apply(StreamEvent::ToolCall {
+                id: id.into(),
+                name: name.into(),
+                args,
+            });
+        }
+        for id in ["c1", "c2"] {
+            app.apply(StreamEvent::ToolResult {
+                id: id.into(),
+                content: "ok".into(),
+                is_error: false,
+                diff: None,
+            });
+        }
+        let group = app.tool_group.as_ref().expect("open group");
+        let running = lines_text(&running_group_rows(group, 0, 80));
+        assert!(running.starts_with("• Exploring ("), "{running}");
+        app.apply(StreamEvent::ToolResult {
+            id: "c3".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        let (closed, _) = explored_row(&app);
+        assert!(closed.starts_with("• Explored\n"), "{closed}");
+        // Only the header changes: every child row stays where it was.
+        let children = |t: &str| t.split_once('\n').map(|(_, rest)| rest.to_string());
+        assert_eq!(children(&running), children(&closed));
+        assert_eq!(children(&closed).unwrap(), "  └ Read a.rs, b.rs\n    Search x");
+    }
+
+    #[test]
+    fn a_group_with_any_non_exploration_call_keeps_the_counted_summary() {
+        let mut app = test_app();
+        explore_batch(
+            &mut app,
+            &[
+                ("c1", "read", json!({ "path": "a.rs" }), "a", false),
+                ("c2", "web_search", json!({ "query": "rust" }), "r", false),
+            ],
+        );
+        let (text, _) = explored_row(&app);
+        assert_eq!(text, "• Read 1 file; ran 1 tool call");
     }
 
     /// A lone in-flight call is specific enough to name: the live row shows its
@@ -32182,7 +32680,7 @@ mod tests {
             Some(ToolState::Success),
             "status lagged behind the result: {row}"
         );
-        assert!(row.contains("Searched"), "row not past tense: {row}");
+        assert!(row.starts_with("• Explored"), "row not past tense: {row}");
 
         // A later call in the same group reopens it as running.
         app.apply(StreamEvent::ToolCall {
@@ -39151,8 +39649,10 @@ mod tests {
         });
         let group = app.tool_group.as_ref().expect("open group");
         assert!(group.is_running());
+        // Only the header animates; the child rows below carry their accent
+        // verb in every mode, so they are not part of the motion signal.
         let rgb = |lines: &[Line<'static>]| {
-            lines.iter().flat_map(|l| l.spans.iter()).any(|s| {
+            lines[0].spans.iter().any(|s| {
                 matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))
             })
         };
@@ -39166,7 +39666,7 @@ mod tests {
                 with_mode(MotionMode::Animated, || running_group_rows(group, frame, 80))
             });
             assert_eq!(lines_text(&moving), lines_text(&still), "frame {frame}");
-            assert!(lines_text(&still).starts_with("\u{2022} Searching"));
+            assert!(lines_text(&still).starts_with("\u{2022} Exploring"));
             for rows in [&still, &flat] {
                 assert!(!rgb(rows), "frame {frame}");
                 assert_eq!(rows[0].spans[0].style, rest, "frame {frame}");
