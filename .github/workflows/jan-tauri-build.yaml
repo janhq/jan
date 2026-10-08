@@ -59,6 +59,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
 
   build-linux-x64:
     uses: ./.github/workflows/template-tauri-build-linux-x64.yml
@@ -70,6 +71,7 @@ jobs:
       channel: stable
       new_version: ${{ needs.get-update-version.outputs.new_version }}
       upload_url: ${{ needs.create-draft-release.outputs.upload_url }}
+      engine_variant: cuda13-vulkan
 
   build-windows-arm64:
     uses: ./.github/workflows/template-tauri-build-windows-arm64.yml

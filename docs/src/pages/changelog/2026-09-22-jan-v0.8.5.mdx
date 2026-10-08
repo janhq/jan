@@ -91,6 +91,8 @@ On Windows it runs in PowerShell, so Git Bash is no longer needed; on macOS and 
 - Log rotation no longer deletes the llama.cpp and worker logs.
 - An in-app update stops the running engine, MCP servers and agent shells before the installer runs. If 0.8.4 left its engine running after an update, Jan stops it at the next start.
 - The Linux AppImage shows its icon again.
+- The Windows installer template substitutes `jan_workspace` correctly.
+- On Windows, the Start-menu and desktop shortcuts keep working after the in-app update renames the app executable.
 
 **Agent & Tooling**
 
