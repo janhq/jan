@@ -2981,6 +2981,12 @@ struct SubagentPanel {
     /// the block says what the fan-out is *for*, not just who is running.
     task: String,
     calls: Vec<String>,
+    /// Identity of the newest call -- tool name plus its full arguments -- and
+    /// how many calls in a row shared it. Kept apart from `calls` because those
+    /// are display labels: two reads of one file at different offsets share a
+    /// label but are not a spin.
+    last_call_key: Option<String>,
+    repeats: usize,
     /// Upstream requests this child has made, counted from its `Step` events.
     /// Distinct from `calls.len()`: one request can carry several tool calls,
     /// and a request can carry none.
@@ -3069,6 +3075,23 @@ fn push_child_prose(prose: &mut String, text: &str) {
 }
 
 impl SubagentPanel {
+    /// Record a completed call. It extends the repeat run only when both the
+    /// tool and its arguments match the previous call; a call with no
+    /// arguments is keyed by the tool name alone.
+    fn record_call(&mut self, tool: &str, args: &serde_json::Value, label: String) {
+        let key = match args {
+            serde_json::Value::Null => tool.to_string(),
+            args => format!("{tool}\u{0}{args}"),
+        };
+        if self.last_call_key.as_deref() == Some(key.as_str()) {
+            self.repeats += 1;
+        } else {
+            self.repeats = 1;
+            self.last_call_key = Some(key);
+        }
+        self.calls.push(label);
+    }
+
     /// The child's cumulative prompt-cache hit rate, `None` until its route
     /// has reported a cache field (the same rule `/context` follows).
     fn cache_hit_rate(&self) -> Option<f64> {
@@ -6572,6 +6595,8 @@ impl App {
                         name: p.name,
                         task: String::new(),
                         calls: Vec::new(),
+                        last_call_key: None,
+                        repeats: 0,
                         requests: 0,
                         prompt_tokens: 0,
                         total_prompt_tokens: 0,
@@ -6612,6 +6637,8 @@ impl App {
                         name,
                         task: task.unwrap_or_default(),
                         calls: Vec::new(),
+                        last_call_key: None,
+                        repeats: 0,
                         requests: 0,
                         prompt_tokens: 0,
                         total_prompt_tokens: 0,
@@ -6656,6 +6683,8 @@ impl App {
                         name,
                         task: task.unwrap_or_default(),
                         calls: Vec::new(),
+                        last_call_key: None,
+                        repeats: 0,
                         requests: 0,
                         prompt_tokens: 0,
                         total_prompt_tokens: 0,
@@ -6827,7 +6856,7 @@ impl App {
                     }
                     // Full history retained for expansion; the panel renders only
                     // the last SUBAGENT_WINDOW.
-                    panel.calls.push(label);
+                    panel.record_call(&tool, &args, label);
                     panel.push_log(ChildLogEntry::Call {
                         id,
                         label: tool_finished(&tool, &args),
@@ -17614,7 +17643,7 @@ fn panel_activity_summary(panel: &SubagentPanel) -> String {
             None => "waiting".to_string(),
         };
     }
-    let repeats = trailing_repeat(&panel.calls);
+    let repeats = panel.repeats;
     if repeats >= STUCK_REPEAT_THRESHOLD {
         return format!("{} ×{repeats}", panel.calls.last().cloned().unwrap_or_default());
     }
@@ -17693,7 +17722,7 @@ fn agent_detail_lines(
 fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let max = (width.max(8) as usize).saturating_sub(2);
-    let repeats = trailing_repeat(&panel.calls);
+    let repeats = panel.repeats;
     let mut out: Vec<Line<'static>> = Vec::new();
     for entry in &panel.log {
         match entry {
@@ -21815,17 +21844,6 @@ const AGENT_MAX_ROWS: usize = 3;
 /// the collapsed `×N` marker turns red to flag it.
 const STUCK_REPEAT_THRESHOLD: usize = 4;
 
-/// Length of the trailing run of the last entry in `calls`: 0 when empty, 1 when
-/// the last call differs from the one before it. Lets the panel collapse a spin
-/// (`bash …` repeated dozens of times) into one `×N` line instead of
-/// showing the newest copy alone, with only the tool counter to betray the loop.
-fn trailing_repeat(calls: &[String]) -> usize {
-    match calls.last() {
-        None => 0,
-        Some(last) => calls.iter().rev().take_while(|l| *l == last).count(),
-    }
-}
-
 /// The live fan-out, as a column: one stats line per child plus as much detail
 /// as `rows` allows.
 ///
@@ -21939,7 +21957,7 @@ fn agents_column(
         // own newlines rather than word-wrapping: models write these as
         // structured briefs whose first line is the summary.
         let brief = panel.task.lines().find(|l| !l.trim().is_empty());
-        let repeats = trailing_repeat(&panel.calls);
+        let repeats = panel.repeats;
         let activity = if repeats >= STUCK_REPEAT_THRESHOLD {
             // A run of identical calls is a spin: show the count in red so it
             // reads as stuck rather than working, even while the newest copy is
@@ -23020,7 +23038,7 @@ mod tests {
     use super::{
         agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
         cache_summary_lines, child_result_summary, open_agents_picker, push_child_prose,
-        retry_wait_label, trailing_repeat, RetryWait, SubagentPanel, CHILD_PROSE_MAX,
+        retry_wait_label, RetryWait, SubagentPanel, CHILD_PROSE_MAX,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -23122,11 +23140,13 @@ mod tests {
     }
 
     fn panel_with_calls(name: &str, calls: Vec<&str>) -> SubagentPanel {
-        SubagentPanel {
+        let mut panel = SubagentPanel {
             run_id: format!("sub-{name}-1"),
             name: name.to_string(),
             task: "review the file".to_string(),
-            calls: calls.into_iter().map(String::from).collect(),
+            calls: Vec::new(),
+            last_call_key: None,
+            repeats: 0,
             requests: 0,
             prompt_tokens: 0,
             total_prompt_tokens: 0,
@@ -23138,15 +23158,50 @@ mod tests {
             pending: false,
             phase: None,
             log: Vec::new(),
+        };
+        // Each label stands in for one distinct set of arguments, so equal
+        // labels here are genuine repeats.
+        for call in calls {
+            panel.record_call("bash", &serde_json::Value::String(call.into()), call.into());
         }
+        panel
     }
 
+    /// A repeat needs the same tool AND the same arguments. Two reads that
+    /// render the same label (one file, different offsets) are progress, not a
+    /// spin, so they must not build up a red `×N`.
     #[test]
-    fn trailing_repeat_counts_the_final_run() {
-        assert_eq!(trailing_repeat(&[]), 0);
-        assert_eq!(trailing_repeat(&["a".into()]), 1);
-        assert_eq!(trailing_repeat(&["a".into(), "b".into(), "b".into()]), 2);
-        assert_eq!(trailing_repeat(&["b".into(), "b".into(), "a".into()]), 1);
+    fn a_repeat_needs_the_same_tool_and_arguments() {
+        let mut panel = panel_with_calls("kv-review", vec![]);
+        assert_eq!(panel.repeats, 0);
+        let read = |offset: u64| json!({ "path": "src/main.rs", "offset": offset });
+        panel.record_call("read", &read(0), "read src/main.rs".into());
+        panel.record_call("read", &read(0), "read src/main.rs".into());
+        assert_eq!(panel.repeats, 2, "same tool, same arguments");
+        panel.record_call("read", &read(200), "read src/main.rs".into());
+        assert_eq!(panel.repeats, 1, "same label, new offset: not a repeat");
+        panel.record_call("grep", &read(200), "grep".into());
+        assert_eq!(panel.repeats, 1, "same arguments, other tool: not a repeat");
+        panel.record_call("todo", &serde_json::Value::Null, "todos".into());
+        panel.record_call("todo", &serde_json::Value::Null, "todos".into());
+        assert_eq!(panel.repeats, 2, "no arguments: the tool alone is the key");
+        assert_eq!(panel.calls.len(), 6, "every call is still listed");
+    }
+
+    /// Labels that collide must not read as a spin in the dock either.
+    #[test]
+    fn agents_column_does_not_flag_same_label_calls_with_new_arguments() {
+        let mut panel = panel_with_calls("kv-review", vec![]);
+        for offset in 0..5u64 {
+            panel.record_call(
+                "read",
+                &json!({ "path": "big.rs", "offset": offset * 100 }),
+                "read big.rs".into(),
+            );
+        }
+        let lines = agents_column(&mut [panel], 200_000, 80, 8, "-");
+        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(!text.contains('\u{d7}'), "no repeat marker: {text}");
     }
 
     /// A worker spinning on one call collapses to a `×N` line in the panel, so
@@ -29012,6 +29067,36 @@ mod tests {
             name: name.into(),
             event: Box::new(event),
         }
+    }
+
+    /// Through the real event path: the same tool with new arguments resets
+    /// the run even when the label would read the same.
+    #[test]
+    fn subagent_repeat_count_follows_tool_and_arguments() {
+        let mut app = test_app();
+        app.apply(StreamEvent::SubagentStart {
+            run_id: "r1".into(),
+            name: "reviewer".into(),
+            task: None,
+        });
+        let call = |i: u32, offset: u64| {
+            wrap(
+                "r1",
+                "reviewer",
+                StreamEvent::ToolCall {
+                    id: format!("c{i}"),
+                    name: "read".into(),
+                    args: json!({ "path": "a.rs", "offset": offset }),
+                },
+            )
+        };
+        for i in 0..3 {
+            app.apply(call(i, 0));
+        }
+        app.apply(call(3, 40));
+        let panel = app.subagents.iter().find(|p| p.run_id == "r1").expect("panel");
+        assert_eq!(panel.repeats, 1, "a new offset starts a new run");
+        assert_eq!(panel.calls.len(), 4);
     }
 
     #[test]
