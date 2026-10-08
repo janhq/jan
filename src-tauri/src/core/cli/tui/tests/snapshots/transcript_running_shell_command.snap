@@ -1,40 +1,27 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 162
 expression: render_snapshot(buf)
 ---
 |                                                                                |
 |› build it                                                                      |
 |                                                                                |
 |                                                                                |
-|│   ┌──────────────────────────────────────────────────────────────────────────┐|
-|│   │ $ make build                                                             │|
-|│   │ compiling core                                                           │|
-|│   │ compiling cli                                                            │|
-|│   │ linking jan                                                              │|
-|│   │ • 0s                                                                     │|
-|│   └──────────────────────────────────────────────────────────────────────────┘|
+|• Running make build (0s)                                                       |
+|  └ compiling core                                                              |
+|    compiling cli                                                               |
+|    linking jan                                                                 |
 
  0 0..80 bg=#282C3A
  1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
  1 2..10 fg=#E9ECF2 bg=#282C3A mod=BOLD
  1 10..80 bg=#282C3A
  2 0..80 bg=#282C3A
- 4 0..80 fg=DarkGray
- 5 0..6 fg=DarkGray
- 5 6..8 fg=Cyan mod=BOLD
- 5 8..18 mod=BOLD
- 5 18..80 fg=DarkGray
- 6 0..6 fg=DarkGray
- 6 6..20 mod=DIM
- 6 20..80 fg=DarkGray
- 7 0..6 fg=DarkGray
- 7 6..19 mod=DIM
- 7 19..80 fg=DarkGray
- 8 0..6 fg=DarkGray
- 8 6..17 mod=DIM
- 8 17..80 fg=DarkGray
- 9 0..6 fg=DarkGray
- 9 6..8 fg=Cyan
- 9 8..80 fg=DarkGray
-10 0..80 fg=DarkGray
+ 4 0..2 mod=DIM
+ 4 2..9 mod=BOLD
+ 4 20..25 fg=DarkGray
+ 5 0..4 fg=DarkGray
+ 5 4..18 mod=DIM
+ 6 0..4 fg=DarkGray
+ 6 4..17 mod=DIM
+ 7 0..4 fg=DarkGray
+ 7 4..15 mod=DIM

@@ -1,20 +1,19 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 162
 expression: render_snapshot(buf)
 ---
 |                                                                                |
 |› use u64 for the area                                                          |
 |                                                                                |
 |                                                                                |
-|• Edited geometry.rs                                                            |
-|    ┌───────────────────────────────────┐                                       |
-|    │ @@ edit 1/1 @@                    │                                       |
-|    │  use std::fmt;                    │                                       |
-|    │ -fn area(w: u32, h: u32) -> u32 { │                                       |
-|    │ +fn area(w: u64, h: u64) -> u64 { │                                       |
-|    │      w * h                        │                                       |
-|    └───────────────────────────────────┘                                       |
+|• Edited geometry.rs (+2 -2)                                                    |
+|      8  use std::fmt;                                                          |
+|      9 -fn area(w: u32, h: u32) -> u32 {                                       |
+|      9 +fn area(w: u64, h: u64) -> u64 {                                       |
+|     10      w * h                                                              |
+|    ⋮                                                                           |
+|    112 -    let cells: u32 = area(4, 4);                                       |
+|    112 +    let cells: u64 = area(4, 4);                                       |
 
  0 0..80 bg=#282C3A
  1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
@@ -23,55 +22,78 @@ expression: render_snapshot(buf)
  2 0..80 bg=#282C3A
  4 0..2 fg=#98C379 mod=BOLD
  4 2..8 mod=BOLD
- 5 0..41 fg=DarkGray
- 6 0..6 fg=DarkGray
- 6 6..20 fg=Cyan mod=DIM
- 6 20..41 fg=DarkGray
- 7 0..6 fg=DarkGray
- 7 6..7 mod=DIM
- 7 7..10 fg=#B48EAD
- 7 10..20 fg=#C0C5CE
- 7 20..41 fg=DarkGray
- 8 0..5 fg=DarkGray
- 8 5..6 fg=DarkGray bg=#421A1E
- 8 6..7 fg=Red bg=#421A1E mod=BOLD
- 8 7..9 fg=#B48EAD bg=#421A1E
- 8 9..10 fg=#C0C5CE bg=#421A1E
- 8 10..14 fg=#8FA1B3 bg=#421A1E
- 8 14..15 fg=#C0C5CE bg=#421A1E
- 8 15..16 fg=#BF616A bg=#421A1E
- 8 16..18 fg=#C0C5CE bg=#421A1E
- 8 18..21 fg=#B48EAD bg=#421A1E
- 8 21..23 fg=#C0C5CE bg=#421A1E
- 8 23..24 fg=#BF616A bg=#421A1E
- 8 24..26 fg=#C0C5CE bg=#421A1E
- 8 26..29 fg=#B48EAD bg=#421A1E
- 8 29..34 fg=#C0C5CE bg=#421A1E
- 8 34..37 fg=#B48EAD bg=#421A1E
- 8 37..39 fg=#C0C5CE bg=#421A1E
- 8 39..40 fg=DarkGray bg=#421A1E
- 8 40..41 fg=DarkGray
- 9 0..5 fg=DarkGray
- 9 5..6 fg=DarkGray bg=#163420
- 9 6..7 fg=Green bg=#163420 mod=BOLD
- 9 7..9 fg=#B48EAD bg=#163420
- 9 9..10 fg=#C0C5CE bg=#163420
- 9 10..14 fg=#8FA1B3 bg=#163420
- 9 14..15 fg=#C0C5CE bg=#163420
- 9 15..16 fg=#BF616A bg=#163420
- 9 16..18 fg=#C0C5CE bg=#163420
- 9 18..21 fg=#B48EAD bg=#163420
- 9 21..23 fg=#C0C5CE bg=#163420
- 9 23..24 fg=#BF616A bg=#163420
- 9 24..26 fg=#C0C5CE bg=#163420
- 9 26..29 fg=#B48EAD bg=#163420
- 9 29..34 fg=#C0C5CE bg=#163420
- 9 34..37 fg=#B48EAD bg=#163420
- 9 37..39 fg=#C0C5CE bg=#163420
- 9 39..40 fg=DarkGray bg=#163420
- 9 40..41 fg=DarkGray
-10 0..6 fg=DarkGray
-10 6..7 mod=DIM
-10 7..16 fg=#C0C5CE
-10 16..41 fg=DarkGray
-11 0..41 fg=DarkGray
+ 4 20..22 fg=DarkGray
+ 4 22..24 fg=Green
+ 4 24..25 fg=DarkGray
+ 4 25..27 fg=Red
+ 4 27..28 fg=DarkGray
+ 5 4..8 fg=DarkGray
+ 5 8..9 mod=DIM
+ 5 9..12 fg=#B48EAD
+ 5 12..22 fg=#C0C5CE
+ 6 4..8 fg=DarkGray
+ 6 8..9 fg=Red bg=#421A1E mod=BOLD
+ 6 9..11 fg=#B48EAD bg=#421A1E
+ 6 11..12 fg=#C0C5CE bg=#421A1E
+ 6 12..16 fg=#8FA1B3 bg=#421A1E
+ 6 16..17 fg=#C0C5CE bg=#421A1E
+ 6 17..18 fg=#BF616A bg=#421A1E
+ 6 18..20 fg=#C0C5CE bg=#421A1E
+ 6 20..23 fg=#B48EAD bg=#421A1E
+ 6 23..25 fg=#C0C5CE bg=#421A1E
+ 6 25..26 fg=#BF616A bg=#421A1E
+ 6 26..28 fg=#C0C5CE bg=#421A1E
+ 6 28..31 fg=#B48EAD bg=#421A1E
+ 6 31..36 fg=#C0C5CE bg=#421A1E
+ 6 36..39 fg=#B48EAD bg=#421A1E
+ 6 39..41 fg=#C0C5CE bg=#421A1E
+ 6 41..79 bg=#421A1E
+ 7 4..8 fg=DarkGray
+ 7 8..9 fg=Green bg=#163420 mod=BOLD
+ 7 9..11 fg=#B48EAD bg=#163420
+ 7 11..12 fg=#C0C5CE bg=#163420
+ 7 12..16 fg=#8FA1B3 bg=#163420
+ 7 16..17 fg=#C0C5CE bg=#163420
+ 7 17..18 fg=#BF616A bg=#163420
+ 7 18..20 fg=#C0C5CE bg=#163420
+ 7 20..23 fg=#B48EAD bg=#163420
+ 7 23..25 fg=#C0C5CE bg=#163420
+ 7 25..26 fg=#BF616A bg=#163420
+ 7 26..28 fg=#C0C5CE bg=#163420
+ 7 28..31 fg=#B48EAD bg=#163420
+ 7 31..36 fg=#C0C5CE bg=#163420
+ 7 36..39 fg=#B48EAD bg=#163420
+ 7 39..41 fg=#C0C5CE bg=#163420
+ 7 41..79 bg=#163420
+ 8 4..8 fg=DarkGray
+ 8 8..9 mod=DIM
+ 8 9..18 fg=#C0C5CE
+ 9 4..5 fg=DarkGray
+10 4..8 fg=DarkGray
+10 8..9 fg=Red bg=#421A1E mod=BOLD
+10 9..13 fg=#C0C5CE bg=#421A1E
+10 13..16 fg=#B48EAD bg=#421A1E
+10 16..24 fg=#C0C5CE bg=#421A1E
+10 24..27 fg=#B48EAD bg=#421A1E
+10 27..30 fg=#C0C5CE bg=#421A1E
+10 30..34 fg=#96B5B4 bg=#421A1E
+10 34..35 fg=#C0C5CE bg=#421A1E
+10 35..36 fg=#D08770 bg=#421A1E
+10 36..38 fg=#C0C5CE bg=#421A1E
+10 38..39 fg=#D08770 bg=#421A1E
+10 39..41 fg=#C0C5CE bg=#421A1E
+10 41..79 bg=#421A1E
+11 4..8 fg=DarkGray
+11 8..9 fg=Green bg=#163420 mod=BOLD
+11 9..13 fg=#C0C5CE bg=#163420
+11 13..16 fg=#B48EAD bg=#163420
+11 16..24 fg=#C0C5CE bg=#163420
+11 24..27 fg=#B48EAD bg=#163420
+11 27..30 fg=#C0C5CE bg=#163420
+11 30..34 fg=#96B5B4 bg=#163420
+11 34..35 fg=#C0C5CE bg=#163420
+11 35..36 fg=#D08770 bg=#163420
+11 36..38 fg=#C0C5CE bg=#163420
+11 38..39 fg=#D08770 bg=#163420
+11 39..41 fg=#C0C5CE bg=#163420
+11 41..79 bg=#163420

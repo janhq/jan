@@ -67,6 +67,18 @@ before it finished. A result or diff hangs off the row beneath a dim `└`.
 <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to expand just that one. Once the
 answer arrives, the tool calls before it fold into a single `• Worked · N steps` row.
 
+A shell command shows as `• Running cargo test (12s)`, with its output streaming in beneath it as
+it prints - the newest five lines, under a dim `… +N earlier lines` count once there are more. A
+command of several lines shows its next two on a dim `│` rail, then a count of the rest. When it
+finishes the row reads `• Ran cargo test`, followed by the first three lines of output and
+`… +N lines (Ctrl-O to expand)`; a silent command shows `(no output)`, and a failed one adds
+its exit code: `• Ran cargo test (exit 101)`.
+
+An edit names its size on the row - `• Edited src/cli.rs (+3 -1)`, or `Created` and `Wrote` for a
+new or rewritten file - and the diff follows it, indented, with each line's number in a dim
+column on the left. Added and removed lines are tinted green and red; on a 16-colour terminal the
+text takes the colour instead. A dim `⋮` separates hunks that are not adjacent.
+
 ## A turn
 
 You type, the agent works, and it stops when it has an answer or needs you.

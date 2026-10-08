@@ -703,6 +703,29 @@ fn transcript_finished_shell_command() {
 }
 
 #[test]
+fn transcript_failed_multi_line_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "check the build");
+    tool_call(
+        &mut app,
+        "b1",
+        "bash",
+        json!({ "command": "cd src-tauri\ncargo check\ncargo clippy\ncargo test" }),
+    );
+    tool_result(
+        &mut app,
+        "b1",
+        "error[E0425]: cannot find value `x`\n[exit 101]",
+        true,
+        None,
+    );
+    let open = body(&mut app);
+    app.finalize_tool_group();
+    assert_buffer("transcript_failed_shell_command_open", &open);
+    assert_buffer("transcript_failed_shell_command", &body(&mut app));
+}
+
+#[test]
 fn transcript_running_shell_command() {
     let mut app = snapshot_app();
     start_turn(&mut app, "build it");
@@ -746,12 +769,16 @@ fn transcript_edit_with_diff() {
         "e1",
         "Applied 1 edit(s) to src/geometry.rs",
         false,
+        // The edit tool's own shape: numbered rows, one header per edit.
         Some(concat!(
-            "@@ edit 1/1 @@\n",
-            " use std::fmt;\n",
-            "-fn area(w: u32, h: u32) -> u32 {\n",
-            "+fn area(w: u64, h: u64) -> u64 {\n",
-            "     w * h",
+            "@@ edit 1/2 @@\n",
+            "     8 | use std::fmt;\n",
+            "-    9 | fn area(w: u32, h: u32) -> u32 {\n",
+            "+    9 | fn area(w: u64, h: u64) -> u64 {\n",
+            "    10 |     w * h\n",
+            "@@ edit 2/2 @@\n",
+            "-  112 |     let cells: u32 = area(4, 4);\n",
+            "+  112 |     let cells: u64 = area(4, 4);",
         )),
     );
     assert_buffer("transcript_edit_with_diff", &body(&mut app));

@@ -1,32 +1,13 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
-|┌───────────────────┐                           |
-|│ @@ -1,2 +1,2 @@   │                           |
-|│ -colour = grey    │                           |
-|│ +colour = gray    │                           |
-|│  unchanged = true │                           |
-|└───────────────────┘                           |
+|-colour = grey                                  |
+|+colour = gray                                  |
+| unchanged = true                               |
 
- 0 0..21 fg=DarkGray
- 1 0..2 fg=DarkGray
- 1 2..17 fg=Cyan mod=DIM
- 1 17..21 fg=DarkGray
- 2 0..1 fg=DarkGray
- 2 1..2 fg=DarkGray bg=#FFCDD2
- 2 2..3 fg=Red bg=#FFCDD2 mod=BOLD
- 2 3..16 bg=#FFCDD2
- 2 16..20 fg=DarkGray bg=#FFCDD2
- 2 20..21 fg=DarkGray
- 3 0..1 fg=DarkGray
- 3 1..2 fg=DarkGray bg=#C6EFCE
- 3 2..3 fg=Green bg=#C6EFCE mod=BOLD
- 3 3..16 bg=#C6EFCE
- 3 16..20 fg=DarkGray bg=#C6EFCE
- 3 20..21 fg=DarkGray
- 4 0..2 fg=DarkGray
- 4 2..19 mod=DIM
- 4 19..21 fg=DarkGray
- 5 0..21 fg=DarkGray
+ 0 0..1 fg=Red bg=#FFCDD2 mod=BOLD
+ 0 1..47 bg=#FFCDD2
+ 1 0..1 fg=Green bg=#C6EFCE mod=BOLD
+ 1 1..47 bg=#C6EFCE
+ 2 0..17 mod=DIM

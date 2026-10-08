@@ -1,77 +1,53 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 163
 expression: render_snapshot(buf)
 ---
-|┌───────────────────────────────────┐                           |
-|│ @@ -2,4 +2,5 @@                   │                           |
-|│  use std::fmt;                    │                           |
-|│ -fn area(w: u32, h: u32) -> u32 { │                           |
-|│ +/// Area in cells.               │                           |
-|│ +fn area(w: u64, h: u64) -> u64 { │                           |
-|│      w * h                        │                           |
-|│  }                                │                           |
-|└───────────────────────────────────┘                           |
+| use std::fmt;                                                  |
+|-fn area(w: u32, h: u32) -> u32 {                               |
+|+/// Area in cells.                                             |
+|+fn area(w: u64, h: u64) -> u64 {                               |
+|     w * h                                                      |
+| }                                                              |
 
- 0 0..37 fg=DarkGray
- 1 0..2 fg=DarkGray
- 1 2..17 fg=Cyan mod=DIM
- 1 17..37 fg=DarkGray
- 2 0..2 fg=DarkGray
- 2 2..3 mod=DIM
- 2 3..6 fg=#B48EAD
- 2 6..16 fg=#C0C5CE
- 2 16..37 fg=DarkGray
- 3 0..1 fg=DarkGray
- 3 1..2 fg=DarkGray bg=#421A1E
- 3 2..3 fg=Red bg=#421A1E mod=BOLD
- 3 3..5 fg=#B48EAD bg=#421A1E
- 3 5..6 fg=#C0C5CE bg=#421A1E
- 3 6..10 fg=#8FA1B3 bg=#421A1E
- 3 10..11 fg=#C0C5CE bg=#421A1E
- 3 11..12 fg=#BF616A bg=#421A1E
- 3 12..14 fg=#C0C5CE bg=#421A1E
- 3 14..17 fg=#B48EAD bg=#421A1E
- 3 17..19 fg=#C0C5CE bg=#421A1E
- 3 19..20 fg=#BF616A bg=#421A1E
- 3 20..22 fg=#C0C5CE bg=#421A1E
- 3 22..25 fg=#B48EAD bg=#421A1E
- 3 25..30 fg=#C0C5CE bg=#421A1E
- 3 30..33 fg=#B48EAD bg=#421A1E
- 3 33..35 fg=#C0C5CE bg=#421A1E
- 3 35..36 fg=DarkGray bg=#421A1E
- 3 36..37 fg=DarkGray
- 4 0..1 fg=DarkGray
- 4 1..2 fg=DarkGray bg=#163420
- 4 2..3 fg=Green bg=#163420 mod=BOLD
- 4 3..21 fg=#65737E bg=#163420
- 4 21..36 fg=DarkGray bg=#163420
- 4 36..37 fg=DarkGray
- 5 0..1 fg=DarkGray
- 5 1..2 fg=DarkGray bg=#163420
- 5 2..3 fg=Green bg=#163420 mod=BOLD
- 5 3..5 fg=#B48EAD bg=#163420
- 5 5..6 fg=#C0C5CE bg=#163420
- 5 6..10 fg=#8FA1B3 bg=#163420
- 5 10..11 fg=#C0C5CE bg=#163420
- 5 11..12 fg=#BF616A bg=#163420
- 5 12..14 fg=#C0C5CE bg=#163420
- 5 14..17 fg=#B48EAD bg=#163420
- 5 17..19 fg=#C0C5CE bg=#163420
- 5 19..20 fg=#BF616A bg=#163420
- 5 20..22 fg=#C0C5CE bg=#163420
- 5 22..25 fg=#B48EAD bg=#163420
- 5 25..30 fg=#C0C5CE bg=#163420
- 5 30..33 fg=#B48EAD bg=#163420
- 5 33..35 fg=#C0C5CE bg=#163420
- 5 35..36 fg=DarkGray bg=#163420
- 5 36..37 fg=DarkGray
- 6 0..2 fg=DarkGray
- 6 2..3 mod=DIM
- 6 3..12 fg=#C0C5CE
- 6 12..37 fg=DarkGray
- 7 0..2 fg=DarkGray
- 7 2..3 mod=DIM
- 7 3..4 fg=#C0C5CE
- 7 4..37 fg=DarkGray
- 8 0..37 fg=DarkGray
+ 0 0..1 mod=DIM
+ 0 1..4 fg=#B48EAD
+ 0 4..14 fg=#C0C5CE
+ 1 0..1 fg=Red bg=#421A1E mod=BOLD
+ 1 1..3 fg=#B48EAD bg=#421A1E
+ 1 3..4 fg=#C0C5CE bg=#421A1E
+ 1 4..8 fg=#8FA1B3 bg=#421A1E
+ 1 8..9 fg=#C0C5CE bg=#421A1E
+ 1 9..10 fg=#BF616A bg=#421A1E
+ 1 10..12 fg=#C0C5CE bg=#421A1E
+ 1 12..15 fg=#B48EAD bg=#421A1E
+ 1 15..17 fg=#C0C5CE bg=#421A1E
+ 1 17..18 fg=#BF616A bg=#421A1E
+ 1 18..20 fg=#C0C5CE bg=#421A1E
+ 1 20..23 fg=#B48EAD bg=#421A1E
+ 1 23..28 fg=#C0C5CE bg=#421A1E
+ 1 28..31 fg=#B48EAD bg=#421A1E
+ 1 31..33 fg=#C0C5CE bg=#421A1E
+ 1 33..63 bg=#421A1E
+ 2 0..1 fg=Green bg=#163420 mod=BOLD
+ 2 1..19 fg=#65737E bg=#163420
+ 2 19..63 bg=#163420
+ 3 0..1 fg=Green bg=#163420 mod=BOLD
+ 3 1..3 fg=#B48EAD bg=#163420
+ 3 3..4 fg=#C0C5CE bg=#163420
+ 3 4..8 fg=#8FA1B3 bg=#163420
+ 3 8..9 fg=#C0C5CE bg=#163420
+ 3 9..10 fg=#BF616A bg=#163420
+ 3 10..12 fg=#C0C5CE bg=#163420
+ 3 12..15 fg=#B48EAD bg=#163420
+ 3 15..17 fg=#C0C5CE bg=#163420
+ 3 17..18 fg=#BF616A bg=#163420
+ 3 18..20 fg=#C0C5CE bg=#163420
+ 3 20..23 fg=#B48EAD bg=#163420
+ 3 23..28 fg=#C0C5CE bg=#163420
+ 3 28..31 fg=#B48EAD bg=#163420
+ 3 31..33 fg=#C0C5CE bg=#163420
+ 3 33..63 bg=#163420
+ 4 0..1 mod=DIM
+ 4 1..10 fg=#C0C5CE
+ 5 0..1 mod=DIM
+ 5 1..2 fg=#C0C5CE

@@ -584,9 +584,9 @@ impl Pending {
         out
     }
 
-    /// Boxed diff preview for the prompt, sized to `inner` width; empty when the
-    /// tool carries no diff (exec/read). No gutter: the panel sits flush in the
-    /// prompt box, unlike the tool-row-aligned result diff.
+    /// Diff preview for the prompt, sized to `inner` width; empty when the tool
+    /// carries no diff (exec/read). No indent: the body sits flush in the prompt
+    /// box, unlike the tool-row-aligned result diff.
     fn diff_preview(&self, inner: u16) -> Vec<Line<'static>> {
         match &self.diff {
             Some(d) => diff_lines(
@@ -1330,9 +1330,9 @@ struct GroupedCall {
     content: Option<String>,
     is_error: bool,
     diff: Option<String>,
-    /// Raw shell command, retained so the live terminal box can keep showing it
+    /// Raw shell command, retained so the live shell rows can keep showing it
     /// (and its output) after the result lands -- until the group folds. `None`
-    /// for non-shell calls, which contribute no box.
+    /// for non-shell calls, which contribute no shell rows.
     command: Option<String>,
 }
 
@@ -1418,7 +1418,17 @@ impl ToolGroup {
             if state == GroupRow::Aborted && self.is_running() {
                 self.activity()
             } else {
-                self.first_done.clone()
+                // A failed command names its exit code, which the folded row
+                // would otherwise only show behind an expand.
+                let code = self
+                    .calls
+                    .first()
+                    .filter(|c| c.is_error && c.command.is_some())
+                    .and_then(|c| split_exit_marker(c.content.as_deref()?).1);
+                match code {
+                    Some(code) => format!("{} (exit {code})", self.first_done),
+                    None => self.first_done.clone(),
+                }
             }
         } else {
             group_summary(&self.nouns)
@@ -1711,7 +1721,7 @@ fn fits_one_row(line: &Line<'_>, width: u16) -> bool {
 
 /// One committed transcript entry. Width-dependent entries keep their *source*
 /// rather than rendered lines, so a terminal resize re-lays them out at the new
-/// width instead of leaving tables, boxed diffs and truncated labels sized for
+/// width instead of leaving tables, diffs and truncated labels sized for
 /// the old one. `Line` holds content whose layout is width-independent (it wraps
 /// naturally in the body `Paragraph`).
 ///
@@ -1764,7 +1774,7 @@ enum RowKind {
         label: String,
         reserve: u16,
     },
-    /// A tool result summary plus its optional boxed diff panel, hung off the
+    /// A tool result summary plus its optional diff body, hung off the
     /// call row above as its first child. `content` is `None` when the call row
     /// already says the same thing.
     Result {
@@ -1885,7 +1895,7 @@ impl RowKind {
                 state.label_style(),
                 *reserve,
                 width,
-                None,
+                Vec::new(),
             ),
             RowKind::Result {
                 is_error,
@@ -1915,7 +1925,31 @@ impl RowKind {
                 out
             }
             RowKind::Resolved { call, result } => {
-                let mut out = call.render(width);
+                // A resolved edit/write ends its row on the change count, so
+                // the size of the edit reads before its body does.
+                let stat = match (call.as_ref(), result.as_ref()) {
+                    (
+                        RowKind::Tool {
+                            state,
+                            label,
+                            reserve,
+                        },
+                        RowKind::Result {
+                            is_error: false,
+                            diff: Some(diff),
+                            ..
+                        },
+                    ) => Some(tool_row_lines(
+                        state.bullet(),
+                        label,
+                        state.label_style(),
+                        *reserve,
+                        width,
+                        diff_stat_spans(diff),
+                    )),
+                    _ => None,
+                };
+                let mut out = stat.unwrap_or_else(|| call.render(width));
                 out.extend(result.render(width));
                 out
             }
@@ -3453,7 +3487,7 @@ impl App {
     ///   shimmer, rotating action word, elapsed time and the header
     ///   wall clock, the `[thinking]` / `thought for` badges and their TTL, the
     ///   lingering reasoning step's fold timer, a running tool group's clock
-    ///   and live shell boxes, and the retry countdown;
+    ///   and live shell output, and the retry countdown;
     /// - compaction (manual or mid-run), whose row shows a spinner and clock;
     /// - an MCP sign-in, whose badge and detail row spin;
     /// - subagent panels, monitors, background shells, awaited children and
@@ -3687,7 +3721,7 @@ impl App {
             is_error: false,
             diff: None,
             // Set for shell calls (track_bash_command ran first). Kept on the call
-            // so the terminal box survives the result clearing `bash_commands`.
+            // so the shell rows survive the result clearing `bash_commands`.
             command: self.bash_commands.get(id).cloned(),
         };
         let extend = self
@@ -3982,56 +4016,37 @@ impl App {
         self.persist();
     }
 
-    /// The live terminal box for `group`'s newest unresolved *command*, streamed
-    /// from the moment the command starts -- before any output -- so it reads as
-    /// a terminal opening rather than a spinner that later becomes one. No rows
-    /// when nothing in the group is a command in flight (a `read`/`grep` run
-    /// keeps its plain activity row).
+    /// The live shell rows for `group`'s commands, streamed from the moment a
+    /// command starts -- before any output -- so its header and output appear
+    /// as it runs rather than a spinner that later turns into them. No rows when
+    /// nothing in the group is a command (a `read`/`grep` run keeps its plain
+    /// activity row).
     ///
-    /// One box per command still in flight, in dispatch order: a group runs its
-    /// calls in parallel, so several commands can be streaming at once and each
-    /// gets its own terminal rather than one hiding the rest. A `read`/`grep` in
-    /// the group has no command and contributes no box.
+    /// One block per command, in dispatch order: a group runs its calls in
+    /// parallel, so several commands can be streaming at once and each shows its
+    /// own output rather than one hiding the rest.
     fn live_shell_panel(&self, group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
         let elapsed = group.started.elapsed().as_secs();
         let mut out = Vec::new();
-        // A blank row between stacked boxes so two terminals do not run their
-        // borders together.
-        let spacer = |out: &mut Vec<Line<'static>>| {
-            if !out.is_empty() {
-                out.push(Line::raw(""));
-            }
-        };
         for call in group.calls.iter().filter(|c| c.command.is_some()) {
+            let command = call.command.as_deref().unwrap_or("");
             match &call.content {
-                // Still running: the live output tail with a spinner + elapsed.
+                // Still running: the live output tail under the elapsed header.
                 None => {
-                    spacer(&mut out);
-                    let command = call.command.as_deref().unwrap_or("");
                     let output = self
                         .live_output
                         .get(&call.id)
                         .map_or("", String::as_str);
-                    out.extend(running_terminal_lines(
+                    out.extend(running_shell_lines(
                         command, output, elapsed, spinner_frame, width,
                     ));
                 }
-                // Finished, but the group is still the current step: keep the box
-                // (command + output + a settled status) so the output stays
-                // readable until the group folds, rather than vanishing the
-                // instant the result lands. The authoritative content backs it
-                // (`bash_commands`/`live_output` are cleared on the result), and a
-                // bounded tail keeps a huge result cheap to re-render each frame.
+                // Finished, but the group is still the current step: keep the
+                // output readable until the group folds, rather than vanishing
+                // the instant the result lands. The authoritative content backs
+                // it (`bash_commands`/`live_output` are cleared on the result).
                 Some(content) => {
-                    spacer(&mut out);
-                    let command = call.command.as_deref().unwrap_or("");
-                    let output = tail_on_char_boundary(content, FINISHED_OUTPUT_TAIL_BYTES);
-                    out.extend(finished_terminal_lines(
-                        command,
-                        output,
-                        call.is_error,
-                        width,
-                    ));
+                    out.extend(finished_shell_lines(command, content, call.is_error, width));
                 }
             }
         }
@@ -4059,7 +4074,7 @@ impl App {
     /// Rewrite a standalone tool row to its resolved form once its result lands:
     /// past-tense label plus an outcome tag, matching how a tool group's row
     /// resolves. Without this a finished `edit` keeps reading as "Editing X".
-    /// `result` (the diff panel or error text) is drawn in the same slot: the
+    /// `result` (the diff body or error text) is drawn in the same slot: the
     /// batch's later calls may already have rows below this one, so appending
     /// it would strand the diff under an unrelated command. Returns `result`
     /// back when there is no pending row to attach it to.
@@ -4076,9 +4091,19 @@ impl App {
         if row.idx >= self.transcript.len() {
             return Some(result);
         }
+        // A write's past tense says whether the file is new: the tool heads
+        // its diff with which of the two it did.
+        let created = matches!(
+            &result,
+            RowKind::Result { diff: Some(d), .. } if d.starts_with("@@ created file @@")
+        );
+        let label = match row.done.strip_prefix("Wrote ") {
+            Some(path) if created => format!("Created {path}"),
+            _ => row.done,
+        };
         let call = RowKind::Tool {
             state: ToolState::of(is_error),
-            label: row.done,
+            label,
             reserve: TOOL_ROW_RESERVE,
         };
         self.transcript[row.idx] = RowKind::Resolved {
@@ -8524,23 +8549,61 @@ fn panel_block(border: Color) -> Block<'static> {
         .padding(ratatui::widgets::Padding::horizontal(1))
 }
 
-/// Render focused-diff text as a boxed panel: a light rule frames the change,
-/// `+` rows on a green background and `-` rows on a red one across the whole row
-/// (so the change reads as a band), `@@` headers dim-cyan. Every row keeps its
-/// syntax highlighting, changed or not; only the background says what happened.
-/// Content is truncated to what `width` leaves after the gutter and the frame,
-/// and each row padded so the right border aligns.
-/// Collapses to `max_rows` with a `(+N more)` tail before the closing rule.
-/// `gutter` indents the panel (tool-row alignment under a result; empty in the
-/// prompt).
+/// Render focused-diff text as an unframed, line-numbered body: each row is
+/// `indent`, a dim right-aligned line number (when the diff carries them), the
+/// `-`/`+` sign and the code. `+` rows sit on a green band and `-` rows on a red
+/// one from the sign to the right margin, so a change reads as a band; every row
+/// keeps its syntax highlighting, and on a 16-colour terminal the code takes the
+/// red/green instead. A hunk header or the tool's `...` gap becomes a dim `⋮`
+/// between hunks (never before the first). Code is cut to what `width` leaves.
+/// Collapses to `max_rows` source lines with a `… +N lines` tail. `indent` hangs
+/// the body under its tool row; the permission prompt passes none.
 fn diff_lines(
     diff: &str,
     width: usize,
     max_rows: usize,
-    gutter: &'static str,
+    indent: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
-    diff_lines_in(theme::Theme::current(), diff, width, max_rows, gutter, lang)
+    diff_lines_in(theme::Theme::current(), diff, width, max_rows, indent, lang)
+}
+
+/// One source row of a tool diff.
+enum DiffRow<'a> {
+    /// A break between hunks: a `@@ ... @@` header or the tool's `...` gap.
+    Gap,
+    Code {
+        /// `-`, `+`, or ` ` for context.
+        sign: &'a str,
+        /// The tool's own line number, when the row carries one.
+        num: Option<&'a str>,
+        body: &'a str,
+    },
+}
+
+/// Parse a diff row. The edit tool numbers its rows as `+ NNNN | code` (any
+/// sign); a plain unified diff (`+code`) has no number and keeps its code whole.
+fn parse_diff_row(line: &str) -> DiffRow<'_> {
+    if line.starts_with("@@") || line.strip_prefix("   ").is_some_and(|r| r.trim() == "...") {
+        return DiffRow::Gap;
+    }
+    let (sign, rest) = split_diff_marker(line);
+    let numbered = rest.split_once(" | ").filter(|(n, _)| {
+        let n = n.trim();
+        !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())
+    });
+    match numbered {
+        Some((num, body)) => DiffRow::Code {
+            sign,
+            num: Some(num.trim()),
+            body,
+        },
+        None => DiffRow::Code {
+            sign,
+            num: None,
+            body: rest,
+        },
+    }
 }
 
 /// `diff_lines` for an explicit theme, so each colour depth is tested without
@@ -8550,84 +8613,158 @@ fn diff_lines_in(
     diff: &str,
     width: usize,
     max_rows: usize,
-    gutter: &'static str,
+    indent: &'static str,
     lang: Option<&str>,
 ) -> Vec<Line<'static>> {
-    let max = panel_inner(width, gutter);
+    use unicode_width::UnicodeWidthStr;
+
     let all: Vec<&str> = diff.lines().collect();
     let shown = all.len().min(max_rows);
-    let truncated = all.len() > shown;
+    let parsed: Vec<DiffRow<'_>> = all[..shown].iter().map(|l| parse_diff_row(l)).collect();
+    let num_w = parsed
+        .iter()
+        .filter_map(|r| match r {
+            DiffRow::Code { num: Some(n), .. } => Some(n.len()),
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let num_col = if num_w > 0 { num_w + 1 } else { 0 };
+    // The sign, and a column of margin so a band never touches the frame edge.
+    let max = width
+        .saturating_sub(indent.width() + num_col + 2)
+        .max(1);
 
     // Truncate before highlighting so the width arithmetic is unchanged.
-    let kept: Vec<String> = all[..shown].iter().map(|l| truncate(l, max)).collect();
-    // Highlight the body with the `-`/`+` markers stripped, so a multi-line
-    // string or comment keeps its colour across the hunk instead of restarting
-    // on every row; the markers are re-attached with their own colour below.
-    // Hunk headers are not code and stay out of it.
-    let bodies: Vec<&str> = kept.iter().map(|l| split_diff_marker(l).1).collect();
+    // Highlight the bodies as one block so a multi-line string or comment keeps
+    // its colour across the hunk instead of restarting on every row; the signs
+    // are re-attached with their own colour below.
+    let bodies: Vec<String> = parsed
+        .iter()
+        .filter_map(|r| match r {
+            DiffRow::Code { body, .. } => Some(truncate(body, max)),
+            DiffRow::Gap => None,
+        })
+        .collect();
     let highlighted: Option<Vec<Vec<Span<'static>>>> = match lang {
-        Some(l) if !l.is_empty() => Some(highlight::block(&bodies, l)),
+        Some(l) if !l.is_empty() => {
+            let refs: Vec<&str> = bodies.iter().map(String::as_str).collect();
+            Some(highlight::block(&refs, l))
+        }
         _ => None,
     };
 
+    let dim = Style::new().dark_gray();
     let mut rows: Vec<Line<'static>> = Vec::with_capacity(shown + 1);
-    for (i, line) in kept.iter().enumerate() {
-        let (marker, body) = split_diff_marker(line);
-        if marker.starts_with('@') {
-            rows.push(Line::styled(line.clone(), Style::new().cyan().dim()));
-            continue;
+    let mut code_idx = 0;
+    // A gap only separates hunks: none before the first code row, one per run.
+    let mut gap_due = false;
+    for row in &parsed {
+        let (sign, num) = match row {
+            DiffRow::Gap => {
+                gap_due = code_idx > 0;
+                continue;
+            }
+            DiffRow::Code { sign, num, .. } => (*sign, *num),
+        };
+        if gap_due {
+            rows.push(Line::from(vec![
+                Span::raw(indent),
+                Span::styled("\u{22ee}", dim),
+            ]));
+            gap_due = false;
         }
-        let change = match marker.as_bytes().first() {
-            Some(b'-') => Some(Color::Red),
-            Some(b'+') => Some(Color::Green),
+        let i = code_idx;
+        code_idx += 1;
+        let body = &bodies[i];
+        let change = match sign {
+            "-" => Some(Color::Red),
+            "+" => Some(Color::Green),
             _ => None,
         };
         let bg = change.and_then(|c| diff_band(c == Color::Green, t));
-        let mut spans = Vec::with_capacity(2);
-        if !marker.is_empty() {
-            // On a tinted row the marker takes the strong colour and the code
-            // keeps its own; elsewhere it recedes.
-            let marker_style = match marker.as_bytes().first() {
-                Some(b'-') => Style::new().red().bold(),
-                Some(b'+') => Style::new().green().bold(),
-                _ => Style::new().dim(),
-            };
-            spans.push(Span::styled(marker.to_string(), marker_style));
+        let mut spans = vec![Span::raw(indent)];
+        if num_w > 0 {
+            spans.push(Span::styled(
+                format!("{:>num_w$} ", num.unwrap_or("")),
+                dim,
+            ));
         }
+        let mut code: Vec<Span<'static>> = Vec::with_capacity(2);
+        // On a tinted row the sign takes the strong colour and the code keeps
+        // its own; elsewhere it recedes.
+        code.push(Span::styled(
+            if sign.is_empty() { " " } else { sign }.to_string(),
+            match change {
+                Some(Color::Red) => Style::new().red().bold(),
+                Some(_) => Style::new().green().bold(),
+                None => Style::new().dim(),
+            },
+        ));
         match (&highlighted, change) {
             // Without a band the foreground is all that says what changed, so
             // it wins over the syntax colours.
             (_, Some(fg)) if bg.is_none() => {
-                spans.push(Span::styled(body.to_string(), Style::new().fg(fg)))
+                code.push(Span::styled(body.clone(), Style::new().fg(fg)))
             }
-            (Some(h), _) => spans.extend(h[i].iter().cloned()),
+            (Some(h), _) => code.extend(h[i].iter().cloned()),
             // Dimming an unhighlighted body would fight the tint behind it.
-            (None, _) if bg.is_some() => spans.push(Span::raw(body.to_string())),
-            (None, _) => spans.push(Span::styled(body.to_string(), Style::new().dim())),
+            (None, _) if bg.is_some() => code.push(Span::raw(body.clone())),
+            (None, _) => code.push(Span::styled(body.clone(), Style::new().dim())),
         }
-        // The tint rides on the line so `boxed_panel` can carry it across the
-        // padding too, making the band reach the right border.
-        let row = Line::from(spans);
-        rows.push(match bg {
-            Some(bg) => row.style(Style::new().bg(bg)),
-            None => row,
-        });
+        match bg {
+            // The band runs from the sign to the margin, so a changed row reads
+            // as a stripe rather than stopping at the end of its text.
+            Some(bg) => {
+                let used: usize = code.iter().map(Span::width).sum();
+                let pad = (max + 1).saturating_sub(used);
+                spans.extend(
+                    code.into_iter()
+                        .map(|s| Span::styled(s.content, s.style.bg(bg))),
+                );
+                if pad > 0 {
+                    spans.push(Span::styled(" ".repeat(pad), Style::new().bg(bg)));
+                }
+            }
+            None => spans.extend(code),
+        }
+        rows.push(Line::from(spans));
     }
-    if truncated {
-        rows.push(Line::styled(
-            format!("(+{} more)", all.len() - shown),
-            Style::new().dim(),
-        ));
+    if all.len() > shown {
+        rows.push(Line::from(vec![
+            Span::raw(indent),
+            Span::styled(
+                format!("\u{2026} +{}", pluralize("line", all.len() - shown)),
+                dim,
+            ),
+        ]));
     }
-    boxed_panel(rows, width, gutter)
+    rows
 }
 
-/// Split a diff row into its leading marker and the code after it. A `@@` hunk
-/// header is returned whole as the marker, since none of it is code.
-fn split_diff_marker(line: &str) -> (&str, &str) {
-    if line.starts_with("@@") {
-        return (line, "");
+/// The `(+N -M)` change count a diff's tool row ends on: added rows green,
+/// removed rows red, so the size of an edit reads before its body does.
+fn diff_stat_spans(diff: &str) -> Vec<Span<'static>> {
+    let (mut added, mut removed) = (0, 0);
+    for line in diff.lines().filter(|l| !l.starts_with("@@")) {
+        match line.as_bytes().first() {
+            Some(b'+') => added += 1,
+            Some(b'-') => removed += 1,
+            _ => {}
+        }
     }
+    let dim = Style::new().dark_gray();
+    vec![
+        Span::styled(" (", dim),
+        Span::styled(format!("+{added}"), Style::new().green()),
+        Span::styled(" ", dim),
+        Span::styled(format!("-{removed}"), Style::new().red()),
+        Span::styled(")", dim),
+    ]
+}
+
+/// Split a diff row into its leading marker and the code after it.
+fn split_diff_marker(line: &str) -> (&str, &str) {
     match line.as_bytes().first() {
         Some(b'-') | Some(b'+') | Some(b' ') => line.split_at(1),
         _ => ("", line),
@@ -8657,25 +8794,8 @@ pub(super) fn panel_inner(width: usize, gutter: &str) -> usize {
 /// fills the interior padding so a highlighted row reads as a band from border to
 /// border rather than stopping at the end of its text.
 fn boxed_panel(rows: Vec<Line<'static>>, width: usize, gutter: &'static str) -> Vec<Line<'static>> {
-    boxed_panel_sized(rows, width, gutter, false)
-}
-
-/// `boxed_panel`, but `full` forces the box to the whole available width instead
-/// of shrinking it to the widest row. The shell terminal boxes use it so the
-/// frame stretches to the console edge and every command/output line shares one
-/// fixed column budget (they are truncated to it in `shell_body_rows`).
-fn boxed_panel_sized(
-    rows: Vec<Line<'static>>,
-    width: usize,
-    gutter: &'static str,
-    full: bool,
-) -> Vec<Line<'static>> {
     let cap = panel_inner(width, gutter);
-    let inner = if full {
-        cap
-    } else {
-        rows.iter().map(row_width).max().unwrap_or(0).clamp(1, cap)
-    };
+    let inner = rows.iter().map(row_width).max().unwrap_or(0).clamp(1, cap);
     let border = Style::new().dark_gray();
     let mut out = Vec::with_capacity(rows.len() + 2);
     out.push(Line::from(vec![
@@ -8997,8 +9117,8 @@ struct StartingPreview {
     /// Body lines scrolled off the top of `tail`.
     skipped: usize,
     /// The shell command as it streams in, for a `bash`/`shell`/`exec` call, so
-    /// the in-flight row shows the command being typed into the same terminal box
-    /// the running call becomes. `None` for every other tool.
+    /// the in-flight row shows the command being typed into the same header the
+    /// running call keeps. `None` for every other tool.
     command: Option<String>,
 }
 
@@ -9061,7 +9181,7 @@ impl StartingCall {
         self.preview.path =
             partial_json_field(&self.args, "path").map(unescape_partial_json_string);
         // A shell command streams as one short string; keep it so the row can
-        // type it into a terminal box rather than sit on "Preparing bash".
+        // type it into its running header rather than sit on "Preparing bash".
         self.preview.command = matches!(self.name.as_str(), "bash" | "shell" | "exec")
             .then(|| partial_json_field(&self.args, "command"))
             .flatten()
@@ -9251,13 +9371,12 @@ fn starting_call_lines(
     width: u16,
 ) -> Vec<Line<'static>> {
     call.refresh_preview();
-    // A shell call types its command into the same terminal box the running
-    // call becomes, so there is no "Preparing bash" stage and the dispatch is a
+    // A shell call types its command into the same header the running call
+    // keeps, so there is no "Preparing bash" stage and the dispatch is a
     // seamless swap.
     if matches!(call.name.as_str(), "bash" | "shell" | "exec") {
         let command = call.preview.command.clone().unwrap_or_default();
-        let frame = motion::spinner(spinner_frame, motion::mode());
-        return typing_terminal_lines(&command, frame, width);
+        return typing_shell_lines(&command, spinner_frame, width);
     }
     let Some(tail) = call.preview.tail.as_ref() else {
         let label = match call.preview.path.as_deref() {
@@ -9318,18 +9437,23 @@ fn starting_call_lines(
 /// The label's first word is its verb and is set bold, so a column of rows
 /// scans by what happened; the argument after it stays plain.
 ///
-/// `suffix` rides the end of the last row (the live row's elapsed badge). The
-/// wrap reserves `ELAPSED_RESERVE` for it up front instead of measuring it, so a
-/// counter ticking past 9s or 99s cannot re-flow the command above it.
+/// `suffix` rides the end of the last row (the live row's elapsed badge, a
+/// diff's change count). The wrap reserves at least `ELAPSED_RESERVE` for it up
+/// front instead of measuring the badge alone, so a counter ticking past 9s or
+/// 99s cannot re-flow the command above it.
 fn tool_row_lines(
     bullet: Span<'static>,
     label: &str,
     label_style: Style,
     reserve: u16,
     width: u16,
-    suffix: Option<(String, Style)>,
+    suffix: Vec<Span<'static>>,
 ) -> Vec<Line<'static>> {
-    let held = if suffix.is_some() { ELAPSED_RESERVE } else { 0 };
+    let held = if suffix.is_empty() {
+        0
+    } else {
+        suffix.iter().map(Span::width).sum::<usize>().max(ELAPSED_RESERVE)
+    };
     let max = (width.saturating_sub(reserve) as usize)
         .saturating_sub(held)
         .max(1);
@@ -9340,11 +9464,9 @@ fn tool_row_lines(
             last.push(Span::styled(" \u{2026}", label_style));
         }
     }
-    if let Some((text, style)) = suffix {
-        rows.last_mut()
-            .expect("wrap_text yields at least one row")
-            .push(Span::styled(format!(" {text}"), style));
-    }
+    rows.last_mut()
+        .expect("wrap_text yields at least one row")
+        .extend(suffix);
     gutter_lines(rows, vec![bullet], vec![Span::raw("  ")])
 }
 
@@ -9430,9 +9552,13 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
         };
         // Expanded view shows the full output verbatim, and a line wider than
         // the terminal wraps rather than eliding -- this is the surface the
-        // transcript's one-line summary sends the user to. Empty content still
-        // gets its (bare) row, so a silent call is visibly accounted for.
-        let rows = wrap_text(content, result_style(call.is_error), max);
+        // transcript's one-line summary sends the user to. A silent call says
+        // so, so it is visibly accounted for.
+        let rows = if content.trim().is_empty() {
+            wrap_text("(no output)", Style::new().dark_gray(), max)
+        } else {
+            wrap_text(content, result_style(call.is_error), max)
+        };
         let indent = if show_headers { TREE_NESTED } else { TREE_REST };
         let lead = if show_headers {
             Span::raw(TREE_NESTED)
@@ -9519,7 +9645,7 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
         Style::new(),
         TOOL_ROW_RESERVE,
         width,
-        Some((format!("({elapsed}s)"), Style::new().dark_gray())),
+        vec![Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray())],
     )
 }
 
@@ -9528,141 +9654,196 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
 /// the call finishes.
 const LIVE_OUTPUT_MAX_BYTES: usize = 64 * 1024;
 
-/// Rendered rows of live command output, so a long-running command fills at most
-/// this much of the viewport.
-const LIVE_OUTPUT_TAIL_LINES: usize = 12;
+/// Output rows a running command shows: the newest few, so the view follows the
+/// stream without a chatty command pushing the conversation off screen.
+const LIVE_OUTPUT_TAIL_LINES: usize = 5;
 
-/// Indent of the live shell panel, matching a single-call group's detail box so
-/// the running command and its expanded result sit on the same column.
-const SHELL_PANEL_GUTTER: &str = "│   ";
+/// Output rows a finished command previews under its header; the rest folds
+/// behind a count that names the expand key.
+const SHELL_PREVIEW_LINES: usize = 3;
 
-/// The unframed prompt + output rows for a shell command. The command is the
-/// first line as a `$ ` prompt, so a box around these reads as a terminal rather
-/// than a detached wall of output; only a bounded tail of output is kept so a
-/// chatty command cannot fill the viewport.
-fn shell_body_rows(
+/// Continuation rows a multi-line command shows under its header before the rest
+/// collapses to a count, so a heredoc cannot bury its own output.
+const SHELL_COMMAND_MAX_CONT: usize = 2;
+
+/// Prefix of a multi-line command's continuation rows: a rail under the header
+/// that reads as more of the command rather than as its output.
+const SHELL_CONT: &str = "  \u{2502} ";
+
+/// A shell call's header: `bullet`, the bold `verb` and the command's first line,
+/// then up to `SHELL_COMMAND_MAX_CONT` continuation rows on a dim rail and a
+/// count of the rest. Each line is cut to one row rather than wrapped, and the
+/// cut always holds back `ELAPSED_RESERVE`, so the typing, running and finished
+/// forms of one command lay out identically whatever `suffix` they carry.
+fn shell_header_rows(
+    bullet: Span<'static>,
+    verb: &'static str,
     command: &str,
-    output: &str,
+    suffix: Option<Span<'static>>,
     width: u16,
-    gutter: &'static str,
 ) -> Vec<Line<'static>> {
-    let max = panel_inner(width as usize, gutter);
-    // The box spans the full width, so each command/output line is truncated to
-    // one row rather than wrapped: the terminal reads like a terminal, and a long
-    // command or a wide log line cannot balloon the box vertically. The full text
-    // is still on the group's expand (Ctrl-O).
-    let mut rows: Vec<Line<'static>> = command
-        .lines()
-        .enumerate()
-        .map(|(i, line)| {
-            Line::from(vec![
-                Span::styled(
-                    if i == 0 { "$ " } else { "  " },
-                    Style::new().cyan().bold(),
-                ),
-                Span::styled(
-                    truncate(&single_line(line), max.saturating_sub(2)),
-                    Style::new().bold(),
-                ),
-            ])
-        })
-        .collect();
-    if !output.is_empty() {
-        let all: Vec<&str> = output.lines().collect();
-        let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
-        if skipped > 0 {
-            rows.push(Line::styled(
-                format!("… ({})", pluralize("earlier line", skipped)),
-                Style::new().dark_gray(),
-            ));
-        }
-        for line in &all[skipped..] {
-            rows.push(Line::styled(
-                truncate(line, max),
-                Style::new().dim(),
-            ));
-        }
+    let max = (width.saturating_sub(TOOL_ROW_RESERVE) as usize)
+        .saturating_sub(ELAPSED_RESERVE)
+        .max(1);
+    let mut lines = command.lines();
+    let first = single_line(lines.next().unwrap_or(""));
+    let mut head = vec![bullet, Span::styled(verb, Style::new().bold())];
+    if !first.is_empty() {
+        // Budgeted against the longer verb, so "Ran" cuts the command where
+        // "Running" did and the text does not re-flow as the call resolves.
+        let room = max.saturating_sub("Running ".len());
+        head.push(Span::raw(format!(" {}", truncate(&first, room))));
     }
-    rows
+    head.extend(suffix);
+    let mut out = vec![Line::from(head)];
+    let rest: Vec<&str> = lines.collect();
+    let rail = Style::new().dark_gray();
+    for line in rest.iter().take(SHELL_COMMAND_MAX_CONT) {
+        out.push(Line::from(vec![
+            Span::styled(SHELL_CONT, rail),
+            Span::raw(truncate(&single_line(line), max)),
+        ]));
+    }
+    if rest.len() > SHELL_COMMAND_MAX_CONT {
+        let more = pluralize("line", rest.len() - SHELL_COMMAND_MAX_CONT);
+        out.push(Line::from(vec![
+            Span::styled(SHELL_CONT, rail),
+            Span::styled(format!("\u{2026} +{more}"), rail),
+        ]));
+    }
+    out
 }
 
-/// The running command as a live terminal view: the framed prompt and output
-/// plus a trailing status line (spinner + elapsed), so the box stands in for the
-/// plain "Running" activity row instead of sitting beneath it. The command
-/// itself types in earlier, in the in-flight box, as its argument tokens stream
-/// (see `typing_terminal_lines`); by the time it runs it is shown whole.
-fn running_terminal_lines(
+/// Hang `rows` off a shell header as its tree: the corner on the first row, the
+/// blank indent after. `notes` are counts and placeholders, set as chrome; the
+/// rest is output, dim so the command above stays the thing to read.
+fn shell_tree(rows: Vec<(String, bool)>) -> Vec<Line<'static>> {
+    rows.into_iter()
+        .enumerate()
+        .map(|(i, (text, note))| {
+            let style = if note {
+                Style::new().dark_gray()
+            } else {
+                Style::new().dim()
+            };
+            Line::from(vec![child_prefix(i == 0), Span::styled(text, style)])
+        })
+        .collect()
+}
+
+/// Columns an output row may use under the tree: the prefix and a right margin
+/// come off the draw width. Rows are cut, not wrapped, so a wide log line costs
+/// one row and the view's height is the row count.
+fn shell_output_width(width: u16) -> usize {
+    (width as usize).saturating_sub(TREE_REST.len() + 2).max(1)
+}
+
+/// The running command, live: its header with the elapsed badge, then the newest
+/// `LIVE_OUTPUT_TAIL_LINES` of its output under the tree, behind a count of the
+/// lines that have scrolled past. Rebuilt every frame from the call's live
+/// buffer, so output streams in as the command prints it.
+fn running_shell_lines(
     command: &str,
     output: &str,
     elapsed: u64,
     spinner_frame: usize,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
-    let frame = motion::spinner(spinner_frame, motion::mode());
-    rows.push(Line::from(vec![
-        Span::styled(format!("{frame} "), Style::new().cyan()),
-        Span::styled(format!("{elapsed}s"), Style::new().dark_gray()),
-    ]));
-    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
-}
-
-/// The most-recent bytes of `s` that begin on a char boundary, capped at `max`.
-/// Used to bound a finished command's (possibly large) result before rendering
-/// its terminal tail, so re-rendering the box each frame stays cheap.
-fn tail_on_char_boundary(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        return s;
+    let badge = Span::styled(format!(" ({elapsed}s)"), Style::new().dark_gray());
+    let mut out = shell_header_rows(
+        running_bullet(spinner_frame),
+        "Running",
+        command,
+        Some(badge),
+        width,
+    );
+    let max = shell_output_width(width);
+    let all: Vec<&str> = output.lines().collect();
+    let skipped = all.len().saturating_sub(LIVE_OUTPUT_TAIL_LINES);
+    let mut rows = Vec::with_capacity(LIVE_OUTPUT_TAIL_LINES + 1);
+    if skipped > 0 {
+        rows.push((
+            format!("\u{2026} +{}", pluralize("earlier line", skipped)),
+            true,
+        ));
     }
-    let start = s.len() - max;
-    let at = (start..s.len())
-        .find(|i| s.is_char_boundary(*i))
-        .unwrap_or(s.len());
-    &s[at..]
+    rows.extend(all[skipped..].iter().map(|l| (truncate(l, max), false)));
+    out.extend(shell_tree(rows));
+    out
 }
 
-/// Bytes of a finished command's result kept for its lingering terminal box.
-/// Only a tail is shown (`LIVE_OUTPUT_TAIL_LINES`); this bounds the scan cheaply.
-const FINISHED_OUTPUT_TAIL_BYTES: usize = 8 * 1024;
+/// Split the exec tool's trailing `[exit N]` marker off a command's output,
+/// returning the output without it and the code it carried. The marker is the
+/// header's business (a failure appends its code there); printed under the tree
+/// it would be one more line of output. Output without a final marker (a signal,
+/// a truncation note after it) comes back whole.
+fn split_exit_marker(output: &str) -> (&str, Option<i32>) {
+    let body = output.trim_end();
+    let (head, last) = match body.rfind('\n') {
+        Some(at) => (&body[..at], &body[at + 1..]),
+        None => ("", body),
+    };
+    match last
+        .strip_prefix("[exit ")
+        .and_then(|r| r.strip_suffix(']'))
+        .and_then(|n| n.parse().ok())
+    {
+        Some(code) => (head, Some(code)),
+        None => (output, None),
+    }
+}
 
-/// A finished command's terminal box: the same framed prompt + output as the
-/// running one, but with a settled status glyph in place of the spinner/elapsed,
-/// so a command's output stays readable after it returns -- until the group
-/// folds it to a one-line summary. The full output is still on the group's
-/// expand.
-fn finished_terminal_lines(
+/// A finished command, kept readable until its group folds: the header in its
+/// settled state (a failure appends its exit code), then the first
+/// `SHELL_PREVIEW_LINES` of output under the tree and a count of the rest that
+/// names the key that shows it all. A silent command says so rather than ending
+/// on a bare header.
+fn finished_shell_lines(
     command: &str,
     output: &str,
     is_error: bool,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let mut rows = shell_body_rows(command, output, width, SHELL_PANEL_GUTTER);
-    let (glyph, style) = if is_error {
-        ("✗", Style::new().red())
+    let (body, code) = split_exit_marker(output);
+    let badge = code
+        .filter(|c| is_error && *c != 0)
+        .map(|c| Span::styled(format!(" (exit {c})"), Style::new().dark_gray()));
+    let mut out = shell_header_rows(
+        ToolState::of(is_error).bullet(),
+        "Ran",
+        command,
+        badge,
+        width,
+    );
+    let max = shell_output_width(width);
+    let rows = if body.trim().is_empty() {
+        vec![("(no output)".to_string(), true)]
     } else {
-        ("✓", Style::new().green())
+        let mut lines = body.lines();
+        let mut rows: Vec<(String, bool)> = lines
+            .by_ref()
+            .take(SHELL_PREVIEW_LINES)
+            .map(|l| (truncate(l, max), false))
+            .collect();
+        let more = lines.count();
+        if more > 0 {
+            rows.push((
+                format!("\u{2026} +{} (Ctrl-O to expand)", pluralize("line", more)),
+                true,
+            ));
+        }
+        rows
     };
-    rows.push(Line::from(Span::styled(glyph.to_string(), style)));
-    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
+    out.extend(shell_tree(rows));
+    out
 }
 
-/// The command being typed, framed like the running terminal it becomes: the
-/// partial `$ command` prompt and a "typing" status line where the running box
-/// shows elapsed, so dispatch is a seamless swap -- the prompt does not move,
-/// only the status turns over. Shown even before the first command byte, so a
-/// shell call never sits on a plain "Preparing bash" throbber.
-fn typing_terminal_lines(command: &str, frame: &str, width: u16) -> Vec<Line<'static>> {
-    let mut rows = shell_body_rows(command, "", width, SHELL_PANEL_GUTTER);
-    if rows.is_empty() {
-        // No command bytes yet: still show the prompt so the box reads as a
-        // terminal waiting for input rather than an empty frame.
-        rows.push(Line::from(Span::styled("$ ", Style::new().cyan().bold())));
-    }
-    rows.push(Line::from(vec![
-        Span::styled(format!("{frame} "), Style::new().cyan()),
-        Span::styled("typing…", Style::new().dark_gray()),
-    ]));
-    boxed_panel_sized(rows, width as usize, SHELL_PANEL_GUTTER, true)
+/// The command while its arguments are still streaming: the running header with
+/// whatever of the command has arrived, so dispatch only adds the badge and the
+/// output beneath -- the command itself does not move. Shown even before the
+/// first command byte, so a shell call never sits on a "Preparing bash" row.
+fn typing_shell_lines(command: &str, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
+    shell_header_rows(running_bullet(spinner_frame), "Running", command, None, width)
 }
 
 /// Bucket `nouns` into read-style and run-style clauses (first-seen order,
@@ -17253,7 +17434,7 @@ fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
                     Style::new(),
                     TOOL_ROW_RESERVE,
                     width,
-                    None,
+                    Vec::new(),
                 ));
                 if let Some((content, is_error)) = result {
                     let summary = summarize_result(content, max.saturating_sub(4));
@@ -18930,7 +19111,7 @@ fn rebuild_recall(app: &mut App) {
 }
 
 /// Replay a display journal through the very paths that rendered it live, so a
-/// resumed or rewound transcript keeps its reasoning, tool rows and diff panels.
+/// resumed or rewound transcript keeps its reasoning, tool rows and diffs.
 /// The replayed events journal themselves again, so `entries` is reinstated as
 /// the log afterwards instead of whatever the replay appended.
 fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
@@ -19606,25 +19787,25 @@ fn draw(f: &mut Frame, app: &mut App) {
             reveal_at = Some(content_h);
         }
         // Every committed row re-renders at the current width, so a resize
-        // re-flows prose, re-boxes diffs and re-truncates labels. The open
-        // group's row is live (spinner, or a lingering finished box), so it can
-        // never come from the row cache.
+        // re-flows prose, re-cuts diffs and re-truncates labels. The open
+        // group's row is live (spinner, or lingering finished output), so it
+        // can never come from the row cache.
         let seg = match app.tool_group.as_ref().filter(|g| g.idx == i) {
             Some(g) => {
-                // The open group's shell calls render as live terminal boxes: a
-                // running command shows its streaming output + spinner/elapsed; a
-                // finished one keeps its box (output + a settled status) until the
-                // group folds, so the output does not vanish the instant the
+                // The open group's shell calls render live: a running command
+                // shows its header with elapsed and its streaming output tail; a
+                // finished one keeps its settled header and output head until
+                // the group folds, so the output does not vanish the instant the
                 // result lands. A running non-shell group keeps its plain
-                // activity row; a finished non-shell group (no box, not yet
-                // committed) renders its folded summary row.
+                // activity row; a finished non-shell group (no shell rows, not
+                // yet committed) renders its folded summary row.
                 let mut panel = app.live_shell_panel(g, app.spinner_frame, width);
-                // The panel only boxes the shell calls. A group can keep folding
+                // The panel only shows the shell calls. A group can keep folding
                 // in later, non-shell calls (a read/grep after a bash), or the
                 // running command may not be a shell call at all -- those would be
-                // hidden behind the lingering box. Show the running activity row
-                // beneath it too, unless the in-flight call is itself a shell box
-                // (which already carries its own spinner).
+                // hidden behind the lingering output. Show the running activity
+                // row beneath it too, unless the in-flight call is itself a shell
+                // call (whose header already carries its own bullet and clock).
                 let inflight_shell = g
                     .calls
                     .iter()
@@ -23648,10 +23829,10 @@ mod tests {
         );
     }
 
-    /// The boxed diff panel is re-drawn at the current width, so its right
-    /// border still lands inside the frame after a shrink.
+    /// A committed diff is re-cut at the current width, so after a shrink its
+    /// rows (bands included) still end inside the frame.
     #[test]
-    fn a_committed_diff_panel_reboxes_on_resize() {
+    fn a_committed_diff_recuts_on_resize() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "e1".into(),
@@ -23664,26 +23845,18 @@ mod tests {
             is_error: false,
             diff: Some("@@ edit 1/1 @@\n-    let value = compute_something_long(1, 2, 3);\n+    let value = compute_something_much_longer(1, 2, 3, 4);".into()),
         });
-        let border_width = |rows: &[String]| {
-            rows.iter()
-                .find(|r| r.contains('┌'))
-                .map(|r| r.trim_end().chars().count())
-                .expect("no diff panel")
-        };
-        let wide = border_width(&render_rows(&mut app, 100, 24));
-        let narrow_rows = render_rows(&mut app, 50, 24);
-        let narrow = border_width(&narrow_rows);
+        let wide = render_rows(&mut app, 100, 24);
         assert!(
-            narrow < wide,
-            "panel kept its old width: {narrow} vs {wide}"
+            wide.iter().any(|r| r.contains("compute_something_much_longer(1, 2, 3, 4);")),
+            "the wide frame shows the whole row: {wide:?}"
         );
-        assert!(narrow <= 50, "panel overflows the frame: {narrow}");
-        // Every panel row still closes inside the frame, so the box reads as a box.
-        for row in narrow_rows.iter().filter(|r| r.contains('│')) {
-            assert!(
-                row.trim_end().chars().count() <= 50,
-                "row overflows: {row:?}"
-            );
+        let narrow = render_rows(&mut app, 50, 24);
+        assert!(
+            narrow.iter().any(|r| r.starts_with("    +") && r.contains('\u{2026}')),
+            "the narrow frame cuts the row: {narrow:?}"
+        );
+        for row in &narrow {
+            assert!(row.chars().count() <= 50, "row overflows: {row:?}");
         }
     }
 
@@ -23713,8 +23886,8 @@ mod tests {
             "duplicate summary line: {rows:?}"
         );
         assert!(
-            rows.iter().any(|r| r.contains('┌')),
-            "diff panel lost: {rows:?}"
+            rows.iter().any(|r| r.trim_end() == "    +b"),
+            "diff body lost: {rows:?}"
         );
     }
 
@@ -24255,13 +24428,10 @@ mod tests {
         let p = app.pending().unwrap();
         assert_eq!(p.diff.as_deref(), Some("@@ created file @@\n+ hi"));
         let preview = p.diff_preview(60);
-        assert!(preview.len() >= 4, "boxed diff expected, got {preview:?}");
-        let text: String = preview.iter().map(line_text).collect();
-        assert!(
-            text.contains('┌') && text.contains('┘'),
-            "no box frame: {text}"
-        );
-        assert!(text.contains("+ hi"), "diff content missing: {text}");
+        // The header is dropped: the prompt already says what the call does.
+        let text: Vec<String> = preview.iter().map(line_text).collect();
+        assert_eq!(text.len(), 1, "one body row expected, got {text:?}");
+        assert!(text[0].starts_with("+ hi"), "diff content missing: {text:?}");
     }
 
     #[test]
@@ -25326,9 +25496,9 @@ mod tests {
         );
     }
 
-    /// A running command is a terminal from the moment it starts: the boxed
-    /// prompt appears immediately, before any output, and each chunk streams into
-    /// the box as it is produced.
+    /// A running command shows from the moment it starts: its header appears
+    /// immediately, before any output, and each chunk streams in under the tree
+    /// as it is produced.
     #[test]
     fn a_running_command_shows_its_output_live() {
         let mut app = test_app();
@@ -25337,10 +25507,10 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "make" }),
         });
-        // The box opens right away, framed, before a single line is printed.
+        // The header shows right away, before a single line is printed.
         let opening = render_rows(&mut app, 70, 16).join("\n");
-        assert!(opening.contains("$ make"), "box opens immediately: {opening}");
-        assert!(opening.contains('\u{250c}'), "framed: {opening}");
+        assert!(opening.contains("Running make (0s)"), "header immediately: {opening}");
+        assert!(!opening.contains('\u{250c}'), "no frame: {opening}");
 
         app.apply(StreamEvent::ToolOutputDelta {
             id: "t1".into(),
@@ -25351,18 +25521,14 @@ mod tests {
             delta: "compiling bar\n".into(),
         });
         let live = render_rows(&mut app, 70, 16).join("\n");
-        assert!(
-            live.contains("$ make"),
-            "command on the prompt line: {live}"
-        );
-        assert!(live.contains("compiling foo"), "first chunk: {live}");
-        assert!(live.contains("compiling bar"), "and the next: {live}");
-        assert!(live.contains('\u{250c}'), "framed: {live}");
+        assert!(live.contains("Running make (0s)"), "header stays: {live}");
+        assert!(live.contains("  \u{2514} compiling foo"), "first chunk: {live}");
+        assert!(live.contains("    compiling bar"), "and the next: {live}");
     }
 
-    /// A streamed bash call types into a terminal box while the arguments
-    /// stream, then the full `ToolCall` swaps it for the running box -- no plain
-    /// throbber at any point, and the typing status must not linger.
+    /// A streamed bash call types its command into the running header while the
+    /// arguments stream, then the full `ToolCall` adds the elapsed badge -- no
+    /// "Preparing" throbber at any point, and the command does not move.
     #[test]
     fn streamed_bash_call_types_then_runs_in_the_terminal() {
         let mut app = test_app();
@@ -25376,8 +25542,8 @@ mod tests {
         });
         let typing = render_rows(&mut app, 70, 16).join("\n");
         assert!(!typing.contains("Preparing"), "no plain throbber: {typing}");
-        assert!(typing.contains("$ make"), "command types into the box: {typing}");
-        assert!(typing.contains("typing"), "typing status while streaming: {typing}");
+        assert!(typing.contains("\u{2022} Running make"), "command types in: {typing}");
+        assert!(!typing.contains("(0s)"), "no clock before it runs: {typing}");
 
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
@@ -25385,11 +25551,8 @@ mod tests {
             args: json!({ "command": "make" }),
         });
         let live = render_rows(&mut app, 70, 16).join("\n");
-        assert!(live.contains("$ make"), "the same box now runs: {live}");
-        assert!(
-            !live.contains("typing"),
-            "the status flips off typing once the command runs: {live}"
-        );
+        assert!(live.contains("Running make (0s)"), "the same header now runs: {live}");
+        assert_eq!(live.matches("Running make").count(), 1, "shown once: {live}");
     }
 
     /// The reported bug: a provider that announces the streaming call under one
@@ -25408,7 +25571,7 @@ mod tests {
             delta: "{\"command\":\"sleep 1\"}".into(),
         });
         let typing = render_rows(&mut app, 70, 16).join("\n");
-        assert!(typing.contains("$ sleep 1"), "the in-flight box shows: {typing}");
+        assert!(typing.contains("Running sleep 1"), "the in-flight header shows: {typing}");
 
         app.apply(StreamEvent::ToolCall {
             id: "final-1".into(),
@@ -25418,16 +25581,16 @@ mod tests {
         let live = render_rows(&mut app, 70, 16).join("\n");
         assert!(
             !live.contains("sleep 1"),
-            "the stale in-flight box clears despite the id mismatch: {live}"
+            "the stale in-flight header clears despite the id mismatch: {live}"
         );
-        assert!(live.contains("$ make"), "the running command's box shows: {live}");
+        assert!(live.contains("Running make"), "the running command shows: {live}");
     }
 
-    /// The terminal box replaces the plain "Running" activity row entirely,
-    /// from the first frame, so the command is never shown twice; the spinner and
-    /// elapsed fold into the box.
+    /// The live shell header stands in for the plain "Running" activity row
+    /// from the first frame, so the command is never shown twice; the elapsed
+    /// badge rides the header.
     #[test]
-    fn the_live_terminal_replaces_the_executing_row() {
+    fn the_live_shell_header_replaces_the_executing_row() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -25435,20 +25598,18 @@ mod tests {
             args: json!({ "command": "make" }),
         });
         let live = render_rows(&mut app, 70, 16).join("\n");
-        assert!(live.contains("$ make"), "terminal box from the start: {live}");
-        assert!(live.contains('\u{250c}'), "framed: {live}");
-        assert!(
-            !live.contains("Running make"),
+        assert_eq!(
+            live.matches("Running make").count(),
+            1,
             "the activity row is replaced, not duplicated: {live}"
         );
-        // Elapsed folds into the box (0s at render time), with the spinner.
-        assert!(live.contains("0s"), "elapsed in the box: {live}");
+        assert!(live.contains("Running make (0s)"), "elapsed on the header: {live}");
     }
 
-    /// Parallel commands in one group each stream in their own terminal box, so
+    /// Parallel commands in one group each stream under their own header, so
     /// a second command never hides an older one still running.
     #[test]
-    fn parallel_bash_calls_each_get_a_terminal_box() {
+    fn parallel_bash_calls_each_get_their_own_output() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
@@ -25469,18 +25630,18 @@ mod tests {
             delta: "running 3 tests\n".into(),
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("$ make"), "first command box: {live}");
+        assert!(live.contains("Running make (0s)"), "first command: {live}");
         assert!(live.contains("compiling foo"), "first command output: {live}");
-        assert!(live.contains("$ cargo test"), "second command box: {live}");
+        assert!(live.contains("Running cargo test (0s)"), "second command: {live}");
         assert!(live.contains("running 3 tests"), "second command output: {live}");
         assert!(
-            live.matches('\u{250c}').count() >= 2,
-            "one box per command: {live}"
+            live.find("compiling foo").unwrap() < live.find("Running cargo test").unwrap(),
+            "each output sits under its own command: {live}"
         );
 
-        // When the first finishes its box stays -- now settled with a status and
-        // its final output -- so the output remains readable while the second
-        // command keeps streaming its own box. It only folds once the group does.
+        // When the first finishes its output stays -- now under a settled
+        // header -- so it remains readable while the second command keeps
+        // streaming its own. It only folds once the group does.
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "compiling foo\n[exit 0]".into(),
@@ -25488,9 +25649,9 @@ mod tests {
             diff: None,
         });
         let live = render_rows(&mut app, 80, 30).join("\n");
-        assert!(live.contains("$ make"), "the finished command keeps its box: {live}");
-        assert!(live.contains("[exit 0]"), "with its final output: {live}");
-        assert!(live.contains("$ cargo test"), "the running one stays boxed: {live}");
+        assert!(live.contains("\u{2022} Ran make"), "the finished command stays: {live}");
+        assert!(live.contains("  \u{2514} compiling foo"), "with its final output: {live}");
+        assert!(live.contains("Running cargo test"), "the running one streams on: {live}");
     }
 
     /// The result is the authoritative output, so the live buffer is released
@@ -25563,29 +25724,78 @@ mod tests {
     #[test]
     fn the_live_panel_renders_only_a_bounded_tail() {
         let many: String = (0..60).map(|i| format!("line {i}\n")).collect();
-        // prompt + skip-notice + bounded tail + status row + two borders.
-        let rows = super::running_terminal_lines("make", &many, 0, 0, 70);
-        assert!(
-            rows.len() <= super::LIVE_OUTPUT_TAIL_LINES + 5,
-            "unbounded panel: {} rows",
-            rows.len()
-        );
-        let text = rows
+        let rows = super::running_shell_lines("make", &many, 0, 0, 70);
+        // header + skip-notice + the bounded tail.
+        assert_eq!(rows.len(), 1 + 1 + super::LIVE_OUTPUT_TAIL_LINES);
+        let text: Vec<String> = rows.iter().map(line_text).collect();
+        assert_eq!(text[0], "\u{2022} Running make (0s)");
+        assert_eq!(text[1], "  \u{2514} \u{2026} +55 earlier lines");
+        assert_eq!(text[2], "    line 55");
+        assert_eq!(text.last().unwrap(), "    line 59");
+    }
+
+    /// A finished command previews its first rows and points at the expand
+    /// key for the rest; the exit marker becomes the header's business.
+    #[test]
+    fn a_finished_command_previews_its_head() {
+        let out = "a\nb\nc\nd\ne\n[exit 0]";
+        let text: Vec<String> = super::finished_shell_lines("make", out, false, 70)
             .iter()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(text.contains("line 59"), "the newest line shows: {text}");
-        assert!(!text.contains("line 0\n"), "the oldest is elided: {text}");
-        assert!(
-            text.contains("earlier lines"),
-            "elision is reported: {text}"
+            .map(line_text)
+            .collect();
+        assert_eq!(
+            text,
+            vec![
+                "\u{2022} Ran make",
+                "  \u{2514} a",
+                "    b",
+                "    c",
+                "    \u{2026} +2 lines (Ctrl-O to expand)",
+            ]
         );
+        let failed: Vec<String> = super::finished_shell_lines("false", "[exit 1]", true, 70)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert_eq!(failed, vec!["\u{2022} Ran false (exit 1)", "  \u{2514} (no output)"]);
+    }
+
+    /// A multi-line command shows two continuation rows on its rail, then a
+    /// count, so a heredoc cannot bury its own output.
+    #[test]
+    fn a_multi_line_command_caps_its_continuation_rows() {
+        let cmd = "cat <<EOF\none\ntwo\nthree\nEOF";
+        let text: Vec<String> = super::typing_shell_lines(cmd, 0, 70)
+            .iter()
+            .map(line_text)
+            .collect();
+        assert_eq!(
+            text,
+            vec![
+                "\u{2022} Running cat <<EOF",
+                "  \u{2502} one",
+                "  \u{2502} two",
+                "  \u{2502} \u{2026} +2 lines",
+            ]
+        );
+    }
+
+    /// The header holds the same columns whatever badge it carries, so a
+    /// long command lays out identically while typing, running and done.
+    #[test]
+    fn a_shell_header_keeps_its_layout_as_it_resolves() {
+        let cmd = format!("echo {}", "x".repeat(400));
+        let typing = super::typing_shell_lines(&cmd, 0, 60);
+        let running = super::running_shell_lines(&cmd, "", 7, 0, 60);
+        let done = super::finished_shell_lines(&cmd, "ok\n[exit 0]", false, 60);
+        let first = |l: &[Line<'static>]| line_text(&l[0]);
+        assert_eq!(typing.len(), 1);
+        assert!(first(&running).starts_with(first(&typing).as_str()));
+        let body = |s: String| s.split_once(' ').map(|(_, r)| r.split_once(' ').unwrap().1.to_string());
+        assert_eq!(body(first(&typing)), body(first(&done)), "command cut differs");
+        for line in typing.iter().chain(&running).chain(&done) {
+            assert!(row_width(line) <= 60, "row overflows: {}", line_text(line));
+        }
     }
 
     #[test]
@@ -30712,24 +30922,28 @@ mod tests {
             .clone()
     }
 
-    /// Backgrounds of a row's spans, skipping the box frame and the gutter so
-    /// only the banded interior is left.
+    /// Backgrounds of a numbered row's spans from its sign on, skipping the
+    /// indent and the line number so only what the band covers is left.
     fn row_backgrounds(rows: &[Line<'static>], needle: &str) -> Vec<Option<ratatui::style::Color>> {
         diff_row(rows, needle)
             .spans
             .iter()
-            .filter(|s| !s.content.is_empty() && !s.content.contains('│'))
+            .skip(2)
             .map(|s| s.style.bg)
             .collect()
     }
 
-    /// A changed row is banded by its background, from the left border to the
-    /// right one -- including the padding past the end of the text, or the band
-    /// would stop mid-row on every short line.
+    /// A changed row is banded by its background, from its sign to the right
+    /// margin -- including the padding past the end of the text, or the band
+    /// would stop mid-row on every short line. The line number stays outside it.
     #[test]
     fn changed_diff_rows_are_banded_by_background() {
         let diff = "     1 | keep\n-    2 | before\n+    2 | a much longer added line";
-        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, "│     ", None);
+        let out = diff_lines(diff, 80, DIFF_MAX_ROWS, super::TREE_REST, None);
+        let before = diff_row(&out, "before");
+        assert_eq!(line_text(&before).trim_end(), "    2 -before");
+        assert_eq!(row_width(&before), 80 - 1, "band stops short of the margin");
+        assert_eq!(before.spans[1].style.bg, None, "line number was banded");
         assert!(
             row_backgrounds(&out, "before")
                 .iter()
@@ -30872,7 +31086,7 @@ mod tests {
         }
         // The marker itself stays red/green, so the sign reads without colour
         // vision doing all the work.
-        let marker = diff_row(&out, "let y = 2;").spans[3].clone();
+        let marker = diff_row(&out, "let y = 2;").spans[2].clone();
         assert_eq!(marker.content.as_ref(), "+");
         assert_eq!(marker.style.fg, Some(Color::Green));
     }
@@ -30886,26 +31100,33 @@ mod tests {
         );
     }
 
+    /// Hunk headers and the tool's `...` gap become one dim `⋮` between hunks;
+    /// nothing marks the start of the first, and the numbers line up right.
     #[test]
-    fn a_hunk_header_is_not_syntax_highlighted() {
-        let out = diff_lines(
-            "@@ -1,2 +1,3 @@\n   1 | let x = 1;",
-            80,
-            DIFF_MAX_ROWS,
-            "",
-            Some("a.rs"),
+    fn hunk_breaks_render_as_a_gap_marker() {
+        let diff = concat!(
+            "@@ edit 1/2 @@\n",
+            "-    9 | a\n",
+            "+    9 | b\n",
+            "      ...\n",
+            "    40 | c\n",
+            "@@ edit 2/2 @@\n",
+            "+  120 | d",
         );
-        let header = out
+        let out: Vec<String> = diff_lines(diff, 80, DIFF_MAX_ROWS, super::TREE_REST, Some("a.rs"))
             .iter()
-            .find(|l| line_text(l).contains("@@"))
-            .expect("no hunk header row");
-        assert!(
-            header
-                .spans
-                .iter()
-                .all(|s| !matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))),
-            "hunk header was highlighted: {:?}",
-            line_text(header)
+            .map(|l| line_text(l).trim_end().to_string())
+            .collect();
+        assert_eq!(
+            out,
+            vec![
+                "      9 -a",
+                "      9 +b",
+                "    \u{22ee}",
+                "     40  c",
+                "    \u{22ee}",
+                "    120 +d",
+            ]
         );
     }
 
@@ -30945,40 +31166,10 @@ mod tests {
 
     #[test]
     fn diff_lines_renders_all_when_under_cap() {
-        let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, "│     ", None);
-        // 2 content rows framed by a top and bottom border.
-        assert_eq!(out.len(), 4);
-        assert!(
-            line_text(&out[0]).contains('┌'),
-            "top: {}",
-            line_text(&out[0])
-        );
-        assert!(
-            line_text(out.last().unwrap()).contains('┘'),
-            "bottom: {}",
-            line_text(out.last().unwrap())
-        );
-    }
-
-    /// The shell terminal box stretches to the full width and truncates each
-    /// command/output line to one row rather than wrapping, so a long command or
-    /// a wide log line cannot balloon the box.
-    #[test]
-    fn shell_box_fills_width_and_truncates_lines() {
-        let long_cmd = format!("echo {}", "x".repeat(400));
-        let lines = super::finished_terminal_lines(&long_cmd, "one\ntwo", false, 100);
-        let widths: Vec<usize> = lines.iter().map(|line| spans_width(&line.spans)).collect();
-        assert!(
-            widths.windows(2).all(|pair| pair[0] == pair[1]),
-            "box is not a uniform full width: {widths:?}"
-        );
-        let texts: Vec<String> = lines.iter().map(line_text).collect();
-        let cmd_rows = texts.iter().filter(|r| r.contains("echo")).count();
-        assert_eq!(cmd_rows, 1, "command wrapped instead of truncating: {texts:?}");
-        assert!(
-            texts.iter().any(|r| r.contains('…')),
-            "long command should be truncated with an ellipsis: {texts:?}"
-        );
+        let out = diff_lines("- foo\n+ bar", 80, DIFF_MAX_ROWS, super::TREE_REST, None);
+        // One row per source row and no frame; unnumbered rows get no column.
+        let text: Vec<String> = out.iter().map(|l| line_text(l).trim_end().to_string()).collect();
+        assert_eq!(text, vec!["    - foo", "    + bar"]);
     }
 
     /// Box sizing must use terminal cells, not Unicode scalar counts. A row made
@@ -30993,19 +31184,19 @@ mod tests {
         );
     }
 
-    /// The panel is sized to the width it is drawn at: gutter, frame and content
-    /// together have to fit, or the closing border wraps onto a line of its own
-    /// and the box reads as double-spaced with no right edge.
+    /// The body is sized to the width it is drawn at: indent, number column
+    /// and band together have to fit, or a changed row wraps onto a line of its
+    /// own and its band breaks in two.
     #[test]
-    fn a_boxed_diff_fits_the_draw_width() {
+    fn a_diff_fits_the_draw_width() {
         let long = format!("+    1 | {}", "x".repeat(300));
-        for gutter in ["", "│   ", "│     ", "│       "] {
+        for indent in ["", super::TREE_REST, super::TREE_NESTED] {
             for width in [40usize, 80, 163] {
-                for line in diff_lines(&long, width, DIFF_MAX_ROWS, gutter, None) {
+                for line in diff_lines(&long, width, DIFF_MAX_ROWS, indent, None) {
                     assert!(
                         row_width(&line) <= width,
-                        "gutter {:?} at width {width}: row is {} wide: {:?}",
-                        gutter,
+                        "indent {:?} at width {width}: row is {} wide: {:?}",
+                        indent,
                         row_width(&line),
                         line_text(&line)
                     );
@@ -31046,12 +31237,10 @@ mod tests {
 
     #[test]
     fn diff_lines_collapses_tail_past_cap() {
-        let out = diff_lines(&plus_rows(30), 80, 20, "│     ", None);
-        // 20 content rows + a `(+N more)` row, framed by 2 borders.
-        assert_eq!(out.len(), 20 + 1 + 2);
-        // The tail sits just above the closing border.
-        let tail = line_text(&out[out.len() - 2]);
-        assert!(tail.contains("(+10 more)"), "tail: {tail}");
+        let out = diff_lines(&plus_rows(30), 80, 20, super::TREE_REST, None);
+        // 20 content rows + the overflow count.
+        assert_eq!(out.len(), 20 + 1);
+        assert_eq!(line_text(out.last().unwrap()), "    \u{2026} +10 lines");
     }
 
     /// The transcript scrolls, so a long edit is shown in full there; the
@@ -31061,13 +31250,13 @@ mod tests {
     fn the_result_cap_is_generous_and_the_prompt_cap_is_not() {
         assert_eq!(DIFF_MAX_ROWS, 1000);
         let long = plus_rows(400);
-        let result = diff_lines(&long, 80, DIFF_MAX_ROWS, "│     ", None);
-        assert_eq!(result.len(), 400 + 2, "result diff must not collapse");
+        let result = diff_lines(&long, 80, DIFF_MAX_ROWS, super::TREE_REST, None);
+        assert_eq!(result.len(), 400, "result diff must not collapse");
 
         let mut prompt = pending(true);
         prompt.diff = Some(long);
         let preview = prompt.diff_preview(80);
-        assert_eq!(preview.len(), DIFF_PREVIEW_MAX_ROWS + 1 + 2);
+        assert_eq!(preview.len(), DIFF_PREVIEW_MAX_ROWS + 1);
     }
 
     #[test]
@@ -32364,11 +32553,11 @@ mod tests {
         app.toggle_regions();
         let live = render_rows(&mut app, 120, 50).join("\n");
         assert!(live.contains("inspect before changing"), "{live}");
-        // The in-flight bash call types into a terminal box ($ <command>), which
-        // trails the reasoning that preceded it.
-        assert!(live.contains("$ first"), "{live}");
+        // The in-flight bash call types into its running header, which trails
+        // the reasoning that preceded it.
+        assert!(live.contains("Running first"), "{live}");
         assert!(
-            live.find("inspect before changing").unwrap() < live.find("$ first").unwrap(),
+            live.find("inspect before changing").unwrap() < live.find("Running first").unwrap(),
             "{live}"
         );
         app.toggle_regions();
@@ -32613,7 +32802,7 @@ mod tests {
         assert!(!live.contains("Done"), "no Done terminal while live: {live}");
     }
 
-    /// A finished bash command keeps its terminal box (command + output) while
+    /// A finished bash command keeps its output under its header while
     /// its group is still the current step, so the output stays readable instead
     /// of vanishing the instant the result lands. Once the model moves on (an
     /// answer here), the group folds to the one-line summary; the full output is
@@ -32633,9 +32822,9 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        // Group still open: the finished box lingers with its command and output.
+        // Group still open: the finished command lingers with its output.
         let open = render_rows(&mut app, 60, 16).join("\n");
-        assert!(open.contains("$ ls -la"), "command still shown: {open}");
+        assert!(open.contains("\u{2022} Ran ls -la"), "command still shown: {open}");
         assert!(
             open.contains("file_a.txt") && open.contains("file_b.txt"),
             "output stays visible after the result: {open}"
@@ -32653,8 +32842,8 @@ mod tests {
         );
     }
 
-    /// A failed bash command's lingering box carries the error glyph and its
-    /// error output, so a failure is legible before the group folds.
+    /// A failed bash command's lingering rows carry a red bullet, its exit code
+    /// and its error output, so a failure is legible before the group folds.
     #[test]
     fn a_finished_bash_box_marks_failure() {
         let mut app = test_app();
@@ -32666,13 +32855,26 @@ mod tests {
         });
         app.apply(StreamEvent::ToolResult {
             id: "b1".into(),
-            content: "boom".into(),
+            content: "boom\n[exit 2]".into(),
             is_error: true,
             diff: None,
         });
         let open = render_rows(&mut app, 50, 12).join("\n");
-        assert!(open.contains("\u{2717}"), "failed box shows the error glyph: {open}");
-        assert!(open.contains("boom"), "error output shows: {open}");
+        assert!(open.contains("Ran false (exit 2)"), "failure names its code: {open}");
+        assert!(open.contains("  \u{2514} boom"), "error output shows: {open}");
+        assert!(!open.contains("[exit 2]"), "the marker moved to the header: {open}");
+        let bullet = app
+            .tool_group
+            .as_ref()
+            .map(|g| app.live_shell_panel(g, 0, 50))
+            .expect("the group is open")[0]
+            .spans[0]
+            .clone();
+        assert_eq!(bullet.style.fg, Some(ratatui::style::Color::Red));
+        // The folded row keeps the code too.
+        app.finalize_tool_group();
+        let folded = render_rows(&mut app, 50, 12).join("\n");
+        assert!(folded.contains("Ran false (exit 2)"), "{folded}");
     }
 
     /// Ctrl-O (`toggle_regions`) unfolds every collapsed trace along with the
@@ -32740,7 +32942,7 @@ mod tests {
         assert!(!live.contains("Working \u{b7}"), "no live fold header: {live}");
         assert!(live.contains("Thought"), "settled reasoning steps show: {live}");
         // The current step -- the running command -- shows as the frontier.
-        assert!(live.contains("$ cargo test"), "current step shows: {live}");
+        assert!(live.contains("Running cargo test"), "current step shows: {live}");
     }
 
     /// A live run shows both its settled step and the current reasoning step at
@@ -33036,9 +33238,9 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         // The call row resolves to past tense once the result lands.
-        assert!(joined.contains("Edited a.txt"), "{joined}");
+        assert!(joined.contains("Edited a.txt (+1 -1)"), "{joined}");
         assert!(!joined.contains("Editing a.txt"), "{joined}");
-        assert!(joined.contains('┌') && joined.contains('┘'), "{joined}");
+        assert!(joined.contains("    + new"), "{joined}");
     }
 
     #[test]
@@ -33195,9 +33397,9 @@ mod tests {
 
         assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
         assert!(resumed.contains("Thought"), "{resumed}");
-        assert!(has_tool_row(&fresh, "Wrote a.txt", ToolState::Success), "tool row: {resumed}");
+        assert!(has_tool_row(&fresh, "Created a.txt", ToolState::Success), "tool row: {resumed}");
         assert!(
-            resumed.contains("@@ created file @@") && resumed.contains("+    1 | x"),
+            resumed.contains("    1 +x"),
             "diff panel: {resumed}"
         );
         assert!(resumed.contains("Answer."), "{resumed}");
@@ -33462,8 +33664,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            has_tool_row(&app, "Wrote a.txt", ToolState::Success)
-                && after.contains("@@ created file @@"),
+            has_tool_row(&app, "Created a.txt", ToolState::Success)
+                && after.contains("    1 +x"),
             "the journal was carried, not just the wire history: {after}"
         );
         assert!(!after.contains("Second answer."), "{after}");
@@ -33678,10 +33880,10 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            has_tool_row(&app, "Wrote a.txt", ToolState::Success),
+            has_tool_row(&app, "Created a.txt", ToolState::Success),
             "first turn keeps its rows: {after}"
         );
-        assert!(after.contains("@@ created file @@"), "{after}");
+        assert!(after.contains("    1 +x"), "{after}");
         assert!(
             !after.contains("Second answer."),
             "rewound turn is gone: {after}"
@@ -37448,11 +37650,11 @@ mod tests {
         );
     }
 
-    /// A shell call types its command into a terminal box as the arguments
-    /// stream, so it never sits on a plain "Preparing bash" throbber; the box is
-    /// the same one the running call becomes.
+    /// A shell call types its command into its running header as the
+    /// arguments stream, so it never sits on a plain "Preparing bash" throbber;
+    /// the header is the same one the running call keeps.
     #[test]
-    fn a_streaming_shell_call_types_into_a_terminal_box() {
+    fn a_streaming_shell_call_types_into_its_header() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
         call.args = r#"{"command":"ls -la"#.into();
         let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
@@ -37461,13 +37663,11 @@ mod tests {
             .collect();
         let joined = text.join("\n");
         assert!(!joined.contains("Preparing"), "no plain throbber: {joined}");
-        assert!(joined.contains("$ ls -la"), "command on the prompt line: {joined}");
-        assert!(joined.contains("typing"), "streaming status: {joined}");
-        assert!(joined.contains('\u{250c}'), "framed like a terminal: {joined}");
+        assert_eq!(text, vec!["\u{2022} Running ls -la"]);
     }
 
-    /// Before any command byte a shell call still shows the empty terminal
-    /// prompt, not "Preparing bash".
+    /// Before any command byte a shell call still shows its bare running
+    /// header, not "Preparing bash".
     #[test]
     fn a_shell_call_shows_the_prompt_before_the_command_arrives() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
@@ -37478,8 +37678,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(!joined.contains("Preparing"), "no plain throbber: {joined}");
-        assert!(joined.contains("$"), "prompt is shown: {joined}");
-        assert!(joined.contains('\u{250c}'), "framed: {joined}");
+        assert_eq!(joined, "\u{2022} Running");
     }
 
     /// A tool with no streaming preview (no command, no file body) keeps the
