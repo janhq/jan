@@ -13,6 +13,7 @@ import {
 } from 'ai'
 import { repairToolArgs } from './toolCallRepair'
 import {
+  encodeMcpToolImages,
   hasToolImageSentinel,
   stripToolImageSentinels,
 } from './tool-image-sentinel'
@@ -1532,7 +1533,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           this.encodeVideoAttachments(
             this.encodeAudioAttachments(
               stripUnsupportedImageParts(
-                this.mapUserInlineAttachments(effectiveMessages),
+                encodeMcpToolImages(
+                  this.mapUserInlineAttachments(effectiveMessages)
+                ),
                 modelSupportsVision
               )
             )

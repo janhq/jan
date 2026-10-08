@@ -397,3 +397,36 @@ it('keeps a Cowork run on its chosen model when the viewed model changes between
   await drain(await send(transport, [user('next', 'Next step')]))
   expect(vi.mocked(ModelFactory.createModel).mock.calls.map(([id]) => id)).toEqual(['gpt', 'gpt'])
 })
+
+// The filesystem server's `read_media_file` result, stored as its MCP content
+// array. Sent as-is, the SDK stringifies it and the model gets the base64 as
+// text; the transport must turn it into a tool image sentinel first.
+it('sends an MCP image result as a tool image, not as base64 text', async () => {
+  streamTextCalls.length = 0
+  provider.provider = 'openai'
+  h.providerId = 'openai'
+  selectedModel.id = 'gpt'
+  selectedModel.capabilities = ['tools', 'vision']
+  const transport = new CustomChatTransport('you are jan', 'thread-1')
+  await drain(
+    await send(transport, [
+      user('u1', 'look at the frame'),
+      {
+        id: 'a1',
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-read_media_file',
+            toolCallId: 'c1',
+            state: 'output-available',
+            input: { path: '/frames/a.png' },
+            output: [{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }],
+          },
+        ],
+      } as unknown as UIMessage,
+    ])
+  )
+  const sent = JSON.stringify(streamTextCalls[0].messages)
+  expect(sent).toContain('__JAN_TOOL_IMAGE__data:image/png;base64,iVBORw0KGgo=')
+  expect(sent).not.toContain('mimeType')
+})
