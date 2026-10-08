@@ -399,4 +399,27 @@ export const predefinedProviders = [
     ],
     models: [],
   },
+  {
+    active: true,
+    api_key: '',
+    base_url: 'https://api.flex.ai/v1',
+    explore_models_url: 'https://flex.ai/models',
+    provider: 'flexai',
+    settings: [
+      {
+        key: 'api-key',
+        title: 'API Key',
+        description:
+          "The FlexAI API uses API keys for authentication. Create one from the API Keys page of your [FlexAI dashboard](https://tokens.flex.ai); see the [FlexAI API documentation](https://docs.flex.ai/inference-api/quickstart) for more information.",
+        controller_type: 'input',
+        controller_props: {
+          placeholder: 'Insert API Key',
+          value: '',
+          type: 'password',
+          input_actions: ['unobscure', 'copy'],
+        },
+      },
+    ],
+    models: [],
+  },
 ]
