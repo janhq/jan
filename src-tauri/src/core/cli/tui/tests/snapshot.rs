@@ -29,7 +29,9 @@
 use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
-use crate::core::cli::tui::{input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD};
+use crate::core::cli::tui::{
+    input_box, input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD,
+};
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
 use ratatui::widgets::Paragraph;
@@ -218,6 +220,27 @@ fn header_parked_waiting_and_watching() {
     let watching = header_buffer(&app, DARK);
     assert_buffer("header_parked_waiting", &waiting);
     assert_buffer("header_parked_watching", &watching);
+}
+
+/// The input box while a run is parked on two agents and a monitor: what it
+/// waits on, the stop hint, and the dim tree of names under it.
+#[test]
+fn parked_waiting_on_agents() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "go");
+    app.subagents = fan_out().into_iter().take(2).collect();
+    app.apply(StreamEvent::Monitors {
+        monitors: vec![monitor("mon-1", "build", "grep OK build.log", 1)],
+    });
+    app.apply(StreamEvent::Parked);
+    let h = input_box_height(&app, 80);
+    let buf = pinned(DARK, || {
+        let area = Rect::new(0, 0, 80, h);
+        let mut buf = Buffer::empty(area);
+        ratatui::widgets::Widget::render(input_box(&app, 80), area, &mut buf);
+        buf
+    });
+    assert_buffer("parked_waiting_on_agents", &buf);
 }
 
 #[test]

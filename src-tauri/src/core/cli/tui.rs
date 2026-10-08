@@ -4098,6 +4098,12 @@ struct App {
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
     awaiting: Vec<(String, String, String)>,
+    /// `(reasoning, answer)` of the turn a run parked after. The answer is
+    /// committed to the transcript the moment the run parks, so a child that
+    /// finishes during the wait lands *below* it; kept here because a run that
+    /// ends straight from the wait still owes that answer to `history`.
+    /// Dropped when a ping resumes the run, which records the turn itself.
+    parked_answer: Option<(String, String)>,
     /// Tool calls whose arguments are still streaming. Rendered live -- a file
     /// body previews as it arrives, anything else gets a throbber -- and
     /// cleared on the matching `ToolCall` (full args) or on the next `Step`,
@@ -4779,6 +4785,7 @@ impl App {
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
             awaiting: Vec::new(),
+            parked_answer: None,
             starting: Vec::new(),
             spinner_frame: 0,
             last_spinner_advance: Instant::now(),
@@ -7131,6 +7138,7 @@ impl App {
                 // A new turn means a ping resumed the run: back to working.
                 self.turn = (index, max);
                 if self.status == Status::Parked {
+                    self.parked_answer = None;
                     self.status = Status::Running;
                     self.publish_agent_status();
                 }
@@ -7374,6 +7382,10 @@ impl App {
             // dispatched. Nothing is generating, so present as idle (see
             // `Status::Parked`) while the run stays open.
             StreamEvent::Parked => {
+                // The turn is over: commit its answer now, so whatever the
+                // wait produces (a child's `Finished` row) reads after it.
+                self.transcript.finalize_tool_group();
+                self.parked_answer = Some(self.take_turn_answer());
                 self.status = Status::Parked;
                 self.publish_agent_status();
             }
@@ -7716,6 +7728,7 @@ impl App {
         self.turn_cached_tokens = 0;
         self.turn_cache_write_tokens = 0;
         self.turn_cache_reported = false;
+        self.parked_answer = None;
         self.scrollback = 0;
         // A new turn pins the view to the bottom to follow it, so a search
         // left behind would highlight text the user has moved on from.
@@ -7739,6 +7752,20 @@ impl App {
         motion::spinner(self.spinner_frame, motion::mode())
     }
 
+    /// The current turn's `(reasoning, answer)`, flushing it to the transcript,
+    /// or the parked turn's when the run ended straight from its wait. The
+    /// reasoning is read before the flush clears it: native reasoning lives in
+    /// `reasoning_segs` until then, and inline `<think>` blocks are folded into
+    /// the buffer.
+    fn take_turn_answer(&mut self) -> (String, String) {
+        let reasoning = self.transcript.native_reasoning_text();
+        let answer = self.transcript.take_answer();
+        match self.parked_answer.take() {
+            Some(parked) if answer.is_empty() && reasoning.is_empty() => parked,
+            _ => (reasoning, answer),
+        }
+    }
+
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
         self.transcript.finalize_tool_group();
         // Done is terminal: nothing more arrives on this stream, so a call that
@@ -7748,12 +7775,9 @@ impl App {
         // arrive on its stream. Any panel still open here never got its own
         // `SubagentEnd`.
         self.close_live_background();
-        // Capture the turn's reasoning before `take_answer` flushes it: native
-        // reasoning lives in `reasoning_segs` until the flush, and inline
-        // ` thinking` blocks are folded into the buffer. Preserved so the
-        // final assistant turn can be resent with its reasoning (see below).
-        let reasoning = self.transcript.native_reasoning_text();
-        let answer = self.transcript.take_answer();
+        // Preserved so the final assistant turn can be resent with its
+        // reasoning (see below).
+        let (reasoning, answer) = self.take_turn_answer();
         let wire = answer_without_reasoning(&answer);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
@@ -8037,10 +8061,10 @@ impl App {
         // answer in history so the next turn and a later /resume both see it.
         self.abort_tool_rows();
         self.append_cancelled_turn_tools();
-        // Captured before the flush clears it, like `on_done`, so a cancelled
-        // turn's partial answer keeps the reasoning that produced it.
-        let reasoning = self.transcript.native_reasoning_text();
-        let answer = answer_without_reasoning(&self.transcript.take_answer());
+        // Like `on_done`, so a cancelled turn's partial answer keeps the
+        // reasoning that produced it.
+        let (reasoning, answer) = self.take_turn_answer();
+        let answer = answer_without_reasoning(&answer);
         if !answer.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
             if !reasoning.is_empty() {
@@ -23008,11 +23032,14 @@ fn monitors_column(monitors: &[MonitorSnapshot], width: u16, rows: usize) -> Vec
 const MAX_INPUT_ROWS: u16 = 8;
 
 /// Rows the message box occupies: 1 content row for the idle/working
-/// placeholder, or the wrapped input height clamped to `MAX_INPUT_ROWS` while
-/// editing, plus one row of air above the dock. The box is borderless, so the
+/// placeholder, the parked row with its detail rows (`parked_rows`), or the
+/// wrapped input height clamped to `MAX_INPUT_ROWS` while editing, plus one
+/// row of air above the dock. The box is borderless, so the
 /// two rows this used to add on top of its content were simply blank.
 fn input_box_height(app: &App, width: u16) -> u16 {
-    let content = if app.picker.is_none()
+    let content = if let Some(rows) = parked_rows(app, width) {
+        rows.len() as u16
+    } else if app.picker.is_none()
         && app.blocking_dock().is_none()
         && !(app.status == Status::Running && app.input.is_empty())
     {
@@ -23132,11 +23159,120 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     )
     .remove(0)
     .spans;
-    let used = spans_width(&spans);
-    if let Some(hint) = WORKING_HINTS.iter().find(|h| used + h.len() <= width as usize) {
+    push_fitting_hint(&mut spans, &WORKING_HINTS, width);
+    Line::from(spans)
+}
+
+/// Append the longest of `hints` that still fits `width` beside `spans`, or
+/// none, so an input-row hint is dropped whole rather than clipped mid-word.
+fn push_fitting_hint(spans: &mut Vec<Span<'static>>, hints: &[&'static str], width: u16) {
+    let used = spans_width(spans);
+    if let Some(hint) = hints.iter().find(|h| used + h.len() <= width as usize) {
         spans.push(Span::styled(*hint, Style::new().dim().italic()));
     }
-    Line::from(spans)
+}
+
+/// The parked row's hint, longest first, degrading like `WORKING_HINTS`. Esc
+/// *stops* here rather than cancels: the model's turn already ended, and what
+/// Esc ends is the background work the run is parked on.
+const PARKED_HINTS: [&str; 2] = [" (Esc to stop, type to steer)", " (Esc to stop)"];
+
+/// Most detail rows the parked row hangs under itself, so a wide fan-out
+/// cannot push the transcript off a short terminal.
+const PARKED_DETAIL_ROWS: usize = 3;
+
+/// What a parked run is waiting on: the subagents it dispatched that are
+/// running or queued for a slot (a later phase that has not started yet is
+/// not waited on until its phase opens), a child still awaited whose panel is
+/// already gone, and the monitors the run owns.
+fn parked_on(app: &App) -> (Vec<&str>, Vec<&MonitorSnapshot>) {
+    let mut agents: Vec<&str> = app
+        .subagents
+        .iter()
+        .filter(|p| !p.pending)
+        .map(|p| p.name.as_str())
+        .collect();
+    agents.extend(
+        app.awaiting
+            .iter()
+            .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
+            .map(|(_, _, name)| name.as_str()),
+    );
+    (agents, app.monitors.iter().collect())
+}
+
+/// `Waiting for 2 agents · 1 monitor`, or `Waiting for kv-review` when one
+/// agent is the whole of it, so the input row names what Esc would stop.
+fn parked_reason(app: &App) -> String {
+    let (agents, monitors) = parked_on(app);
+    if let ([name], []) = (agents.as_slice(), monitors.as_slice()) {
+        return format!("Waiting for {name}");
+    }
+    let parts: Vec<String> = [("agent", agents.len()), ("monitor", monitors.len())]
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .map(|(noun, n)| pluralize(noun, n))
+        .collect();
+    if parts.is_empty() {
+        return "Waiting for background work".to_string();
+    }
+    format!("Waiting for {}", parts.join(" \u{b7} "))
+}
+
+/// The input row while a run is parked and the field is empty: a static `• `
+/// and `parked_reason` (nothing is generating, so no shimmer, and no elapsed
+/// time: that is the header's), then a `└` row per thing waited on, at most
+/// `PARKED_DETAIL_ROWS`, the last ending `…` when more are hidden. A lone
+/// agent is already named on the head row, so it gets no detail row. `None`
+/// whenever the input box shows anything else.
+fn parked_rows(app: &App, width: u16) -> Option<Vec<Line<'static>>> {
+    let shown = app.status == Status::Parked
+        && app.input.is_empty()
+        && app.picker.is_none()
+        && app.blocking_dock().is_none()
+        && app.compacting.is_none()
+        && app.run_compacting.is_none()
+        && app.retrying.is_none();
+    if !shown {
+        return None;
+    }
+    let max = width.max(8) as usize;
+    let dim = Style::new().fg(theme::muted());
+    let reason = parked_reason(app);
+    let mut head = vec![
+        Span::styled(TOOL_BULLET, dim),
+        Span::raw(truncate(&reason, max.saturating_sub(TOOL_BULLET.len()))),
+    ];
+    push_fitting_hint(&mut head, &PARKED_HINTS, width);
+    let mut rows = vec![Line::from(head)];
+    let (agents, monitors) = parked_on(app);
+    if agents.len() == 1 && monitors.is_empty() {
+        return Some(rows);
+    }
+    let room = max.saturating_sub(TREE_FIRST.len() + 2);
+    let items: Vec<Span<'static>> = agents
+        .iter()
+        .map(|name| {
+            let mut span = agent_label(name);
+            span.content = truncate(name, room).into();
+            span
+        })
+        .chain(monitors.iter().map(|m| {
+            Span::styled(
+                truncate(&format!("{} {}", m.monitor_id, m.name), room),
+                Style::new().fg(theme::accent()),
+            )
+        }))
+        .collect();
+    let cut = items.len() > PARKED_DETAIL_ROWS;
+    for (i, item) in items.into_iter().take(PARKED_DETAIL_ROWS).enumerate() {
+        let mut line = vec![Span::styled(TREE_FIRST, dim), item];
+        if cut && i + 1 == PARKED_DETAIL_ROWS {
+            line.push(Span::styled(" \u{2026}", dim));
+        }
+        rows.push(Line::from(line));
+    }
+    Some(rows)
 }
 
 fn input_box(app: &App, width: u16) -> Paragraph<'static> {
@@ -23192,6 +23328,8 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             Style::new().dim().italic(),
         ))
         .block(block)
+    } else if let Some(rows) = parked_rows(app, width) {
+        Paragraph::new(rows).block(block)
     } else if app.input.is_empty() {
         // Same `> ` prompt as the typing view, then a fixed (non-blinking)
         // block cursor in front of the placeholder.
@@ -23335,12 +23473,20 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
         return spans;
     }
     let mut spans = match app.status {
-        // Parked keeps the cancel hint: nothing is generating, but the run is
-        // open and Esc is still what ends it (and its background work).
-        Status::Running | Status::Parked => hint_spans(
+        Status::Running => hint_spans(
             key_style,
             &[
                 ("Esc/Ctrl-C", "cancel"),
+                ("PgUp/PgDn", "scroll"),
+                ("Ctrl-O", "expand all"),
+            ],
+        ),
+        // Nothing is generating, so there is no turn to cancel: Esc stops the
+        // background work the run is parked on, which ends the run.
+        Status::Parked => hint_spans(
+            key_style,
+            &[
+                ("Esc", "stop"),
                 ("PgUp/PgDn", "scroll"),
                 ("Ctrl-O", "expand all"),
             ],
@@ -40979,6 +41125,157 @@ mod tests {
         app.pending_queue.clear();
         app.publish_agent_status();
         assert_eq!(app.agent_status.last_state(), Some(S::Done));
+    }
+
+    /// The rendered input box: every row between the separator rule and the
+    /// dock, trimmed.
+    fn input_rows(app: &mut App, w: u16, h: u16) -> Vec<String> {
+        let rows = render_rows(app, w, h);
+        let rule = rows.iter().rposition(|r| r.starts_with('\u{2500}')).expect("rule");
+        rows[rule + 1..rows.len() - 1]
+            .iter()
+            .map(|r| r.trim_end().to_string())
+            .filter(|r| !r.is_empty())
+            .collect()
+    }
+
+    /// One agent and nothing else: the head row names it, so no detail row
+    /// repeats it, and the run's elapsed time stays in the header.
+    #[test]
+    fn a_run_parked_on_one_agent_names_it() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.run_started = Some(Instant::now() - Duration::from_secs(65));
+        start_subagent(&mut app, "r0", "kv-review");
+        app.apply(StreamEvent::Parked);
+        assert_eq!(super::parked_reason(&app), "Waiting for kv-review");
+        let rows = input_rows(&mut app, 100, 24);
+        assert_eq!(
+            rows,
+            vec!["\u{2022} Waiting for kv-review (Esc to stop, type to steer)"],
+            "{rows:#?}"
+        );
+        let screen = render_rows(&mut app, 100, 24);
+        assert!(screen[0].contains("1m 05s"), "the header keeps it: {screen:#?}");
+        assert!(
+            !rows.iter().any(|r| r.contains("1m 05s")),
+            "no elapsed on the input row: {rows:#?}"
+        );
+        assert!(!screen.join("\n").contains("Type to steer the agent"));
+    }
+
+    /// Several things: counted on the head row, named under it, a later phase
+    /// that has not started is not waited on yet, and past three the last row
+    /// says more are hidden.
+    #[test]
+    fn a_run_parked_on_agents_and_a_monitor_lists_them() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        start_subagent(&mut app, "r0", "kv-review");
+        start_subagent(&mut app, "r1", "docs-writer");
+        app.subagents.push(SubagentPanel {
+            pending: true,
+            phase: Some(2),
+            ..SubagentPanel::new("r2".into(), "collector".into(), String::new())
+        });
+        app.apply(StreamEvent::Monitors {
+            monitors: vec![monitor("mon-1", "build", "grep OK build.log", 2)],
+        });
+        app.apply(StreamEvent::Parked);
+        assert_eq!(
+            super::parked_reason(&app),
+            "Waiting for 2 agents \u{b7} 1 monitor"
+        );
+        let rows = input_rows(&mut app, 100, 30);
+        assert_eq!(
+            rows,
+            vec![
+                "\u{2022} Waiting for 2 agents \u{b7} 1 monitor (Esc to stop, type to steer)",
+                "  \u{2514} kv-review",
+                "  \u{2514} docs-writer",
+                "  \u{2514} mon-1 build",
+            ],
+            "{rows:#?}"
+        );
+
+        start_subagent(&mut app, "r3", "perf-scan");
+        let rows = input_rows(&mut app, 100, 30);
+        assert_eq!(rows.len(), 1 + super::PARKED_DETAIL_ROWS, "{rows:#?}");
+        assert!(rows[0].contains("Waiting for 3 agents"), "{rows:#?}");
+        assert_eq!(rows[3], "  \u{2514} perf-scan \u{2026}", "{rows:#?}");
+    }
+
+    /// The hint sheds by width like the working row's, and the row never
+    /// outgrows the terminal.
+    #[test]
+    fn the_parked_row_degrades_by_width() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        start_subagent(&mut app, "r0", "kv-review");
+        app.apply(StreamEvent::Parked);
+        let head = |app: &App, width: u16| -> String {
+            let rows = super::parked_rows(app, width).expect("parked");
+            let text: String = rows[0].spans.iter().map(|s| s.content.as_ref()).collect();
+            assert!(spans_width(&rows[0].spans) <= width.max(8) as usize, "{width}: {text}");
+            text
+        };
+        assert!(head(&app, 80).ends_with("(Esc to stop, type to steer)"));
+        let mid = head(&app, 40);
+        assert!(mid.ends_with("(Esc to stop)"), "{mid}");
+        let narrow = head(&app, 26);
+        assert_eq!(narrow, "\u{2022} Waiting for kv-review", "{narrow}");
+        for width in 8..120 {
+            head(&app, width);
+        }
+        // Typing replaces the row with the field, a single row again.
+        app.input = "also".into();
+        assert!(super::parked_rows(&app, 80).is_none());
+    }
+
+    /// Parked, Esc stops the background work; there is no turn left to cancel.
+    #[test]
+    fn the_parked_footer_says_esc_stops() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        let footer = |app: &App| -> String {
+            super::footer_spans(app).iter().map(|s| s.content.as_ref()).collect()
+        };
+        assert!(footer(&app).contains("Esc/Ctrl-C cancel"), "{}", footer(&app));
+        app.apply(StreamEvent::Parked);
+        let parked = footer(&app);
+        assert!(parked.contains("Esc stop"), "{parked}");
+        assert!(!parked.contains("cancel"), "{parked}");
+    }
+
+    /// A child that finishes while the run is parked leaves its `Finished`
+    /// row *after* the answer the run parked on, not above it; a re-park adds
+    /// nothing; and the answer still reaches `history` when the run ends.
+    #[test]
+    fn a_child_finishing_while_parked_reads_after_the_answer() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        start_subagent(&mut app, "r0", "kv-review");
+        app.apply(StreamEvent::Token {
+            text: "Dispatched the review.".into(),
+        });
+        app.apply(StreamEvent::Parked);
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "r0".into(),
+            name: "kv-review".into(),
+            error: None,
+        });
+        app.apply(StreamEvent::Parked);
+        let text = transcript_text(&app);
+        let answer = text.find("Dispatched the review.").expect("answer");
+        let finished = text.find("Finished kv-review").expect("summary row");
+        assert!(answer < finished, "{text}");
+        assert_eq!(text.matches("Finished kv-review").count(), 1, "{text}");
+        assert_eq!(text.matches("Dispatched the review.").count(), 1, "{text}");
+        assert!(!text.contains("subagent kv-review"), "a row, not a note: {text}");
+
+        app.on_done("stop".into(), None);
+        let last = app.history.last().expect("answer recorded");
+        assert_eq!(last["content"], "Dispatched the review.");
     }
 
     fn session_monitor_spec(script: &str) -> tauri_plugin_agent_tools::tools::monitor::MonitorSpec {

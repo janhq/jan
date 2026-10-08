@@ -109,6 +109,27 @@ key that cancels it, <kbd>Esc</kbd>; the turn's elapsed time (`12s`, `1m 05s`, `
 header. On a narrow terminal the row drops the long hint first, then the short one, so it always
 stays one line.
 
+### Waiting on background work
+
+When the agent has answered but a subagent it dispatched or a monitor it started is still going,
+the turn stays open and waits for it. The header badge reads `○ [waiting]` (`[watching]` while a
+monitor is up), and the input row says what the turn is waiting on, with each item under it:
+
+```
+• Waiting for 2 agents · 1 monitor (Esc to stop, type to steer)
+  └ kv-review
+  └ perf-scan
+  └ mon-1 build
+```
+
+A single subagent is named on the row itself (`• Waiting for kv-review`). At most three items are
+listed, the last ending in `…` when there are more. The row does not animate, since nothing is being
+generated, and it shows no elapsed time: that stays in the header. The footer reads `Esc stop`:
+<kbd>Esc</kbd> stops the background work and ends the turn. Anything you type steers the agent.
+
+A subagent that finishes during the wait leaves its `• Finished NAME` row below the answer, and the
+agent picks up from there.
+
 ### Motion
 
 The working row and the `[thinking]` badge animate: a brightness sweep crosses the label. A
