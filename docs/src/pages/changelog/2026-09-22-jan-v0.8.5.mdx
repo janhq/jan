@@ -75,6 +75,7 @@ On Windows it runs in PowerShell, so Git Bash is no longer needed; on macOS and 
 
 - A new chat inside a project uses that project's assistant.
 - The predefined Azure provider has a Base URL field, so it can point at your Azure endpoint.
+- A message that failed is no longer sent again inside your next one, and a local server (Jan's own engine, Ollama, LM Studio or anything on `localhost`) is not retried after an error, so a failing prompt runs once instead of three times.
 
 **MCP**
 
@@ -84,6 +85,7 @@ On Windows it runs in PowerShell, so Git Bash is no longer needed; on macOS and 
 **Desktop & Platform**
 
 - The sidebar's Jan label no longer overlaps the macOS traffic lights.
+- Windows: the maximize button turns into Restore while the window is maximized.
 - Zoom shortcuts are scoped to chat message text, so zooming a message no longer rescales the whole app.
 - Hub search ranks exact model id matches first.
 - Log rotation no longer deletes the llama.cpp and worker logs.
@@ -109,6 +111,7 @@ On Windows it runs in PowerShell, so Git Bash is no longer needed; on macOS and 
 
 - A failed in-app update closes the update dialog without an error; the reason is only in the log ([#9137](https://github.com/janhq/jan/issues/9137)).
 - Windows, inside the sandbox the `shell` tool runs in: `git` cannot read the workspace, and tools whose install folder denies access to app containers (Node.js installed from its MSI, for example) cannot start. PowerShell in Constrained Language Mode, which some managed machines enforce, also stops the `shell` tool.
+- Ubuntu 24.04: the default AppArmor policy blocks the sandbox the `shell` tool runs in, so Jan does not offer the tool in chat. Everything else works.
 
 ---
 
