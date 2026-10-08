@@ -428,8 +428,8 @@ const SYSTEM_GLYPH: &str = "•";
 const GOAL_GLYPH: &str = "◎";
 
 /// Gutter for the body rows of a multi-line system block. Distinct from the tool
-/// rows' `│` and the reasoning rows' `┊`, so three stacked blocks stay tellable
-/// apart at a glance.
+/// rows' `└` tree and the reasoning rows' `┊`, so three stacked blocks stay
+/// tellable apart at a glance.
 const SYSTEM_CONT: &str = "┆";
 
 /// How loud a system line is. The only thing that varies between them, so it is
@@ -1304,7 +1304,7 @@ impl From<&str> for PendingMessage {
 /// individual call and its result without re-fetching anything.
 struct GroupedCall {
     id: String,
-    /// Present-tense label (e.g. "Executing grep -n foo src/"), shown on the
+    /// Present-tense label (e.g. "Running grep -n foo src/"), shown on the
     /// live row while this is the group's only call.
     activity: String,
     /// Past-tense finished label (e.g. "Ran grep -n foo src/").
@@ -1350,17 +1350,17 @@ impl ToolGroup {
         self.calls.iter().any(|c| c.content.is_none())
     }
 
-    /// Terminal marker for the collapsed row: the latest result's status, so a
+    /// Terminal state for the collapsed row: the latest result's status, so a
     /// call that failed and then succeeded on a retry reads as resolved. The
     /// per-call failure stays visible in the expanded detail. A failure still
     /// outranks an unresolved call: it is the more specific thing to report.
-    fn outcome_tag(&self, interrupted: bool) -> (&'static str, Style) {
+    fn outcome(&self, interrupted: bool) -> ToolState {
         if self.last_result_error == Some(true) {
-            ("✗", Style::new().red())
+            ToolState::Failure
         } else if interrupted && self.is_running() {
-            ("○", Style::new().yellow())
+            ToolState::Interrupted
         } else {
-            ("✓", Style::new().green())
+            ToolState::Success
         }
     }
 
@@ -1380,22 +1380,21 @@ impl ToolGroup {
             .unwrap_or_default()
     }
 
-    /// The group's row: present-tense `▸` only while it is open with a call in
-    /// flight, otherwise a resolved tag plus past-tense summary. The label is
-    /// stored untruncated; `Row::Tool` clamps it to the current draw width.
+    /// The group's row: present tense with a running bullet only while it is
+    /// open with a call in flight, otherwise a resolved bullet plus past-tense
+    /// summary. The label is stored untruncated; `Row::Tool` clamps it to the
+    /// current draw width.
     fn row(&self, state: GroupRow) -> Row {
         if state == GroupRow::Open && self.is_running() {
             return RowKind::Tool {
-                tag: "▸".to_string(),
-                tag_style: Style::new().cyan(),
+                state: ToolState::Running,
                 label: self.activity(),
-                label_style: Style::new().cyan().dim(),
                 reserve: TOOL_ROW_RESERVE,
             }
             .into();
         }
         // An aborted single call that never resolved keeps its present-tense
-        // `activity()` label: `first_done` ("Ran: cargo build") beside the yellow
+        // `activity()` label: `first_done` ("Ran cargo build") beside the yellow
         // interrupted mark would read as completed. Mirrors the standalone
         // edit/write orphan path (resolve_orphan_tool_rows).
         let label = if self.nouns.len() <= 1 {
@@ -1407,15 +1406,59 @@ impl ToolGroup {
         } else {
             group_summary(&self.nouns)
         };
-        let (tag, tag_style) = self.outcome_tag(state == GroupRow::Aborted);
         RowKind::Tool {
-            tag: tag.to_string(),
-            tag_style,
+            state: self.outcome(state == GroupRow::Aborted),
             label,
-            label_style: Style::new().dim(),
             reserve: TOOL_ROW_RESERVE,
         }
         .into()
+    }
+}
+
+/// What a tool row's bullet reports. The bullet's colour is the row's only
+/// state signal, so it is held as a state rather than a style and resolved at
+/// render time, against whatever theme is current then.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ToolState {
+    /// In flight. A committed row cannot animate (it is cached), so it rests
+    /// dim; the live row sweeps it via `running_bullet`.
+    Running,
+    Success,
+    Failure,
+    /// The run ended before the call resolved.
+    Interrupted,
+    /// A finished subagent's summary row, set apart from the parent's own calls.
+    Subagent,
+}
+
+impl ToolState {
+    fn of(is_error: bool) -> Self {
+        if is_error {
+            ToolState::Failure
+        } else {
+            ToolState::Success
+        }
+    }
+
+    fn bullet_style(self) -> Style {
+        match self {
+            ToolState::Running => Style::new().dim(),
+            ToolState::Success => Style::new().fg(theme::success()).bold(),
+            ToolState::Failure => Style::new().red().bold(),
+            ToolState::Interrupted => Style::new().fg(theme::warning()),
+            ToolState::Subagent => Style::new().magenta(),
+        }
+    }
+
+    fn label_style(self) -> Style {
+        match self {
+            ToolState::Subagent => Style::new().magenta(),
+            _ => Style::new(),
+        }
+    }
+
+    fn bullet(self) -> Span<'static> {
+        Span::styled(TOOL_BULLET, self.bullet_style())
     }
 }
 
@@ -1429,8 +1472,8 @@ enum GroupRow {
 }
 
 /// A standalone (diff-producing) tool row awaiting its `ToolResult`, retained so
-/// an aborted run can mark it interrupted instead of leaving a `▸` that reads as
-/// work still in flight.
+/// an aborted run can mark it interrupted instead of leaving a running bullet
+/// that reads as work still in flight.
 struct PendingToolRow {
     id: String,
     idx: usize,
@@ -1700,17 +1743,15 @@ enum RowKind {
     },
     /// A tool call/summary row, re-truncated to `width - reserve`.
     Tool {
-        tag: String,
-        tag_style: Style,
+        state: ToolState,
         label: String,
-        label_style: Style,
         reserve: u16,
     },
-    /// A tool result summary plus its optional boxed diff panel. `content` is
-    /// `None` when the call row above already says the same thing.
+    /// A tool result summary plus its optional boxed diff panel, hung off the
+    /// call row above as its first child. `content` is `None` when the call row
+    /// already says the same thing.
     Result {
-        tag: &'static str,
-        tag_style: Style,
+        is_error: bool,
         content: Option<String>,
         diff: Option<String>,
         /// Path of the edited file, for diff syntax highlighting.
@@ -1818,15 +1859,19 @@ impl RowKind {
                 }
             }
             RowKind::Tool {
-                tag,
-                tag_style,
+                state,
                 label,
-                label_style,
                 reserve,
-            } => tool_row_lines(tag, *tag_style, label, *label_style, *reserve, width, None),
+            } => tool_row_lines(
+                state.bullet(),
+                label,
+                state.label_style(),
+                *reserve,
+                width,
+                None,
+            ),
             RowKind::Result {
-                tag,
-                tag_style,
+                is_error,
                 content,
                 diff,
                 lang,
@@ -1836,9 +1881,8 @@ impl RowKind {
                     .iter()
                     .map(|c| {
                         Line::from(vec![
-                            Span::styled("│   ", Style::new().dark_gray()),
-                            Span::styled(format!("{tag} "), *tag_style),
-                            Span::styled(summarize_result(c, max), Style::new().dim()),
+                            Span::styled(TREE_FIRST, Style::new().dark_gray()),
+                            Span::styled(summarize_result(c, max), result_style(*is_error)),
                         ])
                     })
                     .collect();
@@ -1847,7 +1891,7 @@ impl RowKind {
                         diff,
                         width as usize,
                         DIFF_MAX_ROWS,
-                        "│     ",
+                        TREE_REST,
                         lang.as_deref(),
                     ));
                 }
@@ -2934,19 +2978,19 @@ impl SubagentBlock {
     /// summary row sends the user to, so it is the one that has to be complete.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
         let max = width.saturating_sub(8).max(1) as usize;
-        self.calls
-            .iter()
-            .flat_map(|label| {
-                gutter_lines(
-                    wrap_text(label, Style::new().dim(), max),
-                    vec![
-                        Span::styled("│   ", Style::new().dark_gray()),
-                        Span::styled("▸ ", Style::new().magenta()),
-                    ],
-                    vec![Span::styled("│     ", Style::new().dark_gray())],
-                )
-            })
-            .collect()
+        let mut out = Vec::new();
+        for label in &self.calls {
+            let first = out.is_empty();
+            out.extend(gutter_lines(
+                wrap_text(label, Style::new().dim(), max),
+                vec![
+                    child_prefix(first),
+                    Span::styled(TOOL_BULLET, Style::new().magenta()),
+                ],
+                vec![Span::raw(TREE_NESTED)],
+            ));
+        }
+        out
     }
 }
 
@@ -3462,7 +3506,7 @@ impl App {
     }
 
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (`> ` user, `│ ` tool, `┊ ` reasoning), so
+    /// transcript class owns one (the user bubble, `• ` tool, `┊ ` reasoning), so
     /// without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
@@ -3642,10 +3686,8 @@ impl App {
         }
         self.gap(Kind::Tool);
         self.push_row(RowKind::Tool {
-            tag: "▸".to_string(),
-            tag_style: Style::new().cyan(),
+            state: ToolState::Running,
             label,
-            label_style: Style::new().cyan().dim(),
             reserve: TOOL_ROW_RESERVE,
         });
         self.tool_group = Some(ToolGroup {
@@ -3780,10 +3822,10 @@ impl App {
         let total = calls.len();
         let noun = if total == 1 { "call" } else { "calls" };
         let done = format!("({total} tool {noun})");
-        let (verb, style) = match &outcome {
-            SubagentOutcome::Finished => ("finished", Style::new().magenta().dim()),
-            SubagentOutcome::Failed(_) => ("failed", Style::new().red()),
-            SubagentOutcome::Interrupted => ("interrupted", Style::new().yellow()),
+        let (verb, state) = match &outcome {
+            SubagentOutcome::Finished => ("finished", ToolState::Subagent),
+            SubagentOutcome::Failed(_) => ("failed", ToolState::Failure),
+            SubagentOutcome::Interrupted => ("interrupted", ToolState::Interrupted),
         };
         let label = match &outcome {
             SubagentOutcome::Failed(e) => format!("subagent {name} {verb} {done}: {e}"),
@@ -3791,13 +3833,8 @@ impl App {
         };
         self.gap(Kind::Tool);
         self.push_row(RowKind::Tool {
-            tag: "↲".to_string(),
-            tag_style: style,
+            state,
             label,
-            label_style: match outcome {
-                SubagentOutcome::Finished => style,
-                _ => Style::new().dim(),
-            },
             reserve: TOOL_ROW_RESERVE,
         });
         if total > 0 {
@@ -4022,16 +4059,9 @@ impl App {
         if row.idx >= self.transcript.len() {
             return Some(result);
         }
-        let (tag, tag_style) = if is_error {
-            ("✗", Style::new().red())
-        } else {
-            ("✓", Style::new().green())
-        };
         let call = RowKind::Tool {
-            tag: tag.to_string(),
-            tag_style,
+            state: ToolState::of(is_error),
             label: row.done,
-            label_style: Style::new().dim(),
             reserve: TOOL_ROW_RESERVE,
         };
         self.transcript[row.idx] = RowKind::Resolved {
@@ -4043,8 +4073,8 @@ impl App {
     }
 
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
-    /// aborted stream) and no `ToolResult` is coming, so a `▸`/`✓` would read as
-    /// work that is still running or that succeeded.
+    /// aborted stream) and no `ToolResult` is coming, so a running or green
+    /// bullet would read as work that is still running or that succeeded.
     fn abort_tool_rows(&mut self) {
         self.close_tool_group(true);
         self.resolve_orphan_tool_rows();
@@ -4054,7 +4084,7 @@ impl App {
     /// Shared by the abort paths and by `on_done`: a run that ends normally can
     /// still leave both behind (an upstream that stops mid tool call, or a soft
     /// stop that returns before the calls are dispatched), and neither a
-    /// "Preparing X" throbber nor a `▸` row has anything left to resolve it.
+    /// "Preparing X" row nor a running one has anything left to resolve it.
     fn resolve_orphan_tool_rows(&mut self) {
         // A call whose args were still streaming never gets its "Preparing X"
         // throbber cleared by the `ToolCall` that would have superseded it, so
@@ -4066,10 +4096,8 @@ impl App {
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.transcript.len() {
                 self.transcript[row.idx] = RowKind::Tool {
-                    tag: "○".to_string(),
-                    tag_style: Style::new().yellow(),
+                    state: ToolState::Interrupted,
                     label: row.label,
-                    label_style: Style::new().dim(),
                     reserve: TOOL_ROW_RESERVE,
                 }
                 .into();
@@ -6141,7 +6169,7 @@ impl App {
                         self.thought_for_since = Some(Instant::now());
                     }
                 }
-                // Commit the tool group as `✓` once real answer prose begins, so
+                // Commit the tool group as resolved once real answer prose begins, so
                 // it lands above the streaming response. Reasoning tokens must
                 // not trigger this, or every call by a reasoning model splits
                 // into its own row.
@@ -6267,10 +6295,8 @@ impl App {
                     self.finalize_tool_group();
                     self.gap(Kind::Tool);
                     self.push_row(RowKind::Tool {
-                        tag: "▸".to_string(),
-                        tag_style: Style::new().cyan(),
+                        state: ToolState::Running,
                         label: label.clone(),
-                        label_style: Style::new().cyan().dim(),
                         reserve: TOOL_ROW_RESERVE,
                     });
                     self.pending_rows.push(PendingToolRow {
@@ -6336,11 +6362,6 @@ impl App {
                     return;
                 }
                 self.flush_assistant();
-                let (tag, tag_style) = if is_error {
-                    ("✗", Style::new().red())
-                } else {
-                    ("✓", Style::new().green())
-                };
                 let lang = diff
                     .is_some()
                     .then(|| self.diff_paths.remove(&id))
@@ -6355,8 +6376,7 @@ impl App {
                     .any(|row| row.id == id && row.idx < self.transcript.len());
                 let content = (!(has_row && !is_error && diff.is_some())).then_some(content);
                 let result = RowKind::Result {
-                    tag,
-                    tag_style,
+                    is_error,
                     content,
                     diff,
                     lang,
@@ -8321,9 +8341,25 @@ const DIFF_MAX_ROWS: usize = 1000;
 /// long diff has to collapse rather than crowd out the options.
 const DIFF_PREVIEW_MAX_ROWS: usize = 20;
 
-/// Cells a `tool_row` spends on its gutter and tag, subtracted from the draw
-/// width before the label is wrapped.
-const TOOL_ROW_RESERVE: u16 = 6;
+/// Cells a tool row spends on its bullet plus a right margin, subtracted from
+/// the draw width before the label is wrapped.
+const TOOL_ROW_RESERVE: u16 = 4;
+
+/// A tool row's state bullet. One glyph for every state: the colour carries
+/// the state, so a row never changes width (or wraps differently) as it
+/// resolves.
+const TOOL_BULLET: &str = "• ";
+
+/// Tree prefix of the first child row under a tool row (its result, an
+/// expanded call, a diff), hanging the detail off the call it belongs to.
+const TREE_FIRST: &str = "  └ ";
+
+/// Prefix of every later child row, aligned under the first one's text.
+const TREE_REST: &str = "    ";
+
+/// Indent of a nested child's own detail (a call's output inside an expanded
+/// multi-call group), aligned under that call's label past its bullet.
+const TREE_NESTED: &str = "      ";
 
 /// Columns held back for the live row's elapsed badge. Fixed rather than
 /// measured so the body's wrap points never move as the counter ticks; wide
@@ -8652,7 +8688,7 @@ fn boxed_panel_sized(
     out
 }
 
-/// Present-tense activity label for the running tool row ("Executing grep",
+/// Present-tense activity label for the running tool row ("Running grep",
 /// "Searching"). Completed rows use `tool_finished` / `group_summary`.
 /// The subagent name embedded in a `sub-<name>-<seq>` run id (falls back to the
 /// raw id when it doesn't match that shape).
@@ -8695,8 +8731,8 @@ fn dispatched_subagents_label(verb: &str, args: &serde_json::Value) -> String {
         .unwrap_or_default();
     match names.as_slice() {
         [] => format!("{verb} subagent"),
-        [one] => format!("{verb} subagent: {one}"),
-        many => format!("{verb} {} subagents: {}", many.len(), many.join(", ")),
+        [one] => format!("{verb} subagent {one}"),
+        many => format!("{verb} {} subagents {}", many.len(), many.join(", ")),
     }
 }
 
@@ -8715,8 +8751,8 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             // Untruncated: the row wraps at the draw width, so the command
             // fills the terminal rather than eliding at a fixed 80.
             match cmd.trim() {
-                "" => "Executing command".to_string(),
-                cmd => format!("Executing: {}", collapse_command(cmd)),
+                "" => "Running command".to_string(),
+                cmd => format!("Running {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searching".to_string(),
@@ -8726,20 +8762,20 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
         "write" => format!("Writing {}", base(s("path"))),
         "edit" => format!("Editing {}", base(s("path"))),
         "dispatch_subagent" => dispatched_subagents_label("Dispatching", args),
-        "message_subagent" => format!("Messaging subagent: {}", s("name")),
-        "stop_subagent" => format!("Stopping subagent: {}", s("name")),
+        "message_subagent" => format!("Messaging subagent {}", s("name")),
+        "stop_subagent" => format!("Stopping subagent {}", s("name")),
         "await_subagent" => format!(
-            "Awaiting subagent: {}",
+            "Awaiting subagent {}",
             subagent_name_from_run_id(s("run_id"))
         ),
-        "create_subagent" => format!("Creating subagent: {}", s("name")),
+        "create_subagent" => format!("Creating subagent {}", s("name")),
         "list_subagents" => "Listing subagents".to_string(),
         "web_search" => {
             let q = s("query");
             if q.is_empty() {
                 "Searching the web".to_string()
             } else {
-                format!("Searching the web: {q}")
+                format!("Searching the web for {q}")
             }
         }
         "web_fetch" => {
@@ -8747,7 +8783,7 @@ fn tool_activity(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetching a page".to_string()
             } else {
-                format!("Fetching: {u}")
+                format!("Fetching {u}")
             }
         }
         "ask" => "Asking a question".to_string(),
@@ -8774,7 +8810,7 @@ fn monitor_activity(args: &serde_json::Value, past: bool) -> String {
             if label.is_empty() {
                 format!("{verb} a monitor")
             } else {
-                format!("{verb} a monitor: {label}")
+                format!("{verb} monitor {label}")
             }
         }
         ("stop", false) => format!("Stopping monitor {}", s("monitor_id")),
@@ -8812,7 +8848,7 @@ fn todo_op_verb(args: &serde_json::Value, past: bool) -> &'static str {
 /// item count for `append`, or "todos" as a generic fallback.
 fn todo_target_label(args: &serde_json::Value) -> String {
     if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
-        return format!("task: {task}");
+        return format!("task {task}");
     }
     if let Some(phase) = args.get("phase").and_then(|v| v.as_str()) {
         if let Some(items) = args.get("items").and_then(|v| v.as_array()) {
@@ -8821,7 +8857,7 @@ fn todo_target_label(args: &serde_json::Value) -> String {
                 return format!("{n} task{} to {phase}", if n == 1 { "" } else { "s" });
             }
         }
-        return format!("phase: {phase}");
+        return format!("phase {phase}");
     }
     if let Some(list) = args.get("list").and_then(|v| v.as_array()) {
         let n = list.len();
@@ -8836,7 +8872,7 @@ fn todo_target_label(args: &serde_json::Value) -> String {
 /// Detailed one-line label for a subagent's own tool call, shown in the live
 /// panel. Unlike `tool_activity` (deliberately terse for the parent transcript),
 /// this keeps the concrete command/path/pattern so consecutive calls are
-/// distinguishable ("git log -5" vs "git diff", not two "Executing git" rows).
+/// distinguishable ("git log -5" vs "git diff", not two "Running git" rows).
 fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
     let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
     match name {
@@ -8875,7 +8911,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             let cmd = s("command");
             match cmd.trim() {
                 "" => "Ran command".to_string(),
-                cmd => format!("Ran: {}", collapse_command(cmd)),
+                cmd => format!("Ran {}", collapse_command(cmd)),
             }
         }
         "grep" | "search" => "Searched".to_string(),
@@ -8885,20 +8921,20 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
         "write" => format!("Wrote {}", base(s("path"))),
         "edit" => format!("Edited {}", base(s("path"))),
         "dispatch_subagent" => dispatched_subagents_label("Dispatched", args),
-        "message_subagent" => format!("Messaged subagent: {}", s("name")),
-        "stop_subagent" => format!("Stopped subagent: {}", s("name")),
+        "message_subagent" => format!("Messaged subagent {}", s("name")),
+        "stop_subagent" => format!("Stopped subagent {}", s("name")),
         "await_subagent" => format!(
             "Subagent {} returned",
             subagent_name_from_run_id(s("run_id"))
         ),
-        "create_subagent" => format!("Created subagent: {}", s("name")),
+        "create_subagent" => format!("Created subagent {}", s("name")),
         "list_subagents" => "Listed subagents".to_string(),
         "web_search" => {
             let q = s("query");
             if q.is_empty() {
                 "Searched the web".to_string()
             } else {
-                format!("Searched the web: {q}")
+                format!("Searched the web for {q}")
             }
         }
         "web_fetch" => {
@@ -8906,7 +8942,7 @@ fn tool_finished(name: &str, args: &serde_json::Value) -> String {
             if u.is_empty() {
                 "Fetched a page".to_string()
             } else {
-                format!("Fetched: {u}")
+                format!("Fetched {u}")
             }
         }
         "ask" => "Asked a question".to_string(),
@@ -9180,13 +9216,18 @@ fn unescape_partial_json_string(raw: &str) -> String {
 /// `STREAM_TAIL_LINES` newline escapes instead of the whole body. Line length
 /// is already bounded by `STREAM_MAX_LINE_CHARS`, without which minified
 /// content cost 650ms per delta at 53KB and grew from there.
-fn starting_call_lines(call: &mut StartingCall, frame: &str, width: u16) -> Vec<Line<'static>> {
+fn starting_call_lines(
+    call: &mut StartingCall,
+    spinner_frame: usize,
+    width: u16,
+) -> Vec<Line<'static>> {
     call.refresh_preview();
     // A shell call types its command into the same terminal box the running
     // call becomes, so there is no "Preparing bash" stage and the dispatch is a
     // seamless swap.
     if matches!(call.name.as_str(), "bash" | "shell" | "exec") {
         let command = call.preview.command.clone().unwrap_or_default();
+        let frame = motion::spinner(spinner_frame, motion::mode());
         return typing_terminal_lines(&command, frame, width);
     }
     let Some(tail) = call.preview.tail.as_ref() else {
@@ -9194,27 +9235,18 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str, width: u16) -> Vec<
             // Even without a body, the path lands early enough to be worth
             // showing -- "Preparing write" alone says nothing about what. Any
             // path-carrying tool reaches here, so the name comes from the call.
-            Some(path) if !path.is_empty() => format!("Preparing {}: {path}", call.name),
+            Some(path) if !path.is_empty() => format!("Preparing {} {path}", call.name),
             _ => format!("Preparing {}", call.name),
         };
-        return vec![tool_row(
-            frame,
-            Style::new().cyan(),
-            &label,
-            Style::new().cyan().dim(),
-        )];
+        return vec![running_tool_row(spinner_frame, &label)];
     };
 
-    let mut out = Vec::new();
-    out.push(Line::from(vec![
-        Span::styled("│ ", Style::new().dark_gray()),
-        Span::styled("Write: ", Style::new().cyan()),
-        Span::styled(
-            call.preview.path.clone().unwrap_or_default(),
-            Style::new().cyan().dim(),
-        ),
-    ]));
-
+    // The preview hangs off its header row like any other tool detail, so the
+    // body reads as the call's child rather than as a block of its own.
+    let mut out = vec![running_tool_row(
+        spinner_frame,
+        &format!("Writing {}", call.preview.path.clone().unwrap_or_default()),
+    )];
     let start = call.preview.skipped;
     let gutter = (start + tail.len())
         .to_string()
@@ -9222,16 +9254,16 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str, width: u16) -> Vec<
         .max(STREAM_GUTTER_MIN);
     if start > 0 {
         out.push(Line::from(vec![
-            Span::styled("│ ", Style::new().dark_gray()),
+            child_prefix(out.len() == 1),
             Span::styled(
-                format!("… ({})", pluralize("earlier line", start)),
+                format!("\u{2026} ({})", pluralize("earlier line", start)),
                 Style::new().dark_gray(),
             ),
         ]));
     }
     for (offset, code) in tail.iter().enumerate() {
         let mut spans = vec![
-            Span::styled("│ ", Style::new().dark_gray()),
+            child_prefix(out.len() == 1),
             Span::styled(
                 format!("{:>gutter$} ", start + offset + 1, gutter = gutter),
                 Style::new().dark_gray(),
@@ -9241,25 +9273,27 @@ fn starting_call_lines(call: &mut StartingCall, frame: &str, width: u16) -> Vec<
         out.push(Line::from(spans));
     }
     out.push(Line::from(vec![
-        Span::styled("│ ", Style::new().dark_gray()),
-        Span::styled(format!("{frame} "), Style::new().cyan()),
-        Span::styled("… (streaming)", Style::new().dark_gray()),
+        child_prefix(out.len() == 1),
+        Span::styled("\u{2026} (streaming)", Style::new().dark_gray()),
     ]));
     out
 }
 
-/// A tool row laid out at `width`: `tag` in the gutter, `label` wrapped
-/// beneath it with continuations aligned under the label rather than under the
-/// tag, bounded by `TOOL_ROW_MAX_LINES`. Shared by the committed `RowKind::Tool`
-/// and the live group row so the running command and the finished one wrap
-/// identically -- the row must not re-flow at the moment it resolves.
+/// A tool row laid out at `width`: `bullet` leads, `label` wraps beside it
+/// with continuations indented two cells, under the label rather than under
+/// the bullet, bounded by `TOOL_ROW_MAX_LINES`. Shared by the committed
+/// `RowKind::Tool` and the live group row so the running command and the
+/// finished one wrap identically -- the row must not re-flow at the moment it
+/// resolves. The bullet is the same width in every state for the same reason.
+///
+/// The label's first word is its verb and is set bold, so a column of rows
+/// scans by what happened; the argument after it stays plain.
 ///
 /// `suffix` rides the end of the last row (the live row's elapsed badge). The
 /// wrap reserves `ELAPSED_RESERVE` for it up front instead of measuring it, so a
 /// counter ticking past 9s or 99s cannot re-flow the command above it.
 fn tool_row_lines(
-    tag: &str,
-    tag_style: Style,
+    bullet: Span<'static>,
     label: &str,
     label_style: Style,
     reserve: u16,
@@ -9270,11 +9304,11 @@ fn tool_row_lines(
     let max = (width.saturating_sub(reserve) as usize)
         .saturating_sub(held)
         .max(1);
-    let mut rows = wrap_text(label, label_style, max);
+    let mut rows = wrap_spans_hard(verb_first_spans(label, label_style), max);
     if rows.len() > TOOL_ROW_MAX_LINES {
         rows.truncate(TOOL_ROW_MAX_LINES);
         if let Some(last) = rows.last_mut() {
-            last.push(Span::styled(" …", label_style));
+            last.push(Span::styled(" \u{2026}", label_style));
         }
     }
     if let Some((text, style)) = suffix {
@@ -9282,76 +9316,103 @@ fn tool_row_lines(
             .expect("wrap_text yields at least one row")
             .push(Span::styled(format!(" {text}"), style));
     }
-    gutter_lines(
-        rows,
-        vec![
-            Span::styled("│ ", Style::new().dark_gray()),
-            Span::styled(format!("{tag} "), tag_style),
+    gutter_lines(rows, vec![bullet], vec![Span::raw("  ")])
+}
+
+/// `label` split into a bold verb (its first word) and the plain rest.
+fn verb_first_spans(label: &str, style: Style) -> Vec<Span<'static>> {
+    match label.split_once(' ') {
+        Some((verb, rest)) => vec![
+            Span::styled(verb.to_string(), style.bold()),
+            Span::styled(format!(" {rest}"), style),
         ],
-        vec![
-            Span::styled("│ ", Style::new().dark_gray()),
-            Span::raw(" ".repeat(tag.chars().count() + 1)),
-        ],
+        None => vec![Span::styled(label.to_string(), style.bold())],
+    }
+}
+
+/// The bullet of a row still in flight. It pulses with the shared sweep so
+/// the row reads as live; reduced motion and 16-colour terminals hold it as
+/// the static dim bullet a committed running row rests in.
+fn running_bullet(spinner_frame: usize) -> Span<'static> {
+    let rest = ToolState::Running.bullet_style();
+    let mut spans = motion::shimmer(
+        "\u{2022}",
+        rest,
+        motion::Tint::Accent,
+        motion::frame_time(spinner_frame),
+        motion::mode(),
+        theme::Theme::current(),
+    );
+    let style = spans.pop().map_or(rest, |s| s.style);
+    Span::styled(TOOL_BULLET, style)
+}
+
+/// A one-row in-flight tool line (a call still streaming its arguments, an
+/// orphaned subagent wait): a running bullet beside the label.
+fn running_tool_row(spinner_frame: usize, label: &str) -> Line<'static> {
+    let mut spans = vec![running_bullet(spinner_frame)];
+    spans.extend(verb_first_spans(label, Style::new()));
+    Line::from(spans)
+}
+
+/// The tree prefix that hangs a child row off the tool row above it: the
+/// corner on the first child, blank alignment on the rest.
+fn child_prefix(first: bool) -> Span<'static> {
+    Span::styled(
+        if first { TREE_FIRST } else { TREE_REST },
+        Style::new().dark_gray(),
     )
 }
 
-fn tool_row(tag: &str, tag_style: Style, text: &str, text_style: Style) -> Line<'static> {
-    Line::from(vec![
-        Span::styled("│ ", Style::new().dark_gray()),
-        Span::styled(format!("{tag} "), tag_style),
-        Span::styled(text.to_string(), text_style),
-    ])
+/// How a tool's output reads under its row. With no tag beside it, an error
+/// carries its state in its colour.
+fn result_style(is_error: bool) -> Style {
+    if is_error {
+        Style::new().red()
+    } else {
+        Style::new().dim()
+    }
 }
 
-/// Per-call detail lines for an expanded tool group: each call's finished label
-/// with its result summary (and diff, if any) indented under the summary row.
+/// Per-call detail lines for an expanded tool group, hung off the summary row
+/// as a tree: each call's finished label with its output (and diff, if any)
+/// indented under it.
 fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
     let max = width.saturating_sub(8) as usize;
-    let mut out = Vec::new();
+    let mut out: Vec<Line<'static>> = Vec::new();
     // A single-call group's summary row already IS that call's `done` label, so
     // repeating it here would duplicate it; only multi-call groups (whose
     // summary is a counted breakdown) need the per-call headers.
     let show_headers = group.calls.len() > 1;
-    let (tag_gutter, cont_gutter) = if show_headers {
-        ("│     ", "│       ")
-    } else {
-        ("│   ", "│     ")
-    };
     for call in &group.calls {
         if show_headers {
+            let state = match call.content {
+                Some(_) => ToolState::of(call.is_error),
+                None => ToolState::Running,
+            };
             out.extend(gutter_lines(
-                wrap_text(&call.done, Style::new().dim(), max),
-                vec![
-                    Span::styled("│   ", Style::new().dark_gray()),
-                    Span::styled("▸ ", Style::new().cyan()),
-                ],
-                vec![Span::styled("│     ", Style::new().dark_gray())],
+                wrap_spans_hard(verb_first_spans(&call.done, Style::new()), max),
+                vec![child_prefix(out.is_empty()), state.bullet()],
+                vec![Span::raw(TREE_NESTED)],
             ));
         }
-        if let Some(content) = &call.content {
-            let (tag, tag_style) = if call.is_error {
-                ("✗", Style::new().red())
-            } else {
-                ("✓", Style::new().green())
-            };
-            // Expanded view shows the full output verbatim: the tag rides the
-            // first line, the rest indent to align under it, and a line wider
-            // than the terminal wraps rather than eliding -- this is the surface
-            // the transcript's one-line summary sends the user to. Empty content
-            // still gets a bare tag row.
-            out.extend(gutter_lines(
-                wrap_text(content, Style::new().dim(), max),
-                vec![
-                    Span::styled(tag_gutter, Style::new().dark_gray()),
-                    Span::styled(format!("{tag} "), tag_style),
-                ],
-                vec![Span::styled(cont_gutter, Style::new().dark_gray())],
-            ));
-            if let Some(diff) = &call.diff {
-                for line in diff_lines(diff, width as usize, DIFF_MAX_ROWS, cont_gutter, None) {
-                    out.push(line);
-                }
-            }
+        let Some(content) = &call.content else {
+            continue;
+        };
+        // Expanded view shows the full output verbatim, and a line wider than
+        // the terminal wraps rather than eliding -- this is the surface the
+        // transcript's one-line summary sends the user to. Empty content still
+        // gets its (bare) row, so a silent call is visibly accounted for.
+        let rows = wrap_text(content, result_style(call.is_error), max);
+        let indent = if show_headers { TREE_NESTED } else { TREE_REST };
+        let lead = if show_headers {
+            Span::raw(TREE_NESTED)
+        } else {
+            child_prefix(out.is_empty())
+        };
+        out.extend(gutter_lines(rows, vec![lead], vec![Span::raw(indent)]));
+        if let Some(diff) = &call.diff {
+            out.extend(diff_lines(diff, width as usize, DIFF_MAX_ROWS, indent, None));
         }
     }
     out
@@ -9381,24 +9442,23 @@ fn group_summary(nouns: &[(&str, bool)]) -> String {
 }
 
 /// The one-line header a finished trace collapses to, with a step count so the
-/// fold advertises how much it hides: a static `▸` and past tense
-/// (`▸ Worked · N steps` / `▸ Thought · N steps`). Only finished traces fold;
+/// fold advertises how much it hides: a dim bullet like a neutral tool row and
+/// past tense (`• Worked · N steps` / `• Thought · N steps`). Only finished
+/// traces fold;
 /// the active run renders as the live growing rail (each step as it happens), so
 /// there is no present-tense header form.
 fn trace_header_line(run: &TraceRun) -> Line<'static> {
     let verb = if run.tool_ran { "Worked" } else { "Thought" };
     let unit = if run.steps == 1 { "step" } else { "steps" };
     Line::from(vec![
-        Span::styled("▸ ".to_string(), Style::new().cyan()),
-        Span::styled(
-            format!("{verb} · {} {unit}", run.steps),
-            Style::new().cyan().dim(),
-        ),
+        Span::styled(TOOL_BULLET, Style::new().dim()),
+        Span::styled(verb, Style::new().dim().bold()),
+        Span::styled(format!(" · {} {unit}", run.steps), Style::new().dim()),
     ])
 }
 
 /// The terminal cap of an expanded trace's rail: a `└` corner that closes the
-/// run of `│`-gutter step rows into a `Done` marker, so the timeline reads as a
+/// run of step rows into a `Done` marker, so the timeline reads as a
 /// completed thread. Only rendered under an expanded finished trace; the live
 /// rail's terminal is its current step, and a folded trace shows only the header.
 fn trace_done_line() -> Line<'static> {
@@ -9408,8 +9468,8 @@ fn trace_done_line() -> Line<'static> {
     ])
 }
 
-/// Live rows for the still-open tool group: a braille throbber in place of the
-/// static `▸` tag, the running call's label, and elapsed time, so the user can
+/// Live rows for the still-open tool group: a pulsing bullet, the running
+/// call's label, and elapsed time, so the user can
 /// see it's actively working and how long it's taken. Rebuilt fresh every draw
 /// (not stored in `transcript`) since the group's row there is only overwritten
 /// on the next tool call, not every tick.
@@ -9423,25 +9483,14 @@ fn trace_done_line() -> Line<'static> {
 /// While in flight the label also carries a brightness sweep (colour only, so
 /// the wrap is the committed row's); the finished row is the plain one.
 fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-    let mode = motion::mode();
-    let label = Style::new().cyan().dim();
     let elapsed = group.started.elapsed().as_secs();
-    let rows = tool_row_lines(
-        motion::spinner(spinner_frame, mode),
-        Style::new().cyan(),
+    tool_row_lines(
+        running_bullet(spinner_frame),
         &group.activity(),
-        label,
+        Style::new(),
         TOOL_ROW_RESERVE,
         width,
         Some((format!("({elapsed}s)"), Style::new().dark_gray())),
-    );
-    motion::shimmer_styled(
-        rows,
-        label,
-        motion::Tint::Accent,
-        motion::frame_time(spinner_frame),
-        mode,
-        theme::Theme::current(),
     )
 }
 
@@ -9510,7 +9559,7 @@ fn shell_body_rows(
 
 /// The running command as a live terminal view: the framed prompt and output
 /// plus a trailing status line (spinner + elapsed), so the box stands in for the
-/// plain "Executing:" activity row instead of sitting beneath it. The command
+/// plain "Running" activity row instead of sitting beneath it. The command
 /// itself types in earlier, in the in-flight box, as its argument tokens stream
 /// (see `typing_terminal_lines`); by the time it runs it is shown whole.
 fn running_terminal_lines(
@@ -11704,8 +11753,8 @@ fn is_chrome_glyph(c: char) -> bool {
     )
 }
 
-/// Drop the chrome the transcript draws around content -- the tool (`│`) and
-/// reasoning (`┊`) gutters, the image gutter, the diff/exec panel frame
+/// Drop the chrome the transcript draws around content -- the tool bullet and
+/// `└` tree, the reasoning (`┊`) gutter, the image gutter, the diff/exec panel frame
 /// (`┌─┐└┘│`), and the leading status glyphs and spinner frames of a row -- so
 /// a copied selection is the text, not the furniture.
 /// A leading gutter/border/marker owns exactly one padding space (the frame's
@@ -17165,16 +17214,14 @@ fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
                 );
             }
             ChildLogEntry::Call { label, result, .. } => {
-                let (tag, tag_style) = match result {
-                    None => ("\u{25b8}", Style::new().fg(theme::accent())),
-                    Some((_, true)) => ("\u{2717}", Style::new().red()),
-                    Some((_, false)) => ("\u{2713}", Style::new().fg(theme::success())),
+                let state = match result {
+                    None => ToolState::Running,
+                    Some((_, is_error)) => ToolState::of(*is_error),
                 };
                 out.extend(tool_row_lines(
-                    tag,
-                    tag_style,
+                    state.bullet(),
                     label,
-                    Style::new().dim(),
+                    Style::new(),
                     TOOL_ROW_RESERVE,
                     width,
                     None,
@@ -17184,7 +17231,7 @@ fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
                     if !summary.is_empty() {
                         let style = if *is_error { Style::new().red() } else { dim };
                         out.push(Line::from(vec![
-                            Span::styled("\u{2502}   ", dim),
+                            Span::styled(TREE_FIRST, dim),
                             Span::styled(summary, style),
                         ]));
                     }
@@ -19474,7 +19521,6 @@ fn draw(f: &mut Frame, app: &mut App) {
     let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
     let mut find_seg: Option<usize> = None;
     let mut find_at: Option<u16> = None;
-    let frame = app.spinner();
     // A finished trace (an answer follows) folds its run of reasoning/tool rows
     // to one static `Thought/Worked` header unless the user expanded it. The
     // active run stays open as the live growing rail while the model reasons and
@@ -19696,18 +19742,16 @@ fn draw(f: &mut Frame, app: &mut App) {
         tail.push(Line::raw(""));
     }
     for name in orphaned {
-        tail.push(tool_row(
-            frame,
-            Style::new().fg(theme::accent()),
-            &format!("Awaiting subagent: {name}"),
-            Style::new().fg(theme::accent()).dim(),
+        tail.push(running_tool_row(
+            app.spinner_frame,
+            &format!("Awaiting subagent {name}"),
         ));
     }
     // In-progress tool calls whose arguments are still streaming: a throbber
     // trails the prose until the full call (with args) arrives and renders its
     // own row.
     for call in &mut app.starting {
-        tail.extend(starting_call_lines(call, frame, width));
+        tail.extend(starting_call_lines(call, app.spinner_frame, width));
     }
     if !tail.is_empty() {
         let seg = Segment::eager(None, tail, width);
@@ -22455,7 +22499,7 @@ mod tests {
         without_think_tags, worktree_command, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
-        RowKind, Selection, SelectionMode, SnapshotJob, Status, Worktree, AGENT_SETTINGS,
+        RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
         ALT_SCROLL_RESTORE, ALT_SCROLL_SAVE_OFF, COPY_NOTICE, DIFF_ADD_BG, DIFF_DEL_BG,
         DIFF_MAX_ROWS, DIFF_PREVIEW_MAX_ROWS, KEY_BINDINGS, KITTY_KEYS_OFF, KITTY_KEYS_ON,
         MAX_IMAGE_BYTES, MAX_OVERFLOW_RETRIES, MOUSE_TRACK_ON, PROVIDERS_SETTINGS_ROW,
@@ -22755,19 +22799,30 @@ mod tests {
     #[test]
     fn agent_detail_shows_the_childs_prose_and_tool_calls() {
         let app = app_with_child_activity();
-        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
+        let lines = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40);
+        let text = lines
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
             .join("\n");
         let order = [
             "Let me run the command.",
-            "✓ Ran: sleep 20 && echo counted",
-            "counted",
-            "✗ Read missing.txt",
-            "ERROR: no such file",
+            "• Ran sleep 20 && echo counted",
+            "└ counted",
+            "• Read missing.txt",
+            "└ ERROR: no such file",
             "All done.",
         ];
+        // The outcome is the bullet's colour, not a glyph of its own.
+        let bullet = |label: &str| {
+            let line = lines
+                .iter()
+                .find(|l| line_text(l).contains(label))
+                .unwrap_or_else(|| panic!("no {label:?} row in:\n{text}"));
+            line.spans[0].style
+        };
+        assert_eq!(bullet("Ran sleep"), ToolState::Success.bullet_style());
+        assert_eq!(bullet("Read missing"), ToolState::Failure.bullet_style());
         let mut at = 0;
         for want in order {
             let found = text[at..].find(want).unwrap_or_else(|| {
@@ -23452,6 +23507,26 @@ mod tests {
             .join("\n")
     }
 
+    /// Whether `app` holds a tool row reading `• <label>` in `state`.
+    fn has_tool_row(app: &App, label: &str, state: ToolState) -> bool {
+        app.transcript.iter().any(|r| {
+            row_text(r).contains(&format!("\u{2022} {label}")) && tool_state(r) == Some(state)
+        })
+    }
+
+    /// The state a tool row's bullet reports. The bullet is the same glyph in
+    /// every state, so a test asks the row rather than its text.
+    fn tool_state(row: &Row) -> Option<ToolState> {
+        fn of(kind: &RowKind) -> Option<ToolState> {
+            match kind {
+                RowKind::Tool { state, .. } => Some(*state),
+                RowKind::Resolved { call, .. } => of(call),
+                _ => None,
+            }
+        }
+        of(&row.kind)
+    }
+
 
     /// Every line the given rows render to at a nominal width.
     fn row_lines(rows: &[Row]) -> Vec<Line<'static>> {
@@ -23691,24 +23766,26 @@ mod tests {
         let label = |rows: &[String], width: usize| {
             let start = rows
                 .iter()
-                .position(|r| r.contains("Ran: echo"))
+                .position(|r| r.contains("Ran echo"))
                 .expect("no tool row");
+            // The bullet row, then its continuations, which indent two cells.
             let body: Vec<String> = rows[start..]
                 .iter()
-                .take_while(|r| r.starts_with('│') && r.trim_end() != "│")
-                .map(|r| {
+                .enumerate()
+                .take_while(|(i, r)| *i == 0 || (r.starts_with("  ") && !r.trim().is_empty()))
+                .map(|(_, r)| {
                     assert!(
                         r.trim_end().chars().count() <= width,
                         "row overflows: {r:?}"
                     );
-                    r.trim_end().trim_start_matches(['│', ' ', '✓']).to_string()
+                    r.trim_end().trim_start_matches(['•', ' ']).to_string()
                 })
                 .collect();
             (body.len(), body.join(" "))
         };
         let (narrow_rows, narrow) = label(&render_rows(&mut app, 40, 12), 40);
         let (wide_rows, wide) = label(&render_rows(&mut app, 100, 12), 100);
-        let full = "Ran: echo the quick brown fox jumps over the lazy dog";
+        let full = "Ran echo the quick brown fox jumps over the lazy dog";
         assert_eq!(narrow, full, "narrow layout dropped text");
         assert_eq!(wide, full, "wide layout dropped text");
         assert!(
@@ -23737,7 +23814,7 @@ mod tests {
         app.finalize_tool_group();
         let rows = render_rows(&mut app, 80, 16);
         let has = |needle: &str| rows.iter().any(|r| r.trim_end().ends_with(needle));
-        assert!(has("Ran: cd /tmp"), "first command line missing: {rows:?}");
+        assert!(has("• Ran cd /tmp"), "first command line missing: {rows:?}");
         assert!(has("cargo build"), "second command line missing: {rows:?}");
         assert!(has("cargo test"), "third command line missing: {rows:?}");
     }
@@ -23895,7 +23972,7 @@ mod tests {
     #[test]
     fn expanded_subagent_detail_wraps_instead_of_eliding() {
         let mut app = test_app();
-        let long = "Executing: cargo test --no-default-features --features cli -- cli::tui::tests";
+        let long = "Running cargo test --no-default-features --features cli -- cli::tui::tests";
         app.push_subagent_summary(
             "reviewer",
             vec![long.to_string()],
@@ -23927,21 +24004,21 @@ mod tests {
         let url = format!("https://example.com/{}", "segment/".repeat(20));
         assert_eq!(
             tool_activity("web_fetch", &json!({ "url": url.clone() })),
-            format!("Fetching: {url}")
+            format!("Fetching {url}")
         );
         assert_eq!(
             tool_finished("web_fetch", &json!({ "url": url.clone() })),
-            format!("Fetched: {url}")
+            format!("Fetched {url}")
         );
         let query = "rust async runtime ".repeat(12);
         assert_eq!(
             tool_activity("web_search", &json!({ "query": query.clone() })),
-            format!("Searching the web: {query}")
+            format!("Searching the web for {query}")
         );
         let task = "refactor the transport layer ".repeat(6);
         assert_eq!(
             tool_activity("todo", &json!({ "op": "start", "task": task.clone() })),
-            format!("Starting task: {task}")
+            format!("Starting task {task}")
         );
     }
 
@@ -25257,7 +25334,7 @@ mod tests {
         assert!(live.contains("$ make"), "the running command's box shows: {live}");
     }
 
-    /// The terminal box replaces the plain "Executing:" activity row entirely,
+    /// The terminal box replaces the plain "Running" activity row entirely,
     /// from the first frame, so the command is never shown twice; the spinner and
     /// elapsed fold into the box.
     #[test]
@@ -25272,7 +25349,7 @@ mod tests {
         assert!(live.contains("$ make"), "terminal box from the start: {live}");
         assert!(live.contains('\u{250c}'), "framed: {live}");
         assert!(
-            !live.contains("Executing: make"),
+            !live.contains("Running make"),
             "the activity row is replaced, not duplicated: {live}"
         );
         // Elapsed folds into the box (0s at render time), with the spinner.
@@ -25426,18 +25503,18 @@ mod tests {
     fn tool_activity_is_concise_present_tense() {
         assert_eq!(
             tool_activity("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
-            "Executing: /usr/bin/grep -n foo src/"
+            "Running /usr/bin/grep -n foo src/"
         );
         assert_eq!(
             tool_activity("bash", &json!({ "command": "cargo test" })),
-            "Executing: cargo test"
+            "Running cargo test"
         );
         // Kept whole: the row clamps to the draw width, so a long command fills
         // the terminal instead of being cut at a fixed 80.
         let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_activity("bash", &json!({ "command": long })),
-            format!("Executing: {long}")
+            format!("Running {long}")
         );
         assert_eq!(
             tool_activity("grep", &json!({ "pattern": "foo" })),
@@ -25460,13 +25537,13 @@ mod tests {
         let start = json!({ "op": "start", "name": "build", "script": "grep OK build.log" });
         assert_eq!(
             tool_activity("monitor", &start),
-            "Starting a monitor: build"
+            "Starting monitor build"
         );
-        assert_eq!(tool_finished("monitor", &start), "Started a monitor: build");
+        assert_eq!(tool_finished("monitor", &start), "Started monitor build");
         let unnamed = json!({ "op": "start", "script": "test -f done.flag" });
         assert_eq!(
             tool_activity("monitor", &unnamed),
-            "Starting a monitor: test -f done.flag"
+            "Starting monitor test -f done.flag"
         );
         assert_eq!(
             tool_activity("monitor", &json!({ "op": "stop", "monitor_id": "mon-2" })),
@@ -25486,14 +25563,14 @@ mod tests {
     fn tool_finished_is_concise_past_tense() {
         assert_eq!(
             tool_finished("bash", &json!({ "command": "/usr/bin/grep -n foo src/" })),
-            "Ran: /usr/bin/grep -n foo src/"
+            "Ran /usr/bin/grep -n foo src/"
         );
         // Whole command on the finished row too, for the same reason as
         // `tool_activity`: the row clamps to the draw width.
         let long = format!("echo {}", "x".repeat(200));
         assert_eq!(
             tool_finished("bash", &json!({ "command": long })),
-            format!("Ran: {long}")
+            format!("Ran {long}")
         );
         assert_eq!(
             tool_finished("grep", &json!({ "pattern": "foo" })),
@@ -25523,19 +25600,19 @@ mod tests {
     fn every_builtin_gets_a_friendly_label_not_a_raw_json_dump() {
         assert_eq!(
             tool_activity("web_search", &json!({ "query": "rust async runtime" })),
-            "Searching the web: rust async runtime"
+            "Searching the web for rust async runtime"
         );
         assert_eq!(
             tool_finished("web_search", &json!({ "query": "rust async runtime" })),
-            "Searched the web: rust async runtime"
+            "Searched the web for rust async runtime"
         );
         assert_eq!(
             tool_activity("web_fetch", &json!({ "url": "https://example.com" })),
-            "Fetching: https://example.com"
+            "Fetching https://example.com"
         );
         assert_eq!(
             tool_finished("web_fetch", &json!({ "url": "https://example.com" })),
-            "Fetched: https://example.com"
+            "Fetched https://example.com"
         );
         assert_eq!(
             tool_activity("ask", &json!({ "questions": [] })),
@@ -25551,11 +25628,11 @@ mod tests {
     fn todo_tool_label_names_the_op_and_target() {
         assert_eq!(
             tool_activity("todo", &json!({ "op": "start", "task": "write tests" })),
-            "Starting task: write tests"
+            "Starting task write tests"
         );
         assert_eq!(
             tool_finished("todo", &json!({ "op": "done", "task": "write tests" })),
-            "Completed task: write tests"
+            "Completed task write tests"
         );
         assert_eq!(
             tool_activity("todo", &json!({ "op": "drop", "all": true })),
@@ -26168,16 +26245,16 @@ mod tests {
         let dispatch = json!({ "subagents": [{ "name": "reviewer", "task": "x" }] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching subagent: reviewer"
+            "Dispatching subagent reviewer"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched subagent: reviewer"
+            "Dispatched subagent reviewer"
         );
         let await_args = json!({ "run_id": "sub-sycl-cuda-gap-explorer-1" });
         assert_eq!(
             tool_activity("await_subagent", &await_args),
-            "Awaiting subagent: sycl-cuda-gap-explorer"
+            "Awaiting subagent sycl-cuda-gap-explorer"
         );
         assert_eq!(
             tool_activity("list_subagents", &json!({})),
@@ -26185,7 +26262,7 @@ mod tests {
         );
         assert_eq!(
             tool_activity("create_subagent", &json!({"name": "r"})),
-            "Creating subagent: r"
+            "Creating subagent r"
         );
     }
 
@@ -26200,22 +26277,22 @@ mod tests {
         ] });
         assert_eq!(
             tool_activity("dispatch_subagent", &dispatch),
-            "Dispatching 3 subagents: counter, waster, reader"
+            "Dispatching 3 subagents counter, waster, reader"
         );
         assert_eq!(
             tool_finished("dispatch_subagent", &dispatch),
-            "Dispatched 3 subagents: counter, waster, reader"
+            "Dispatched 3 subagents counter, waster, reader"
         );
     }
 
     #[test]
     fn steering_tool_rows_name_their_target() {
         let msg = json!({ "name": "counter", "message": "also say BANANA" });
-        assert_eq!(tool_activity("message_subagent", &msg), "Messaging subagent: counter");
-        assert_eq!(tool_finished("message_subagent", &msg), "Messaged subagent: counter");
+        assert_eq!(tool_activity("message_subagent", &msg), "Messaging subagent counter");
+        assert_eq!(tool_finished("message_subagent", &msg), "Messaged subagent counter");
         let stop = json!({ "name": "waster" });
-        assert_eq!(tool_activity("stop_subagent", &stop), "Stopping subagent: waster");
-        assert_eq!(tool_finished("stop_subagent", &stop), "Stopped subagent: waster");
+        assert_eq!(tool_activity("stop_subagent", &stop), "Stopping subagent waster");
+        assert_eq!(tool_finished("stop_subagent", &stop), "Stopped subagent waster");
     }
 
     #[test]
@@ -26245,7 +26322,7 @@ mod tests {
             .position(|r| r.contains("wait for the subagent"));
         let awaiting = rows
             .iter()
-            .position(|r| r.contains("Awaiting subagent: reviewer"));
+            .position(|r| r.contains("Awaiting subagent reviewer"));
         let (prose, awaiting) = (prose.expect("prose row"), awaiting.expect("awaiting row"));
         assert!(
             awaiting > prose,
@@ -26279,8 +26356,8 @@ mod tests {
         let rows = render(&mut app);
         assert!(
             rows.iter()
-                .any(|r| r.contains("│") && r.contains("Preparing write")),
-            "throbber must show with the tool-row gutter while args stream:\n{}",
+                .any(|r| r.starts_with("• Preparing write")),
+            "throbber must show with the tool-row bullet while args stream:\n{}",
             rows.join("\n")
         );
 
@@ -28262,7 +28339,7 @@ mod tests {
     #[test]
     fn subagent_panel_labels_keep_command_detail() {
         // The panel must distinguish consecutive bash calls, not collapse to
-        // "Executing git".
+        // "Running git".
         assert_eq!(
             subagent_activity("bash", &json!({ "command": "git log --oneline -5" })),
             "$ git log --oneline -5"
@@ -28313,7 +28390,7 @@ mod tests {
     /// Regression test: `SubagentEnd` can arrive before the parent's own
     /// `await_subagent` `ToolResult` (the two race). Previously only the
     /// `ToolResult` cleared `awaiting`, so a finished subagent kept showing
-    /// an "Awaiting subagent: X" throbber alongside its own "finished" row.
+    /// an "Awaiting subagent X" throbber alongside its own "finished" row.
     #[test]
     fn subagent_end_clears_its_awaiting_throbber_even_without_a_tool_result() {
         let mut app = test_app();
@@ -30853,8 +30930,7 @@ mod tests {
     #[test]
     fn a_result_row_diff_fits_the_draw_width() {
         let row: Row = RowKind::Result {
-            tag: "✓",
-            tag_style: Style::new().green(),
+            is_error: false,
             content: Some("Wrote notes.md".into()),
             diff: Some(format!("@@ created file @@\n+    1 | {}", "y".repeat(300))),
             lang: None,
@@ -31298,7 +31374,8 @@ mod tests {
             args: json!({ "command": "grep -n foo src/" }),
         });
         let running = row_text(app.transcript.last().unwrap());
-        assert!(running.contains("▸ Executing: grep"), "running: {running}");
+        assert!(running.contains("• Running grep"), "running: {running}");
+        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Running));
         let before = app.transcript.len();
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
@@ -31311,7 +31388,8 @@ mod tests {
         // Finalizing (turn boundary / done) marks it complete on the same row.
         app.finalize_tool_group();
         let row = row_text(app.transcript.last().unwrap());
-        assert!(row.contains("✓") && row.contains("Ran: grep"), "row: {row}");
+        assert!(row.contains("• Ran grep"), "row: {row}");
+        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
         assert!(!row.contains("lines"), "row: {row}");
         assert!(app.tool_group.is_none());
     }
@@ -31350,7 +31428,7 @@ mod tests {
         );
         // Single-call group: the command header must not be repeated inside the
         // expansion (the summary row above already shows it).
-        assert!(!joined.contains("▸"), "duplicate command header: {joined}");
+        assert!(!joined.contains('•'), "duplicate command header: {joined}");
         assert!(
             !joined.contains("git push"),
             "duplicate command label: {joined}"
@@ -31367,7 +31445,7 @@ mod tests {
         });
         assert!(app.tool_group.is_some());
         // Prose begins streaming in the same turn (no intervening Step): the
-        // group's status must land in the timeline as `✓` right away.
+        // group's status must land in the timeline as resolved right away.
         app.apply(StreamEvent::Token {
             text: "Here".into(),
         });
@@ -31376,10 +31454,9 @@ mod tests {
             .transcript
             .iter()
             .rev()
-            .map(row_text)
-            .find(|t| t.contains("Ran: grep"))
+            .find(|r| row_text(r).contains("Ran grep"))
             .unwrap();
-        assert!(row.contains("✓"), "row: {row}");
+        assert_eq!(tool_state(row), Some(ToolState::Success), "{}", row_text(row));
         // Later tokens must not re-trigger finalize work.
         app.apply(StreamEvent::Token {
             text: " goes".into(),
@@ -31415,21 +31492,24 @@ mod tests {
         app.finalize_tool_group();
         // The collapsed row carries the latest result, but the earlier failure
         // must still be reachable by expanding the group.
-        let row = row_text(&app.transcript[app.groups[0].idx]);
-        assert!(row.contains("✓"), "row: {row}");
-        let detail: String = group_detail_lines(&app.groups[0], 80)
-            .iter()
-            .map(|l| {
-                l.spans
-                    .iter()
-                    .map(|s| s.content.as_ref())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+        let row = &app.transcript[app.groups[0].idx];
+        assert_eq!(tool_state(row), Some(ToolState::Success), "{}", row_text(row));
+        let lines = group_detail_lines(&app.groups[0], 80);
+        let detail: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        // The failed call's own bullet is red, and so is its output.
+        let line = |needle: &str| {
+            lines
+                .iter()
+                .find(|l| line_text(l).contains(needle))
+                .unwrap_or_else(|| panic!("no {needle:?} in the expanded detail: {detail}"))
+        };
         assert!(
-            detail.contains("✗") && detail.contains("denied by user"),
+            line("Searched").spans.iter().any(|s| s.style == ToolState::Failure.bullet_style()),
             "failure lost from the expanded detail: {detail}"
+        );
+        assert!(
+            line("denied by user").spans.iter().any(|s| s.style == Style::new().red()),
+            "failure output lost its colour: {detail}"
         );
     }
 
@@ -31445,15 +31525,15 @@ mod tests {
         let idx = app.tool_group.as_ref().unwrap().idx;
         app.cancel_run();
         let row = row_text(&app.transcript[idx]);
-        assert!(
-            !row.contains("✓"),
-            "a cancelled command must not read as succeeded: {row}"
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Interrupted),
+            "a cancelled command must read as interrupted, not succeeded: {row}"
         );
-        assert!(row.contains("○"), "no interrupted marker: {row}");
-        // Present tense beside the interrupted mark: `Ran: sleep 300` would read
+        // Present tense beside the interrupted mark: `Ran sleep 300` would read
         // as completed, matching the standalone edit/write orphan path.
         assert!(
-            row.contains("Executing") && !row.contains("Ran"),
+            row.contains("Running") && !row.contains("Ran"),
             "interrupted command reads as completed: {row}"
         );
     }
@@ -31468,14 +31548,14 @@ mod tests {
             args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
         });
         let idx = app.transcript.len() - 1;
-        assert!(row_text(&app.transcript[idx]).contains("▸"));
+        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Running));
         app.cancel_run();
         let row = row_text(&app.transcript[idx]);
-        assert!(
-            !row.contains("▸"),
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Interrupted),
             "cancelled edit still reads as in flight: {row}"
         );
-        assert!(row.contains("○"), "no interrupted marker: {row}");
     }
 
     #[test]
@@ -31497,7 +31577,8 @@ mod tests {
         app.cancel_run();
         let row = row_text(&app.transcript[idx]);
         assert!(
-            row.contains("✓ Edited foo.rs") && !row.contains("○"),
+            row.contains("• Edited foo.rs")
+                && tool_state(&app.transcript[idx]) == Some(ToolState::Success),
             "a resolved edit must keep its call row: {row}"
         );
     }
@@ -31528,7 +31609,7 @@ mod tests {
             .iter()
             .position(|r| r.contains("check the README"))
             .unwrap();
-        let tool = rows.iter().position(|r| r.contains("Ran: grep")).unwrap();
+        let tool = rows.iter().position(|r| r.contains("Ran grep")).unwrap();
         let after = rows.iter().position(|r| r.contains("Found it")).unwrap();
         assert!(prose < tool && tool < after, "rows: {rows:?}");
     }
@@ -31566,13 +31647,15 @@ mod tests {
         // breakdown -- not "<latest> (4)", and not still-running until the
         // model speaks.
         let row = row_text(app.transcript.last().unwrap());
-        assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+        assert!(row.contains("• Read 3 memory notes, 1 skill"), "row: {row}");
+        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
         // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
         let row = row_text(app.transcript.last().unwrap());
-        assert!(row.contains("✓ Read 3 memory notes, 1 skill"), "row: {row}");
+        assert!(row.contains("• Read 3 memory notes, 1 skill"), "row: {row}");
+        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
     }
 
     #[test]
@@ -31652,7 +31735,7 @@ mod tests {
     }
 
     #[test]
-    fn running_group_row_shows_spinner_and_elapsed() {
+    fn running_group_row_shows_bullet_and_elapsed() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
@@ -31661,7 +31744,7 @@ mod tests {
         });
         let group = app.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 2, 80));
-        assert!(text.contains(SPINNER[2]), "{text}");
+        assert!(text.starts_with("• Searching"), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
     }
 
@@ -31678,7 +31761,7 @@ mod tests {
         });
         let group = app.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 0, 200));
-        assert!(text.contains(&format!("Executing: {cmd}")), "{text}");
+        assert!(text.contains(&format!("Running {cmd}")), "{text}");
         assert!(!text.contains("running 1 command"), "{text}");
     }
 
@@ -31697,7 +31780,7 @@ mod tests {
         }
         let group = app.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 0, 200));
-        assert!(text.contains("Executing: cargo clippy"), "{text}");
+        assert!(text.contains("Running cargo clippy"), "{text}");
         assert!(!text.contains("Running 2 commands"), "{text}");
     }
 
@@ -31722,7 +31805,7 @@ mod tests {
                 line_text(row)
             );
         }
-        let text = lines_text(&rows).replace(['\u{2502}', '\n'], " ");
+        let text = lines_text(&rows).replace('\n', " ");
         // Not the long `DESTDIR=` token: at 40 columns it is wider than the
         // body and hard-breaks, which is the correct fallback, not a drop.
         for word in ["cd /tmp", "make -j8", "all install"] {
@@ -31816,7 +31899,11 @@ mod tests {
         // No token has streamed yet: the row must already read as done rather
         // than sitting on the present-tense running form until prose arrives.
         let row = row_text(&app.transcript[idx]);
-        assert!(row.contains("✓"), "status lagged behind the result: {row}");
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Success),
+            "status lagged behind the result: {row}"
+        );
         assert!(row.contains("Searched"), "row not past tense: {row}");
 
         // A later call in the same group reopens it as running.
@@ -31826,7 +31913,7 @@ mod tests {
             args: json!({ "path": "main.rs" }),
         });
         let row = row_text(&app.transcript[idx]);
-        assert!(row.contains("▸") && !row.contains("✓"), "row: {row}");
+        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Running), "row: {row}");
     }
 
     #[test]
@@ -31845,8 +31932,9 @@ mod tests {
             diff: None,
         });
         let row = row_text(&app.transcript[idx]);
-        assert!(
-            row.contains("✗") && !row.contains("✓"),
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Failure),
             "failure not shown at result time: {row}"
         );
     }
@@ -31879,8 +31967,9 @@ mod tests {
             diff: None,
         });
         let row = row_text(&app.transcript[idx]);
-        assert!(
-            row.contains("✓") && !row.contains("✗"),
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Success),
             "stale failure on the summary row: {row}"
         );
     }
@@ -31909,7 +31998,11 @@ mod tests {
         });
         assert!(app.tool_group.as_ref().unwrap().is_running());
         let row = row_text(&app.transcript[idx]);
-        assert!(!row.contains("✓"), "resolved early: {row}");
+        assert_eq!(
+            tool_state(&app.transcript[idx]),
+            Some(ToolState::Running),
+            "resolved early: {row}"
+        );
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "done".into(),
@@ -31917,7 +32010,7 @@ mod tests {
             diff: None,
         });
         assert!(!app.tool_group.as_ref().unwrap().is_running());
-        assert!(row_text(&app.transcript[idx]).contains("✓"));
+        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Success));
     }
 
     #[test]
@@ -32066,7 +32159,7 @@ mod tests {
             .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
-        assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
+        assert!(has_tool_row(&app, "Ran 3 commands", ToolState::Success), "row: {row}");
     }
 
     #[test]
@@ -32217,7 +32310,7 @@ mod tests {
             });
         }
         let closed = &app.groups[0];
-        assert!(row_text(&app.transcript[closed.idx]).contains('✗'));
+        assert_eq!(tool_state(&app.transcript[closed.idx]), Some(ToolState::Failure));
         let first = group_detail_lines(closed, 120)
             .iter()
             .map(line_text)
@@ -32464,7 +32557,7 @@ mod tests {
         app.apply(StreamEvent::Token { text: "Two files.".into() });
         app.flush_assistant();
         let folded = render_rows(&mut app, 60, 16).join("\n");
-        assert!(folded.contains("Ran: ls -la"), "folds to a summary: {folded}");
+        assert!(folded.contains("Ran ls -la"), "folds to a summary: {folded}");
         assert!(
             !folded.contains("file_a.txt"),
             "output folds away once the step is past: {folded}"
@@ -32743,7 +32836,7 @@ mod tests {
             .map(row_text)
             .find(|t| t.contains("Ran "))
             .unwrap();
-        assert!(row.contains("✓ Ran 3 commands"), "row: {row}");
+        assert!(has_tool_row(&app, "Ran 3 commands", ToolState::Success), "row: {row}");
     }
 
     #[test]
@@ -32880,7 +32973,7 @@ mod tests {
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(joined.contains("✗ Wrote a.txt"), "{joined}");
+        assert!(has_tool_row(&app, "Wrote a.txt", ToolState::Failure), "{joined}");
         assert!(app.pending_rows.is_empty());
     }
 
@@ -33013,7 +33106,7 @@ mod tests {
 
         assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
         assert!(resumed.contains("Thought"), "{resumed}");
-        assert!(resumed.contains("✓ Wrote a.txt"), "tool row: {resumed}");
+        assert!(has_tool_row(&fresh, "Wrote a.txt", ToolState::Success), "tool row: {resumed}");
         assert!(
             resumed.contains("@@ created file @@") && resumed.contains("+    1 | x"),
             "diff panel: {resumed}"
@@ -33280,7 +33373,8 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            after.contains("✓ Wrote a.txt") && after.contains("@@ created file @@"),
+            has_tool_row(&app, "Wrote a.txt", ToolState::Success)
+                && after.contains("@@ created file @@"),
             "the journal was carried, not just the wire history: {after}"
         );
         assert!(!after.contains("Second answer."), "{after}");
@@ -33495,7 +33589,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            after.contains("✓ Wrote a.txt"),
+            has_tool_row(&app, "Wrote a.txt", ToolState::Success),
             "first turn keeps its rows: {after}"
         );
         assert!(after.contains("@@ created file @@"), "{after}");
@@ -34910,7 +35004,7 @@ mod tests {
     }
 
     /// `await_subagent` on a child that already has a live panel used to print
-    /// a second "Awaiting subagent: X" row directly under the block that was
+    /// a second "Awaiting subagent X" row directly under the block that was
     /// showing that child's progress. Only an orphaned wait gets a row.
     #[test]
     fn awaiting_row_is_suppressed_while_the_child_has_a_live_panel() {
@@ -37176,14 +37270,14 @@ mod tests {
         let body: String = (1..=20).map(|n| format!("line {n}\\n")).collect();
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = format!(r#"{{"path":"game.html","content":"{body}"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
         let joined = text.join("\n");
 
         assert!(
-            joined.contains("Write: game.html"),
+            text[0] == "• Writing game.html",
             "no destination: {joined}"
         );
         assert!(
@@ -37254,13 +37348,13 @@ mod tests {
     fn streaming_write_shows_the_path_before_the_body() {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         call.args = r#"{"path":"game.html","cont"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
         assert_eq!(text.len(), 1);
         assert!(
-            text[0].contains("Preparing write: game.html"),
+            text[0].contains("Preparing write game.html"),
             "got {text:?}"
         );
     }
@@ -37272,7 +37366,7 @@ mod tests {
     fn a_streaming_shell_call_types_into_a_terminal_box() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
         call.args = r#"{"command":"ls -la"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
@@ -37289,7 +37383,7 @@ mod tests {
     fn a_shell_call_shows_the_prompt_before_the_command_arrives() {
         let mut call = super::StartingCall::new("c1".into(), "bash".into());
         call.args = r#"{"comm"#.into();
-        let joined = starting_call_lines(&mut call, "⠋", 70)
+        let joined = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
@@ -37305,7 +37399,7 @@ mod tests {
     fn other_tools_keep_the_plain_throbber() {
         let mut call = super::StartingCall::new("c1".into(), "grep".into());
         call.args = r#"{"pattern":"foo"#.into();
-        let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
@@ -37323,7 +37417,7 @@ mod tests {
         let mut call = super::StartingCall::new("c1".into(), "write".into());
         let body = "x".repeat(20_000);
         call.args = format!(r#"{{"path":"bundle.js","content":"{body}"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
@@ -37352,7 +37446,7 @@ mod tests {
         let filler = "-".repeat(super::STREAM_MAX_LINE_CHARS * 2);
         call.args =
             format!(r#"{{"path":"a.txt","content":"HEAD1{filler}TAIL1\nHEAD2{filler}TAIL2"#);
-        let text: Vec<String> = starting_call_lines(&mut call, "\u{280b}", 70)
+        let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
             .iter()
             .map(line_text)
             .collect();
@@ -37467,13 +37561,13 @@ mod tests {
         for name in ["read", "edit", "list"] {
             let mut call = super::StartingCall::new("c1".into(), name.into());
             call.args = r#"{"path":"src/main.rs"#.into();
-            let text: Vec<String> = starting_call_lines(&mut call, "⠋", 70)
+            let text: Vec<String> = starting_call_lines(&mut call, 0, 70)
                 .iter()
                 .map(line_text)
                 .collect();
             assert_eq!(text.len(), 1);
             assert!(
-                text[0].contains(&format!("Preparing {name}: src/main.rs")),
+                text[0].contains(&format!("Preparing {name} src/main.rs")),
                 "got {text:?}"
             );
             assert!(!text[0].contains("write"), "wrong tool named: {text:?}");
@@ -38726,11 +38820,13 @@ mod tests {
         );
     }
 
-    /// A running tool label shimmers and spins; reduced motion holds a static
-    /// glyph and the plain label. Either way the text is the same.
+    /// A running tool row's bullet pulses; reduced motion and a 16-colour
+    /// terminal hold it as the static dim bullet. Either way the text is the
+    /// same, so the row never reflows as it animates.
     #[test]
     fn a_running_tool_row_animates_only_with_motion() {
-        use super::motion::{with_mode, MotionMode, STATIC_GLYPH};
+        use super::motion::{with_mode, MotionMode};
+        use super::theme::{with_theme, ColorDepth, Theme};
         let mut app = test_app();
         app.submit_user("go".into());
         app.apply(StreamEvent::ToolCall {
@@ -38745,17 +38841,24 @@ mod tests {
                 matches!(s.style.fg, Some(ratatui::style::Color::Rgb(..)))
             })
         };
+        let ansi16 = Theme { light: false, depth: ColorDepth::Ansi16 };
+        let rest = ToolState::Running.bullet_style();
         let mut moved = false;
         for frame in 0..30 {
             let moving = with_mode(MotionMode::Animated, || running_group_rows(group, frame, 80));
             let still = with_mode(MotionMode::Reduced, || running_group_rows(group, frame, 80));
-            let strip = |ls: &[Line<'static>]| lines_text(ls).replace(SPINNER[frame % SPINNER.len()], STATIC_GLYPH);
-            assert_eq!(strip(&moving), lines_text(&still), "frame {frame}");
-            assert!(lines_text(&still).contains(STATIC_GLYPH));
-            assert!(!rgb(&still));
+            let flat = with_theme(ansi16, || {
+                with_mode(MotionMode::Animated, || running_group_rows(group, frame, 80))
+            });
+            assert_eq!(lines_text(&moving), lines_text(&still), "frame {frame}");
+            assert!(lines_text(&still).starts_with("\u{2022} Searching"));
+            for rows in [&still, &flat] {
+                assert!(!rgb(rows), "frame {frame}");
+                assert_eq!(rows[0].spans[0].style, rest, "frame {frame}");
+            }
             moved |= rgb(&moving);
         }
-        assert!(moved, "the label shimmered while in flight");
+        assert!(moved, "the bullet pulsed while in flight");
     }
 
     /// The animation is scoped to the state that needs it: a folded, streaming
@@ -42490,7 +42593,13 @@ mod tests {
             diff: None,
         });
         app.finalize_tool_group();
-        assert_eq!(last_row(&app)[0].0, "\u{2502} ", "tool row");
+        // A tool row shares the note's bullet shape; its state colour is what
+        // sets it apart.
+        assert_eq!(
+            last_row(&app)[0],
+            ("\u{2022} ".to_string(), ToolState::Success.bullet_style()),
+            "tool row"
+        );
 
         // Model prose is the one class with no gutter, which is what makes the
         // others readable as "not the model".

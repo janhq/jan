@@ -1,5 +1,6 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
@@ -10,11 +11,11 @@ expression: render_snapshot(buf)
 |│ Review the key-value store for races.                                        │|
 |│                                                                              │|
 |│ Reading the store first.                                                     │|
-|│ │ ✓ Read src/kv.rs                                                           │|
-|│ │   120 lines                                                                │|
+|│ • Read src/kv.rs                                                             │|
+|│   └ 120 lines                                                                │|
 |│ > check the lock order too                                                   │|
-|│ │ ✗ Ran cargo test kv                                                        │|
-|│ │   error: 1 test failed                                                     │|
+|│ • Ran cargo test kv                                                          │|
+|│   └ error: 1 test failed                                                     │|
 |│                                                                              │|
 |╰──────────────────────────────────────────────────────────────────────────────╯|
 |                                                                                |
@@ -46,9 +47,8 @@ expression: render_snapshot(buf)
  7 0..1 fg=#56B6C2
  7 79..80 fg=#56B6C2
  8 0..1 fg=#56B6C2
- 8 2..4 fg=DarkGray
- 8 4..6 fg=#98C379
- 8 6..20 mod=DIM
+ 8 2..4 fg=#98C379 mod=BOLD
+ 8 4..8 mod=BOLD
  8 79..80 fg=#56B6C2
  9 0..1 fg=#56B6C2
  9 2..15 fg=#808080
@@ -57,9 +57,8 @@ expression: render_snapshot(buf)
 10 2..28 fg=Magenta mod=BOLD
 10 79..80 fg=#56B6C2
 11 0..1 fg=#56B6C2
-11 2..4 fg=DarkGray
-11 4..6 fg=Red
-11 6..23 mod=DIM
+11 2..4 fg=Red mod=BOLD
+11 4..7 mod=BOLD
 11 79..80 fg=#56B6C2
 12 0..1 fg=#56B6C2
 12 2..6 fg=#808080

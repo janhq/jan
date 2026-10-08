@@ -27,8 +27,8 @@ jan --task "..."    # with a first message already sent
 
  > add a --version flag
 
- │ ✓ Read 3 files
- │ ✓ Edited src/cli.rs
+ • Read 3 files
+ • Edited src/cli.rs
 
  Done - the flag is wired up and documented.
 
@@ -47,8 +47,12 @@ jan --task "..."    # with a first message already sent
 | Input | Where you type |
 | Footer | Working directory and git branch |
 
-Tool rows fold to one line each. <kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to
-expand just that one.
+Tool rows fold to one line each: a `•` bullet, then the verb and what it acted on (`Ran cargo
+test`, `Edited src/cli.rs`). The bullet's colour is the call's state: it pulses while the call
+runs, then turns green when it succeeds, red when it fails, and yellow when the turn was cancelled
+before it finished. A result or diff hangs off the row beneath a dim `└`.
+<kbd>Ctrl</kbd>+<kbd>O</kbd> expands them all, or click a row to expand just that one. Once the
+answer arrives, the tool calls before it fold into a single `• Worked · N steps` row.
 
 ## A turn
 
@@ -70,9 +74,9 @@ stays one line.
 
 ### Motion
 
-The working row, the `[thinking]` badge and a running tool row animate: a brightness sweep crosses
-the label, and a running tool row also has a throbber. The sweep changes colour only, never width, so nothing beside
-it moves. It is skipped on a 16-colour terminal, which has no shades in between to sweep through.
+The working row and the `[thinking]` badge animate: a brightness sweep crosses the label. A
+running tool row pulses its bullet the same way. The sweep changes colour only, never width, so
+nothing beside it moves. It is skipped on a 16-colour terminal, which has no shades in between to sweep through.
 
 To hold everything still, set this in `~/.jan/config.toml`:
 
@@ -81,7 +85,8 @@ To hold everything still, set this in `~/.jan/config.toml`:
 animations = false
 ```
 
-Throbbers then show a static `•` and every label keeps its resting colour. Jan also turns animations off at launch when the OS asks for reduced motion: on macOS
+Throbbers then show a static `•`, a running tool's bullet stays dim, and every label keeps its
+resting colour. Jan also turns animations off at launch when the OS asks for reduced motion: on macOS
 (System Settings > Accessibility > Display > Reduce motion) and on GNOME-family Linux desktops
 (animations off). Windows is not detected yet, so use the key there. Restart Jan after changing
 either.
