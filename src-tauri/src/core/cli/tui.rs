@@ -23401,6 +23401,18 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     )
     .remove(0)
     .spans;
+    // Pad to the longest synonym so the hint stays in one column as the word
+    // rotates, and lead with the same `> ` as every other input state so the
+    // word sits where typed text will.
+    let longest = WORKING_WORDS
+        .iter()
+        .chain(THINKING_WORDS.iter())
+        .map(|w| w.chars().count())
+        .max()
+        .unwrap_or(0);
+    let pad = (longest + 1).saturating_sub(word.chars().count() + 1);
+    spans.push(Span::raw(" ".repeat(pad)));
+    spans.splice(0..0, empty_prompt_prefix());
     if let Some(count) = bg_shells_count(app) {
         let room = (width as usize).saturating_sub(spans_width(&spans));
         if count.chars().count() <= room {
@@ -23409,6 +23421,17 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     }
     push_fitting_hint(&mut spans, &WORKING_HINTS, width);
     Line::from(spans)
+}
+
+/// The `> ` prompt and the fixed block cursor that open an empty input row.
+/// Shared by the idle placeholder and the working row so their text starts in
+/// the same column.
+fn empty_prompt_prefix() -> [Span<'static>; 3] {
+    [
+        Span::styled("> ", Style::new().fg(theme::accent()).bold()),
+        Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
+        Span::raw(" "),
+    ]
 }
 
 /// Append the longest of `hints` that still fits `width` beside `spans`, or
@@ -23586,12 +23609,8 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
         } else {
             "Type here to chat with agent"
         };
-        let cursor_spans: Vec<Span<'static>> = vec![
-            Span::styled("> ", Style::new().fg(theme::accent()).bold()),
-            Span::styled(" ", Style::new().add_modifier(Modifier::REVERSED)),
-            Span::raw(" "),
-            Span::styled(placeholder, Style::new().dim().italic()),
-        ];
+        let mut cursor_spans: Vec<Span<'static>> = empty_prompt_prefix().into();
+        cursor_spans.push(Span::styled(placeholder, Style::new().dim().italic()));
         Paragraph::new(Line::from(cursor_spans)).block(block)
     } else {
         Paragraph::new(input_content_lines(&app.input, app.cursor))
@@ -37357,6 +37376,44 @@ mod tests {
             !WORKING_WORDS.iter().any(|w| row.contains(w)),
             "no working synonym while reasoning: {row:?}"
         );
+    }
+
+    /// The idle placeholder, the working row and the thinking row open with the
+    /// same `> ` + cursor cell, so their text starts in one column, and the
+    /// working/thinking hint stays in one column whatever the rotating word.
+    #[test]
+    fn idle_working_and_thinking_rows_align() {
+        use unicode_width::UnicodeWidthStr;
+        let col = |row: &str, needle: &str| row.find(needle).map(|i| row[..i].width());
+        let mut app = test_app();
+        let idle = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("Type here to chat"))
+            .expect("idle placeholder");
+        let idle_text = col(&idle, "Type here").unwrap();
+
+        app.submit_user("go".into());
+        let mut hint_cols = Vec::new();
+        for think in [false, true] {
+            if think {
+                app.apply(StreamEvent::Token {
+                    text: "<think>ponder".into(),
+                });
+            }
+            for step in 0..12 {
+                app.spinner_frame = step * super::WORD_ROTATE_FRAMES;
+                let row = render_rows(&mut app, 80, 12)
+                    .into_iter()
+                    .find(|r| r.contains("(Esc to cancel, type to steer"))
+                    .expect("running row");
+                assert!(row.starts_with("> "), "{row:?}");
+                let words = if think { &THINKING_WORDS } else { &WORKING_WORDS };
+                let word = words.iter().find(|w| row.contains(*w)).expect("word");
+                assert_eq!(col(&row, word), Some(idle_text), "{row:?}");
+                hint_cols.push(col(&row, "(Esc").unwrap());
+            }
+        }
+        assert!(hint_cols.windows(2).all(|w| w[0] == w[1]), "{hint_cols:?}");
     }
 
     /// Thinking synonyms are coloured orange so the active reasoning state

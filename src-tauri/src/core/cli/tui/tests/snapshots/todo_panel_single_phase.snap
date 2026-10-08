@@ -1,6 +1,5 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 162
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
@@ -16,7 +15,7 @@ expression: render_snapshot(buf)
 | ☐ write the docs                                                               |
 | ☒ support windows xp                                                           |
 |────────────────────────────────────────────────────────────────────────────────|
-|working… (Esc to cancel, type to steer the agent)                               |
+|>   working…       (Esc to cancel, type to steer the agent)                     |
 |                                                                                |
 |📂 /snapshot/repo       Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all|
 
@@ -38,7 +37,10 @@ expression: render_snapshot(buf)
  9 1..18 fg=#56B6C2
 10 1..17 mod=DIM
 11 1..21 fg=Red mod=CROSSED_OUT
-13 0..49 mod=DIM | ITALIC
+13 0..2 fg=#56B6C2 mod=BOLD
+13 2..3 mod=REVERSED
+13 4..12 mod=DIM | ITALIC
+13 18..59 mod=DIM | ITALIC
 15 0..1 fg=#808080
 15 2..17 fg=#808080
 15 24..34 fg=#56B6C2 mod=BOLD

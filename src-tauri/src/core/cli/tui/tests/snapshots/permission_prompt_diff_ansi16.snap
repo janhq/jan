@@ -21,7 +21,7 @@ expression: render_snapshot(buf)
 |│   Allow always (this thread)                                       │|
 |│   Deny                                                             │|
 |╰────────────────────────────────────────────────────────────────────╯|
-|working… (Esc to cancel, type to steer the agent)                     |
+|>   working…       (Esc to cancel, type to steer the agent)           |
 |                                                                      |
 | ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                |
 
@@ -63,7 +63,10 @@ expression: render_snapshot(buf)
 17 0..1 fg=Yellow
 17 69..70 fg=Yellow
 18 0..70 fg=Yellow
-19 0..49 mod=DIM | ITALIC
+19 0..2 fg=Cyan mod=BOLD
+19 2..3 mod=REVERSED
+19 4..12 mod=DIM | ITALIC
+19 18..59 mod=DIM | ITALIC
 21 1..4 fg=Yellow mod=BOLD
 21 4..11 mod=DIM
 21 14..19 fg=Yellow mod=BOLD

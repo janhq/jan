@@ -1,6 +1,5 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
-assertion_line: 162
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]                                  |
@@ -18,7 +17,7 @@ expression: render_snapshot(buf)
 | ☐ routes                                        │    review the file                               |
 | ☐ auth                                          │    Read mod_5.rs                                 |
 |────────────────────────────────────────────────────────────────────────────────────────────────────|
-|working… (Esc to cancel, type to steer the agent)                                                   |
+|>   working…       (Esc to cancel, type to steer the agent)                                         |
 |                                                                                                    |
 |📂 /snapshot/repo                           Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all|
 
@@ -51,7 +50,10 @@ expression: render_snapshot(buf)
 13 1..7 mod=DIM
 13 48..51 fg=#808080
 13 54..67 fg=#808080
-15 0..49 mod=DIM | ITALIC
+15 0..2 fg=#56B6C2 mod=BOLD
+15 2..3 mod=REVERSED
+15 4..12 mod=DIM | ITALIC
+15 18..59 mod=DIM | ITALIC
 17 0..1 fg=#808080
 17 2..17 fg=#808080
 17 44..54 fg=#56B6C2 mod=BOLD
