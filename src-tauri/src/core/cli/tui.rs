@@ -2739,85 +2739,6 @@ const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "�
 /// Milliseconds per spinner frame, decoupled from the 50ms render tick.
 const SPINNER_ADVANCE_MS: u64 = 80;
 
-/// Sweep the configured glyph back and forth along `message`, replacing the
-/// characters it covers rather than displacing them.
-///
-/// The first cut of this (#8726) inserted the glyph in place of exactly one
-/// `char`. An emoji is two cells wide, so every frame made the row one cell
-/// wider than the text it was drawn from: the tail shifted right, and at the
-/// frame's own width the last character fell off the edge. That is the
-/// "letters vanish" bug the feature was reverted for.
-///
-/// The fix is to spend the glyph's *display width* out of the message: a
-/// 2-cell glyph covers two 1-cell characters, so the composed line is always
-/// exactly as wide as `message`. Whatever the user configured is measured, so a
-/// 1-cell `"~"` covers one character and a 3-cell `"<o>"` covers three.
-///
-/// The glyph is clamped to the message rather than allowed to overhang, so the
-/// last frames of a sweep do not grow the row either.
-fn wave_sweep_line(message: &str, glyph: &str, frame: usize, text_style: Style) -> Line<'static> {
-    use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
-
-    let glyph_width = glyph.width().max(1);
-    let chars: Vec<char> = message.chars().collect();
-    // Character offsets the glyph can start at without overhanging the end.
-    let mut stops: Vec<usize> = Vec::new();
-    for i in 0..chars.len() {
-        let mut width = 0usize;
-        for c in &chars[i..] {
-            width += c.width().unwrap_or(0);
-            if width >= glyph_width {
-                break;
-            }
-        }
-        if width >= glyph_width {
-            stops.push(i);
-        }
-    }
-    if stops.is_empty() {
-        return Line::from(vec![Span::styled(message.to_string(), text_style)]);
-    }
-
-    // Ping-pong across the stops: forward to the end, then back, so the glyph
-    // reverses instead of jumping back to the start.
-    let cycle = stops.len().saturating_mul(2).saturating_sub(2).max(1);
-    let step = frame % cycle;
-    let index = if step < stops.len() {
-        step
-    } else {
-        cycle - step
-    };
-    let start = stops[index];
-
-    // Spend the glyph's width out of the message, so the row's total width is
-    // unchanged no matter how wide the glyph is.
-    let mut end = start;
-    let mut spent = 0usize;
-    while end < chars.len() && spent < glyph_width {
-        spent += chars[end].width().unwrap_or(0);
-        end += 1;
-    }
-
-    let head: String = chars[..start].iter().collect();
-    let tail: String = chars[end..].iter().collect();
-    // A glyph landing on a wider character than itself leaves a gap; pad it so
-    // the tail does not slide left under the glyph.
-    let pad = " ".repeat(spent.saturating_sub(glyph_width));
-
-    let mut spans = Vec::with_capacity(4);
-    if !head.is_empty() {
-        spans.push(Span::styled(head, text_style));
-    }
-    spans.push(Span::styled(glyph.to_string(), Style::new().cyan()));
-    if !pad.is_empty() {
-        spans.push(Span::styled(pad, text_style));
-    }
-    if !tail.is_empty() {
-        spans.push(Span::styled(tail, text_style));
-    }
-    Line::from(spans)
-}
-
 /// Rotating action words for the running input placeholder, replacing a static
 /// "working…" so a long turn does not read as a hung UI.
 const WORKING_WORDS: [&str; 12] = [
@@ -3468,7 +3389,7 @@ impl App {
     /// `FRAME_SAFETY_REDRAW` late):
     ///
     /// - a live run (Running or Parked, or a run clock still set): spinner,
-    ///   shimmer, wave, rotating action word, elapsed time and the header
+    ///   shimmer, rotating action word, elapsed time and the header
     ///   wall clock, the `[thinking]` / `thought for` badges and their TTL, the
     ///   lingering reasoning step's fold timer, a running tool group's clock
     ///   and live shell boxes, and the retry countdown;
@@ -9852,65 +9773,6 @@ fn think_tags_parsed() -> bool {
     PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The glyph swept along the working row, or `None` for the static throbber.
-/// Process-wide for the same reason as `PARSE_THINK_TAGS`: `input_box` is a free
-/// function with no session in hand. Resolved from the config on first use
-/// rather than per frame, since the row redraws every 50ms and this would
-/// otherwise be a file read on each one.
-///
-/// Behind a lock rather than a `LazyLock` value because `/settings` edits it
-/// live: a glyph you have to restart the console to see is not a toggle.
-static WAVE_GLYPH: std::sync::LazyLock<std::sync::RwLock<Option<String>>> =
-    std::sync::LazyLock::new(|| {
-        std::sync::RwLock::new(crate::core::agent::global_config::wave_glyph())
-    });
-
-/// Apply a new wave glyph to the process, as `/settings` does on save.
-///
-/// `None` means the key was removed, so the default sweep comes back -- not
-/// that the sweep is off. Off is `Some("")`, which resolves to no glyph here
-/// for the reason `wave_glyph` gives: an all-whitespace traveller reads as
-/// letters going missing.
-pub(crate) fn set_wave_glyph(glyph: Option<&str>) {
-    let value = match glyph {
-        None => Some(crate::core::agent::global_config::WAVE_DEFAULT.to_string()),
-        Some(g) if g.trim().is_empty() => None,
-        Some(g) => Some(g.to_string()),
-    };
-    if let Ok(mut slot) = WAVE_GLYPH.write() {
-        *slot = value;
-    }
-}
-
-#[cfg(test)]
-thread_local! {
-    /// Per-test override, for the same reason as `PARSE_THINK_TAGS_OVERRIDE`: a
-    /// test sets its own thread's glyph rather than the shared cell, which is
-    /// resolved once per process and reads the real `~/.jan/config.toml`.
-    static WAVE_GLYPH_OVERRIDE: std::cell::RefCell<Option<Option<String>>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-fn wave_glyph() -> Option<String> {
-    #[cfg(test)]
-    {
-        if let Some(over) = WAVE_GLYPH_OVERRIDE.with(|c| c.borrow().clone()) {
-            return over;
-        }
-    }
-    WAVE_GLYPH.read().ok().and_then(|g| g.clone())
-}
-
-/// Run `f` with `glyph` as this thread's wave setting.
-#[cfg(test)]
-fn with_wave_glyph<T>(glyph: Option<&str>, f: impl FnOnce() -> T) -> T {
-    let value = glyph.map(str::to_string);
-    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = Some(value));
-    let out = f();
-    WAVE_GLYPH_OVERRIDE.with(|c| *c.borrow_mut() = None);
-    out
-}
-
 /// Run `f` with `<think>` parsing off on this thread only.
 #[cfg(test)]
 fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
@@ -13143,15 +13005,9 @@ async fn handle_key(
                 };
                 match write_setting(def, &toml_path, None) {
                     Ok(()) => {
-                        // `None`, not `""`: this removed the key, so a `Glyph`
-                        // goes back to its default rather than to off, which
-                        // is what a cleared edit field means.
-                        let when = if apply_live_unset(def) {
-                            "in effect now"
-                        } else {
-                            "takes effect on the next run"
-                        };
-                        app.note(&format!("{key} unset (default applies); {when}"));
+                        app.note(&format!(
+                            "{key} unset (default applies); takes effect on the next run"
+                        ));
                         if let Some(picker) = app.picker.as_mut() {
                             picker.items = build_agent_settings_items(&toml_path);
                             picker.selected =
@@ -14845,14 +14701,6 @@ enum AgentSettingKind {
         default: Option<u64>,
         min: u64,
     },
-    /// Short display glyph with a grapheme cap, and the one kind where an
-    /// empty field is a *value* rather than an unset: `""` is the deliberate
-    /// "off", distinct from the key being absent, which takes the default.
-    /// `x` on the row still removes the key.
-    Glyph {
-        default: &'static str,
-        max: usize,
-    },
     Text {
         default: &'static str,
     },
@@ -14990,16 +14838,6 @@ const AGENT_SETTINGS: &[AgentSettingDef] = &[
         label: "hide_secrets",
         desc: "Privacy: obfuscate secret env values and redact credential-shaped tokens before sending to AI providers",
         kind: AgentSettingKind::Bool { default: false },
-        scope: SettingScope::Global,
-    },
-    AgentSettingDef {
-        key: "wave",
-        label: "wave",
-        desc: "glyph swept along the working row (up to 3 chars; empty = throbber)",
-        kind: AgentSettingKind::Glyph {
-            default: crate::core::agent::global_config::WAVE_DEFAULT,
-            max: crate::core::agent::global_config::WAVE_MAX_GRAPHEMES,
-        },
         scope: SettingScope::Global,
     },
     AgentSettingDef {
@@ -15630,43 +15468,12 @@ fn setting_path(def: &AgentSettingDef, toml_path: &std::path::Path) -> String {
     }
 }
 
-/// Apply a just-saved setting to the running process where that is possible,
-/// returning whether it took. Most keys are snapshotted at session start and
-/// genuinely need a restart; a purely cosmetic one like `wave` does not, and
-/// telling someone to restart to see a glyph they just picked would be a lie
-/// the code does not have to tell. `entered` is the trimmed field; empty is an
-/// unset for most kinds and a written "off" for a `Glyph`, which is why this
-/// passes `Some` either way and lets the setter read it.
-fn apply_live_setting(def: &AgentSettingDef, entered: &str) -> bool {
-    match def.key {
-        "wave" => {
-            set_wave_glyph(Some(entered));
-            true
-        }
-        _ => false,
-    }
-}
-
-/// Apply a just-removed setting to the running process, returning whether it
-/// took. Separate from `apply_live_setting` because removing a key and saving
-/// an empty one are different outcomes for a `Glyph`: the first restores the
-/// default, the second is the off switch.
-fn apply_live_unset(def: &AgentSettingDef) -> bool {
-    match def.key {
-        "wave" => {
-            set_wave_glyph(None);
-            true
-        }
-        _ => false,
-    }
-}
-
 /// `/settings` dispatcher: bare opens the interactive settings menu (an
 /// `AgentSettings` picker over every def, project-scoped or user-wide; Enter on
 /// a row docks an edit prompt); `max_parallel_subagents <N>` still works as a
 /// one-shot shortcut. Writes are format-preserving and take effect on the next
-/// run (the current run snapshotted its config at start), except the cosmetic
-/// ones `apply_live_setting` handles. Runs only while idle, like every command.
+/// run (the current run snapshotted its config at start). Runs only while idle,
+/// like every command.
 fn settings_command(app: &mut App, arg: &str) {
     let toml_path = app.agent_dir.join("agent.toml");
     let arg = arg.trim();
@@ -15798,18 +15605,10 @@ fn open_provider_settings(app: &mut App) {
     });
 }
 
-/// Truncate to the first `n` grapheme clusters. Slicing by byte or `char`
-/// would split an emoji mid-sequence and leave a different glyph on screen.
-fn grapheme_prefix(s: &str, n: usize) -> String {
-    use unicode_segmentation::UnicodeSegmentation;
-    s.graphemes(true).take(n).collect()
-}
-
 /// Parse what was typed for a `/settings` row into the TOML item to write, the
 /// one validator every settings writer shares (`/settings` and `/vibe-setting`).
-/// `Ok(None)` is an unset -- the key is removed so its default applies -- except
-/// for a `Glyph`, where an empty field is the written "off" value. `Err` is the
-/// message to show, naming the valid range.
+/// `Ok(None)` is an unset -- the key is removed so its default applies. `Err` is
+/// the message to show, naming the valid range.
 fn parse_setting_input(
     def: &AgentSettingDef,
     input: &str,
@@ -15846,15 +15645,6 @@ fn parse_setting_input(
                 Err(_) => Err(format!("'{input}' is not a number")),
             }
         }
-        AgentSettingKind::Glyph { .. } => {
-            // Not trimmed to empty-means-unset like `Text`: a cleared field
-            // writes `""`, which is the off switch. `x` on the row is how you
-            // get back to the default.
-            if let Some(err) = crate::core::agent::global_config::wave_error(trimmed) {
-                return Err(err);
-            }
-            Ok(Some(toml_edit::value(trimmed.to_string())))
-        }
         AgentSettingKind::Text { .. } => {
             Ok((!trimmed.is_empty()).then(|| toml_edit::value(trimmed.to_string())))
         }
@@ -15883,8 +15673,7 @@ fn parse_setting_input(
 }
 
 /// Keyboard for the `/settings` edit dock: chars/backspace edit the field,
-/// Enter validates and writes (an empty field clears the key, except for a
-/// `Glyph`, where it writes the off value), Esc cancels. Mirrors
+/// Enter validates and writes (an empty field clears the key), Esc cancels. Mirrors
 /// `handle_login_key`, minus the secret/verify machinery.
 fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
     if (key.code == KeyCode::Esc || (ctrl && key.code == KeyCode::Char('c')))
@@ -15909,20 +15698,12 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             match write_setting(prompt.def(), &toml_path, value) {
                 Ok(()) => {
                     let entered = prompt.input.trim().to_string();
-                    let glyph_kind = matches!(prompt.def().kind, AgentSettingKind::Glyph { .. });
-                    let what = match (entered.is_empty(), glyph_kind) {
-                        // A cleared glyph is a written value, not an unset, so
-                        // saying "default applies" would be a lie.
-                        (true, true) => format!("{} off (throbber)", prompt.key),
-                        (true, false) => format!("{} unset (default applies)", prompt.key),
-                        (false, _) => format!("{} = {entered} written", prompt.key),
-                    };
-                    let when = if apply_live_setting(prompt.def(), &entered) {
-                        "in effect now"
+                    let what = if entered.is_empty() {
+                        format!("{} unset (default applies)", prompt.key)
                     } else {
-                        "takes effect on the next run"
+                        format!("{} = {entered} written", prompt.key)
                     };
-                    app.note(&format!("{what}; {when}"));
+                    app.note(&format!("{what}; takes effect on the next run"));
                     app.settings_prompt = None;
                 }
                 Err(e) => {
@@ -15932,29 +15713,9 @@ fn handle_settings_key(app: &mut App, key: KeyEvent, ctrl: bool) {
             }
         }
         KeyCode::Backspace => {
-            // Whole cluster for a glyph field: popping one `char` off `👁️`
-            // leaves `👁`, so the row looks unchanged and the key reads as
-            // broken. Other kinds keep the plain char pop.
-            if matches!(prompt.def().kind, AgentSettingKind::Glyph { .. }) {
-                let keep =
-                    crate::core::agent::global_config::wave_len(&prompt.input).saturating_sub(1);
-                prompt.input = grapheme_prefix(&prompt.input, keep);
-            } else {
-                prompt.input.pop();
-            }
+            prompt.input.pop();
         }
-        KeyCode::Char(ch) if !ctrl => {
-            prompt.input.push(ch);
-            // Checked on the result rather than by counting up: a skin-tone
-            // modifier or ZWJ joins the cluster before it, so the string can
-            // grow by a `char` without growing by a grapheme, and that must
-            // still be allowed at the cap.
-            if let AgentSettingKind::Glyph { max, .. } = prompt.def().kind {
-                if crate::core::agent::global_config::wave_len(&prompt.input) > max {
-                    prompt.input.pop();
-                }
-            }
-        }
+        KeyCode::Char(ch) if !ctrl => prompt.input.push(ch),
         _ => {}
     }
 }
@@ -20786,9 +20547,6 @@ fn settings_prompt_lines(
                 .unwrap_or_else(|| "unset".to_string());
             format!("default: {d} · valid: {min}-{max}")
         }
-        AgentSettingKind::Glyph { default, max } => {
-            format!("default: {default} · valid: up to {max} chars, empty = off")
-        }
         AgentSettingKind::Text { default } => format!("default: {default}"),
         AgentSettingKind::Enum { options, default } => {
             format!("default: {default} · valid: {}", options.join(" | "))
@@ -21410,11 +21168,6 @@ fn draw_picker(
                         .map(|d| d.to_string())
                         .unwrap_or_else(|| "unset".to_string());
                     format!("default: {d} · valid: {min}-{max} · current: {current}")
-                }
-                AgentSettingKind::Glyph { default, max } => {
-                    format!(
-                        "default: {default} · valid: up to {max} chars, empty = off · current: {current}"
-                    )
                 }
                 AgentSettingKind::Text { default } => {
                     format!("default: {default} · current: {current}")
@@ -22370,10 +22123,10 @@ const WORKING_HINTS: [&str; 2] = [
     " (Esc to cancel)",
 ];
 
-/// The running row: throbber (or wave), action word, elapsed time and the
-/// cancel hint, always one row. What does not fit `width` is dropped in order
-/// of importance -- the long hint, then the short one, then the elapsed time --
-/// so the row never wraps or changes height.
+/// The running row: shimmering action word and the cancel hint, always one
+/// row. The run's elapsed time lives in the header, not here. A hint that does
+/// not fit `width` drops to the shorter one, then to none, so the row never
+/// wraps or changes height.
 fn working_row(app: &App, width: u16) -> Line<'static> {
     let mode = motion::mode();
     // The spinner carries the fast motion; the action word turns over on a
@@ -22396,23 +22149,11 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
             motion::Tint::Muted,
         )
     };
-    // With `wave` set, the glyph travels along the action word in place of the
-    // leading throbber: one moving thing per row, not two. Reduced motion
-    // keeps the word and drops the traveller, so the row is as wide as it is
-    // animated.
+    // The shimmer alone carries the motion: no throbber, so the row is as wide
+    // animated as it is still.
     let message = format!("{word}…");
-    let lead = match (wave_glyph(), mode) {
-        (Some(glyph), motion::MotionMode::Animated) => {
-            wave_sweep_line(&message, &glyph, app.spinner_frame, style)
-        }
-        (Some(_), motion::MotionMode::Reduced) => Line::from(Span::styled(message, style)),
-        (None, _) => Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::accent())),
-            Span::styled(message, style),
-        ]),
-    };
     let mut spans = motion::shimmer_styled(
-        vec![lead],
+        vec![Line::from(Span::styled(message, style))],
         style,
         tint,
         motion::frame_time(app.spinner_frame),
@@ -22421,16 +22162,8 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     )
     .remove(0)
     .spans;
-    let room = width as usize;
-    let elapsed = app
-        .run_started
-        .map(|t| Span::styled(format!(" {}", format_elapsed(t.elapsed().as_secs())), Style::new().dim()))
-        .filter(|e| spans_width(&spans) + e.width() <= room);
-    if let Some(e) = elapsed {
-        spans.push(e);
-    }
     let used = spans_width(&spans);
-    if let Some(hint) = WORKING_HINTS.iter().find(|h| used + h.len() <= room) {
+    if let Some(hint) = WORKING_HINTS.iter().find(|h| used + h.len() <= width as usize) {
         spans.push(Span::styled(*hint, Style::new().dim().italic()));
     }
     Line::from(spans)
@@ -22440,38 +22173,32 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
     let block = Block::default();
     if let Some(kind) = app.compacting.filter(|_| app.input.is_empty()) {
         // Compaction puts nothing in the transcript while it runs, so the input
-        // row carries the throbber and the elapsed seconds.
+        // row carries the label and the elapsed seconds.
         let elapsed = app
             .compact_started
             .map(|t| format!(" {}", format_elapsed(t.elapsed().as_secs())))
             .unwrap_or_default();
-        Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
-            Span::styled(
-                format!("{} conversation…{elapsed}", kind.label()),
-                Style::new().dim().italic(),
-            ),
-        ]))
+        Paragraph::new(Line::from(Span::styled(
+            format!("{} conversation…{elapsed}", kind.label()),
+            Style::new().dim().italic(),
+        )))
         .block(block)
     } else if let Some(started) = app.run_compacting.filter(|_| app.input.is_empty()) {
-        Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().magenta()),
-            Span::styled(
-                format!(
-                    "compacting conversation… {}",
-                    format_elapsed(started.elapsed().as_secs())
-                ),
-                Style::new().dim().italic(),
+        Paragraph::new(Line::from(Span::styled(
+            format!(
+                "compacting conversation… {}",
+                format_elapsed(started.elapsed().as_secs())
             ),
-        ]))
+            Style::new().dim().italic(),
+        )))
         .block(block)
     } else if let Some(wait) = app.retrying.as_ref().filter(|_| app.input.is_empty()) {
         // Without this the row reads "working" through up to the whole retry
         // budget, indistinguishable from a slow model.
-        Paragraph::new(Line::from(vec![
-            Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::warning())),
-            Span::styled(retry_wait_label(wait, Instant::now()), Style::new().dim().italic()),
-        ]))
+        Paragraph::new(Line::styled(
+            retry_wait_label(wait, Instant::now()),
+            Style::new().dim().italic(),
+        ))
         .block(block)
     } else if app.picker.is_some() {
         Paragraph::new(Line::styled("selecting…", Style::new().dim().italic())).block(block)
@@ -22481,13 +22208,10 @@ fn input_box(app: &App, width: u16) -> Paragraph<'static> {
             Paragraph::new(working_row(app, width)).block(block)
         } else {
             let n = app.message_queue.len();
-            Paragraph::new(Line::from(vec![
-                Span::styled(format!("{} ", app.spinner()), Style::new().fg(theme::warning())),
-                Span::styled(
-                    format!("⏳ Pending ({n}) — /cancel to remove, type to steer"),
-                    Style::new().fg(theme::warning()),
-                ),
-            ]))
+            Paragraph::new(Line::styled(
+                format!("⏳ Pending ({n}) — /cancel to remove, type to steer"),
+                Style::new().fg(theme::warning()),
+            ))
             .block(block)
         }
     } else if let Some(what) = app.blocking_dock() {
@@ -22727,8 +22451,8 @@ mod tests {
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
         subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
-        transcript_top_padding, unescape_partial_json_string, user_content_parts, wave_sweep_line,
-        with_wave_glyph, without_think_tags, worktree_command, App, CompactKind, ContextReport,
+        transcript_top_padding, unescape_partial_json_string, user_content_parts,
+        without_think_tags, worktree_command, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, Worktree, AGENT_SETTINGS,
@@ -28945,7 +28669,7 @@ mod tests {
                 r#"{"changes": [
                   {"key": "context_window", "scope": "project", "new_value": 1000000, "reason": "1M window"},
                   {"key": "show_reasoning", "scope": "project", "new_value": true},
-                  {"key": "wave", "scope": "global", "new_value": "~"}
+                  {"key": "ask_timeout_secs", "scope": "global", "new_value": 30}
                 ]}"#,
             );
             assert!(app.vibe_confirm.is_some(), "the diff docks");
@@ -28964,18 +28688,16 @@ mod tests {
             assert!(doc.contains("# keep me"), "format-preserving: {doc}");
             assert!(doc.contains("show_reasoning = true"), "{doc}");
             let global = std::fs::read_to_string(home.join(".jan/config.toml")).unwrap();
-            assert!(global.contains("wave = \"~\""), "{global}");
+            assert!(global.contains("ask_timeout_secs = 30"), "{global}");
             let note = transcript_text(&app);
             assert!(note.contains("wrote 3 setting(s)"), "{note}");
             let flat = note.split_whitespace().collect::<Vec<_>>().join(" ");
-            assert!(flat.contains("wave in effect now"), "{flat}");
+            assert!(flat.contains("show_reasoning, ask_timeout_secs apply when jan restarts"), "{flat}");
             assert!(flat.contains("run /reload config to apply context_window"), "{flat}");
-            assert!(flat.contains("show_reasoning applies when jan restarts"), "{flat}");
             // A side call, not a turn: the conversation -- and so the cached
             // request prefix -- is exactly what it was before the command.
             assert!(app.history.is_empty(), "{:?}", app.history);
             assert!(!app.want_start);
-            super::set_wave_glyph(None);
             let _ = std::fs::remove_dir_all(&app.agent_dir);
         });
     }
@@ -29108,76 +28830,49 @@ mod tests {
         let _ = std::fs::remove_dir_all(&app.agent_dir);
     }
 
-    /// `wave` lives in `~/.jan/config.toml`, not the project's agent.toml, so
-    /// the row has to write across scopes. It is also the one setting that
-    /// applies live: a cosmetic glyph you must restart to see is not a toggle,
-    /// and the note must not claim a restart is needed.
+    /// `ask_timeout_secs` lives in the user-wide config, not the project's
+    /// agent.toml, so the row has to write across scopes, and the note says it
+    /// takes effect on the next run.
     #[test]
-    fn settings_prompt_writes_a_global_scope_key_and_applies_it_live() {
+    fn settings_prompt_writes_a_global_scope_key() {
         crate::core::agent::global_config::with_temp_home(|home| {
             let mut app = test_app();
             std::fs::create_dir_all(&app.agent_dir).unwrap();
             let toml_path = app.agent_dir.join("agent.toml");
             std::fs::write(&toml_path, "[agent]\n").unwrap();
 
-            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
+            let def = AGENT_SETTINGS
+                .iter()
+                .find(|d| d.key == "ask_timeout_secs")
+                .unwrap();
             app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
-            super::handle_settings_key(&mut app, key(KeyCode::Char('~')), false);
+            super::handle_settings_key(&mut app, key(KeyCode::Char('9')), false);
             super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
 
             assert!(app.settings_prompt.is_none(), "Enter closes the dock");
-            let global = std::fs::read_to_string(home.join(".jan").join("config.toml")).unwrap();
+            let global = std::fs::read_to_string(crate::core::agent::global_config::global_config_path().unwrap()).unwrap();
+            let _ = home;
             assert!(
-                global.contains("wave = \"~\""),
+                global.contains("ask_timeout_secs = 9"),
                 "written globally: {global}"
             );
             let project = std::fs::read_to_string(&toml_path).unwrap();
             assert!(
-                !project.contains("wave"),
+                !project.contains("ask_timeout_secs"),
                 "a global key must not land in agent.toml: {project}"
             );
-            assert_eq!(super::wave_glyph().as_deref(), Some("~"), "applied live");
             let note = transcript_text(&app);
-            assert!(note.contains("wave = ~ written"), "{note}");
-            assert!(
-                note.contains("in effect now"),
-                "no restart is needed: {note}"
-            );
+            assert!(note.contains("ask_timeout_secs = 9 written"), "{note}");
+            assert!(note.contains("takes effect on the next run"), "{note}");
 
-            // Clearing the field writes the off value, live. It does *not*
-            // remove the key: absent means the default 👋 comes back, which is
-            // the opposite of what someone clearing the glyph asked for.
-            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("~")));
+            // Clearing the field removes the key.
+            app.settings_prompt = Some(super::SettingsPrompt::new(def, Some("9")));
             super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
             super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
-            assert_eq!(super::wave_glyph(), None, "off applied live");
-            // Asserted through the reader, not the raw text: the scaffolded
-            // template carries a commented `# wave = ...` example line that a
-            // substring check would match forever.
             assert_eq!(
-                crate::core::agent::global_config::global_value("wave").as_deref(),
-                Some(""),
-                "cleared field persists as the off value"
-            );
-            let note = transcript_text(&app);
-            assert!(
-                note.contains("wave off (throbber)"),
-                "off, not unset: {note}"
-            );
-
-            // Removing the key is the other path, and it restores the default
-            // rather than leaving the sweep off.
-            crate::core::agent::global_config::set_global_key("wave", None).expect("unset");
-            super::set_wave_glyph(None);
-            assert_eq!(
-                crate::core::agent::global_config::global_value("wave"),
+                crate::core::agent::global_config::global_value("ask_timeout_secs"),
                 None,
-                "key removed from the file"
-            );
-            assert_eq!(
-                super::wave_glyph().as_deref(),
-                Some(crate::core::agent::global_config::WAVE_DEFAULT),
-                "a removed key brings the default sweep back"
+                "cleared field unsets the key"
             );
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
@@ -29200,22 +28895,26 @@ mod tests {
             std::fs::write(app.agent_dir.join("agent.toml"), "[agent]\n").unwrap();
             std::fs::create_dir_all(home.join(".jan")).unwrap();
             let global_path = home.join(".jan").join("config.toml");
-            std::fs::write(&global_path, "wave = \"🍌\"\n").unwrap();
+            std::fs::write(&global_path, "ask_timeout_secs = 5\n").unwrap();
 
             super::settings_command(&mut app, "");
             let picker = app.picker.as_ref().expect("picker opens");
             let row = picker
                 .items
                 .iter()
-                .find(|i| i.value == "wave")
-                .expect("wave row present");
-            assert_eq!(row.hint.as_deref(), Some("= 🍌"), "hint reads ~/.jan");
+                .find(|i| i.value == "ask_timeout_secs")
+                .expect("ask_timeout_secs row present");
+            assert_eq!(row.hint.as_deref(), Some("= 5"), "hint reads the global config");
 
-            let idx = picker.items.iter().position(|i| i.value == "wave").unwrap();
+            let idx = picker
+                .items
+                .iter()
+                .position(|i| i.value == "ask_timeout_secs")
+                .unwrap();
             app.picker.as_mut().unwrap().selected = idx;
             rt.block_on(press(&mut app, KeyCode::Char('x'), KeyModifiers::NONE));
             assert_eq!(
-                crate::core::agent::global_config::global_value("wave"),
+                crate::core::agent::global_config::global_value("ask_timeout_secs"),
                 None,
                 "x unsets globally"
             );
@@ -29225,8 +28924,8 @@ mod tests {
                 .expect("picker stays open")
                 .items
                 .iter()
-                .find(|i| i.value == "wave")
-                .expect("wave row present");
+                .find(|i| i.value == "ask_timeout_secs")
+                .expect("ask_timeout_secs row present");
             assert_eq!(row.hint.as_deref(), Some("(unset)"));
 
             let _ = std::fs::remove_dir_all(&app.agent_dir);
@@ -29254,64 +28953,6 @@ mod tests {
             "unchanged: {doc}"
         );
         let _ = std::fs::remove_dir_all(&app.agent_dir);
-    }
-
-    /// The glyph field stops accepting input at the cap rather than letting a
-    /// long string be typed and rejected on Enter, and it counts what the eye
-    /// counts: `👁️👄👁️` is three characters, not five.
-    #[test]
-    fn settings_glyph_field_caps_at_three_graphemes() {
-        let mut app = test_app();
-        let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
-        app.settings_prompt = Some(super::SettingsPrompt::new(def, None));
-
-        for ch in "👁️👄👁️".chars() {
-            super::handle_settings_key(&mut app, key(KeyCode::Char(ch)), false);
-        }
-        fn input(app: &App) -> String {
-            app.settings_prompt.as_ref().unwrap().input.clone()
-        }
-        assert_eq!(
-            input(&app),
-            "👁️👄👁️",
-            "three clusters of five chars all fit"
-        );
-
-        // One past the cap is dropped, and the field is left exactly as it was
-        // rather than half-appended.
-        super::handle_settings_key(&mut app, key(KeyCode::Char('x')), false);
-        assert_eq!(input(&app), "👁️👄👁️", "a fourth cluster is refused");
-
-        // Backspace removes a whole cluster: popping one `char` off `👁️` would
-        // leave `👁`, which looks like nothing happened.
-        super::handle_settings_key(&mut app, key(KeyCode::Backspace), false);
-        assert_eq!(input(&app), "👁️👄", "backspace drops the whole cluster");
-    }
-
-    /// A hand-typed over-long glyph is rejected inline with a reason, not
-    /// silently truncated: truncation would save something the user did not
-    /// type.
-    #[test]
-    fn settings_glyph_rejects_an_over_long_paste() {
-        crate::core::agent::global_config::with_temp_home(|_| {
-            let mut app = test_app();
-            let def = AGENT_SETTINGS.iter().find(|d| d.key == "wave").unwrap();
-            let mut prompt = super::SettingsPrompt::new(def, None);
-            // Set directly: the key handler caps typing, so an over-long value
-            // can only arrive from a paste or a hand-edited file.
-            prompt.input = "abcd".to_string();
-            app.settings_prompt = Some(prompt);
-
-            super::handle_settings_key(&mut app, key(KeyCode::Enter), false);
-            let prompt = app.settings_prompt.as_ref().expect("dock stays open");
-            let error = prompt.error.as_deref().expect("inline error");
-            assert!(error.contains('3'), "names the cap: {error}");
-            assert_eq!(
-                crate::core::agent::global_config::global_value("wave"),
-                None,
-                "nothing written on a rejected value"
-            );
-        });
     }
 
     #[test]
@@ -34774,7 +34415,7 @@ mod tests {
     }
 
     #[test]
-    fn a_running_compaction_shows_a_throbber() {
+    fn a_running_compaction_is_labelled_in_the_input_row() {
         let mut app = test_app();
         let idle = render_rows(&mut app, 80, 12).join("\n");
         assert!(!idle.contains("compacting"), "got: {idle}");
@@ -34787,8 +34428,8 @@ mod tests {
             "the input row must say what is happening: {out}"
         );
         assert!(
-            out.contains(SPINNER[app.spinner_frame % SPINNER.len()]),
-            "the input row must carry the throbber: {out}"
+            !SPINNER.iter().any(|f| out.contains(f)),
+            "the input row carries no throbber: {out}"
         );
     }
 
@@ -35387,53 +35028,27 @@ mod tests {
     }
 
     /// The running placeholder is the row a user stares at during a long turn.
-    /// A static "working…" reads as a hung UI, so it animates on the same
-    /// cadence as every other throbber: the spinner glyph rotates, and the
-    /// action word cycles through synonyms of "working".
+    /// A static "working…" reads as a hung UI, so the action word cycles through
+    /// synonyms of "working" and shimmers (colour only, see
+    /// `working_synonym_rotates_across_frames`). The row carries no throbber.
     #[test]
-    fn working_placeholder_animates() {
+    fn working_placeholder_has_a_synonym_and_no_throbber() {
         let mut app = test_app();
         app.submit_user("go".into());
         assert_eq!(app.status, Status::Running);
 
-        // Pinned off: these assert on the spinner glyph and the intact action
-        // word, both of which the sweep overwrites a cell of. `wave` is on by
-        // default now, so the sweep has its own tests and these keep testing
-        // the row underneath it.
-        let frame_of = |app: &mut App| {
-            with_wave_glyph(None, || {
-                render_rows(app, 80, 12)
-                    .into_iter()
-                    .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
-                    .expect("running placeholder present")
-            })
-        };
-
         app.spinner_frame = 0;
-        let first = frame_of(&mut app);
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
+            .expect("running placeholder present");
         assert!(
-            first.contains(SPINNER[0]),
-            "expected frame 0 glyph: {first:?}"
+            WORKING_WORDS.iter().any(|w| row.contains(w)),
+            "expected a working synonym in: {row:?}"
         );
-
-        // While a plain turn is running (no reasoning), the row shows a
-        // rotating synonym of "working".
         assert!(
-            WORKING_WORDS.iter().any(|w| first.contains(w)),
-            "expected a working synonym in: {first:?}"
-        );
-
-        app.spinner_frame = 3;
-        let later = frame_of(&mut app);
-        assert!(
-            later.contains(SPINNER[3]),
-            "expected frame 3 glyph: {later:?}"
-        );
-        assert_ne!(first, later, "row must change as the frame advances");
-
-        assert!(
-            later.contains("(Esc to cancel, type to steer the agent)"),
-            "{later:?}"
+            !SPINNER.iter().any(|f| row.contains(f)),
+            "no throbber on the input row: {row:?}"
         );
     }
 
@@ -35446,14 +35061,10 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>ponder the plan".into(),
         });
-        // Pinned off for the same reason as `working_placeholder_animates`:
-        // the sweep replaces a letter of the word being matched.
-        let row = with_wave_glyph(None, || {
-            render_rows(&mut app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
-                .expect("running placeholder present")
-        });
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
+            .expect("running placeholder present");
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym in: {row:?}"
@@ -35475,11 +35086,7 @@ mod tests {
             text: "<think>ponder the plan".into(),
         });
         let mut terminal = Terminal::new(TestBackend::new(80, 12)).unwrap();
-        // Pinned off: the row is located by matching the intact word, which
-        // the sweep breaks.
-        with_wave_glyph(None, || {
-            terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-        });
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
         let buf = terminal.backend().buffer().clone();
         // Locate the placeholder row, then assert the action word's cells are
         // orange (the trailing hint stays dim, so only the word carries it).
@@ -35500,14 +35107,10 @@ mod tests {
         app.submit_user("go".into());
         let mut word_at = |frame: usize| {
             app.spinner_frame = frame;
-            // Pinned off: the sweep would eat a letter of the very word this
-            // looks up.
-            let row = with_wave_glyph(None, || {
-                render_rows(&mut app, 80, 12)
-                    .into_iter()
-                    .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
-                    .expect("running placeholder present")
-            });
+            let row = render_rows(&mut app, 80, 12)
+                .into_iter()
+                .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
+                .expect("running placeholder present");
             WORKING_WORDS
                 .iter()
                 .find(|w| row.contains(*w))
@@ -35519,18 +35122,20 @@ mod tests {
         assert_ne!(a, b, "working word must rotate as frames advance: {a}");
     }
 
-    /// A queued-message row is still a running row, so it animates too.
+    /// A queued-message row is a running row too, with no throbber of its own.
     #[test]
-    fn queued_placeholder_animates() {
+    fn queued_placeholder_has_no_throbber() {
         let mut app = test_app();
         app.submit_user("go".into());
         app.message_queue.push_back("next".into());
-        app.spinner_frame = 5;
         let row = render_rows(&mut app, 80, 12)
             .into_iter()
             .find(|r| r.contains("Pending"))
             .expect("queued row present");
-        assert!(row.contains(SPINNER[5]), "expected frame 5 glyph: {row:?}");
+        assert!(
+            !SPINNER.iter().any(|f| row.contains(f)),
+            "no throbber on the queued row: {row:?}"
+        );
     }
 
     /// Native reasoning events (a dedicated `reasoning_content` field) drive the
@@ -35543,16 +35148,10 @@ mod tests {
         app.apply(StreamEvent::Reasoning {
             text: "ponder the plan".into(),
         });
-        // Pinned off: this asserts on the *word*, and the sweep overwrites a
-        // letter of it with the travelling glyph. `wave` is on by default now,
-        // so leaving it to the process state makes this test depend on
-        // whichever config the shared cell resolved first.
-        let row = with_wave_glyph(None, || {
-            render_rows(&mut app, 80, 12)
-                .into_iter()
-                .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
-                .expect("running placeholder present")
-        });
+        let row = render_rows(&mut app, 80, 12)
+            .into_iter()
+            .find(|r| r.contains("(Esc to cancel, type to steer the agent)"))
+            .expect("running placeholder present");
         assert!(
             THINKING_WORDS.iter().any(|w| row.contains(w)),
             "expected a thinking synonym while reasoning: {row:?}"
@@ -39073,9 +38672,10 @@ mod tests {
         assert_eq!(format_elapsed(3720), "1h 02m");
     }
 
-    /// The working row carries the elapsed time and the cancel hint on one
-    /// row, is exactly as wide in both motion modes, and sheds the hint, then
-    /// the elapsed time, as the terminal narrows instead of wrapping.
+    /// The working row carries the cancel hint on one row, is exactly as wide
+    /// in both motion modes, and sheds the hint as the terminal narrows instead
+    /// of wrapping. The elapsed time is the header's alone: the input row never
+    /// shows it.
     #[test]
     fn the_working_row_keeps_its_width_and_degrades_by_width() {
         use super::motion::{with_mode, MotionMode};
@@ -39085,48 +38685,44 @@ mod tests {
         let text = |line: &Line<'static>| -> String {
             line.spans.iter().map(|s| s.content.as_ref()).collect()
         };
-        for glyph in [None, Some("\u{1f44b}")] {
-            with_wave_glyph(glyph, || {
-                for frame in [0, 7, 19] {
-                    app.spinner_frame = frame;
-                    let moving = with_mode(MotionMode::Animated, || super::working_row(&app, 120));
-                    let still = with_mode(MotionMode::Reduced, || super::working_row(&app, 120));
-                    assert_eq!(
-                        spans_width(&moving.spans),
-                        spans_width(&still.spans),
-                        "glyph {glyph:?} frame {frame}: {:?} vs {:?}",
-                        text(&moving),
-                        text(&still)
-                    );
-                    assert!(text(&moving).contains("1m 05s"), "{}", text(&moving));
-                    assert!(text(&moving).contains("Esc to cancel, type to steer"));
-                }
-            });
+        for frame in [0, 7, 19] {
+            app.spinner_frame = frame;
+            let moving = with_mode(MotionMode::Animated, || super::working_row(&app, 120));
+            let still = with_mode(MotionMode::Reduced, || super::working_row(&app, 120));
+            assert_eq!(
+                spans_width(&moving.spans),
+                spans_width(&still.spans),
+                "frame {frame}: {:?} vs {:?}",
+                text(&moving),
+                text(&still)
+            );
+            assert!(!text(&moving).contains("1m 05s"), "{}", text(&moving));
+            assert!(text(&moving).contains("Esc to cancel, type to steer"));
         }
         app.spinner_frame = 0;
-        with_wave_glyph(None, || {
-            for width in 0..120u16 {
-                let row = super::working_row(&app, width);
-                let t = text(&row);
-                if t.contains("cancel") || t.contains("1m 05s") {
-                    let w = spans_width(&row.spans);
-                    assert!(w <= width as usize, "optional parts must fit: {width}: {t}");
-                }
+        for width in 0..120u16 {
+            let row = super::working_row(&app, width);
+            let t = text(&row);
+            if t.contains("cancel") {
+                let w = spans_width(&row.spans);
+                assert!(w <= width as usize, "optional parts must fit: {width}: {t}");
             }
-            // "<glyph> working... 1m 05s" is 17 cells; the short hint adds 16.
-            let mid = text(&super::working_row(&app, 34));
-            assert!(mid.contains("(Esc to cancel)") && !mid.contains("steer"), "{mid}");
-            let narrow = text(&super::working_row(&app, 22));
-            assert!(narrow.contains("1m 05s") && !narrow.contains("Esc"), "{narrow}");
-            let tiny = text(&super::working_row(&app, 12));
-            assert!(!tiny.contains("1m"), "{tiny}");
-        });
-        // Rendered: still one row in the input box.
-        let rows = with_wave_glyph(None, || render_rows(&mut app, 40, 12));
+        }
+        // "working…" is 8 cells; the short hint adds 16.
+        let mid = text(&super::working_row(&app, 34));
+        assert!(mid.contains("(Esc to cancel)") && !mid.contains("steer"), "{mid}");
+        let narrow = text(&super::working_row(&app, 20));
+        assert!(!narrow.contains("Esc"), "{narrow}");
+        // Rendered: still one row in the input box, and the elapsed time
+        // appears once -- in the header, not beside the hint.
+        let rows = render_rows(&mut app, 60, 12);
+        let working: Vec<_> = rows.iter().filter(|r| r.contains("Esc to cancel")).collect();
+        assert_eq!(working.len(), 1, "{rows:#?}");
+        assert!(!working[0].contains("1m 05s"), "{rows:#?}");
         assert_eq!(
-            rows.iter().filter(|r| r.contains("Esc to cancel")).count(),
+            rows.iter().filter(|r| r.contains("1m 05s")).count(),
             1,
-            "{rows:#?}"
+            "header keeps the elapsed time: {rows:#?}"
         );
     }
 
@@ -43697,117 +43293,30 @@ mod tests {
         assert!(clamped.spans.last().unwrap().content.ends_with('\u{2026}'));
     }
 
-    /// The bug #8726 was reverted for: a 2-cell emoji stood in for a 1-cell
-    /// character, so every frame was a cell wider than the text and the tail
-    /// slid right until the last character fell off the row. The sweep must
-    /// occupy exactly the width of the message it travels along, at every frame.
-    #[test]
-    fn a_wide_glyph_never_changes_the_row_width() {
-        let message = "working…";
-        let plain = message.width();
-        for glyph in ["👋", "🍌", "~", "<o>"] {
-            for frame in 0..40 {
-                let line = wave_sweep_line(message, glyph, frame, Style::default());
-                assert_eq!(
-                    spans_width(&line.spans),
-                    plain,
-                    "glyph {glyph:?} frame {frame} changed the row width"
-                );
-            }
-        }
-    }
-
-    /// The glyph covers characters instead of deleting them: every frame keeps
-    /// the message's own width, and the characters it is not standing on are
-    /// still there in order.
-    #[test]
-    fn the_sweep_covers_characters_without_dropping_the_rest() {
-        let line = wave_sweep_line("working…", "👋", 0, Style::default());
-        let text = line_text(&line);
-        assert!(text.starts_with('👋'), "{text}");
-        // "👋" is two cells, so it stands on "wo" and the rest survives.
-        assert!(text.ends_with("rking…"), "{text}");
-    }
-
-    /// A 1-cell glyph spends one character, so a narrow ASCII wave is exact
-    /// rather than padded.
-    #[test]
-    fn a_narrow_glyph_covers_exactly_one_character() {
-        let line = wave_sweep_line("abc", "~", 0, Style::default());
-        assert_eq!(line_text(&line), "~bc");
-    }
-
-    /// The sweep reverses at both ends instead of jumping back to the start,
-    /// and never runs off the message.
-    #[test]
-    fn the_sweep_reverses_at_both_ends() {
-        let seen: Vec<String> = (0..8)
-            .map(|frame| line_text(&wave_sweep_line("abcd", "~", frame, Style::default())))
-            .collect();
-        assert_eq!(
-            seen,
-            vec!["~bcd", "a~cd", "ab~d", "abc~", "ab~d", "a~cd", "~bcd", "a~cd"]
-        );
-    }
-
-    /// Multi-byte characters are covered on character boundaries, so a sweep
-    /// over non-ASCII text cannot slice a `char` in half and panic.
-    #[test]
-    fn the_sweep_respects_character_boundaries() {
-        for frame in 0..12 {
-            let line = wave_sweep_line("éxé…", "~", frame, Style::default());
-            assert_eq!(spans_width(&line.spans), "éxé…".width());
-        }
-    }
-
-    /// A message narrower than the glyph has nowhere to sweep, so it is left
-    /// alone rather than being overwritten by a glyph wider than itself.
-    #[test]
-    fn a_message_narrower_than_the_glyph_is_left_alone() {
-        let line = wave_sweep_line("a", "👋", 0, Style::default());
-        assert_eq!(line_text(&line), "a");
-    }
-
-    /// Unset `wave` leaves the Braille throbber in place: the sweep is opt-in,
-    /// so a terminal with no emoji font is unaffected by default.
+    /// The working row is the shimmering action word alone: no throbber and no
+    /// travelling glyph, in either motion mode.
     ///
     /// Anchored on "Esc to cancel", which only the input row carries: the header
     /// also shows `[working]` and the brand wave, and matching those would test
     /// the wrong row.
     #[test]
-    fn the_working_row_keeps_its_throbber_until_a_wave_is_configured() {
+    fn the_working_row_has_no_throbber_or_traveller() {
+        use super::motion::{with_mode, MotionMode};
         let mut app = test_app();
         app.status = Status::Running;
-        let rows = with_wave_glyph(None, || render_rows(&mut app, 80, 12));
-        let row = rows
-            .iter()
-            .find(|r| r.contains("Esc to cancel"))
-            .expect("working row")
-            .clone();
-        assert!(
-            SPINNER.iter().any(|s| row.contains(s)),
-            "expected a throbber in {row:?}"
-        );
-        assert!(!row.contains('👋'), "{row}");
-    }
-
-    /// With `wave` set the glyph replaces the throbber rather than joining it:
-    /// two moving things on one row read as jitter.
-    #[test]
-    fn a_configured_wave_replaces_the_throbber() {
-        let mut app = test_app();
-        app.status = Status::Running;
-        let rows = with_wave_glyph(Some("🍌"), || render_rows(&mut app, 80, 12));
-        let row = rows
-            .iter()
-            .find(|r| r.contains("Esc to cancel"))
-            .expect("working row")
-            .clone();
-        assert!(row.contains('🍌'), "expected the wave in {row:?}");
-        assert!(
-            !SPINNER.iter().any(|s| row.contains(s)),
-            "throbber still present in {row:?}"
-        );
+        for mode in [MotionMode::Animated, MotionMode::Reduced] {
+            let rows = with_mode(mode, || render_rows(&mut app, 80, 12));
+            let row = rows
+                .iter()
+                .find(|r| r.contains("Esc to cancel"))
+                .expect("working row");
+            assert!(
+                !SPINNER.iter().any(|s| row.contains(s)) && !row.contains('\u{2022}'),
+                "{mode:?}: throbber in {row:?}"
+            );
+            assert!(!row.contains('\u{1f44b}'), "{mode:?}: {row}");
+            assert!(WORKING_WORDS.iter().any(|w| row.contains(w)), "{mode:?}: {row}");
+        }
     }
 
     // ── Session-scoped providers (gateway launches) ─────────────────────────

@@ -16,7 +16,7 @@
 //! reviewer has to re-read on every intentional change. One or two
 //! representative states (and widths, where the layout reflows) per surface.
 //!
-//! Every snapshot renders with motion reduced, the wave glyph off and a pinned
+//! Every snapshot renders with motion reduced and a pinned
 //! theme (dark truecolor unless the test is about another), and avoids
 //! anything read from the clock or the machine: no running `run_started`
 //! (the header shows the wall clock while a run is timed), no git branch, no
@@ -48,12 +48,10 @@ const ANSI16: Theme = Theme {
     depth: ColorDepth::Ansi16,
 };
 
-/// Run `f` with every process-wide render input pinned: motion reduced, no
-/// wave glyph (it is read from the user's config otherwise) and `theme`.
+/// Run `f` with every process-wide render input pinned: motion reduced and
+/// `theme`.
 fn pinned<T>(theme: Theme, f: impl FnOnce() -> T) -> T {
-    with_mode(MotionMode::Reduced, || {
-        with_wave_glyph(None, || with_theme(theme, f))
-    })
+    with_mode(MotionMode::Reduced, || with_theme(theme, f))
 }
 
 /// A fresh app with the machine-dependent inputs cleared: the branch is read

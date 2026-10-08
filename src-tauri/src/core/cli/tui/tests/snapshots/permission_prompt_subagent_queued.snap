@@ -17,7 +17,7 @@ expression: render_snapshot(buf)
 |│ ▶ Allow once                                                         │|
 |│   Deny                                                               │|
 |╰──────────────────────────────────────────────────────────────────────╯|
-|• working… (Esc to cancel, type to steer the agent)                     |
+|working… (Esc to cancel, type to steer the agent)                       |
 |                                                                        |
 | ↑/↓ select   Enter confirm   Esc deny   Ctrl-C cancel                  |
 
@@ -48,8 +48,7 @@ expression: render_snapshot(buf)
 13 0..1 fg=#E5C07B
 13 71..72 fg=#E5C07B
 14 0..72 fg=#E5C07B
-15 0..2 fg=#56B6C2
-15 2..51 mod=DIM | ITALIC
+15 0..49 mod=DIM | ITALIC
 17 1..4 fg=#E5C07B mod=BOLD
 17 4..11 mod=DIM
 17 14..19 fg=#E5C07B mod=BOLD

@@ -17,7 +17,7 @@ expression: render_snapshot(buf)
 | ☐ routes                                        │    review the file                               |
 | ☐ auth                                          │    read src/mod_5.rs                             |
 |────────────────────────────────────────────────────────────────────────────────────────────────────|
-|• working… (Esc to cancel, type to steer the agent)                                                 |
+|working… (Esc to cancel, type to steer the agent)                                                   |
 |                                                                                                    |
 |📂 /snapshot/repo                           Esc/Ctrl-C cancel   PgUp/PgDn scroll   Ctrl-O expand all|
 
@@ -47,8 +47,7 @@ expression: render_snapshot(buf)
 13 1..7 mod=DIM
 13 48..51 fg=#808080
 13 54..71 mod=DIM
-15 0..2 fg=#56B6C2
-15 2..51 mod=DIM | ITALIC
+15 0..49 mod=DIM | ITALIC
 17 0..1 fg=#808080
 17 2..17 fg=#808080
 17 44..54 fg=#56B6C2 mod=BOLD

@@ -56,21 +56,16 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # memory_cross_project = false        # hide other projects' memory from the
 #                                     # agent (the root ~/.jan/MEMORY.md lists
 #                                     # them by default)
-# wave = "👋"                          # sweep this glyph along the working row
-#                                     # instead of the static throbber. Up to
-#                                     # 3 characters ("🍌", "~", "👁️👄👁️").
-#                                     # Defaults to 👋; set "" for the plain
-#                                     # throbber if your terminal draws tofu
 # prune_threads = true                # delete old saved threads at TUI start,
 #                                     # under each project's agent.toml
 #                                     # thread_retention_days / max_threads.
 #                                     # Off by default: nothing is deleted
 #
 # [tui]
-# animations = false                  # hold the TUI still: no shimmer, a
-#                                     # static glyph for the throbber and the
-#                                     # wave. On by default; the OS reduce-
-#                                     # motion setting also turns it off
+# animations = false                  # hold the TUI still: no shimmer and
+#                                     # static throbbers. On by default; the
+#                                     # OS reduce-motion setting also turns
+#                                     # it off
 #
 # [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
 # enabled = true                      # usage metrics and events to YOUR
@@ -163,16 +158,6 @@ struct GlobalConfigToml {
     /// memory to itself (user-wide `user:` notes still apply everywhere).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     memory_cross_project: Option<bool>,
-    /// Glyph swept along the working row while a turn runs, in place of the
-    /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
-    /// throbber. See `wave_glyph` for why those are two different things.
-    ///
-    /// Any string up to `WAVE_MAX_GRAPHEMES` clusters is accepted -- `"🍌"`,
-    /// `"~"`, `"<o>"` -- because what reads as a wave is a matter of taste,
-    /// and the renderer measures whatever it is given rather than assuming
-    /// one cell.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    wave: Option<String>,
     /// Prune old saved threads at TUI start. `None` = the default, off: a
     /// deleted thread is not recoverable, so removing the user's history is
     /// something they turn on, not something they find out about.
@@ -224,7 +209,7 @@ struct GlobalConfigToml {
 /// `[tui]` in `~/.jan/config.toml`. Each key is `None` when unset.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 struct TuiSection {
-    /// Animate the TUI (shimmer, throbbers, the wave). `None` = on.
+    /// Animate the TUI (shimmer, throbbers). `None` = on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     animations: Option<bool>,
 }
@@ -604,61 +589,6 @@ pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
         .map(std::time::Duration::from_secs)
 }
 
-/// The default glyph swept along the working row when `wave` is absent.
-pub(crate) const WAVE_DEFAULT: &str = "👋";
-
-/// The most grapheme clusters a `wave` may hold. Three is the width of the
-/// small ASCII-art faces the feature is for (`👁️👄👁️`); past that the glyph
-/// stops reading as a traveller and starts overwriting the word it sweeps.
-pub(crate) const WAVE_MAX_GRAPHEMES: usize = 3;
-
-/// Grapheme-cluster count, which is what "characters" means to the person
-/// typing: `👁️👄👁️` is 3 to them and 5 `char`s to Rust, and an emoji with a
-/// skin-tone or ZWJ sequence is worse. Counting `char`s would reject glyphs
-/// that visibly fit.
-pub(crate) fn wave_len(glyph: &str) -> usize {
-    use unicode_segmentation::UnicodeSegmentation;
-    glyph.graphemes(true).count()
-}
-
-/// Validate a candidate `wave`, returning the reason it is unusable. Empty is
-/// valid and means "no sweep" -- the deliberate off switch, distinct from the
-/// key being absent, which takes the default.
-pub(crate) fn wave_error(glyph: &str) -> Option<String> {
-    let len = wave_len(glyph);
-    (len > WAVE_MAX_GRAPHEMES)
-        .then(|| format!("at most {WAVE_MAX_GRAPHEMES} characters (got {len})"))
-}
-
-/// The glyph to sweep along the working row (`wave` in `~/.jan/config.toml`).
-///
-/// Three states, because the key has to distinguish "never touched it" from
-/// "turned it off":
-///
-/// - absent -> `WAVE_DEFAULT`, the wave is on out of the box
-/// - `""` -> `None`, the static Braille throbber, chosen deliberately
-/// - a glyph -> that glyph
-///
-/// An all-whitespace glyph is `None` too: an invisible traveller reads as
-/// letters going missing, which is the bug this feature had the first time
-/// round.
-///
-/// A value past the length cap falls back to the default rather than
-/// erroring. `/settings` rejects an over-long glyph at the point of entry, so
-/// this only fires for a hand-edited file, and a display preference must never
-/// block startup.
-pub(crate) fn wave_glyph() -> Option<String> {
-    let Ok(config) = load_raw() else {
-        return Some(WAVE_DEFAULT.to_string());
-    };
-    match config.wave {
-        None => Some(WAVE_DEFAULT.to_string()),
-        Some(glyph) if glyph.trim().is_empty() => None,
-        Some(glyph) if wave_error(&glyph).is_some() => Some(WAVE_DEFAULT.to_string()),
-        Some(glyph) => Some(glyph),
-    }
-}
-
 /// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
 /// the one mistake this file invites: appending a top-level key to the end of
 /// the file, where it silently lands inside whichever `[providers.*]` table
@@ -673,7 +603,6 @@ const ROOT_KEYS: &[&str] = &[
     "theme",
     "ask_timeout_secs",
     "terminal_hint",
-    "wave",
     "hooks",
 ];
 
@@ -1139,85 +1068,6 @@ mod tests {
         });
     }
 
-    #[test]
-    fn wave_defaults_to_the_hand_and_reads_the_toml_key() {
-        with_temp_home(|_| {
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "missing file -> the default sweep, not off"
-            );
-            let path = ensure_global_config().expect("ensure");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "scaffolded file only comments the key, so the default still applies"
-            );
-
-            // Any string within the cap, not a fixed set: the point of the key
-            // is the user's own glyph.
-            std::fs::write(&path, "wave = \"🍌\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("🍌"));
-            std::fs::write(&path, "wave = \"<o>\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("<o>"));
-            // Three clusters that are five `char`s: the cap counts what the
-            // eye counts, so this fits.
-            std::fs::write(&path, "wave = \"👁️👄👁️\"\n").unwrap();
-            assert_eq!(wave_glyph().as_deref(), Some("👁️👄👁️"));
-
-            // An explicit empty string is the off switch, and the one case
-            // that must not fall back to the default.
-            std::fs::write(&path, "wave = \"\"\n").unwrap();
-            assert_eq!(wave_glyph(), None, "empty is a deliberate off");
-
-            // A blank glyph would sweep an invisible traveller along the row,
-            // which reads as characters going missing.
-            std::fs::write(&path, "wave = \"   \"\n").unwrap();
-            assert_eq!(wave_glyph(), None, "whitespace is off too");
-
-            // Hand-edited past the cap: a display preference must not break
-            // the console, so it reverts rather than erroring.
-            std::fs::write(&path, "wave = \"abcd\"\n").unwrap();
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "over the cap falls back to the default"
-            );
-
-            std::fs::write(&path, "not valid toml [[[").unwrap();
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "an unreadable config keeps the default"
-            );
-        });
-    }
-
-    #[test]
-    fn wave_length_counts_grapheme_clusters() {
-        // The whole reason the cap is not `chars().count()`: each of these is
-        // one thing to the person typing it.
-        assert_eq!(wave_len(""), 0);
-        assert_eq!(wave_len("~"), 1);
-        assert_eq!(wave_len("👋"), 1);
-        assert_eq!(wave_len("👋🏽"), 1, "skin-tone modifier joins the cluster");
-        assert_eq!(wave_len("👁️"), 1, "variation selector joins the cluster");
-        assert_eq!(wave_len("👨‍👩‍👧"), 1, "ZWJ family is one cluster");
-        assert_eq!(wave_len("👁️👄👁️"), 3, "5 chars, 3 clusters");
-
-        assert!(
-            wave_error("").is_none(),
-            "empty is the off switch, not an error"
-        );
-        assert!(wave_error("👁️👄👁️").is_none(), "exactly at the cap");
-        assert!(wave_error("<o>").is_none());
-        let err = wave_error("abcd").expect("over the cap");
-        assert!(
-            err.contains('3') && err.contains('4'),
-            "names cap and actual: {err}"
-        );
-    }
-
     /// A root key appended to the end of the file lands inside the last
     /// `[providers.*]` table, and `toml`'s own error says only "duplicate key
     /// ... in table `providers.opencode`" - true, but it never says the key
@@ -1265,26 +1115,24 @@ mod tests {
             let path = ensure_global_config().expect("ensure");
             std::fs::write(&path, "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n").unwrap();
 
-            set_global_key("wave", Some(toml_edit::value("🍌"))).expect("set");
+            set_global_key("stream_reasoning", Some(toml_edit::value(false))).expect("set");
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(
                 raw.contains("# keep me"),
                 "comment survives the write: {raw}"
             );
             assert!(raw.contains("sk-x"), "provider survives the write: {raw}");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some("🍌"),
+            assert!(
+                !stream_reasoning_enabled(),
                 "key must parse as a document key, not a provider field: {raw}"
             );
-            assert_eq!(global_value("wave").as_deref(), Some("🍌"));
+            assert_eq!(global_value("stream_reasoning").as_deref(), Some("false"));
 
-            set_global_key("wave", None).expect("unset");
-            assert_eq!(global_value("wave"), None, "None removes the key");
-            assert_eq!(
-                wave_glyph().as_deref(),
-                Some(WAVE_DEFAULT),
-                "a removed key falls back to the default, not to off"
+            set_global_key("stream_reasoning", None).expect("unset");
+            assert_eq!(global_value("stream_reasoning"), None, "None removes the key");
+            assert!(
+                stream_reasoning_enabled(),
+                "a removed key falls back to the default"
             );
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
@@ -1299,10 +1147,10 @@ mod tests {
             let path = home.join(".jan").join("config.toml");
             assert!(!path.exists(), "starting from no config");
 
-            set_global_key("wave", Some(toml_edit::value("~"))).expect("set");
+            set_global_key("stream_reasoning", Some(toml_edit::value(false))).expect("set");
             let raw = std::fs::read_to_string(&path).unwrap();
             assert!(raw.contains("Jan Agent global provider config"), "{raw}");
-            assert_eq!(wave_glyph().as_deref(), Some("~"));
+            assert!(!stream_reasoning_enabled());
         });
     }
 

@@ -75,7 +75,7 @@ See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-
 | `/login` | Sign in to Tokamak and save the API key |
 | `/config [what you want]` | View provider config (`~/.jan/config.toml`). With words, it is `/vibe-setting` |
 | `/terminal-setup` | Configure this terminal so <kbd>Shift</kbd>+<kbd>Enter</kbd> inserts a newline and, on macOS, <kbd>Option</kbd>+<kbd>Delete</kbd> deletes a word. Writes the terminal's own config where it can (VS Code, kitty, Ghostty, tmux) and prints the manual step where it cannot. Idempotent |
-| `/settings [what you want]` | With words (other than the `max_parallel_subagents N` shortcut), it is `/vibe-setting`. Bare, it opens the menu to edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `wave` and `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets - except `wave`, where an empty field is the "no sweep" value and `x` restores the default 👋). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next session (or after `/reload config` for the `[agent]`/`[budget]` limits), except cosmetic ones like `wave` that apply immediately |
+| `/settings [what you want]` | With words (other than the `max_parallel_subagents N` shortcut), it is `/vibe-setting`. Bare, it opens the menu to edit settings in an interactive menu - the project's `agent.toml` (`[agent]` knobs `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `max_parallel_subagents`, `[budget]` limits, the `[tools]` / `[skills]` toggles) and user-wide `~/.jan/config.toml` keys such as `ask_timeout_secs` in the one list (Enter edits a row, `x` resets to default, Esc cancels, clearing the field unsets). The leading `providers` row opens a manager for OpenAI-compatible providers in `~/.jan/config.toml`: `a` adds, Enter edits, `d` twice deletes. `max_parallel_subagents N` works as a one-shot shortcut. Writes apply on the next session (or after `/reload config` for the `[agent]`/`[budget]` limits) |
 | `/vibe-setting <what you want>` | Say what you want in plain words and the agent proposes the settings changes that get it. `/settings <words>` and `/config <words>` do the same. See [below](#vibe-setting) |
 
 ### `/vibe-setting`
@@ -103,7 +103,6 @@ each one applies:
 
 | Keys | Applies |
 | --- | --- |
-| `wave` | Now |
 | `context_window`, `compaction_ratio`, `compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, `budget.max_tokens` | After `/reload config`, from the next run |
 | Everything else (`max_parallel_subagents`, `tools.default`, `show_reasoning`, ...) | When Jan restarts |
 
