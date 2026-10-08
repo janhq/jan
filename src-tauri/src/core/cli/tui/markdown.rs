@@ -315,7 +315,7 @@ pub(super) fn reasoning_summary_row(dur: Option<std::time::Duration>) -> Line<'s
 /// Render answer prose to styled lines. Every block -- prose, code fences,
 /// pipe tables -- comes from one `pulldown-cmark` pass, so cell and code
 /// contents are extracted by the parser rather than by matching raw lines.
-pub(super) fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+fn format_markdown_lines(text: &str, width: u16) -> Vec<Line<'static>> {
     use pulldown_cmark::{Event, Options, Parser, Tag};
 
     #[cfg(test)]

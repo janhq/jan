@@ -193,7 +193,7 @@ fn header_running_working_with_turn_and_cache() {
 #[test]
 fn header_running_thinking_reduced_motion() {
     let mut app = snapshot_app();
-    app.stream_reasoning = false;
+    app.transcript.stream_reasoning = false;
     start_turn(&mut app, "go");
     app.apply(StreamEvent::Token {
         text: "<think>pondering".into(),
@@ -489,33 +489,161 @@ fn agents_inspector_lists_the_fan_out() {
     assert_buffer("agents_inspector_list", &frame(&mut app, DARK, 90, 16));
 }
 
-#[test]
-fn agents_inspector_detail_for_one_child() {
-    let mut app = snapshot_app();
-    start_turn(&mut app, "fan out");
-    let mut panel = cached_panel("kv-review", 2, 64_000, 48_000, true);
-    panel.task = "Review the key-value store for races.\nThen report.".into();
-    panel.log = vec![
-        super::super::ChildLogEntry::Prose("Reading the store first.".into()),
-        super::super::ChildLogEntry::Call {
-            id: "c1".into(),
-            label: "Read src/kv.rs".into(),
-            result: Some(("120 lines".into(), false)),
+/// Feed `event` to the running child `kv-review`, as its stream would.
+fn child(app: &mut App, event: StreamEvent) {
+    app.apply(StreamEvent::Subagent {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        event: Box::new(event),
+    });
+}
+
+fn child_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {
+    child(
+        app,
+        StreamEvent::ToolCall {
+            id: id.into(),
+            name: name.into(),
+            args,
         },
-        super::super::ChildLogEntry::Steer("check the lock order too".into()),
-        super::super::ChildLogEntry::Call {
-            id: "c2".into(),
-            label: "Ran cargo test kv".into(),
-            result: Some(("error: 1 test failed".into(), true)),
+    );
+}
+
+fn child_result(app: &mut App, id: &str, content: &str, is_error: bool, diff: Option<&str>) {
+    child(
+        app,
+        StreamEvent::ToolResult {
+            id: id.into(),
+            content: content.into(),
+            is_error,
+            diff: diff.map(String::from),
         },
-    ];
-    app.subagents = vec![panel];
-    open_agents_picker(&mut app);
+    );
+}
+
+/// Open `/agents` straight on `kv-review`'s detail, with its cache rate
+/// pinned to the dock fixture's. Its reasoning is aged past the linger
+/// window, so the frame does not depend on how fast the test ran.
+fn open_kv_review_detail(app: &mut App) {
+    if let Some(panel) = app.subagents.first_mut() {
+        panel.total_prompt_tokens = 64_000;
+        panel.total_cached_tokens = 48_000;
+        panel.cache_reported = true;
+        let aged = Instant::now().checked_sub(Duration::from_secs(60));
+        for block in &mut panel.transcript.reasoning_blocks {
+            block.committed = aged.unwrap_or(block.committed);
+        }
+    }
+    open_agents_picker(app);
     if let Some(picker) = app.picker.as_mut() {
         picker.kind = PickerKind::AgentDetail;
     }
     app.agent_detail = Some("sub-kv-review-1".into());
-    assert_buffer("agents_inspector_detail", &frame(&mut app, DARK, 80, 20));
+}
+
+fn start_kv_review(app: &mut App) {
+    app.apply(StreamEvent::SubagentStart {
+        run_id: "sub-kv-review-1".into(),
+        name: "kv-review".into(),
+        task: Some("Review the key-value store for races.\nThen report.".into()),
+    });
+}
+
+#[test]
+fn agents_inspector_detail_for_one_child() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "Reading the store first.".into(),
+        },
+    );
+    child_call(&mut app, "c1", "read", json!({ "path": "src/kv.rs" }));
+    child_result(&mut app, "c1", "120 lines", false, None);
+    // A steer from `/agents` lands as the child's user turn.
+    if let Some(panel) = app.subagents.first_mut() {
+        panel.transcript.flush_assistant();
+        panel.transcript.finalize_tool_group();
+        panel
+            .transcript
+            .push_user_line("check the lock order too", &[]);
+    }
+    child(&mut app, StreamEvent::Step { index: 2, max: 0 });
+    child_call(
+        &mut app,
+        "c2",
+        "bash",
+        json!({ "command": "cargo test kv" }),
+    );
+    child_result(
+        &mut app,
+        "c2",
+        "error: 1 test failed\n[exit 101]",
+        true,
+        None,
+    );
+    open_kv_review_detail(&mut app);
+    assert_buffer("agents_inspector_detail", &frame(&mut app, DARK, 80, 24));
+}
+
+/// A fuller child run in the detail box, mid-run: its opening answer, its
+/// reasoning folded to a summary row, an Explored group and an edit with its
+/// diff, all laid out by the main transcript's code at the box's inner width.
+/// Nothing answers after the tools yet, so the trace stays open.
+#[test]
+fn agents_inspector_detail_for_a_richer_child() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "fan out");
+    start_kv_review(&mut app);
+    child(&mut app, StreamEvent::Step { index: 1, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Token {
+            text: "I'll check the **lock order** in `src/kv.rs`.".into(),
+        },
+    );
+    child(&mut app, StreamEvent::Step { index: 2, max: 0 });
+    child(
+        &mut app,
+        StreamEvent::Reasoning {
+            text: "The lock order is the likely race.".into(),
+        },
+    );
+    child_call(&mut app, "c1", "read", json!({ "path": "src/kv.rs" }));
+    child_call(
+        &mut app,
+        "c2",
+        "grep",
+        json!({ "pattern": "lock()", "path": "src" }),
+    );
+    child_result(&mut app, "c1", "pub struct Kv;", false, None);
+    child_result(&mut app, "c2", "src/kv.rs:12: self.a.lock()", false, None);
+    child(&mut app, StreamEvent::Step { index: 3, max: 0 });
+    child_call(
+        &mut app,
+        "c3",
+        "edit",
+        json!({ "path": "src/kv.rs", "old": "a", "new": "b" }),
+    );
+    child_result(
+        &mut app,
+        "c3",
+        "Applied 1 edit to src/kv.rs",
+        false,
+        Some(concat!(
+            "@@ -12,1 +12,1 @@\n",
+            "-        let a = self.a.lock();\n",
+            "+        let b = self.b.lock();\n",
+        )),
+    );
+    open_kv_review_detail(&mut app);
+    assert_buffer(
+        "agents_inspector_detail_rich",
+        &frame(&mut app, DARK, 80, 30),
+    );
 }
 
 // ---- Model picker -----------------------------------------------------------
@@ -611,13 +739,14 @@ fn finish_turn(app: &mut App, prompt: u64, output: u64) {
     app.on_done("stop".into(), None);
     let receipt = app
         .transcript
+        .rows
         .iter()
         .rposition(|r| {
             matches!(&r.kind, RowKind::Line(l) if line_text(l).contains("Worked for "))
         })
         .expect("the turn left a receipt");
     let pinned = turn_stats_line(prompt, output, Duration::from_secs(2), "03:04".into());
-    app.transcript[receipt] = Row::line(pinned);
+    app.transcript.rows[receipt] = Row::line(pinned);
 }
 
 fn tool_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {
@@ -671,7 +800,7 @@ fn transcript_closed_tool_group() {
     tool_result(&mut app, "c2", "src/main.rs\nsrc/lib.rs\nsrc/core/cli/tui.rs", false, None);
     tool_result(&mut app, "c3", "fn main() {}", false, None);
     tool_result(&mut app, "c4", "pub mod tui;", false, None);
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     assert_buffer("transcript_closed_tool_group", &body(&mut app));
 }
 
@@ -697,7 +826,7 @@ fn transcript_finished_shell_command() {
     // While the group is still the current step the box lingers with its
     // output; once it closes the call folds to its summary row.
     let open = body(&mut app);
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     assert_buffer("transcript_finished_shell_command_open", &open);
     assert_buffer("transcript_finished_shell_command", &body(&mut app));
 }
@@ -720,7 +849,7 @@ fn transcript_failed_multi_line_shell_command() {
         None,
     );
     let open = body(&mut app);
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     assert_buffer("transcript_failed_shell_command_open", &open);
     assert_buffer("transcript_failed_shell_command", &body(&mut app));
 }
@@ -737,7 +866,7 @@ fn transcript_running_shell_command() {
         });
     }
     // The box reports whole elapsed seconds; a fresh start reads `0s`.
-    if let Some(group) = app.tool_group.as_mut() {
+    if let Some(group) = app.transcript.tool_group.as_mut() {
         group.started = Instant::now();
     }
     assert_buffer("transcript_running_shell_command", &body(&mut app));
@@ -755,7 +884,7 @@ fn transcript_failed_tool_call() {
         true,
         None,
     );
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     assert_buffer("transcript_failed_tool_call", &body(&mut app));
 }
 
@@ -792,7 +921,7 @@ fn transcript_folded_reasoning_and_answer() {
         text: "91 is odd. Try 7: 7 * 13 = 91, so it has a factor.".into(),
     });
     // Backdated so the fold names a whole number of seconds.
-    app.thinking_since = Some(Instant::now() - Duration::from_secs(3));
+    app.transcript.thinking_since = Some(Instant::now() - Duration::from_secs(3));
     token(&mut app, "No: 91 = 7 x 13.");
     finish_turn(&mut app, 900, 40);
     assert_buffer("transcript_folded_reasoning_and_answer", &body(&mut app));

@@ -41,8 +41,8 @@ mod theme;
 mod vibe_setting;
 
 use markdown::{
-    answer_lines, format_markdown_lines, live_assistant_lines, reasoning_detail_lines,
-    reasoning_summary_row, reasoning_tail_lines,
+    answer_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
+    reasoning_tail_lines,
 };
 
 use super::agent_status::AgentStatusReporter;
@@ -409,8 +409,9 @@ enum Status {
 /// Kind of the last transcript block, used to insert a blank line only when the
 /// block kind changes (so consecutive tool lines group, but prose/tool/user
 /// turns get breathing room).
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Default)]
 enum Kind {
+    #[default]
     None,
     User,
     Prose,
@@ -749,7 +750,7 @@ impl Picker {
             PickerKind::PluginConnect => " Up/Down select   Enter confirm   Esc cancel setup",
             PickerKind::McpServer => " ↑/↓ select   Enter run   Esc back",
             PickerKind::Agents => " ↑/↓ select   Enter view   m message   x stop   Esc close",
-            PickerKind::AgentDetail => " m message   x stop   Esc back",
+            PickerKind::AgentDetail => " PgUp/PgDn scroll   m message   x stop   Esc back",
             PickerKind::BackgroundShells => " ↑/↓ select   x stop   Esc close",
         }
     }
@@ -2042,6 +2043,1285 @@ impl RowKind {
     }
 }
 
+/// A transcript and everything that builds it: the committed rows, the
+/// streaming assistant buffer, the open tool group, pending edit rows and the
+/// folded regions an expand reveals. The main conversation owns one and every
+/// subagent panel owns one for its child, so a child's run is laid out by the
+/// very code that lays out the parent's rather than a second renderer.
+#[derive(Default)]
+struct Transcript {
+    /// Display transcript (user turns, assistant text, workflow lines). Rows,
+    /// not lines: width-dependent entries keep their source and re-render on
+    /// resize (see `Row`).
+    rows: Vec<Row>,
+    /// What was rendered, in emission order, so a resumed session gets its
+    /// reasoning and tool calls back. `history` cannot serve this: reasoning is
+    /// kept out of it and tool calls are flattened away on save. Dumped off the
+    /// render loop by `persist`, replayed by `replay_display_log`.
+    display_log: Vec<DisplayEntry>,
+    /// In-progress assistant text for the current turn, flushed on the next
+    /// step/tool/terminal event.
+    assistant_buf: String,
+    /// Reasoning streamed natively via `StreamEvent::Reasoning` since the last
+    /// flush, each segment anchored to the `assistant_buf` offset it arrived at.
+    /// Kept apart from `assistant_buf` so it is never wrapped into the wire
+    /// history: it is display-only, folded like `<think>` blocks. Anchoring
+    /// (rather than one flat buffer) is what keeps a turn that interleaves
+    /// reasoning with prose in emission order, and what lets `reasoning_open`
+    /// tell "still reasoning" from "prose has started".
+    reasoning_segs: Vec<ReasoningSeg>,
+    /// What `assistant_buf` has said so far (answer started, think block
+    /// open), folded in as tokens append; see `BufScan`. Reset wherever the
+    /// buffer is cleared or replaced.
+    buf_scan: RefCell<BufScan>,
+    /// The streaming tail as last rendered, reused while nothing it is built
+    /// from changed; see `LiveTail`.
+    live_tail: RefCell<Option<LiveTail>>,
+    /// The current run of consecutive collapsible tool calls, rendered as one
+    /// transcript row that updates in real time and finalizes to a short summary.
+    /// edit/write are excluded (they render their own diff panel).
+    tool_group: Option<ToolGroup>,
+    /// Ids of calls folded into a `ToolGroup`, so their `ToolResult` is swallowed
+    /// (the group row already represents them). Survives group finalize.
+    grouped_ids: std::collections::HashSet<String>,
+    /// Finalized tool groups, retained with their per-call detail so a collapsed
+    /// summary row can be expanded back to its individual calls/results.
+    groups: Vec<ToolGroup>,
+    /// Standalone (edit/write) call rows still awaiting their result. Several
+    /// can be open at once: a batch emits every `ToolCall` before any result.
+    pending_rows: Vec<PendingToolRow>,
+    /// Committed reasoning blocks, folded to a summary row and expandable back to
+    /// their full dimmed lines.
+    reasoning_blocks: Vec<ReasoningBlock>,
+    /// Committed finished-subagent summary rows, each holding the child's run
+    /// so Ctrl-O can expand it (parallel to `groups`/`reasoning_blocks`).
+    subagent_blocks: Vec<SubagentBlock>,
+    /// Start transcript index of each "trace" -- a contiguous run of
+    /// reasoning-summary + tool-group rows (see `trace_runs`) -- the user has
+    /// expanded. A *finished* trace (one an answer follows) folds to a single
+    /// `Thought/Worked` header by default; being in this set opts it back out to
+    /// the full run. The active (still-streaming) run is never folded.
+    expanded_traces: std::collections::HashSet<usize>,
+    /// Transcript row indices of collapsed regions (tool groups or reasoning
+    /// blocks) the user has expanded to full detail.
+    expanded: std::collections::HashSet<usize>,
+    /// Transcript row of a region to scroll into view on the next draw (set when
+    /// expanding one that may sit above the pinned-to-bottom viewport).
+    reveal: Option<usize>,
+    /// Whether `<think>` reasoning reveals in full instead of folding. Defaults
+    /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
+    /// existing block between its summary row and full detail for the session.
+    show_reasoning: bool,
+    /// Whether reasoning streams into the live tail while folding is on.
+    /// Defaults from `stream_reasoning` in `~/.jan/config.toml` (true). The open
+    /// block shows its last `LIVE_REASONING_TAIL_LINES` lines and still folds to
+    /// a summary row when the turn commits; false shows nothing but the header
+    /// badge, as before. Orthogonal to `show_reasoning`, which unfolds for good.
+    stream_reasoning: bool,
+    /// Wall-clock start of the current reasoning `<think>` block while it is
+    /// open (the model is actively reasoning). `None` between blocks.
+    thinking_since: Option<Instant>,
+    /// Duration of the reasoning block that just closed, cached so the header
+    /// can show `[thought for Ns]` transiently. `None` after the reasoning is
+    /// shown inline (or none has happened yet).
+    thought_for: Option<Duration>,
+    /// Wall-clock time `thought_for` was last set, so the `[thought for Ns]`
+    /// summary can expire back to the plain `[working]` after a short while
+    /// rather than persisting for the rest of the turn. `None` when `thought_for`
+    /// is `None` or not yet set.
+    thought_for_since: Option<Instant>,
+    /// Destination path of each in-flight `edit`/`write` call, keyed by call id,
+    /// so the diff in its `ToolResult` (which carries no path) can be
+    /// syntax-highlighted for the right language. Removed as results arrive.
+    diff_paths: HashMap<String, String>,
+    /// Command of each in-flight `bash` call, keyed by call id, kept only until
+    /// its result lands. Labels a running shell row with the work it is doing.
+    bash_commands: HashMap<String, String>,
+    /// Output streamed by each `bash` call so far, keyed by call id, bounded to
+    /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
+    /// command from a spinner into a terminal.
+    live_output: HashMap<String, String>,
+    /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
+    /// it. 0 until the first draw (callers fall back to a default).
+    view_width: u16,
+    /// Kind of the last committed block, which `gap` compares against.
+    last_kind: Kind,
+    /// Whether rendered events are also recorded in `display_log`. Only the
+    /// main conversation is journaled for a resume; a child's transcript lives
+    /// as long as the session does, so recording it would only grow memory.
+    journal: bool,
+}
+
+impl Transcript {
+    /// The main conversation's transcript, journaled for a resume.
+    fn journaled(show_reasoning: bool) -> Self {
+        Transcript {
+            show_reasoning,
+            // Overwritten from the session config right after construction.
+            stream_reasoning: true,
+            journal: true,
+            ..Transcript::default()
+        }
+    }
+
+    fn log(&mut self, entry: DisplayEntry) {
+        if self.journal {
+            self.display_log.push(entry);
+        }
+    }
+
+    /// Streamed answer text.
+    fn token(&mut self, text: &str) {
+        self.assistant_buf.push_str(text);
+        // Track the live thinking state so the header can fold reasoning
+        // to `[thinking]` / `[thought for Ns]`. Start the timer when
+        // reasoning is open; close it (stashing the duration) once the
+        // block ends. `reasoning_open` covers both inline ` think>` tags
+        // and native reasoning_buf, so a content token after reasoning
+        // closes the window (and prose arriving with no reasoning leaves
+        // it closed).
+        let open = self.reasoning_open();
+        if open && self.thinking_since.is_none() {
+            self.thinking_since = Some(Instant::now());
+        } else if !open {
+            if let Some(started) = self.thinking_since.take() {
+                self.thought_for = Some(started.elapsed());
+                self.thought_for_since = Some(Instant::now());
+            }
+        }
+        // Commit the tool group as resolved once real answer prose begins, so
+        // it lands above the streaming response. Reasoning tokens must
+        // not trigger this, or every call by a reasoning model splits
+        // into its own row.
+        if self.tool_group.is_some() && self.answer_started() {
+            self.finalize_tool_group();
+        }
+    }
+
+    /// Natively streamed reasoning.
+    fn reasoning(&mut self, text: String) {
+        // Native reasoning stays out of the answer buffer entirely; it is
+        // folded into the display log on the next flush. Deltas that
+        // arrive with no prose in between extend the open segment;
+        // reasoning after prose starts a new one, so the timeline keeps
+        // emission order instead of hoisting every thought to the top.
+        if !text.is_empty() {
+            let at = self.assistant_buf.len();
+            match self.reasoning_segs.last_mut() {
+                Some(seg) if seg.at == at => seg.text.push_str(&text),
+                _ => self.reasoning_segs.push(ReasoningSeg { at, text }),
+            }
+            if self.thinking_since.is_none() {
+                self.thinking_since = Some(Instant::now());
+            }
+        }
+    }
+
+    /// A new model request began.
+    fn step(&mut self) {
+        // Only flush (and thereby close the tool group) once the model
+        // has produced answer prose; a turn that only reasoned or only
+        // called tools keeps the group open so the next turn's calls
+        // keep folding into one summary row instead of a row per turn.
+        if self.answer_started() {
+            self.flush_assistant();
+        }
+    }
+
+    /// Output a running shell call streamed.
+    fn output_delta(&mut self, id: String, delta: &str) {
+        // Bounded from the end: a runaway command must not be able to
+        // grow the TUI's memory. The tool keeps the authoritative full
+        // output (spilling to disk past its own cap) and hands it over
+        // with the result; this buffer only has to feed the live view.
+        let buf = self.live_output.entry(id).or_default();
+        buf.push_str(delta);
+        if buf.len() > LIVE_OUTPUT_MAX_BYTES {
+            // Trim on a char boundary so the buffer stays valid UTF-8.
+            let cut = buf.len() - LIVE_OUTPUT_MAX_BYTES;
+            let at = (cut..buf.len())
+                .find(|i| buf.is_char_boundary(*i))
+                .unwrap_or(buf.len());
+            buf.drain(..at);
+        }
+    }
+
+    /// A complete tool call: a standalone row for a diff-producing tool, else
+    /// a member of the open tool group.
+    fn tool_call(&mut self, id: String, name: &str, args: &serde_json::Value) {
+        // Commit buffered prose/reasoning before anything else, so the
+        // timeline stays in emission order and the journal does too -- text
+        // that preceded the call, then the call. `flush_assistant` no-ops on
+        // an empty buffer, so silent consecutive calls still fold into one
+        // group row.
+        self.flush_assistant();
+        self.log(DisplayEntry::ToolCall {
+            id: id.clone(),
+            name: name.to_string(),
+            args: args.clone(),
+        });
+        self.track_bash_command(&id, name, args);
+        // Untruncated: every row that shows these clamps to the width it
+        // is drawn at, so they survive a resize either way.
+        let label = tool_activity(name, args);
+        let done = tool_finished(name, args);
+        if matches!(name, "edit" | "write") {
+            if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
+                self.diff_paths.insert(id.clone(), p.to_string());
+            }
+            // Diff-producing tools render standalone (call row & panel).
+            self.finalize_tool_group();
+            self.gap(Kind::Tool);
+            self.push_row(RowKind::Tool {
+                state: ToolState::Running,
+                label: label.clone(),
+                reserve: TOOL_ROW_RESERVE,
+            });
+            self.pending_rows.push(PendingToolRow {
+                id,
+                idx: self.rows.len() - 1,
+                label,
+                done,
+            });
+        } else {
+            self.push_grouped_call(&id, name, args, label, done);
+        }
+    }
+
+    /// A tool call's result, attached to the row (or group) that made it.
+    fn tool_result(&mut self, id: String, content: String, is_error: bool, diff: Option<String>) {
+        self.log(DisplayEntry::ToolResult {
+            id: id.clone(),
+            content: content.clone(),
+            is_error,
+            diff: diff.clone(),
+        });
+        // This call is no longer in flight (it finished, or it detached
+        // into the background where its output now lands in a file the
+        // agent reads later): the row's content is authoritative, so the
+        // in-flight command label and the live buffer are both dead weight.
+        self.bash_commands.remove(&id);
+        self.live_output.remove(&id);
+        // Grouped calls are already represented by the group row; retain
+        // their result on the group so an expand can show it later.
+        if self.grouped_ids.contains(&id) {
+            if let Some(group) = self.tool_group.as_mut() {
+                if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                    call.is_error = is_error;
+                    call.diff = diff;
+                    call.content = Some(content);
+                    group.last_result_error = Some(is_error);
+                    self.refresh_group_row();
+                    return;
+                }
+            }
+            // A standalone edit/write or intervening display block can
+            // close a group before its batch's results arrive.
+            for group in &mut self.groups {
+                if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
+                    call.is_error = is_error;
+                    call.diff = diff;
+                    call.content = Some(content);
+                    group.last_result_error = Some(is_error);
+                    self.rows[group.idx] = group.row(GroupRow::Closed);
+                    break;
+                }
+            }
+            return;
+        }
+        self.flush_assistant();
+        let lang = diff
+            .is_some()
+            .then(|| self.diff_paths.remove(&id))
+            .flatten();
+        // The resolved call row already names the tool and file in past
+        // tense, so a successful "Applied N edit(s) to X" only repeats
+        // it; the diff is the informative part. Errors keep their text
+        // -- the row says nothing about why the call failed.
+        let has_row = self
+            .pending_rows
+            .iter()
+            .any(|row| row.id == id && row.idx < self.rows.len());
+        let content = (!(has_row && !is_error && diff.is_some())).then_some(content);
+        let result = RowKind::Result {
+            is_error,
+            content,
+            diff,
+            lang,
+        };
+        if let Some(result) = self.resolve_pending_row(&id, is_error, result) {
+            self.gap(Kind::Tool);
+            self.push_row(result);
+        }
+    }
+
+    /// Measure the body: every committed row (folded traces, expanded
+    /// regions and the live tool group included) and then the streaming tail,
+    /// with `extra` -- tool-band rows that are not the transcript's own, such
+    /// as throbbers for calls whose arguments are still streaming -- below it.
+    /// `active` is whether the run that feeds this transcript is generating,
+    /// which keeps its newest reasoning step expanded for a moment. `open`
+    /// lays everything out expanded -- no folded traces, every region's detail
+    /// shown -- instead of only what the user opened. Shared by the main body,
+    /// the `/agents` detail and a finished child's expand, so a child's run is
+    /// laid out exactly like the parent's.
+    fn layout_body(
+        &self,
+        width: u16,
+        spinner_frame: usize,
+        active: bool,
+        open: bool,
+        find: Option<&find::Find>,
+        extra: Vec<Line<'static>>,
+    ) -> BodyLayout {
+        // Every committed row contributes only its *height* here, read from the
+        // row cache in O(1); the rows the viewport actually shows are the only
+        // ones materialized and word-wrapped, in `BodyLayout::window`. Laying
+        // the whole session out every frame is what made a long transcript
+        // crawl: the body Paragraph wrapped all of it twice (once to count,
+        // once to render), so the per-frame cost tracked history rather than
+        // what was on screen.
+        let mut segs: Vec<Segment> = Vec::with_capacity(self.rows.len() + 8);
+        let mut content_h: u16 = 0;
+        let mut reveal_at: Option<u16> = None;
+        // The current search match: which segment holds it, and (on the frame that
+        // owes the jump) where that segment starts, in wrapped lines.
+        let find_hit = find.and_then(|f| f.current_hit());
+        let find_jump = find.is_some_and(|f| f.jump);
+        let mut find_seg: Option<usize> = None;
+        let mut find_at: Option<u16> = None;
+        // A finished trace (an answer follows) folds its run of reasoning/tool rows
+        // to one static `Thought/Worked` header unless the user expanded it. The
+        // active run stays open as the live growing rail while the model reasons and
+        // calls tools -- but the moment answer prose begins streaming, the whole run
+        // collapses to its header too, so the reader's eye is on the answer rather
+        // than the scaffolding that produced it. (`finalize_tool_group` closes the
+        // open group on that same first prose token, so it is already a trace member.)
+        let last_answer = self.last_answer_idx();
+        let answer_started = self.answer_started();
+        // Built once: it sorts every group and reasoning block in the session.
+        let trace_runs = self.trace_runs();
+        let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
+        for run in trace_runs.iter().copied() {
+            let finished = answer_started || last_answer.is_some_and(|a| run.end < a);
+            if !open && finished && !self.expanded_traces.contains(&run.start) {
+                collapsed_headers.insert(run.start, run);
+            }
+        }
+        let hidden_trace_rows: std::collections::HashSet<usize> = collapsed_headers
+            .values()
+            .flat_map(|r| (r.start + 1)..=r.end)
+            .collect();
+        // A finished trace the user expanded caps its rail with a `└ Done` terminal
+        // after its last row, keyed by that row's index. The live rail's terminal is
+        // its current step, and a folded trace shows only its header, so neither gets
+        // one.
+        let expanded_trace_ends: std::collections::HashSet<usize> = trace_runs
+            .iter()
+            .filter(|r| {
+                last_answer.is_some_and(|a| r.end < a) && self.expanded_traces.contains(&r.start)
+            })
+            .map(|r| r.end)
+            .collect();
+        // Built on the first expanded row, so a frame with nothing expanded pays
+        // nothing and one with many expanded pays one pass, not one per row.
+        let mut region_index: Option<RegionIndex> = None;
+        for (i, row) in self.rows.iter().enumerate() {
+            // A collapsed trace shows a single header at its start and hides the
+            // rest of its rows.
+            if hidden_trace_rows.contains(&i) {
+                continue;
+            }
+            if let Some(run) = collapsed_headers.get(&i) {
+                let line = trace_header_line(run);
+                let seg = Segment::eager(Some(i), vec![line], width);
+                if self.reveal == Some(i) {
+                    reveal_at = Some(content_h);
+                }
+                content_h = content_h.saturating_add(seg.height);
+                segs.push(seg);
+                continue;
+            }
+            if self.reveal == Some(i) {
+                reveal_at = Some(content_h);
+            }
+            // Every committed row re-renders at the current width, so a resize
+            // re-flows prose, re-cuts diffs and re-truncates labels. The open
+            // group's row is live (spinner, or lingering finished output), so it
+            // can never come from the row cache.
+            let seg = match self.tool_group.as_ref().filter(|g| g.idx == i) {
+                Some(g) => {
+                    // The open group's shell calls render live: a running command
+                    // shows its header with elapsed and its streaming output tail; a
+                    // finished one keeps its settled header and output head until
+                    // the group folds, so the output does not vanish the instant the
+                    // result lands. A running non-shell group keeps its plain
+                    // activity row; a finished non-shell group (no shell rows, not
+                    // yet committed) renders its folded summary row.
+                    let mut panel = self.live_shell_panel(g, spinner_frame, width);
+                    // The panel only shows the shell calls. A group can keep folding
+                    // in later, non-shell calls (a read/grep after a bash), or the
+                    // running command may not be a shell call at all -- those would be
+                    // hidden behind the lingering output. Show the running activity
+                    // row beneath it too, unless the in-flight call is itself a shell
+                    // call (whose header already carries its own bullet and clock).
+                    let inflight_shell = g
+                        .calls
+                        .iter()
+                        .rev()
+                        .find(|c| c.content.is_none())
+                        .is_some_and(|c| c.command.is_some());
+                    if !panel.is_empty() {
+                        if g.is_running() && !inflight_shell {
+                            panel.push(Line::raw(""));
+                            panel.extend(running_group_rows(g, spinner_frame, width));
+                        }
+                        Segment::eager(Some(i), panel, width)
+                    } else if g.is_running() {
+                        Segment::eager(
+                            Some(i),
+                            running_group_rows(g, spinner_frame, width),
+                            width,
+                        )
+                    } else {
+                        Segment {
+                            idx: Some(i),
+                            height: row.height(width),
+                            lines: None,
+                        }
+                    }
+                }
+                None => Segment {
+                    idx: Some(i),
+                    height: row.height(width),
+                    lines: None,
+                },
+            };
+            if find_hit.is_some_and(|h| h.row == i && !h.detail) {
+                find_seg = Some(segs.len());
+                if find_jump {
+                    find_at = Some(content_h);
+                }
+            }
+            content_h = content_h.saturating_add(seg.height);
+            segs.push(seg);
+            // The newest reasoning step lingers expanded for a grace window after it
+            // commits, then folds to its `reasoned for Ns` summary as the run rolls
+            // on -- so the chain of thought is readable across the tool call it
+            // triggered without every past step piling up on screen. Older steps and
+            // the whole run past the answer fold normally. `show_reasoning` already
+            // inlines every block, so this only touches the default-folded case.
+            let active_reasoning = active
+                && !self.show_reasoning
+                && !answer_started
+                && last_answer.is_none_or(|a| i > a)
+                && self
+                    .reasoning_blocks
+                    .last()
+                    .is_some_and(|r| r.idx == i && r.committed.elapsed() < REASONING_FOLD_AFTER);
+            let expanded = open || self.expanded.contains(&i);
+            if expanded || active_reasoning {
+                // Detail rows map back to the same owning idx (not `None`), so a
+                // click anywhere in an expanded block collapses it -- not just on
+                // its header row, which may have scrolled out of view once the
+                // block grew past the viewport (long reasoning, many tool calls).
+                // A lingering active step shows the same bounded scrolling tail the
+                // live stream did; a manual expand (click, Ctrl-O) shows the whole
+                // thing.
+                let detail = if active_reasoning && !expanded {
+                    self.reasoning_blocks
+                        .iter()
+                        .find(|r| r.idx == i)
+                        .map(|block| reasoning_tail_lines(&block.source, width))
+                } else {
+                    let index = region_index.get_or_insert_with(|| self.region_index());
+                    self.region_detail_in(index, i, width)
+                };
+                if let Some(detail) = detail {
+                    if find_hit.is_some_and(|h| h.row == i && h.detail) {
+                        find_seg = Some(segs.len());
+                        if find_jump {
+                            find_at = Some(content_h);
+                        }
+                    }
+                    let seg = Segment::eager(Some(i), detail, width);
+                    content_h = content_h.saturating_add(seg.height);
+                    segs.push(seg);
+                }
+            }
+            // Cap an expanded finished trace's rail with the `└ Done` terminal, after
+            // its last row (and that row's own detail). Keyed to the same `idx`, so a
+            // click on it collapses the run like any other row of the trace.
+            if expanded_trace_ends.contains(&i) {
+                let seg = Segment::eager(Some(i), vec![trace_done_line()], width);
+                content_h = content_h.saturating_add(seg.height);
+                segs.push(seg);
+            }
+        }
+
+        // Streaming prose and the `extra` rows have no transcript index; they
+        // are rebuilt every frame and ride along as one trailing segment.
+        let mut tail: Vec<Line<'static>> = Vec::new();
+        let mut live_trailing = None;
+        if !self.assistant_buf.is_empty() || !self.reasoning_segs.is_empty() {
+            // Native reasoning is placed beside the live prose by its offset, so the
+            // shared renderer dims/folds it exactly like inline-tag providers.
+            let (live, live_leading, trailing) = self.live_tail(width);
+            live_trailing = trailing;
+            if !live.is_empty() {
+                // Mirror `gap` so the separator above the live block matches what
+                // its commit will emit: a band change (prose after a tool call) gets
+                // a blank, but streaming reasoning shares the tool band and gets
+                // none, so a tool call runs straight into the reasoning below it.
+                let leading = live_leading.unwrap_or(Kind::Prose);
+                if band(self.last_kind) != band(leading)
+                    && !trailing_blank(&tail, &self.rows, width)
+                {
+                    tail.push(Line::raw(""));
+                }
+                // Live tail: same renderer as finalized messages, so an open
+                // (unterminated) wrapped reasoning block dims and grows during streaming.
+                tail.extend(live);
+            }
+        }
+        // Tool-band rows only need a separator when the row above is a
+        // different band. After reasoning or a tool call (both the tool band)
+        // they run straight on; only answer prose (or a user/meta line) above
+        // them earns a blank. What precedes is the live tail if one rendered,
+        // else the last committed row.
+        let preceding_kind = if tail.is_empty() {
+            self.last_kind
+        } else {
+            live_trailing.unwrap_or(Kind::Prose)
+        };
+        if !extra.is_empty()
+            && band(preceding_kind) != band(Kind::Tool)
+            && !trailing_blank(&tail, &self.rows, width)
+        {
+            tail.push(Line::raw(""));
+        }
+        tail.extend(extra);
+        if !tail.is_empty() {
+            let seg = Segment::eager(None, tail, width);
+            content_h = content_h.saturating_add(seg.height);
+            segs.push(seg);
+        }
+        BodyLayout {
+            segs,
+            content_h,
+            reveal_at,
+            find_seg,
+            find_at,
+        }
+    }
+
+    /// Every line of the transcript at `width`, every region open and no live
+    /// tail: what a finished child's summary row expands to.
+    fn all_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let layout = self.layout_body(width, 0, false, true, None, Vec::new());
+        let height = layout.content_h;
+        layout.window(&self.rows, width, 0, height, None).0
+    }
+
+    /// Mark every edit/write row still awaiting a result as interrupted: the
+    /// stream that would have resolved it is over.
+    fn interrupt_pending_rows(&mut self) {
+        for row in std::mem::take(&mut self.pending_rows) {
+            if row.idx < self.rows.len() {
+                self.rows[row.idx] = RowKind::Tool {
+                    state: ToolState::Interrupted,
+                    label: row.label,
+                    reserve: TOOL_ROW_RESERVE,
+                }
+                .into();
+            }
+        }
+    }
+
+    /// Commit whatever the stream left open once it is over: the buffered
+    /// answer, the open tool group, and rows still waiting on a result, which
+    /// `interrupted` marks as cut short rather than done.
+    fn settle(&mut self, interrupted: bool) {
+        self.flush_assistant();
+        self.close_tool_group(interrupted);
+        self.interrupt_pending_rows();
+        self.live_output.clear();
+    }
+
+    /// Drop the oldest rows past `max`, along with every region that pointed
+    /// into them, and shift the rest down. Bounds a transcript that is only
+    /// ever read from its tail, so a child that works for an hour cannot grow
+    /// the TUI without limit.
+    fn cap_rows(&mut self, max: usize) {
+        let Some(cut) = self.rows.len().checked_sub(max).filter(|n| *n > 0) else {
+            return;
+        };
+        self.rows.drain(..cut);
+        let shift = |idx: usize| idx.checked_sub(cut);
+        if let Some(g) = self.tool_group.as_mut() {
+            match shift(g.idx) {
+                Some(idx) => g.idx = idx,
+                None => self.tool_group = None,
+            }
+        }
+        self.groups
+            .retain_mut(|g| shift(g.idx).map(|idx| g.idx = idx).is_some());
+        self.reasoning_blocks
+            .retain_mut(|r| shift(r.idx).map(|idx| r.idx = idx).is_some());
+        self.subagent_blocks
+            .retain_mut(|b| shift(b.idx).map(|idx| b.idx = idx).is_some());
+        self.pending_rows
+            .retain_mut(|p| shift(p.idx).map(|idx| p.idx = idx).is_some());
+        self.expanded = self.expanded.iter().filter_map(|&i| shift(i)).collect();
+        self.expanded_traces = self
+            .expanded_traces
+            .iter()
+            .filter_map(|&i| shift(i))
+            .collect();
+        self.reveal = self.reveal.and_then(shift);
+    }
+
+    fn push(&mut self, line: Line<'static>) {
+        self.rows.push(Row::line(line));
+    }
+
+    fn push_row(&mut self, row: impl Into<Row>) {
+        self.rows.push(row.into());
+    }
+
+    /// Insert a blank separator when the block *band* changes, then record the
+    /// kind. Keeps consecutive same-kind lines tight while spacing turn
+    /// boundaries.
+    fn gap(&mut self, next: Kind) {
+        let last_blank = self.rows.last().map(Row::is_blank).unwrap_or(true);
+        if !self.rows.is_empty() && band(self.last_kind) != band(next) && !last_blank {
+            self.rows.push(Row::line(Line::raw("")));
+        }
+        self.last_kind = next;
+    }
+
+    fn flush_assistant(&mut self) {
+        let segs = std::mem::take(&mut self.reasoning_segs);
+        let prose = self.assistant_buf.trim_end().to_string();
+        self.assistant_buf.clear();
+        self.reset_buf_scan();
+        // How long this turn's reasoning took, for the `Thought for Ns` label:
+        // an open block being closed by this flush (a mid-block tool call) is
+        // still timing on `thinking_since`; one that closed earlier (prose
+        // arrived) stashed its elapsed in `thought_for`.
+        let open = self.thinking_since.take();
+        let reasoning_dur = open.map(|s| s.elapsed()).or(self.thought_for);
+        // A block still open at flush time is closed by this flush (a reason ->
+        // tool turn): stamp the header badge state so it shows `[thought for Ns]`
+        // exactly as a reason -> answer turn does, where a content Token stamps
+        // it. A block that closed earlier already stamped itself.
+        if let Some(started) = open {
+            self.thought_for = Some(started.elapsed());
+            self.thought_for_since = Some(Instant::now());
+        }
+        // No-op (and, crucially, don't finalize the tool group) on an empty or
+        // whitespace-only turn, so silent consecutive tool calls keep folding.
+        if !assistant_has_content(&prose, &segs) {
+            return;
+        }
+        // Model prose ends the current run of tool calls.
+        self.finalize_tool_group();
+        // Display-logged here (out of `history` on purpose) so the replay folds
+        // reasoning like the live turn did. Prose and reasoning are journaled
+        // apart, exactly as they arrived; the reasoning duration rides along so
+        // a resumed session keeps its `Thought for Ns` label.
+        self.log(DisplayEntry::Assistant {
+            text: prose.clone(),
+            reasoning: segs.clone(),
+            reasoning_ms: reasoning_dur.map(|d| d.as_millis() as u64),
+        });
+        self.push_assistant_blocks(&prose, &segs, reasoning_dur);
+    }
+
+    /// Commit assistant `text` to the transcript in emission order: answer prose
+    /// through markdown, each `<think>` block folded to a one-line summary row
+    /// whose full dimmed detail is retained for expansion.
+    fn push_assistant_blocks(
+        &mut self,
+        prose: &str,
+        segs: &[ReasoningSeg],
+        reasoning_dur: Option<Duration>,
+    ) {
+        let runs = assistant_runs(prose, segs);
+        // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
+        // when the turn has one reasoning block; stamping it on each of several
+        // would misreport all but one (per-block timing is not tracked). With
+        // more than one, they fall back to a plain `Thought`.
+        let single_reasoning = runs
+            .iter()
+            .filter(|(reasoning, seg)| *reasoning && !seg.trim().is_empty())
+            .count()
+            == 1;
+        for (reasoning, seg) in runs {
+            // Only answer prose can carry an injected `<system>` block; stripping
+            // per run rather than over the whole turn keeps the reasoning
+            // offsets meaningful.
+            let seg = if reasoning {
+                seg
+            } else {
+                strip_system_xml_tags(&seg).to_string()
+            };
+            if seg.trim().is_empty() {
+                continue;
+            }
+            if reasoning {
+                let detail = reasoning_detail_lines(&seg);
+                if detail.is_empty() {
+                    continue;
+                }
+                // Distinct Kind so the reasoning->prose transition still gaps
+                // (both sharing Kind::Prose would collapse to no separator).
+                self.gap(Kind::Reasoning);
+                if self.show_reasoning {
+                    self.rows.extend(detail.into_iter().map(Row::line));
+                } else {
+                    let dur = single_reasoning.then_some(reasoning_dur).flatten();
+                    self.push(reasoning_summary_row(dur));
+                    let idx = self.rows.len() - 1;
+                    self.reasoning_blocks.push(ReasoningBlock {
+                        idx,
+                        detail,
+                        source: seg.clone(),
+                        committed: Instant::now(),
+                    });
+                }
+            } else {
+                // Kept as source: the markdown re-wraps at the draw width, so a
+                // resize re-flows tables and code blocks instead of stranding
+                // them at the width they were committed at. Markup that renders
+                // to nothing (a bare HTML comment) still emits no row.
+                let row: Row = RowKind::Markdown(seg.to_string()).into();
+                if !row.lines(self.render_width()).is_empty() {
+                    self.gap(Kind::Prose);
+                    self.push_row(row);
+                }
+            }
+        }
+    }
+
+    /// Fold a collapsible tool call into the current group row (extending it and
+    /// updating its live status) or open a new group row.
+    fn push_grouped_call(
+        &mut self,
+        id: &str,
+        name: &str,
+        args: &serde_json::Value,
+        label: String,
+        done: String,
+    ) {
+        let (noun, is_read) = tool_kind(name);
+        self.grouped_ids.insert(id.to_string());
+        let call = GroupedCall {
+            id: id.to_string(),
+            activity: label,
+            done: done.clone(),
+            content: None,
+            is_error: false,
+            diff: None,
+            // Set for shell calls (track_bash_command ran first). Kept on the call
+            // so the shell rows survive the result clearing `bash_commands`.
+            command: self.bash_commands.get(id).cloned(),
+            explore: explore_of(name, args),
+        };
+        let extend = self
+            .tool_group
+            .as_ref()
+            .is_some_and(|g| g.idx < self.rows.len());
+        if extend {
+            let g = self.tool_group.as_mut().expect("group checked above");
+            g.nouns.push((noun, is_read));
+            g.calls.push(call);
+            self.refresh_group_row();
+            return;
+        }
+        self.gap(Kind::Tool);
+        let group = ToolGroup {
+            idx: self.rows.len(),
+            first_done: done,
+            nouns: vec![(noun, is_read)],
+            calls: vec![call],
+            started: Instant::now(),
+            last_result_error: None,
+        };
+        self.push_row(group.row(GroupRow::Open));
+        self.tool_group = Some(group);
+    }
+
+    /// Rewrite the open group's row for its current state, leaving it open so
+    /// later calls keep folding in. Called as each result lands so the status
+    /// resolves then, rather than lagging until the group closes (which only
+    /// happens once the model starts answering).
+    fn refresh_group_row(&mut self) {
+        let Some((idx, row)) = self
+            .tool_group
+            .as_ref()
+            .filter(|g| g.idx < self.rows.len())
+            .map(|g| (g.idx, g.row(GroupRow::Open)))
+        else {
+            return;
+        };
+        self.rows[idx] = row;
+    }
+
+    /// Close the current tool group, rewriting its row to a short summary: the
+    /// single activity label for one call, else a counted breakdown.
+    fn finalize_tool_group(&mut self) {
+        self.close_tool_group(false);
+    }
+
+    /// `interrupted` marks calls that never received a result as unresolved
+    /// rather than done. Only an abort knows that: a normal finalize can land
+    /// while a call is legitimately still running (a `dispatch_subagent`
+    /// resolves after its child's panel opens).
+    fn close_tool_group(&mut self, interrupted: bool) {
+        let Some(g) = self.tool_group.take() else {
+            return;
+        };
+        if g.idx >= self.rows.len() {
+            return;
+        }
+        let state = if interrupted {
+            GroupRow::Aborted
+        } else {
+            GroupRow::Closed
+        };
+        self.rows[g.idx] = g.row(state);
+        self.groups.push(g);
+    }
+
+    /// The committed traces (contiguous runs of reasoning-summary + tool-group
+    /// rows), each of 2+ rows -- a lone reasoning block or tool group is already
+    /// one line and not worth a collapse header. Members are the finalized
+    /// reasoning blocks and tool groups; the still-running group is the active
+    /// tail and never part of a collapsible run.
+    fn trace_runs(&self) -> Vec<TraceRun> {
+        #[cfg(test)]
+        tally(&TRACE_RUN_SCANS);
+        let mut members: Vec<(usize, bool)> = Vec::new();
+        for g in &self.groups {
+            members.push((g.idx, true));
+        }
+        for r in &self.reasoning_blocks {
+            members.push((r.idx, false));
+        }
+        members.sort_by_key(|(i, _)| *i);
+
+        let mut runs = Vec::new();
+        let mut iter = members.into_iter().peekable();
+        while let Some((start, first_is_tool)) = iter.next() {
+            let mut end = start;
+            let mut tool_ran = first_is_tool;
+            while let Some(&(next, is_tool)) = iter.peek() {
+                if next != end + 1 {
+                    break;
+                }
+                end = next;
+                tool_ran |= is_tool;
+                iter.next();
+            }
+            let steps = end - start + 1;
+            if steps >= 2 {
+                runs.push(TraceRun {
+                    start,
+                    end,
+                    tool_ran,
+                    steps,
+                });
+            }
+        }
+        runs
+    }
+
+    /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
+    /// default fold). A no-op if `start` is not a trace or active-fold start.
+    fn toggle_trace(&mut self, start: usize) {
+        let is_start = self.trace_runs().iter().any(|r| r.start == start);
+        if !is_start {
+            return;
+        }
+        if !self.expanded_traces.remove(&start) {
+            self.expanded_traces.insert(start);
+        }
+    }
+
+    /// Highest transcript index holding answer prose, or `None` when the turn
+    /// has produced none yet. A trace whose last row precedes some answer is
+    /// "finished" and folds by default; the run after the latest answer is the
+    /// active one and stays open.
+    fn last_answer_idx(&self) -> Option<usize> {
+        self.rows
+            .iter()
+            .rposition(|row| matches!(row.kind, RowKind::Markdown(_)))
+    }
+
+    /// The live shell rows for `group`'s commands, streamed from the moment a
+    /// command starts -- before any output -- so its header and output appear
+    /// as it runs rather than a spinner that later turns into them. No rows when
+    /// nothing in the group is a command (a `read`/`grep` run keeps its plain
+    /// activity row).
+    ///
+    /// One block per command, in dispatch order: a group runs its calls in
+    /// parallel, so several commands can be streaming at once and each shows its
+    /// own output rather than one hiding the rest.
+    fn live_shell_panel(
+        &self,
+        group: &ToolGroup,
+        spinner_frame: usize,
+        width: u16,
+    ) -> Vec<Line<'static>> {
+        let elapsed = group.started.elapsed().as_secs();
+        let mut out = Vec::new();
+        for call in group.calls.iter().filter(|c| c.command.is_some()) {
+            let command = call.command.as_deref().unwrap_or("");
+            match &call.content {
+                // Still running: the live output tail under the elapsed header.
+                None => {
+                    let output = self
+                        .live_output
+                        .get(&call.id)
+                        .map_or("", String::as_str);
+                    out.extend(running_shell_lines(
+                        command, output, elapsed, spinner_frame, width,
+                    ));
+                }
+                // Finished, but the group is still the current step: keep the
+                // output readable until the group folds, rather than vanishing
+                // the instant the result lands. The authoritative content backs
+                // it (`bash_commands`/`live_output` are cleared on the result).
+                Some(content) => {
+                    out.extend(finished_shell_lines(command, content, call.is_error, width));
+                }
+            }
+        }
+        out
+    }
+
+    /// Remember a `bash` call's command against its call id until its result
+    /// lands, so every row labelling the call names the work it is doing rather
+    /// than an opaque id.
+    fn track_bash_command(&mut self, id: &str, name: &str, args: &serde_json::Value) {
+        if !matches!(name, "bash" | "shell" | "exec") {
+            return;
+        }
+        let cmd = args
+            .get("command")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if !cmd.is_empty() {
+            self.bash_commands.insert(id.to_string(), cmd);
+        }
+    }
+
+    /// Rewrite a standalone tool row to its resolved form once its result lands:
+    /// past-tense label plus an outcome tag, matching how a tool group's row
+    /// resolves. Without this a finished `edit` keeps reading as "Editing X".
+    /// `result` (the diff body or error text) is drawn in the same slot: the
+    /// batch's later calls may already have rows below this one, so appending
+    /// it would strand the diff under an unrelated command. Returns `result`
+    /// back when there is no pending row to attach it to.
+    fn resolve_pending_row(
+        &mut self,
+        id: &str,
+        is_error: bool,
+        result: RowKind,
+    ) -> Option<RowKind> {
+        let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
+            return Some(result);
+        };
+        let row = self.pending_rows.remove(pos);
+        if row.idx >= self.rows.len() {
+            return Some(result);
+        }
+        // A write's past tense says whether the file is new: the tool heads
+        // its diff with which of the two it did.
+        let created = matches!(
+            &result,
+            RowKind::Result { diff: Some(d), .. } if d.starts_with("@@ created file @@")
+        );
+        let label = match row.done.strip_prefix("Wrote ") {
+            Some(path) if created => format!("Created {path}"),
+            _ => row.done,
+        };
+        let call = RowKind::Tool {
+            state: ToolState::of(is_error),
+            label,
+            reserve: TOOL_ROW_RESERVE,
+        };
+        self.rows[row.idx] = RowKind::Resolved {
+            call: Box::new(call),
+            result: Box::new(result),
+        }
+        .into();
+        None
+    }
+
+    /// True while the model is mid-reasoning: either a `<think>` block is live
+    /// in the answer buffer (inline-tag providers) or the newest native segment
+    /// is still at the tail, i.e. no content token has arrived since
+    /// (`reasoning_content` providers). The tail check is what closes the window
+    /// when prose starts, since native segments live on until the next flush.
+    fn reasoning_open(&self) -> bool {
+        self.scan_buf().think_open
+            || self
+                .reasoning_segs
+                .last()
+                .is_some_and(|seg| seg.at == self.assistant_buf.len())
+    }
+
+    /// Header status while a turn is running with reasoning folding on:
+    /// `[thinking]` while a reasoning block is actively streaming, `[thought for
+    /// Ns]` for a short while after a block closes, then back to `None` (the
+    /// plain `[working]`) once the model is working again. `None` when no
+    /// reasoning has happened recently this turn.
+    fn reasoning_status(&self) -> Option<(String, Style)> {
+        if self.reasoning_open() {
+            Some(("thinking".to_string(), Style::new().fg(theme::warning()).bold()))
+        } else {
+            // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
+            // block closed, so a long tool call or answer prose falls back to the
+            // plain [working] instead of pinning [thought for Ns] till turn end.
+            match (self.thought_for, self.thought_for_since) {
+                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => Some((
+                    format!("thought for {}", format_elapsed(d.as_secs())),
+                    Style::new().fg(theme::warning()),
+                )),
+                _ => None,
+            }
+        }
+    }
+
+    /// Toggle full detail for every collapsed region (tool groups and reasoning
+    /// blocks): collapse all when all are already expanded, else expand all and
+    /// scroll the most-recent one into view.
+    fn toggle_regions(&mut self) {
+        let all: Vec<usize> = self
+            .groups
+            .iter()
+            .map(|g| g.idx)
+            .chain(self.reasoning_blocks.iter().map(|r| r.idx))
+            .chain(self.subagent_blocks.iter().map(|b| b.idx))
+            .collect();
+        // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
+        // opens both the folds and the per-row detail.
+        let trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
+        if all.is_empty() && trace_starts.is_empty() {
+            return;
+        }
+        let fully_open = all.iter().all(|i| self.expanded.contains(i))
+            && trace_starts.iter().all(|s| self.expanded_traces.contains(s));
+        if fully_open {
+            self.expanded.clear();
+            self.expanded_traces.clear();
+            self.reveal = None;
+        } else {
+            self.expanded = all.iter().copied().collect();
+            self.expanded_traces = trace_starts.iter().copied().collect();
+            // The regions sit above the answer that follows; scroll the latest
+            // into view rather than staying pinned to the bottom.
+            self.reveal = all.iter().copied().max();
+        }
+    }
+
+    /// The lines folded region `i` expands to (a tool group's calls, a reasoning
+    /// block, a subagent's call list), or `None` when the row owns no region.
+    /// Shared by `draw` and the search scan, so a match found in the detail is
+    /// on the line `draw` puts there.
+    ///
+    /// Takes a `region_index` so a caller asking about many rows (the search
+    /// scan, a frame with many expanded rows) builds it once.
+    fn region_detail_in(
+        &self,
+        index: &RegionIndex,
+        i: usize,
+        width: u16,
+    ) -> Option<Vec<Line<'static>>> {
+        let running_group = self.tool_group.as_ref().filter(|g| g.idx == i);
+        index
+            .groups
+            .get(&i)
+            .map(|&pos| &self.groups[pos])
+            // The still-running group isn't finalized into `groups` yet, but its
+            // row is already clickable/expandable like any other.
+            .or(running_group)
+            .map(|group| group_detail_lines(group, width))
+            .or_else(|| {
+                index
+                    .reasoning
+                    .get(&i)
+                    .map(|&pos| self.reasoning_blocks[pos].detail.clone())
+            })
+            .or_else(|| {
+                index
+                    .subagents
+                    .get(&i)
+                    .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
+            })
+    }
+
+    /// Where each row's region lives in `groups`, `reasoning_blocks` and
+    /// `subagent_blocks`, so a caller asking about many rows (the search scan,
+    /// a frame with many expanded rows) does one lookup per row instead of
+    /// three linear searches. The first entry for an index wins, as the
+    /// searches' `find` did.
+    fn region_index(&self) -> RegionIndex {
+        fn first_by_idx(idxs: impl Iterator<Item = usize>) -> HashMap<usize, usize> {
+            let mut map = HashMap::new();
+            for (pos, idx) in idxs.enumerate() {
+                map.entry(idx).or_insert(pos);
+            }
+            map
+        }
+        RegionIndex {
+            groups: first_by_idx(self.groups.iter().map(|g| g.idx)),
+            reasoning: first_by_idx(self.reasoning_blocks.iter().map(|r| r.idx)),
+            subagents: first_by_idx(self.subagent_blocks.iter().map(|b| b.idx)),
+        }
+    }
+
+    /// Whether transcript row `idx` is currently drawn as a folded trace header
+    /// (a finished trace start, not expanded), so a click there unfolds the trace
+    /// rather than toggling that row's own detail. The active run never folds, so
+    /// only finished traces qualify.
+    fn is_folded_trace_start(&self, idx: usize) -> bool {
+        if self.expanded_traces.contains(&idx) {
+            return false;
+        }
+        let last_answer = self.last_answer_idx();
+        self.trace_runs()
+            .iter()
+            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a))
+    }
+
+    /// Toggle a single collapsed region by its transcript row index (a click on
+    /// its summary row); no-op if `idx` isn't an expandable region.
+    fn toggle_region(&mut self, idx: usize) {
+        let is_region = self.groups.iter().any(|g| g.idx == idx)
+            || self.reasoning_blocks.iter().any(|r| r.idx == idx)
+            || self.subagent_blocks.iter().any(|b| b.idx == idx)
+            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx);
+        if !is_region {
+            return;
+        }
+        if !self.expanded.remove(&idx) {
+            self.expanded.insert(idx);
+        }
+    }
+
+    /// Forget what `buf_scan` folded in. Every site that clears or replaces
+    /// `assistant_buf` (rather than appending to it) must call this.
+    fn reset_buf_scan(&mut self) {
+        *self.buf_scan.get_mut() = BufScan::default();
+    }
+
+    /// `buf_scan` brought up to date with `assistant_buf`.
+    fn scan_buf(&self) -> BufScan {
+        let mut scan = self.buf_scan.borrow_mut();
+        scan.sync(&self.assistant_buf);
+        scan.clone()
+    }
+
+    /// The streaming tail's lines and the kinds of its first and last runs,
+    /// rendered once per change rather than once per frame. A spinner-only
+    /// frame mid-reply used to re-parse the whole reply's markdown (and split
+    /// its reasoning three more times for the kinds).
+    fn live_tail(&self, width: u16) -> (Vec<Line<'static>>, Option<Kind>, Option<Kind>) {
+        let key = LiveTailKey {
+            width,
+            fold: !self.show_reasoning,
+            stream: self.stream_reasoning,
+            gate: think_tags_parsed(),
+            theme: theme::Theme::current(),
+        };
+        let mut cache = self.live_tail.borrow_mut();
+        let hit = cache.as_ref().is_some_and(|c| {
+            c.key == key && c.prose == self.assistant_buf && c.segs == self.reasoning_segs
+        });
+        if !hit {
+            *cache = Some(LiveTail {
+                key,
+                prose: self.assistant_buf.clone(),
+                segs: self.reasoning_segs.clone(),
+                lines: live_assistant_lines(
+                    &self.assistant_buf,
+                    &self.reasoning_segs,
+                    width,
+                    key.fold,
+                    key.stream,
+                ),
+                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs),
+                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs),
+            });
+        }
+        let tail = cache.as_ref().expect("filled above");
+        (tail.lines.clone(), tail.leading, tail.trailing)
+    }
+
+    /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
+    fn answer_started(&self) -> bool {
+        self.scan_buf().answer
+    }
+
+    /// Flush the current turn and return its text as the final assistant answer.
+    fn take_answer(&mut self) -> String {
+        let answer = self.assistant_buf.trim().to_string();
+        self.flush_assistant();
+        answer
+    }
+
+    /// The concatenated natively-streamed reasoning text for the current turn.
+    /// Used to resend the final answer's reasoning on the wire. Inline
+    /// `<think>` blocks (which arrive through `Token` and live in the buffer)
+    /// are handled separately by `answer_without_reasoning` and the loop path;
+    /// this covers the `reasoning_content` delta case, which never touches the
+    /// buffer.
+    fn native_reasoning_text(&self) -> String {
+        self.reasoning_segs
+            .iter()
+            .map(|s| s.text.clone())
+            .collect::<String>()
+    }
+
+    /// Render a user turn: the prompt line, then one dotted connector row per
+    /// attached image ending in an `[IMAGE]` label (basename when known).
+    fn push_user_line(&mut self, text: &str, images: &[String]) {
+        self.gap(Kind::User);
+        // A `System` row rather than a `Line`: a pasted or shift-entered message
+        // carries its own newlines, and a single `Line` renders those as blank
+        // cells in one run-on row.
+        self.push_row(user_bubble(vec![Span::styled(
+            text.to_string(),
+            Style::new().bold().fg(user_bubble_fg()),
+        )]));
+        for name in images {
+            let label = if name.is_empty() {
+                "[IMAGE]".to_string()
+            } else {
+                format!("[IMAGE] {name}")
+            };
+            self.push(Line::from(vec![
+                Span::styled("  ┊ ", Style::new().dim()),
+                Span::styled(label, Style::new().cyan()),
+            ]));
+        }
+    }
+
+    /// Effective width for table wrapping (fallback before the first draw).
+    fn render_width(&self) -> u16 {
+        if self.view_width == 0 {
+            80
+        } else {
+            self.view_width
+        }
+    }
+}
+
 /// A committed `<think>` reasoning block, folded to a one-line summary row.
 /// The full dimmed lines are retained so the row can expand back to them.
 struct ReasoningBlock {
@@ -2392,17 +3672,6 @@ struct App {
     /// drained into the next checkpoint's snapshot and reset per turn. Only
     /// these exact paths are staged -- checkpoints never scan the repo.
     turn_touched: Vec<PathBuf>,
-    /// Destination path of each in-flight `edit`/`write` call, keyed by call id,
-    /// so the diff in its `ToolResult` (which carries no path) can be
-    /// syntax-highlighted for the right language. Removed as results arrive.
-    diff_paths: HashMap<String, String>,
-    /// Command of each in-flight `bash` call, keyed by call id, kept only until
-    /// its result lands. Labels a running shell row with the work it is doing.
-    bash_commands: HashMap<String, String>,
-    /// Output streamed by each `bash` call so far, keyed by call id, bounded to
-    /// [`LIVE_OUTPUT_MAX_BYTES`] from the end. This is what turns a running
-    /// command from a spinner into a terminal.
-    live_output: HashMap<String, String>,
     /// Background shells the `bash` tool has detached, refreshed from the process
     /// registry once per frame in the render loop (never in `draw`, so tests are
     /// not coupled to that process-global state). Drives the `/shells` inspector
@@ -2448,67 +3717,11 @@ struct App {
     history: Vec<serde_json::Value>,
     /// Thread this conversation persists to (set on first save or on resume).
     thread_id: Option<String>,
-    /// Display transcript (user turns, assistant text, workflow lines). Rows,
-    /// not lines: width-dependent entries keep their source and re-render on
-    /// resize (see `Row`).
-    transcript: Vec<Row>,
-    /// What was rendered, in emission order, so a resumed session gets its
-    /// reasoning and tool calls back. `history` cannot serve this: reasoning is
-    /// kept out of it and tool calls are flattened away on save. Dumped off the
-    /// render loop by `persist`, replayed by `replay_display_log`.
-    display_log: Vec<DisplayEntry>,
+    /// The conversation as rendered rows, plus the streaming state that
+    /// builds them. See [`Transcript`].
+    transcript: Transcript,
     /// Background journal writer, created on the first dump and joined on exit.
     journal_writer: Option<journal::Writer>,
-    /// In-progress assistant text for the current turn, flushed on the next
-    /// step/tool/terminal event.
-    assistant_buf: String,
-    /// Reasoning streamed natively via `StreamEvent::Reasoning` since the last
-    /// flush, each segment anchored to the `assistant_buf` offset it arrived at.
-    /// Kept apart from `assistant_buf` so it is never wrapped into the wire
-    /// history: it is display-only, folded like `<think>` blocks. Anchoring
-    /// (rather than one flat buffer) is what keeps a turn that interleaves
-    /// reasoning with prose in emission order, and what lets `reasoning_open`
-    /// tell "still reasoning" from "prose has started".
-    reasoning_segs: Vec<ReasoningSeg>,
-    /// What `assistant_buf` has said so far (answer started, think block
-    /// open), folded in as tokens append; see `BufScan`. Reset wherever the
-    /// buffer is cleared or replaced.
-    buf_scan: RefCell<BufScan>,
-    /// The streaming tail as last rendered, reused while nothing it is built
-    /// from changed; see `LiveTail`.
-    live_tail: RefCell<Option<LiveTail>>,
-    /// The current run of consecutive collapsible tool calls, rendered as one
-    /// transcript row that updates in real time and finalizes to a short summary.
-    /// edit/write are excluded (they render their own diff panel).
-    tool_group: Option<ToolGroup>,
-    /// Ids of calls folded into a `ToolGroup`, so their `ToolResult` is swallowed
-    /// (the group row already represents them). Survives group finalize.
-    grouped_ids: std::collections::HashSet<String>,
-    /// Finalized tool groups, retained with their per-call detail so a collapsed
-    /// summary row can be expanded back to its individual calls/results.
-    groups: Vec<ToolGroup>,
-    /// Standalone (edit/write) call rows still awaiting their result. Several
-    /// can be open at once: a batch emits every `ToolCall` before any result.
-    pending_rows: Vec<PendingToolRow>,
-    /// Committed reasoning blocks, folded to a summary row and expandable back to
-    /// their full dimmed lines.
-    reasoning_blocks: Vec<ReasoningBlock>,
-    /// Start transcript index of each "trace" -- a contiguous run of
-    /// reasoning-summary + tool-group rows (see `trace_runs`) -- the user has
-    /// expanded. A *finished* trace (one an answer follows) folds to a single
-    /// `Thought/Worked` header by default; being in this set opts it back out to
-    /// the full run. The active (still-streaming) run is never folded.
-    expanded_traces: std::collections::HashSet<usize>,
-    /// Whether `<think>` reasoning reveals in full instead of folding. Defaults
-    /// from `[agent].show_reasoning` in agent.toml (false). Ctrl-O toggles every
-    /// existing block between its summary row and full detail for the session.
-    show_reasoning: bool,
-    /// Whether reasoning streams into the live tail while folding is on.
-    /// Defaults from `stream_reasoning` in `~/.jan/config.toml` (true). The open
-    /// block shows its last `LIVE_REASONING_TAIL_LINES` lines and still folds to
-    /// a summary row when the turn commits; false shows nothing but the header
-    /// badge, as before. Orthogonal to `show_reasoning`, which unfolds for good.
-    stream_reasoning: bool,
     /// Whether a prior assistant turn's reasoning is resent to the model.
     /// Defaults from `[agent].send_reasoning` in agent.toml (true). False keeps
     /// long chains of thought out of the request (and satisfies upstreams that
@@ -2521,12 +3734,6 @@ struct App {
     /// The most recently selected non-low effort level, used by the Alt+T
     /// toggle to switch between `"low"` and this value.
     last_non_low_effort: String,
-    /// Transcript row indices of collapsed regions (tool groups or reasoning
-    /// blocks) the user has expanded to full detail.
-    expanded: std::collections::HashSet<usize>,
-    /// Transcript row of a region to scroll into view on the next draw (set when
-    /// expanding one that may sit above the pinned-to-bottom viewport).
-    reveal: Option<usize>,
     /// Active `/find` search, `None` when there is none. Display-only: it never
     /// edits `transcript` or `display_log`, and moves the view only through
     /// `draw` (see `find::Find::jump`).
@@ -2564,18 +3771,6 @@ struct App {
     /// Orca-integration status emitter (OSC 9999 + terminal titles). Inert
     /// until `run` enables it, so test-driven state machines write nothing.
     agent_status: AgentStatusReporter,
-    /// Wall-clock start of the current reasoning `<think>` block while it is
-    /// open (the model is actively reasoning). `None` between blocks.
-    thinking_since: Option<Instant>,
-    /// Duration of the reasoning block that just closed, cached so the header
-    /// can show `[thought for Ns]` transiently. `None` after the reasoning is
-    /// shown inline (or none has happened yet).
-    thought_for: Option<Duration>,
-    /// Wall-clock time `thought_for` was last set, so the `[thought for Ns]`
-    /// summary can expire back to the plain `[working]` after a short while
-    /// rather than persisting for the rest of the turn. `None` when `thought_for`
-    /// is `None` or not yet set.
-    thought_for_since: Option<Instant>,
     turn: (u32, u32),
     tokens: u64,
     /// Whether `tokens`/`turn_prompt_tokens` still describe a conversation the
@@ -2640,9 +3835,13 @@ struct App {
     /// landing later (a tool list, a finished sign-in) can update it in place.
     mcp_detail: Option<McpDetail>,
     /// The run_id the `/agents` inspector is drilled into, or `None` at the
-    /// list. The detail renders live from `App::subagents` by this id, so a
-    /// finishing child updates (or empties) the screen in place.
+    /// list. The detail renders live from `App::subagents` by this id, and from
+    /// the child's summary-row block once it finishes, so a finishing child
+    /// stays on screen.
     agent_detail: Option<String>,
+    /// Lines the `/agents` detail is scrolled up from its bottom; 0 follows
+    /// the child as it works. Clamped to the content on every draw.
+    agent_detail_scroll: u16,
     /// MCP work handed to the loop to run off the render loop. Taken once.
     mcp_job_request: Option<McpJob>,
     /// An OAuth sign-in in flight, shown in place on the `/mcp` screen and as a
@@ -2744,10 +3943,6 @@ struct App {
     /// model roundtrips, so a run that finishes its plan and stops would pin a
     /// fully checked-off list on screen indefinitely.
     todos_closed_at: Option<Instant>,
-    /// Transcript viewport width in cells, refreshed each `draw`; tables wrap to
-    /// it. 0 until the first draw (callers fall back to a default).
-    view_width: u16,
-    last_kind: Kind,
     should_quit: bool,
     /// A blank idle composer has armed the exit: the first Ctrl-C/Ctrl-D only
     /// warns,
@@ -2779,9 +3974,6 @@ struct App {
     /// `shell_set`. Children outlive the run that dispatched them, so their
     /// panels survive a run end and a completion between runs starts a turn.
     subagent_set: Arc<crate::core::agent::subagent::BackgroundSubagents>,
-    /// Committed finished-subagent summary rows, expandable to their full
-    /// tool-call list via Ctrl-O (parallel to `groups`/`reasoning_blocks`).
-    subagent_blocks: Vec<SubagentBlock>,
     /// In-flight `await_subagent` calls, `(tool_call_id, run_id, subagent_name)`.
     /// Cleared on the matching `ToolResult` or `SubagentEnd`, whichever comes
     /// first (the two can race).
@@ -2971,9 +4163,9 @@ const THOUGHT_FOR_TTL: Duration = Duration::from_secs(3);
 /// transition rather than the thought vanishing the instant the tool runs.
 const REASONING_FOLD_AFTER: Duration = Duration::from_secs(4);
 
-/// Live rolling view of an in-flight subagent's tool calls. The panel shows only
-/// the most recent [`SUBAGENT_WINDOW`] calls, but the full list is retained so
-/// the finished summary row can expand back to every call (Ctrl-O).
+/// One background subagent: its dock stats and activity, and its run as a
+/// transcript for the `/agents` detail. Moved into a `SubagentBlock` when the
+/// child finishes, so the summary row and `/agents` can still show the run.
 struct SubagentPanel {
     run_id: String,
     name: String,
@@ -3023,58 +4215,77 @@ struct SubagentPanel {
     /// 1-based phase this subagent belongs to, for phases past the first. `None`
     /// for a plain (single-phase) fan-out, whose agents carry no phase badge.
     phase: Option<u32>,
-    /// What the child has said and done, in order, for the `/agents` detail
-    /// view: the same prose and tool rows the main transcript shows, kept per
-    /// child because a child's stream never reaches the parent's transcript.
-    log: Vec<ChildLogEntry>,
+    /// The child's run as rows, built from its own stream by the same code
+    /// that builds the main transcript, for the `/agents` detail view and the
+    /// finished summary row's expand. A child's stream never reaches the
+    /// parent's transcript, so it is kept here per child.
+    transcript: Transcript,
 }
 
-/// One entry of a child's `/agents` log.
-enum ChildLogEntry {
-    /// Answer prose, extended in place as tokens stream.
-    Prose(String),
-    /// A message the user sent it from `/agents`.
-    Steer(String),
-    /// A completed call; `result` fills in when its `ToolResult` lands, kept
-    /// as the one-line summary the log renders (see [`child_result_summary`]),
-    /// never the whole output.
-    Call {
-        id: String,
-        label: String,
-        result: Option<(String, bool)>,
-    },
-}
+/// Most rows a child's transcript keeps. The detail view opens on the tail,
+/// and a child that works for an hour must not grow the TUI without bound.
+const CHILD_ROWS_MAX: usize = 400;
 
-/// Longest log a child panel keeps. The detail view only ever shows the tail,
-/// and a child that streams for an hour must not grow the TUI without bound.
-const CHILD_LOG_MAX: usize = 400;
+/// Most bytes a child's tool result keeps. A result renders as its head (a
+/// summary line, a few lines of shell output), so a child that reads a large
+/// file need not keep the whole file alive in the TUI.
+const CHILD_RESULT_MAX: usize = 64 * 1024;
 
-/// Most bytes one prose entry keeps. [`CHILD_LOG_MAX`] bounds the entry count,
-/// but a child that streams one long answer extends a single entry, so that
-/// entry is bounded too. The oldest text goes: the detail view shows the tail.
-const CHILD_PROSE_MAX: usize = 64 * 1024;
-
-/// What a child log keeps of a tool result: the first non-empty line and a
-/// count of the rest, which is all `child_log_lines` ever renders. A child
-/// that reads a large file must not keep the whole file alive in the TUI.
-fn child_result_summary(content: &str) -> String {
-    summarize_result(content, 500)
-}
-
-/// Append streamed `text` to a prose entry, dropping its oldest bytes (on a
-/// char boundary) once it passes [`CHILD_PROSE_MAX`].
-fn push_child_prose(prose: &mut String, text: &str) {
-    prose.push_str(text);
-    if prose.len() > CHILD_PROSE_MAX {
-        let mut cut = prose.len() - CHILD_PROSE_MAX;
-        while !prose.is_char_boundary(cut) {
-            cut += 1;
+/// Cut `s` to at most `max` bytes, keeping its head and ending on a char
+/// boundary.
+fn truncate_head(s: &mut String, max: usize) {
+    if s.len() > max {
+        let mut cut = max;
+        while !s.is_char_boundary(cut) {
+            cut -= 1;
         }
-        prose.drain(..cut);
+        s.truncate(cut);
     }
 }
 
 impl SubagentPanel {
+    /// A panel for a child that has not done anything yet.
+    fn new(run_id: String, name: String, task: String) -> Self {
+        SubagentPanel {
+            run_id,
+            name,
+            task,
+            calls: Vec::new(),
+            last_call_key: None,
+            repeats: 0,
+            requests: 0,
+            prompt_tokens: 0,
+            total_prompt_tokens: 0,
+            total_cached_tokens: 0,
+            cache_reported: false,
+            active: None,
+            queued: false,
+            waiting: 0,
+            pending: false,
+            phase: None,
+            transcript: Transcript::default(),
+        }
+    }
+
+    /// A finished child rebuilt from its journal entry, which keeps only the
+    /// call labels: each becomes a resolved tool row, so a resumed session's
+    /// summary row still expands to what the child did.
+    fn replayed(name: &str, calls: &[String]) -> Self {
+        let mut panel = SubagentPanel::new(String::new(), name.to_string(), String::new());
+        panel.calls = calls.to_vec();
+        if !calls.is_empty() {
+            panel.transcript.gap(Kind::Tool);
+        }
+        for label in calls {
+            panel.transcript.push_row(RowKind::Tool {
+                state: ToolState::Success,
+                label: label.clone(),
+                reserve: TOOL_ROW_RESERVE,
+            });
+        }
+        panel
+    }
+
     /// Record a completed call. It extends the repeat run only when both the
     /// tool and its arguments match the previous call; a call with no
     /// arguments is keyed by the tool name alone.
@@ -3098,14 +4309,6 @@ impl SubagentPanel {
         (self.cache_reported && self.total_prompt_tokens > 0)
             .then(|| cache_hit_percent(self.total_cached_tokens, self.total_prompt_tokens))
     }
-
-    fn push_log(&mut self, entry: ChildLogEntry) {
-        self.log.push(entry);
-        if self.log.len() > CHILD_LOG_MAX {
-            let excess = self.log.len() - CHILD_LOG_MAX;
-            self.log.drain(..excess);
-        }
-    }
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -3122,34 +4325,30 @@ enum SubagentOutcome {
 }
 
 /// A committed finished-subagent summary row, folded to one line but retaining
-/// its full tool-call list so the row can expand back to it (like a tool group).
+/// the child itself -- its stats and its transcript -- so the row can expand
+/// back to the run (like a tool group) and `/agents` can still open it.
 struct SubagentBlock {
     /// Transcript index of the summary row this block owns.
     idx: usize,
-    /// Tool-call labels, revealed when expanded. Held as text, not lines, so
-    /// they re-truncate to the draw width.
-    calls: Vec<String>,
+    panel: SubagentPanel,
+    outcome: SubagentOutcome,
 }
 
 impl SubagentBlock {
-    /// The child's call list, revealed by Ctrl-O. Wrapped, not elided, for the
-    /// same reason as `group_detail_lines`: this is the surface the folded
-    /// summary row sends the user to, so it is the one that has to be complete.
+    /// The child's run, revealed by Ctrl-O: its transcript laid out like the
+    /// main body, hung off the summary row's tree gutter.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
-        let max = width.saturating_sub(8).max(1) as usize;
-        let mut out = Vec::new();
-        for label in &self.calls {
-            let first = out.is_empty();
-            out.extend(gutter_lines(
-                wrap_text(label, Style::new().dim(), max),
-                vec![
-                    child_prefix(first),
-                    Span::styled(TOOL_BULLET, Style::new().magenta()),
-                ],
-                vec![Span::raw(TREE_NESTED)],
-            ));
-        }
-        out
+        let inner = width.saturating_sub(TREE_REST.len() as u16).max(1);
+        let lines = self.panel.transcript.all_lines(inner);
+        lines
+            .into_iter()
+            .enumerate()
+            .map(|(i, line)| {
+                let mut spans = vec![child_prefix(i == 0)];
+                spans.extend(line.spans);
+                Line::from(spans).style(line.style)
+            })
+            .collect()
     }
 }
 
@@ -3214,9 +4413,6 @@ impl App {
             git_branch: git::current_branch(&project_root),
             project_root,
             turn_touched: Vec::new(),
-            diff_paths: HashMap::new(),
-            bash_commands: HashMap::new(),
-            live_output: HashMap::new(),
             bg_shells: Vec::new(),
             base_snapshot: None,
             checkpoints: Vec::new(),
@@ -3231,27 +4427,11 @@ impl App {
             agent_dir,
             history: Vec::new(),
             thread_id: None,
-            transcript: Vec::new(),
-            display_log: Vec::new(),
+            transcript: Transcript::journaled(show_reasoning),
             journal_writer: None,
-            assistant_buf: String::new(),
-            reasoning_segs: Vec::new(),
-            buf_scan: RefCell::new(BufScan::default()),
-            live_tail: RefCell::new(None),
-            tool_group: None,
-            grouped_ids: std::collections::HashSet::new(),
-            groups: Vec::new(),
-            pending_rows: Vec::new(),
-            reasoning_blocks: Vec::new(),
-            expanded_traces: std::collections::HashSet::new(),
-            show_reasoning,
-            // Overwritten from the session config right after construction.
-            stream_reasoning: true,
             send_reasoning: true,
             reasoning_effort: "medium".into(),
             last_non_low_effort: "medium".into(),
-            expanded: std::collections::HashSet::new(),
-            reveal: None,
             find: None,
             input: String::new(),
             input_history: Vec::new(),
@@ -3268,9 +4448,6 @@ impl App {
             path_hint_dismissed: false,
             status: Status::Idle,
             agent_status: AgentStatusReporter::new(),
-            thinking_since: None,
-            thought_for: None,
-            thought_for_since: None,
             turn: (0, 0),
             tokens: 0,
             tokens_estimated: false,
@@ -3291,6 +4468,7 @@ impl App {
             mcp_prompt: None,
             mcp_detail: None,
             agent_detail: None,
+            agent_detail_scroll: 0,
             mcp_job_request: None,
             mcp_auth: None,
             mcp_auth_cancel: false,
@@ -3327,8 +4505,6 @@ impl App {
             want_start: false,
             turns_since_todos_closed: 0,
             todos_closed_at: None,
-            view_width: 0,
-            last_kind: Kind::None,
             should_quit: false,
             exit_armed: false,
             subagents: Vec::new(),
@@ -3338,7 +4514,6 @@ impl App {
             subagent_set: Arc::new(crate::core::agent::subagent::BackgroundSubagents::new(
                 crate::core::agent::subagent::DEFAULT_MAX_PARALLEL_SUBAGENTS,
             )),
-            subagent_blocks: Vec::new(),
             awaiting: Vec::new(),
             starting: Vec::new(),
             spinner_frame: 0,
@@ -3378,34 +4553,6 @@ impl App {
     /// `pending_queue`). Later queued requests stay hidden until this resolves.
     fn pending(&self) -> Option<&Pending> {
         self.pending_queue.front()
-    }
-
-    /// Effective width for table wrapping (fallback before the first draw).
-    fn render_width(&self) -> u16 {
-        if self.view_width == 0 {
-            80
-        } else {
-            self.view_width
-        }
-    }
-
-    fn push(&mut self, line: Line<'static>) {
-        self.transcript.push(Row::line(line));
-    }
-
-    fn push_row(&mut self, row: impl Into<Row>) {
-        self.transcript.push(row.into());
-    }
-
-    /// Insert a blank separator when the block *band* changes, then record the
-    /// kind. Keeps consecutive same-kind lines tight while spacing turn
-    /// boundaries.
-    fn gap(&mut self, next: Kind) {
-        let last_blank = self.transcript.last().map(Row::is_blank).unwrap_or(true);
-        if !self.transcript.is_empty() && band(self.last_kind) != band(next) && !last_blank {
-            self.transcript.push(Row::line(Line::raw("")));
-        }
-        self.last_kind = next;
     }
 
     /// Put the session in a checkout and let the active thread claim it. The two
@@ -3481,16 +4628,16 @@ impl App {
         self.snap_queue.clear();
         self.base_requested = false;
         self.last_esc = None;
-        self.transcript.clear();
-        self.display_log.clear();
-        self.tool_group = None;
-        self.grouped_ids.clear();
+        self.transcript.rows.clear();
+        self.transcript.display_log.clear();
+        self.transcript.tool_group = None;
+        self.transcript.grouped_ids.clear();
         self.starting.clear();
-        self.groups.clear();
-        self.pending_rows.clear();
-        self.reasoning_blocks.clear();
-        self.expanded_traces.clear();
-        self.subagent_blocks.clear();
+        self.transcript.groups.clear();
+        self.transcript.pending_rows.clear();
+        self.transcript.reasoning_blocks.clear();
+        self.transcript.expanded_traces.clear();
+        self.transcript.subagent_blocks.clear();
         // Aborts the children themselves, not just their panels: the
         // conversation they would report into is going away.
         self.stop_subagents();
@@ -3498,12 +4645,12 @@ impl App {
         self.stop_monitors();
         // Pings for work whose conversation is gone have no turn to join.
         self.shell_set.take_notices();
-        self.expanded.clear();
-        self.reveal = None;
+        self.transcript.expanded.clear();
+        self.transcript.reveal = None;
         self.find = None;
-        self.assistant_buf.clear();
-        self.reset_buf_scan();
-        self.reasoning_segs.clear();
+        self.transcript.assistant_buf.clear();
+        self.transcript.reset_buf_scan();
+        self.transcript.reasoning_segs.clear();
         self.message_queue.clear();
         self.pending_queue.clear();
         self.ask_queue.clear();
@@ -3521,7 +4668,7 @@ impl App {
         self.turn = (0, 0);
         self.detail.clear();
         self.scrollback = 0;
-        self.last_kind = Kind::None;
+        self.transcript.last_kind = Kind::None;
         // The conversation the session counters described is gone, so they go
         // with it -- and the session is once again one this process owns from
         // its first message.
@@ -3617,10 +4764,15 @@ impl App {
             || !self.bg_shells.is_empty()
             || !self.awaiting.is_empty()
             || !self.starting.is_empty()
-            || self.tool_group.as_ref().is_some_and(|g| g.is_running())
-            || self.goal.as_ref().is_some_and(|g| {
-                g.status == crate::core::agent::goal::GoalStatus::Active
-            })
+            || self
+                .transcript
+                .tool_group
+                .as_ref()
+                .is_some_and(|g| g.is_running())
+            || self
+                .goal
+                .as_ref()
+                .is_some_and(|g| g.status == crate::core::agent::goal::GoalStatus::Active)
             || self.ask_queue.iter().any(|a| a.deadline.is_some())
             || self.copy_notice().is_some()
             || (self.todos_closed_at.is_some() && !self.todos_expired())
@@ -3648,11 +4800,11 @@ impl App {
                 .map(|w| format!("{} ⎇ {}", tilde_path(&w.path), w.branch)),
             awaiting_first_message,
         };
-        self.gap(Kind::Meta);
-        self.push_row(RowKind::Banner(Box::new(banner)));
+        self.transcript.gap(Kind::Meta);
+        self.transcript.push_row(RowKind::Banner(Box::new(banner)));
         // Whatever follows -- a startup note, or the first message -- gets a
         // blank line off the splash instead of butting against its last row.
-        self.last_kind = Kind::None;
+        self.transcript.last_kind = Kind::None;
     }
 
     /// Push the splash using the startup approval phrasing, to re-brand the
@@ -3670,9 +4822,9 @@ impl App {
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
-        self.gap(Kind::Meta);
+        self.transcript.gap(Kind::Meta);
         let (gutter, body) = level.styles();
-        self.push_row(RowKind::System {
+        self.transcript.push_row(RowKind::System {
             glyph,
             cont: " ",
             gutter,
@@ -3699,7 +4851,7 @@ impl App {
     /// Fixed dim styling rather than the header's `Level`: blocks are
     /// informational -- a warning or an error is a single line.
     fn system_detail(&mut self, body: Vec<Span<'static>>) {
-        self.push_row(RowKind::System {
+        self.transcript.push_row(RowKind::System {
             glyph: SYSTEM_CONT,
             cont: SYSTEM_CONT,
             gutter: Style::new().dark_gray(),
@@ -3712,278 +4864,21 @@ impl App {
         self.system_detail(vec![Span::styled(text.to_string(), Style::new().dim())]);
     }
 
-    fn flush_assistant(&mut self) {
-        let segs = std::mem::take(&mut self.reasoning_segs);
-        let prose = self.assistant_buf.trim_end().to_string();
-        self.assistant_buf.clear();
-        self.reset_buf_scan();
-        // How long this turn's reasoning took, for the `Thought for Ns` label:
-        // an open block being closed by this flush (a mid-block tool call) is
-        // still timing on `thinking_since`; one that closed earlier (prose
-        // arrived) stashed its elapsed in `thought_for`.
-        let open = self.thinking_since.take();
-        let reasoning_dur = open.map(|s| s.elapsed()).or(self.thought_for);
-        // A block still open at flush time is closed by this flush (a reason ->
-        // tool turn): stamp the header badge state so it shows `[thought for Ns]`
-        // exactly as a reason -> answer turn does, where a content Token stamps
-        // it. A block that closed earlier already stamped itself.
-        if let Some(started) = open {
-            self.thought_for = Some(started.elapsed());
-            self.thought_for_since = Some(Instant::now());
-        }
-        // No-op (and, crucially, don't finalize the tool group) on an empty or
-        // whitespace-only turn, so silent consecutive tool calls keep folding.
-        if !assistant_has_content(&prose, &segs) {
-            return;
-        }
-        // Model prose ends the current run of tool calls.
-        self.finalize_tool_group();
-        // Display-logged here (out of `history` on purpose) so the replay folds
-        // reasoning like the live turn did. Prose and reasoning are journaled
-        // apart, exactly as they arrived; the reasoning duration rides along so
-        // a resumed session keeps its `Thought for Ns` label.
-        self.display_log.push(DisplayEntry::Assistant {
-            text: prose.clone(),
-            reasoning: segs.clone(),
-            reasoning_ms: reasoning_dur.map(|d| d.as_millis() as u64),
-        });
-        self.push_assistant_blocks(&prose, &segs, reasoning_dur);
-    }
-
-    /// Commit assistant `text` to the transcript in emission order: answer prose
-    /// through markdown, each `<think>` block folded to a one-line summary row
-    /// whose full dimmed detail is retained for expansion.
-    fn push_assistant_blocks(
-        &mut self,
-        prose: &str,
-        segs: &[ReasoningSeg],
-        reasoning_dur: Option<Duration>,
-    ) {
-        let runs = assistant_runs(prose, segs);
-        // `reasoning_dur` is a single turn-wide figure, so it is only meaningful
-        // when the turn has one reasoning block; stamping it on each of several
-        // would misreport all but one (per-block timing is not tracked). With
-        // more than one, they fall back to a plain `Thought`.
-        let single_reasoning = runs
-            .iter()
-            .filter(|(reasoning, seg)| *reasoning && !seg.trim().is_empty())
-            .count()
-            == 1;
-        for (reasoning, seg) in runs {
-            // Only answer prose can carry an injected `<system>` block; stripping
-            // per run rather than over the whole turn keeps the reasoning
-            // offsets meaningful.
-            let seg = if reasoning {
-                seg
-            } else {
-                strip_system_xml_tags(&seg).to_string()
-            };
-            if seg.trim().is_empty() {
-                continue;
-            }
-            if reasoning {
-                let detail = reasoning_detail_lines(&seg);
-                if detail.is_empty() {
-                    continue;
-                }
-                // Distinct Kind so the reasoning->prose transition still gaps
-                // (both sharing Kind::Prose would collapse to no separator).
-                self.gap(Kind::Reasoning);
-                if self.show_reasoning {
-                    self.transcript.extend(detail.into_iter().map(Row::line));
-                } else {
-                    let dur = single_reasoning.then_some(reasoning_dur).flatten();
-                    self.push(reasoning_summary_row(dur));
-                    let idx = self.transcript.len() - 1;
-                    self.reasoning_blocks.push(ReasoningBlock {
-                        idx,
-                        detail,
-                        source: seg.clone(),
-                        committed: Instant::now(),
-                    });
-                }
-            } else {
-                // Kept as source: the markdown re-wraps at the draw width, so a
-                // resize re-flows tables and code blocks instead of stranding
-                // them at the width they were committed at. Markup that renders
-                // to nothing (a bare HTML comment) still emits no row.
-                let row: Row = RowKind::Markdown(seg.to_string()).into();
-                if !row.lines(self.render_width()).is_empty() {
-                    self.gap(Kind::Prose);
-                    self.push_row(row);
-                }
-            }
-        }
-    }
-
-    /// Fold a collapsible tool call into the current group row (extending it and
-    /// updating its live status) or open a new group row.
-    fn push_grouped_call(
-        &mut self,
-        id: &str,
-        name: &str,
-        args: &serde_json::Value,
-        label: String,
-        done: String,
-    ) {
-        let (noun, is_read) = tool_kind(name);
-        self.grouped_ids.insert(id.to_string());
-        let call = GroupedCall {
-            id: id.to_string(),
-            activity: label,
-            done: done.clone(),
-            content: None,
-            is_error: false,
-            diff: None,
-            // Set for shell calls (track_bash_command ran first). Kept on the call
-            // so the shell rows survive the result clearing `bash_commands`.
-            command: self.bash_commands.get(id).cloned(),
-            explore: explore_of(name, args),
-        };
-        let extend = self
-            .tool_group
-            .as_ref()
-            .is_some_and(|g| g.idx < self.transcript.len());
-        if extend {
-            let g = self.tool_group.as_mut().expect("group checked above");
-            g.nouns.push((noun, is_read));
-            g.calls.push(call);
-            self.refresh_group_row();
-            return;
-        }
-        self.gap(Kind::Tool);
-        let group = ToolGroup {
-            idx: self.transcript.len(),
-            first_done: done,
-            nouns: vec![(noun, is_read)],
-            calls: vec![call],
-            started: Instant::now(),
-            last_result_error: None,
-        };
-        self.push_row(group.row(GroupRow::Open));
-        self.tool_group = Some(group);
-    }
-
-    /// Rewrite the open group's row for its current state, leaving it open so
-    /// later calls keep folding in. Called as each result lands so the status
-    /// resolves then, rather than lagging until the group closes (which only
-    /// happens once the model starts answering).
-    fn refresh_group_row(&mut self) {
-        let Some((idx, row)) = self
-            .tool_group
-            .as_ref()
-            .filter(|g| g.idx < self.transcript.len())
-            .map(|g| (g.idx, g.row(GroupRow::Open)))
-        else {
-            return;
-        };
-        self.transcript[idx] = row;
-    }
-
-    /// Close the current tool group, rewriting its row to a short summary: the
-    /// single activity label for one call, else a counted breakdown.
-    fn finalize_tool_group(&mut self) {
-        self.close_tool_group(false);
-    }
-
-    /// `interrupted` marks calls that never received a result as unresolved
-    /// rather than done. Only an abort knows that: a normal finalize can land
-    /// while a call is legitimately still running (a `dispatch_subagent`
-    /// resolves after its child's panel opens).
-    fn close_tool_group(&mut self, interrupted: bool) {
-        let Some(g) = self.tool_group.take() else {
-            return;
-        };
-        if g.idx >= self.transcript.len() {
-            return;
-        }
-        let state = if interrupted {
-            GroupRow::Aborted
-        } else {
-            GroupRow::Closed
-        };
-        self.transcript[g.idx] = g.row(state);
-        self.groups.push(g);
-    }
-
-    /// The committed traces (contiguous runs of reasoning-summary + tool-group
-    /// rows), each of 2+ rows -- a lone reasoning block or tool group is already
-    /// one line and not worth a collapse header. Members are the finalized
-    /// reasoning blocks and tool groups; the still-running group is the active
-    /// tail and never part of a collapsible run.
-    fn trace_runs(&self) -> Vec<TraceRun> {
-        #[cfg(test)]
-        tally(&TRACE_RUN_SCANS);
-        let mut members: Vec<(usize, bool)> = Vec::new();
-        for g in &self.groups {
-            members.push((g.idx, true));
-        }
-        for r in &self.reasoning_blocks {
-            members.push((r.idx, false));
-        }
-        members.sort_by_key(|(i, _)| *i);
-
-        let mut runs = Vec::new();
-        let mut iter = members.into_iter().peekable();
-        while let Some((start, first_is_tool)) = iter.next() {
-            let mut end = start;
-            let mut tool_ran = first_is_tool;
-            while let Some(&(next, is_tool)) = iter.peek() {
-                if next != end + 1 {
-                    break;
-                }
-                end = next;
-                tool_ran |= is_tool;
-                iter.next();
-            }
-            let steps = end - start + 1;
-            if steps >= 2 {
-                runs.push(TraceRun {
-                    start,
-                    end,
-                    tool_ran,
-                    steps,
-                });
-            }
-        }
-        runs
-    }
-
-    /// Expand/fold the trace that starts at `start` (toggles its opt-out of the
-    /// default fold). A no-op if `start` is not a trace or active-fold start.
-    fn toggle_trace(&mut self, start: usize) {
-        let is_start = self.trace_runs().iter().any(|r| r.start == start);
-        if !is_start {
-            return;
-        }
-        if !self.expanded_traces.remove(&start) {
-            self.expanded_traces.insert(start);
-        }
-    }
-
-    /// Highest transcript index holding answer prose, or `None` when the turn
-    /// has produced none yet. A trace whose last row precedes some answer is
-    /// "finished" and folds by default; the run after the latest answer is the
-    /// active one and stays open.
-    fn last_answer_idx(&self) -> Option<usize> {
-        self.transcript
-            .iter()
-            .rposition(|row| matches!(row.kind, RowKind::Markdown(_)))
-    }
-
-    /// Fold one finished child into a summary row, retaining its call list so
-    /// the row can expand back to it (like a tool group).
-    fn push_subagent_summary(&mut self, name: &str, calls: Vec<String>, outcome: SubagentOutcome) {
-        self.display_log.push(DisplayEntry::Subagent {
-            name: name.to_string(),
-            calls: calls.clone(),
+    /// Fold one finished child into a summary row, retaining the child -- and
+    /// with it its transcript -- so the row can expand back to the run (like a
+    /// tool group) and `/agents` can still open it.
+    fn push_subagent_summary(&mut self, mut panel: SubagentPanel, outcome: SubagentOutcome) {
+        let name = panel.name.clone();
+        self.transcript.log(DisplayEntry::Subagent {
+            name: name.clone(),
+            calls: panel.calls.clone(),
             finished: !matches!(outcome, SubagentOutcome::Interrupted),
             error: match &outcome {
                 SubagentOutcome::Failed(e) => Some(e.clone()),
                 _ => None,
             },
         });
-        let total = calls.len();
+        let total = panel.calls.len();
         let noun = if total == 1 { "call" } else { "calls" };
         let done = format!("({total} tool {noun})");
         let (verb, state) = match &outcome {
@@ -3995,15 +4890,24 @@ impl App {
             SubagentOutcome::Failed(e) => format!("subagent {name} {verb} {done}: {e}"),
             _ => format!("subagent {name} {verb} {done}"),
         };
-        self.gap(Kind::Tool);
-        self.push_row(RowKind::Tool {
+        self.transcript.gap(Kind::Tool);
+        self.transcript.push_row(RowKind::Tool {
             state,
             label,
             reserve: TOOL_ROW_RESERVE,
         });
-        if total > 0 {
-            let idx = self.transcript.len() - 1;
-            self.subagent_blocks.push(SubagentBlock { idx, calls });
+        // The child's stream is over: nothing it left open will resolve now.
+        panel
+            .transcript
+            .settle(outcome != SubagentOutcome::Finished);
+        panel.active = None;
+        if !panel.transcript.rows.is_empty() {
+            let idx = self.transcript.rows.len() - 1;
+            self.transcript.subagent_blocks.push(SubagentBlock {
+                idx,
+                panel,
+                outcome,
+            });
         }
     }
 
@@ -4036,7 +4940,7 @@ impl App {
             if panel.pending {
                 continue;
             }
-            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
+            self.push_subagent_summary(panel, SubagentOutcome::Interrupted);
         }
         self.subagents = still_running;
         self.awaiting.clear();
@@ -4067,7 +4971,7 @@ impl App {
             if panel.pending {
                 continue;
             }
-            self.push_subagent_summary(&panel.name, panel.calls, SubagentOutcome::Interrupted);
+            self.push_subagent_summary(panel, SubagentOutcome::Interrupted);
         }
     }
 
@@ -4129,109 +5033,11 @@ impl App {
         self.persist();
     }
 
-    /// The live shell rows for `group`'s commands, streamed from the moment a
-    /// command starts -- before any output -- so its header and output appear
-    /// as it runs rather than a spinner that later turns into them. No rows when
-    /// nothing in the group is a command (a `read`/`grep` run keeps its plain
-    /// activity row).
-    ///
-    /// One block per command, in dispatch order: a group runs its calls in
-    /// parallel, so several commands can be streaming at once and each shows its
-    /// own output rather than one hiding the rest.
-    fn live_shell_panel(&self, group: &ToolGroup, spinner_frame: usize, width: u16) -> Vec<Line<'static>> {
-        let elapsed = group.started.elapsed().as_secs();
-        let mut out = Vec::new();
-        for call in group.calls.iter().filter(|c| c.command.is_some()) {
-            let command = call.command.as_deref().unwrap_or("");
-            match &call.content {
-                // Still running: the live output tail under the elapsed header.
-                None => {
-                    let output = self
-                        .live_output
-                        .get(&call.id)
-                        .map_or("", String::as_str);
-                    out.extend(running_shell_lines(
-                        command, output, elapsed, spinner_frame, width,
-                    ));
-                }
-                // Finished, but the group is still the current step: keep the
-                // output readable until the group folds, rather than vanishing
-                // the instant the result lands. The authoritative content backs
-                // it (`bash_commands`/`live_output` are cleared on the result).
-                Some(content) => {
-                    out.extend(finished_shell_lines(command, content, call.is_error, width));
-                }
-            }
-        }
-        out
-    }
-
-    /// Remember a `bash` call's command against its call id until its result
-    /// lands, so every row labelling the call names the work it is doing rather
-    /// than an opaque id.
-    fn track_bash_command(&mut self, id: &str, name: &str, args: &serde_json::Value) {
-        if !matches!(name, "bash" | "shell" | "exec") {
-            return;
-        }
-        let cmd = args
-            .get("command")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        if !cmd.is_empty() {
-            self.bash_commands.insert(id.to_string(), cmd);
-        }
-    }
-
-    /// Rewrite a standalone tool row to its resolved form once its result lands:
-    /// past-tense label plus an outcome tag, matching how a tool group's row
-    /// resolves. Without this a finished `edit` keeps reading as "Editing X".
-    /// `result` (the diff body or error text) is drawn in the same slot: the
-    /// batch's later calls may already have rows below this one, so appending
-    /// it would strand the diff under an unrelated command. Returns `result`
-    /// back when there is no pending row to attach it to.
-    fn resolve_pending_row(
-        &mut self,
-        id: &str,
-        is_error: bool,
-        result: RowKind,
-    ) -> Option<RowKind> {
-        let Some(pos) = self.pending_rows.iter().position(|row| row.id == id) else {
-            return Some(result);
-        };
-        let row = self.pending_rows.remove(pos);
-        if row.idx >= self.transcript.len() {
-            return Some(result);
-        }
-        // A write's past tense says whether the file is new: the tool heads
-        // its diff with which of the two it did.
-        let created = matches!(
-            &result,
-            RowKind::Result { diff: Some(d), .. } if d.starts_with("@@ created file @@")
-        );
-        let label = match row.done.strip_prefix("Wrote ") {
-            Some(path) if created => format!("Created {path}"),
-            _ => row.done,
-        };
-        let call = RowKind::Tool {
-            state: ToolState::of(is_error),
-            label,
-            reserve: TOOL_ROW_RESERVE,
-        };
-        self.transcript[row.idx] = RowKind::Resolved {
-            call: Box::new(call),
-            result: Box::new(result),
-        }
-        .into();
-        None
-    }
-
     /// Resolve every row still awaiting a result: the run ended (cancel, error,
     /// aborted stream) and no `ToolResult` is coming, so a running or green
     /// bullet would read as work that is still running or that succeeded.
     fn abort_tool_rows(&mut self) {
-        self.close_tool_group(true);
+        self.transcript.close_tool_group(true);
         self.resolve_orphan_tool_rows();
     }
 
@@ -4248,16 +5054,7 @@ impl App {
         // Same for a wait whose `ToolResult` never landed: its child cannot
         // outlive the run, so the row has nothing left to wait for.
         self.awaiting.clear();
-        for row in std::mem::take(&mut self.pending_rows) {
-            if row.idx < self.transcript.len() {
-                self.transcript[row.idx] = RowKind::Tool {
-                    state: ToolState::Interrupted,
-                    label: row.label,
-                    reserve: TOOL_ROW_RESERVE,
-                }
-                .into();
-            }
-        }
+        self.transcript.interrupt_pending_rows();
     }
 
     /// Stamp the moment the plan ran out of open work, and clear the stamp the
@@ -4301,9 +5098,9 @@ impl App {
     /// `stream_reasoning` on the tail itself is moving, so the badge stays flat.
     fn is_thinking(&self) -> bool {
         self.status == Status::Running
-            && !self.show_reasoning
-            && !self.stream_reasoning
-            && self.reasoning_open()
+            && !self.transcript.show_reasoning
+            && !self.transcript.stream_reasoning
+            && self.transcript.reasoning_open()
     }
 
     /// The open dock that owns the keyboard, phrased as what the user has to do
@@ -4340,135 +5137,12 @@ impl App {
         }
     }
 
-    /// True while the model is mid-reasoning: either a `<think>` block is live
-    /// in the answer buffer (inline-tag providers) or the newest native segment
-    /// is still at the tail, i.e. no content token has arrived since
-    /// (`reasoning_content` providers). The tail check is what closes the window
-    /// when prose starts, since native segments live on until the next flush.
-    fn reasoning_open(&self) -> bool {
-        self.scan_buf().think_open
-            || self
-                .reasoning_segs
-                .last()
-                .is_some_and(|seg| seg.at == self.assistant_buf.len())
-    }
-
-    /// Header status while a turn is running with reasoning folding on:
-    /// `[thinking]` while a reasoning block is actively streaming, `[thought for
-    /// Ns]` for a short while after a block closes, then back to `None` (the
-    /// plain `[working]`) once the model is working again. `None` when no
-    /// reasoning has happened recently this turn.
-    fn reasoning_status(&self) -> Option<(String, Style)> {
-        if self.reasoning_open() {
-            Some(("thinking".to_string(), Style::new().fg(theme::warning()).bold()))
-        } else {
-            // The summary is transient: it lasts only `THOUGHT_FOR_TTL` after the
-            // block closed, so a long tool call or answer prose falls back to the
-            // plain [working] instead of pinning [thought for Ns] till turn end.
-            match (self.thought_for, self.thought_for_since) {
-                (Some(d), Some(since)) if since.elapsed() < THOUGHT_FOR_TTL => Some((
-                    format!("thought for {}", format_elapsed(d.as_secs())),
-                    Style::new().fg(theme::warning()),
-                )),
-                _ => None,
-            }
-        }
-    }
-
-    /// Toggle full detail for every collapsed region (tool groups and reasoning
-    /// blocks): collapse all when all are already expanded, else expand all and
-    /// scroll the most-recent one into view.
-    fn toggle_regions(&mut self) {
-        let all: Vec<usize> = self
-            .groups
-            .iter()
-            .map(|g| g.idx)
-            .chain(self.reasoning_blocks.iter().map(|r| r.idx))
-            .chain(self.subagent_blocks.iter().map(|b| b.idx))
-            .collect();
-        // Ctrl-O also unfolds every collapsed (finished) trace, so one keystroke
-        // opens both the folds and the per-row detail.
-        let trace_starts: Vec<usize> = self.trace_runs().iter().map(|r| r.start).collect();
-        if all.is_empty() && trace_starts.is_empty() {
-            return;
-        }
-        let fully_open = all.iter().all(|i| self.expanded.contains(i))
-            && trace_starts.iter().all(|s| self.expanded_traces.contains(s));
-        if fully_open {
-            self.expanded.clear();
-            self.expanded_traces.clear();
-            self.reveal = None;
-        } else {
-            self.expanded = all.iter().copied().collect();
-            self.expanded_traces = trace_starts.iter().copied().collect();
-            // The regions sit above the answer that follows; scroll the latest
-            // into view rather than staying pinned to the bottom.
-            self.reveal = all.iter().copied().max();
-        }
-    }
-
-    /// The lines folded region `i` expands to (a tool group's calls, a reasoning
-    /// block, a subagent's call list), or `None` when the row owns no region.
-    /// Shared by `draw` and the search scan, so a match found in the detail is
-    /// on the line `draw` puts there.
-    ///
-    /// Takes a `region_index` so a caller asking about many rows (the search
-    /// scan, a frame with many expanded rows) builds it once.
-    fn region_detail_in(
-        &self,
-        index: &RegionIndex,
-        i: usize,
-        width: u16,
-    ) -> Option<Vec<Line<'static>>> {
-        let running_group = self.tool_group.as_ref().filter(|g| g.idx == i);
-        index
-            .groups
-            .get(&i)
-            .map(|&pos| &self.groups[pos])
-            // The still-running group isn't finalized into `groups` yet, but its
-            // row is already clickable/expandable like any other.
-            .or(running_group)
-            .map(|group| group_detail_lines(group, width))
-            .or_else(|| {
-                index
-                    .reasoning
-                    .get(&i)
-                    .map(|&pos| self.reasoning_blocks[pos].detail.clone())
-            })
-            .or_else(|| {
-                index
-                    .subagents
-                    .get(&i)
-                    .map(|&pos| self.subagent_blocks[pos].detail_lines(width))
-            })
-    }
-
-    /// Where each row's region lives in `groups`, `reasoning_blocks` and
-    /// `subagent_blocks`, so a caller asking about many rows (the search scan,
-    /// a frame with many expanded rows) does one lookup per row instead of
-    /// three linear searches. The first entry for an index wins, as the
-    /// searches' `find` did.
-    fn region_index(&self) -> RegionIndex {
-        fn first_by_idx(idxs: impl Iterator<Item = usize>) -> HashMap<usize, usize> {
-            let mut map = HashMap::new();
-            for (pos, idx) in idxs.enumerate() {
-                map.entry(idx).or_insert(pos);
-            }
-            map
-        }
-        RegionIndex {
-            groups: first_by_idx(self.groups.iter().map(|g| g.idx)),
-            reasoning: first_by_idx(self.reasoning_blocks.iter().map(|r| r.idx)),
-            subagents: first_by_idx(self.subagent_blocks.iter().map(|b| b.idx)),
-        }
-    }
-
     /// Every committed line matching `needle`, top to bottom. Scans what the
     /// rows render to, folded detail included, rather than only what is on
     /// screen: the transcript is built from `display_log`, so this covers the
     /// whole session. The streaming tail is not committed yet and is skipped.
     fn find_hits(&self, needle: &str) -> Vec<find::Hit> {
-        let width = self.render_width();
+        let width = self.transcript.render_width();
         let mut hits = Vec::new();
         let mut scan = |row: usize, detail: bool, lines: &[Line<'static>]| {
             for (line, l) in lines.iter().enumerate() {
@@ -4477,15 +5151,15 @@ impl App {
                 }
             }
         };
-        let index = self.region_index();
-        for (i, row) in self.transcript.iter().enumerate() {
+        let index = self.transcript.region_index();
+        for (i, row) in self.transcript.rows.iter().enumerate() {
             // Read in place: copying every row of the session out of its cache
             // on each `/find` and `n` was most of the scan's cost.
             row.fill(width);
             if let Some(cached) = row.cache.borrow().as_ref() {
                 scan(i, false, &cached.lines);
             }
-            if let Some(detail) = self.region_detail_in(&index, i, width) {
+            if let Some(detail) = self.transcript.region_detail_in(&index, i, width) {
                 scan(i, true, &detail);
             }
         }
@@ -4497,14 +5171,15 @@ impl App {
     /// same as a click would.
     fn reveal_hit(&mut self, hit: find::Hit) {
         if let Some(run) = self
+            .transcript
             .trace_runs()
             .into_iter()
             .find(|r| r.start <= hit.row && hit.row <= r.end)
         {
-            self.expanded_traces.insert(run.start);
+            self.transcript.expanded_traces.insert(run.start);
         }
         if hit.detail {
-            self.expanded.insert(hit.row);
+            self.transcript.expanded.insert(hit.row);
         }
         if let Some(find) = self.find.as_mut() {
             find.jump = true;
@@ -4527,7 +5202,7 @@ impl App {
             .iter()
             .rev()
             .find_map(|r| *r)
-            .unwrap_or(self.transcript.len());
+            .unwrap_or(self.transcript.rows.len());
         let current = find::nearest(&hits, bottom);
         let hit = current.and_then(|i| hits.get(i).copied());
         self.find = Some(find::Find {
@@ -4555,7 +5230,7 @@ impl App {
         let current = match from {
             Some(from) => find::step(&hits, from, forward),
             // Nothing matched before; anything that does now is a fresh start.
-            None => find::nearest(&hits, self.transcript.len()),
+            None => find::nearest(&hits, self.transcript.rows.len()),
         };
         let hit = current.and_then(|i| hits.get(i).copied());
         if let Some(find) = self.find.as_mut() {
@@ -4564,35 +5239,6 @@ impl App {
         }
         if let Some(hit) = hit {
             self.reveal_hit(hit);
-        }
-    }
-
-    /// Whether transcript row `idx` is currently drawn as a folded trace header
-    /// (a finished trace start, not expanded), so a click there unfolds the trace
-    /// rather than toggling that row's own detail. The active run never folds, so
-    /// only finished traces qualify.
-    fn is_folded_trace_start(&self, idx: usize) -> bool {
-        if self.expanded_traces.contains(&idx) {
-            return false;
-        }
-        let last_answer = self.last_answer_idx();
-        self.trace_runs()
-            .iter()
-            .any(|r| r.start == idx && last_answer.is_some_and(|a| r.end < a))
-    }
-
-    /// Toggle a single collapsed region by its transcript row index (a click on
-    /// its summary row); no-op if `idx` isn't an expandable region.
-    fn toggle_region(&mut self, idx: usize) {
-        let is_region = self.groups.iter().any(|g| g.idx == idx)
-            || self.reasoning_blocks.iter().any(|r| r.idx == idx)
-            || self.subagent_blocks.iter().any(|b| b.idx == idx)
-            || self.tool_group.as_ref().is_some_and(|g| g.idx == idx);
-        if !is_region {
-            return;
-        }
-        if !self.expanded.remove(&idx) {
-            self.expanded.insert(idx);
         }
     }
 
@@ -4709,60 +5355,6 @@ impl App {
         self.cursor += text.len();
         self.reset_slash_hint();
         self.refresh_path_hints();
-    }
-
-    /// Forget what `buf_scan` folded in. Every site that clears or replaces
-    /// `assistant_buf` (rather than appending to it) must call this.
-    fn reset_buf_scan(&mut self) {
-        *self.buf_scan.get_mut() = BufScan::default();
-    }
-
-    /// `buf_scan` brought up to date with `assistant_buf`.
-    fn scan_buf(&self) -> BufScan {
-        let mut scan = self.buf_scan.borrow_mut();
-        scan.sync(&self.assistant_buf);
-        scan.clone()
-    }
-
-    /// The streaming tail's lines and the kinds of its first and last runs,
-    /// rendered once per change rather than once per frame. A spinner-only
-    /// frame mid-reply used to re-parse the whole reply's markdown (and split
-    /// its reasoning three more times for the kinds).
-    fn live_tail(&self, width: u16) -> (Vec<Line<'static>>, Option<Kind>, Option<Kind>) {
-        let key = LiveTailKey {
-            width,
-            fold: !self.show_reasoning,
-            stream: self.stream_reasoning,
-            gate: think_tags_parsed(),
-            theme: theme::Theme::current(),
-        };
-        let mut cache = self.live_tail.borrow_mut();
-        let hit = cache.as_ref().is_some_and(|c| {
-            c.key == key && c.prose == self.assistant_buf && c.segs == self.reasoning_segs
-        });
-        if !hit {
-            *cache = Some(LiveTail {
-                key,
-                prose: self.assistant_buf.clone(),
-                segs: self.reasoning_segs.clone(),
-                lines: live_assistant_lines(
-                    &self.assistant_buf,
-                    &self.reasoning_segs,
-                    width,
-                    key.fold,
-                    key.stream,
-                ),
-                leading: live_leading_kind(&self.assistant_buf, &self.reasoning_segs),
-                trailing: live_trailing_kind(&self.assistant_buf, &self.reasoning_segs),
-            });
-        }
-        let tail = cache.as_ref().expect("filled above");
-        (tail.lines.clone(), tail.leading, tail.trailing)
-    }
-
-    /// `has_answer_text(&self.assistant_buf)`, without rescanning the reply.
-    fn answer_started(&self) -> bool {
-        self.scan_buf().answer
     }
 
     /// Delete the char before the caret (Backspace).
@@ -5364,17 +5956,18 @@ impl App {
                 self.push_invocation_row(&format!("[skill:{name}]"), &args, &description);
                 format!("[skill:{name}] {args}")
             } else {
-                self.push_user_line(&pending.text, &pending.images);
+                self.transcript
+                    .push_user_line(&pending.text, &pending.images);
                 pending.text
             };
-            self.display_log.push(DisplayEntry::User {
+            self.transcript.display_log.push(DisplayEntry::User {
                 text,
                 images: pending.images,
             });
         } else {
             // Nothing to render, but the turn still counts: see
             // `DisplayEntry::Invocation`.
-            self.display_log.push(DisplayEntry::Invocation {
+            self.transcript.display_log.push(DisplayEntry::Invocation {
                 label: String::new(),
                 detail: String::new(),
             });
@@ -5576,8 +6169,8 @@ impl App {
         if request.reply.send(messages).is_err() || count == 0 {
             return;
         }
-        self.flush_assistant();
-        self.finalize_tool_group();
+        self.transcript.flush_assistant();
+        self.transcript.finalize_tool_group();
         self.history = request.messages;
         for _ in 0..count {
             let pending = self
@@ -5590,30 +6183,6 @@ impl App {
         self.reminder_count = 0;
         self.reminder_awaiting_progress = false;
         self.persist();
-    }
-
-    /// Render a user turn: the prompt line, then one dotted connector row per
-    /// attached image ending in an `[IMAGE]` label (basename when known).
-    fn push_user_line(&mut self, text: &str, images: &[String]) {
-        self.gap(Kind::User);
-        // A `System` row rather than a `Line`: a pasted or shift-entered message
-        // carries its own newlines, and a single `Line` renders those as blank
-        // cells in one run-on row.
-        self.push_row(user_bubble(vec![Span::styled(
-            text.to_string(),
-            Style::new().bold().fg(user_bubble_fg()),
-        )]));
-        for name in images {
-            let label = if name.is_empty() {
-                "[IMAGE]".to_string()
-            } else {
-                format!("[IMAGE] {name}")
-            };
-            self.push(Line::from(vec![
-                Span::styled("  ┊ ", Style::new().dim()),
-                Span::styled(label, Style::new().cyan()),
-            ]));
-        }
     }
 
     /// One compact transcript row for a skill/command invocation, never the
@@ -5629,8 +6198,8 @@ impl App {
                 Style::new().fg(user_bubble_fg()),
             ));
         }
-        self.gap(Kind::User);
-        self.push_row(user_bubble(body));
+        self.transcript.gap(Kind::User);
+        self.transcript.push_row(user_bubble(body));
     }
 
     /// The row a slash invocation commits, plus its journal entry -- the two
@@ -5644,7 +6213,7 @@ impl App {
         } else {
             String::new()
         };
-        self.display_log.push(DisplayEntry::Invocation {
+        self.transcript.display_log.push(DisplayEntry::Invocation {
             label: label.to_string(),
             detail: detail.clone(),
         });
@@ -5878,7 +6447,7 @@ impl App {
         let path = journal::journal_path(&self.agent_dir, &id);
         self.journal_writer
             .get_or_insert_with(journal::Writer::new)
-            .dump(path, self.display_log.clone());
+            .dump(path, self.transcript.display_log.clone());
     }
 
     /// Wait for queued journal dumps to reach disk (session exit, tests).
@@ -6294,57 +6863,10 @@ impl App {
             self.retrying = None;
         }
         match ev {
-            StreamEvent::Token { text } => {
-                self.assistant_buf.push_str(&text);
-                // Track the live thinking state so the header can fold reasoning
-                // to `[thinking]` / `[thought for Ns]`. Start the timer when
-                // reasoning is open; close it (stashing the duration) once the
-                // block ends. `reasoning_open` covers both inline ` think>` tags
-                // and native reasoning_buf, so a content token after reasoning
-                // closes the window (and prose arriving with no reasoning leaves
-                // it closed).
-                let open = self.reasoning_open();
-                if open && self.thinking_since.is_none() {
-                    self.thinking_since = Some(Instant::now());
-                } else if !open {
-                    if let Some(started) = self.thinking_since.take() {
-                        self.thought_for = Some(started.elapsed());
-                        self.thought_for_since = Some(Instant::now());
-                    }
-                }
-                // Commit the tool group as resolved once real answer prose begins, so
-                // it lands above the streaming response. Reasoning tokens must
-                // not trigger this, or every call by a reasoning model splits
-                // into its own row.
-                if self.tool_group.is_some() && self.answer_started() {
-                    self.finalize_tool_group();
-                }
-            }
-            StreamEvent::Reasoning { text } => {
-                // Native reasoning stays out of the answer buffer entirely; it is
-                // folded into the display log on the next flush. Deltas that
-                // arrive with no prose in between extend the open segment;
-                // reasoning after prose starts a new one, so the timeline keeps
-                // emission order instead of hoisting every thought to the top.
-                if !text.is_empty() {
-                    let at = self.assistant_buf.len();
-                    match self.reasoning_segs.last_mut() {
-                        Some(seg) if seg.at == at => seg.text.push_str(&text),
-                        _ => self.reasoning_segs.push(ReasoningSeg { at, text }),
-                    }
-                    if self.thinking_since.is_none() {
-                        self.thinking_since = Some(Instant::now());
-                    }
-                }
-            }
+            StreamEvent::Token { text } => self.transcript.token(&text),
+            StreamEvent::Reasoning { text } => self.transcript.reasoning(text),
             StreamEvent::Step { index, max } => {
-                // Only flush (and thereby close the tool group) once the model
-                // has produced answer prose; a turn that only reasoned or only
-                // called tools keeps the group open so the next turn's calls
-                // keep folding into one summary row instead of a row per turn.
-                if self.answer_started() {
-                    self.flush_assistant();
-                }
+                self.transcript.step();
                 self.starting.clear();
                 // A new turn means a ping resumed the run: back to working.
                 self.turn = (index, max);
@@ -6356,7 +6878,7 @@ impl App {
             StreamEvent::ToolCallStarted { id, name } => {
                 // Commit buffered prose/reasoning so it renders above the
                 // in-progress throbber, matching the grouped-call ordering.
-                self.flush_assistant();
+                self.transcript.flush_assistant();
                 if !self.starting.iter().any(|c| c.id == id) {
                     self.starting.push(StartingCall::new(id, name));
                 }
@@ -6366,22 +6888,7 @@ impl App {
                     call.args.push_str(&delta);
                 }
             }
-            StreamEvent::ToolOutputDelta { id, delta } => {
-                // Bounded from the end: a runaway command must not be able to
-                // grow the TUI's memory. The tool keeps the authoritative full
-                // output (spilling to disk past its own cap) and hands it over
-                // with the result; this buffer only has to feed the live view.
-                let buf = self.live_output.entry(id).or_default();
-                buf.push_str(&delta);
-                if buf.len() > LIVE_OUTPUT_MAX_BYTES {
-                    // Trim on a char boundary so the buffer stays valid UTF-8.
-                    let cut = buf.len() - LIVE_OUTPUT_MAX_BYTES;
-                    let at = (cut..buf.len())
-                        .find(|i| buf.is_char_boundary(*i))
-                        .unwrap_or(buf.len());
-                    buf.drain(..at);
-                }
-            }
+            StreamEvent::ToolOutputDelta { id, delta } => self.transcript.output_delta(id, &delta),
             StreamEvent::ToolCall { id, name, args } => {
                 // The full call supersedes its in-progress throbber. Clearing the
                 // whole set, not just this id: `ToolCall` events are emitted only
@@ -6391,23 +6898,6 @@ impl App {
                 // throbber whose id did not line up (or a duplicate) lingering on
                 // screen through the whole command.
                 self.starting.clear();
-                // Commit buffered prose/reasoning before anything else: every
-                // branch below does it anyway (so the timeline stays in emission
-                // order), and doing it here keeps the journal in that order too
-                // -- text that preceded the call, then the call. `flush_assistant`
-                // no-ops on an empty buffer, so silent consecutive calls still
-                // fold into one group row.
-                self.flush_assistant();
-                // `await_subagent` renders a live throbber that its result
-                // clears, so journaling the call would replay a spinner nothing
-                // ever stops; its result row is journaled below either way.
-                if name != "await_subagent" {
-                    self.display_log.push(DisplayEntry::ToolCall {
-                        id: id.clone(),
-                        name: name.clone(),
-                        args: args.clone(),
-                    });
-                }
                 // Track todo activity this turn so the reminder policy can tell
                 // an engaged turn (mutated todos) from a stalled one.
                 if name == "todo" {
@@ -6415,42 +6905,24 @@ impl App {
                 }
                 // Awaiting a subagent is a long block: show a live throbber row
                 // (advanced each render tick) instead of a static grouped row,
-                // cleared when its result arrives.
+                // cleared when its result arrives. Journaling the call would
+                // replay a spinner nothing ever stops; its result row is
+                // journaled either way.
                 if name == "await_subagent" {
+                    self.transcript.flush_assistant();
                     let run_id = args.get("run_id").and_then(|v| v.as_str()).unwrap_or("");
                     let sub = subagent_name_from_run_id(run_id).to_string();
                     self.awaiting.push((id, run_id.to_string(), sub));
                     return;
                 }
-                self.track_bash_command(&id, &name, &args);
-                // Untruncated: every row that shows these clamps to the width it
-                // is drawn at, so they survive a resize either way.
-                let label = tool_activity(&name, &args);
-                let done = tool_finished(&name, &args);
+                // Record the touched path so the next checkpoint snapshots
+                // exactly this file instead of scanning the whole repo.
                 if matches!(name.as_str(), "edit" | "write") {
-                    // Record the touched path so the next checkpoint snapshots
-                    // exactly this file instead of scanning the whole repo.
                     if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
                         self.turn_touched.push(self.project_root.join(p));
-                        self.diff_paths.insert(id.clone(), p.to_string());
                     }
-                    // Diff-producing tools render standalone (call row & panel).
-                    self.finalize_tool_group();
-                    self.gap(Kind::Tool);
-                    self.push_row(RowKind::Tool {
-                        state: ToolState::Running,
-                        label: label.clone(),
-                        reserve: TOOL_ROW_RESERVE,
-                    });
-                    self.pending_rows.push(PendingToolRow {
-                        id: id.clone(),
-                        idx: self.transcript.len() - 1,
-                        label,
-                        done,
-                    });
-                } else {
-                    self.push_grouped_call(&id, &name, &args, label, done);
                 }
+                self.transcript.tool_call(id, &name, &args);
             }
             StreamEvent::ToolResult {
                 id,
@@ -6460,74 +6932,11 @@ impl App {
             } => {
                 // Clear the throbber for an awaited subagent once its result lands.
                 self.awaiting.retain(|(await_id, ..)| await_id != &id);
-                self.display_log.push(DisplayEntry::ToolResult {
-                    id: id.clone(),
-                    content: content.clone(),
-                    is_error,
-                    diff: diff.clone(),
-                });
-                // This call is no longer in flight (it finished, or it detached
-                // into the background where its output now lands in a file the
-                // agent reads later): the row's content is authoritative, so the
-                // in-flight command label and the live buffer are both dead weight.
-                self.bash_commands.remove(&id);
-                self.live_output.remove(&id);
                 // Any tool result means the model took some action since the last
                 // reminder fired; let a later stop remind again if work is still
-                // open. Set unconditionally, before the grouped-call early return
-                // below, so it applies no matter how the result renders.
+                // open, no matter how the result renders.
                 self.reminder_awaiting_progress = false;
-                // Grouped calls are already represented by the group row; retain
-                // their result on the group so an expand can show it later.
-                if self.grouped_ids.contains(&id) {
-                    if let Some(group) = self.tool_group.as_mut() {
-                        if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
-                            call.is_error = is_error;
-                            call.diff = diff;
-                            call.content = Some(content);
-                            group.last_result_error = Some(is_error);
-                            self.refresh_group_row();
-                            return;
-                        }
-                    }
-                    // A standalone edit/write or intervening display block can
-                    // close a group before its batch's results arrive.
-                    for group in &mut self.groups {
-                        if let Some(call) = group.calls.iter_mut().find(|c| c.id == id) {
-                            call.is_error = is_error;
-                            call.diff = diff;
-                            call.content = Some(content);
-                            group.last_result_error = Some(is_error);
-                            self.transcript[group.idx] = group.row(GroupRow::Closed);
-                            break;
-                        }
-                    }
-                    return;
-                }
-                self.flush_assistant();
-                let lang = diff
-                    .is_some()
-                    .then(|| self.diff_paths.remove(&id))
-                    .flatten();
-                // The resolved call row already names the tool and file in past
-                // tense, so a successful "Applied N edit(s) to X" only repeats
-                // it; the diff is the informative part. Errors keep their text
-                // -- the row says nothing about why the call failed.
-                let has_row = self
-                    .pending_rows
-                    .iter()
-                    .any(|row| row.id == id && row.idx < self.transcript.len());
-                let content = (!(has_row && !is_error && diff.is_some())).then_some(content);
-                let result = RowKind::Result {
-                    is_error,
-                    content,
-                    diff,
-                    lang,
-                };
-                if let Some(result) = self.resolve_pending_row(&id, is_error, result) {
-                    self.gap(Kind::Tool);
-                    self.push_row(result);
-                }
+                self.transcript.tool_result(id, content, is_error, diff);
             }
             StreamEvent::PermissionRequest {
                 request_id,
@@ -6587,27 +6996,13 @@ impl App {
                 // The later phases of a plan, named before they start. Open a
                 // waiting panel per subagent so a dependent phase is visible up
                 // front; its own SubagentStart/SubagentQueued promotes it later.
-                self.finalize_tool_group();
-                self.flush_assistant();
+                self.transcript.finalize_tool_group();
+                self.transcript.flush_assistant();
                 for p in pending {
                     self.subagents.push(SubagentPanel {
-                        run_id: String::new(),
-                        name: p.name,
-                        task: String::new(),
-                        calls: Vec::new(),
-                        last_call_key: None,
-                        repeats: 0,
-                        requests: 0,
-                        prompt_tokens: 0,
-                        total_prompt_tokens: 0,
-                        total_cached_tokens: 0,
-                        cache_reported: false,
-                        active: None,
-                        queued: false,
-                        waiting: 0,
                         pending: true,
                         phase: Some(p.phase),
-                        log: Vec::new(),
+                        ..SubagentPanel::new(String::new(), p.name, String::new())
                     });
                 }
             }
@@ -6630,27 +7025,10 @@ impl App {
                         panel.task = t;
                     }
                 } else {
-                    self.finalize_tool_group();
-                    self.flush_assistant();
-                    self.subagents.push(SubagentPanel {
-                        run_id,
-                        name,
-                        task: task.unwrap_or_default(),
-                        calls: Vec::new(),
-                        last_call_key: None,
-                        repeats: 0,
-                        requests: 0,
-                        prompt_tokens: 0,
-                        total_prompt_tokens: 0,
-                        total_cached_tokens: 0,
-                        cache_reported: false,
-                        active: None,
-                        queued: false,
-                        waiting: 0,
-                        pending: false,
-                        phase: None,
-                        log: Vec::new(),
-                    });
+                    self.transcript.finalize_tool_group();
+                    self.transcript.flush_assistant();
+                    self.subagents
+                        .push(SubagentPanel::new(run_id, name, task.unwrap_or_default()));
                 }
             }
             StreamEvent::SubagentQueued {
@@ -6663,8 +7041,8 @@ impl App {
                 // child finishes. Promote a pending later-phase panel (matched by
                 // name) or open a fresh queued one, so the fan-out shows the queue
                 // instead of hiding dispatches.
-                self.finalize_tool_group();
-                self.flush_assistant();
+                self.transcript.finalize_tool_group();
+                self.transcript.flush_assistant();
                 if let Some(panel) = self
                     .subagents
                     .iter_mut()
@@ -6679,23 +7057,9 @@ impl App {
                     }
                 } else {
                     self.subagents.push(SubagentPanel {
-                        run_id,
-                        name,
-                        task: task.unwrap_or_default(),
-                        calls: Vec::new(),
-                        last_call_key: None,
-                        repeats: 0,
-                        requests: 0,
-                        prompt_tokens: 0,
-                        total_prompt_tokens: 0,
-                        total_cached_tokens: 0,
-                        cache_reported: false,
-                        active: None,
                         queued: true,
                         waiting,
-                        pending: false,
-                        phase: None,
-                        log: Vec::new(),
+                        ..SubagentPanel::new(run_id, name, task.unwrap_or_default())
                     });
                 }
             }
@@ -6704,26 +7068,25 @@ impl App {
                 name,
                 error,
             } => {
-                let calls = self
-                    .subagents
-                    .iter()
-                    .find(|p| p.run_id == run_id)
-                    .map(|p| p.calls.clone())
-                    .unwrap_or_default();
-                self.subagents.retain(|p| p.run_id != run_id);
+                // A child with no panel (its start never reached this screen)
+                // still gets its row, from an empty one.
+                let panel = match self.subagents.iter().position(|p| p.run_id == run_id) {
+                    Some(at) => self.subagents.remove(at),
+                    None => SubagentPanel::new(run_id.clone(), name, String::new()),
+                };
                 self.awaiting.retain(|(_, r, _)| r != &run_id);
                 let outcome = match error {
                     Some(e) => SubagentOutcome::Failed(e),
                     None => SubagentOutcome::Finished,
                 };
-                self.push_subagent_summary(&name, calls, outcome);
+                self.push_subagent_summary(panel, outcome);
             }
             // A background ping's headline (a monitor condition matching),
             // emitted as the loop delivers the `<SYSTEM>` text to the model.
             // Transient like every other note: not journaled.
             StreamEvent::Notice { text } => {
-                self.finalize_tool_group();
-                self.flush_assistant();
+                self.transcript.finalize_tool_group();
+                self.transcript.flush_assistant();
                 self.note(&text);
             }
             StreamEvent::Monitors { monitors } => self.monitors = monitors,
@@ -6736,8 +7099,8 @@ impl App {
                 reason,
             } => {
                 if attempt == 2 {
-                    self.finalize_tool_group();
-                    self.flush_assistant();
+                    self.transcript.finalize_tool_group();
+                    self.transcript.flush_assistant();
                     self.note(&format!("{reason}; retrying"));
                 }
                 self.retrying = Some(RetryWait {
@@ -6837,73 +7200,78 @@ impl App {
     }
 
     /// Route one backgrounded subagent's internal event to its run's live panel.
-    /// Only tool calls populate the rolling window; the child's own prose/steps/
-    /// results are internal. A permission request docks the shared prompt,
-    /// attributed to the asking subagent.
+    /// The child's prose, reasoning and tool calls build its own transcript (the
+    /// `/agents` detail); the parent transcript still shows a child only as its
+    /// dock row and, once it ends, its summary row. A permission request docks
+    /// the shared prompt, attributed to the asking subagent.
     fn apply_subagent_event(&mut self, run_id: &str, name: &str, event: StreamEvent) {
+        let (show, stream) = (self.transcript.show_reasoning, self.transcript.stream_reasoning);
+        let mut panel = self.subagents.iter_mut().find(|p| p.run_id == run_id);
+        // A child's reasoning reads the way the parent's does, including after
+        // `/settings` changes it mid-session.
+        if let Some(panel) = panel.as_deref_mut() {
+            panel.transcript.show_reasoning = show;
+            panel.transcript.stream_reasoning = stream;
+        }
         match event {
             StreamEvent::ToolCall {
                 id,
                 name: tool,
                 args,
             } => {
-                // Stored untruncated; the panel clamps it to the draw width.
-                let label = subagent_activity(&tool, &args);
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                if let Some(panel) = panel {
                     // The completed call supersedes its in-progress view.
                     if panel.active.as_ref().is_some_and(|c| c.id == id) {
                         panel.active = None;
                     }
-                    // Full history retained for expansion; the panel renders only
-                    // the last SUBAGENT_WINDOW.
-                    panel.record_call(&tool, &args, label);
-                    panel.push_log(ChildLogEntry::Call {
-                        id,
-                        label: tool_finished(&tool, &args),
-                        result: None,
-                    });
+                    // Stored untruncated; the dock clamps it to the draw width.
+                    panel.record_call(&tool, &args, subagent_activity(&tool, &args));
+                    panel.transcript.tool_call(id, &tool, &args);
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
             }
-            // Prose and results feed only the `/agents` detail log: the parent
-            // transcript still shows a child as its one-line panel.
             StreamEvent::Token { text } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                    match panel.log.last_mut() {
-                        Some(ChildLogEntry::Prose(prose)) => push_child_prose(prose, &text),
-                        _ => panel.push_log(ChildLogEntry::Prose(text)),
-                    }
+                if let Some(panel) = panel {
+                    panel.transcript.token(&text);
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
+                }
+            }
+            StreamEvent::Reasoning { text } => {
+                if let Some(panel) = panel {
+                    panel.transcript.reasoning(text);
                 }
             }
             StreamEvent::ToolResult {
                 id,
-                content,
+                mut content,
                 is_error,
-                ..
+                diff,
             } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                    let call = panel.log.iter_mut().rev().find_map(|e| match e {
-                        ChildLogEntry::Call { id: cid, result, .. } if *cid == id => Some(result),
-                        _ => None,
-                    });
-                    if let Some(result) = call {
-                        *result = Some((child_result_summary(&content), is_error));
-                    }
+                if let Some(panel) = panel {
+                    truncate_head(&mut content, CHILD_RESULT_MAX);
+                    panel.transcript.tool_result(id, content, is_error, diff);
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
+                }
+            }
+            StreamEvent::ToolOutputDelta { id, delta } => {
+                if let Some(panel) = panel {
+                    panel.transcript.output_delta(id, &delta);
                 }
             }
             // A child's arguments stream just like the parent's, and for a big
             // `write` that window is most of the run. Track it so the panel
             // reports the call being built instead of going silent until it
-            // lands.
+            // lands. Its buffered prose commits first, so the call being built
+            // renders below what led up to it.
             StreamEvent::ToolCallStarted { id, name: tool } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                if let Some(panel) = panel {
+                    panel.transcript.flush_assistant();
                     panel.active = Some(StartingCall::new(id, tool));
                 }
             }
             StreamEvent::ToolCallArgsDelta { id, delta } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                    if let Some(call) = panel.active.as_mut().filter(|c| c.id == id) {
-                        call.args.push_str(&delta);
-                    }
+                if let Some(call) = panel.and_then(|p| p.active.as_mut()).filter(|c| c.id == id) {
+                    call.args.push_str(&delta);
                 }
             }
             StreamEvent::PermissionRequest {
@@ -6932,8 +7300,10 @@ impl App {
             // Each child request bumps its counter, so the panel shows work
             // happening even during a long think with no tool calls.
             StreamEvent::Step { .. } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                if let Some(panel) = panel {
                     panel.requests += 1;
+                    panel.transcript.step();
+                    panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
             }
             // The child's own context high-water mark and its own cache totals,
@@ -6946,7 +7316,7 @@ impl App {
                 usage,
                 execution_id,
             } => {
-                if let Some(panel) = self.subagents.iter_mut().find(|p| p.run_id == run_id) {
+                if let Some(panel) = panel {
                     panel.prompt_tokens = usage.prompt_tokens.unwrap_or(panel.prompt_tokens);
                     panel.total_prompt_tokens += usage.prompt_tokens.unwrap_or(0);
                     panel.total_cached_tokens += usage.cached_tokens.unwrap_or(0);
@@ -6988,11 +7358,9 @@ impl App {
                 reason,
                 messages,
             } => self.apply_compaction(phase, reason, messages, Some(name)),
-            // A child's live tool output (`ToolOutputDelta`) and any nested
-            // bracket stay out of the parent transcript: a subagent panel is a
-            // one-line activity summary, and a child's shell output would push
-            // the parent's own live panel off screen. Its prose and results are
-            // kept above, for `/agents` only.
+            // Anything else a child emits (a nested bracket, its terminal
+            // events) has no place on this screen: a child's end arrives as
+            // the parent's own `SubagentEnd`.
             _ => {}
         }
     }
@@ -7025,8 +7393,8 @@ impl App {
                     self.run_compacting = None;
                     self.pending_compaction_refresh = true;
                 }
-                self.finalize_tool_group();
-                self.flush_assistant();
+                self.transcript.finalize_tool_group();
+                self.transcript.flush_assistant();
                 self.note(&format!(
                     "{who}compacted {} messages into a summary: {why}",
                     messages.unwrap_or(0)
@@ -7095,12 +7463,12 @@ impl App {
         self.todo_call_this_turn = false;
         self.todo_ok_this_turn = false;
         // A fresh turn starts with no active reasoning.
-        self.thinking_since = None;
-        self.thought_for = None;
-        self.thought_for_since = None;
+        self.transcript.thinking_since = None;
+        self.transcript.thought_for = None;
+        self.transcript.thought_for_since = None;
         // A call cancelled before its result would otherwise leave its path
         // behind for the life of the session.
-        self.diff_paths.clear();
+        self.transcript.diff_paths.clear();
         self.publish_agent_status();
     }
 
@@ -7111,27 +7479,8 @@ impl App {
         motion::spinner(self.spinner_frame, motion::mode())
     }
 
-    /// Flush the current turn and return its text as the final assistant answer.
-    fn take_answer(&mut self) -> String {
-        let answer = self.assistant_buf.trim().to_string();
-        self.flush_assistant();
-        answer
-    }
-
-    /// The concatenated natively-streamed reasoning text for the current turn.
-    /// Used to resend the final answer's reasoning on the wire. Inline
-    /// `<think>` blocks (which arrive through `Token` and live in the buffer)
-    /// are handled separately by `answer_without_reasoning` and the loop path;
-    /// this covers the `reasoning_content` delta case, which never touches the
-    /// buffer.
-    fn native_reasoning_text(&self) -> String {
-        self.reasoning_segs
-            .iter()
-            .map(|s| s.text.clone())
-            .collect::<String>()
-    }
     fn on_done(&mut self, stop_reason: String, usage: Option<Usage>) {
-        self.finalize_tool_group();
+        self.transcript.finalize_tool_group();
         // Done is terminal: nothing more arrives on this stream, so a call that
         // never completed cannot be left animating for the rest of the session.
         self.resolve_orphan_tool_rows();
@@ -7143,8 +7492,8 @@ impl App {
         // reasoning lives in `reasoning_segs` until the flush, and inline
         // ` thinking` blocks are folded into the buffer. Preserved so the
         // final assistant turn can be resent with its reasoning (see below).
-        let reasoning = self.native_reasoning_text();
-        let answer = self.take_answer();
+        let reasoning = self.transcript.native_reasoning_text();
+        let answer = self.transcript.take_answer();
         let wire = answer_without_reasoning(&answer);
         if !wire.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": wire });
@@ -7200,8 +7549,8 @@ impl App {
                 started.elapsed(),
                 receipt_clock(now, now.date_naive()),
             );
-            self.gap(Kind::Meta);
-            self.push(stats);
+            self.transcript.gap(Kind::Meta);
+            self.transcript.push(stats);
         }
         // Cache this turn's output rate from the single `usage` sample and its
         // streaming duration, before `run_started` is cleared below. Holds
@@ -7304,7 +7653,7 @@ impl App {
     fn on_error(&mut self, code: String, message: String) {
         self.abort_tool_rows();
         self.close_live_background();
-        self.flush_assistant();
+        self.transcript.flush_assistant();
         self.status = Status::Idle;
         self.run_started = None;
         self.detail = if message.contains("budget") {
@@ -7430,8 +7779,8 @@ impl App {
         self.append_cancelled_turn_tools();
         // Captured before the flush clears it, like `on_done`, so a cancelled
         // turn's partial answer keeps the reasoning that produced it.
-        let reasoning = self.native_reasoning_text();
-        let answer = answer_without_reasoning(&self.take_answer());
+        let reasoning = self.transcript.native_reasoning_text();
+        let answer = answer_without_reasoning(&self.transcript.take_answer());
         if !answer.is_empty() {
             let mut msg = serde_json::json!({ "role": "assistant", "content": answer });
             if !reasoning.is_empty() {
@@ -7475,6 +7824,7 @@ impl App {
     /// placeholder result so the exchange stays protocol-valid.
     fn append_cancelled_turn_tools(&mut self) {
         let start = self
+            .transcript
             .display_log
             .iter()
             .rposition(|e| matches!(e, DisplayEntry::User { .. }))
@@ -7482,7 +7832,7 @@ impl App {
             .unwrap_or(0);
         let mut calls: Vec<(String, String, serde_json::Value)> = Vec::new();
         let mut results: Vec<(String, String)> = Vec::new();
-        for entry in self.display_log.iter().skip(start) {
+        for entry in self.transcript.display_log.iter().skip(start) {
             match entry {
                 DisplayEntry::ToolCall { id, name, args } => {
                     calls.push((id.clone(), name.clone(), args.clone()));
@@ -11256,7 +11606,7 @@ pub async fn run(
     app.set_workspace(workspace);
     app.model_pinned = model_pinned;
     app.smol_model = smol_model;
-    app.stream_reasoning = stream_reasoning;
+    app.transcript.stream_reasoning = stream_reasoning;
     app.send_reasoning = send_reasoning;
     app.monitor_set = monitor_set;
     app.shell_set = shell_set;
@@ -11446,7 +11796,7 @@ async fn apply_stream_event(
             // Keep any partial prose/tool calls already streamed.
             app.pending_queue.clear();
             if app.run_is_live() {
-                app.flush_assistant();
+                app.transcript.flush_assistant();
                 app.abort_tool_rows();
                 // The task was killed without a natural stop, so the
                 // mid-turn `MessagesUpdated` that would have folded the
@@ -12211,10 +12561,10 @@ fn click_region(app: &mut App, column: u16, row: u16) {
     if let Some(Some(idx)) = app.row_index.get(body_row) {
         // A folded trace header expands its whole run; any other row toggles its
         // own detail.
-        if app.is_folded_trace_start(*idx) {
-            app.toggle_trace(*idx);
+        if app.transcript.is_folded_trace_start(*idx) {
+            app.transcript.toggle_trace(*idx);
         } else {
-            app.toggle_region(*idx);
+            app.transcript.toggle_region(*idx);
         }
     }
 }
@@ -13412,6 +13762,20 @@ async fn handle_key(
                 }
                 picker.kind = PickerKind::AgentDetail;
                 app.agent_detail = Some(run_id);
+                app.agent_detail_scroll = 0;
+            }
+            // The detail scrolls like the main body: PgUp/PgDn by a page's
+            // worth, Home to the start of the run, End back to following it.
+            KeyCode::PageUp | KeyCode::PageDown | KeyCode::Home | KeyCode::End
+                if picker.kind == PickerKind::AgentDetail =>
+            {
+                let at = app.agent_detail_scroll;
+                app.agent_detail_scroll = match key.code {
+                    KeyCode::PageUp => at.saturating_add(10),
+                    KeyCode::PageDown => at.saturating_sub(10),
+                    KeyCode::Home => u16::MAX,
+                    _ => 0,
+                };
             }
             // `/agents`: `m` writes to the selected child (or the one drilled
             // into), `x` stops it. Both reach the same registry calls the parent
@@ -13940,7 +14304,7 @@ async fn handle_key(
         // Ctrl-O expands/collapses all folded regions (tool groups and reasoning
         // blocks), scrolling the latest into view.
         KeyCode::Char('o') if ctrl => {
-            app.toggle_regions();
+            app.transcript.toggle_regions();
         }
         // Alt+T toggles reasoning effort between "low" and the last non-low
         // level (default medium). A quick way to quiet or deepen a model run
@@ -15476,7 +15840,12 @@ fn handle_agent_message_key(app: &mut App, key: KeyEvent, ctrl: bool) {
                     let (run_id, name) = (prompt.run_id.clone(), prompt.name.clone());
                     app.agent_message = None;
                     if let Some(panel) = app.subagents.iter_mut().find(|p| p.run_id == run_id) {
-                        panel.push_log(ChildLogEntry::Steer(text));
+                        // Committed first, as a steer to the parent is, so the
+                        // message sits below what the child said before it.
+                        panel.transcript.flush_assistant();
+                        panel.transcript.finalize_tool_group();
+                        panel.transcript.push_user_line(&text, &[]);
+                        panel.transcript.cap_rows(CHILD_ROWS_MAX);
                     }
                     app.note(&format!(
                         "message queued for subagent {name}; it reads it at its next step"
@@ -16819,12 +17188,13 @@ async fn plugin_command(app: &mut App, arg: &str) {
                     return;
                 }
                 for p in &plugins {
-                    app.push(Line::styled(summary_line(p), Style::new().fg(theme::accent()).bold()));
+                    let style = Style::new().fg(theme::accent()).bold();
+                    app.transcript.push(Line::styled(summary_line(p), style));
                 }
                 // Surface unsatisfied setup requirements right in the list:
                 // a plugin whose key is missing explains itself here.
                 for (plugin, var, _) in crate::core::agent::plugins::missing_plugin_env(&root) {
-                    app.push(Line::styled(
+                    app.transcript.push(Line::styled(
                         format!("  {plugin}: key missing ({var}) - /plugin setup {plugin}"),
                         Style::new().fg(theme::warning()),
                     ));
@@ -16832,9 +17202,10 @@ async fn plugin_command(app: &mut App, arg: &str) {
             } else {
                 match crate::core::agent::plugins::find_installed(&root, &rest) {
                     Some((directory, p)) => {
-                        app.push(Line::styled(summary_line(&p), Style::new().fg(theme::accent()).bold()));
+                        let style = Style::new().fg(theme::accent()).bold();
+                        app.transcript.push(Line::styled(summary_line(&p), style));
                         if !p.description.is_empty() {
-                            app.push(Line::styled(
+                            app.transcript.push(Line::styled(
                                 format!("  {}", p.description),
                                 Style::new().dim(),
                             ));
@@ -16842,9 +17213,10 @@ async fn plugin_command(app: &mut App, arg: &str) {
                         let metas =
                             crate::core::agent::skills::plugin_skill_metas(&root, &directory);
                         if !metas.is_empty() {
-                            app.push(Line::styled("  skills:", Style::new().dim()));
+                            app.transcript
+                                .push(Line::styled("  skills:", Style::new().dim()));
                             for meta in metas {
-                                app.push(Line::styled(
+                                app.transcript.push(Line::styled(
                                     format!("    {}", meta.name),
                                     Style::new().dim(),
                                 ));
@@ -16855,9 +17227,10 @@ async fn plugin_command(app: &mut App, arg: &str) {
                             .filter(|e| e.plugin == directory)
                             .collect::<Vec<_>>();
                         if !commands.is_empty() {
-                            app.push(Line::styled("  commands:", Style::new().dim()));
+                            app.transcript
+                                .push(Line::styled("  commands:", Style::new().dim()));
                             for cmd in &commands {
-                                app.push(Line::styled(
+                                app.transcript.push(Line::styled(
                                     format!("    {}", cmd.name),
                                     Style::new().dim(),
                                 ));
@@ -16866,16 +17239,18 @@ async fn plugin_command(app: &mut App, arg: &str) {
                         let agents =
                             crate::core::agent::subagent::plugin_agent_metas(&root, &directory);
                         if !agents.is_empty() {
-                            app.push(Line::styled("  agents:", Style::new().dim()));
+                            app.transcript
+                                .push(Line::styled("  agents:", Style::new().dim()));
                             for (name, _) in &agents {
-                                app.push(Line::styled(format!("    {name}"), Style::new().dim()));
+                                app.transcript
+                                    .push(Line::styled(format!("    {name}"), Style::new().dim()));
                             }
                         }
                     }
                     None => app.note(&format!("plugin '{}' is not installed", rest)),
                 }
             }
-            app.gap(Kind::Meta);
+            app.transcript.gap(Kind::Meta);
         }
         "install" => {
             if rest.is_empty() {
@@ -16925,16 +17300,16 @@ async fn plugin_command(app: &mut App, arg: &str) {
             }
             Ok(entries) => {
                 for e in &entries {
-                    app.push(Line::styled(
+                    app.transcript.push(Line::styled(
                         format!("plugin {}", e.name),
                         Style::new().fg(theme::accent()).bold(),
                     ));
-                    app.push(Line::styled(
+                    app.transcript.push(Line::styled(
                         format!("  {}  ({})", e.description, e.repo),
                         Style::new().dim(),
                     ));
                 }
-                app.gap(Kind::Meta);
+                app.transcript.gap(Kind::Meta);
             }
             Err(e) => app.note(&e),
         },
@@ -17546,7 +17921,7 @@ fn open_agents_picker(app: &mut App) {
     app.agent_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::Agents,
-        items: agent_picker_items(&app.subagents),
+        items: agent_picker_items(&app.subagents, &app.transcript.subagent_blocks),
         selected: 0,
         search: None,
         armed_delete: None,
@@ -17597,11 +17972,16 @@ fn background_shell_picker_items(
 }
 
 /// One row per running subagent (`name  ·  Nt  ·  NN% cached  ·  <activity>`,
-/// the rate only once the child's route reports a cache field), or a
-/// single watermark row when the fan-out is empty. The row `value` is the
+/// the rate only once the child's route reports a cache field), then one per
+/// finished child this session can still open (`name  ·  Nt  ·  finished`), or
+/// a single watermark row when there are neither. The row `value` is the
 /// child's `run_id`, which Enter drills into.
-fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
-    if subagents.is_empty() {
+fn agent_picker_items(subagents: &[SubagentPanel], finished: &[SubagentBlock]) -> Vec<PickerItem> {
+    let finished: Vec<&SubagentBlock> = finished
+        .iter()
+        .filter(|b| !b.panel.run_id.is_empty())
+        .collect();
+    if subagents.is_empty() && finished.is_empty() {
         return vec![PickerItem {
             label: "no subagents running".to_string(),
             value: String::new(),
@@ -17609,26 +17989,36 @@ fn agent_picker_items(subagents: &[SubagentPanel]) -> Vec<PickerItem> {
             checkbox: None,
         }];
     }
+    let row = |p: &SubagentPanel, status: String| {
+        let cache = p
+            .cache_hit_rate()
+            .map(|pct| format!("  ·  {pct:.0}% cached"))
+            .unwrap_or_default();
+        PickerItem {
+            label: format!("{}  ·  {}t{cache}  ·  {status}", p.name, p.calls.len()),
+            value: p.run_id.clone(),
+            hint: None,
+            checkbox: None,
+        }
+    };
     subagents
         .iter()
-        .map(|p| {
-            let cache = p
-                .cache_hit_rate()
-                .map(|pct| format!("  ·  {pct:.0}% cached"))
-                .unwrap_or_default();
-            PickerItem {
-                label: format!(
-                    "{}  ·  {}t{cache}  ·  {}",
-                    p.name,
-                    p.calls.len(),
-                    panel_activity_summary(p)
-                ),
-                value: p.run_id.clone(),
-                hint: None,
-                checkbox: None,
-            }
-        })
+        .map(|p| row(p, panel_activity_summary(p)))
+        .chain(
+            finished
+                .into_iter()
+                .map(|b| row(&b.panel, outcome_word(&b.outcome).to_string())),
+        )
         .collect()
+}
+
+/// How a finished child ended, as one word.
+fn outcome_word(outcome: &SubagentOutcome) -> &'static str {
+    match outcome {
+        SubagentOutcome::Finished => "finished",
+        SubagentOutcome::Failed(_) => "failed",
+        SubagentOutcome::Interrupted => "interrupted",
+    }
 }
 
 /// A one-line "what this agent is doing now" for an immutable panel (the
@@ -17658,23 +18048,14 @@ fn panel_activity_summary(panel: &SubagentPanel) -> String {
     }
 }
 
-/// The `/agents` detail body for the subagent `run_id`: header, stats, dispatch
-/// brief, and the tail of its activity log (see [`child_log_lines`]) that fits in `height`. An
-/// agent that has finished (its panel gone) shows a short "finished" note, since
-/// the inspector reads live panels only.
-fn agent_detail_lines(
-    subagents: &[SubagentPanel],
-    run_id: Option<&str>,
+/// The `/agents` detail header: the child's name and run id, its stats (and
+/// how it ended, once it has), and the first line of its brief.
+fn agent_detail_header(
+    panel: &SubagentPanel,
+    outcome: Option<&SubagentOutcome>,
     width: u16,
-    height: u16,
 ) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
-    let Some(panel) = run_id.and_then(|id| subagents.iter().find(|p| p.run_id == id)) else {
-        return vec![Line::styled(
-            "this subagent has finished. Press Esc to go back.".to_string(),
-            dim,
-        )];
-    };
     let max = (width.max(8) as usize).saturating_sub(2);
     let mut out = vec![Line::from(vec![
         Span::styled(panel.name.clone(), Style::new().magenta().bold()),
@@ -17687,7 +18068,24 @@ fn agent_detail_lines(
     if let Some(pct) = panel.cache_hit_rate() {
         stats.push_str(&format!(" · {pct:.0}% cached"));
     }
-    out.push(Line::styled(stats, dim));
+    match outcome {
+        Some(SubagentOutcome::Failed(e)) => stats.push_str(&format!(" · failed: {e}")),
+        Some(outcome) => stats.push_str(&format!(" · {}", outcome_word(outcome))),
+        None => {}
+    }
+    let mut row = vec![Span::styled(stats, dim)];
+    // A spin is still worth flagging in red: the transcript alone reads as
+    // busy.
+    let repeats = panel.repeats;
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        if let Some(last) = panel.calls.last() {
+            row.push(Span::styled(
+                format!(" · repeating {last} \u{d7}{repeats}"),
+                Style::new().red(),
+            ));
+        }
+    }
+    out.push(Line::from(row));
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
         out.push(Line::from(""));
         out.extend(
@@ -17697,85 +18095,69 @@ fn agent_detail_lines(
         );
     }
     out.push(Line::from(""));
-    let body = child_log_lines(panel, width);
-    if body.is_empty() {
-        out.push(Line::styled("(no activity yet)".to_string(), dim));
-        return out;
-    }
-    // The tail, so the newest activity is what survives a small box; one row is
-    // held back for the "+N earlier" head whenever anything is cut.
-    let budget = (height as usize).saturating_sub(out.len()).max(1);
-    if body.len() <= budget {
-        out.extend(body);
-    } else {
-        let keep = budget.saturating_sub(1);
-        let hidden = body.len() - keep;
-        out.push(Line::styled(format!("+{hidden} earlier lines"), dim));
-        out.extend(body.into_iter().skip(hidden));
-    }
     out
 }
 
-/// A child's log rendered like the main transcript: prose as markdown, each
-/// call as a tool row with its outcome tag and a one-line result summary, and
-/// the user's own steering messages as user lines.
-fn child_log_lines(panel: &SubagentPanel, width: u16) -> Vec<Line<'static>> {
+/// The `/agents` detail for one child, running or finished, inside the
+/// inspector's box: `agent_detail_header`, then the child's transcript laid out
+/// by the code that lays out the main body, at the box's inner width, with the
+/// call it is still building below it. Pinned to the bottom unless scrolled
+/// back (`App::agent_detail_scroll`).
+fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
+    let block = panel_block(theme::border_active()).title(" subagent ");
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
     let dim = Style::new().fg(theme::muted());
-    let max = (width.max(8) as usize).saturating_sub(2);
-    let repeats = panel.repeats;
-    let mut out: Vec<Line<'static>> = Vec::new();
-    for entry in &panel.log {
-        match entry {
-            ChildLogEntry::Prose(text) => {
-                let text = strip_system_xml_tags(text);
-                if text.trim().is_empty() {
-                    continue;
-                }
-                out.extend(format_markdown_lines(text.trim(), width));
-            }
-            ChildLogEntry::Steer(text) => {
-                out.extend(
-                    wrap_text(&format!("> {text}"), Style::new().bold().magenta(), max)
-                        .into_iter()
-                        .map(Line::from),
-                );
-            }
-            ChildLogEntry::Call { label, result, .. } => {
-                let state = match result {
-                    None => ToolState::Running,
-                    Some((_, is_error)) => ToolState::of(*is_error),
-                };
-                out.extend(tool_row_lines(
-                    state.bullet(),
-                    label,
-                    Style::new(),
-                    TOOL_ROW_RESERVE,
-                    width,
-                    Vec::new(),
-                ));
-                if let Some((content, is_error)) = result {
-                    let summary = summarize_result(content, max.saturating_sub(4));
-                    if !summary.is_empty() {
-                        let style = if *is_error { Style::new().red() } else { dim };
-                        out.push(Line::from(vec![
-                            Span::styled(TREE_FIRST, dim),
-                            Span::styled(summary, style),
-                        ]));
-                    }
-                }
-            }
-        }
+    let run_id = app.agent_detail.clone().unwrap_or_default();
+    let spinner_frame = app.spinner_frame;
+    // A finished child is read from its summary row's block, which keeps it.
+    let found = match app.subagents.iter_mut().find(|p| p.run_id == run_id) {
+        Some(panel) => Some((panel, None)),
+        None => app
+            .transcript
+            .subagent_blocks
+            .iter_mut()
+            .find(|b| b.panel.run_id == run_id)
+            .map(|b| (&mut b.panel, Some(&b.outcome))),
+    };
+    let Some((panel, outcome)) = found else {
+        let gone = "this subagent is no longer available. Press Esc to go back.";
+        f.render_widget(Paragraph::new(Line::styled(gone, dim)), inner);
+        return;
+    };
+    let width = inner.width;
+    let header = agent_detail_header(panel, outcome, width);
+    let header_h = wrapped_height_of(&header, width).min(inner.height);
+    let [head, body] =
+        Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(inner);
+    f.render_widget(Paragraph::new(header).wrap(Wrap { trim: false }), head);
+    let live = outcome.is_none();
+    let extra = match panel.active.as_mut().filter(|_| live) {
+        Some(call) => starting_call_lines(call, spinner_frame, width),
+        None => Vec::new(),
+    };
+    let mut layout = panel
+        .transcript
+        .layout_body(width, spinner_frame, live, false, None, extra);
+    if layout.content_h == 0 {
+        f.render_widget(Paragraph::new(Line::styled("(no activity yet)", dim)), body);
+        return;
     }
-    // A spin is still worth flagging in red: the log alone reads as busy.
-    if repeats >= STUCK_REPEAT_THRESHOLD {
-        if let Some(last) = panel.calls.last() {
-            out.push(Line::styled(
-                format!("repeating: {last} \u{d7}{repeats}"),
-                Style::new().red(),
-            ));
-        }
-    }
-    out
+    layout.pin(body.height);
+    let max_back = layout.content_h.saturating_sub(body.height);
+    app.agent_detail_scroll = app.agent_detail_scroll.min(max_back);
+    let scroll = max_back - app.agent_detail_scroll;
+    let (lines, _, offset) =
+        layout.window(&panel.transcript.rows, width, scroll, body.height, None);
+    f.render_widget(
+        Paragraph::new(lines)
+            .wrap(Wrap { trim: false })
+            .scroll((offset, 0)),
+        body,
+    );
 }
 
 fn open_login_picker(app: &mut App) {
@@ -19392,8 +19774,12 @@ fn rewind_to(app: &mut App, target: usize, restore_workspace: bool) {
     app.tokens = estimate_token_count(&app.history);
     // The journal is keyed by its own user entries, not by history indices: it
     // holds rows (tool calls, reasoning) that history never had.
-    app.display_log
-        .truncate(journal::truncate_at_user(&app.display_log, target));
+    app.transcript
+        .display_log
+        .truncate(journal::truncate_at_user(
+            &app.transcript.display_log,
+            target,
+        ));
     app.checkpoints.retain(|c| c.user_index < target);
     rebuild_transcript(app);
     rebuild_recall(app);
@@ -19435,13 +19821,13 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
     for entry in &entries {
         match entry {
             DisplayEntry::User { text, images } => {
-                app.finalize_tool_group();
-                app.push_user_line(text, images);
+                app.transcript.finalize_tool_group();
+                app.transcript.push_user_line(text, images);
             }
             // A user turn like any other, so it closes the open tool group too;
             // a hidden prompt has no row of its own and only does that.
             DisplayEntry::Invocation { label, detail } => {
-                app.finalize_tool_group();
+                app.transcript.finalize_tool_group();
                 if !label.is_empty() {
                     app.push_invocation_label(label, detail);
                 }
@@ -19456,15 +19842,15 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 reasoning,
                 reasoning_ms,
             } => {
-                app.assistant_buf = text.clone();
-                app.reset_buf_scan();
-                app.reasoning_segs = reasoning.clone();
+                app.transcript.assistant_buf = text.clone();
+                app.transcript.reset_buf_scan();
+                app.transcript.reasoning_segs = reasoning.clone();
                 // Seed the recorded duration so the replay stamps the same
                 // `Thought for Ns`; flush reads it via `thought_for`. Cleared
                 // after so it cannot leak onto the next reasoning block.
-                app.thought_for = reasoning_ms.map(Duration::from_millis);
-                app.flush_assistant();
-                app.thought_for = None;
+                app.transcript.thought_for = reasoning_ms.map(Duration::from_millis);
+                app.transcript.flush_assistant();
+                app.transcript.thought_for = None;
             }
             DisplayEntry::ToolCall { id, name, args } => app.apply(StreamEvent::ToolCall {
                 id: id.clone(),
@@ -19488,48 +19874,48 @@ fn replay_display_log(app: &mut App, entries: Vec<DisplayEntry>) {
                 finished,
                 error,
             } => {
-                app.finalize_tool_group();
+                app.transcript.finalize_tool_group();
                 let outcome = match (finished, error) {
                     (_, Some(e)) => SubagentOutcome::Failed(e.clone()),
                     (true, None) => SubagentOutcome::Finished,
                     (false, None) => SubagentOutcome::Interrupted,
                 };
-                app.push_subagent_summary(name, calls.clone(), outcome);
+                app.push_subagent_summary(SubagentPanel::replayed(name, calls), outcome);
             }
         }
     }
     // A replay is rendering, not work: the calls it re-renders must not stage
     // files for the next checkpoint, leave a call awaiting a diff, or read as
     // todo activity in the turn that follows.
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     app.turn_touched.clear();
-    app.diff_paths.clear();
+    app.transcript.diff_paths.clear();
     app.todo_call_this_turn = false;
-    app.display_log = entries;
+    app.transcript.display_log = entries;
 }
 
 /// Re-render the transcript after a rewind: from the display journal when there
 /// is one (so the kept turns keep their reasoning and tool rows), else from the
 /// `history` the rewind left behind.
 fn rebuild_transcript(app: &mut App) {
-    app.transcript.clear();
-    app.tool_group = None;
-    app.grouped_ids.clear();
+    app.transcript.rows.clear();
+    app.transcript.tool_group = None;
+    app.transcript.grouped_ids.clear();
     app.starting.clear();
-    app.groups.clear();
-    app.pending_rows.clear();
-    app.reasoning_blocks.clear();
-    app.expanded_traces.clear();
-    app.subagent_blocks.clear();
-    app.expanded.clear();
-    app.reveal = None;
+    app.transcript.groups.clear();
+    app.transcript.pending_rows.clear();
+    app.transcript.reasoning_blocks.clear();
+    app.transcript.expanded_traces.clear();
+    app.transcript.subagent_blocks.clear();
+    app.transcript.expanded.clear();
+    app.transcript.reveal = None;
     app.find = None;
-    app.assistant_buf.clear();
-    app.reset_buf_scan();
-    app.reasoning_segs.clear();
-    app.last_kind = Kind::None;
-    if !app.display_log.is_empty() {
-        let logged = std::mem::take(&mut app.display_log);
+    app.transcript.assistant_buf.clear();
+    app.transcript.reset_buf_scan();
+    app.transcript.reasoning_segs.clear();
+    app.transcript.last_kind = Kind::None;
+    if !app.transcript.display_log.is_empty() {
+        let logged = std::mem::take(&mut app.transcript.display_log);
         return replay_display_log(app, logged);
     }
     let history = app.history.clone();
@@ -19545,12 +19931,12 @@ fn rebuild_transcript(app: &mut App) {
             // verbatim in history but must not flood the transcript.
             match super::invocation_label(&text) {
                 Some(label) => app.push_invocation_label(&label, ""),
-                None => app.push_user_line(&text, &images),
+                None => app.transcript.push_user_line(&text, &images),
             }
         } else if role == "assistant" {
             let text = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
             if !text.is_empty() {
-                app.push_assistant_blocks(text, &[], None);
+                app.transcript.push_assistant_blocks(text, &[], None);
             }
         }
     }
@@ -19592,24 +19978,24 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
 
     app.history.clear();
     app.thread_id = Some(full_id.to_string());
-    app.transcript.clear();
-    app.tool_group = None;
-    app.grouped_ids.clear();
-    app.groups.clear();
-    app.pending_rows.clear();
-    app.reasoning_blocks.clear();
-    app.expanded_traces.clear();
-    app.subagent_blocks.clear();
+    app.transcript.rows.clear();
+    app.transcript.tool_group = None;
+    app.transcript.grouped_ids.clear();
+    app.transcript.groups.clear();
+    app.transcript.pending_rows.clear();
+    app.transcript.reasoning_blocks.clear();
+    app.transcript.expanded_traces.clear();
+    app.transcript.subagent_blocks.clear();
     // The conversation these would report into is being replaced.
     app.stop_subagents();
     app.stop_monitors();
     app.shell_set.take_notices();
-    app.expanded.clear();
-    app.reveal = None;
+    app.transcript.expanded.clear();
+    app.transcript.reveal = None;
     app.find = None;
-    app.assistant_buf.clear();
-    app.reset_buf_scan();
-    app.reasoning_segs.clear();
+    app.transcript.assistant_buf.clear();
+    app.transcript.reset_buf_scan();
+    app.transcript.reasoning_segs.clear();
     app.turn = (0, 0);
     app.scrollback = 0;
     app.message_queue.clear();
@@ -19678,7 +20064,7 @@ async fn load_thread(app: &mut App, thread: &serde_json::Value, verb: &str) {
             )
         })
         .count();
-    app.display_log.clear();
+    app.transcript.display_log.clear();
     if logged.is_empty() {
         rebuild_transcript(app);
     } else {
@@ -19887,6 +20273,108 @@ impl Segment {
     }
 }
 
+/// A transcript body measured at one width (see `Transcript::layout_body`):
+/// its segments top to bottom, their total height, and where the rows `draw`
+/// owes a scroll to (a revealed region, the current search match) start.
+struct BodyLayout {
+    segs: Vec<Segment>,
+    content_h: u16,
+    reveal_at: Option<u16>,
+    /// Segment holding the current search match, and (on the frame that owes
+    /// the jump) where it starts, in wrapped lines.
+    find_seg: Option<usize>,
+    find_at: Option<u16>,
+}
+
+impl BodyLayout {
+    /// Pad a body shorter than `inner_h` with blank rows above, so it pins to
+    /// the bottom (terminal-chat feel) instead of top-anchoring with a gap
+    /// below.
+    fn pin(&mut self, inner_h: u16) {
+        let pad = transcript_top_padding(self.content_h, inner_h);
+        if pad == 0 {
+            return;
+        }
+        self.segs.insert(
+            0,
+            Segment {
+                idx: None,
+                height: pad,
+                lines: Some(vec![Line::raw(""); pad as usize]),
+            },
+        );
+        self.content_h = self.content_h.saturating_add(pad);
+        self.reveal_at = self.reveal_at.map(|n| n.saturating_add(pad));
+        self.find_at = self.find_at.map(|n| n.saturating_add(pad));
+        self.find_seg = self.find_seg.map(|n| n + 1);
+    }
+
+    /// Materialize the `height` rows starting `scroll` lines down: the lines
+    /// to hand a wrapping `Paragraph`, which transcript row owns each screen
+    /// row, and how far the paragraph still has to scroll inside the first
+    /// segment. Only segments overlapping the window are cloned, so the
+    /// paragraph wraps a viewport's worth of lines instead of the session.
+    /// `find` paints the search term onto those lines, the current match
+    /// brighter.
+    fn window(
+        self,
+        rows: &[Row],
+        width: u16,
+        scroll: u16,
+        height: u16,
+        find: Option<(&str, Option<find::Hit>)>,
+    ) -> (Vec<Line<'static>>, Vec<Option<usize>>, u16) {
+        let end = scroll.saturating_add(height);
+        let mut visible: Vec<Line<'static>> = Vec::new();
+        // Parallel to the *screen* rows of the body, in wrapped coordinates:
+        // which transcript index (if any) owns each one, so a mouse click can
+        // be mapped back to a region to toggle.
+        let mut row_index: Vec<Option<usize>> = Vec::with_capacity(height as usize);
+        let mut first_start: Option<u16> = None;
+        let mut at: u16 = 0;
+        for (n, seg) in self.segs.into_iter().enumerate() {
+            let seg_end = at.saturating_add(seg.height);
+            if seg_end > scroll && at < end {
+                first_start.get_or_insert(at);
+                let lines = match seg.lines {
+                    Some(lines) => lines,
+                    // Committed rows are cloned out of the cache only here.
+                    None => seg
+                        .idx
+                        .and_then(|i| rows.get(i))
+                        .map(|row| row.lines(width))
+                        .unwrap_or_default(),
+                };
+                // Search highlights are painted onto the lines already being
+                // materialized, so only the viewport pays for them and the row
+                // cache never holds a highlighted copy.
+                match find {
+                    Some((needle, hit)) => {
+                        visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
+                            let current =
+                                self.find_seg == Some(n) && hit.is_some_and(|h| h.line == li);
+                            find::highlight_line(line, needle, current)
+                        }))
+                    }
+                    None => visible.extend(lines),
+                }
+                let visible_rows = seg_end.min(end).saturating_sub(at.max(scroll));
+                row_index.extend(std::iter::repeat_n(seg.idx, visible_rows as usize));
+            }
+            at = seg_end;
+            if at >= end {
+                break;
+            }
+        }
+        row_index.resize(height as usize, None);
+        // What the paragraph still has to skip inside the first
+        // partially-scrolled segment; everything before it was never
+        // materialized.
+        let offset = scroll.saturating_sub(first_start.unwrap_or(scroll));
+        (visible, row_index, offset)
+    }
+}
+
 /// Whether the body currently ends on a blank line, so `draw` knows if the
 /// streaming tail needs a separator above it. Reads the last rendered line
 /// rather than the last row's source, since a row renders to several lines.
@@ -19923,7 +20411,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // Cached before anything reads it: the status panel sizes the layout, so a
     // stale width would mis-size the frame a resize lands on. The body spans
     // the full frame width (its border is top-only).
-    app.view_width = f.area().width.max(1);
+    app.transcript.view_width = f.area().width.max(1);
     if let Some(picker) = app.model_picker.as_ref() {
         draw_model_picker(f, f.area(), picker, &app.model);
         return;
@@ -19986,7 +20474,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     // fan-out each frame so a finishing or newly-dispatched child appears
     // without reopening. Sequential borrows: read subagents, then write picker.
     if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
-        let items = agent_picker_items(&app.subagents);
+        let items = agent_picker_items(&app.subagents, &app.transcript.subagent_blocks);
         if let Some(p) = app.picker.as_mut() {
             p.selected = p.selected.min(items.len().saturating_sub(1));
             p.items = items;
@@ -20002,20 +20490,22 @@ fn draw(f: &mut Frame, app: &mut App) {
             p.items = items;
         }
     }
-    if let Some(picker) = &app.picker {
+    if let Some(kind) = app.picker.as_ref().map(|p| p.kind) {
         app.row_index.clear();
-        let toml_path = app.agent_dir.join("agent.toml");
-        draw_picker(
-            f,
-            chunks[1],
-            picker,
-            &toml_path,
-            app.mcp_detail.as_ref(),
-            app.mcp_auth.as_ref(),
-            &app.subagents,
-            app.agent_detail.as_deref(),
-            app.spinner(),
-        );
+        if kind == PickerKind::AgentDetail {
+            draw_agent_detail(f, chunks[1], app);
+        } else if let Some(picker) = &app.picker {
+            let toml_path = app.agent_dir.join("agent.toml");
+            draw_picker(
+                f,
+                chunks[1],
+                picker,
+                &toml_path,
+                app.mcp_detail.as_ref(),
+                app.mcp_auth.as_ref(),
+                app.spinner(),
+            );
+        }
         f.render_widget(input_box(app, chunks[2].width), chunks[2]);
         f.render_widget(dock_line(app, chunks[3].width), chunks[3]);
         // The `/mcp` sign-in confirm lives here too: the picker path returns
@@ -20031,296 +20521,58 @@ fn draw(f: &mut Frame, app: &mut App) {
         return;
     }
 
-    // ---- Measure ----
-    // Every committed row contributes only its *height* here, read from the row
-    // cache in O(1); the rows the viewport actually shows are the only ones
-    // materialized and word-wrapped, in the pass below. Laying the whole
-    // session out every frame is what made a long transcript crawl: the body
-    // Paragraph wrapped all of it twice (once to count, once to render), so the
-    // per-frame cost tracked history rather than what was on screen.
-    let mut segs: Vec<Segment> = Vec::with_capacity(app.transcript.len() + 8);
-    let mut content_h: u16 = 0;
-    let mut reveal_at: Option<u16> = None;
-    // The current search match: which segment holds it, and (on the frame that
-    // owes the jump) where that segment starts, in wrapped lines.
-    let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
-    let find_jump = app.find.as_ref().is_some_and(|f| f.jump);
-    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
-    let mut find_seg: Option<usize> = None;
-    let mut find_at: Option<u16> = None;
-    // A finished trace (an answer follows) folds its run of reasoning/tool rows
-    // to one static `Thought/Worked` header unless the user expanded it. The
-    // active run stays open as the live growing rail while the model reasons and
-    // calls tools -- but the moment answer prose begins streaming, the whole run
-    // collapses to its header too, so the reader's eye is on the answer rather
-    // than the scaffolding that produced it. (`finalize_tool_group` closes the
-    // open group on that same first prose token, so it is already a trace member.)
-    let last_answer = app.last_answer_idx();
-    let answer_started = app.answer_started();
-    // Built once: it sorts every group and reasoning block in the session.
-    let trace_runs = app.trace_runs();
-    let mut collapsed_headers: HashMap<usize, TraceRun> = HashMap::new();
-    for run in trace_runs.iter().copied() {
-        let finished = answer_started || last_answer.is_some_and(|a| run.end < a);
-        if finished && !app.expanded_traces.contains(&run.start) {
-            collapsed_headers.insert(run.start, run);
-        }
-    }
-    let hidden_trace_rows: std::collections::HashSet<usize> = collapsed_headers
-        .values()
-        .flat_map(|r| (r.start + 1)..=r.end)
-        .collect();
-    // A finished trace the user expanded caps its rail with a `└ Done` terminal
-    // after its last row, keyed by that row's index. The live rail's terminal is
-    // its current step, and a folded trace shows only its header, so neither gets
-    // one.
-    let expanded_trace_ends: std::collections::HashSet<usize> = trace_runs
-        .iter()
-        .filter(|r| {
-            last_answer.is_some_and(|a| r.end < a) && app.expanded_traces.contains(&r.start)
-        })
-        .map(|r| r.end)
-        .collect();
-    // Built on the first expanded row, so a frame with nothing expanded pays
-    // nothing and one with many expanded pays one pass, not one per row.
-    let mut region_index: Option<RegionIndex> = None;
-    for (i, row) in app.transcript.iter().enumerate() {
-        // A collapsed trace shows a single header at its start and hides the
-        // rest of its rows.
-        if hidden_trace_rows.contains(&i) {
-            continue;
-        }
-        if let Some(run) = collapsed_headers.get(&i) {
-            let line = trace_header_line(run);
-            let seg = Segment::eager(Some(i), vec![line], width);
-            if app.reveal == Some(i) {
-                reveal_at = Some(content_h);
-            }
-            content_h = content_h.saturating_add(seg.height);
-            segs.push(seg);
-            continue;
-        }
-        if app.reveal == Some(i) {
-            reveal_at = Some(content_h);
-        }
-        // Every committed row re-renders at the current width, so a resize
-        // re-flows prose, re-cuts diffs and re-truncates labels. The open
-        // group's row is live (spinner, or lingering finished output), so it
-        // can never come from the row cache.
-        let seg = match app.tool_group.as_ref().filter(|g| g.idx == i) {
-            Some(g) => {
-                // The open group's shell calls render live: a running command
-                // shows its header with elapsed and its streaming output tail; a
-                // finished one keeps its settled header and output head until
-                // the group folds, so the output does not vanish the instant the
-                // result lands. A running non-shell group keeps its plain
-                // activity row; a finished non-shell group (no shell rows, not
-                // yet committed) renders its folded summary row.
-                let mut panel = app.live_shell_panel(g, app.spinner_frame, width);
-                // The panel only shows the shell calls. A group can keep folding
-                // in later, non-shell calls (a read/grep after a bash), or the
-                // running command may not be a shell call at all -- those would be
-                // hidden behind the lingering output. Show the running activity
-                // row beneath it too, unless the in-flight call is itself a shell
-                // call (whose header already carries its own bullet and clock).
-                let inflight_shell = g
-                    .calls
-                    .iter()
-                    .rev()
-                    .find(|c| c.content.is_none())
-                    .is_some_and(|c| c.command.is_some());
-                if !panel.is_empty() {
-                    if g.is_running() && !inflight_shell {
-                        panel.push(Line::raw(""));
-                        panel.extend(running_group_rows(g, app.spinner_frame, width));
-                    }
-                    Segment::eager(Some(i), panel, width)
-                } else if g.is_running() {
-                    Segment::eager(
-                        Some(i),
-                        running_group_rows(g, app.spinner_frame, width),
-                        width,
-                    )
-                } else {
-                    Segment {
-                        idx: Some(i),
-                        height: row.height(width),
-                        lines: None,
-                    }
-                }
-            }
-            None => Segment {
-                idx: Some(i),
-                height: row.height(width),
-                lines: None,
-            },
-        };
-        if find_hit.is_some_and(|h| h.row == i && !h.detail) {
-            find_seg = Some(segs.len());
-            if find_jump {
-                find_at = Some(content_h);
-            }
-        }
-        content_h = content_h.saturating_add(seg.height);
-        segs.push(seg);
-        // The newest reasoning step lingers expanded for a grace window after it
-        // commits, then folds to its `reasoned for Ns` summary as the run rolls
-        // on -- so the chain of thought is readable across the tool call it
-        // triggered without every past step piling up on screen. Older steps and
-        // the whole run past the answer fold normally. `show_reasoning` already
-        // inlines every block, so this only touches the default-folded case.
-        let active_reasoning = app.status == Status::Running
-            && !app.show_reasoning
-            && !answer_started
-            && last_answer.is_none_or(|a| i > a)
-            && app
-                .reasoning_blocks
-                .last()
-                .is_some_and(|r| r.idx == i && r.committed.elapsed() < REASONING_FOLD_AFTER);
-        if app.expanded.contains(&i) || active_reasoning {
-            // Detail rows map back to the same owning idx (not `None`), so a
-            // click anywhere in an expanded block collapses it -- not just on
-            // its header row, which may have scrolled out of view once the
-            // block grew past the viewport (long reasoning, many tool calls).
-            // A lingering active step shows the same bounded scrolling tail the
-            // live stream did; a manual expand (click, Ctrl-O) shows the whole
-            // thing.
-            let detail = if active_reasoning && !app.expanded.contains(&i) {
-                app.reasoning_blocks
-                    .iter()
-                    .find(|r| r.idx == i)
-                    .map(|block| reasoning_tail_lines(&block.source, width))
-            } else {
-                let index = region_index.get_or_insert_with(|| app.region_index());
-                app.region_detail_in(index, i, width)
-            };
-            if let Some(detail) = detail {
-                if find_hit.is_some_and(|h| h.row == i && h.detail) {
-                    find_seg = Some(segs.len());
-                    if find_jump {
-                        find_at = Some(content_h);
-                    }
-                }
-                let seg = Segment::eager(Some(i), detail, width);
-                content_h = content_h.saturating_add(seg.height);
-                segs.push(seg);
-            }
-        }
-        // Cap an expanded finished trace's rail with the `└ Done` terminal, after
-        // its last row (and that row's own detail). Keyed to the same `idx`, so a
-        // click on it collapses the run like any other row of the trace.
-        if expanded_trace_ends.contains(&i) {
-            let seg = Segment::eager(Some(i), vec![trace_done_line()], width);
-            content_h = content_h.saturating_add(seg.height);
-            segs.push(seg);
-        }
-    }
-
-    // Streaming prose and the awaiting throbbers have no transcript index; they
-    // are rebuilt every frame and ride along as one trailing segment.
-    let mut tail: Vec<Line<'static>> = Vec::new();
-    let mut live_trailing = None;
-    if !app.assistant_buf.is_empty() || !app.reasoning_segs.is_empty() {
-        // Native reasoning is placed beside the live prose by its offset, so the
-        // shared renderer dims/folds it exactly like inline-tag providers.
-        let (live, live_leading, trailing) = app.live_tail(width);
-        live_trailing = trailing;
-        if !live.is_empty() {
-            // Mirror `gap` so the separator above the live block matches what
-            // its commit will emit: a band change (prose after a tool call) gets
-            // a blank, but streaming reasoning shares the tool band and gets
-            // none, so a tool call runs straight into the reasoning below it.
-            let leading = live_leading.unwrap_or(Kind::Prose);
-            if band(app.last_kind) != band(leading)
-                && !trailing_blank(&tail, &app.transcript, width)
-            {
-                tail.push(Line::raw(""));
-            }
-            // Live tail: same renderer as finalized messages, so an open
-            // (unterminated) wrapped reasoning block dims and grows during streaming.
-            tail.extend(live);
-        }
-    }
-    // Awaiting throbbers render last: below the assistant's reasoning/message
-    // so the "still waiting" state trails the prose that led up to the wait.
-    // A child with a live panel already shows its own throbber in the fan-out
-    // block, so only orphaned waits (the child ended, its result has not
-    // landed) get a row -- otherwise every parallel dispatch is listed twice.
-    let orphaned: Vec<&String> = app
+    // Awaiting throbbers render below the live tail: below the assistant's
+    // reasoning/message so the "still waiting" state trails the prose that led
+    // up to the wait. A child with a live panel already shows its own throbber
+    // in the fan-out block, so only orphaned waits (the child ended, its result
+    // has not landed) get a row -- otherwise every parallel dispatch is listed
+    // twice. In-progress tool calls whose arguments are still streaming follow:
+    // a throbber trails the prose until the full call (with args) arrives and
+    // renders its own row.
+    let mut extra: Vec<Line<'static>> = app
         .awaiting
         .iter()
         .filter(|(_, run_id, _)| !app.subagents.iter().any(|p| &p.run_id == run_id))
-        .map(|(_, _, name)| name)
+        .map(|(_, _, name)| {
+            running_tool_row(app.spinner_frame, &format!("Awaiting subagent {name}"))
+        })
         .collect();
-    // These throbbers are tool-band rows, so they only need a separator when the
-    // row above is a different band. After reasoning or a tool call (both the
-    // tool band) they run straight on; only answer prose (or a user/meta line)
-    // above them earns a blank. What precedes is the live tail if one rendered,
-    // else the last committed row.
-    let preceding_kind = if tail.is_empty() {
-        app.last_kind
-    } else {
-        live_trailing.unwrap_or(Kind::Prose)
-    };
-    if (!orphaned.is_empty() || !app.starting.is_empty())
-        && band(preceding_kind) != band(Kind::Tool)
-        && !trailing_blank(&tail, &app.transcript, width)
-    {
-        tail.push(Line::raw(""));
-    }
-    for name in orphaned {
-        tail.push(running_tool_row(
-            app.spinner_frame,
-            &format!("Awaiting subagent {name}"),
-        ));
-    }
-    // In-progress tool calls whose arguments are still streaming: a throbber
-    // trails the prose until the full call (with args) arrives and renders its
-    // own row.
     for call in &mut app.starting {
-        tail.extend(starting_call_lines(call, app.spinner_frame, width));
+        extra.extend(starting_call_lines(call, app.spinner_frame, width));
     }
-    if !tail.is_empty() {
-        let seg = Segment::eager(None, tail, width);
-        content_h = content_h.saturating_add(seg.height);
-        segs.push(seg);
-    }
+    let mut layout = app.transcript.layout_body(
+        width,
+        app.spinner_frame,
+        app.status == Status::Running,
+        false,
+        app.find.as_ref(),
+        extra,
+    );
 
     // TOP border only: the rule under the transcript is now its own row below
     // the todo HUD (see the layout above), not this block's bottom border.
     let inner_h = chunks[1].height.saturating_sub(1);
-    let pad = transcript_top_padding(content_h, inner_h);
-    if pad > 0 {
-        segs.insert(
-            0,
-            Segment {
-                idx: None,
-                height: pad,
-                lines: Some(vec![Line::raw(""); pad as usize]),
-            },
-        );
-        reveal_at = reveal_at.map(|n| n.saturating_add(pad));
-        find_at = find_at.map(|n| n.saturating_add(pad));
-        find_seg = find_seg.map(|n| n + 1);
-    }
-    let total = content_h.saturating_add(pad);
-    let max_back = total.saturating_sub(inner_h);
-    if let Some(target) = reveal_at {
+    layout.pin(inner_h);
+    let max_back = layout.content_h.saturating_sub(inner_h);
+    if let Some(target) = layout.reveal_at {
         // Position the region near the top of the viewport; clamps to pinned
         // bottom when it is already close enough to the end.
         app.scrollback = max_back.saturating_sub(target);
     }
-    app.reveal = None;
-    if let (Some(start), Some(hit)) = (find_at, find_hit) {
+    app.transcript.reveal = None;
+    let find_hit = app.find.as_ref().and_then(|f| f.current_hit());
+    if let (Some(start), Some(hit)) = (layout.find_at, find_hit) {
         // Down to the matching line inside its segment, measured with the same
         // wrap the body uses. Only on the jump frame, so the lines above it are
         // cloned once per `n`/`N`, not every frame.
-        let above = segs
-            .get(find_seg.unwrap_or(usize::MAX))
+        let above = layout
+            .segs
+            .get(layout.find_seg.unwrap_or(usize::MAX))
             .map(|seg| match &seg.lines {
                 Some(lines) => lines[..hit.line.min(lines.len())].to_vec(),
                 None => app
                     .transcript
+                    .rows
                     .get(hit.row)
                     .map(|row| {
                         let mut lines = row.lines(width);
@@ -20335,59 +20587,19 @@ fn draw(f: &mut Frame, app: &mut App) {
         let target = start.saturating_add(above).saturating_sub(inner_h / 3);
         app.scrollback = max_back.saturating_sub(target);
     }
+    let find_needle = app.find.as_ref().and_then(|f| find::needle(&f.term));
     if let Some(find) = app.find.as_mut() {
         find.jump = false;
     }
     app.scrollback = app.scrollback.min(max_back);
     let scroll = max_back - app.scrollback;
-
-    // ---- Materialize the visible window ----
-    // Only segments overlapping [scroll, scroll + inner_h) are cloned, so the
-    // Paragraph below wraps a viewport's worth of lines instead of the session.
-    let end = scroll.saturating_add(inner_h);
-    let mut visible: Vec<Line<'static>> = Vec::new();
-    // Parallel to the *screen* rows of the body, in wrapped coordinates: which
-    // transcript index (if any) owns each one, so a mouse click can be mapped
-    // back to a region to toggle.
-    let mut row_index: Vec<Option<usize>> = Vec::with_capacity(inner_h as usize);
-    let mut first_start: Option<u16> = None;
-    let mut at: u16 = 0;
-    for (n, seg) in segs.into_iter().enumerate() {
-        let seg_end = at.saturating_add(seg.height);
-        if seg_end > scroll && at < end {
-            first_start.get_or_insert(at);
-            let lines = match seg.lines {
-                Some(lines) => lines,
-                // Committed rows are cloned out of the cache only here.
-                None => seg
-                    .idx
-                    .and_then(|i| app.transcript.get(i))
-                    .map(|row| row.lines(width))
-                    .unwrap_or_default(),
-            };
-            // Search highlights are painted onto the lines already being
-            // materialized, so only the viewport pays for them and the row
-            // cache never holds a highlighted copy.
-            match &find_needle {
-                Some(needle) => visible.extend(lines.into_iter().enumerate().map(|(li, line)| {
-                    let current = find_seg == Some(n) && find_hit.is_some_and(|h| h.line == li);
-                    find::highlight_line(line, needle, current)
-                })),
-                None => visible.extend(lines),
-            }
-            let visible_rows = seg_end.min(end).saturating_sub(at.max(scroll));
-            row_index.extend(std::iter::repeat_n(seg.idx, visible_rows as usize));
-        }
-        at = seg_end;
-        if at >= end {
-            break;
-        }
-    }
-    row_index.resize(inner_h as usize, None);
-
-    // What the body still has to skip inside the first partially-scrolled
-    // segment; everything before it was never materialized.
-    let offset = scroll.saturating_sub(first_start.unwrap_or(scroll));
+    let (visible, row_index, offset) = layout.window(
+        &app.transcript.rows,
+        width,
+        scroll,
+        inner_h,
+        find_needle.as_deref().map(|needle| (needle, find_hit)),
+    );
     let body = Paragraph::new(visible)
         .wrap(Wrap { trim: false })
         .block(Block::default().borders(Borders::TOP));
@@ -21650,8 +21862,6 @@ fn draw_picker(
     toml_path: &std::path::Path,
     mcp_detail: Option<&McpDetail>,
     mcp_auth: Option<&McpAuthFlow>,
-    subagents: &[SubagentPanel],
-    agent_detail: Option<&str>,
     spinner: &str,
 ) {
     use ratatui::widgets::{List, ListItem, ListState};
@@ -21791,15 +22001,6 @@ fn draw_picker(
         );
         f.render_widget(Paragraph::new(info), info_area);
         f.render_stateful_widget(list.block(Block::default()), list_area, &mut state);
-    } else if picker.kind == PickerKind::AgentDetail {
-        // One subagent's live detail: rendered from the panels, not the picker
-        // rows, so it updates in place as the child works and empties when it
-        // finishes.
-        let block = panel_block(theme::border_active()).title(picker.title());
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-        let lines = agent_detail_lines(subagents, agent_detail, inner.width, inner.height);
-        f.render_widget(Paragraph::new(lines), inner);
     } else {
         f.render_stateful_widget(list, area, &mut state);
     }
@@ -22145,11 +22346,11 @@ fn header_spans(app: &App) -> Vec<Span<'static>> {
             "watching"
         };
         (label.to_string(), Style::new().fg(theme::accent()))
-    } else if !app.show_reasoning {
+    } else if !app.transcript.show_reasoning {
         // Reasoning folding is on: show the live thought state in place of the
         // generic 'working'. [thinking] while a  block streams; [thought for
         // Ns] for the rest of the turn once it closes.
-        match app.reasoning_status() {
+        match app.transcript.reasoning_status() {
             Some(s) => s,
             None => ("working".to_string(), Style::new().fg(theme::accent()).bold()),
         }
@@ -22708,7 +22909,7 @@ fn working_row(app: &App, width: u16) -> Line<'static> {
     // orange while a reasoning block streams -- so the row reads alive without
     // shifting under the eye.
     let step = app.spinner_frame / WORD_ROTATE_FRAMES;
-    let (word, style, tint) = if app.reasoning_open() {
+    let (word, style, tint) = if app.transcript.reasoning_open() {
         (
             THINKING_WORDS[step % THINKING_WORDS.len()],
             // Same theme-aware accent as markdown bold, so reasoning reads
@@ -23036,9 +23237,9 @@ mod tests {
         SLASH_COMMANDS, SPINNER, SPINNER_ADVANCE_MS, THINKING_WORDS, WORKING_WORDS,
     };
     use super::{
-        agent_detail_lines, agent_picker_items, agents_column, background_shell_picker_items,
-        cache_summary_lines, child_result_summary, open_agents_picker, push_child_prose,
-        retry_wait_label, RetryWait, SubagentPanel, CHILD_PROSE_MAX,
+        agent_picker_items, agents_column, background_shell_picker_items, cache_summary_lines,
+        open_agents_picker, retry_wait_label, RetryWait, SubagentPanel, CHILD_RESULT_MAX,
+        CHILD_ROWS_MAX,
     };
     use crate::core::agent::events::{StreamEvent, Usage};
     use crate::core::agent::r#loop::PermissionRegistry;
@@ -23140,25 +23341,11 @@ mod tests {
     }
 
     fn panel_with_calls(name: &str, calls: Vec<&str>) -> SubagentPanel {
-        let mut panel = SubagentPanel {
-            run_id: format!("sub-{name}-1"),
-            name: name.to_string(),
-            task: "review the file".to_string(),
-            calls: Vec::new(),
-            last_call_key: None,
-            repeats: 0,
-            requests: 0,
-            prompt_tokens: 0,
-            total_prompt_tokens: 0,
-            total_cached_tokens: 0,
-            cache_reported: false,
-            active: None,
-            queued: false,
-            waiting: 0,
-            pending: false,
-            phase: None,
-            log: Vec::new(),
-        };
+        let mut panel = SubagentPanel::new(
+            format!("sub-{name}-1"),
+            name.to_string(),
+            "review the file".to_string(),
+        );
         // Each label stands in for one distinct set of arguments, so equal
         // labels here are genuine repeats.
         for call in calls {
@@ -23218,9 +23405,24 @@ mod tests {
         assert_eq!(text.matches("bash").count(), 1, "one collapsed row: {text}");
     }
 
+    /// Open `/agents` on `run_id`'s detail and render a `w`x`h` frame, as the
+    /// rows of text the box shows.
+    fn agent_detail_text(app: &mut App, run_id: &str, w: u16, h: u16) -> String {
+        open_agents_picker(app);
+        if let Some(picker) = app.picker.as_mut() {
+            picker.kind = PickerKind::AgentDetail;
+        }
+        app.agent_detail = Some(run_id.to_string());
+        render_rows(app, w, h)
+            .into_iter()
+            .map(|row| row.trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
     #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
-        let items = agent_picker_items(&[]);
+        let items = agent_picker_items(&[], &[]);
         assert_eq!(items.len(), 1);
         assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
         assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
@@ -23229,7 +23431,7 @@ mod tests {
     #[test]
     fn agents_picker_row_names_the_child_and_flags_a_spin() {
         let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
-        let items = agent_picker_items(&panels);
+        let items = agent_picker_items(&panels, &[]);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
@@ -23238,21 +23440,18 @@ mod tests {
 
     #[test]
     fn agent_detail_shows_stats_and_collapses_a_spin() {
-        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 5])];
-        let lines = agent_detail_lines(&panels, Some("sub-kv-review-1"), 80, 20);
-        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let mut app = test_app();
+        app.subagents = vec![panel_with_calls("kv-review", vec!["bash {}"; 5])];
+        let text = agent_detail_text(&mut app, "sub-kv-review-1", 100, 20);
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
         assert!(text.contains("×5"), "a spin is flagged in the detail: {text}");
     }
 
     #[test]
-    fn agent_detail_notes_a_finished_child() {
-        let text = agent_detail_lines(&[], Some("sub-gone-1"), 80, 20)
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(text.contains("finished"), "{text}");
+    fn agent_detail_notes_a_child_it_no_longer_has() {
+        let mut app = test_app();
+        let text = agent_detail_text(&mut app, "sub-gone-1", 80, 20);
+        assert!(text.contains("no longer available"), "{text}");
     }
 
     /// A later phase's subagents appear waiting (with their phase) before they
@@ -23332,6 +23531,10 @@ mod tests {
             name: "counter".to_string(),
             event: Box::new(event),
         };
+        app.apply(child(StreamEvent::Step { index: 1, max: 0 }));
+        app.apply(child(StreamEvent::Reasoning {
+            text: "Counting needs a shell.".into(),
+        }));
         app.apply(child(StreamEvent::Token { text: "Let me run ".into() }));
         app.apply(child(StreamEvent::Token { text: "the command.".into() }));
         app.apply(child(StreamEvent::ToolCall {
@@ -23360,36 +23563,21 @@ mod tests {
         app
     }
 
-    /// The detail view reads like the main transcript: the child's prose, and
-    /// each tool call with its outcome tag and a summary of its result, in the
-    /// order they happened.
+    /// The detail view reads like the main transcript, because the main
+    /// transcript's code built it: the child's answer under the `•` answer
+    /// gutter, its reasoning folded to a `Thought` row, and its consecutive
+    /// tool calls folded into one group row whose bullet carries the latest
+    /// outcome, in the order they happened.
     #[test]
-    fn agent_detail_shows_the_childs_prose_and_tool_calls() {
-        let app = app_with_child_activity();
-        let lines = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40);
-        let text = lines
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
+    fn agent_detail_shows_the_childs_run_like_the_main_transcript() {
+        let mut app = app_with_child_activity();
+        let text = agent_detail_text(&mut app, "sub-counter-1", 100, 40);
         let order = [
-            "Let me run the command.",
-            "• Ran sleep 20 && echo counted",
-            "└ counted",
-            "• Read missing.txt",
-            "└ ERROR: no such file",
-            "All done.",
+            "┊ Thought",
+            "• Let me run the command.",
+            "• Read 1 file; ran 1 command",
+            "• All done.",
         ];
-        // The outcome is the bullet's colour, not a glyph of its own.
-        let bullet = |label: &str| {
-            let line = lines
-                .iter()
-                .find(|l| line_text(l).contains(label))
-                .unwrap_or_else(|| panic!("no {label:?} row in:\n{text}"));
-            line.spans[0].style
-        };
-        assert_eq!(bullet("Ran sleep"), ToolState::Success.bullet_style());
-        assert_eq!(bullet("Read missing"), ToolState::Failure.bullet_style());
         let mut at = 0;
         for want in order {
             let found = text[at..].find(want).unwrap_or_else(|| {
@@ -23397,30 +23585,122 @@ mod tests {
             });
             at += found + want.len();
         }
+        // The rows are the main transcript's own, so the outcome is still the
+        // bullet's colour.
+        let child = &app.subagents[0].transcript;
+        let failed = child.rows.iter().any(|row| {
+            row.lines(100).iter().any(|l| {
+                line_text(l).contains("Read 1 file")
+                    && l.spans[0].style == ToolState::Failure.bullet_style()
+            })
+        });
+        assert!(
+            failed,
+            "the group ended on a failed read, so its bullet is red"
+        );
     }
 
-    /// A long-running child keeps its newest activity on screen: the detail
-    /// shows the tail of the log and says how much scrolled off above it.
-    #[test]
-    fn agent_detail_keeps_the_newest_activity_in_view() {
+    /// A long-running child opens on its newest activity, and PgUp/Home scroll
+    /// back through the rest of its run inside the box; End follows it again.
+    #[tokio::test]
+    async fn agent_detail_opens_on_the_newest_activity_and_scrolls() {
         let mut app = app_with_child_activity();
         for n in 0..40 {
             app.apply(StreamEvent::Subagent {
                 run_id: "sub-counter-1".to_string(),
                 name: "counter".to_string(),
-                event: Box::new(StreamEvent::ToolCall {
-                    id: format!("n{n}"),
-                    name: "bash".into(),
-                    args: json!({ "command": format!("echo step-{n}") }),
+                event: Box::new(StreamEvent::Token {
+                    text: format!("step-{n} done.\n\n"),
                 }),
             });
+            app.apply(StreamEvent::Subagent {
+                run_id: "sub-counter-1".to_string(),
+                name: "counter".to_string(),
+                event: Box::new(StreamEvent::Step { index: n, max: 0 }),
+            });
         }
-        let lines = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 20);
-        assert!(lines.len() <= 20, "fits the box: {}", lines.len());
-        let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
-        assert!(text.contains("step-39"), "newest call shown: {text}");
-        assert!(!text.contains("step-0\n"), "oldest scrolled off: {text}");
-        assert!(text.contains("earlier"), "says what scrolled off: {text}");
+        let text = agent_detail_text(&mut app, "sub-counter-1", 80, 20);
+        assert!(text.contains("step-39"), "newest shown: {text}");
+        assert!(!text.contains("step-1 "), "oldest scrolled off: {text}");
+
+        press(&mut app, KeyCode::Home, KeyModifiers::NONE).await;
+        let top = render_rows(&mut app, 80, 20).join("\n");
+        assert!(
+            top.contains("Let me run the command."),
+            "Home reaches the start: {top}"
+        );
+        assert!(!top.contains("step-39"), "{top}");
+
+        press(&mut app, KeyCode::PageDown, KeyModifiers::NONE).await;
+        let lower = render_rows(&mut app, 80, 20).join("\n");
+        assert_ne!(top, lower, "PgDn moves the view");
+
+        press(&mut app, KeyCode::End, KeyModifiers::NONE).await;
+        let bottom = render_rows(&mut app, 80, 20).join("\n");
+        assert!(
+            bottom.contains("step-39"),
+            "End follows the child again: {bottom}"
+        );
+        assert_eq!(
+            app.picker.as_ref().map(|p| p.kind),
+            Some(PickerKind::AgentDetail),
+            "scrolling stays on the detail"
+        );
+    }
+
+    /// A child that has finished is still listed and can still be opened: its
+    /// transcript moves into its summary row's block instead of being dropped.
+    #[test]
+    fn a_finished_child_is_still_listed_and_viewable() {
+        let mut app = app_with_child_activity();
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-counter-1".into(),
+            name: "counter".into(),
+            error: None,
+        });
+        assert!(app.subagents.is_empty(), "the live panel is gone");
+        let items = agent_picker_items(&app.subagents, &app.transcript.subagent_blocks);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].value, "sub-counter-1");
+        assert!(items[0].label.contains("finished"), "{}", items[0].label);
+        let text = agent_detail_text(&mut app, "sub-counter-1", 100, 40);
+        assert!(text.contains("finished"), "the header says so: {text}");
+        assert!(
+            text.contains("• All done."),
+            "the run is still there: {text}"
+        );
+        assert!(text.contains("Read 1 file; ran 1 command"), "{text}");
+    }
+
+    /// Ctrl-O on a finished child's summary row expands to its run, laid out
+    /// like the main transcript under the row's tree gutter, rather than the
+    /// bare list of call labels the dock shows.
+    #[test]
+    fn a_finished_childs_summary_row_expands_to_its_run() {
+        let mut app = app_with_child_activity();
+        app.apply(StreamEvent::SubagentEnd {
+            run_id: "sub-counter-1".into(),
+            name: "counter".into(),
+            error: None,
+        });
+        app.transcript.toggle_regions();
+        let screen = render_rows(&mut app, 100, 40).join("\n");
+        assert!(
+            screen.contains("subagent counter finished (2 tool calls)"),
+            "{screen}"
+        );
+        assert!(screen.contains("└ ┊ Thought"), "{screen}");
+        assert!(screen.contains("• Let me run the command."), "{screen}");
+        assert!(
+            screen.contains("Ran sleep 20 && echo counted"),
+            "every call is open: {screen}"
+        );
+        assert!(screen.contains("ERROR: no such file"), "{screen}");
+        assert!(screen.contains("• All done."), "{screen}");
+        assert!(
+            !screen.contains("$ sleep"),
+            "not the dock's labels: {screen}"
+        );
     }
 
     /// `m` on a child's detail opens a message dock; Enter queues the text on
@@ -23459,12 +23739,15 @@ mod tests {
             vec![json!({ "role": "user", "content": "also say BANANA" })],
             "queued exactly as a parent message is"
         );
-        let text = agent_detail_lines(&app.subagents, Some("sub-counter-1"), 80, 40)
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(text.contains("also say BANANA"), "the message shows in its log: {text}");
+        let text = render_rows(&mut app, 80, 30).join("\n");
+        assert!(
+            text.contains("› also say BANANA"),
+            "the message shows as a user turn: {text}"
+        );
+        let bubble = app.subagents[0].transcript.rows.iter().any(
+            |row| matches!(row.kind, RowKind::System { glyph, .. } if glyph == super::USER_GLYPH),
+        );
+        assert!(bubble, "the steer is the main transcript's user bubble");
     }
 
     /// The dock opens over the `/agents` inspector, whose draw path returns
@@ -23645,7 +23928,8 @@ mod tests {
         assert_eq!(app.history.len(), 3);
         assert!(app.message_queue.is_empty());
         assert_eq!(
-            app.display_log
+            app.transcript
+                .display_log
                 .iter()
                 .filter(|e| matches!(e, DisplayEntry::User { .. }))
                 .count(),
@@ -23804,6 +24088,7 @@ mod tests {
         );
         assert_eq!(
             restored
+                .transcript
                 .display_log
                 .iter()
                 .filter(|e| matches!(e, DisplayEntry::User { text, .. } if text == "correction"))
@@ -23952,6 +24237,7 @@ mod tests {
         note_update(&mut app, Some(available_update("0.8.4-10", "0.8.4-11")));
         let text = app
             .transcript
+            .rows
             .iter()
             .map(message_text_of)
             .collect::<String>();
@@ -23964,9 +24250,9 @@ mod tests {
     #[test]
     fn no_update_available_notes_nothing() {
         let mut app = test_app();
-        let before = app.transcript.len();
+        let before = app.transcript.rows.len();
         note_update(&mut app, None);
-        assert_eq!(app.transcript.len(), before);
+        assert_eq!(app.transcript.rows.len(), before);
     }
 
     #[tokio::test]
@@ -23994,7 +24280,7 @@ mod tests {
         assert_eq!(second.matches("Claude Code keychain").count(), 1);
     }
     fn transcript_text(app: &App) -> String {
-        app.transcript.iter().map(message_text_of).collect()
+        app.transcript.rows.iter().map(message_text_of).collect()
     }
 
     #[tokio::test]
@@ -24076,7 +24362,7 @@ mod tests {
 
     /// Whether `app` holds a tool row reading `• <label>` in `state`.
     fn has_tool_row(app: &App, label: &str, state: ToolState) -> bool {
-        app.transcript.iter().any(|r| {
+        app.transcript.rows.iter().any(|r| {
             row_text(r).contains(&format!("\u{2022} {label}")) && tool_state(r) == Some(state)
         })
     }
@@ -24146,7 +24432,7 @@ mod tests {
     #[test]
     fn committed_prose_reflows_when_the_terminal_resizes() {
         let mut app = test_app();
-        app.push_assistant_blocks(
+        app.transcript.push_assistant_blocks(
             "| column one heading | column two heading |\n|---|---|\n\
              | a reasonably long value here | another reasonably long value |",
             &[],
@@ -24319,7 +24605,7 @@ mod tests {
         });
         // Close the group so its row reads as the finished command, not the
         // live "running 1 command" throbber.
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         // The label's rows, stripped of gutter and tag and joined back into the
         // text they display.
         let label = |rows: &[String], width: usize| {
@@ -24370,7 +24656,7 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         let rows = render_rows(&mut app, 80, 16);
         let has = |needle: &str| rows.iter().any(|r| r.trim_end().ends_with(needle));
         assert!(has("• Ran cd /tmp"), "first command line missing: {rows:?}");
@@ -24392,8 +24678,8 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": command }),
         });
-        app.finalize_tool_group();
-        let rendered = app.transcript.last().expect("no row").lines(80);
+        app.transcript.finalize_tool_group();
+        let rendered = app.transcript.rows.last().expect("no row").lines(80);
         assert_eq!(
             rendered.len(),
             super::TOOL_ROW_MAX_LINES,
@@ -24415,7 +24701,8 @@ mod tests {
     #[test]
     fn user_message_keeps_its_line_breaks() {
         let mut app = test_app();
-        app.push_user_line("first line\nsecond line", &[]);
+        app.transcript
+            .push_user_line("first line\nsecond line", &[]);
         let rows = render_rows(&mut app, 60, 12);
         assert!(
             rows.iter().any(|r| r.trim_end().ends_with("first line")),
@@ -24434,10 +24721,11 @@ mod tests {
     #[test]
     fn user_message_renders_as_a_filled_bubble() {
         let mut app = test_app();
-        app.push_user_line("first line\nsecond line", &[]);
+        app.transcript
+            .push_user_line("first line\nsecond line", &[]);
         let bg = super::user_bubble_bg();
         let fg = super::user_bubble_fg();
-        let row = app.transcript.last().expect("no user row");
+        let row = app.transcript.rows.last().expect("no user row");
         let lines = row.lines(60);
         let text: Vec<String> = lines.iter().map(line_text).collect();
         assert_eq!(text.len(), 4, "padding, two text lines, padding: {text:?}");
@@ -24487,13 +24775,13 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
-        app.assistant_buf = "Done, see `main.rs`.\n\n```rust\nfn main() {}\n```".into();
-        app.flush_assistant();
+        app.transcript.finalize_tool_group();
+        app.transcript.assistant_buf = "Done, see `main.rs`.\n\n```rust\nfn main() {}\n```".into();
+        app.transcript.flush_assistant();
         app.on_done("stop".into(), None);
         let bubble = super::user_bubble_bg();
         let mut filled = 0;
-        for row in &app.transcript {
+        for row in &app.transcript.rows {
             for line in row.lines(60) {
                 for span in &line.spans {
                     match span.style.bg {
@@ -24525,8 +24813,8 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
-        let group = app.groups.last().expect("no group");
+        app.transcript.finalize_tool_group();
+        let group = app.transcript.groups.last().expect("no group");
         let text: String = super::group_detail_lines(group, 40)
             .iter()
             .flat_map(|line| line.spans.iter())
@@ -24579,11 +24867,14 @@ mod tests {
         let mut app = test_app();
         let long = "Running cargo test --no-default-features --features cli -- cli::tui::tests";
         app.push_subagent_summary(
-            "reviewer",
-            vec![long.to_string()],
+            SubagentPanel::replayed("reviewer", &[long.to_string()]),
             SubagentOutcome::Finished,
         );
-        let block = app.subagent_blocks.last().expect("no subagent block");
+        let block = app
+            .transcript
+            .subagent_blocks
+            .last()
+            .expect("no subagent block");
         let lines = block.detail_lines(50);
         assert!(lines.len() > 1, "detail was not wrapped: {lines:?}");
         let text: String = lines
@@ -24708,8 +24999,8 @@ mod tests {
     #[test]
     fn tiny_frames_render_without_panicking() {
         let mut app = test_app();
-        app.push_user_line("hello", &[]);
-        app.push_assistant_blocks(
+        app.transcript.push_user_line("hello", &[]);
+        app.transcript.push_assistant_blocks(
             "| a | b |\n|---|---|\n| 1 | 2 |\n\n```rs\nlet x = 1;\n```",
             &[],
             None,
@@ -25245,7 +25536,7 @@ mod tests {
         let mut app = test_app();
         replay_display_log(&mut app, vec![entry]);
         assert_eq!(
-            app.reasoning_blocks.len(),
+            app.transcript.reasoning_blocks.len(),
             1,
             "legacy markers must still fold into a reasoning block"
         );
@@ -25268,7 +25559,7 @@ mod tests {
         assert_eq!(round_tripped, entry);
         let mut app = test_app();
         replay_display_log(&mut app, vec![entry]);
-        assert_eq!(app.reasoning_blocks.len(), 1);
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
     }
 
     /// The gate governs inline tags only. Native reasoning is carried
@@ -25345,7 +25636,7 @@ mod tests {
             });
             app.on_done("stop".into(), None);
             assert!(
-                app.reasoning_blocks.is_empty(),
+                app.transcript.reasoning_blocks.is_empty(),
                 "nothing may fold with the gate off"
             );
             let last = app.history.last().expect("assistant turn in history");
@@ -25381,7 +25672,7 @@ mod tests {
     #[test]
     fn live_tail_streams_open_reasoning_and_the_gate_hides_it() {
         let mut app = test_app();
-        app.assistant_buf = "<think>pondering the answer".to_string();
+        app.transcript.assistant_buf = "<think>pondering the answer".to_string();
 
         // Streaming is the default: a folded, still-open block shows its tail so
         // the user can watch the thought form.
@@ -25392,7 +25683,7 @@ mod tests {
         );
 
         // With the gate off only the header's [thinking] badge stands for it.
-        app.stream_reasoning = false;
+        app.transcript.stream_reasoning = false;
         let hidden = render_rows(&mut app, 60, 30).join("\n");
         assert!(
             !hidden.contains("pondering"),
@@ -25400,7 +25691,7 @@ mod tests {
         );
 
         // With show_reasoning on, folding is off entirely and it renders whole.
-        app.show_reasoning = true;
+        app.transcript.show_reasoning = true;
         let shown = render_rows(&mut app, 60, 30).join("\n");
         assert!(
             shown.contains("pondering"),
@@ -25549,8 +25840,8 @@ mod tests {
 
         // Age the summary beyond its TTL; it must fall back to [working] rather
         // than pinning [thought for Ns] for the rest of the turn.
-        if let Some(since) = app.thought_for_since {
-            app.thought_for_since =
+        if let Some(since) = app.transcript.thought_for_since {
+            app.transcript.thought_for_since =
                 Some(since - super::THOUGHT_FOR_TTL - std::time::Duration::from_secs(1));
         }
         let stale = render(&mut app);
@@ -25616,9 +25907,9 @@ mod tests {
             text: "<think>first thought</think>one<think>second thought</think>two".into(),
         });
         // Force a measurable duration so a single block would read "Thought for Ns".
-        app.thinking_since =
+        app.transcript.thinking_since =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         let text = transcript_text(&app);
         assert!(text.contains("Thought"), "reasoning summaries present: {text}");
         assert!(
@@ -25636,7 +25927,7 @@ mod tests {
             text: "<think>secret plan line</think>Answer.".into(),
         });
         app.on_done("stop".into(), None);
-        assert_eq!(app.reasoning_blocks.len(), 1);
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
 
         let render = |app: &mut App| {
             let mut terminal = Terminal::new(TestBackend::new(60, 30)).unwrap();
@@ -25659,7 +25950,7 @@ mod tests {
         );
         assert!(collapsed.contains("Thought"));
 
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         let expanded = render(&mut app);
         assert!(
             expanded.contains("secret plan line"),
@@ -25683,7 +25974,7 @@ mod tests {
             });
         }
         app.on_done("stop".into(), None);
-        assert_eq!(app.reasoning_blocks.len(), 1);
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
 
         let render = |app: &mut App| {
             let mut terminal = Terminal::new(TestBackend::new(60, 12)).unwrap();
@@ -25703,7 +25994,7 @@ mod tests {
         assert!(!render(&mut app).contains("Thought"));
 
         // Expanding scrolls the region into view so its detail is visible.
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         let expanded = render(&mut app);
         assert!(
             expanded.contains("hidden rationale"),
@@ -25744,22 +26035,23 @@ mod tests {
             diff: None,
         });
         app.on_done("stop".into(), None);
-        assert_eq!(app.reasoning_blocks.len(), 2);
-        assert_eq!(app.groups.len(), 2);
+        assert_eq!(app.transcript.reasoning_blocks.len(), 2);
+        assert_eq!(app.transcript.groups.len(), 2);
 
         // One toggle expands every region.
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         let all: std::collections::HashSet<usize> = app
+            .transcript
             .groups
             .iter()
             .map(|g| g.idx)
-            .chain(app.reasoning_blocks.iter().map(|r| r.idx))
+            .chain(app.transcript.reasoning_blocks.iter().map(|r| r.idx))
             .collect();
-        assert_eq!(app.expanded, all);
+        assert_eq!(app.transcript.expanded, all);
 
         // A second toggle collapses them all.
-        app.toggle_regions();
-        assert!(app.expanded.is_empty());
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.is_empty());
     }
 
     #[test]
@@ -26018,7 +26310,7 @@ mod tests {
             diff: None,
         });
         assert!(
-            !app.live_output.contains_key("t1"),
+            !app.transcript.live_output.contains_key("t1"),
             "the finished call still holds its buffer"
         );
     }
@@ -26058,7 +26350,12 @@ mod tests {
             id: "t1".into(),
             delta: "x".repeat(super::LIVE_OUTPUT_MAX_BYTES * 2),
         });
-        let held = app.live_output.get("t1").expect("buffered").len();
+        let held = app
+            .transcript
+            .live_output
+            .get("t1")
+            .expect("buffered")
+            .len();
         assert!(held <= super::LIVE_OUTPUT_MAX_BYTES, "kept {held} bytes");
     }
 
@@ -26486,7 +26783,7 @@ mod tests {
         assert_eq!(content[1]["type"], "image_url");
         assert!(app.pending_images.is_empty(), "pending images flushed");
 
-        let rendered: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rendered: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(rendered.iter().any(|l| l.contains("[IMAGE] shot.png")));
     }
 
@@ -26586,10 +26883,10 @@ mod tests {
 
         // The transcript row, the journal entry and the conversation agree, so
         // rewinding to #1 empties all three.
-        assert_eq!(user_entries(&app.display_log), 2);
+        assert_eq!(user_entries(&app.transcript.display_log), 2);
         rewind_to(&mut app, 0, false);
         assert!(app.history.is_empty());
-        assert!(app.display_log.is_empty());
+        assert!(app.transcript.display_log.is_empty());
         assert_eq!(app.input, typed, "the target message comes back verbatim");
     }
 
@@ -26606,13 +26903,13 @@ mod tests {
         app.submit_user("third".into());
 
         assert_eq!(app.history.iter().filter(|m| is_user_turn(m)).count(), 3);
-        assert_eq!(user_entries(&app.display_log), 3);
+        assert_eq!(user_entries(&app.transcript.display_log), 3);
 
         // Rewinding to "third" must drop it from the transcript as well.
         rewind_to(&mut app, 2, false);
         assert_eq!(app.history.iter().filter(|m| is_user_turn(m)).count(), 2);
-        assert_eq!(user_entries(&app.display_log), 2);
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        assert_eq!(user_entries(&app.transcript.display_log), 2);
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(!rows.iter().any(|r| r.contains("third")), "{rows:?}");
         assert!(
             !rows.iter().any(|r| r.contains("CANNED PROMPT BODY")),
@@ -26637,7 +26934,7 @@ mod tests {
         app.submit_user("then what".into());
 
         assert_eq!(app.history.iter().filter(|m| is_user_turn(m)).count(), 2);
-        assert_eq!(user_entries(&app.display_log), 2);
+        assert_eq!(user_entries(&app.transcript.display_log), 2);
 
         // The picker names the skill rather than truncating its template body.
         open_rewind_picker(&mut app);
@@ -26645,7 +26942,7 @@ mod tests {
         assert_eq!(items[0].label, "[skill:deploy]");
 
         rewind_to(&mut app, 1, false);
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             rows.iter().any(|r| r.contains("[skill:deploy] to staging")),
             "the kept invocation replays with its args: {rows:?}"
@@ -27036,7 +27333,11 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "sleep 60" }),
         });
-        assert!(app.tool_group.as_ref().is_some_and(|g| g.is_running()));
+        assert!(app
+            .transcript
+            .tool_group
+            .as_ref()
+            .is_some_and(|g| g.is_running()));
         press_esc(&mut app).await;
         assert_eq!(app.status, Status::Idle);
         let rows = render_rows(&mut app, 60, 30);
@@ -27468,7 +27769,7 @@ mod tests {
 
         run_command(&mut app, "help", &no_mcp()).await;
 
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("/login"), "{text}");
         assert!(text.contains("Sign in to a provider"), "{text}");
         assert!(!text.contains("Sign in to Tokamak"), "{text}");
@@ -27766,14 +28067,14 @@ mod tests {
     async fn login_prompt_esc_cancels_without_outcome_message() {
         let mut app = test_app();
         super::open_login_prompt(&mut app, "tokamak");
-        let before = app.transcript.len();
+        let before = app.transcript.rows.len();
 
         press(&mut app, KeyCode::Esc, KeyModifiers::NONE).await;
 
         assert!(app.login.is_none(), "Esc must close the prompt");
         assert!(app.login_submit.is_none());
         assert_eq!(
-            app.transcript.len(),
+            app.transcript.rows.len(),
             before,
             "cancellation must stay silent"
         );
@@ -28584,7 +28885,7 @@ mod tests {
             )),
         );
         assert!(app.login.is_none(), "an uneditable dock must not stay open");
-        let text: String = row_lines(&app.transcript)
+        let text: String = row_lines(&app.transcript.rows)
             .iter()
             .flat_map(|l| l.spans.clone())
             .map(|s| s.content.to_string())
@@ -28609,7 +28910,7 @@ mod tests {
                 account: Some("a@b.c".into()),
             }),
         ));
-        let text: String = row_lines(&app.transcript)
+        let text: String = row_lines(&app.transcript.rows)
             .iter()
             .flat_map(|l| l.spans.clone())
             .map(|s| s.content.to_string())
@@ -28627,7 +28928,7 @@ mod tests {
             "a fresh install must not start a turn with no model"
         );
         assert!(app.history.is_empty());
-        let text: String = row_lines(&app.transcript)
+        let text: String = row_lines(&app.transcript.rows)
             .iter()
             .flat_map(|l| l.spans.clone())
             .map(|s| s.content.to_string())
@@ -28658,7 +28959,7 @@ mod tests {
             data_url: "data:image/png;base64,AA".into(),
         });
         super::init_command(&mut app);
-        let text: String = row_lines(&app.transcript)
+        let text: String = row_lines(&app.transcript.rows)
             .iter()
             .flat_map(|l| l.spans.clone())
             .map(|s| s.content.to_string())
@@ -28666,7 +28967,8 @@ mod tests {
         assert!(!text.contains("Onboard yourself"), "{text}");
         assert!(text.contains("init ·"), "{text}");
         assert!(
-            !app.display_log
+            !app.transcript
+                .display_log
                 .iter()
                 .any(|e| matches!(e, DisplayEntry::User { .. })),
             "a hidden turn must not journal a user row"
@@ -28959,14 +29261,14 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>collecting the subagent answers</think>".into(),
         });
-        assert!(app.reasoning_blocks.is_empty());
+        assert!(app.transcript.reasoning_blocks.is_empty());
         app.apply(StreamEvent::ToolCall {
             id: "a1".into(),
             name: "await_subagent".into(),
             args: json!({ "run_id": "sub-reviewer-1" }),
         });
-        assert_eq!(app.reasoning_blocks.len(), 1);
-        assert!(app.assistant_buf.is_empty());
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
+        assert!(app.transcript.assistant_buf.is_empty());
         assert_eq!(app.awaiting.len(), 1);
     }
 
@@ -29018,7 +29320,10 @@ mod tests {
                 "reviewer".to_string()
             )
         );
-        assert!(app.tool_group.is_none(), "await must not open a tool group");
+        assert!(
+            app.transcript.tool_group.is_none(),
+            "await must not open a tool group"
+        );
         // The result clears the throbber.
         app.apply(StreamEvent::ToolResult {
             id: "a1".into(),
@@ -30961,8 +31266,8 @@ mod tests {
             error: None,
         });
         // A collapsed summary row + a retained expandable block.
-        assert_eq!(app.subagent_blocks.len(), 1);
-        let idx = app.subagent_blocks[0].idx;
+        assert_eq!(app.transcript.subagent_blocks.len(), 1);
+        let idx = app.transcript.subagent_blocks[0].idx;
 
         use ratatui::{backend::TestBackend, Terminal};
         let render = |app: &mut App| {
@@ -30981,8 +31286,8 @@ mod tests {
         // Collapsed: full list (e.g. the oldest call) is hidden.
         assert!(!render(&mut app).contains("cmd0"));
         // Ctrl-O expand-all reveals every call, including ones outside the window.
-        app.toggle_regions();
-        assert!(app.expanded.contains(&idx));
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.contains(&idx));
         let expanded = render(&mut app);
         assert!(
             expanded.contains("cmd0"),
@@ -30990,8 +31295,8 @@ mod tests {
         );
         assert!(expanded.contains("cmd6"));
         // Toggling again collapses it.
-        app.toggle_regions();
-        assert!(!app.expanded.contains(&idx));
+        app.transcript.toggle_regions();
+        assert!(!app.transcript.expanded.contains(&idx));
     }
 
     #[test]
@@ -31019,6 +31324,7 @@ mod tests {
         assert!(app.subagents.iter().all(|p| p.run_id != "r1"));
         assert!(app
             .transcript
+            .rows
             .iter()
             .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
     }
@@ -31042,6 +31348,7 @@ mod tests {
         });
         let row = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .find(|t| t.contains("subagent reviewer"))
@@ -31072,6 +31379,7 @@ mod tests {
         super::replay_display_log(&mut app, vec![entry.clone()]);
         assert!(app
             .transcript
+            .rows
             .iter()
             .any(|r| row_text(r).contains("subagent reviewer failed")));
         // A journal written before the field existed still replays as a clean
@@ -31105,12 +31413,12 @@ mod tests {
                 text: "child prose".into(),
             },
         ));
-        assert!(app.assistant_buf.is_empty());
+        assert!(app.transcript.assistant_buf.is_empty());
         // The parent's own token still streams even with a child active.
         app.apply(StreamEvent::Token {
             text: "parent prose".into(),
         });
-        assert_eq!(app.assistant_buf, "parent prose");
+        assert_eq!(app.transcript.assistant_buf, "parent prose");
     }
 
     #[test]
@@ -31511,9 +31819,12 @@ mod tests {
             name: "write".into(),
             args: json!({"path": "src/main.rs"}),
         });
-        assert_eq!(app.diff_paths.len(), 1);
+        assert_eq!(app.transcript.diff_paths.len(), 1);
         app.begin_turn();
-        assert!(app.diff_paths.is_empty(), "path outlived its turn");
+        assert!(
+            app.transcript.diff_paths.is_empty(),
+            "path outlived its turn"
+        );
     }
 
     #[test]
@@ -31531,9 +31842,9 @@ mod tests {
             diff: Some("     1 | fn main() {\n-    2 | let x = 1;\n+    2 | let x = 2;".into()),
         });
         assert!(
-            !diff_syntax_colours(&row_lines(&app.transcript)).is_empty(),
+            !diff_syntax_colours(&row_lines(&app.transcript.rows)).is_empty(),
             "result diff not highlighted: {:?}",
-            app.transcript.iter().map(row_text).collect::<Vec<_>>()
+            app.transcript.rows.iter().map(row_text).collect::<Vec<_>>()
         );
     }
 
@@ -31694,7 +32005,7 @@ mod tests {
             text: "Here is what I found so far".into(),
         });
         app.cancel_run();
-        let body: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let body: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         let joined = body.join("\n");
         assert!(
             joined.contains("Here is what I found so far"),
@@ -31705,7 +32016,7 @@ mod tests {
             "tool call vanished on cancel:\n{joined}"
         );
         assert!(joined.contains("cancelled"), "no cancel marker:\n{joined}");
-        assert!(app.assistant_buf.is_empty());
+        assert!(app.transcript.assistant_buf.is_empty());
         // The partial answer is recorded in history for the next turn / resume.
         let last = app.history.last().expect("history entry");
         assert_eq!(last["role"], "assistant");
@@ -32024,10 +32335,13 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "grep -n foo src/" }),
         });
-        let running = row_text(app.transcript.last().unwrap());
+        let running = row_text(app.transcript.rows.last().unwrap());
         assert!(running.contains("• Running grep"), "running: {running}");
-        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Running));
-        let before = app.transcript.len();
+        assert_eq!(
+            tool_state(app.transcript.rows.last().unwrap()),
+            Some(ToolState::Running)
+        );
+        let before = app.transcript.rows.len();
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "match\nmatch\n(+50 lines)".into(),
@@ -32035,14 +32349,17 @@ mod tests {
             diff: None,
         });
         // Result is swallowed: still one row, still running.
-        assert_eq!(app.transcript.len(), before);
+        assert_eq!(app.transcript.rows.len(), before);
         // Finalizing (turn boundary / done) marks it complete on the same row.
-        app.finalize_tool_group();
-        let row = row_text(app.transcript.last().unwrap());
+        app.transcript.finalize_tool_group();
+        let row = row_text(app.transcript.rows.last().unwrap());
         assert!(row.contains("• Ran grep"), "row: {row}");
-        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
+        assert_eq!(
+            tool_state(app.transcript.rows.last().unwrap()),
+            Some(ToolState::Success)
+        );
         assert!(!row.contains("lines"), "row: {row}");
-        assert!(app.tool_group.is_none());
+        assert!(app.transcript.tool_group.is_none());
     }
 
     #[test]
@@ -32061,8 +32378,8 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
-        let joined = group_detail_lines(&app.groups[0], 120)
+        app.transcript.finalize_tool_group();
+        let joined = group_detail_lines(&app.transcript.groups[0], 120)
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
@@ -32094,15 +32411,16 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "grep -n foo src/" }),
         });
-        assert!(app.tool_group.is_some());
+        assert!(app.transcript.tool_group.is_some());
         // Prose begins streaming in the same turn (no intervening Step): the
         // group's status must land in the timeline as resolved right away.
         app.apply(StreamEvent::Token {
             text: "Here".into(),
         });
-        assert!(app.tool_group.is_none());
+        assert!(app.transcript.tool_group.is_none());
         let row = app
             .transcript
+            .rows
             .iter()
             .rev()
             .find(|r| row_text(r).contains("Ran grep"))
@@ -32112,7 +32430,7 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: " goes".into(),
         });
-        assert!(app.tool_group.is_none());
+        assert!(app.transcript.tool_group.is_none());
     }
 
     #[test]
@@ -32142,12 +32460,12 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         // The collapsed row carries the latest result, but the earlier failure
         // must still be reachable by expanding the group.
-        let row = &app.transcript[app.groups[0].idx];
+        let row = &app.transcript.rows[app.transcript.groups[0].idx];
         assert_eq!(tool_state(row), Some(ToolState::Success), "{}", row_text(row));
-        let lines = group_detail_lines(&app.groups[0], 80);
+        let lines = group_detail_lines(&app.transcript.groups[0], 80);
         let detail: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         // The failed call's own bullet is red, and so is its output.
         let line = |needle: &str| {
@@ -32175,11 +32493,11 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "sleep 300" }),
         });
-        let idx = app.tool_group.as_ref().unwrap().idx;
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         app.cancel_run();
-        let row = row_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript.rows[idx]);
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Interrupted),
             "a cancelled command must read as interrupted, not succeeded: {row}"
         );
@@ -32200,12 +32518,15 @@ mod tests {
             name: "edit".into(),
             args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
         });
-        let idx = app.transcript.len() - 1;
-        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Running));
-        app.cancel_run();
-        let row = row_text(&app.transcript[idx]);
+        let idx = app.transcript.rows.len() - 1;
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
+            Some(ToolState::Running)
+        );
+        app.cancel_run();
+        let row = row_text(&app.transcript.rows[idx]);
+        assert_eq!(
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Interrupted),
             "cancelled edit still reads as in flight: {row}"
         );
@@ -32220,7 +32541,7 @@ mod tests {
             name: "edit".into(),
             args: json!({ "path": "foo.rs", "old_string": "a", "new_string": "b" }),
         });
-        let idx = app.transcript.len() - 1;
+        let idx = app.transcript.rows.len() - 1;
         app.apply(StreamEvent::ToolResult {
             id: "e1".into(),
             content: "edited foo.rs".into(),
@@ -32228,10 +32549,10 @@ mod tests {
             diff: None,
         });
         app.cancel_run();
-        let row = row_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript.rows[idx]);
         assert!(
             row.contains("• Edited foo.rs")
-                && tool_state(&app.transcript[idx]) == Some(ToolState::Success),
+                && tool_state(&app.transcript.rows[idx]) == Some(ToolState::Success),
             "a resolved edit must keep its call row: {row}"
         );
     }
@@ -32257,7 +32578,7 @@ mod tests {
             text: "Found it.".into(),
         });
         app.apply(StreamEvent::Step { index: 2, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         let prose = rows
             .iter()
             .position(|r| r.contains("check the README"))
@@ -32292,6 +32613,7 @@ mod tests {
         // All four folded into a single row listing what they explored.
         let tool_rows = app
             .transcript
+            .rows
             .iter()
             .filter(|r| row_text(r).contains("Explor"))
             .count();
@@ -32301,15 +32623,19 @@ mod tests {
         // one child row.
         let listed = "• Explored\n  └ List memory notes\n    List skills\n    \
                       Read memory: project-overview, top-p";
-        let row = row_text(app.transcript.last().unwrap());
+        let row = row_text(app.transcript.rows.last().unwrap());
         assert_eq!(row, listed);
-        assert_eq!(tool_state(app.transcript.last().unwrap()), Some(ToolState::Success));
+        assert_eq!(
+            tool_state(app.transcript.rows.last().unwrap()),
+            Some(ToolState::Success)
+        );
         // The model speaking closes the group without disturbing the row.
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
         let row = app
             .transcript
+            .rows
             .iter()
             .find(|r| row_text(r).starts_with("• Explored"))
             .expect("the group row");
@@ -32340,21 +32666,21 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
-        assert_eq!(app.groups.len(), 1);
+        assert_eq!(app.transcript.groups.len(), 1);
 
         // Collapsed by default: draw injects no per-call detail.
-        assert!(app.expanded.is_empty());
-        let group_idx = app.groups[0].idx;
-        let detail = group_detail_lines(&app.groups[0], 80);
+        assert!(app.transcript.expanded.is_empty());
+        let group_idx = app.transcript.groups[0].idx;
+        let detail = group_detail_lines(&app.transcript.groups[0], 80);
         let detail_text: Vec<String> = detail.iter().map(line_text).collect();
         assert!(detail_text.iter().any(|l| l.contains("result for c1")));
         assert!(detail_text.iter().any(|l| l.contains("result for c2")));
 
         // Ctrl-O expands, a second toggle collapses.
-        app.toggle_regions();
-        assert!(app.expanded.contains(&group_idx));
-        app.toggle_regions();
-        assert!(app.expanded.is_empty());
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.contains(&group_idx));
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.is_empty());
     }
 
     #[test]
@@ -32380,17 +32706,17 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
-        let group_idx = app.groups[0].idx;
+        let group_idx = app.transcript.groups[0].idx;
 
         // A click on the group's own row toggles it, same as Ctrl-O.
-        app.toggle_region(group_idx);
-        assert!(app.expanded.contains(&group_idx));
-        app.toggle_region(group_idx);
-        assert!(app.expanded.is_empty());
+        app.transcript.toggle_region(group_idx);
+        assert!(app.transcript.expanded.contains(&group_idx));
+        app.transcript.toggle_region(group_idx);
+        assert!(app.transcript.expanded.is_empty());
 
         // A row that isn't a region's own summary is a no-op.
-        app.toggle_region(9999);
-        assert!(app.expanded.is_empty());
+        app.transcript.toggle_region(9999);
+        assert!(app.transcript.expanded.is_empty());
     }
 
     #[test]
@@ -32401,7 +32727,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
-        let group = app.tool_group.as_ref().expect("group open");
+        let group = app.transcript.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 2, 80));
         assert!(text.starts_with("• Exploring"), "{text}");
         assert!(text.contains("(0s)") || text.contains("(1s)"), "{text}");
@@ -32425,12 +32751,12 @@ mod tests {
                 diff: None,
             });
         }
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
     }
 
     /// The first closed group's row: its text and its rendered lines.
     fn explored_row(app: &App) -> (String, Vec<Line<'static>>) {
-        let row = &app.transcript[app.groups[0].idx];
+        let row = &app.transcript.rows[app.transcript.groups[0].idx];
         (row_text(row), row.lines(80))
     }
 
@@ -32454,7 +32780,11 @@ mod tests {
             "• Explored\n  └ Read a.rs, b.rs\n    Search fn x in src\n    \
              Read c.rs\n    List docs"
         );
-        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Success));
+        let group = app.transcript.groups[0].idx;
+        assert_eq!(
+            tool_state(&app.transcript.rows[group]),
+            Some(ToolState::Success)
+        );
         // The verb is the accent colour; separators and ` in ` are chrome.
         let dim = Style::new().dark_gray();
         let span = |line: usize, text: &str| {
@@ -32505,7 +32835,11 @@ mod tests {
             text,
             "• Explored · 1 failed\n  └ Read a.rs\n    Read gone.rs (failed)\n    Read b.rs"
         );
-        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Failure));
+        let group = app.transcript.groups[0].idx;
+        assert_eq!(
+            tool_state(&app.transcript.rows[group]),
+            Some(ToolState::Failure)
+        );
         let red = Style::new().red();
         assert!(lines[0].spans.iter().any(|s| s.content == " · 1 failed" && s.style == red));
         assert!(lines[2].spans.iter().any(|s| s.content == " (failed)" && s.style == red));
@@ -32520,7 +32854,11 @@ mod tests {
         );
         let (text, lines) = explored_row(&app);
         assert_eq!(text, "• Explored\n  └ Search nowhere (no matches)");
-        assert_eq!(tool_state(&app.transcript[app.groups[0].idx]), Some(ToolState::Success));
+        let group = app.transcript.groups[0].idx;
+        assert_eq!(
+            tool_state(&app.transcript.rows[group]),
+            Some(ToolState::Success)
+        );
         let note = lines[1]
             .spans
             .iter()
@@ -32548,7 +32886,7 @@ mod tests {
         );
         assert_eq!(lines[5].spans[0].style, Style::new().dark_gray());
         // Ctrl-O shows every call with its result, carried on the same tree.
-        let detail = lines_text(&group_detail_lines(&app.groups[0], 80));
+        let detail = lines_text(&group_detail_lines(&app.transcript.groups[0], 80));
         assert!(detail.contains("Searched") && detail.contains("hit"), "{detail}");
         assert_eq!(detail.matches("Searched").count(), 6, "{detail}");
         assert!(!detail.contains('└'), "{detail}");
@@ -32577,7 +32915,7 @@ mod tests {
                 diff: None,
             });
         }
-        let group = app.tool_group.as_ref().expect("open group");
+        let group = app.transcript.tool_group.as_ref().expect("open group");
         let running = lines_text(&running_group_rows(group, 0, 80));
         assert!(running.starts_with("• Exploring ("), "{running}");
         app.apply(StreamEvent::ToolResult {
@@ -32586,7 +32924,7 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         let (closed, _) = explored_row(&app);
         assert!(closed.starts_with("• Explored\n"), "{closed}");
         // Only the header changes: every child row stays where it was.
@@ -32620,7 +32958,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": cmd }),
         });
-        let group = app.tool_group.as_ref().expect("group open");
+        let group = app.transcript.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains(&format!("Running {cmd}")), "{text}");
         assert!(!text.contains("running 1 command"), "{text}");
@@ -32639,7 +32977,7 @@ mod tests {
                 args: json!({ "command": cmd }),
             });
         }
-        let group = app.tool_group.as_ref().expect("group open");
+        let group = app.transcript.tool_group.as_ref().expect("group open");
         let text = lines_text(&running_group_rows(group, 0, 200));
         assert!(text.contains("Running cargo clippy"), "{text}");
         assert!(!text.contains("Running 2 commands"), "{text}");
@@ -32656,7 +32994,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "cd /tmp\nmake -j8 all install DESTDIR=/opt/somewhere/deep" }),
         });
-        let group = app.tool_group.as_ref().expect("group open");
+        let group = app.transcript.tool_group.as_ref().expect("group open");
         let rows = running_group_rows(group, 0, 40);
         assert!(rows.len() > 2, "long command was not wrapped: {rows:?}");
         for row in &rows {
@@ -32690,7 +33028,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": cmd }),
         });
-        let group = app.tool_group.as_mut().expect("group open");
+        let group = app.transcript.tool_group.as_mut().expect("group open");
         // The body's wrap points must be the same at 0s and at four digits.
         let strip = |rows: &[ratatui::text::Line]| {
             rows.iter()
@@ -32722,7 +33060,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
-        assert!(app.tool_group.as_ref().unwrap().is_running());
+        assert!(app.transcript.tool_group.as_ref().unwrap().is_running());
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "ok".into(),
@@ -32731,15 +33069,15 @@ mod tests {
         });
         // Group stays open (folding), but with its only call resolved and no
         // next call yet, it must not render as still executing.
-        assert!(app.tool_group.is_some());
-        assert!(!app.tool_group.as_ref().unwrap().is_running());
+        assert!(app.transcript.tool_group.is_some());
+        assert!(!app.transcript.tool_group.as_ref().unwrap().is_running());
 
         app.apply(StreamEvent::ToolCall {
             id: "c2".into(),
             name: "grep".into(),
             args: json!({ "pattern": "bar" }),
         });
-        assert!(app.tool_group.as_ref().unwrap().is_running());
+        assert!(app.transcript.tool_group.as_ref().unwrap().is_running());
     }
 
     #[test]
@@ -32750,7 +33088,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
-        let idx = app.tool_group.as_ref().unwrap().idx;
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "ok".into(),
@@ -32759,9 +33097,9 @@ mod tests {
         });
         // No token has streamed yet: the row must already read as done rather
         // than sitting on the present-tense running form until prose arrives.
-        let row = row_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript.rows[idx]);
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Success),
             "status lagged behind the result: {row}"
         );
@@ -32773,8 +33111,12 @@ mod tests {
             name: "read".into(),
             args: json!({ "path": "main.rs" }),
         });
-        let row = row_text(&app.transcript[idx]);
-        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Running), "row: {row}");
+        let row = row_text(&app.transcript.rows[idx]);
+        assert_eq!(
+            tool_state(&app.transcript.rows[idx]),
+            Some(ToolState::Running),
+            "row: {row}"
+        );
     }
 
     #[test]
@@ -32785,16 +33127,16 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "cargo build" }),
         });
-        let idx = app.tool_group.as_ref().unwrap().idx;
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "ERROR: command not found".into(),
             is_error: true,
             diff: None,
         });
-        let row = row_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript.rows[idx]);
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Failure),
             "failure not shown at result time: {row}"
         );
@@ -32808,7 +33150,7 @@ mod tests {
             name: "bash".into(),
             args: json!({ "command": "cargo buidl" }),
         });
-        let idx = app.tool_group.as_ref().unwrap().idx;
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "ERROR: no such subcommand".into(),
@@ -32827,9 +33169,9 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        let row = row_text(&app.transcript[idx]);
+        let row = row_text(&app.transcript.rows[idx]);
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Success),
             "stale failure on the summary row: {row}"
         );
@@ -32848,7 +33190,7 @@ mod tests {
             name: "read".into(),
             args: json!({ "path": "main.rs" }),
         });
-        let idx = app.tool_group.as_ref().unwrap().idx;
+        let idx = app.transcript.tool_group.as_ref().unwrap().idx;
         // Results can land out of dispatch order; the row must not claim the
         // batch is done while an earlier call is still outstanding.
         app.apply(StreamEvent::ToolResult {
@@ -32857,10 +33199,10 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        assert!(app.tool_group.as_ref().unwrap().is_running());
-        let row = row_text(&app.transcript[idx]);
+        assert!(app.transcript.tool_group.as_ref().unwrap().is_running());
+        let row = row_text(&app.transcript.rows[idx]);
         assert_eq!(
-            tool_state(&app.transcript[idx]),
+            tool_state(&app.transcript.rows[idx]),
             Some(ToolState::Running),
             "resolved early: {row}"
         );
@@ -32870,8 +33212,11 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        assert!(!app.tool_group.as_ref().unwrap().is_running());
-        assert_eq!(tool_state(&app.transcript[idx]), Some(ToolState::Success));
+        assert!(!app.transcript.tool_group.as_ref().unwrap().is_running());
+        assert_eq!(
+            tool_state(&app.transcript.rows[idx]),
+            Some(ToolState::Success)
+        );
     }
 
     #[test]
@@ -32891,7 +33236,7 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "Done.".into(),
         });
-        let group_idx = app.groups[0].idx;
+        let group_idx = app.transcript.groups[0].idx;
 
         // Simulate what `draw` would have recorded: the group's row is the
         // only transcript row, right under the top border at row 1.
@@ -32900,11 +33245,11 @@ mod tests {
         app.row_index = vec![Some(group_idx)];
 
         click(&mut app, 5, 1);
-        assert!(app.expanded.contains(&group_idx));
+        assert!(app.transcript.expanded.contains(&group_idx));
 
         // Clicking outside the viewport (past the bottom border) is a no-op.
         click(&mut app, 5, 9);
-        assert!(app.expanded.contains(&group_idx));
+        assert!(app.transcript.expanded.contains(&group_idx));
     }
 
     #[test]
@@ -32939,7 +33284,7 @@ mod tests {
 
     #[test]
     fn toggle_region_expands_still_running_group() {
-        // A tool group is still open (not yet finalized into `app.groups`)
+        // A tool group is still open (not yet finalized into `app.transcript.groups`)
         // while the agent is actively executing -- clicking its row must
         // still toggle it, not just after it finishes.
         let mut app = test_app();
@@ -32948,13 +33293,13 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
-        let idx = app.tool_group.as_ref().expect("group open").idx;
-        assert!(app.groups.is_empty(), "not finalized yet");
+        let idx = app.transcript.tool_group.as_ref().expect("group open").idx;
+        assert!(app.transcript.groups.is_empty(), "not finalized yet");
 
-        app.toggle_region(idx);
-        assert!(app.expanded.contains(&idx));
-        app.toggle_region(idx);
-        assert!(app.expanded.is_empty());
+        app.transcript.toggle_region(idx);
+        assert!(app.transcript.expanded.contains(&idx));
+        app.transcript.toggle_region(idx);
+        assert!(app.transcript.expanded.is_empty());
     }
 
     #[test]
@@ -32963,12 +33308,16 @@ mod tests {
         // its header row can scroll out of view. A click on any of its detail
         // rows -- not just the header -- must still collapse it.
         let mut app = test_app();
-        app.push_assistant_blocks("<think>line one\nline two\nline three</think>answer", &[], None);
-        assert_eq!(app.reasoning_blocks.len(), 1);
-        let idx = app.reasoning_blocks[0].idx;
+        app.transcript.push_assistant_blocks(
+            "<think>line one\nline two\nline three</think>answer",
+            &[],
+            None,
+        );
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
+        let idx = app.transcript.reasoning_blocks[0].idx;
 
-        app.toggle_region(idx);
-        assert!(app.expanded.contains(&idx));
+        app.transcript.toggle_region(idx);
+        assert!(app.transcript.expanded.contains(&idx));
 
         // Detail rows map back to the same idx as the header (see draw()).
         app.transcript_rect = Rect::new(0, 0, 80, 10);
@@ -32976,7 +33325,7 @@ mod tests {
         app.row_index = vec![Some(idx), Some(idx), Some(idx)];
         click(&mut app, 5, 2); // a detail row, not the header at row 1
         assert!(
-            app.expanded.is_empty(),
+            app.transcript.expanded.is_empty(),
             "click on a detail row should collapse"
         );
     }
@@ -33003,9 +33352,10 @@ mod tests {
             });
         }
         // Still one open group after three turns, not a row per turn.
-        assert!(app.tool_group.is_some());
+        assert!(app.transcript.tool_group.is_some());
         let tool_rows = app
             .transcript
+            .rows
             .iter()
             .filter(|l| {
                 let t = row_text(l);
@@ -33016,6 +33366,7 @@ mod tests {
         app.on_done("stop".into(), None);
         let row = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .find(|t| t.contains("Ran "))
@@ -33043,10 +33394,10 @@ mod tests {
             diff: None,
         });
         // Buffer is drained: the reasoning is committed, not stranded below.
-        assert!(app.assistant_buf.is_empty());
+        assert!(app.transcript.assistant_buf.is_empty());
         // Reasoning folds to a collapsed summary row (raw thought hidden), which
         // still lands above the tool row it preceded (emission order).
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             !rows.iter().any(|r| r.contains("let me look")),
             "raw reasoning must be hidden by default: {rows:?}"
@@ -33064,7 +33415,7 @@ mod tests {
             "reasoning must render above the tool row it preceded: {rows:?}"
         );
         // The raw thought is retained on the block for expansion.
-        let block = &app.reasoning_blocks[0];
+        let block = &app.transcript.reasoning_blocks[0];
         assert!(block
             .detail
             .iter()
@@ -33133,7 +33484,7 @@ mod tests {
             app.apply(event);
         }
         // The real streamed reasoning precedes the in-progress tool display.
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         let live = render_rows(&mut app, 120, 50).join("\n");
         assert!(live.contains("inspect before changing"), "{live}");
         // The in-flight bash call types into its running header, which trails
@@ -33143,7 +33494,7 @@ mod tests {
             live.find("inspect before changing").unwrap() < live.find("Running first").unwrap(),
             "{live}"
         );
-        app.toggle_regions();
+        app.transcript.toggle_regions();
 
         for call in completion["choices"][0]["message"]["tool_calls"]
             .as_array()
@@ -33170,14 +33521,17 @@ mod tests {
                 diff: None,
             });
         }
-        let closed = &app.groups[0];
-        assert_eq!(tool_state(&app.transcript[closed.idx]), Some(ToolState::Failure));
+        let closed = &app.transcript.groups[0];
+        assert_eq!(
+            tool_state(&app.transcript.rows[closed.idx]),
+            Some(ToolState::Failure)
+        );
         let first = group_detail_lines(closed, 120)
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
             .join("\n");
-        let third = group_detail_lines(app.tool_group.as_ref().unwrap(), 120)
+        let third = group_detail_lines(app.transcript.tool_group.as_ref().unwrap(), 120)
             .iter()
             .map(line_text)
             .collect::<Vec<_>>()
@@ -33190,9 +33544,9 @@ mod tests {
             third.contains("third result") && !third.contains("first failed"),
             "{third}"
         );
-        app.toggle_regions();
-        let open_idx = app.tool_group.as_ref().unwrap().idx;
-        app.toggle_region(open_idx);
+        app.transcript.toggle_regions();
+        let open_idx = app.transcript.tool_group.as_ref().unwrap().idx;
+        app.transcript.toggle_region(open_idx);
         let rendered = render_rows(&mut app, 120, 50).join("\n");
         let reasoning = rendered.find("inspect before changing").unwrap();
         let first = rendered.find("first failed").unwrap();
@@ -33207,7 +33561,7 @@ mod tests {
             text: "<think>thinking</think>Hi there!".into(),
         });
         app.apply(StreamEvent::Step { index: 1, max: 8 });
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         let think_at = rows
             .iter()
             .position(|r| r.contains("Thought"))
@@ -33233,13 +33587,13 @@ mod tests {
             text: "weighing the options".into(),
         });
         // Backdate the open block so it reads as multi-second, not instant.
-        app.thinking_since = Some(Instant::now() - Duration::from_secs(3));
+        app.transcript.thinking_since = Some(Instant::now() - Duration::from_secs(3));
         // Answer prose closes the reasoning block, stashing its elapsed.
         app.apply(StreamEvent::Token {
             text: "the answer".into(),
         });
-        app.flush_assistant();
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        app.transcript.flush_assistant();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             rows.iter().any(|r| r.contains("Thought for 3s")),
             "collapsed reasoning names its duration: {rows:?}"
@@ -33247,6 +33601,7 @@ mod tests {
 
         // The duration rides the journal, so a replay restamps the same label.
         let entry = app
+            .transcript
             .display_log
             .iter()
             .rev()
@@ -33255,7 +33610,7 @@ mod tests {
             .expect("assistant entry journaled");
         let mut fresh = test_app();
         replay_display_log(&mut fresh, vec![entry]);
-        let replayed: Vec<String> = fresh.transcript.iter().map(row_text).collect();
+        let replayed: Vec<String> = fresh.transcript.rows.iter().map(row_text).collect();
         assert!(
             replayed.iter().any(|r| r.contains("Thought for 3s")),
             "resume keeps the duration label: {replayed:?}"
@@ -33271,18 +33626,18 @@ mod tests {
         // A turn boundary commits the buffer.
         app.apply(StreamEvent::Step { index: 1, max: 8 });
 
-        let rows: Vec<String> = app.transcript.iter().map(row_text).collect();
+        let rows: Vec<String> = app.transcript.rows.iter().map(row_text).collect();
         assert!(rows.iter().any(|r| r.contains("Thought")));
         assert!(rows.iter().any(|r| r.contains("The answer is 42")));
         // Raw reasoning is hidden until expanded.
         assert!(!rows.iter().any(|r| r.contains("step one")));
-        assert_eq!(app.reasoning_blocks.len(), 1);
+        assert_eq!(app.transcript.reasoning_blocks.len(), 1);
 
-        let idx = app.reasoning_blocks[0].idx;
-        app.toggle_regions();
-        assert!(app.expanded.contains(&idx));
-        app.toggle_regions();
-        assert!(app.expanded.is_empty());
+        let idx = app.transcript.reasoning_blocks[0].idx;
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.contains(&idx));
+        app.transcript.toggle_regions();
+        assert!(app.transcript.expanded.is_empty());
     }
 
     /// A finished reasoning + tool run is one trace: once the answer follows it
@@ -33306,9 +33661,9 @@ mod tests {
             diff: None,
         });
         app.apply(StreamEvent::Token { text: "the answer".into() });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
 
-        let runs = app.trace_runs();
+        let runs = app.transcript.trace_runs();
         assert_eq!(runs.len(), 1, "reasoning + tool group form one trace: {runs:?}");
         assert!(runs[0].tool_ran && runs[0].steps == 2, "{:?}", runs[0]);
         let start = runs[0].start;
@@ -33320,13 +33675,13 @@ mod tests {
         assert!(folded.contains("the answer"), "prose survives: {folded}");
 
         // Expanding shows the run and drops the header.
-        app.toggle_trace(start);
+        app.transcript.toggle_trace(start);
         let open = render_rows(&mut app, 70, 20).join("\n");
         assert!(open.contains("Thought"), "reasoning summary shows: {open}");
         assert!(!open.contains("Worked \u{b7}"), "no header when expanded: {open}");
 
         // Ctrl-O folds everything back.
-        app.toggle_trace(start);
+        app.transcript.toggle_trace(start);
         let refolded = render_rows(&mut app, 70, 20).join("\n");
         assert!(refolded.contains("Worked \u{b7} 2 steps"), "refolded: {refolded}");
     }
@@ -33349,15 +33704,15 @@ mod tests {
             diff: None,
         });
         app.apply(StreamEvent::Token { text: "the answer".into() });
-        app.flush_assistant();
-        let start = app.trace_runs()[0].start;
+        app.transcript.flush_assistant();
+        let start = app.transcript.trace_runs()[0].start;
 
         // Folded: header only, no terminal.
         let folded = render_rows(&mut app, 70, 20).join("\n");
         assert!(!folded.contains("Done"), "folded trace has no terminal: {folded}");
 
         // Expanded: the rail ends in `└ Done`.
-        app.toggle_trace(start);
+        app.transcript.toggle_trace(start);
         let open = render_rows(&mut app, 70, 20).join("\n");
         assert!(open.contains("\u{2514} Done"), "expanded rail ends with Done: {open}");
     }
@@ -33416,7 +33771,7 @@ mod tests {
         // The model answers: the group folds to its one-line summary, output gone
         // from the transcript (still reachable via expand).
         app.apply(StreamEvent::Token { text: "Two files.".into() });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         let folded = render_rows(&mut app, 60, 16).join("\n");
         assert!(folded.contains("Ran ls -la"), "folds to a summary: {folded}");
         assert!(
@@ -33447,15 +33802,16 @@ mod tests {
         assert!(open.contains("  \u{2514} boom"), "error output shows: {open}");
         assert!(!open.contains("[exit 2]"), "the marker moved to the header: {open}");
         let bullet = app
+            .transcript
             .tool_group
             .as_ref()
-            .map(|g| app.live_shell_panel(g, 0, 50))
+            .map(|g| app.transcript.live_shell_panel(g, 0, 50))
             .expect("the group is open")[0]
             .spans[0]
             .clone();
         assert_eq!(bullet.style.fg, Some(ratatui::style::Color::Red));
         // The folded row keeps the code too.
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         let folded = render_rows(&mut app, 50, 12).join("\n");
         assert!(folded.contains("Ran false (exit 2)"), "{folded}");
     }
@@ -33478,12 +33834,12 @@ mod tests {
             diff: None,
         });
         app.apply(StreamEvent::Token { text: "the answer".into() });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
 
         assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "folded by default");
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         assert!(!render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O unfolds");
-        app.toggle_regions();
+        app.transcript.toggle_regions();
         assert!(render_rows(&mut app, 70, 20).join("\n").contains("Worked \u{b7}"), "Ctrl-O refolds");
     }
 
@@ -33516,7 +33872,7 @@ mod tests {
             args: json!({ "command": "cargo test" }),
         });
 
-        let runs = app.trace_runs();
+        let runs = app.transcript.trace_runs();
         assert_eq!(runs.len(), 1, "one active run of settled steps: {runs:?}");
         assert!(runs[0].steps == 3 && runs[0].tool_ran, "{:?}", runs[0]);
 
@@ -33535,7 +33891,7 @@ mod tests {
         let mut app = test_app();
         app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "here goes".into() });
-        app.flush_assistant(); // an answer, so what follows is a fresh active run
+        app.transcript.flush_assistant(); // an answer, so what follows is a fresh active run
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
             name: "bash".into(),
@@ -33599,7 +33955,7 @@ mod tests {
         let mut app = test_app();
         app.status = super::Status::Running;
         app.apply(StreamEvent::Token { text: "I'll review this PR.".into() });
-        app.flush_assistant(); // the answer, so what follows is a fresh run
+        app.transcript.flush_assistant(); // the answer, so what follows is a fresh run
         for (id, cmd) in [("t1", "grep alpha"), ("t2", "grep bravo")] {
             app.apply(StreamEvent::Token {
                 text: format!("<think>step {id}</think>"),
@@ -33665,7 +34021,7 @@ mod tests {
 
         // The run answers and ends: the finished trace folds to a static header.
         app.apply(StreamEvent::Token { text: "reviewed it".into() });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         app.status = super::Status::Idle;
         let idle = render_rows(&mut app, 90, 24).join("\n");
         assert!(idle.contains("Worked \u{b7}"), "finished trace folds: {idle}");
@@ -33690,9 +34046,10 @@ mod tests {
                 diff: None,
             });
         }
-        assert!(app.tool_group.is_some());
+        assert!(app.transcript.tool_group.is_some());
         let tool_rows = app
             .transcript
+            .rows
             .iter()
             .filter(|l| {
                 let t = row_text(l);
@@ -33703,9 +34060,10 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "All done.".into(),
         });
-        assert!(app.tool_group.is_none());
+        assert!(app.transcript.tool_group.is_none());
         let row = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .find(|t| t.contains("Ran "))
@@ -33722,6 +34080,7 @@ mod tests {
         app.on_done("stop".into(), None);
         assert!(!app
             .transcript
+            .rows
             .iter()
             .any(|l| row_text(l).contains("finished")));
     }
@@ -33735,6 +34094,7 @@ mod tests {
         app.on_done("length".into(), None);
         let warn = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .find(|t| t.contains("finished early"))
@@ -33752,6 +34112,7 @@ mod tests {
         app.on_done("stop".into(), None);
         assert!(app
             .transcript
+            .rows
             .iter()
             .any(|l| row_text(l).contains("finished with no answer")));
     }
@@ -33784,9 +34145,10 @@ mod tests {
             });
         }
         // Both gated calls stayed in one running group despite the prompts.
-        assert!(app.tool_group.is_some());
+        assert!(app.transcript.tool_group.is_some());
         let tool_rows = app
             .transcript
+            .rows
             .iter()
             .filter(|l| {
                 let t = row_text(l);
@@ -33804,7 +34166,7 @@ mod tests {
             name: "edit".into(),
             args: json!({ "path": "a.txt" }),
         });
-        let before = app.transcript.len();
+        let before = app.transcript.rows.len();
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "edited".into(),
@@ -33813,9 +34175,10 @@ mod tests {
         });
         // The diff folds into the call's own slot rather than being appended,
         // so later calls in the same batch can never land between them.
-        assert_eq!(app.transcript.len(), before);
+        assert_eq!(app.transcript.rows.len(), before);
         let joined: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -33834,7 +34197,7 @@ mod tests {
             name: "write".into(),
             args: json!({ "path": "a.txt", "content": "x" }),
         });
-        assert!(row_text(app.transcript.last().unwrap()).contains("Writing a.txt"));
+        assert!(row_text(app.transcript.rows.last().unwrap()).contains("Writing a.txt"));
         app.apply(StreamEvent::ToolResult {
             id: "c1".into(),
             content: "boom".into(),
@@ -33843,37 +34206,77 @@ mod tests {
         });
         let joined: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
         assert!(has_tool_row(&app, "Wrote a.txt", ToolState::Failure), "{joined}");
-        assert!(app.pending_rows.is_empty());
+        assert!(app.transcript.pending_rows.is_empty());
     }
 
-    /// One long streamed answer extends a single entry, so the entry cap alone
-    /// never bounds it: the prose keeps its newest bytes, cut on a char
-    /// boundary.
+    /// A child that works for a long time keeps only its newest rows, and the
+    /// regions that pointed into the dropped ones go with them while the rest
+    /// still point at their own rows.
     #[test]
-    fn a_child_prose_entry_keeps_only_its_newest_bytes() {
-        let mut prose = String::new();
-        for _ in 0..CHILD_PROSE_MAX {
-            push_child_prose(&mut prose, "\u{e9}");
+    fn a_child_transcript_keeps_only_its_newest_rows() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        for n in 0..CHILD_ROWS_MAX + 50 {
+            app.apply(wrap(
+                "r0",
+                "alpha",
+                StreamEvent::Token {
+                    text: format!("note {n}"),
+                },
+            ));
+            app.apply(wrap(
+                "r0",
+                "alpha",
+                StreamEvent::ToolCall {
+                    id: format!("c{n}"),
+                    name: "bash".into(),
+                    args: json!({ "command": format!("echo {n}") }),
+                },
+            ));
         }
-        push_child_prose(&mut prose, "END");
-        assert!(prose.len() <= CHILD_PROSE_MAX, "{}", prose.len());
-        assert!(prose.ends_with("END"));
-        assert!(prose.starts_with('\u{e9}'), "cut on a char boundary");
+        let child = &app.subagents[0].transcript;
+        assert!(child.rows.len() <= CHILD_ROWS_MAX, "{}", child.rows.len());
+        assert!(child.groups.iter().all(|g| g.idx < child.rows.len()));
+        let newest = child.tool_group.as_ref().expect("the last call is open");
+        assert!(matches!(child.rows[newest.idx].kind, RowKind::Tool { .. }));
     }
 
-    /// A child's tool result is kept as the line the log renders, not the
-    /// whole output.
+    /// A child's tool result keeps its head only: the rows render a summary or
+    /// a few lines of output, so a child reading a large file must not keep
+    /// the whole file alive in the TUI.
     #[test]
-    fn a_child_tool_result_is_kept_as_its_summary() {
-        let big = format!("first line\n{}", "x\n".repeat(100_000));
-        let kept = child_result_summary(&big);
-        assert!(kept.starts_with("first line") && kept.contains("(+100000 lines)"), "{kept}");
-        assert!(kept.len() < 600);
+    fn a_child_tool_result_keeps_only_its_head() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        app.apply(wrap(
+            "r0",
+            "alpha",
+            StreamEvent::ToolCall {
+                id: "c0".into(),
+                name: "read".into(),
+                args: json!({ "path": "big.txt" }),
+            },
+        ));
+        let big = format!("first line\n{}", "\u{e9}".repeat(CHILD_RESULT_MAX));
+        app.apply(wrap(
+            "r0",
+            "alpha",
+            StreamEvent::ToolResult {
+                id: "c0".into(),
+                content: big,
+                is_error: false,
+                diff: None,
+            },
+        ));
+        let group = app.subagents[0].transcript.tool_group.as_ref().unwrap();
+        let kept = group.calls[0].content.as_deref().unwrap();
+        assert!(kept.starts_with("first line") && kept.len() <= CHILD_RESULT_MAX);
     }
 
     #[test]
@@ -33963,6 +34366,7 @@ mod tests {
         record_full_turn(&mut app);
         let live: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -33973,12 +34377,17 @@ mod tests {
         apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert_eq!(fresh.reasoning_blocks.len(), 1, "folded reasoning is back");
+        assert_eq!(
+            fresh.transcript.reasoning_blocks.len(),
+            1,
+            "folded reasoning is back"
+        );
         assert!(resumed.contains("Thought"), "{resumed}");
         assert!(has_tool_row(&fresh, "Created a.txt", ToolState::Success), "tool row: {resumed}");
         assert!(
@@ -33996,7 +34405,7 @@ mod tests {
         );
         // Expanding the restored reasoning row reveals its full detail, so the
         // journal carried the text and not just the summary count.
-        fresh.toggle_regions();
+        fresh.transcript.toggle_regions();
         let expanded = render_rows(&mut fresh, 60, 30).join("\n");
         assert!(expanded.contains("my private reasoning"), "{expanded}");
     }
@@ -34032,6 +34441,7 @@ mod tests {
         app.join_journal();
         let live: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34046,6 +34456,7 @@ mod tests {
         apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34055,12 +34466,16 @@ mod tests {
             "both grouped calls must come back as their own rows:\n{resumed}"
         );
         assert!(
-            fresh.tool_group.is_none(),
+            fresh.transcript.tool_group.is_none(),
             "no group may be left open after a replay"
         );
-        assert_eq!(fresh.groups.len(), 2, "one closed group per run of calls");
+        assert_eq!(
+            fresh.transcript.groups.len(),
+            2,
+            "one closed group per run of calls"
+        );
         // Expanding a restored group row still shows the call and its output.
-        fresh.toggle_regions();
+        fresh.transcript.toggle_regions();
         let expanded = render_rows(&mut fresh, 80, 40).join("\n");
         assert!(expanded.contains("output"), "{expanded}");
     }
@@ -34112,6 +34527,7 @@ mod tests {
         apply_resume(&mut fresh, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let resumed: String = fresh
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34120,7 +34536,10 @@ mod tests {
             resumed.contains("do it") && resumed.contains("Answer."),
             "{resumed}"
         );
-        assert!(fresh.display_log.is_empty(), "nothing to journal from");
+        assert!(
+            fresh.transcript.display_log.is_empty(),
+            "nothing to journal from"
+        );
     }
 
     fn test_worktree(path: &str) -> Worktree {
@@ -34162,6 +34581,7 @@ mod tests {
         apply_resume(&mut elsewhere, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let notes: String = elsewhere
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34178,6 +34598,7 @@ mod tests {
         apply_resume(&mut same, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         assert!(!same
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .any(|t| t.contains("last worked in")));
@@ -34199,6 +34620,7 @@ mod tests {
         worktree_command(&mut app);
         let notes: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34242,6 +34664,7 @@ mod tests {
 
         let after: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34268,6 +34691,7 @@ mod tests {
         assert_eq!(back.thread_id.as_deref(), Some(source.as_str()));
         assert!(back
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .any(|t| t.contains("Second answer.")));
@@ -34296,6 +34720,7 @@ mod tests {
         // thing the two paths are allowed to disagree on.
         let rows = |app: &App| {
             app.transcript
+                .rows
                 .iter()
                 .map(row_text)
                 .filter(|t| !t.trim_start().starts_with('\u{2022}'))
@@ -34303,7 +34728,10 @@ mod tests {
         };
         assert_eq!(rows(&forked), rows(&rewound));
         assert_eq!(forked.history, rewound.history);
-        assert_eq!(forked.display_log, rewound.display_log);
+        assert_eq!(
+            forked.transcript.display_log,
+            rewound.transcript.display_log
+        );
     }
 
     /// The parent pointer has to survive the branch's own first save, which
@@ -34458,6 +34886,7 @@ mod tests {
         rewind_to(&mut app, 1, false);
         let after: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34472,7 +34901,8 @@ mod tests {
             "rewound turn is gone: {after}"
         );
         assert!(
-            !app.display_log
+            !app.transcript
+                .display_log
                 .iter()
                 .any(|e| matches!(e, DisplayEntry::User { text, .. } if text == "and again")),
             "the journal is truncated with the conversation"
@@ -34502,6 +34932,7 @@ mod tests {
         assert_eq!(fresh.model, "saved-model");
         let joined: String = fresh
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34549,6 +34980,7 @@ mod tests {
         // ...but the transcript shows only the compact invocation row.
         let joined: String = fresh
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34591,6 +35023,7 @@ mod tests {
         apply_resume(&mut app, &ResumeRequest::resume(ResumeTarget::Latest)).await;
         let joined: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -34940,7 +35373,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "foo" }),
         });
-        let idx = app.tool_group.as_ref().expect("group open").idx;
+        let idx = app.transcript.tool_group.as_ref().expect("group open").idx;
         app.transcript_rect = Rect::new(0, 0, 80, 10);
         app.last_scroll = 0;
         app.row_index = vec![Some(idx)];
@@ -34958,7 +35391,10 @@ mod tests {
             mouse_at(MouseEventKind::Up(MouseButton::Left), 30, 1),
         );
 
-        assert!(app.expanded.is_empty(), "a drag must not expand the row");
+        assert!(
+            app.transcript.expanded.is_empty(),
+            "a drag must not expand the row"
+        );
         assert!(app.copy_armed, "the release arms the copy");
         let sel = app.selection.expect("selection held after release");
         assert!(!sel.dragging);
@@ -35323,7 +35759,7 @@ mod tests {
         let mut app = test_app();
         app.history.push(json!({ "role": "user", "content": "hi" }));
         run_command(&mut app, "compact", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("compaction unavailable"), "got: {text}");
         // History untouched when no session is attached.
         assert_eq!(app.history.len(), 1);
@@ -35335,7 +35771,7 @@ mod tests {
         let mut app = test_app();
         app.compacting = Some(CompactKind::Auto);
         run_command(&mut app, "compact", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("already compacting"), "got: {text}");
         assert!(app.compact_request.is_none());
     }
@@ -35363,7 +35799,7 @@ mod tests {
         assert_eq!(contents, vec!["summary", "m4"], "tail must survive");
         assert!(app.compacting.is_none());
         assert!(app.compact_started.is_none());
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("compacted 4 -> 2 messages"), "got: {text}");
     }
 
@@ -35375,7 +35811,7 @@ mod tests {
         finish_compaction(&mut app, Err("upstream 500".into()), 1);
         assert_eq!(app.history.len(), 1, "history must be left alone");
         assert!(app.compacting.is_none(), "a failure must allow a retry");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("auto-compacting failed: upstream 500"),
             "got: {text}"
@@ -35485,13 +35921,9 @@ mod tests {
         child_usage(&mut app, "r0", 3_000, Some(2_500));
         let out = render_rows(&mut app, 120, 20).join("\n");
         assert!(out.contains(" · 75% cached"), "{out}");
-        let items = agent_picker_items(&app.subagents);
+        let items = agent_picker_items(&app.subagents, &[]);
         assert!(items[0].label.contains("75% cached"), "{}", items[0].label);
-        let detail = agent_detail_lines(&app.subagents, Some("r0"), 80, 20)
-            .iter()
-            .map(line_text)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let detail = agent_detail_text(&mut app, "r0", 80, 20);
         assert!(detail.contains("75% cached"), "{detail}");
     }
 
@@ -35504,7 +35936,7 @@ mod tests {
         child_usage(&mut app, "r0", 1_000, None);
         let out = render_rows(&mut app, 120, 20).join("\n");
         assert!(!out.contains("cached"), "{out}");
-        let items = agent_picker_items(&app.subagents);
+        let items = agent_picker_items(&app.subagents, &[]);
         assert!(!items[0].label.contains("cached"), "{}", items[0].label);
     }
 
@@ -35813,7 +36245,7 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "parent keeps talking".into(),
         });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
 
         let rows = render_rows(&mut app, 100, 24);
         let prose = rows
@@ -35842,9 +36274,13 @@ mod tests {
     fn parallel_dispatches_share_one_pinned_panel() {
         let mut app = test_app();
         start_subagent(&mut app, "r0", "alpha");
-        let before = app.transcript.len();
+        let before = app.transcript.rows.len();
         start_subagent(&mut app, "r1", "beta");
-        assert_eq!(app.transcript.len(), before, "no transcript rows committed");
+        assert_eq!(
+            app.transcript.rows.len(),
+            before,
+            "no transcript rows committed"
+        );
         let rows = render_rows(&mut app, 100, 24);
         assert_eq!(
             rows.iter().filter(|r| r.contains("agents")).count(),
@@ -36130,7 +36566,7 @@ mod tests {
         });
         app.on_done("stop".into(), None);
         assert_eq!(
-            app.reasoning_blocks.len(),
+            app.transcript.reasoning_blocks.len(),
             1,
             "reasoning folded into one block"
         );
@@ -36218,16 +36654,16 @@ mod tests {
             text: "ponder".into(),
         });
         assert_eq!(
-            app.reasoning_status().map(|(w, _)| w),
+            app.transcript.reasoning_status().map(|(w, _)| w),
             Some("thinking".to_string())
         );
-        assert!(app.reasoning_open(), "reasoning is live");
+        assert!(app.transcript.reasoning_open(), "reasoning is live");
         app.apply(StreamEvent::Token {
             text: "Answer".into(),
         });
-        assert!(!app.reasoning_open(), "prose has started");
+        assert!(!app.transcript.reasoning_open(), "prose has started");
         assert_eq!(
-            app.reasoning_status().map(|(w, _)| w),
+            app.transcript.reasoning_status().map(|(w, _)| w),
             Some("thought for 0s".to_string()),
             "the closed block reports its duration"
         );
@@ -36262,13 +36698,17 @@ mod tests {
             !rows.contains("tag is tricky"),
             "reasoning rendered as answer prose: {rows}"
         );
-        assert_eq!(app.reasoning_blocks.len(), 1, "one folded reasoning block");
+        assert_eq!(
+            app.transcript.reasoning_blocks.len(),
+            1,
+            "one folded reasoning block"
+        );
         // Kept verbatim: reasoning never shares a string with the prose, so
         // there is no block for the tag to close and nothing to neutralize.
         assert!(
-            detail_text(&app.reasoning_blocks[0]).contains("</think>"),
+            detail_text(&app.transcript.reasoning_blocks[0]).contains("</think>"),
             "the tag is preserved as written: {}",
-            detail_text(&app.reasoning_blocks[0])
+            detail_text(&app.transcript.reasoning_blocks[0])
         );
     }
 
@@ -36290,7 +36730,11 @@ mod tests {
             name: "bash".into(),
             args: json!({"command": "ls"}),
         });
-        assert_eq!(app.reasoning_blocks.len(), 1, "reasoning committed to a block");
+        assert_eq!(
+            app.transcript.reasoning_blocks.len(),
+            1,
+            "reasoning committed to a block"
+        );
         let open = render_rows(&mut app, 100, 40).join("\n");
         assert!(
             open.contains("weigh the options carefully"),
@@ -36364,7 +36808,11 @@ mod tests {
             text: " Part two.".into(),
         });
         app.on_done("stop".into(), None);
-        assert_eq!(app.reasoning_blocks.len(), 2, "two separate stretches");
+        assert_eq!(
+            app.transcript.reasoning_blocks.len(),
+            2,
+            "two separate stretches"
+        );
         // Journaled apart: prose verbatim, each stretch at the offset it
         // streamed at, so a replay rebuilds the order without parsing markers.
         let DisplayEntry::Assistant {
@@ -36372,6 +36820,7 @@ mod tests {
             reasoning,
             reasoning_ms: _,
         } = app
+            .transcript
             .display_log
             .iter()
             .rev()
@@ -36463,6 +36912,7 @@ mod tests {
         app.on_done("stop".into(), None);
         let out: String = app
             .transcript
+            .rows
             .iter()
             .map(row_text)
             .collect::<Vec<_>>()
@@ -37933,13 +38383,14 @@ mod tests {
             app.context_request,
             "mid-turn /context must request the off-loop report"
         );
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             !text.contains("only available once the run has finished"),
             "no idle refusal may be emitted: {text}"
         );
         assert!(
             app.transcript
+                .rows
                 .iter()
                 .all(|r| matches!(r.kind, RowKind::Line(_) | RowKind::System { .. })),
             "the readout must not be committed to the transcript as a row"
@@ -38073,7 +38524,7 @@ mod tests {
     async fn help_lists_effort_aliases_and_marks_effort_canonical() {
         let mut app = test_app();
         run_command(&mut app, "help", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         // `/effort` desc has no alias prefix; each alias row derives from
         // `alias_of` and must read as an alias of `/effort`. Signatures are
         // wider than the 18-char pad, so assert on the embedded parts rather
@@ -38482,7 +38933,7 @@ mod tests {
             name: "write".into(),
         });
         assert_eq!(app.starting.len(), 1);
-        assert_eq!(app.pending_rows.len(), 1);
+        assert_eq!(app.transcript.pending_rows.len(), 1);
 
         app.on_done("stop".into(), None);
 
@@ -38491,7 +38942,7 @@ mod tests {
             "a finished run leaves a throbber naming a tool that never ran"
         );
         assert!(
-            app.pending_rows.is_empty(),
+            app.transcript.pending_rows.is_empty(),
             "a finished run leaves a call row spinning for a result that never comes"
         );
     }
@@ -38550,7 +39001,7 @@ mod tests {
     async fn help_lists_every_keybinding() {
         let mut app = test_app();
         run_command(&mut app, "help", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         for (keys, description) in KEY_BINDINGS {
             assert!(text.contains(keys), "missing keys {keys:?} in: {text}");
             assert!(
@@ -38691,7 +39142,7 @@ mod tests {
         app.goal = Some(crate::core::agent::goal::GoalState::new("x"));
         run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("goal cleared"), "missing note: {text}");
     }
 
@@ -38700,7 +39151,7 @@ mod tests {
         let mut app = test_app();
         run_command(&mut app, "goal clear", &no_mcp()).await;
         assert!(app.goal.is_none());
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -38712,7 +39163,7 @@ mod tests {
         goal.last_reason = "two files still modified".into();
         app.goal = Some(goal);
         run_command(&mut app, "goal", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("make git status clean"), "condition: {text}");
         assert!(text.contains("turns: 3"), "turn count: {text}");
         assert!(text.contains("two files still modified"), "reason: {text}");
@@ -38722,7 +39173,7 @@ mod tests {
     async fn goal_status_with_no_goal_notes() {
         let mut app = test_app();
         run_command(&mut app, "goal", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("no active goal"), "missing note: {text}");
     }
 
@@ -38730,7 +39181,7 @@ mod tests {
     async fn effort_command_reports_current_level() {
         let mut app = test_app();
         run_command(&mut app, "effort", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("medium"),
             "default level not reported: {text}"
@@ -38743,7 +39194,7 @@ mod tests {
         run_command(&mut app, "effort high", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "high");
         assert_eq!(app.last_non_low_effort, "high");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("set to high"), "missing note: {text}");
     }
 
@@ -38755,7 +39206,7 @@ mod tests {
             app.reasoning_effort, "medium",
             "invalid level must not apply"
         );
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("unknown effort level"),
             "missing note: {text}"
@@ -38766,7 +39217,7 @@ mod tests {
     async fn think_alias_reports_current_level() {
         let mut app = test_app();
         run_command(&mut app, "think", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("medium"),
             "default level not reported: {text}"
@@ -38779,7 +39230,7 @@ mod tests {
         run_command(&mut app, "think high", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "high");
         assert_eq!(app.last_non_low_effort, "high");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("set to high"), "missing note: {text}");
     }
 
@@ -38791,7 +39242,7 @@ mod tests {
             app.reasoning_effort, "medium",
             "invalid level must not apply"
         );
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("unknown effort level"),
             "missing note: {text}"
@@ -38802,7 +39253,7 @@ mod tests {
     async fn reasoning_alias_reports_current_level() {
         let mut app = test_app();
         run_command(&mut app, "reasoning", &no_mcp()).await;
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("medium"),
             "default level not reported: {text}"
@@ -38815,7 +39266,7 @@ mod tests {
         run_command(&mut app, "reasoning high", &no_mcp()).await;
         assert_eq!(app.reasoning_effort, "high");
         assert_eq!(app.last_non_low_effort, "high");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("set to high"), "missing note: {text}");
     }
 
@@ -38827,7 +39278,7 @@ mod tests {
             app.reasoning_effort, "medium",
             "invalid level must not apply"
         );
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("unknown effort level"),
             "missing note: {text}"
@@ -38995,7 +39446,7 @@ mod tests {
         app.status = Status::Running;
         run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch mid-turn");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("only settable once the run has finished"),
             "note: {text}"
@@ -39012,7 +39463,7 @@ mod tests {
         app.status = Status::Parked;
         run_command(&mut app, "plan", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Normal, "must not switch while parked");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("only settable once the run has finished"),
             "the refusal must not claim the session is busy-until-idle: {text}"
@@ -39035,7 +39486,7 @@ mod tests {
             "text arg must also enter plan mode"
         );
         assert_eq!(app.status, Status::Running, "seeded text must start a turn");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("make a html cat slide"),
             "seeded text must render as the user's message: {text}"
@@ -39050,7 +39501,7 @@ mod tests {
         run_command(&mut app, "plan investigate the auth module", &no_mcp()).await;
         assert_eq!(app.run_mode, RunMode::Plan);
         assert_eq!(app.status, Status::Running);
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("investigate the auth module"), "{text}");
     }
 
@@ -39235,7 +39686,7 @@ mod tests {
         assert!(injected.contains("unfinished todos"), "got: {injected}");
         assert!(injected.contains("t1") && injected.contains("t2"));
         // The reminder is hidden: it never renders into the transcript.
-        let rows: String = app.transcript.iter().map(row_text).collect();
+        let rows: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             !rows.contains("unfinished todos"),
             "reminder must not render as a user row"
@@ -39592,7 +40043,7 @@ mod tests {
     fn thinking_badge_shimmers_unless_motion_is_reduced() {
         use super::motion::{with_mode, MotionMode};
         let mut app = test_app();
-        app.stream_reasoning = false;
+        app.transcript.stream_reasoning = false;
         app.submit_user("hi".into());
         app.apply(StreamEvent::Token {
             text: "<think>pondering".into(),
@@ -39732,7 +40183,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "needle" }),
         });
-        let group = app.tool_group.as_ref().expect("open group");
+        let group = app.transcript.tool_group.as_ref().expect("open group");
         assert!(group.is_running());
         // Only the header animates; the child rows below carry their accent
         // verb in every mode, so they are not part of the motion signal.
@@ -39768,7 +40219,7 @@ mod tests {
         let mut app = test_app();
         // Streaming reasoning puts the thought on screen, so the badge has
         // nothing to stand in for; the shimmer is for the hidden case.
-        app.stream_reasoning = false;
+        app.transcript.stream_reasoning = false;
         assert!(!app.is_thinking(), "idle");
         app.submit_user("hi".into());
         assert!(!app.is_thinking(), "running, but nothing thinking yet");
@@ -39791,7 +40242,7 @@ mod tests {
 
         // With reasoning on screen -- streamed into the live tail, or unfolded
         // outright -- the transcript itself is moving, so the badge stays flat.
-        app.stream_reasoning = true;
+        app.transcript.stream_reasoning = true;
         app.apply(StreamEvent::Token {
             text: "<think>more".into(),
         });
@@ -39799,8 +40250,8 @@ mod tests {
             !app.is_thinking(),
             "streamed reasoning needs no badge motion"
         );
-        app.stream_reasoning = false;
-        app.show_reasoning = true;
+        app.transcript.stream_reasoning = false;
+        app.transcript.show_reasoning = true;
         assert!(
             !app.is_thinking(),
             "unfolded reasoning needs no badge motion"
@@ -39815,14 +40266,14 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "<think>weighing options</think>".into(),
         });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         app.apply(StreamEvent::ToolCall {
             id: "c1".into(),
             name: "grep".into(),
             args: json!({ "pattern": "x" }),
         });
         assert!(
-            !app.transcript.iter().any(Row::is_blank),
+            !app.transcript.rows.iter().any(Row::is_blank),
             "no separator between a reasoning summary and a tool row"
         );
 
@@ -39830,9 +40281,9 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "an answer".into(),
         });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         assert!(
-            app.transcript.iter().any(Row::is_blank),
+            app.transcript.rows.iter().any(Row::is_blank),
             "prose is still separated from the activity above it"
         );
     }
@@ -39848,7 +40299,7 @@ mod tests {
             name: "grep".into(),
             args: json!({ "pattern": "x" }),
         });
-        app.assistant_buf = "<think>weighing options".to_string();
+        app.transcript.assistant_buf = "<think>weighing options".to_string();
         let rows = render_rows(&mut app, 60, 30);
         let reason = rows
             .iter()
@@ -39860,7 +40311,7 @@ mod tests {
         );
 
         // Streaming prose in the same spot is a band change and keeps its air.
-        app.assistant_buf = "here is the answer".to_string();
+        app.transcript.assistant_buf = "here is the answer".to_string();
         let rows = render_rows(&mut app, 60, 30);
         let prose = rows
             .iter()
@@ -40554,7 +41005,7 @@ mod tests {
         app.apply(StreamEvent::Token {
             text: "an answer".into(),
         });
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         let rows = render_rows(&mut app, 60, 20);
 
         let rule = rows
@@ -40614,7 +41065,7 @@ mod tests {
         );
 
         // Committing it moves nothing: the live gap is the one the commit puts in.
-        app.flush_assistant();
+        app.transcript.flush_assistant();
         let flushed = render_rows(&mut app, 60, 16);
         assert_eq!(
             gap(&flushed),
@@ -40786,7 +41237,7 @@ mod tests {
         // Atomic handoff: no staged plan => stay in Plan, no continuation.
         assert_eq!(app.run_mode, RunMode::Plan);
         assert!(app.message_queue.is_empty());
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(text.contains("no plan staged"), "note: {text}");
     }
 
@@ -40883,14 +41334,14 @@ mod tests {
         app.history.push(json!({ "role": "user", "content": "hi" }));
         app.thread_id = Some("t-123".into());
         app.tokens = 42;
-        app.push(Line::raw("old content"));
+        app.transcript.push(Line::raw("old content"));
 
         run_command(&mut app, "new", &no_mcp()).await;
 
         assert!(app.history.is_empty());
         assert!(app.thread_id.is_none(), "must detach from the saved thread");
         assert_eq!(app.tokens, 0);
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             !text.contains("old content"),
             "transcript not reset: {text}"
@@ -40905,11 +41356,11 @@ mod tests {
     async fn clear_re_prints_the_branded_splash() {
         let mut app = test_app();
         app.approval_phrasing = "--safe: approval needed".to_string();
-        app.push(Line::raw("old content"));
+        app.transcript.push(Line::raw("old content"));
 
         run_command(&mut app, "clear", &no_mcp()).await;
 
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             !text.contains("old content"),
             "transcript not reset: {text}"
@@ -42867,7 +43318,7 @@ mod tests {
         crate::core::agent::global_config::with_temp_home(|_| {
             let mut app = test_app();
             app.set_model("claude-sonnet-4-6".to_string());
-            let text: String = app.transcript.iter().map(row_text).collect();
+            let text: String = app.transcript.rows.iter().map(row_text).collect();
             assert!(text.contains("claude-sonnet-4-6"), "got: {text}");
             assert!(text.contains("(context 1000K, catalog)"), "got: {text}");
         });
@@ -42903,7 +43354,7 @@ mod tests {
             "a failure must clear the throbber"
         );
         assert_eq!(app.history.len(), 1, "history must be left untouched");
-        let text: String = app.transcript.iter().map(row_text).collect();
+        let text: String = app.transcript.rows.iter().map(row_text).collect();
         assert!(
             text.contains("auto-compacting failed"),
             "an actionable error must be shown: {text}"
@@ -43153,6 +43604,7 @@ mod tests {
     /// The splash row's rendered text at `width`, one string per line.
     fn banner_text(app: &App, width: u16) -> Vec<String> {
         app.transcript
+            .rows
             .iter()
             .flat_map(|row| row.lines(width))
             .map(|l| l.spans.iter().map(|s| s.content.to_string()).collect())
@@ -43455,6 +43907,7 @@ mod tests {
     /// Spans of the last committed transcript row, as `(text, style)`.
     fn last_row(app: &App) -> Vec<(String, Style)> {
         app.transcript
+            .rows
             .last()
             .expect("a row")
             .lines(80)
@@ -43474,13 +43927,19 @@ mod tests {
 
         // The user turn distinguishes itself with a filled bubble background
         // (its first rendered row is the bubble's padding) and a `›` gutter.
-        app.push_user_line("do it", &[]);
+        app.transcript.push_user_line("do it", &[]);
         assert_eq!(
             last_row(&app)[0].1.bg,
             Some(super::user_bubble_bg()),
             "user message"
         );
-        let text = app.transcript.last().expect("a row").lines(80).remove(1);
+        let text = app
+            .transcript
+            .rows
+            .last()
+            .expect("a row")
+            .lines(80)
+            .remove(1);
         assert_eq!(text.spans[0].content, "\u{203a} ", "user glyph");
 
         app.apply(StreamEvent::ToolCall {
@@ -43494,7 +43953,7 @@ mod tests {
             is_error: false,
             diff: None,
         });
-        app.finalize_tool_group();
+        app.transcript.finalize_tool_group();
         // A tool row shares the note's bullet shape; its state colour is what
         // sets it apart.
         assert_eq!(
@@ -43505,8 +43964,8 @@ mod tests {
 
         // Model prose leads with the same bullet shape, but dim and colourless:
         // the answer reads as the turn's main item without passing for a note.
-        app.assistant_buf = "Done.".into();
-        app.flush_assistant();
+        app.transcript.assistant_buf = "Done.".into();
+        app.transcript.flush_assistant();
         let prose = last_row(&app);
         assert_eq!(prose[0], ("\u{2022} ".to_string(), Style::new().dim()), "answer");
     }
@@ -43555,6 +44014,7 @@ mod tests {
     /// Every rendered line of the last row, as plain text.
     fn last_row_lines(app: &App, width: u16) -> Vec<String> {
         app.transcript
+            .rows
             .last()
             .expect("a row")
             .lines(width)
@@ -43623,7 +44083,7 @@ mod tests {
     fn draw_materializes_only_the_visible_rows() {
         let mut app = test_app();
         for i in 0..4000 {
-            app.transcript.push(
+            app.transcript.rows.push(
                 RowKind::Markdown(format!(
                     "Turn {i}: lorem ipsum dolor sit amet, consectetur adipiscing elit."
                 ))
@@ -43650,14 +44110,16 @@ mod tests {
         let mut app = test_app();
         // Wraps to ~4 lines at width 40, so an unwrapped index would drift.
         app.transcript
+            .rows
             .push(RowKind::Line(Line::raw("w".repeat(150))).into());
         for i in 0..5 {
             app.transcript
+                .rows
                 .push(RowKind::Line(Line::raw(format!("row {i}"))).into());
         }
         render_rows(&mut app, 40, 20);
         let rect = app.transcript_rect;
-        let last = app.transcript.len() - 1;
+        let last = app.transcript.rows.len() - 1;
         // Bottom-pinned, so the final body row is the last transcript row.
         let bottom = rect.y + rect.height - 1;
         super::click_region(&mut app, rect.x + 1, bottom);
@@ -44658,7 +45120,7 @@ mod tests {
     #[tokio::test]
     async fn find_with_no_match_reports_it_distinctly() {
         let mut app = long_answer_app();
-        let rows = app.transcript.len();
+        let rows = app.transcript.rows.len();
         run_command(&mut app, "find zzz-not-here", &no_mcp()).await;
         let find = app.find.as_ref().expect("a failed search still shows state");
         assert!(find.current.is_none());
@@ -44667,7 +45129,7 @@ mod tests {
         assert!(footer.contains("zzz-not-here"), "{footer}");
         // Reported in the dock, not as a transcript note that would also snap
         // the view back to the bottom.
-        assert_eq!(app.transcript.len(), rows);
+        assert_eq!(app.transcript.rows.len(), rows);
     }
 
     #[tokio::test]
@@ -44704,8 +45166,8 @@ mod tests {
     #[tokio::test]
     async fn search_leaves_display_log_and_scroll_alone_except_the_viewport() {
         let mut app = long_answer_app();
-        let log = app.display_log.clone();
-        let rows = app.transcript.len();
+        let log = app.transcript.display_log.clone();
+        let rows = app.transcript.rows.len();
         app.scrollback = 3;
         run_command(&mut app, "find answer line", &no_mcp()).await;
         press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
@@ -44714,8 +45176,8 @@ mod tests {
         press_esc(&mut app).await;
         assert!(app.find.is_none());
         assert_eq!(app.scrollback, 3, "clearing leaves the view where it was");
-        assert_eq!(app.display_log, log);
-        assert_eq!(app.transcript.len(), rows);
+        assert_eq!(app.transcript.display_log, log);
+        assert_eq!(app.transcript.rows.len(), rows);
     }
 
     #[tokio::test]

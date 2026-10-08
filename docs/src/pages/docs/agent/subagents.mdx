@@ -83,8 +83,25 @@ Several messages are delivered together, in order.
 with the turn.
 
 You can do both yourself from `/agents`: select a subagent and press `m` to message it or `x` to stop
-it. Its detail view shows what it has written and every tool call it made, with a short result for
-each.
+it.
+
+## Watching a subagent with `/agents`
+
+`/agents` lists the subagents running now, with their tool count, cache rate and current activity,
+followed by the ones that have finished this session. Press Enter on one to open its run.
+
+The run is drawn the same way as your own conversation: its answers, its reasoning folded to a
+`Thought` row, its tool calls as bulleted rows (reads and searches grouped under `Explored`, shell
+output, edit diffs), and any message you sent it with `m` as your own message. A header above it
+shows the subagent's name, run id, tool and request counts, cache rate, its brief, and how it ended
+once it has finished.
+
+The view follows the subagent as it works. PgUp/PgDn scroll back through the run, Home jumps to its
+start and End returns to following it. Esc goes back to the list.
+
+A finished subagent stays readable. Its summary row in the conversation (`subagent NAME finished`)
+expands with Ctrl-O to the same run, and `/agents` still opens it. The console keeps the most recent
+400 rows of each subagent's run.
 
 ## Parallelism and queueing
 

@@ -163,7 +163,7 @@ fn tui_perf_report() {
     // Unchanged buffer, redrawn: what a spinner-only frame costs mid-reply.
     draw_on(&mut term, &mut app);
     let parses_on_redraw = take(&MD_PARSES);
-    app.flush_assistant();
+    app.transcript.flush_assistant();
     app.status = Status::Idle;
 
     // (c) A 100KB paste into the composer.
@@ -195,7 +195,10 @@ fn tui_perf_report() {
     term.resize(Rect::new(0, 0, 100, 40)).unwrap();
     let resize = draw_on(&mut term, &mut app);
 
-    println!("tui_perf_report ({} transcript rows)", app.transcript.len());
+    println!(
+        "tui_perf_report ({} transcript rows)",
+        app.transcript.rows.len()
+    );
     println!("  idle frame        mean {:.3} ms  p99 {:.3} ms", ms(idle_mean), ms(idle_p99));
     println!(
         "  30KB stream       {frames} frames  total {:.1} ms  worst {:.3} ms",
@@ -323,14 +326,14 @@ fn incremental_buffer_scan_matches_the_full_scan() {
 #[test]
 fn a_replaced_buffer_is_rescanned() {
     let mut app = test_app();
-    app.assistant_buf = "<think>weighing options".into();
-    assert!(!app.answer_started());
-    assert!(app.reasoning_open());
-    app.assistant_buf = "<think>weighing options</think>yes, ok".into();
-    assert!(app.answer_started());
-    app.assistant_buf = "here is the answer, and it is long".into();
-    assert!(app.answer_started());
-    assert!(!app.reasoning_open());
+    app.transcript.assistant_buf = "<think>weighing options".into();
+    assert!(!app.transcript.answer_started());
+    assert!(app.transcript.reasoning_open());
+    app.transcript.assistant_buf = "<think>weighing options</think>yes, ok".into();
+    assert!(app.transcript.answer_started());
+    app.transcript.assistant_buf = "here is the answer, and it is long".into();
+    assert!(app.transcript.answer_started());
+    assert!(!app.transcript.reasoning_open());
 }
 
 /// A redraw with the reply unchanged (a spinner tick mid-stream) reuses the
@@ -430,7 +433,7 @@ fn the_tail_separator_check_copies_no_row() {
         name: "grep".into(),
         args: json!({ "pattern": "x" }),
     });
-    app.finalize_tool_group();
+    app.transcript.finalize_tool_group();
     app.apply(StreamEvent::Token {
         text: "<think>still".into(),
     });
@@ -463,27 +466,34 @@ fn region_index_lookup_matches_a_linear_search() {
         name: "grep".into(),
         args: json!({ "pattern": "x" }),
     });
-    let index = app.region_index();
-    for i in 0..app.transcript.len() + 2 {
+    let index = app.transcript.region_index();
+    for i in 0..app.transcript.rows.len() + 2 {
         let linear = app
+            .transcript
             .groups
             .iter()
             .find(|g| g.idx == i)
-            .or(app.tool_group.as_ref().filter(|g| g.idx == i))
+            .or(app.transcript.tool_group.as_ref().filter(|g| g.idx == i))
             .map(|g| super::super::group_detail_lines(g, 80))
             .or_else(|| {
-                app.reasoning_blocks
+                app.transcript
+                    .reasoning_blocks
                     .iter()
                     .find(|r| r.idx == i)
                     .map(|b| b.detail.clone())
             })
             .or_else(|| {
-                app.subagent_blocks
+                app.transcript
+                    .subagent_blocks
                     .iter()
                     .find(|b| b.idx == i)
                     .map(|b| b.detail_lines(80))
             });
-        assert_eq!(app.region_detail_in(&index, i, 80), linear, "row {i}");
+        assert_eq!(
+            app.transcript.region_detail_in(&index, i, 80),
+            linear,
+            "row {i}"
+        );
     }
 }
 
