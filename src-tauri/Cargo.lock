@@ -8189,6 +8189,7 @@ name = "tauri-plugin-websearch"
 version = "0.8.3"
 dependencies = [
  "async-trait",
+ "jan-utils",
  "log",
  "reqwest 0.12.28",
  "serde",

@@ -18,6 +18,7 @@ tauri = ["dep:tauri"]
 
 [dependencies]
 async-trait = "0.1"
+jan-utils = { path = "../../utils" }
 log = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
