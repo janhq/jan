@@ -11033,16 +11033,19 @@ fn think_re() -> &'static regex::Regex {
 /// Whether inline `<think>` tags in model content are parsed as reasoning.
 /// Process-wide rather than a session field because the split runs on every
 /// rendered row, from free functions a `Row` reaches with no session in hand.
-/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `true`
+/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `false`
 /// until then, which is also the default.
-static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
 thread_local! {
     /// Per-test override. A test flips its own thread's answer instead of the
     /// shared static, so a gate-off test cannot race the rest of the suite.
+    /// Starts on: the reasoning-fold tests feed inline tags, which production
+    /// only parses once `think_tags = true`. The shipped default (off) is
+    /// pinned by the `global_config` test.
     static PARSE_THINK_TAGS_OVERRIDE: std::cell::Cell<Option<bool>> =
-        const { std::cell::Cell::new(None) };
+        const { std::cell::Cell::new(Some(true)) };
 }
 
 /// Apply the `think_tags` setting for the process. Called once per session from
@@ -11066,7 +11069,7 @@ fn think_tags_parsed() -> bool {
 fn without_think_tags<T>(f: impl FnOnce() -> T) -> T {
     PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(false)));
     let out = f();
-    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(None));
+    PARSE_THINK_TAGS_OVERRIDE.with(|c| c.set(Some(true)));
     out
 }
 

@@ -26,10 +26,11 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 # worktree = true                     # run each session in its own git worktree
 #                                     # (same as passing --worktree); off by
 #                                     # default, so the agent edits your checkout
-# think_tags = false                  # stop treating <think> tags in model
-#                                     # content as reasoning; they render and
-#                                     # are resent as ordinary prose. On by
-#                                     # default
+# think_tags = true                   # treat <think> tags in model content as
+#                                     # reasoning (folded, resent); only for a
+#                                     # provider that inlines them, since a
+#                                     # reasoning_content field needs no tags.
+#                                     # Off by default: tags render as prose
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
@@ -118,7 +119,7 @@ struct GlobalConfigToml {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     worktree: Option<bool>,
     /// Parse `<think>` tags in model *content* as reasoning. `None` = the
-    /// default, on. Native `reasoning_content` streaming is a separate
+    /// default, off. Native `reasoning_content` streaming is a separate
     /// mechanism and is unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     think_tags: Option<bool>,
@@ -527,9 +528,11 @@ pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::Hook
 }
 
 /// Whether inline `<think>` tags in model content are parsed as reasoning
-/// (`think_tags` in `~/.jan/config.toml`), defaulting to on. `false` makes the
-/// tags ordinary prose: rendered verbatim, kept in the answer sent back as
-/// history, and never folded into a reasoning block.
+/// (`think_tags` in `~/.jan/config.toml`), defaulting to off: reasoning arrives
+/// in its own `reasoning_content` field, so a tag in content is the model
+/// writing about tags. Off renders them verbatim, keeps them in the answer sent
+/// back as history, and never folds them into a reasoning block; on is for a
+/// provider that inlines its reasoning.
 ///
 /// A display preference must never block startup, so an unreadable or malformed
 /// config yields the default rather than an error.
@@ -537,7 +540,7 @@ pub(crate) fn think_tags_enabled() -> bool {
     load_raw()
         .ok()
         .and_then(|config| config.think_tags)
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 
 /// Whether other projects' memory is listed and readable
@@ -1049,20 +1052,20 @@ mod tests {
     }
 
     #[test]
-    fn think_tags_default_on_and_read_from_the_toml_key() {
+    fn think_tags_default_off_and_read_from_the_toml_key() {
         with_temp_home(|_| {
-            assert!(think_tags_enabled(), "missing file -> parsing on");
+            assert!(!think_tags_enabled(), "missing file -> parsing off");
             let path = ensure_global_config().expect("ensure");
-            assert!(think_tags_enabled(), "scaffolded file -> parsing on");
+            assert!(!think_tags_enabled(), "scaffolded file -> parsing off");
 
-            std::fs::write(&path, "think_tags = false\n").unwrap();
-            assert!(!think_tags_enabled());
             std::fs::write(&path, "think_tags = true\n").unwrap();
             assert!(think_tags_enabled());
+            std::fs::write(&path, "think_tags = false\n").unwrap();
+            assert!(!think_tags_enabled());
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(
-                think_tags_enabled(),
+                !think_tags_enabled(),
                 "an unreadable config keeps the default"
             );
         });
