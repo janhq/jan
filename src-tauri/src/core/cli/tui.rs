@@ -554,7 +554,7 @@ impl Pending {
         if let Some(name) = &self.subagent {
             out.push(Line::from(vec![
                 Span::styled("subagent ", dim),
-                Span::styled(name.clone(), Style::new().magenta().bold()),
+                agent_label(name),
                 Span::styled(" is asking:", dim),
             ]));
         }
@@ -899,6 +899,10 @@ struct PickerItem {
     hint: Option<String>,
     /// Enabled-state for toggle pickers (`/mcp`); `None` for one-shot pickers.
     checkbox: Option<bool>,
+    /// A styled rendering of `label`, drawn instead of it, for a row whose
+    /// parts carry state in their colour (`/agents`). `label` stays the plain
+    /// text a search matches against.
+    spans: Option<Vec<Span<'static>>>,
 }
 
 /// The `/mcp` detail screen's data: a local snapshot (config plus the cached
@@ -1521,8 +1525,6 @@ enum ToolState {
     Failure,
     /// The run ended before the call resolved.
     Interrupted,
-    /// A finished subagent's summary row, set apart from the parent's own calls.
-    Subagent,
 }
 
 impl ToolState {
@@ -1540,14 +1542,6 @@ impl ToolState {
             ToolState::Success => Style::new().fg(theme::success()).bold(),
             ToolState::Failure => Style::new().red().bold(),
             ToolState::Interrupted => Style::new().fg(theme::warning()),
-            ToolState::Subagent => Style::new().magenta(),
-        }
-    }
-
-    fn label_style(self) -> Style {
-        match self {
-            ToolState::Subagent => Style::new().magenta(),
-            _ => Style::new(),
         }
     }
 
@@ -1862,6 +1856,107 @@ enum RowKind {
     /// slot. A batch emits every call before any result, so appending the
     /// result would strand it below the rows of later calls in the batch.
     Resolved { call: Box<RowKind>, result: Box<RowKind> },
+    /// A row about subagents: a dispatch or a finished child.
+    Agent(Box<AgentRow>),
+}
+
+/// `• Dispatched kv-review, docs-writer` or `• Finished kv-review · 3 tools`:
+/// a tool row whose subjects are subagents, named the way the dock and
+/// `/agents` name them, with its detail -- the briefs, or how the child ended --
+/// hung under it as a tree.
+#[derive(Clone)]
+struct AgentRow {
+    state: ToolState,
+    verb: AgentVerb,
+    names: Vec<String>,
+    /// Dim text after the names, e.g. the child's tool count.
+    stats: Option<String>,
+    /// One child row per brief, under the tree's corner.
+    briefs: Vec<Vec<Span<'static>>>,
+    /// How a finished child ended, as the last child row.
+    status: Option<AgentStatus>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum AgentVerb {
+    Dispatch,
+    Finish,
+}
+
+impl AgentRow {
+    /// The row's verb: present tense while the dispatch is in flight (or was
+    /// cut short before it resolved), past tense once it has.
+    fn verb(&self) -> &'static str {
+        match (self.verb, self.state) {
+            (AgentVerb::Dispatch, ToolState::Running | ToolState::Interrupted) => "Dispatching",
+            (AgentVerb::Dispatch, _) => "Dispatched",
+            (AgentVerb::Finish, _) => "Finished",
+        }
+    }
+
+    fn lines(&self, width: u16) -> Vec<Line<'static>> {
+        let dim = Style::new().fg(theme::muted());
+        let mut head = vec![Span::styled(self.verb(), Style::new().bold())];
+        for (i, name) in self.names.iter().enumerate() {
+            head.push(Span::raw(if i == 0 { " " } else { ", " }));
+            head.push(agent_label(name));
+        }
+        if let Some(stats) = &self.stats {
+            head.push(Span::styled(format!(" \u{b7} {stats}"), dim));
+        }
+        let mut out = tool_row_spans(self.state.bullet(), head, TOOL_ROW_RESERVE, width, Vec::new());
+        let inner = width.saturating_sub(TREE_FIRST.len() as u16).max(1) as usize;
+        let status = self.status.iter().map(|s| s.spans(inner));
+        for (i, child) in self.briefs.iter().cloned().chain(status).enumerate() {
+            out.extend(gutter_lines(
+                wrap_spans_hard(child, inner),
+                vec![child_prefix(i == 0)],
+                vec![child_prefix(false)],
+            ));
+        }
+        out
+    }
+}
+
+/// The dispatch row for a `dispatch_subagent` call: every child it names, each
+/// brief's first line under it (named, when there are several).
+fn dispatch_row(args: &serde_json::Value) -> AgentRow {
+    let subagents: Vec<(String, String)> = args
+        .get("subagents")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|s| {
+                    let name = s.get("name").and_then(|v| v.as_str())?;
+                    let task = s.get("task").and_then(|v| v.as_str()).unwrap_or("");
+                    let brief = task.lines().map(str::trim).find(|l| !l.is_empty());
+                    Some((name.to_string(), brief.unwrap_or("").to_string()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let dim = Style::new().fg(theme::muted());
+    let several = subagents.len() > 1;
+    let briefs = subagents
+        .iter()
+        .filter(|(_, brief)| !brief.is_empty())
+        .map(|(name, brief)| {
+            let mut spans = Vec::new();
+            if several {
+                spans.push(Span::styled(format!("{name}: "), dim));
+            }
+            spans.push(Span::styled(brief.clone(), dim.italic()));
+            spans
+        })
+        .collect();
+    AgentRow {
+        state: ToolState::Running,
+        verb: AgentVerb::Dispatch,
+        names: subagents.into_iter().map(|(name, _)| name).collect(),
+        stats: None,
+        briefs,
+        status: None,
+    }
 }
 
 impl From<RowKind> for Row {
@@ -1966,7 +2061,6 @@ impl RowKind {
             } => tool_row_lines(
                 state.bullet(),
                 label,
-                state.label_style(),
                 *reserve,
                 width,
                 Vec::new(),
@@ -2028,7 +2122,6 @@ impl RowKind {
                     ) => Some(tool_row_lines(
                         state.bullet(),
                         label,
-                        state.label_style(),
                         *reserve,
                         width,
                         diff_stat_spans(diff),
@@ -2039,6 +2132,7 @@ impl RowKind {
                 out.extend(result.render(width));
                 out
             }
+            RowKind::Agent(row) => row.lines(width),
         }
     }
 }
@@ -2265,18 +2359,23 @@ impl Transcript {
         // is drawn at, so they survive a resize either way.
         let label = tool_activity(name, args);
         let done = tool_finished(name, args);
-        if matches!(name, "edit" | "write") {
+        if matches!(name, "edit" | "write" | "dispatch_subagent") {
             if let Some(p) = args.get("path").and_then(|v| v.as_str()) {
                 self.diff_paths.insert(id.clone(), p.to_string());
             }
-            // Diff-producing tools render standalone (call row & panel).
+            // Diff-producing tools render standalone (call row & panel), and so
+            // does a dispatch, whose row carries the briefs it sent.
             self.finalize_tool_group();
             self.gap(Kind::Tool);
-            self.push_row(RowKind::Tool {
-                state: ToolState::Running,
-                label: label.clone(),
-                reserve: TOOL_ROW_RESERVE,
-            });
+            if name == "dispatch_subagent" {
+                self.push_row(RowKind::Agent(Box::new(dispatch_row(args))));
+            } else {
+                self.push_row(RowKind::Tool {
+                    state: ToolState::Running,
+                    label: label.clone(),
+                    reserve: TOOL_ROW_RESERVE,
+                });
+            }
             self.pending_rows.push(PendingToolRow {
                 id,
                 idx: self.rows.len() - 1,
@@ -2628,10 +2727,16 @@ impl Transcript {
     fn interrupt_pending_rows(&mut self) {
         for row in std::mem::take(&mut self.pending_rows) {
             if row.idx < self.rows.len() {
-                self.rows[row.idx] = RowKind::Tool {
-                    state: ToolState::Interrupted,
-                    label: row.label,
-                    reserve: TOOL_ROW_RESERVE,
+                self.rows[row.idx] = match &self.rows[row.idx].kind {
+                    RowKind::Agent(agent) => RowKind::Agent(Box::new(AgentRow {
+                        state: ToolState::Interrupted,
+                        ..(**agent).clone()
+                    })),
+                    _ => RowKind::Tool {
+                        state: ToolState::Interrupted,
+                        label: row.label,
+                        reserve: TOOL_ROW_RESERVE,
+                    },
                 }
                 .into();
             }
@@ -3049,10 +3154,25 @@ impl Transcript {
             Some(path) if created => format!("Created {path}"),
             _ => row.done,
         };
-        let call = RowKind::Tool {
-            state: ToolState::of(is_error),
-            label,
-            reserve: TOOL_ROW_RESERVE,
+        let call = match &self.rows[row.idx].kind {
+            // A dispatch keeps its row; the result only confirms what the row
+            // already says unless it failed.
+            RowKind::Agent(agent) => {
+                let call = RowKind::Agent(Box::new(AgentRow {
+                    state: ToolState::of(is_error),
+                    ..(**agent).clone()
+                }));
+                if !is_error {
+                    self.rows[row.idx] = call.into();
+                    return None;
+                }
+                call
+            }
+            _ => RowKind::Tool {
+                state: ToolState::of(is_error),
+                label,
+                reserve: TOOL_ROW_RESERVE,
+            },
         };
         self.rows[row.idx] = RowKind::Resolved {
             call: Box::new(call),
@@ -4309,6 +4429,30 @@ impl SubagentPanel {
         (self.cache_reported && self.total_prompt_tokens > 0)
             .then(|| cache_hit_percent(self.total_cached_tokens, self.total_prompt_tokens))
     }
+
+    /// Where this child stands: `outcome` once it has ended, else whether it
+    /// is running or still waiting for its turn.
+    fn status(&self, outcome: Option<&SubagentOutcome>) -> AgentStatus {
+        match outcome {
+            Some(SubagentOutcome::Finished) => AgentStatus::Completed(self.reply_preview()),
+            Some(SubagentOutcome::Failed(e)) => AgentStatus::Error(single_line(e)),
+            Some(SubagentOutcome::Interrupted) => AgentStatus::Interrupted,
+            None if self.pending => AgentStatus::Waiting(self.phase),
+            None if self.queued => AgentStatus::Queued(self.waiting),
+            None => AgentStatus::Running,
+        }
+    }
+
+    /// The first line of the child's last answer, which is the reply it hands
+    /// back, or `None` when it answered nothing this screen saw.
+    fn reply_preview(&self) -> Option<String> {
+        let idx = self.transcript.last_answer_idx()?;
+        let RowKind::Markdown(text) = &self.transcript.rows[idx].kind else {
+            return None;
+        };
+        let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
+        Some(line.trim_start_matches(['#', '*', '-', '>', ' ']).to_string())
+    }
 }
 
 /// How a closed child's summary row reads. `Failed` carries the reason the
@@ -4324,6 +4468,127 @@ enum SubagentOutcome {
     Interrupted,
 }
 
+/// Where a subagent stands, in the one vocabulary the dock, `/agents` and the
+/// transcript's summary row all speak, so a child reads the same wherever it
+/// is shown.
+#[derive(Clone, Debug, PartialEq)]
+enum AgentStatus {
+    Running,
+    /// Parked on the `max_parallel_subagents` cap, at this queue position.
+    Queued(u32),
+    /// A later-phase child waiting on the phase before it.
+    Waiting(Option<u32>),
+    /// Finished on its own, with the first line of its reply when it gave one.
+    Completed(Option<String>),
+    Interrupted,
+    Error(String),
+}
+
+impl AgentStatus {
+    /// The status as styled words: the state's own colour on its name, then a
+    /// ` - ` detail. A reply preview is cut to fit `max` so it stays one line;
+    /// an error keeps its whole text, since it is the only account of why.
+    fn spans(&self, max: usize) -> Vec<Span<'static>> {
+        let dim = Style::new().fg(theme::muted());
+        let word = |text: &str, style: Style| vec![Span::styled(text.to_string(), style)];
+        match self {
+            AgentStatus::Running => word("Running", Style::new().fg(theme::accent()).bold()),
+            AgentStatus::Queued(n) => word(&format!("Queued ({n})"), dim),
+            AgentStatus::Waiting(Some(p)) => word(&format!("Waiting (phase {p})"), dim),
+            AgentStatus::Waiting(None) => word("Waiting", dim),
+            AgentStatus::Completed(preview) => {
+                let mut out = word("Completed", Style::new().fg(theme::success()));
+                if let Some(preview) = preview {
+                    let room = max.saturating_sub("Completed - ".len()).max(8);
+                    out.push(Span::styled(format!(" - {}", truncate(preview, room)), dim));
+                }
+                out
+            }
+            AgentStatus::Interrupted => word("Interrupted", Style::new().fg(theme::warning())),
+            AgentStatus::Error(msg) => word(&format!("Error - {msg}"), Style::new().red()),
+        }
+    }
+}
+
+/// A subagent's name as every surface shows it.
+fn agent_label(name: &str) -> Span<'static> {
+    Span::styled(name.to_string(), Style::new().fg(theme::accent()).bold())
+}
+
+/// A subagent's stats, dim and joined by ` · `: `4 tools · 4 req · 50% ctx ·
+/// 75% cached`, or `4t · 4r · ...` in the `compact` form the dock fits beside
+/// the plan. A part that is not known yet is left out rather than shown as a
+/// zero that would read as a stalled agent, and a child that has not started
+/// has none. The cache rate is its own span so a zero hit stands out.
+fn agent_stats(panel: &SubagentPanel, context_window: u64, compact: bool) -> Vec<Span<'static>> {
+    if panel.queued || panel.pending {
+        return Vec::new();
+    }
+    let dim = Style::new().fg(theme::muted());
+    let (tools, requests) = (panel.calls.len(), panel.requests);
+    let mut parts = if compact {
+        vec![format!("{tools}t"), format!("{requests}r")]
+    } else {
+        vec![pluralize("tool", tools), format!("{requests} req")]
+    };
+    // A running later-phase child keeps its phase, so the dependent stage
+    // stays visible past the wait.
+    if let Some(p) = panel.phase {
+        parts.push(format!("phase {p}"));
+    }
+    // `context_window` arrives as 0 when the session has disproven it, and the
+    // share is clamped: a child on a model with a larger window than the
+    // parent's config would otherwise report past 100%.
+    if panel.prompt_tokens > 0 && context_window > 0 {
+        let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
+        parts.push(format!("{pct:.0}% ctx"));
+    }
+    let mut out = vec![Span::styled(parts.join(" \u{b7} "), dim)];
+    if let Some(pct) = panel.cache_hit_rate() {
+        let style = if pct == 0.0 { Style::new().fg(theme::warning()) } else { dim };
+        out.push(Span::styled(" \u{b7} ", dim));
+        out.push(Span::styled(format!("{pct:.0}% cached"), style));
+    }
+    out
+}
+
+/// What a running subagent is doing, verb-first like a transcript row: the call
+/// it is building, else the last call it made with a dim ` ×N` for a short run
+/// of the same call. A run of `STUCK_REPEAT_THRESHOLD` reads as a loop and is
+/// flagged as one, even while the newest copy is still streaming. Empty for a
+/// child that has not started.
+fn agent_activity(panel: &mut SubagentPanel, frame: &str) -> Vec<Span<'static>> {
+    if panel.queued || panel.pending {
+        return Vec::new();
+    }
+    let dim = Style::new().fg(theme::muted());
+    let repeats = panel.repeats;
+    let last = panel.calls.last().map(|label| single_line(label));
+    if repeats >= STUCK_REPEAT_THRESHOLD {
+        let mut out = vec![Span::styled(
+            format!("\u{26a0} looping \u{d7}{repeats}"),
+            Style::new().fg(theme::warning()),
+        )];
+        if let Some(last) = last {
+            out.push(Span::styled(format!(" \u{b7} {last}"), dim));
+        }
+        return out;
+    }
+    if let Some(call) = panel.active.as_mut() {
+        let label = call.activity_label();
+        let text = if frame.is_empty() { label } else { format!("{frame} {label}") };
+        return vec![Span::styled(text, Style::new().fg(theme::accent()).dim())];
+    }
+    match last {
+        Some(last) if repeats > 1 => vec![
+            Span::styled(last, dim),
+            Span::styled(format!(" \u{d7}{repeats}"), dim),
+        ],
+        Some(last) => vec![Span::styled(last, dim)],
+        None => vec![Span::styled("starting\u{2026}", dim)],
+    }
+}
+
 /// A committed finished-subagent summary row, folded to one line but retaining
 /// the child itself -- its stats and its transcript -- so the row can expand
 /// back to the run (like a tool group) and `/agents` can still open it.
@@ -4336,15 +4601,14 @@ struct SubagentBlock {
 
 impl SubagentBlock {
     /// The child's run, revealed by Ctrl-O: its transcript laid out like the
-    /// main body, hung off the summary row's tree gutter.
+    /// main body, carrying on the tree the summary row's status line opened.
     fn detail_lines(&self, width: u16) -> Vec<Line<'static>> {
         let inner = width.saturating_sub(TREE_REST.len() as u16).max(1);
         let lines = self.panel.transcript.all_lines(inner);
         lines
             .into_iter()
-            .enumerate()
-            .map(|(i, line)| {
-                let mut spans = vec![child_prefix(i == 0)];
+            .map(|line| {
+                let mut spans = vec![child_prefix(false)];
                 spans.extend(line.spans);
                 Line::from(spans).style(line.style)
             })
@@ -4878,29 +5142,25 @@ impl App {
                 _ => None,
             },
         });
-        let total = panel.calls.len();
-        let noun = if total == 1 { "call" } else { "calls" };
-        let done = format!("({total} tool {noun})");
-        let (verb, state) = match &outcome {
-            SubagentOutcome::Finished => ("finished", ToolState::Subagent),
-            SubagentOutcome::Failed(_) => ("failed", ToolState::Failure),
-            SubagentOutcome::Interrupted => ("interrupted", ToolState::Interrupted),
-        };
-        let label = match &outcome {
-            SubagentOutcome::Failed(e) => format!("subagent {name} {verb} {done}: {e}"),
-            _ => format!("subagent {name} {verb} {done}"),
-        };
-        self.transcript.gap(Kind::Tool);
-        self.transcript.push_row(RowKind::Tool {
-            state,
-            label,
-            reserve: TOOL_ROW_RESERVE,
-        });
         // The child's stream is over: nothing it left open will resolve now.
         panel
             .transcript
             .settle(outcome != SubagentOutcome::Finished);
         panel.active = None;
+        let state = match &outcome {
+            SubagentOutcome::Finished => ToolState::Success,
+            SubagentOutcome::Failed(_) => ToolState::Failure,
+            SubagentOutcome::Interrupted => ToolState::Interrupted,
+        };
+        self.transcript.gap(Kind::Tool);
+        self.transcript.push_row(RowKind::Agent(Box::new(AgentRow {
+            state,
+            verb: AgentVerb::Finish,
+            names: vec![name],
+            stats: Some(pluralize("tool", panel.calls.len())),
+            briefs: Vec::new(),
+            status: Some(panel.status(Some(&outcome))),
+        })));
         if !panel.transcript.rows.is_empty() {
             let idx = self.transcript.rows.len() - 1;
             self.transcript.subagent_blocks.push(SubagentBlock {
@@ -7225,7 +7485,7 @@ impl App {
                         panel.active = None;
                     }
                     // Stored untruncated; the dock clamps it to the draw width.
-                    panel.record_call(&tool, &args, subagent_activity(&tool, &args));
+                    panel.record_call(&tool, &args, tool_finished(&tool, &args));
                     panel.transcript.tool_call(id, &tool, &args);
                     panel.transcript.cap_rows(CHILD_ROWS_MAX);
                 }
@@ -9487,32 +9747,6 @@ fn todo_target_label(args: &serde_json::Value) -> String {
     "todos".to_string()
 }
 
-/// Detailed one-line label for a subagent's own tool call, shown in the live
-/// panel. Unlike `tool_activity` (deliberately terse for the parent transcript),
-/// this keeps the concrete command/path/pattern so consecutive calls are
-/// distinguishable ("git log -5" vs "git diff", not two "Running git" rows).
-fn subagent_activity(name: &str, args: &serde_json::Value) -> String {
-    let s = |k: &str| args.get(k).and_then(|v| v.as_str()).unwrap_or("");
-    match name {
-        "bash" | "shell" | "exec" => {
-            let cmd = s("command");
-            // The live panel gives each call exactly one row, so this one stays
-            // flattened where the transcript's label keeps its breaks.
-            match cmd.trim() {
-                "" => "command".to_string(),
-                cmd => format!("$ {}", single_line(cmd)),
-            }
-        }
-        "grep" | "search" => format!("grep {}", s("pattern")),
-        "find" | "glob" => format!("find {}", s("pattern")),
-        "read" => format!("read {}", s("path")),
-        "list" | "ls" => format!("ls {}", s("path")),
-        "write" => format!("write {}", s("path")),
-        "edit" => format!("edit {}", s("path")),
-        _ => tool_activity(name, args),
-    }
-}
-
 /// Past-tense counterpart to `tool_activity` for a finalized single call
 /// ("Reading main.rs" -> "Read main.rs"); falls back to `describe_tool_call`.
 fn tool_finished(name: &str, args: &serde_json::Value) -> String {
@@ -9726,15 +9960,21 @@ fn clamp_preview_line(line: &str, open: bool) -> (String, bool) {
 }
 
 impl StartingCall {
-    /// One-line "what is this call doing" for a compact row, resolved as far as
-    /// the arguments allow: the destination once `path` has streamed, the tool
-    /// name alone before that.
+    /// One-line "what is this call doing" for a compact row, worded as the
+    /// transcript words it (`Writing kv.rs`, `Running cargo test`) once the
+    /// path or command has streamed, and `Preparing <tool>` before that.
     fn activity_label(&mut self) -> String {
         self.refresh_preview();
-        match self.preview.path.as_deref() {
-            Some(path) if !path.is_empty() => format!("{} {path}", self.name),
-            _ => format!("{}…", self.name),
+        let mut args = serde_json::Map::new();
+        for (key, value) in [("path", &self.preview.path), ("command", &self.preview.command)] {
+            if let Some(value) = value.as_deref().filter(|v| !v.trim().is_empty()) {
+                args.insert(key.to_string(), value.into());
+            }
         }
+        if args.is_empty() {
+            return format!("Preparing {}", self.name);
+        }
+        single_line(&tool_activity(&self.name, &serde_json::Value::Object(args)))
     }
 }
 
@@ -9913,7 +10153,18 @@ fn starting_call_lines(
 fn tool_row_lines(
     bullet: Span<'static>,
     label: &str,
-    label_style: Style,
+    reserve: u16,
+    width: u16,
+    suffix: Vec<Span<'static>>,
+) -> Vec<Line<'static>> {
+    tool_row_spans(bullet, verb_first_spans(label), reserve, width, suffix)
+}
+
+/// `tool_row_lines` for a label already split into styled spans, such as a
+/// subagent row whose names carry their own colour.
+fn tool_row_spans(
+    bullet: Span<'static>,
+    label: Vec<Span<'static>>,
     reserve: u16,
     width: u16,
     suffix: Vec<Span<'static>>,
@@ -9926,11 +10177,11 @@ fn tool_row_lines(
     let max = (width.saturating_sub(reserve) as usize)
         .saturating_sub(held)
         .max(1);
-    let mut rows = wrap_spans_hard(verb_first_spans(label, label_style), max);
+    let mut rows = wrap_spans_hard(label, max);
     if rows.len() > TOOL_ROW_MAX_LINES {
         rows.truncate(TOOL_ROW_MAX_LINES);
         if let Some(last) = rows.last_mut() {
-            last.push(Span::styled(" \u{2026}", label_style));
+            last.push(Span::raw(" \u{2026}"));
         }
     }
     rows.last_mut()
@@ -9940,13 +10191,13 @@ fn tool_row_lines(
 }
 
 /// `label` split into a bold verb (its first word) and the plain rest.
-fn verb_first_spans(label: &str, style: Style) -> Vec<Span<'static>> {
+fn verb_first_spans(label: &str) -> Vec<Span<'static>> {
     match label.split_once(' ') {
         Some((verb, rest)) => vec![
-            Span::styled(verb.to_string(), style.bold()),
-            Span::styled(format!(" {rest}"), style),
+            Span::styled(verb.to_string(), Style::new().bold()),
+            Span::raw(format!(" {rest}")),
         ],
-        None => vec![Span::styled(label.to_string(), style.bold())],
+        None => vec![Span::styled(label.to_string(), Style::new().bold())],
     }
 }
 
@@ -9971,7 +10222,7 @@ fn running_bullet(spinner_frame: usize) -> Span<'static> {
 /// orphaned subagent wait): a running bullet beside the label.
 fn running_tool_row(spinner_frame: usize, label: &str) -> Line<'static> {
     let mut spans = vec![running_bullet(spinner_frame)];
-    spans.extend(verb_first_spans(label, Style::new()));
+    spans.extend(verb_first_spans(label));
     Line::from(spans)
 }
 
@@ -10015,7 +10266,7 @@ fn group_detail_lines(group: &ToolGroup, width: u16) -> Vec<Line<'static>> {
                 None => ToolState::Running,
             };
             out.extend(gutter_lines(
-                wrap_spans_hard(verb_first_spans(&call.done, Style::new()), max),
+                wrap_spans_hard(verb_first_spans(&call.done), max),
                 vec![child_prefix(first(&out)), state.bullet()],
                 vec![Span::raw(TREE_NESTED)],
             ));
@@ -10309,7 +10560,6 @@ fn running_group_rows(group: &ToolGroup, spinner_frame: usize, width: u16) -> Ve
     tool_row_lines(
         running_bullet(spinner_frame),
         &group.activity(),
-        Style::new(),
         TOOL_ROW_RESERVE,
         width,
         badge,
@@ -11471,6 +11721,7 @@ fn finish_plugin_install(
                         label: c.path,
                         hint: c.installed.then(|| INSTALLED_HINT.to_string()),
                         checkbox: Some(false),
+                        spans: None,
                     })
                     .collect(),
                 selected: 0,
@@ -13205,6 +13456,7 @@ fn open_plugin_setup(app: &mut App) -> bool {
             value: directory,
             hint: (!plugin.description.is_empty()).then_some(plugin.description),
             checkbox: None,
+            spans: None,
         }).collect(),
         selected: 0,
         armed_delete: None,
@@ -13278,12 +13530,14 @@ fn show_next_plugin_connection(app: &mut App) {
                 label: format!("Enable and connect {name}"),
                 hint: Some(format!("{target} - allow this plugin's MCP server")),
                 checkbox: None,
+                spans: None,
             },
             PickerItem {
                 value: "skip".into(),
                 label: "Not now".into(),
                 hint: Some("Keep installed; resume with /plugin setup <name>".into()),
                 checkbox: None,
+                spans: None,
             },
         ],
         selected: 0,
@@ -16468,6 +16722,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
         label: "providers".to_string(),
         hint: Some("configure OpenAI-compatible providers".to_string()),
         checkbox: None,
+        spans: None,
     }];
     items.extend(
         AGENT_SETTINGS
@@ -16482,6 +16737,7 @@ fn build_agent_settings_items(toml_path: &std::path::Path) -> Vec<PickerItem> {
                         None => "(unset)".to_string(),
                     }),
                     checkbox: None,
+                    spans: None,
                 }
             })
             .collect::<Vec<_>>(),
@@ -16521,6 +16777,7 @@ fn open_provider_settings(app: &mut App) {
             value: String::new(),
             hint: None,
             checkbox: None,
+            spans: None,
         }]
     } else {
         providers
@@ -16537,6 +16794,7 @@ fn open_provider_settings(app: &mut App) {
                     value: c.provider.clone(),
                     hint: Some(c.provider),
                     checkbox: None,
+                    spans: None,
                 }
             })
             .collect()
@@ -17019,6 +17277,7 @@ fn build_todo_items(todos: &crate::core::agent::todo::TodoList) -> Vec<PickerIte
                 label: format!("{marker} {}", task.content),
                 hint: (!phase.name.is_empty()).then(|| phase.name.clone()),
                 checkbox: None,
+                spans: None,
             });
         }
     }
@@ -17749,6 +18008,7 @@ fn open_thread_picker(app: &mut App) {
                         label,
                         hint,
                         checkbox: None,
+                        spans: None,
                     })
                 })
                 .collect::<Vec<_>>();
@@ -17872,6 +18132,7 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
             value: String::new(),
             hint: None,
             checkbox: None,
+            spans: None,
         }]
     } else {
         // One lock for the whole list: `describe` per row would take and drop it
@@ -17900,6 +18161,7 @@ async fn open_mcp_picker(app: &mut App, mcp_servers: &crate::core::state::Shared
                     value: s.name,
                     hint: None,
                     checkbox: Some(s.active),
+                    spans: None,
                 }
             })
             .collect()
@@ -17921,7 +18183,11 @@ fn open_agents_picker(app: &mut App) {
     app.agent_detail = None;
     app.picker = Some(Picker {
         kind: PickerKind::Agents,
-        items: agent_picker_items(&app.subagents, &app.transcript.subagent_blocks),
+        items: agent_picker_items(
+            &mut app.subagents,
+            &app.transcript.subagent_blocks,
+            app.context_window,
+        ),
         selected: 0,
         search: None,
         armed_delete: None,
@@ -17954,6 +18220,7 @@ fn background_shell_picker_items(
             value: String::new(),
             hint: None,
             checkbox: None,
+            spans: None,
         }];
     }
     shells
@@ -17967,16 +18234,21 @@ fn background_shell_picker_items(
             value: s.pid.to_string(),
             hint: Some("running".to_string()),
             checkbox: None,
+            spans: None,
         })
         .collect()
 }
 
-/// One row per running subagent (`name  ·  Nt  ·  NN% cached  ·  <activity>`,
-/// the rate only once the child's route reports a cache field), then one per
-/// finished child this session can still open (`name  ·  Nt  ·  finished`), or
-/// a single watermark row when there are neither. The row `value` is the
-/// child's `run_id`, which Enter drills into.
-fn agent_picker_items(subagents: &[SubagentPanel], finished: &[SubagentBlock]) -> Vec<PickerItem> {
+/// One row per subagent this session can open, live ones first: a bullet
+/// (green while it runs, dim while it waits and once it has finished), its name, its dim stats and
+/// its status -- for a running child, what it is doing now. A single watermark
+/// row stands in when there are none. The row `value` is the child's `run_id`,
+/// which Enter drills into.
+fn agent_picker_items(
+    subagents: &mut [SubagentPanel],
+    finished: &[SubagentBlock],
+    context_window: u64,
+) -> Vec<PickerItem> {
     let finished: Vec<&SubagentBlock> = finished
         .iter()
         .filter(|b| !b.panel.run_id.is_empty())
@@ -17987,103 +18259,84 @@ fn agent_picker_items(subagents: &[SubagentPanel], finished: &[SubagentBlock]) -
             value: String::new(),
             hint: None,
             checkbox: None,
+            spans: None,
         }];
     }
-    let row = |p: &SubagentPanel, status: String| {
-        let cache = p
-            .cache_hit_rate()
-            .map(|pct| format!("  ·  {pct:.0}% cached"))
-            .unwrap_or_default();
+    let dim = Style::new().fg(theme::muted());
+    let row = |p: &SubagentPanel, live: bool, tail: Vec<Span<'static>>| {
+        let bullet = if live {
+            Style::new().fg(theme::success()).bold()
+        } else {
+            dim
+        };
+        let mut spans = vec![
+            Span::styled(TOOL_BULLET, bullet),
+            agent_label(&p.name),
+            Span::raw("  "),
+        ];
+        let stats = agent_stats(p, context_window, false);
+        if !stats.is_empty() {
+            spans.extend(stats);
+            spans.push(Span::raw("  "));
+        }
+        spans.extend(tail);
         PickerItem {
-            label: format!("{}  ·  {}t{cache}  ·  {status}", p.name, p.calls.len()),
+            label: spans.iter().map(|s| s.content.as_ref()).collect(),
             value: p.run_id.clone(),
             hint: None,
             checkbox: None,
+            spans: Some(spans),
         }
     };
-    subagents
-        .iter()
-        .map(|p| row(p, panel_activity_summary(p)))
-        .chain(
-            finished
-                .into_iter()
-                .map(|b| row(&b.panel, outcome_word(&b.outcome).to_string())),
-        )
-        .collect()
+    let mut items = Vec::new();
+    for p in subagents.iter_mut() {
+        let status = p.status(None);
+        let running = status == AgentStatus::Running;
+        let mut tail = status.spans(AGENT_PREVIEW_MAX);
+        let activity = agent_activity(p, "");
+        if running && !activity.is_empty() {
+            tail.push(Span::styled(" \u{b7} ", dim));
+            tail.extend(activity);
+        }
+        items.push(row(p, running, tail));
+    }
+    for b in finished {
+        let tail = b.panel.status(Some(&b.outcome)).spans(AGENT_PREVIEW_MAX);
+        items.push(row(&b.panel, false, tail));
+    }
+    items
 }
 
-/// How a finished child ended, as one word.
-fn outcome_word(outcome: &SubagentOutcome) -> &'static str {
-    match outcome {
-        SubagentOutcome::Finished => "finished",
-        SubagentOutcome::Failed(_) => "failed",
-        SubagentOutcome::Interrupted => "interrupted",
-    }
-}
+/// Widest a one-line reply preview runs in the `/agents` list, which does not
+/// wrap: past this a preview is noise beside the stats it shares the row with.
+const AGENT_PREVIEW_MAX: usize = 60;
 
-/// A one-line "what this agent is doing now" for an immutable panel (the
-/// `/agents` inspector), mirroring the live dock's logic in `agents_column` but
-/// without the streaming argument preview (`StartingCall::activity_label` needs
-/// `&mut`; the tool name is enough here). A spin of identical calls collapses to
-/// `label ×N` so a stuck worker reads as stuck.
-fn panel_activity_summary(panel: &SubagentPanel) -> String {
-    if panel.pending {
-        return match panel.phase {
-            Some(p) => format!("phase {p} (waiting)"),
-            None => "waiting".to_string(),
-        };
-    }
-    let repeats = panel.repeats;
-    if repeats >= STUCK_REPEAT_THRESHOLD {
-        return format!("{} ×{repeats}", panel.calls.last().cloned().unwrap_or_default());
-    }
-    if let Some(call) = panel.active.as_ref() {
-        return format!("{}…", call.name);
-    }
-    match panel.calls.last() {
-        Some(last) if repeats > 1 => format!("{last} ×{repeats}"),
-        Some(last) => last.clone(),
-        None if panel.queued => format!("queued ({})", panel.waiting),
-        None => "starting…".to_string(),
-    }
-}
-
-/// The `/agents` detail header: the child's name and run id, its stats (and
-/// how it ended, once it has), and the first line of its brief.
+/// The `/agents` detail header: the child's name and run id, its stats, its
+/// status (with its reply preview once it has finished), and the first line of
+/// its brief. Built from the helpers the dock and the list use, so the child
+/// reads the same on every surface.
 fn agent_detail_header(
-    panel: &SubagentPanel,
+    panel: &mut SubagentPanel,
     outcome: Option<&SubagentOutcome>,
+    context_window: u64,
     width: u16,
 ) -> Vec<Line<'static>> {
     let dim = Style::new().fg(theme::muted());
     let max = (width.max(8) as usize).saturating_sub(2);
     let mut out = vec![Line::from(vec![
-        Span::styled(panel.name.clone(), Style::new().magenta().bold()),
+        agent_label(&panel.name),
         Span::styled(format!("  ({})", panel.run_id), dim),
     ])];
-    let mut stats = format!("{} tools · {} req", panel.calls.len(), panel.requests);
-    if panel.queued {
-        stats.push_str(&format!(" · queued ({})", panel.waiting));
+    let mut row = agent_stats(panel, context_window, false);
+    if !row.is_empty() {
+        row.push(Span::raw("  "));
     }
-    if let Some(pct) = panel.cache_hit_rate() {
-        stats.push_str(&format!(" · {pct:.0}% cached"));
-    }
-    match outcome {
-        Some(SubagentOutcome::Failed(e)) => stats.push_str(&format!(" · failed: {e}")),
-        Some(outcome) => stats.push_str(&format!(" · {}", outcome_word(outcome))),
-        None => {}
-    }
-    let mut row = vec![Span::styled(stats, dim)];
-    // A spin is still worth flagging in red: the transcript alone reads as
-    // busy.
-    let repeats = panel.repeats;
-    if repeats >= STUCK_REPEAT_THRESHOLD {
-        if let Some(last) = panel.calls.last() {
-            row.push(Span::styled(
-                format!(" · repeating {last} \u{d7}{repeats}"),
-                Style::new().red(),
-            ));
-        }
+    let status = panel.status(outcome);
+    row.extend(status.spans(max));
+    // A loop is still worth flagging: the transcript alone reads as busy.
+    if status == AgentStatus::Running && panel.repeats >= STUCK_REPEAT_THRESHOLD {
+        row.push(Span::styled(" \u{b7} ", dim));
+        row.extend(agent_activity(panel, ""));
     }
     out.push(Line::from(row));
     if let Some(brief) = panel.task.lines().find(|l| !l.trim().is_empty()) {
@@ -18113,6 +18366,7 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
     let dim = Style::new().fg(theme::muted());
     let run_id = app.agent_detail.clone().unwrap_or_default();
     let spinner_frame = app.spinner_frame;
+    let context_window = app.context_window;
     // A finished child is read from its summary row's block, which keeps it.
     let found = match app.subagents.iter_mut().find(|p| p.run_id == run_id) {
         Some(panel) => Some((panel, None)),
@@ -18129,7 +18383,7 @@ fn draw_agent_detail(f: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
     let width = inner.width;
-    let header = agent_detail_header(panel, outcome, width);
+    let header = agent_detail_header(panel, outcome, context_window, width);
     let header_h = wrapped_height_of(&header, width).min(inner.height);
     let [head, body] =
         Layout::vertical([Constraint::Length(header_h), Constraint::Min(0)]).areas(inner);
@@ -18237,6 +18491,7 @@ fn mcp_action_items(server: &super::mcp::ServerDetail) -> Vec<PickerItem> {
             label,
             value: value.to_string(),
             checkbox: None,
+            spans: None,
         })
         .collect()
 }
@@ -18476,6 +18731,7 @@ fn open_login_picker_at(app: &mut App, selected_provider: Option<&str>) {
                 label: format!("{} ({})", provider.name, provider.id),
                 hint: Some(status.to_string()),
                 checkbox: None,
+                spans: None,
             }
         })
         .collect::<Vec<_>>();
@@ -18990,6 +19246,7 @@ fn open_config_screen(app: &mut App) {
             value: String::new(),
             hint: None,
             checkbox: None,
+            spans: None,
         }]
     } else {
         providers
@@ -19006,6 +19263,7 @@ fn open_config_screen(app: &mut App) {
                     value: c.provider.clone(),
                     hint: Some(c.provider),
                     checkbox: None,
+                    spans: None,
                 }
             })
             .collect()
@@ -19635,6 +19893,7 @@ fn open_tree_picker(app: &mut App) {
                 hint: Some(id.chars().take(8).collect()),
                 value: id,
                 checkbox: None,
+                spans: None,
             })
         })
         .collect();
@@ -19680,6 +19939,7 @@ fn open_turn_picker(app: &mut App, kind: PickerKind, empty: &str) {
                 label,
                 hint: Some(format!("#{}", ui + 1)),
                 checkbox: None,
+                spans: None,
             });
             ui += 1;
         }
@@ -19706,6 +19966,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
         label: "conversation only".to_string(),
         hint: None,
         checkbox: None,
+        spans: None,
     }];
     if app.base_snapshot.is_some() {
         items.push(PickerItem {
@@ -19713,6 +19974,7 @@ fn open_rewind_scope(app: &mut App, user_index: usize) {
             label: "conversation + workspace".to_string(),
             hint: None,
             checkbox: None,
+            spans: None,
         });
     }
     app.picker = Some(Picker {
@@ -20474,7 +20736,11 @@ fn draw(f: &mut Frame, app: &mut App) {
     // fan-out each frame so a finishing or newly-dispatched child appears
     // without reopening. Sequential borrows: read subagents, then write picker.
     if app.picker.as_ref().map(|p| p.kind) == Some(PickerKind::Agents) {
-        let items = agent_picker_items(&app.subagents, &app.transcript.subagent_blocks);
+        let items = agent_picker_items(
+            &mut app.subagents,
+            &app.transcript.subagent_blocks,
+            app.context_window,
+        );
         if let Some(p) = app.picker.as_mut() {
             p.selected = p.selected.min(items.len().saturating_sub(1));
             p.items = items;
@@ -21888,7 +22154,10 @@ fn draw_picker(
                 if let Some(hint) = &it.hint {
                     spans.push(Span::styled(format!("{hint}  "), Style::new().fg(theme::muted())));
                 }
-                spans.push(Span::raw(it.label.clone()));
+                match &it.spans {
+                    Some(styled) => spans.extend(styled.iter().cloned()),
+                    None => spans.push(Span::raw(it.label.clone())),
+                }
             }
             ListItem::new(Line::from(spans))
         })
@@ -22042,7 +22311,7 @@ const PANEL_GUTTER: u16 = 3;
 const AGENT_MAX_ROWS: usize = 3;
 
 /// A trailing run of identical calls this long reads as a spin, not progress, so
-/// the collapsed `×N` marker turns red to flag it.
+/// the collapsed `×N` count becomes a `⚠ looping ×N` warning.
 const STUCK_REPEAT_THRESHOLD: usize = 4;
 
 /// The live fan-out, as a column: one stats line per child plus as much detail
@@ -22090,66 +22359,25 @@ fn agents_column(
         .map_or(0, |n| n.min(AGENT_MAX_ROWS - 1));
 
     for panel in panels.iter_mut().take(shown) {
-        let idle = panel.queued || panel.pending;
-        let mut spans = vec![Span::styled(
-            format!("{} ", if idle { "·" } else { frame }),
-            Style::new().magenta(),
-        )];
-        if panel.pending {
-            // A later-phase subagent waiting on the phase before it: no run yet,
-            // so show which phase it belongs to instead of live stats.
-            spans.push(Span::styled(
-                truncate(&panel.name, max.saturating_sub(18)),
-                Style::new().magenta().dim(),
-            ));
-            spans.push(Span::styled(
-                match panel.phase {
-                    Some(p) => format!("  phase {p} · waiting"),
-                    None => "  waiting".to_string(),
-                },
-                Style::new().fg(theme::warning()),
-            ));
-        } else if panel.queued {
-            // Parked on the `max_parallel_subagents` cap; the child has not
-            // started, so there are no live stats -- its queue position instead.
-            spans.push(Span::styled(
-                truncate(&panel.name, max.saturating_sub(14)),
-                Style::new().magenta().dim(),
-            ));
-            spans.push(Span::styled(
-                format!("  queued ({})", panel.waiting),
-                Style::new().fg(theme::warning()),
-            ));
+        let status = panel.status(None);
+        let running = status == AgentStatus::Running;
+        let mut spans = vec![
+            Span::styled(
+                format!("{} ", if running { frame } else { "\u{b7}" }),
+                Style::new().fg(theme::accent()),
+            ),
+            // Clamped so a long name cannot push its stats off the column.
+            agent_label(&truncate(&panel.name, max.saturating_sub(20))),
+            Span::raw("  "),
+        ];
+        // A running child shows its stats; one that has not started has none,
+        // so its place in line stands in for them.
+        if running {
+            spans.extend(agent_stats(panel, context_window, true));
         } else {
-            spans.push(Span::styled(
-                truncate(&panel.name, max.saturating_sub(20)),
-                Style::new().magenta(),
-            ));
-            // Compact stats: side by side with the plan there is no room for
-            // "33 tools  ·  24 req", and the units are obvious in context.
-            let mut stats = format!("  {}t · {}r", panel.calls.len(), panel.requests);
-            // A running subagent from a later phase keeps its phase badge, so the
-            // dependent-stage hint persists past the wait.
-            if let Some(p) = panel.phase {
-                stats.push_str(&format!(" · phase {p}"));
-            }
-            // Only once the child has reported usage; "0%" before its first
-            // response would read as a stalled agent rather than a starting one.
-            // `context_window` arrives as 0 when the session has disproven it,
-            // and the share is clamped: a child on a model with a larger window
-            // than the parent's config would otherwise report past 100%.
-            if panel.prompt_tokens > 0 && context_window > 0 {
-                let pct = (panel.prompt_tokens as f64 / context_window as f64 * 100.0).min(100.0);
-                stats.push_str(&format!(" · {pct:.1}%"));
-            }
-            spans.push(Span::styled(stats, dim));
-            // Its own span so a zero hit stands out, as the header rate does.
-            if let Some(pct) = panel.cache_hit_rate() {
-                let style = if pct == 0.0 { Style::new().fg(theme::warning()) } else { dim };
-                spans.push(Span::styled(format!(" · {pct:.0}% cached"), style));
-            }
+            spans.extend(status.spans(max));
         }
-        out.push(Line::from(spans));
+        out.push(Line::from(clip_spans(spans, max)));
 
         if per == 0 {
             continue;
@@ -22157,56 +22385,23 @@ fn agents_column(
         // The dispatch brief says what this child is *for*. Split on the task's
         // own newlines rather than word-wrapping: models write these as
         // structured briefs whose first line is the summary.
-        let brief = panel.task.lines().find(|l| !l.trim().is_empty());
-        let repeats = panel.repeats;
-        let activity = if repeats >= STUCK_REPEAT_THRESHOLD {
-            // A run of identical calls is a spin: show the count in red so it
-            // reads as stuck rather than working, even while the newest copy is
-            // still streaming as `active`.
-            panel
-                .calls
-                .last()
-                .map(|label| (format!("{label} ×{repeats}"), Style::new().red()))
-        } else {
-            match panel.active.as_mut() {
-                Some(call) => Some((
-                    format!("{frame} {}", call.activity_label()),
-                    Style::new().fg(theme::accent()).dim(),
-                )),
-                None => panel
-                    .calls
-                    .last()
-                    .map(|label| {
-                        let text = if repeats > 1 {
-                            format!("{label} ×{repeats}")
-                        } else {
-                            label.clone()
-                        };
-                        (text, Style::new().dim())
-                    })
-                    .or_else(|| {
-                        (!panel.queued && !panel.pending)
-                            .then(|| ("starting…".to_string(), Style::new().dim()))
-                    }),
-            }
-        };
+        let brief = panel
+            .task
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .map(|b| vec![Span::styled(b.trim().to_string(), Style::new().dim().italic())]);
+        let activity = Some(agent_activity(panel, frame)).filter(|a| !a.is_empty());
         // With only one detail row the activity wins: what it is doing now is
         // worth more than what it was asked, which the transcript already shows.
-        let detail: Vec<(String, Style)> = match (per, brief, activity) {
+        let detail: Vec<Vec<Span<'static>>> = match (per, brief, activity) {
             (1, _, Some(a)) => vec![a],
-            (1, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
-            (_, Some(b), Some(a)) => {
-                vec![(b.trim().to_string(), Style::new().dim().italic()), a]
-            }
-            (_, None, Some(a)) => vec![a],
-            (_, Some(b), None) => vec![(b.trim().to_string(), Style::new().dim().italic())],
-            _ => Vec::new(),
+            (_, Some(b), Some(a)) => vec![b, a],
+            (_, b, a) => b.or(a).into_iter().collect(),
         };
-        for (text, style) in detail {
-            out.push(Line::from(vec![
-                Span::raw("   "),
-                Span::styled(truncate(&text, max.saturating_sub(3)), style),
-            ]));
+        for row in detail {
+            let mut spans = vec![Span::raw("   ")];
+            spans.extend(row);
+            out.push(Line::from(clip_spans(spans, max)));
         }
     }
     if hidden > 0 {
@@ -23214,7 +23409,7 @@ mod tests {
         build_user_message, clipboard_path, compact_tokens, context_lines, diff_lines,
         drain_stream_events, estimate_token_count, finish_account_login, finish_compaction,
         finish_context_report, finish_login, finish_plugin_install, finish_tokamak_login,
-        finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
+        agent_stats, finish_update_install, fork_at, format_tokens, group_detail_lines, group_summary,
         handle_ask_key, handle_ask_mouse, handle_key, handle_mouse, handle_plugin_setup_key,
         header_spans, image_mime,
         image_mime_of, input_content_lines, is_user_turn, load_first_file_image, load_image_file,
@@ -23224,10 +23419,10 @@ mod tests {
         restore_host_system_prompt, restore_run_mode, restore_todos, resume_hint, rewind_to,
         route_paste_event, row_width, run_command, running_group_rows, selection_text, spans_width, spawn_branch_poll,
         split_reasoning, starting_call_lines, startup_modes, strip_system_xml_tags,
-        subagent_activity, subagent_name_from_run_id, summarize_result, sync_output_for,
+        subagent_name_from_run_id, summarize_result, sync_output_for,
         thinking_open, tilde_path, tokens_per_second, tool_activity, tool_finished,
         transcript_top_padding, unescape_partial_json_string, user_content_parts,
-        without_think_tags, worktree_command, App, CompactKind, ContextReport,
+        without_think_tags, worktree_command, AgentStatus, App, CompactKind, ContextReport,
         ContextSegment, CurrentRun, Readout, McpField, McpPrompt, MonitorSet, Pending,
         PendingImage, PickerKind, ProviderField, ReasoningSeg, ResumeRequest, ResumeTarget, Row,
         RowKind, Selection, SelectionMode, SnapshotJob, Status, ToolState, Worktree, AGENT_SETTINGS,
@@ -23400,9 +23595,175 @@ mod tests {
         let mut panels = vec![panel_with_calls("kv-review", vec![call; 5])];
         let lines = agents_column(&mut panels, 200_000, 80, 8, "-");
         let text = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
-        assert!(text.contains("×5"), "collapsed spin shows its count: {text}");
+        assert!(text.contains("⚠ looping ×5"), "a spin reads as a loop: {text}");
         // The single call is not duplicated across five rows.
         assert_eq!(text.matches("bash").count(), 1, "one collapsed row: {text}");
+        let marker = lines
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .find(|s| s.content.contains("looping"))
+            .expect("loop marker");
+        assert_eq!(marker.style.fg, Some(super::theme::warning()), "{marker:?}");
+    }
+
+    /// Below the loop threshold a run of one call keeps a quiet dim count.
+    #[test]
+    fn agents_column_counts_a_short_repeat_quietly() {
+        let mut panels = vec![panel_with_calls("kv-review", vec!["Ran ls"; 2])];
+        let text = agents_column(&mut panels, 200_000, 80, 8, "-")
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("Ran ls ×2"), "{text}");
+        assert!(!text.contains("looping"), "{text}");
+    }
+
+    /// The dock and `/agents` say what a child is doing the way the transcript
+    /// does: verb-first, not `read src/x.rs` or `$ cmd`.
+    #[test]
+    fn subagent_activity_reads_verb_first() {
+        let mut app = test_app();
+        start_subagent(&mut app, "r0", "alpha");
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::ToolCall {
+                id: "c1".into(),
+                name: "bash".into(),
+                args: json!({ "command": "git log -5" }),
+            },
+        );
+        assert_eq!(app.subagents[0].calls, vec!["Ran git log -5".to_string()]);
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::ToolCallStarted {
+                id: "c2".into(),
+                name: "write".into(),
+            },
+        );
+        subagent_event(
+            &mut app,
+            "r0",
+            "alpha",
+            StreamEvent::ToolCallArgsDelta {
+                id: "c2".into(),
+                delta: r#"{"path":"src/kv.rs","content":"x"#.into(),
+            },
+        );
+        let text = agents_column(&mut app.subagents, 200_000, 80, 8, "-")
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("- Writing kv.rs"), "the call in flight: {text}");
+    }
+
+    /// One status vocabulary: each state's word, in its own colour.
+    #[test]
+    fn agent_status_words_carry_their_state() {
+        let words = |status: AgentStatus| {
+            let spans = status.spans(80);
+            (spans.iter().map(|s| s.content.to_string()).collect::<String>(), spans[0].style)
+        };
+        let (text, style) = words(AgentStatus::Running);
+        assert_eq!(text, "Running");
+        assert_eq!(style.fg, Some(super::theme::accent()));
+        let (text, style) = words(AgentStatus::Completed(Some("Found 2 races.".into())));
+        assert_eq!(text, "Completed - Found 2 races.");
+        assert_eq!(style.fg, Some(super::theme::success()));
+        assert_eq!(words(AgentStatus::Completed(None)).0, "Completed");
+        let (text, style) = words(AgentStatus::Interrupted);
+        assert_eq!(text, "Interrupted");
+        assert_eq!(style.fg, Some(super::theme::warning()));
+        let (text, style) = words(AgentStatus::Error("429".into()));
+        assert_eq!(text, "Error - 429");
+        assert_eq!(style.fg, Some(ratatui::style::Color::Red));
+        assert_eq!(words(AgentStatus::Queued(2)).0, "Queued (2)");
+        assert_eq!(words(AgentStatus::Waiting(Some(3))).0, "Waiting (phase 3)");
+    }
+
+    /// The full and compact stats come from one function and leave out what
+    /// is not known yet.
+    #[test]
+    fn agent_stats_full_and_compact_forms() {
+        let text = |spans: Vec<ratatui::text::Span<'static>>| {
+            spans.iter().map(|s| s.content.to_string()).collect::<String>()
+        };
+        let mut panel = panel_with_calls("kv-review", vec!["Ran a", "Ran b", "Ran c", "Ran d"]);
+        panel.requests = 4;
+        assert_eq!(text(agent_stats(&panel, 128_000, false)), "4 tools · 4 req");
+        panel.prompt_tokens = 64_000;
+        panel.total_prompt_tokens = 64_000;
+        panel.total_cached_tokens = 48_000;
+        panel.cache_reported = true;
+        assert_eq!(
+            text(agent_stats(&panel, 128_000, false)),
+            "4 tools · 4 req · 50% ctx · 75% cached"
+        );
+        assert_eq!(
+            text(agent_stats(&panel, 128_000, true)),
+            "4t · 4r · 50% ctx · 75% cached"
+        );
+        panel.queued = true;
+        assert!(agent_stats(&panel, 128_000, false).is_empty(), "no stats before it starts");
+    }
+
+    /// A dispatch is a bullet row naming every child, with each brief under it.
+    #[test]
+    fn a_dispatch_row_names_the_children_and_their_briefs() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [
+                { "name": "kv-review", "task": "Review the store.\nThen report." },
+                { "name": "docs-writer", "task": "Write the docs." },
+            ] }),
+        });
+        let text = transcript_text(&app);
+        assert!(text.contains("• Dispatching kv-review, docs-writer"), "{text}");
+        app.apply(StreamEvent::ToolResult {
+            id: "d1".into(),
+            content: "dispatched".into(),
+            is_error: false,
+            diff: None,
+        });
+        let text = transcript_text(&app);
+        assert!(
+            text.contains(concat!(
+                "• Dispatched kv-review, docs-writer\n",
+                "  └ kv-review: Review the store.\n",
+                "    docs-writer: Write the docs."
+            )),
+            "{text}"
+        );
+        assert!(!text.contains("dispatched\n"), "a clean result adds no row: {text}");
+        assert!(has_dispatch_state(&app, ToolState::Success));
+    }
+
+    /// A dispatch the run never resolved reads as interrupted, not running.
+    #[test]
+    fn an_unresolved_dispatch_row_is_interrupted_by_a_cancel() {
+        let mut app = test_app();
+        app.apply(StreamEvent::ToolCall {
+            id: "d1".into(),
+            name: "dispatch_subagent".into(),
+            args: json!({ "subagents": [{ "name": "solo", "task": "go" }] }),
+        });
+        app.transcript.settle(true);
+        assert!(has_dispatch_state(&app, ToolState::Interrupted));
+        assert!(transcript_text(&app).contains("• Dispatching solo\n  └ go"));
+    }
+
+    fn has_dispatch_state(app: &App, state: ToolState) -> bool {
+        app.transcript
+            .rows
+            .iter()
+            .any(|r| matches!(&r.kind, RowKind::Agent(a) if a.state == state))
     }
 
     /// Open `/agents` on `run_id`'s detail and render a `w`x`h` frame, as the
@@ -23422,7 +23783,7 @@ mod tests {
 
     #[test]
     fn agents_picker_shows_a_watermark_when_no_children_run() {
-        let items = agent_picker_items(&[], &[]);
+        let items = agent_picker_items(&mut [], &[], 200_000);
         assert_eq!(items.len(), 1);
         assert!(items[0].value.is_empty(), "watermark row has no run_id to open");
         assert!(items[0].label.contains("no subagents"), "{}", items[0].label);
@@ -23430,12 +23791,16 @@ mod tests {
 
     #[test]
     fn agents_picker_row_names_the_child_and_flags_a_spin() {
-        let panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
-        let items = agent_picker_items(&panels, &[]);
+        let mut panels = vec![panel_with_calls("kv-review", vec!["bash {}"; 4])];
+        let items = agent_picker_items(&mut panels, &[], 200_000);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-kv-review-1");
         assert!(items[0].label.contains("kv-review"), "{}", items[0].label);
-        assert!(items[0].label.contains("×4"), "spin visible in the row: {}", items[0].label);
+        assert!(
+            items[0].label.contains("Running · ⚠ looping ×4"),
+            "spin visible in the row: {}",
+            items[0].label
+        );
     }
 
     #[test]
@@ -23444,7 +23809,7 @@ mod tests {
         app.subagents = vec![panel_with_calls("kv-review", vec!["bash {}"; 5])];
         let text = agent_detail_text(&mut app, "sub-kv-review-1", 100, 20);
         assert!(text.contains("kv-review") && text.contains("sub-kv-review-1"), "{text}");
-        assert!(text.contains("×5"), "a spin is flagged in the detail: {text}");
+        assert!(text.contains("5 tools · 0 req  Running · ⚠ looping ×5"), "{text}");
     }
 
     #[test]
@@ -23476,7 +23841,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            text.contains("collector") && text.contains("phase 2") && text.contains("waiting"),
+            text.contains("collector") && text.contains("Waiting (phase 2)"),
             "the waiting hint is shown: {text}"
         );
 
@@ -23659,12 +24024,19 @@ mod tests {
             error: None,
         });
         assert!(app.subagents.is_empty(), "the live panel is gone");
-        let items = agent_picker_items(&app.subagents, &app.transcript.subagent_blocks);
+        let items = {
+            let app = &mut *app;
+            agent_picker_items(&mut app.subagents, &app.transcript.subagent_blocks, 200_000)
+        };
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].value, "sub-counter-1");
-        assert!(items[0].label.contains("finished"), "{}", items[0].label);
+        assert!(
+            items[0].label.contains("Completed - All done."),
+            "{}",
+            items[0].label
+        );
         let text = agent_detail_text(&mut app, "sub-counter-1", 100, 40);
-        assert!(text.contains("finished"), "the header says so: {text}");
+        assert!(text.contains("Completed - All done."), "the header says so: {text}");
         assert!(
             text.contains("• All done."),
             "the run is still there: {text}"
@@ -23684,12 +24056,14 @@ mod tests {
             error: None,
         });
         app.transcript.toggle_regions();
-        let screen = render_rows(&mut app, 100, 40).join("\n");
+        let rows = render_rows(&mut app, 100, 40);
+        let screen = rows.join("\n");
         assert!(
-            screen.contains("subagent counter finished (2 tool calls)"),
+            rows.windows(2).any(|w| w[0].trim_end() == "• Finished counter · 2 tools"
+                && w[1].trim_end() == "  └ Completed - All done."),
             "{screen}"
         );
-        assert!(screen.contains("└ ┊ Thought"), "{screen}");
+        assert!(screen.contains("    ┊ Thought"), "{screen}");
         assert!(screen.contains("• Let me run the command."), "{screen}");
         assert!(
             screen.contains("Ran sleep 20 && echo counted"),
@@ -29281,28 +29655,6 @@ mod tests {
     }
 
     #[test]
-    fn subagent_panel_labels_keep_command_detail() {
-        // The panel must distinguish consecutive bash calls, not collapse to
-        // "Running git".
-        assert_eq!(
-            subagent_activity("bash", &json!({ "command": "git log --oneline -5" })),
-            "$ git log --oneline -5"
-        );
-        assert_eq!(
-            subagent_activity("bash", &json!({ "command": "git diff" })),
-            "$ git diff"
-        );
-        assert_eq!(
-            subagent_activity("read", &json!({ "path": "src/main.rs" })),
-            "read src/main.rs"
-        );
-        assert_eq!(
-            subagent_activity("grep", &json!({ "pattern": "TODO" })),
-            "grep TODO"
-        );
-    }
-
-    #[test]
     fn await_subagent_shows_throbber_until_result() {
         let mut app = test_app();
         app.apply(StreamEvent::ToolCall {
@@ -29542,7 +29894,7 @@ mod tests {
         });
         let rows = render_rows(&mut app, 80, 20);
         assert!(
-            rows.iter().any(|r| r.contains("queued (3)")),
+            rows.iter().any(|r| r.contains("Queued (3)")),
             "queued panel shows its position: {rows:?}"
         );
     }
@@ -31326,7 +31678,7 @@ mod tests {
             .transcript
             .rows
             .iter()
-            .any(|r| row_text(r).contains("subagent reviewer finished (1 tool call)")));
+            .any(|r| row_text(r).contains("Finished reviewer · 1 tool\n  └ Completed")));
     }
 
     /// A background child reports its failure to the model (the `<SYSTEM>`
@@ -31351,13 +31703,13 @@ mod tests {
             .rows
             .iter()
             .map(row_text)
-            .find(|t| t.contains("subagent reviewer"))
+            .find(|t| t.contains("Finished reviewer"))
             .expect("no summary row");
         assert!(
-            row.contains("failed") && row.contains("429 rate limited"),
+            row.contains("└ Error - upstream: 429 rate limited"),
             "row hides the failure: {row}"
         );
-        assert!(!row.contains("finished"), "row reads as a clean run: {row}");
+        assert!(!row.contains("Completed"), "row reads as a clean run: {row}");
     }
 
     /// The journal replays the outcome too: a resumed session must not turn a
@@ -31381,7 +31733,7 @@ mod tests {
             .transcript
             .rows
             .iter()
-            .any(|r| row_text(r).contains("subagent reviewer failed")));
+            .any(|r| row_text(r).contains("└ Error - upstream: 429 rate limited")));
         // A journal written before the field existed still replays as a clean
         // finish rather than being dropped.
         let old: DisplayEntry =
@@ -35921,7 +36273,7 @@ mod tests {
         child_usage(&mut app, "r0", 3_000, Some(2_500));
         let out = render_rows(&mut app, 120, 20).join("\n");
         assert!(out.contains(" · 75% cached"), "{out}");
-        let items = agent_picker_items(&app.subagents, &[]);
+        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
         assert!(items[0].label.contains("75% cached"), "{}", items[0].label);
         let detail = agent_detail_text(&mut app, "r0", 80, 20);
         assert!(detail.contains("75% cached"), "{detail}");
@@ -35936,7 +36288,7 @@ mod tests {
         child_usage(&mut app, "r0", 1_000, None);
         let out = render_rows(&mut app, 120, 20).join("\n");
         assert!(!out.contains("cached"), "{out}");
-        let items = agent_picker_items(&app.subagents, &[]);
+        let items = agent_picker_items(&mut app.subagents, &[], 200_000);
         assert!(!items[0].label.contains("cached"), "{}", items[0].label);
     }
 
@@ -36217,7 +36569,7 @@ mod tests {
         let rows = render_rows(&mut app, 100, 24);
         let out = rows.join("\n");
         assert!(out.contains("2 agents"), "no consolidated header: {out}");
-        for (name, pct) in [("alpha", "10.0%"), ("beta", "20.0%")] {
+        for (name, pct) in [("alpha", "10% ctx"), ("beta", "20% ctx")] {
             assert!(out.contains(name), "missing {name}: {out}");
             assert!(out.contains(pct), "missing context share {pct}: {out}");
         }
@@ -36308,7 +36660,7 @@ mod tests {
             "panel must be gone: {rows:?}"
         );
         assert!(
-            rows.iter().any(|r| r.contains("subagent alpha finished")),
+            rows.iter().any(|r| r.contains("Finished alpha · 0 tools")),
             "summary row missing: {rows:?}"
         );
     }
@@ -40905,8 +41257,9 @@ mod tests {
             // Not silently: the child did work, so it gets the same kind of
             // summary row a clean end would leave, marked unfinished.
             assert!(
-                rows.iter()
-                    .any(|r| r.contains("subagent alpha interrupted")),
+                rows.windows(2).any(|w| {
+                    w[0].contains("Finished alpha · 1 tool") && w[1].contains("└ Interrupted")
+                }),
                 "{finish}: unfinished child must be accounted for: {rows:?}"
             );
         }

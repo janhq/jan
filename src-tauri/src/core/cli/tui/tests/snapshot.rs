@@ -435,7 +435,7 @@ fn cached_panel(
     reported: bool,
 ) -> SubagentPanel {
     let mut panel = panel_with_calls(name, Vec::new());
-    panel.calls = (0..calls).map(|i| format!("read src/mod_{i}.rs")).collect();
+    panel.calls = (0..calls).map(|i| format!("Read mod_{i}.rs")).collect();
     panel.requests = calls as u32;
     panel.prompt_tokens = prompt;
     panel.total_prompt_tokens = prompt;

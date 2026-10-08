@@ -6,7 +6,7 @@ expression: render_snapshot(buf)
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
 |╭ subagent ────────────────────────────────────────────────────────────────────╮|
 |│ kv-review  (sub-kv-review-1)                                                 │|
-|│ 2 tools · 2 req · 75% cached                                                 │|
+|│ 2 tools · 2 req · 75% cached  Running                                        │|
 |│                                                                              │|
 |│ Review the key-value store for races.                                        │|
 |│                                                                              │|
@@ -35,11 +35,12 @@ expression: render_snapshot(buf)
  0 57..66 fg=#56B6C2 mod=BOLD
  1 0..80 fg=#56B6C2
  2 0..1 fg=#56B6C2
- 2 2..11 fg=Magenta mod=BOLD
+ 2 2..11 fg=#56B6C2 mod=BOLD
  2 11..30 fg=#808080
  2 79..80 fg=#56B6C2
  3 0..1 fg=#56B6C2
  3 2..30 fg=#808080
+ 3 32..39 fg=#56B6C2 mod=BOLD
  3 79..80 fg=#56B6C2
  4 0..1 fg=#56B6C2
  4 79..80 fg=#56B6C2
