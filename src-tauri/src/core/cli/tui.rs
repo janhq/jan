@@ -11072,9 +11072,10 @@ thread_local! {
         const { std::cell::Cell::new(Some(true)) };
 }
 
-/// Apply the tag gate for the process. `App::sync_think_tags` calls it at
-/// startup and whenever the serving provider can change.
-fn set_think_tags_parsed(enabled: bool) {
+/// Apply the tag gate for the process. Seeded by `prepare_agent_session` for
+/// every surface; `App::sync_think_tags` re-applies it in the TUI whenever the
+/// serving provider can change.
+pub(crate) fn set_think_tags_parsed(enabled: bool) {
     PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -30139,6 +30140,44 @@ mod tests {
             assert!(!super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
             app.set_model("local-reasoner".into());
             assert!(super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
+        });
+    }
+
+    /// A headless run (`jan cli agent run`, rpc, acp) never builds an `App`, yet
+    /// its result strips reasoning through the same gate, so session setup has
+    /// to seed it from the provider that serves the model.
+    #[test]
+    fn preparing_a_session_seeds_the_think_tag_gate_for_headless_runs() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let set = |name: &str, model: &str| {
+                crate::core::agent::global_config::set_provider(
+                    name,
+                    crate::core::agent::global_config::ProviderUpdate {
+                        base_url: Some("http://127.0.0.1:1/v1".into()),
+                        models: Some(vec![model.into()]),
+                        ..Default::default()
+                    },
+                )
+                .expect("seed provider");
+            };
+            set("mine", "local-reasoner");
+            set("tokamak", "tk-1");
+            let dir = tempfile::tempdir().unwrap();
+            let prepare = |model: &str| {
+                super::super::prepare_agent_session(
+                    dir.path().to_str().unwrap(),
+                    Some(model.to_string()),
+                    super::super::ProviderOverrides::default(),
+                    super::super::SessionFlags::default(),
+                    None,
+                )
+                .expect("session")
+            };
+            let gate = || super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed);
+            prepare("local-reasoner");
+            assert!(gate(), "custom provider parses tags");
+            prepare("tk-1");
+            assert!(!gate(), "tokamak sends reasoning separately");
         });
     }
 

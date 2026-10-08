@@ -1,12 +1,11 @@
 //! The one place the TUI decides whether something moves.
 //!
 //! Every animated element -- the throbber, the brightness sweep on a status
-//! word, the travelling `wave` glyph, a running tool row -- asks this module
-//! for its frame and gets an explicit static fallback when motion is off. The
-//! mode is resolved once at launch from `[tui] animations` in
-//! `~/.jan/config.toml` and the OS reduce-motion preference, and is
-//! process-wide for the same reason as the theme: the render helpers are free
-//! functions with no session in hand.
+//! word, a running tool row -- asks this module for its frame and gets an
+//! explicit static fallback when motion is off. The mode is resolved once at
+//! launch from `[tui] animations` in `~/.jan/config.toml` and the OS
+//! reduce-motion preference, and is process-wide for the same reason as the
+//! theme: the render helpers are free functions with no session in hand.
 //!
 //! Animation is driven by the render loop's frame counter rather than the wall
 //! clock, so every frame is a pure function of its inputs: a test passes a
@@ -43,7 +42,7 @@ static REDUCED: AtomicBool = AtomicBool::new(false);
 
 #[cfg(test)]
 thread_local! {
-    /// Per-test override, like `WAVE_GLYPH_OVERRIDE`: a test pins its own
+    /// Per-test override, like `theme::with_theme`: a test pins its own
     /// thread's mode instead of racing others on the shared flag.
     static MODE_OVERRIDE: std::cell::Cell<Option<MotionMode>> =
         const { std::cell::Cell::new(None) };

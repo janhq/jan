@@ -106,13 +106,15 @@ fn current_style() -> Style {
 
 /// `line` with every occurrence of `needle` painted over its own style. Spans
 /// are split at match edges, so a match that straddles two styled spans is
-/// still covered whole. A line without a match comes back unchanged.
+/// still covered whole. A line without a match comes back unchanged. When
+/// `current` is set the line is the jumped-to hit, and only its first match
+/// gets the current style: hits are whole lines, so that is the one `n` landed
+/// on, and the rest stay reversed.
 pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -> Line<'static> {
     let ranges = match_ranges(&line_text(&line), needle);
     if ranges.is_empty() {
         return line;
     }
-    let paint = if current { current_style() } else { match_style() };
     let mut spans: Vec<Span<'static>> = Vec::with_capacity(line.spans.len() + ranges.len() * 2);
     let mut offset = 0;
     for span in line.spans {
@@ -120,7 +122,11 @@ pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -
         let (start, end) = (offset, offset + text.len());
         offset = end;
         let mut cut = start;
-        for r in ranges.iter().filter(|r| r.start < end && r.end > start) {
+        for (n, r) in ranges.iter().enumerate() {
+            if r.start >= end || r.end <= start {
+                continue;
+            }
+            let paint = if current && n == 0 { current_style() } else { match_style() };
             let (a, b) = (r.start.max(start), r.end.min(end));
             if a > cut {
                 spans.push(Span::styled(text[cut - start..a - start].to_string(), span.style));
@@ -247,6 +253,18 @@ mod tests {
         assert_eq!(hit.style.bg, Some(Color::Yellow));
         let plain = highlight_line(Line::raw("no match here"), "needle", true);
         assert_eq!(plain, Line::raw("no match here"));
+    }
+
+    #[test]
+    fn only_the_first_match_on_the_current_line_gets_the_current_style() {
+        let out = highlight_line(Line::raw("needle and needle"), "needle", true);
+        let bands: Vec<bool> = out
+            .spans
+            .iter()
+            .filter(|s| s.content == "needle")
+            .map(|s| s.style.bg == Some(Color::Yellow))
+            .collect();
+        assert_eq!(bands, vec![true, false]);
     }
 
     #[test]

@@ -1819,6 +1819,17 @@ fn prepare_agent_session(
     let serving_provider =
         crate::core::cli::providers::provider_for_model(&model, &provider_configs);
 
+    // The tag gate is process-wide and read by free rendering functions, and a
+    // headless run strips reasoning through it too, so every surface seeds it
+    // here. The TUI re-applies it when the serving provider changes.
+    tui::set_think_tags_parsed(crate::core::agent::global_config::think_tags_enabled_for(
+        serving_provider.as_deref(),
+        serving_provider
+            .as_deref()
+            .and_then(|name| provider_configs.get(name))
+            .and_then(|config| config.api_type.as_deref()),
+    ));
+
     // MCP servers marked `active` in mcp_config.json connect off-thread so setup/
     // render isn't blocked on a cold stdio spawn. The caller awaits `mcp_task`
     // before the first turn (tools are collected once per run), so a race with
