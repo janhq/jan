@@ -6819,6 +6819,7 @@ impl App {
     fn set_model(&mut self, model: String) {
         self.model = model;
         self.refresh_context_window();
+        self.sync_think_tags();
         // A model the session-scoped provider serves is this session's choice
         // only: its id names the session's endpoint, and saving it would start
         // the next native `jan` in this project on a model nothing it has
@@ -6944,6 +6945,29 @@ impl App {
         drop(pc);
         self.model_provider = Some((self.model.clone(), resolved.clone()));
         resolved
+    }
+
+    /// Point the `<think>` tag gate at whoever serves the current model. The
+    /// default differs per provider, so it follows the model across `/model`
+    /// switches and provider reloads; rows already built keep the split they
+    /// were built with.
+    fn sync_think_tags(&mut self) {
+        let gate = self.think_tags_gate();
+        set_think_tags_parsed(gate);
+    }
+
+    /// Whether the current model's provider has its inline tags parsed.
+    fn think_tags_gate(&mut self) -> bool {
+        let provider = self.serving_provider();
+        let api_type = provider.as_deref().and_then(|name| {
+            let args = self.args.as_ref()?;
+            let pc = args.provider_configs.try_lock().ok()?;
+            pc.get(name)?.api_type.clone()
+        });
+        crate::core::agent::global_config::think_tags_enabled_for(
+            provider.as_deref(),
+            api_type.as_deref(),
+        )
     }
 
     /// The `/usage` bucket one request bills against.
@@ -11033,8 +11057,8 @@ fn think_re() -> &'static regex::Regex {
 /// Whether inline `<think>` tags in model content are parsed as reasoning.
 /// Process-wide rather than a session field because the split runs on every
 /// rendered row, from free functions a `Row` reaches with no session in hand.
-/// Seeded once from `~/.jan/config.toml` by `set_think_tags_parsed`; `false`
-/// until then, which is also the default.
+/// Set from the serving provider's setting by `set_think_tags_parsed`; `false`
+/// until then.
 static PARSE_THINK_TAGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
@@ -11048,9 +11072,9 @@ thread_local! {
         const { std::cell::Cell::new(Some(true)) };
 }
 
-/// Apply the `think_tags` setting for the process. Called once per session from
-/// `prepare_agent_session`, the chokepoint every agent surface goes through.
-pub(crate) fn set_think_tags_parsed(enabled: bool) {
+/// Apply the tag gate for the process. `App::sync_think_tags` calls it at
+/// startup and whenever the serving provider can change.
+fn set_think_tags_parsed(enabled: bool) {
     PARSE_THINK_TAGS.store(enabled, std::sync::atomic::Ordering::Relaxed);
 }
 
@@ -11978,6 +12002,7 @@ pub async fn run(
     app.shell_set = shell_set;
     app.subagent_set = subagent_set;
     app.args = Some(args.clone());
+    app.sync_think_tags();
     // Adopt the session's startup run mode (e.g. `--plan`) so the header badge
     // shows immediately; a resumed thread overrides this via restore_run_mode.
     app.run_mode = args.run_mode;
@@ -19395,6 +19420,7 @@ async fn reload_provider_configs(app: &mut App) {
             // The memoized model -> provider answer was resolved against the
             // snapshot just replaced.
             app.invalidate_serving_provider();
+            app.sync_think_tags();
         }
         Err(e) => {
             app.note(&format!(
@@ -30077,6 +30103,42 @@ mod tests {
                 Some(crate::core::cli::tokamak::BASE_URL)
             );
             assert!(tokamak.models.iter().any(|m| m == "tokamak-1-preview"));
+        });
+    }
+
+    /// The tag gate follows whoever serves the model: a custom OpenAI-compatible
+    /// provider parses inline tags, tokamak (reasoning in its own field) does not,
+    /// and switching models moves the gate with it.
+    #[test]
+    fn think_tag_gate_follows_the_serving_provider_across_a_model_switch() {
+        crate::core::agent::global_config::with_temp_home(|_| {
+            let provider = |name: &str, model: &str| {
+                (
+                    name.to_string(),
+                    crate::core::state::ProviderConfig {
+                        provider: name.into(),
+                        base_url: Some("http://127.0.0.1:1/v1".into()),
+                        models: vec![model.into()],
+                        ..Default::default()
+                    },
+                )
+            };
+            let mut app = test_app();
+            let args = test_args(
+                &app,
+                [provider("mine", "local-reasoner"), provider("tokamak", "tk-1")]
+                    .into_iter()
+                    .collect(),
+            );
+            app.args = Some(args);
+
+            app.model = "local-reasoner".into();
+            assert!(app.think_tags_gate(), "custom provider parses tags");
+            app.set_model("tk-1".into());
+            assert!(!app.think_tags_gate(), "tokamak sends reasoning separately");
+            assert!(!super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
+            app.set_model("local-reasoner".into());
+            assert!(super::PARSE_THINK_TAGS.load(std::sync::atomic::Ordering::Relaxed));
         });
     }
 

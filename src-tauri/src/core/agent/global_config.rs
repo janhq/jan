@@ -27,10 +27,13 @@ const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
 #                                     # (same as passing --worktree); off by
 #                                     # default, so the agent edits your checkout
 # think_tags = true                   # treat <think> tags in model content as
-#                                     # reasoning (folded, resent); only for a
-#                                     # provider that inlines them, since a
-#                                     # reasoning_content field needs no tags.
-#                                     # Off by default: tags render as prose
+#                                     # reasoning (folded, resent), for every
+#                                     # provider. Unset: on only for a custom
+#                                     # OpenAI-compatible provider; off for
+#                                     # openai, anthropic and tokamak, which
+#                                     # send reasoning in its own field. A
+#                                     # provider overrides it with
+#                                     # parse_think_tags in its own table
 # stream_reasoning = false            # stop streaming reasoning into the TUI
 #                                     # live tail while it folds; only the
 #                                     # [thinking] badge shows it. On by default
@@ -118,9 +121,10 @@ struct GlobalConfigToml {
     /// default, off. The "permanently on" answer to `--worktree`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     worktree: Option<bool>,
-    /// Parse `<think>` tags in model *content* as reasoning. `None` = the
-    /// default, off. Native `reasoning_content` streaming is a separate
-    /// mechanism and is unaffected.
+    /// Parse `<think>` tags in model *content* as reasoning, for every
+    /// provider. `None` = each provider's default (see
+    /// `think_tags_enabled_for`). Native `reasoning_content` streaming is a
+    /// separate mechanism and is unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     think_tags: Option<bool>,
     /// Stream reasoning into the TUI live tail while it is still folded. `None`
@@ -285,6 +289,13 @@ struct GlobalProviderEntry {
     /// session's `JAN_CUSTOM_HEADERS` beats a header of the same name here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     headers: BTreeMap<String, String>,
+    /// Parse `<think>` tags in this provider's content as reasoning. `None`
+    /// inherits the root `think_tags`, then the provider default. Named apart
+    /// from the root key on purpose: a root `think_tags` appended to the end of
+    /// the file lands in the last provider table, and must not silently become
+    /// that provider's setting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parse_think_tags: Option<bool>,
 }
 
 /// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
@@ -527,20 +538,38 @@ pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::Hook
     load_raw().map(|config| config.hooks).unwrap_or_default()
 }
 
-/// Whether inline `<think>` tags in model content are parsed as reasoning
-/// (`think_tags` in `~/.jan/config.toml`), defaulting to off: reasoning arrives
-/// in its own `reasoning_content` field, so a tag in content is the model
-/// writing about tags. Off renders them verbatim, keeps them in the answer sent
-/// back as history, and never folds them into a reasoning block; on is for a
-/// provider that inlines its reasoning.
+/// Providers known to send reasoning in its own `reasoning_content` field, so
+/// tag parsing is off for them unless the user opts in. Anything else on the
+/// OpenAI wire (a custom endpoint, a local server) may inline its reasoning.
+const SEPARATE_REASONING_PROVIDERS: &[&str] = &["openai", "anthropic", "tokamak"];
+
+/// Whether inline `<think>` tags in the content `provider` serves are parsed as
+/// reasoning. `provider` is the one serving the active model and `api_type` its
+/// wire API; `None` when nothing serves it.
+///
+/// Answered in this order: the provider's own `parse_think_tags`, the root
+/// `think_tags` (every provider), then the default. The default is on only for
+/// a custom OpenAI-compatible provider: the known providers send reasoning
+/// separately, and a non-chat-completions wire API (`anthropic`, `google`,
+/// `openai-responses`) carries it in typed blocks, so a tag in their content is
+/// the model writing about tags.
 ///
 /// A display preference must never block startup, so an unreadable or malformed
 /// config yields the default rather than an error.
-pub(crate) fn think_tags_enabled() -> bool {
-    load_raw()
-        .ok()
-        .and_then(|config| config.think_tags)
-        .unwrap_or(false)
+pub(crate) fn think_tags_enabled_for(provider: Option<&str>, api_type: Option<&str>) -> bool {
+    let Some(provider) = provider else {
+        return false;
+    };
+    let config = load_raw().ok();
+    config
+        .as_ref()
+        .and_then(|c| c.providers.get(provider))
+        .and_then(|entry| entry.parse_think_tags)
+        .or_else(|| config.as_ref().and_then(|c| c.think_tags))
+        .unwrap_or_else(|| {
+            !SEPARATE_REASONING_PROVIDERS.contains(&provider)
+                && matches!(api_type, None | Some("openai"))
+        })
 }
 
 /// Whether other projects' memory is listed and readable
@@ -1052,20 +1081,52 @@ mod tests {
     }
 
     #[test]
-    fn think_tags_default_off_and_read_from_the_toml_key() {
+    fn think_tags_default_follows_who_serves_the_model() {
         with_temp_home(|_| {
-            assert!(!think_tags_enabled(), "missing file -> parsing off");
-            let path = ensure_global_config().expect("ensure");
-            assert!(!think_tags_enabled(), "scaffolded file -> parsing off");
+            // Providers known to send reasoning in its own field, and any
+            // non-chat-completions wire API, never need tag parsing.
+            for known in ["openai", "anthropic", "tokamak"] {
+                assert!(!think_tags_enabled_for(Some(known), None), "{known}");
+            }
+            assert!(!think_tags_enabled_for(Some("mine"), Some("anthropic")));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("google")));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("openai-responses")));
+            // A custom OpenAI-compatible endpoint may inline its reasoning.
+            assert!(think_tags_enabled_for(Some("mine"), None));
+            assert!(think_tags_enabled_for(Some("mine"), Some("openai")));
+            // Nothing serves the model: nothing to parse for.
+            assert!(!think_tags_enabled_for(None, None));
+        });
+    }
 
-            std::fs::write(&path, "think_tags = true\n").unwrap();
-            assert!(think_tags_enabled());
+    #[test]
+    fn think_tags_overrides_beat_the_default_provider_first() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            assert!(think_tags_enabled_for(Some("mine"), None), "scaffold is neutral");
+
+            // The root key is the user-wide answer for every provider.
             std::fs::write(&path, "think_tags = false\n").unwrap();
-            assert!(!think_tags_enabled());
+            assert!(!think_tags_enabled_for(Some("mine"), None));
+            std::fs::write(&path, "think_tags = true\n").unwrap();
+            assert!(think_tags_enabled_for(Some("openai"), None));
+
+            // A provider's own key beats the root key, both ways.
+            std::fs::write(
+                &path,
+                "think_tags = true\n[providers.openai]\nparse_think_tags = false\n\
+                 [providers.mine]\nparse_think_tags = false\n",
+            )
+            .unwrap();
+            assert!(!think_tags_enabled_for(Some("openai"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), None));
+            std::fs::write(&path, "[providers.openai]\nparse_think_tags = true\n").unwrap();
+            assert!(think_tags_enabled_for(Some("openai"), None));
+            assert!(!think_tags_enabled_for(Some("anthropic"), None));
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(
-                !think_tags_enabled(),
+                think_tags_enabled_for(Some("mine"), None),
                 "an unreadable config keeps the default"
             );
         });
