@@ -5306,6 +5306,29 @@ impl App {
         }
     }
 
+    /// Re-read the docked monitors from the session set so the poll counter
+    /// advances between loop publishes: `StreamEvent::Monitors` only arrives at
+    /// call boundaries and only when the snapshot differs, and the monitor
+    /// keeps polling in between. Returns whether anything changed, so the
+    /// caller marks the frame dirty only on a real change.
+    ///
+    /// Nothing is read while the dock is empty: a monitor starting is always
+    /// announced by `StreamEvent::Monitors`, so there is nothing to catch up
+    /// on. The set is the source of truth (the same one the loop publishes
+    /// from), so a monitor that matched, timed out or was stopped drops out
+    /// here too.
+    fn refresh_monitors(&mut self) -> bool {
+        if self.monitors.is_empty() {
+            return false;
+        }
+        let live = self.monitor_set.snapshot();
+        if live == self.monitors {
+            return false;
+        }
+        self.monitors = live;
+        true
+    }
+
     /// Stop every session monitor and undock it: the conversation they were
     /// started for is going away, so a later match would have no turn to join.
     fn stop_monitors(&mut self) {
@@ -12671,6 +12694,13 @@ async fn chat_loop<B: Backend>(
                 // on its current frame when motion is reduced.
                 if motion::mode() == motion::MotionMode::Animated {
                     app.agent_status.animate();
+                }
+                // Every tick rather than a coarser cadence: the read is one
+                // short lock plus a few small strings, and the dock already
+                // redraws at this rate while a monitor is up. A tick that
+                // finds nothing new stays idle (#F6).
+                if app.refresh_monitors() {
+                    idle_tick = false;
                 }
                 while event::poll(Duration::ZERO).unwrap_or(false) {
                     // Input draws at once, past the frame cap: typing must not
@@ -41871,6 +41901,56 @@ mod tests {
         app.reset_session();
         assert!(app.monitors.is_empty());
         assert!(!app.monitor_set.has_pending_work());
+    }
+
+    /// The loop only publishes the monitors at call boundaries, yet the watcher
+    /// keeps polling in between: the dock's counter must follow the set.
+    #[tokio::test]
+    async fn refresh_monitors_follows_the_poll_count() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        assert!(!app.refresh_monitors(), "an empty dock reads nothing");
+
+        app.monitor_set
+            .start(
+                session_monitor_spec("exit 1"),
+                session_monitor_ctx(root.path()),
+            )
+            .unwrap();
+        app.monitors = app.monitor_set.snapshot();
+        let before = app.monitors[0].polls;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(app.refresh_monitors(), "the watcher polled meanwhile");
+        assert!(
+            app.monitors[0].polls > before,
+            "{before} -> {}",
+            app.monitors[0].polls
+        );
+    }
+
+    /// A tick that finds the same snapshot is not a change, so the frame stays
+    /// skippable; a monitor that ended since the last publish drops out.
+    #[tokio::test]
+    async fn refresh_monitors_reports_only_real_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let mut app = test_app();
+        // A long interval pins the count at its first poll.
+        let mut spec = session_monitor_spec("exit 1");
+        spec.interval = Duration::from_secs(60);
+        app.monitor_set
+            .start(spec, session_monitor_ctx(root.path()))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        app.monitors = app.monitor_set.snapshot();
+        assert_eq!(app.monitors[0].polls, 1);
+        assert!(!app.refresh_monitors(), "same snapshot, no change");
+
+        let id = app.monitors[0].monitor_id.clone();
+        app.monitor_set.stop(&id);
+        assert!(app.refresh_monitors(), "a stopped monitor drops out");
+        assert!(app.monitors.is_empty());
+        assert!(!app.refresh_monitors(), "nothing left to read");
     }
 
     /// A match landing between runs is delivered by the TUI itself: the
