@@ -242,6 +242,13 @@ impl ToolOutcome {
     }
 }
 
+/// Per-outcome completion callback of [`ToolInvoker::invoke_streaming`]. An
+/// alias because `async_trait` rewrites the elided lifetime of a `dyn Fn(&T)`
+/// written inline in a method signature into a fresh *outer* parameter, which
+/// is then no longer higher-ranked and rejects the very outcomes it is for.
+/// The object lifetime is explicit so a callback may borrow its caller's state.
+pub(crate) type OnComplete<'a> = dyn Fn(&ToolOutcome) + Send + Sync + 'a;
+
 /// What a host tool call produced: the text summary, the content parts that
 /// replace it on the wire when the host sent any, and the display-only details.
 #[cfg(feature = "cli")]
@@ -293,6 +300,25 @@ pub(crate) struct BackgroundNotice {
 pub(crate) trait ToolInvoker: Send + Sync {
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String>;
 
+    /// [`Self::invoke`], calling `on_complete` with each call's outcome the
+    /// moment that call finishes instead of only when the whole batch has.
+    ///
+    /// The batch still returns every outcome in call order; the callback is a
+    /// second, earlier view of the same outcomes so a display can show an
+    /// edit's diff while a shell call that followed it in the batch is still
+    /// running. An invoker may announce none, some or all of its outcomes: the
+    /// caller settles whatever was not announced once the batch returns, so
+    /// the default -- which announces nothing -- is right for any invoker with
+    /// no useful intermediate state.
+    async fn invoke_streaming(
+        &self,
+        tool_calls: &[serde_json::Value],
+        on_complete: &OnComplete<'_>,
+    ) -> Result<Vec<ToolOutcome>, String> {
+        let _ = on_complete;
+        self.invoke(tool_calls).await
+    }
+
     /// Pings raised by work the model started and is no longer blocked on (a
     /// backgrounded subagent finishing, a monitor condition matching), oldest
     /// first. Folded into the conversation as `<SYSTEM>` reminders at the top
@@ -343,6 +369,58 @@ fn publish_monitors(
         });
         *shown = now;
     }
+}
+
+/// Hand `on_complete` every outcome pushed onto `out` since the last call.
+/// `announced` is the high-water mark; `out` is append-only until the batch is
+/// put back in call order, so an index is enough to know what is new.
+fn announce_new(
+    out: &[ToolOutcome],
+    announced: &mut usize,
+    on_complete: &OnComplete<'_>,
+) {
+    for outcome in &out[*announced..] {
+        on_complete(outcome);
+    }
+    *announced = out.len();
+}
+
+/// Send one finished call's display events -- [`StreamEvent::ToolResult`] and,
+/// after it so a consumer can attach it to a row it has already drawn, any
+/// [`StreamEvent::ToolDetails`] -- and return whether the call failed.
+///
+/// The one place these are built, shared by the invoker's early per-call
+/// announcement and the end-of-batch sweep, so the two cannot disagree on what
+/// an outcome looks like on the wire. A shell call that exits non-zero isn't
+/// prefixed "ERROR" (that convention is reserved for hard tool failures the
+/// model must treat as errors), but its failed exit marker still flags the call
+/// as failed for display.
+fn emit_tool_result(
+    events: &mpsc::UnboundedSender<StreamEvent>,
+    tool_names: &HashMap<&str, &str>,
+    outcome: &ToolOutcome,
+) -> bool {
+    let name = tool_names.get(outcome.id.as_str()).copied().unwrap_or("");
+    let is_error = match tauri_plugin_agent_tools::tools::lookup(name) {
+        Some(tool) => {
+            tauri_plugin_agent_tools::tools::handlers::tool_result_failed(tool, &outcome.content)
+        }
+        None => outcome.content.starts_with("ERROR"),
+    };
+    let _ = events.send(StreamEvent::ToolResult {
+        id: outcome.id.clone(),
+        content: outcome.content.clone(),
+        is_error,
+        diff: outcome.diff.clone(),
+    });
+    // Display-only: never reaches the transcript.
+    if let Some(details) = &outcome.details {
+        let _ = events.send(StreamEvent::ToolDetails {
+            id: outcome.id.clone(),
+            details: details.clone(),
+        });
+    }
+    is_error
 }
 
 struct HttpModelInvoker {
@@ -1879,6 +1957,14 @@ impl ToolInvoker for CompositeToolInvoker {
     }
 
     async fn invoke(&self, tool_calls: &[serde_json::Value]) -> Result<Vec<ToolOutcome>, String> {
+        self.invoke_streaming(tool_calls, &|_| {}).await
+    }
+
+    async fn invoke_streaming(
+        &self,
+        tool_calls: &[serde_json::Value],
+        on_complete: &OnComplete<'_>,
+    ) -> Result<Vec<ToolOutcome>, String> {
         use tauri_plugin_agent_tools::tools::{
             gate::{resolve_decision, Decision, PromptKind},
             handlers::{execute_builtin_with_diff, preview_diff},
@@ -1898,7 +1984,14 @@ impl ToolInvoker for CompositeToolInvoker {
         // run concurrently with each other once the gating pass is over.
         #[cfg(feature = "cli")]
         let mut host_read_calls: Vec<(String, String, serde_json::Value)> = Vec::new();
+        // How many of `out` `on_complete` has already seen. The sequential pass
+        // `continue`s out of a dozen arms, so announcing at the top of the next
+        // iteration (and once more after the loop) covers every arm with one
+        // call site -- and still lands before the next call's gate can prompt
+        // or run, which is the moment a finished edit must not be held past.
+        let mut announced = 0;
         for tc in tool_calls {
+            announce_new(&out, &mut announced, on_complete);
             let name = tc
                 .get("function")
                 .and_then(|f| f.get("name"))
@@ -2402,20 +2495,37 @@ impl ToolInvoker for CompositeToolInvoker {
                 ..ToolOutcome::plain(id, text)
             });
         }
-        if !read_futures.is_empty() {
-            out.extend(futures::future::join_all(read_futures).await);
+        announce_new(&out, &mut announced, on_complete);
+        // Driven together but announced one by one as each resolves: a fast
+        // read should not wait on a slow one batched beside it. `out` is put in
+        // call order below, so the completion order here costs nothing.
+        {
+            use futures::StreamExt;
+            let mut reads: futures::stream::FuturesUnordered<_> =
+                read_futures.into_iter().collect();
+            while let Some(outcome) = reads.next().await {
+                out.push(outcome);
+                announce_new(&out, &mut announced, on_complete);
+            }
         }
         #[cfg(feature = "cli")]
-        if !host_read_calls.is_empty() {
-            let calls = host_read_calls.iter().map(|(id, name, args)| async move {
-                let (content, parts, details) = self.call_host_tool(name, args).await;
-                ToolOutcome {
-                    parts,
-                    details,
-                    ..ToolOutcome::plain(id.clone(), content)
-                }
-            });
-            out.extend(futures::future::join_all(calls).await);
+        {
+            use futures::StreamExt;
+            let mut calls: futures::stream::FuturesUnordered<_> = host_read_calls
+                .iter()
+                .map(|(id, name, args)| async move {
+                    let (content, parts, details) = self.call_host_tool(name, args).await;
+                    ToolOutcome {
+                        parts,
+                        details,
+                        ..ToolOutcome::plain(id.clone(), content)
+                    }
+                })
+                .collect();
+            while let Some(outcome) = calls.next().await {
+                out.push(outcome);
+                announce_new(&out, &mut announced, on_complete);
+            }
         }
         if !mcp_calls.is_empty() {
             let results = self.mcp.invoke(&mcp_calls).await?;
@@ -2435,6 +2545,9 @@ impl ToolInvoker for CompositeToolInvoker {
                 .await;
             }
             out.extend(results);
+            // The MCP batch answers as one, and its PostToolUse hooks have
+            // just run, so this is the earliest these are announceable.
+            announce_new(&out, &mut announced, on_complete);
         }
         let order: HashMap<&str, usize> = tool_calls
             .iter()
@@ -4760,19 +4873,6 @@ async fn run_turn_cycle(
                 ToolOutcome::plain(id.to_string(), reason.to_string())
             })
             .collect();
-        let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
-            Vec::new()
-        } else {
-            tools.invoke(&executable).await?
-        };
-        // Results are matched to calls by id, so appending the failed calls
-        // after the executed ones keeps the protocol intact.
-        tool_results.append(&mut error_outcomes);
-        publish_monitors(tools, events, &mut shown_monitors);
-
-        // Standard OpenAI tool protocol: each result is a `role: "tool"` message
-        // carrying its `tool_call_id` (see note above the assistant push -- the
-        // tokamak-1-preview facade handles models that can't attend to it).
         let tool_names: HashMap<&str, &str> = tool_calls
             .iter()
             .filter_map(|tc| {
@@ -4784,52 +4884,55 @@ async fn run_turn_cycle(
                 Some((id, name))
             })
             .collect();
+        // Results the invoker announced while the batch was still running, with
+        // the `is_error` each was announced with. A call's result is shown the
+        // moment it completes -- an edit's diff must not wait on a shell call
+        // batched after it -- so the sweep below only emits what is missing
+        // here, which keeps it to exactly one `ToolResult` per id.
+        let announced: std::sync::Mutex<HashMap<String, bool>> =
+            std::sync::Mutex::new(HashMap::new());
+        let mut tool_results: Vec<ToolOutcome> = if executable.is_empty() {
+            Vec::new()
+        } else {
+            tools
+                .invoke_streaming(&executable, &|outcome| {
+                    let is_error = emit_tool_result(events, &tool_names, outcome);
+                    announced.lock().unwrap().insert(outcome.id.clone(), is_error);
+                })
+                .await?
+        };
+        // Results are matched to calls by id, so appending the failed calls
+        // after the executed ones keeps the protocol intact.
+        tool_results.append(&mut error_outcomes);
+        publish_monitors(tools, events, &mut shown_monitors);
 
         // Reset wins over any mutations counted in the same batch: touching
         // `todo` at all means the list was just reconciled, regardless of
         // what else ran alongside it.
         let mut todo_touched_this_batch = false;
         for outcome in tool_results {
+            // Emitted here only when the invoker did not announce it already
+            // (the default invoker never does; a failed call refused before
+            // execution never reaches one). Either way `is_error` is the one
+            // the display was given, so the mutation count agrees with it.
+            let is_error = match announced.lock().unwrap().get(&outcome.id).copied() {
+                Some(is_error) => is_error,
+                None => emit_tool_result(events, &tool_names, &outcome),
+            };
             let ToolOutcome {
                 id,
                 content,
-                diff,
                 images,
                 parts,
-                details,
+                ..
             } = outcome;
-            // A shell call that exits non-zero isn't prefixed "ERROR" (that
-            // convention is reserved for hard tool failures the model must
-            // treat as errors), but its failed exit marker still flags the
-            // call as failed for display.
             let name = tool_names.get(id.as_str()).copied().unwrap_or("");
-            let builtin = tauri_plugin_agent_tools::tools::lookup(name);
-            let is_error = match builtin {
-                Some(tool) => {
-                    tauri_plugin_agent_tools::tools::handlers::tool_result_failed(tool, &content)
-                }
-                None => content.starts_with("ERROR"),
-            };
             if name == "todo" {
                 todo_touched_this_batch = true;
             } else if !is_error
                 && matches!(name, tauri_plugin_agent_tools::tools::SHELL_TOOL | "write" | "edit")
             {
                 mutations_since_todo_touch += 1;
-            }
-            let _ = events.send(StreamEvent::ToolResult {
-                id: id.clone(),
-                content: content.clone(),
-                is_error,
-                diff: diff.clone(),
-            });
-            // Display-only, and after the result so a consumer can attach it
-            // to a row it has already drawn. Never reaches the transcript.
-            if let Some(details) = details {
-                let _ = events.send(StreamEvent::ToolDetails {
-                    id: id.clone(),
-                    details,
-                });
             }
             // A `read` of an image carries OpenAI `image_url` content parts; the
             // tool message is then a content-part array (text note first, the
@@ -11376,6 +11479,169 @@ mod tests {
         );
         drop(steering);
         postman.await.unwrap();
+    }
+
+    /// A parallel batch of an edit and a shell call: the edit's result is shown
+    /// when the edit completes, not after the shell call it was batched with.
+    ///
+    /// The shell call blocks until the test, having *seen* the edit's result,
+    /// creates `go`; a regression therefore shows up as the first `ToolResult`
+    /// never arriving while the shell waits, and the bounded loop in the command
+    /// turns that into a timeout failure instead of a hang. No wall-clock sleep
+    /// is asserted on.
+    // POSIX shell text: Windows runs PowerShell.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_edit_result_is_shown_before_the_shell_call_batched_after_it_finishes() {
+        let root = hooks_root("early_edit");
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let mut invoker =
+            build_prompting_invoker(root.clone(), tx.clone(), PermissionRegistry::default());
+        invoker.sandbox = false;
+        invoker.hidden_root = None;
+        invoker.auto_approve = true;
+        let call = |id: &str, name: &str, args: serde_json::Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() }
+            })
+        };
+        let completion = json!({
+            "choices": [{
+                "message": {
+                    "content": serde_json::Value::Null,
+                    "tool_calls": [
+                        call("c1", "edit", json!({
+                            "path": "a.txt",
+                            "edits": [{ "old_string": "one", "new_string": "two" }]
+                        })),
+                        call("c2", "shell", json!({
+                            "command": "i=0; while [ ! -f go ] && [ $i -lt 100 ]; do sleep 0.1; i=$((i+1)); done; echo finished"
+                        })),
+                    ]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        });
+        let model = MockModel::new(vec![completion, final_answer("done")]);
+        let mut budget = SessionBudget::new(None);
+
+        let body = json!({});
+        let run = run_turn_cycle(
+            &tx,
+            &body,
+            "m",
+            &[],
+            Transcript::from_history(vec![json!({"role": "user", "content": "go"})]),
+            None,
+            true,
+            8,
+            &mut budget,
+            &model,
+            &invoker,
+            crate::core::agent::plan::RunMode::Normal,
+            None,
+            None,
+            None,
+            None,
+        );
+        let watch = async {
+            let mut seen: Vec<StreamEvent> = Vec::new();
+            let early = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    match rx.recv().await {
+                        Some(StreamEvent::ToolResult { id, content, is_error, diff }) if id == "c1" => {
+                            return Some((content, is_error, diff));
+                        }
+                        Some(other) => seen.push(other),
+                        None => return None,
+                    }
+                }
+            })
+            .await;
+            // Released whether or not the assertion below holds, so a failure
+            // is reported rather than waited out.
+            std::fs::write(root.join("go"), "").unwrap();
+            (early, seen)
+        };
+        let (result, (early, _)) = tokio::join!(run, watch);
+        result.unwrap();
+
+        let (content, is_error, diff) = early
+            .expect("the edit's result must arrive while the shell call is still running")
+            .expect("the event channel stayed open");
+        assert!(!is_error, "{content}");
+        assert!(diff.is_some_and(|d| d.contains("two")), "the diff rides the early result");
+        assert_eq!(std::fs::read_to_string(root.join("a.txt")).unwrap(), "two\n");
+
+        // Everything else: one ToolResult per id (the c1 above is the one for
+        // that id), and the transcript still answers the calls in call order.
+        drop(tx);
+        drop(invoker);
+        let mut results: Vec<String> = Vec::new();
+        let mut last_history = Vec::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                StreamEvent::ToolResult { id, .. } => results.push(id),
+                StreamEvent::MessagesUpdated { messages } => last_history = messages,
+                _ => {}
+            }
+        }
+        assert_eq!(results, ["c2"], "c1 was announced once, early, and not again");
+        let tool_messages: Vec<&serde_json::Value> =
+            last_history.iter().filter(|m| m["role"] == "tool").collect();
+        let ids: Vec<&str> = tool_messages
+            .iter()
+            .map(|m| m["tool_call_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(ids, ["c1", "c2"], "recorded in call order");
+        assert!(tool_messages[1]["content"].as_str().unwrap().contains("finished"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The streaming entry point is `invoke` with an earlier view: every outcome
+    /// is announced exactly once, the batch still comes back in call order, and a
+    /// read that resolves first is announced first.
+    #[tokio::test]
+    async fn invoke_streaming_announces_each_outcome_once_and_returns_call_order() {
+        let root = hooks_root("announce_once");
+        std::fs::write(root.join("a.txt"), "one\n").unwrap();
+        std::fs::write(root.join("b.txt"), "bee\n").unwrap();
+        let invoker = invoker_with_hooks(
+            root.clone(),
+            Default::default(),
+            Default::default(),
+            crate::core::agent::plan::RunMode::Normal,
+        );
+        let call = |id: &str, name: &str, args: serde_json::Value| {
+            json!({
+                "id": id,
+                "type": "function",
+                "function": { "name": name, "arguments": args.to_string() }
+            })
+        };
+        let heard: StdMutex<Vec<String>> = StdMutex::new(Vec::new());
+        let out = invoker
+            .invoke_streaming(
+                &[
+                    call("r", "read", json!({ "path": "b.txt" })),
+                    call("e", "edit", json!({
+                        "path": "a.txt",
+                        "edits": [{ "old_string": "one", "new_string": "two" }]
+                    })),
+                ],
+                &|outcome| heard.lock().unwrap().push(outcome.id.clone()),
+            )
+            .await
+            .unwrap();
+        let returned: Vec<&str> = out.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(returned, ["r", "e"], "call order, not completion order");
+        // The edit ran in the sequential pass and the read after it, so the
+        // announcements follow completion.
+        assert_eq!(*heard.lock().unwrap(), ["e", "r"]);
+        let _ = std::fs::remove_dir_all(&root);
     }
 
 }
