@@ -1884,6 +1884,15 @@ impl ToolInvoker for CompositeToolInvoker {
             handlers::{execute_builtin_with_diff, preview_diff},
             is_builtin, lookup, Capability, ToolContext,
         };
+        // B phase (Blocker-2 / Blocker-5)：本批次即一个 turn。
+        //
+        // turn_id 由 dispatch 层（这里）生成并注入本批每一个 ToolContext，
+        // 使 handlers 侧 register_defer 能按批次聚合；guard 把收口挂在 Drop 上，
+        // 覆盖三条退出路径：尾部 Ok(out)、`self.mcp.invoke(...).await?` 的提前
+        // 返回（L2424）、以及 panic unwind。裸放在 Ok(out) 前只能覆盖第一条。
+        let turn_id = tauri_plugin_agent_tools::tools::cplus::new_request_id();
+        let mut turn_guard = tauri_plugin_agent_tools::tools::cplus::TurnGuard::new(&turn_id);
+
         let mut out: Vec<ToolOutcome> = Vec::with_capacity(tool_calls.len());
         let mut mcp_calls: Vec<serde_json::Value> = Vec::new();
         // id -> (tool name, arguments) for the MCP calls that passed the gate,
@@ -2130,7 +2139,7 @@ impl ToolInvoker for CompositeToolInvoker {
                 let content = tauri_plugin_agent_tools::tools::plugin_tools::execute(
                     tool,
                     &args,
-                    &self.streaming_tool_context(&id),
+                    &self.streaming_tool_context(&id).with_turn_id(Some(&turn_id)),
                 )
                 .await;
                 self.fire_hooks(
@@ -2282,8 +2291,12 @@ impl ToolInvoker for CompositeToolInvoker {
                 let hooks = self.hooks.clone();
                 let planning = self.run_mode == crate::core::agent::plan::RunMode::Plan;
                 let hook_sink = self.hook_sink();
+                // 只读 built-in 不产生 DEFER（无写语义），但同样注入 turn_id，
+                // 使"本批所有 ctx 均带 turn_id"成为可静态核对的不变量。
+                let turn_id_for_read = turn_id.clone();
                 read_futures.push(async move {
-                    let ctx = ToolContext::new(&root, &store, &enabled);
+                    let ctx = ToolContext::new(&root, &store, &enabled)
+                        .with_turn_id(Some(&turn_id_for_read));
                     let ctx = match memory_home.as_deref() {
                         Some(home) => ctx.with_memory_home(home, cross_project),
                         None => ctx,
@@ -2309,9 +2322,12 @@ impl ToolInvoker for CompositeToolInvoker {
                 continue;
             }
             let (text, diff, images) = match decision {
-                Decision::Allow => {
-                    execute_builtin_with_diff(tool, &args, &self.streaming_tool_context(&id)).await
-                }
+                Decision::Allow => execute_builtin_with_diff(
+                    tool,
+                    &args,
+                    &self.streaming_tool_context(&id).with_turn_id(Some(&turn_id)),
+                )
+                .await,
                 Decision::HardDeny(reason) => {
                     (hard_deny_msg(name, reason, &self.project_root), None, None)
                 }
@@ -2346,7 +2362,9 @@ impl ToolInvoker for CompositeToolInvoker {
                         .then(|| args.get("command").and_then(|v| v.as_str()))
                         .flatten()
                         .map(String::from);
-                    let diff = preview_diff(tool, &args, &self.tool_context()).await;
+                    let diff =
+                        preview_diff(tool, &args, &self.tool_context().with_turn_id(Some(&turn_id)))
+                            .await;
                     let _ = self.events.send(StreamEvent::PermissionRequest {
                         request_id: request_id.clone(),
                         tool_name: name.to_string(),
@@ -2367,7 +2385,9 @@ impl ToolInvoker for CompositeToolInvoker {
                             execute_builtin_with_diff(
                                 tool,
                                 &args,
-                                &self.streaming_tool_context(&id),
+                                &self
+                                    .streaming_tool_context(&id)
+                                    .with_turn_id(Some(&turn_id)),
                             )
                             .await
                         }
@@ -2386,7 +2406,9 @@ impl ToolInvoker for CompositeToolInvoker {
                             execute_builtin_with_diff(
                                 tool,
                                 &args,
-                                &self.streaming_tool_context(&id),
+                                &self
+                                    .streaming_tool_context(&id)
+                                    .with_turn_id(Some(&turn_id)),
                             )
                             .await
                         }
@@ -2442,6 +2464,10 @@ impl ToolInvoker for CompositeToolInvoker {
             .filter_map(|(i, tc)| tc.get("id").and_then(|v| v.as_str()).map(|id| (id, i)))
             .collect();
         out.sort_by_key(|o| *order.get(o.id.as_str()).unwrap_or(&usize::MAX));
+        // B phase：正常走完整批才标记完成，随后由 TurnGuard::drop 触发
+        // finalize_turn（commit 或按各条目 content 熔断）。若在此之前的任一
+        // 路径退出（L2424 的 `?`、panic），guard 未标记 → 走 abort_turn 强回滚。
+        turn_guard.complete();
         Ok(out)
     }
 }

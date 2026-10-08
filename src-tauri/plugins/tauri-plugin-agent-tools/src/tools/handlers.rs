@@ -151,7 +151,208 @@ pub async fn execute_builtin(
             None,
         );
     }
-    let (content, images) = execute_builtin_unhooked(tool, args, ctx).await;
+    // C+ sidecar gate (taiji-permission-v1): total overlay on top of Jan's own
+    // gate. Opt-in via JAN_CPLUS_ENABLED. Fail-closed: a DENY verdict, an IPC
+    // failure, or (via the sidecar) an unlisted/unknown tool_name all block the
+    // call. The ERROR shape matches the PreToolUse denial above, so the model
+    // and the transcript cannot tell the two apart.
+    //
+    // DEFER (side-effect, requires_commit) tools run a two-phase journal:
+    //   phase 1 (before exec) -> journal_open  (ledger entry "open")
+    //   phase 2 (after exec)  -> journal_commit on success / journal_rollback on error
+    // Mode is per-tool: `write`/`edit` use S staging (atomic os.replace on commit),
+    // the rest use J ledger semantics where rollback reverts ONLY the ledger /
+    // in-memory snapshot, NOT bytes already on disk.
+    // S (3.1/3.2) 影子写：DEFER 的 write/edit 走原子 staging——只在此处长出 redirect 逻辑，
+    // 门禁/握手/三态判定（verdict）一行不动。其余 DEFER 工具暂留 J 账本。
+    let mut exec_args: serde_json::Value = args.clone();
+    let mut defer_req_id: Option<String> = None;
+    // B phase：捕获 target/staging 供 turn 末批量收口用
+    let mut defer_target: Option<String> = None;
+    let mut defer_staging: Option<String> = None;
+    if crate::tools::cplus::enabled() {
+        match crate::tools::cplus::verdict(tool.name, args) {
+            Ok(crate::tools::cplus::Verdict::Allow) => {}
+            Ok(crate::tools::cplus::Verdict::Defer) => {
+                // 两阶段：执行前先在 sidecar 落 journal(open)
+                let rid = crate::tools::cplus::new_request_id();
+                // write/edit：把【绝对解析后的 target】交给 sidecar 记账，
+                // 并把执行体的 path 重定向到 <target>.taiji-staging.<rid>。
+                // edit 额外注入 _cplus_read_path = 原始 target（读 prior 钉真实文件）。
+                if tool.name == "write" || tool.name == "edit" {
+                    match arg_str(args, "path") {
+                        Some(p) => {
+                            let abs_target =
+                                resolve_path(ctx.project_root, ctx.scratch_root, p);
+                            let abs_target_str = abs_target.to_string_lossy().to_string();
+                            // 洞 B：staging 名按 rid 唯一化，避免同 target 并发写互相覆盖
+                            let staging_str = format!("{abs_target_str}.taiji-staging.{rid}");
+                            // sidecar 记账用绝对 target + 唯一 staging（commit 时 os.replace 用）
+                            let mut journal_args = args.clone();
+                            if let Some(obj) = journal_args.as_object_mut() {
+                                obj.insert(
+                                    "path".into(),
+                                    serde_json::Value::String(abs_target_str),
+                                );
+                                obj.insert(
+                                    "staging".into(),
+                                    serde_json::Value::String(staging_str.clone()),
+                                );
+                            }
+                            // 执行体写到 staging（target 全程不动，直到 commit）
+                            if let Some(obj) = exec_args.as_object_mut() {
+                                obj.insert(
+                                    "path".into(),
+                                    serde_json::Value::String(staging_str),
+                                );
+                                // edit：读 prior 钉原始 target（不读空 staging）
+                                if tool.name == "edit" {
+                                    obj.insert(
+                                        "_cplus_read_path".into(),
+                                        serde_json::Value::String(abs_target_str.clone()),
+                                    );
+                                    // 展示用：DEFER edit 成功返回引用原始 target，不含 .taiji-staging
+                                    obj.insert(
+                                        "_cplus_display_path".into(),
+                                        serde_json::Value::String(abs_target_str.clone()),
+                                    );
+                                }
+                            }
+                            if let Err(reason) =
+                                crate::tools::cplus::journal_open(&rid, tool.name, &journal_args)
+                            {
+                                // 记账失败 = 门禁失败（fail-closed 延伸）
+                                eprintln!("[cplus] journal_open fail-closed deny: {reason}");
+                                return (
+                                    format!(
+                                        "ERROR: tool '{}' denied by C+ gate (journal fail): {reason}",
+                                        tool.name
+                                    ),
+                                    None,
+                                );
+                            }
+                            // B phase：捕获 target/staging 供 turn 末批量收口用
+                            defer_target = Some(abs_target_str);
+                            defer_staging = Some(staging_str);
+                        }
+                        None => {
+                            // path 缺失无法 staging，fail-closed 拦截
+                            eprintln!("[cplus] write DEFER missing path -> deny");
+                            return (
+                                format!(
+                                    "ERROR: tool '{}' denied by C+ gate (missing path)",
+                                    tool.name
+                                ),
+                                None,
+                            );
+                        }
+                    }
+                } else if let Err(reason) =
+                    crate::tools::cplus::journal_open(&rid, tool.name, args)
+                {
+                    // 记账失败 = 门禁失败（fail-closed 延伸）
+                    eprintln!("[cplus] journal_open fail-closed deny: {reason}");
+                    return (
+                        format!(
+                            "ERROR: tool '{}' denied by C+ gate (journal fail): {reason}",
+                            tool.name
+                        ),
+                        None,
+                    );
+                }
+                defer_req_id = Some(rid);
+            }
+            Ok(crate::tools::cplus::Verdict::Deny) => {
+                return (
+                    format!("ERROR: tool '{}' denied by C+ gate", tool.name),
+                    None,
+                );
+            }
+            Err(reason) => {
+                eprintln!("[cplus] fail-closed deny: {reason}");
+                return (
+                    format!(
+                        "ERROR: tool '{}' denied by C+ gate (fail-closed): {reason}",
+                        tool.name
+                    ),
+                    None,
+                );
+            }
+        }
+    }
+    let (mut content, images) = execute_builtin_unhooked(tool, &exec_args, ctx).await;
+    // DEFER 工具：按真实返回分流 commit / rollback
+    // write(S)：commit = os.replace 原子覆盖；rollback = 删 staging（target 不动）。
+    // 无写语义/其余(J)：rollback 只回账本/内存态，不撤销已落盘字节（诚实命名）。
+    // 洞 A：commit 失败（staging os.replace 抛错）时 sidecar 回 COMMIT_FAILED，
+    // journal_commit 返回 Err —— 必须把成功回显改判为 ERROR，否则模型会以为写成功、
+    // 而磁盘从未更新（静默丢数据）。
+    //
+    // B phase (N2)：turn 级批量收口。将 DEFER 条目登记到 turn 注册表，供 turn 末
+    // finalize_turn() 统一 commit/abort。零回归：finalize_turn() 未被调用时，
+    // 走原路径 per-rid commit。
+    if let Some(rid) = defer_req_id {
+        // B phase：登记 DEFER 条目（turn_id 由 dispatch 层经 ctx.turn_id 注入）
+        //
+        // Blocker-5 修复：此前用 `ctx.thread_id` 代理，而 thread_id 在插件内挂着
+        // `ensure_thread_workspace` / `ensure_scratch_dir` / 权限分桶（commands.rs
+        // :107/:407/:594），语义上不是批次 id——复用它会让 finalize_turn 用一个
+        // dispatch 层永远不会传入的 key 去收口，等于永不收口。现改取 ctx.turn_id。
+        //
+        // fail-safe 降级：turn_id 缺失（某条 ctx 漏接 .with_turn_id）时取
+        // "per-call" 且**不登记**，走 S 阶段已验透的 per-call commit。这把
+        // "漏接 → staging 永久滞留、target 永不落盘且无告警"翻转为
+        // "退回旧行为"。代价是该调用不参与本 turn 的原子性（见方案 §空洞乙）。
+        let turn_id = ctx.turn_id.unwrap_or("per-call");
+        // NEW-3 修复：register_defer 只登记 turn 模式下的条目。
+        // 非 turn 模式走 per-call journal_commit，finalize_turn 不会被调用，
+        // 不 gate 会导致 TURN_REGISTRY 无界增长（内存泄漏）。
+        // Blocker-5 收紧：turn_id 缺失（ctx 未注入）同样不登记。
+        if crate::tools::cplus::turn_mode() && ctx.turn_id.is_some() {
+            if let (Some(target), Some(staging)) = (&defer_target, &defer_staging) {
+                // Blocker-4 修复：同 target 多次写检测 → 保守 DENY
+                if crate::tools::cplus::duplicate_target_in_turn(turn_id, target) {
+                    eprintln!(
+                        "[cplus] duplicate target in turn: {} -> deny",
+                        target
+                    );
+                    // 已登记的 rid 走 rollback
+                    crate::tools::cplus::journal_rollback(&rid);
+                    return (
+                        format!(
+                            "ERROR: tool '{}' denied: duplicate write to {} within same turn",
+                            tool.name, target
+                        ),
+                        None,
+                    );
+                }
+
+                crate::tools::cplus::register_defer(
+                    turn_id,
+                    &rid,
+                    target,
+                    staging,
+                    tool.name,
+                    &content,
+                );
+            }
+        }
+
+        // turn 模式：跳过 per-call commit，由 finalize_turn() 统一收口
+        // 非 turn 模式：走原路径 per-rid commit（零回归）
+        if !crate::tools::cplus::turn_mode() {
+            if content.starts_with("ERROR") {
+                crate::tools::cplus::journal_rollback(&rid);
+                eprintln!("[cplus] DEFER rollback (staging removed / ledger only): {rid}");
+            } else if let Err(e) = crate::tools::cplus::journal_commit(&rid) {
+                eprintln!("[cplus] DEFER commit_failed -> downgrade content to ERROR: {e}");
+                content = format!(
+                    "ERROR: tool '{}' commit failed (staging os.replace failed, bytes NOT written): {e}",
+                    tool.name
+                );
+            }
+        }
+    }
     let post = crate::tools::hooks::HookPayload {
         tool_result: Some(content.clone()),
         ..payload
@@ -784,13 +985,24 @@ async fn edit(
     if confine && escapes_write_roots(root, scratch, write_roots, path).unwrap_or(true) {
         return format!("ERROR: refused to edit outside the agent workspace: {path}");
     }
-    let shown = display_path(root, scratch, &target);
+    // S(3.2) 展示层对齐：DEFER 路径下优先用 _cplus_display_path（原始 target），
+    // 不含 .taiji-staging。无该字段时回退现有 display_path(target)。
+    let shown = match arg_str(args, "_cplus_display_path") {
+        Some(dp) => dp.to_string(),
+        None => display_path(root, scratch, &target),
+    };
     // Re-validate before the final read+write pair so a swapped symlink cannot
     // redirect either the read or the later write.
     if symlink_escapes_any_root(root, scratch, write_roots, &target) {
         return format!("ERROR: refused to edit through a symlink out of the workspace: {path}");
     }
-    let mut content = match tokio::fs::read_to_string(&target).await {
+    // S(3.2) 读/写分流：DEFER 路径下 _cplus_read_path = 原始 target（读 prior），
+    // path = staging（写新内容）。无该字段时回退 path：ALLOW 路径 / 非 defer 零回归。
+    let prior_src = args.get("_cplus_read_path")
+        .and_then(|v| v.as_str())
+        .map(Path::new)
+        .unwrap_or(&target);
+    let mut content = match tokio::fs::read_to_string(prior_src).await {
         Ok(c) => c,
         Err(e) => return format!("ERROR: {shown}: {e}"),
     };

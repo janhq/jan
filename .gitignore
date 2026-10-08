@@ -43,6 +43,9 @@ autoqa/recordings
 __pycache__/
 *.py[cod]
 
+# C+ sidecar journal (append-only audit ledger; never commit)
+/journal/
+
 # Astro / Starlight specific
 website/dist/
 website/.astro/

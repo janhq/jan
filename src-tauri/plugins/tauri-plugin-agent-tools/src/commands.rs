@@ -1033,6 +1033,22 @@ pub fn preview_unregister_root(roots: tauri::State<'_, PreviewRoots>, root: Stri
     roots.unregister(Path::new(&root));
 }
 
+/// B phase (N2)：turn 级批量收口。
+/// 调用 finalize_turn(turn_id)，对 turn_id 下所有已登记的 DEFER rid 统一 commit/abort。
+/// 由 dispatch 层在 turn 末（该批 tool call 全部返回后）调用。
+#[cfg(feature = "tauri")]
+#[tauri::command]
+pub fn cplus_finalize_turn(turn_id: String) -> Result<String, AgentToolsError> {
+    let (count, errors) = crate::tools::cplus::finalize_turn(&turn_id);
+    if count > 0 {
+        Ok(format!("OK: committed {} ops", count))
+    } else if !errors.is_empty() {
+        Err(AgentToolsError::Msg(errors.join("; ")))
+    } else {
+        Ok("OK: no pending DEFER entries".into())
+    }
+}
+
 /// One `preview://` request. Anything not resolvable to a file under a
 /// registered root is a 404 with no detail: the requester is model markup.
 pub fn preview_response<R: tauri::Runtime>(
