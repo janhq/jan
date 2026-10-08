@@ -1,5 +1,6 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]                                  |
@@ -9,8 +10,8 @@ expression: render_snapshot(buf)
 |                                                                                                    |
 |                                                                                                    |
 |                                                                                                    |
+|› build it                                                                                          |
 |                                                                                                    |
-| build it                                                                                           |
 |                                                                                                    |
 |✓ Todos · 1/2 · backend 1/3   /todo              │ ≡ 1 agent                                        |
 | ☑ scaffold                                      │ • api-review  6t · 6r · 9.4% · 75% cached        |
@@ -26,9 +27,11 @@ expression: render_snapshot(buf)
  0 14..29 fg=#E5C07B
  0 55..57 fg=#56B6C2
  0 57..66 fg=#56B6C2 mod=BOLD
- 8 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
- 8 1..9 fg=#E9ECF2 bg=#282C3A mod=BOLD
- 8 9..10 bg=#282C3A
+ 6 0..100 bg=#282C3A
+ 7 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 7 2..10 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 7 10..100 bg=#282C3A
+ 8 0..100 bg=#282C3A
 10 0..2 fg=#56B6C2
 10 2..7 fg=#56B6C2 mod=BOLD
 10 7..13 fg=#56B6C2

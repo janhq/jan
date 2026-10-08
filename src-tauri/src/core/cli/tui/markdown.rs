@@ -18,11 +18,49 @@ pub(super) fn format_assistant_lines(
         let next = if reasoning {
             reasoning_detail_lines(&seg)
         } else {
-            format_markdown_lines(&seg, width)
+            answer_lines(&seg, width)
         };
         append_band(&mut lines, next);
     }
     lines
+}
+
+/// Columns the answer gutter takes: a dim `• ` on the first row, two blanks
+/// on every row after it.
+const ANSWER_GUTTER_COLS: u16 = 2;
+
+/// An answer block as the transcript shows it: the markdown laid out at
+/// `width - 2`, the first row behind a dim `• ` and every other row (code
+/// boxes and tables included) indented two columns under it. Prose rows are
+/// pre-wrapped here rather than left to the body `Paragraph`, whose wrap would
+/// start each continuation at the left edge, outside the indent. The committed
+/// row and the live tail both go through this, so nothing reflows when the
+/// stream commits.
+pub(super) fn answer_lines(text: &str, width: u16) -> Vec<Line<'static>> {
+    let inner = width.saturating_sub(ANSWER_GUTTER_COLS).max(1);
+    let mut out = Vec::new();
+    for line in format_markdown_lines(text, inner) {
+        if line.spans.iter().all(|s| s.content.is_empty()) {
+            out.push(line);
+            continue;
+        }
+        let rows = if super::fits_one_row(&line, inner) {
+            vec![line.spans]
+        } else {
+            wrap_spans_at_words(line.spans, inner as usize)
+        };
+        for spans in rows {
+            let gutter = if out.is_empty() {
+                Span::styled("\u{2022} ", Style::new().dim())
+            } else {
+                Span::raw("  ")
+            };
+            let mut row = vec![gutter];
+            row.extend(spans);
+            out.push(Line::from(row).style(line.style));
+        }
+    }
+    out
 }
 
 /// Append `next` under `lines`, separated by the blank row the committed path
@@ -90,7 +128,7 @@ pub(super) fn live_assistant_lines(
         } else if seg.trim().is_empty() {
             continue;
         } else {
-            format_markdown_lines(&seg, width)
+            answer_lines(&seg, width)
         };
         append_band(&mut lines, next);
     }
@@ -1017,13 +1055,48 @@ fn group_by_style(chars: &[(char, Style)]) -> Vec<(Style, String)> {
 #[cfg(test)]
 mod tests {
     use super::{
-        format_markdown_lines, render_table, segment_reasoning_steps, segment_reasoning_steps_with,
-        split_reasoning_paragraphs, wrap_spans_at_words,
+        answer_lines, format_markdown_lines, live_assistant_lines, render_table,
+        segment_reasoning_steps, segment_reasoning_steps_with, split_reasoning_paragraphs,
+        wrap_spans_at_words,
     };
     use ratatui::prelude::*;
 
     fn line_text(line: &ratatui::text::Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn answer_leads_with_a_dim_bullet_and_indents_the_rest() {
+        let md = concat!(
+            "one two three four five six seven\n\n",
+            "```rust\nfn main() {}\n```\n\n",
+            "| a | b |\n|---|---|\n| 1 | 2 |",
+        );
+        let lines = answer_lines(md, 20);
+        let first = &lines[0].spans[0];
+        assert_eq!(first.content, "\u{2022} ");
+        assert_eq!(first.style, Style::new().dim());
+        for line in &lines[1..] {
+            let text = line_text(line);
+            assert!(
+                text.is_empty() || text.starts_with("  "),
+                "row escaped the indent: {text:?}"
+            );
+            assert!(line.width() <= 20, "row overflows: {text:?}");
+        }
+        let text: Vec<String> = lines.iter().map(line_text).collect();
+        assert!(text.iter().any(|t| t.starts_with("  \u{250c}")), "code box: {text:?}");
+        assert!(text.iter().any(|t| t.starts_with("  ") && t.contains('1')), "table: {text:?}");
+    }
+
+    /// The live tail lays the answer out exactly as the committed row does, so
+    /// nothing reflows when the stream commits.
+    #[test]
+    fn live_answer_matches_the_committed_layout() {
+        let md = "a long enough answer to wrap at this width\n\n- item";
+        for fold in [false, true] {
+            assert_eq!(live_assistant_lines(md, &[], 24, fold, true), answer_lines(md, 24));
+        }
     }
 
     #[test]

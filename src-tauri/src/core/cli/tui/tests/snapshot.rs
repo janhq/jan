@@ -29,7 +29,7 @@
 use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
-use crate::core::cli::tui::{input_box_height, Level, TRANSCRIPT_BOTTOM_PAD};
+use crate::core::cli::tui::{input_box_height, turn_stats_line, Level, TRANSCRIPT_BOTTOM_PAD};
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
 use ratatui::widgets::Paragraph;
@@ -594,9 +594,9 @@ fn body(app: &mut App) -> Buffer {
     buf
 }
 
-/// End the turn with a receipt, as the stream's `Done` does, then pin the
-/// receipt's clock-derived fields (the local timestamp, the elapsed time and
-/// the rate it implies) so the row is a pure function of the token counts.
+/// End the turn with a receipt, as the stream's `Done` does, then redraw the
+/// receipt with its clock-derived inputs (the elapsed time and the time of
+/// day) pinned, so the row is a pure function of the token counts.
 fn finish_turn(app: &mut App, prompt: u64, output: u64) {
     app.apply(StreamEvent::TurnUsage {
         usage: Usage {
@@ -613,17 +613,11 @@ fn finish_turn(app: &mut App, prompt: u64, output: u64) {
         .transcript
         .iter()
         .rposition(|r| {
-            matches!(&r.kind, RowKind::Line(l) if line_text(l).contains('\u{23f1}'))
+            matches!(&r.kind, RowKind::Line(l) if line_text(l).contains("Worked for "))
         })
         .expect("the turn left a receipt");
-    let RowKind::Line(line) = &app.transcript[receipt].kind else {
-        unreachable!("matched a line row above");
-    };
-    let mut spans = line.spans.clone();
-    for (i, pinned) in [(0, "2026-01-02 03:04"), (6, "2.0s"), (8, "60.0/s")] {
-        spans[i].content = pinned.into();
-    }
-    app.transcript[receipt] = Row::line(Line::from(spans));
+    let pinned = turn_stats_line(prompt, output, Duration::from_secs(2), "03:04".into());
+    app.transcript[receipt] = Row::line(pinned);
 }
 
 fn tool_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {

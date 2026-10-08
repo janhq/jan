@@ -25,14 +25,16 @@ jan --task "..."    # with a first message already sent
 ─────────────────────────────────────────────────────────────────────────────────────
  MCP ready: sequential-thinking, serper
 
- > add a --version flag
+
+ › add a --version flag
+
 
  • Read 3 files
  • Edited src/cli.rs
 
- Done - the flag is wired up and documented.
+ • Done - the flag is wired up and documented.
 
- 2026-07-29 11:32:02  ↑ 43K  ↓ 1.1K  ⏱ 1.8s  ⚡ 109.8/s
+   Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s
 ─────────────────────────────────────────────────────────────────────────────────────
  > Type here to chat with agent
 
@@ -43,9 +45,20 @@ jan --task "..."    # with a first message already sent
 | --- | --- |
 | Header | Model, reasoning effort, clock, turn count, context usage, prompt-cache hit rate, throughput, state |
 | Transcript | The conversation, with tool calls folded into summary rows |
-| Receipt | Per turn: context sent, tokens produced, elapsed, rate |
+| Receipt | Per turn: how long it took, when it finished, context sent, tokens produced, rate |
 | Input | Where you type |
 | Footer | Working directory and git branch |
+
+Your own messages are the one filled block in the transcript: a full-width tinted bubble with a
+row of padding above and below, the text behind a `›`. A `/command` or skill you invoke shows in
+the same bubble. The agent's answer starts with a dim `•` and the rest of it - code boxes and
+tables included - is indented under it. When the turn ends, a dim receipt lines up under the
+answer: `Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s` - the duration, the time it finished
+(with the date when it was not today, `Oct 7 14:02`), context sent, tokens produced, and
+throughput when there was output to measure.
+
+Notes from Jan itself carry a glyph in the left column: `•` for information, a yellow `⚠` for a
+warning, and a red `■` for an error, so a failure stands out even without colour.
 
 Tool rows fold to one line each: a `•` bullet, then the verb and what it acted on (`Ran cargo
 test`, `Edited src/cli.rs`). The bullet's colour is the call's state: it pulses while the call

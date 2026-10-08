@@ -41,8 +41,8 @@ mod theme;
 mod vibe_setting;
 
 use markdown::{
-    format_markdown_lines, live_assistant_lines, reasoning_detail_lines, reasoning_summary_row,
-    reasoning_tail_lines,
+    answer_lines, format_markdown_lines, live_assistant_lines, reasoning_detail_lines,
+    reasoning_summary_row, reasoning_tail_lines,
 };
 
 use super::agent_status::AgentStatusReporter;
@@ -424,6 +424,10 @@ enum Kind {
 /// one marker.
 const SYSTEM_GLYPH: &str = "•";
 
+/// Gutter glyphs for a warning and an error note.
+const WARN_GLYPH: &str = "⚠";
+const ERROR_GLYPH: &str = "■";
+
 /// Gutter glyph for goal-loop lines, matching the header's `◎ /goal` badge.
 const GOAL_GLYPH: &str = "◎";
 
@@ -447,12 +451,25 @@ enum Level {
 }
 
 impl Level {
+    /// Gutter glyph: the shape repeats the colour's message, so an error or a
+    /// warning still stands out on a terminal that drops the colour.
+    fn glyph(self) -> &'static str {
+        match self {
+            Level::Info | Level::Good => SYSTEM_GLYPH,
+            Level::Warn => WARN_GLYPH,
+            Level::Error => ERROR_GLYPH,
+        }
+    }
+
     /// `(gutter, body)` styles. The gutter always carries colour so the marker
     /// is scannable down the left edge even when the body is dim.
     fn styles(self) -> (Style, Style) {
         match self {
             Level::Info => (Style::new().light_blue(), Style::new().dim()),
-            Level::Warn => (Style::new().yellow(), Style::new().yellow()),
+            Level::Warn => {
+                let warn = Style::new().fg(theme::warning());
+                (warn, warn)
+            }
             Level::Error => (Style::new().red().bold(), Style::new().red().bold()),
             Level::Good => (Style::new().green(), Style::new().green().bold()),
         }
@@ -1828,7 +1845,7 @@ impl RowKind {
     fn render(&self, width: u16) -> Vec<Line<'static>> {
         match self {
             RowKind::Line(line) => vec![line.clone()],
-            RowKind::Markdown(text) => format_markdown_lines(text, width),
+            RowKind::Markdown(text) => answer_lines(text, width),
             RowKind::Banner(banner) => banner_lines(banner, width),
             RowKind::System {
                 glyph,
@@ -1854,7 +1871,7 @@ impl RowKind {
                     )],
                 );
                 match bg {
-                    Some(bg) => band_rows(lines, *bg),
+                    Some(bg) => band_rows(lines, *bg, width),
                     None => lines,
                 }
             }
@@ -3506,8 +3523,8 @@ impl App {
     }
 
     /// Append a line the *app* is saying, in its own gutter column. Every other
-    /// transcript class owns one (the user bubble, `• ` tool, `┊ ` reasoning), so
-    /// without it a note is indistinguishable from model prose. `glyph` names the
+    /// transcript class owns one (the user's `› ` bubble, `• ` tool, `┊ ` reasoning),
+    /// so without it a note is indistinguishable from model prose. `glyph` names the
     /// category and `level` carries severity.
     fn system_marked(&mut self, glyph: &'static str, level: Level, text: &str) {
         self.scrollback = 0;
@@ -3523,7 +3540,7 @@ impl App {
     }
 
     fn system(&mut self, level: Level, text: &str) {
-        self.system_marked(SYSTEM_GLYPH, level, text);
+        self.system_marked(level.glyph(), level, text);
     }
 
     /// A dim informational note: the common case, and what every `/command`
@@ -5444,16 +5461,10 @@ impl App {
         // A `System` row rather than a `Line`: a pasted or shift-entered message
         // carries its own newlines, and a single `Line` renders those as blank
         // cells in one run-on row.
-        self.push_row(RowKind::System {
-            glyph: "",
-            cont: "",
-            gutter: Style::new().light_magenta().bold(),
-            body: vec![Span::styled(
-                text.to_string(),
-                Style::new().bold().fg(user_bubble_fg()),
-            )],
-            bg: Some(user_bubble_bg()),
-        });
+        self.push_row(user_bubble(vec![Span::styled(
+            text.to_string(),
+            Style::new().bold().fg(user_bubble_fg()),
+        )]));
         for name in images {
             let label = if name.is_empty() {
                 "[IMAGE]".to_string()
@@ -5481,13 +5492,7 @@ impl App {
             ));
         }
         self.gap(Kind::User);
-        self.push_row(RowKind::System {
-            glyph: "",
-            cont: "",
-            gutter: Style::new().light_magenta().bold(),
-            body,
-            bg: Some(user_bubble_bg()),
-        });
+        self.push_row(user_bubble(body));
     }
 
     /// The row a slash invocation commits, plus its journal entry -- the two
@@ -7044,10 +7049,12 @@ impl App {
                     .and_then(|u| u.completion_tokens)
                     .unwrap_or(0);
             }
+            let now = chrono::Local::now();
             let stats = turn_stats_line(
                 self.turn_prompt_tokens,
                 self.turn_output_tokens,
                 started.elapsed(),
+                receipt_clock(now, now.date_naive()),
             );
             self.gap(Kind::Meta);
             self.push(stats);
@@ -8429,25 +8436,47 @@ fn user_bubble_fg() -> Color {
     t.fit(user_bubble_fg_for(t.light))
 }
 
-/// Tint a run of gutter rows as one filled bubble: every span carries the
-/// background and each row is padded to the widest so the block reads as a card
-/// rather than a ragged run of tinted fragments. The padded width is capped at
-/// the frame so the extra column never forces a wrap.
-fn band_rows(lines: Vec<Line<'static>>, bg: Color) -> Vec<Line<'static>> {
-    let target = lines.iter().map(row_width).max().unwrap_or(0);
-    lines
-        .into_iter()
-        .map(|line| {
-            let pad = target.saturating_sub(row_width(&line)) + 1;
-            let mut spans: Vec<Span<'static>> = line
-                .spans
-                .into_iter()
-                .map(|s| Span::styled(s.content, s.style.bg(bg)))
-                .collect();
-            spans.push(Span::styled(" ".repeat(pad), Style::new().bg(bg)));
-            Line::from(spans)
-        })
-        .collect()
+/// Gutter glyph on a user turn's first line; continuations indent under it.
+const USER_GLYPH: &str = "›";
+
+/// A user turn (typed prompt or slash/skill invocation label): `body` in the
+/// filled full-width bubble behind an accent `›` gutter. The bubble is the
+/// only filled element in the transcript, so the user's own words are what the
+/// eye lands on when scanning back.
+fn user_bubble(body: Vec<Span<'static>>) -> RowKind {
+    RowKind::System {
+        glyph: USER_GLYPH,
+        cont: " ",
+        gutter: Style::new().fg(theme::accent()).bold(),
+        body,
+        bg: Some(user_bubble_bg()),
+    }
+}
+
+/// Tint a run of gutter rows as one filled bubble spanning the whole transcript
+/// `width`, with a blank tinted row above and below the text. Every span
+/// carries the background and each row is padded to the frame edge, so the
+/// block reads as a card -- the one filled element in the transcript -- rather
+/// than a ragged run of tinted fragments.
+fn band_rows(lines: Vec<Line<'static>>, bg: Color, width: u16) -> Vec<Line<'static>> {
+    let fill = |n: usize| Span::styled(" ".repeat(n), Style::new().bg(bg));
+    let width = width as usize;
+    let mut out = Vec::with_capacity(lines.len() + 2);
+    out.push(Line::from(fill(width)));
+    for line in lines {
+        let pad = width.saturating_sub(row_width(&line));
+        let mut spans: Vec<Span<'static>> = line
+            .spans
+            .into_iter()
+            .map(|s| Span::styled(s.content, s.style.bg(bg)))
+            .collect();
+        if pad > 0 {
+            spans.push(fill(pad));
+        }
+        out.push(Line::from(spans));
+    }
+    out.push(Line::from(fill(width)));
+    out
 }
 
 /// The band behind a changed diff row at the theme's depth, or `None` on a
@@ -21525,28 +21554,42 @@ fn compact_tokens(n: u64) -> String {
     }
 }
 
-/// Per-turn receipt: wall-clock, context sent, tokens produced, elapsed, rate.
-fn turn_stats_line(prompt_tokens: u64, output_tokens: u64, elapsed: Duration) -> Line<'static> {
-    let secs = elapsed.as_secs_f64();
-    let rate = tokens_per_second(output_tokens, elapsed.as_millis() as u64);
-    let dim = Style::new().fg(theme::muted());
-    let mut spans = vec![Span::styled(local_timestamp(), dim)];
-    for (glyph, value) in [
-        ("↑", compact_tokens(prompt_tokens)),
-        ("↓", compact_tokens(output_tokens)),
-        ("⏱", format!("{secs:.1}s")),
-        ("⚡", format!("{rate:.1}/s")),
-    ] {
-        spans.push(Span::styled(format!("  {glyph} "), dim));
-        spans.push(Span::styled(value, Style::new().dim()));
+/// Per-turn receipt, one dim line indented under the answer:
+/// `Worked for 12s • 14:02 • ↑ 43K ↓ 1.1K • 45.6/s`. The rate is left out
+/// when the turn produced no measurable output.
+fn turn_stats_line(
+    prompt_tokens: u64,
+    output_tokens: u64,
+    elapsed: Duration,
+    clock: String,
+) -> Line<'static> {
+    let mut parts = vec![
+        format!("Worked for {}", format_elapsed(elapsed.as_secs())),
+        clock,
+        format!(
+            "↑ {} ↓ {}",
+            compact_tokens(prompt_tokens),
+            compact_tokens(output_tokens)
+        ),
+    ];
+    if output_tokens > 0 {
+        let rate = tokens_per_second(output_tokens, elapsed.as_millis() as u64);
+        parts.push(format!("{rate:.1}/s"));
     }
-    Line::from(spans)
+    Line::from(Span::styled(
+        format!("  {}", parts.join(" • ")),
+        Style::new().fg(theme::muted()),
+    ))
 }
 
-/// `YYYY-MM-DD HH:MM` in local time, without pulling in a date library:
-/// `chrono` is already a dependency, so this is just the formatting choice.
-fn local_timestamp() -> String {
-    chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
+/// When a turn finished, for its receipt: `14:02` when that is `today`, else
+/// `Oct 7 14:02`, so a receipt never reads as today's when it is not.
+fn receipt_clock(finished: chrono::DateTime<chrono::Local>, today: chrono::NaiveDate) -> String {
+    if finished.date_naive() == today {
+        finished.format("%H:%M").to_string()
+    } else {
+        finished.format("%b %-d %H:%M").to_string()
+    }
 }
 
 /// Compact elapsed time: `12s`, `1m 05s`, `1h 02m`. The zero-padded second
@@ -23869,8 +23912,9 @@ mod tests {
     }
 
     /// The user turn renders as a filled bubble (the terminal analog of the
-    /// desktop's `bg-secondary` chat bubble), so every wrapped line carries the
-    /// background across the gutter, the text and the trailing padding.
+    /// desktop's `bg-secondary` chat bubble): full transcript width, one tinted
+    /// padding row above and below the text, an accent `›` on the first line
+    /// and a two-column indent on the rest.
     #[test]
     fn user_message_renders_as_a_filled_bubble() {
         let mut app = test_app();
@@ -23879,28 +23923,73 @@ mod tests {
         let fg = super::user_bubble_fg();
         let row = app.transcript.last().expect("no user row");
         let lines = row.lines(60);
-        assert_eq!(lines.len(), 2, "one bubble line per source line");
+        let text: Vec<String> = lines.iter().map(line_text).collect();
+        assert_eq!(text.len(), 4, "padding, two text lines, padding: {text:?}");
+        assert!(text[0].trim().is_empty(), "padding row above: {text:?}");
+        assert!(text[3].trim().is_empty(), "padding row below: {text:?}");
+        assert_eq!(text[1].trim_end(), "\u{203a} first line");
+        assert_eq!(text[2].trim_end(), "  second line");
+        assert_eq!(
+            lines[1].spans[0].style.fg,
+            Some(super::theme::accent()),
+            "the glyph takes the accent"
+        );
         for line in &lines {
             assert!(
                 line.spans.iter().all(|s| s.style.bg == Some(bg)),
                 "every span must carry the bubble background: {line:?}"
             );
+            assert_eq!(super::row_width(line), 60, "bubble spans the width: {line:?}");
+        }
+        for line in &lines[1..3] {
             assert!(
                 line.spans
                     .iter()
                     .any(|s| !s.content.trim().is_empty() && s.style.fg == Some(fg)),
                 "the message text must carry the contrast foreground: {line:?}"
             );
-            let last = line.spans.last().expect("empty bubble line");
-            assert!(
-                last.content.chars().all(|c| c == ' '),
-                "bubble ends in a padding column: {last:?}"
-            );
-            assert!(
-                super::row_width(line) <= 60,
-                "bubble padding must not overflow the frame: {line:?}"
-            );
         }
+    }
+
+    /// The bubble is the transcript's one filled element: notes, tool rows,
+    /// answers and the receipt leave the background alone.
+    #[test]
+    fn only_the_user_bubble_fills_its_background() {
+        let mut app = test_app();
+        app.submit_user("go".into());
+        app.note("model switched");
+        app.system(super::Level::Warn, "finished early");
+        app.system(super::Level::Error, "502 from the provider");
+        app.apply(StreamEvent::ToolCall {
+            id: "t1".into(),
+            name: "bash".into(),
+            args: json!({"command": "ls"}),
+        });
+        app.apply(StreamEvent::ToolResult {
+            id: "t1".into(),
+            content: "ok".into(),
+            is_error: false,
+            diff: None,
+        });
+        app.finalize_tool_group();
+        app.assistant_buf = "Done, see `main.rs`.\n\n```rust\nfn main() {}\n```".into();
+        app.flush_assistant();
+        app.on_done("stop".into(), None);
+        let bubble = super::user_bubble_bg();
+        let mut filled = 0;
+        for row in &app.transcript {
+            for line in row.lines(60) {
+                for span in &line.spans {
+                    match span.style.bg {
+                        Some(bg) if bg == bubble => filled += 1,
+                        Some(bg) => panic!("{bg:?} fill outside the bubble: {line:?}"),
+                        None => {}
+                    }
+                }
+                assert_eq!(line.style.bg, None, "line-level fill: {line:?}");
+            }
+        }
+        assert!(filled > 0, "the user turn lost its bubble");
     }
 
     /// The expanded (Ctrl-O) view is where the full output lives, so a line
@@ -33112,11 +33201,11 @@ mod tests {
             "diff panel: {resumed}"
         );
         assert!(resumed.contains("Answer."), "{resumed}");
-        // Every rendered row returns; the turn receipt (`↑ tokens ⏱ elapsed`) is
+        // Every rendered row returns; the turn receipt (`Worked for ...`) is
         // deliberately transient, like notes and permission prompts.
         assert!(
             live.lines()
-                .filter(|l| !l.contains('⏱'))
+                .filter(|l| !l.contains("Worked for "))
                 .all(|l| resumed.contains(l.trim_end())),
             "every live row must come back\nlive:\n{live}\nresumed:\n{resumed}"
         );
@@ -38766,6 +38855,33 @@ mod tests {
         assert_eq!(format_elapsed(3720), "1h 02m");
     }
 
+    #[test]
+    fn turn_receipt_reads_as_one_dim_worked_for_line() {
+        let line = |out, ms| {
+            let l =
+                super::turn_stats_line(43_000, out, Duration::from_millis(ms), "14:02".into());
+            (l.spans.iter().map(|s| s.content.to_string()).collect::<String>(), l)
+        };
+        let (text, l) = line(1_100, 12_000);
+        assert_eq!(
+            text,
+            "  Worked for 12s \u{2022} 14:02 \u{2022} \u{2191} 43K \u{2193} 1.1K \u{2022} 91.7/s"
+        );
+        assert!(l.spans.iter().all(|s| s.style.fg == Some(super::theme::muted())), "{l:?}");
+        // No output, no rate: `0.0/s` would read as a stalled model.
+        let (text, _) = line(0, 65_000);
+        assert_eq!(text, "  Worked for 1m 05s \u{2022} 14:02 \u{2022} \u{2191} 43K \u{2193} 0");
+    }
+
+    #[test]
+    fn receipt_clock_names_the_day_only_when_it_is_not_today() {
+        use chrono::TimeZone;
+        let finished = chrono::Local.with_ymd_and_hms(2026, 10, 7, 14, 2, 0).unwrap();
+        assert_eq!(super::receipt_clock(finished, finished.date_naive()), "14:02");
+        let next_day = finished.date_naive().succ_opt().unwrap();
+        assert_eq!(super::receipt_clock(finished, next_day), "Oct 7 14:02");
+    }
+
     /// The working row carries the cancel hint on one row, is exactly as wide
     /// in both motion modes, and sheds the hint as the terminal narrows instead
     /// of wrapping. The elapsed time is the header's alone: the input row never
@@ -39663,7 +39779,7 @@ mod tests {
             .expect("the separator rule is on screen");
         let last_prose = rows[..rule]
             .iter()
-            .rposition(|r| r.trim() == "an answer")
+            .rposition(|r| r.trim() == "\u{2022} an answer")
             .expect("the answer is on screen");
         // Literal, not derived from the constant: the point is the geometry on
         // screen, and reading the expectation back off `TRANSCRIPT_BOTTOM_PAD`
@@ -42573,13 +42689,15 @@ mod tests {
         assert_eq!(last_row(&app)[0].0, "\u{2022} ", "system note");
 
         // The user turn distinguishes itself with a filled bubble background
-        // rather than a gutter glyph.
+        // (its first rendered row is the bubble's padding) and a `›` gutter.
         app.push_user_line("do it", &[]);
         assert_eq!(
             last_row(&app)[0].1.bg,
             Some(super::user_bubble_bg()),
             "user message"
         );
+        let text = app.transcript.last().expect("a row").lines(80).remove(1);
+        assert_eq!(text.spans[0].content, "\u{203a} ", "user glyph");
 
         app.apply(StreamEvent::ToolCall {
             id: "t1".into(),
@@ -42601,15 +42719,12 @@ mod tests {
             "tool row"
         );
 
-        // Model prose is the one class with no gutter, which is what makes the
-        // others readable as "not the model".
+        // Model prose leads with the same bullet shape, but dim and colourless:
+        // the answer reads as the turn's main item without passing for a note.
         app.assistant_buf = "Done.".into();
         app.flush_assistant();
         let prose = last_row(&app);
-        assert!(
-            !prose[0].0.starts_with('\u{2022}') && !prose[0].0.starts_with('>'),
-            "prose took a gutter: {prose:?}"
-        );
+        assert_eq!(prose[0], ("\u{2022} ".to_string(), Style::new().dim()), "answer");
     }
 
     #[test]
@@ -42621,11 +42736,17 @@ mod tests {
         assert_eq!(info[0].1.fg, Some(Color::LightBlue), "info gutter");
         assert!(info[1].1.add_modifier.contains(Modifier::DIM), "info body");
 
+        assert_eq!(info[0].0, "\u{2022} ", "info glyph");
+
         app.system(super::Level::Warn, "finished early");
-        assert_eq!(last_row(&app)[0].1.fg, Some(Color::Yellow));
+        let warn = last_row(&app);
+        assert_eq!(warn[0].0, "\u{26a0} ", "warn glyph");
+        assert_eq!(warn[0].1.fg, Some(super::theme::warning()));
+        assert_eq!(warn[1].1.fg, Some(super::theme::warning()));
 
         app.system(super::Level::Error, "denied: rm -rf /");
         let err = last_row(&app);
+        assert_eq!(err[0].0, "\u{25a0} ", "error glyph");
         assert_eq!(err[0].1.fg, Some(Color::Red));
         assert!(err[1].1.add_modifier.contains(Modifier::BOLD), "{err:?}");
 

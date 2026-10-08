@@ -1,8 +1,11 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
 expression: render_snapshot(buf)
 ---
-| run the tests                                                                  |
+|                                                                                |
+|› run the tests                                                                 |
+|                                                                                |
 |                                                                                |
 |│   ┌──────────────────────────────────────────────────────────────────────────┐|
 |│   │ $ cargo test --lib parser                                                │|
@@ -15,31 +18,33 @@ expression: render_snapshot(buf)
 |│   │ ✓                                                                        │|
 |│   └──────────────────────────────────────────────────────────────────────────┘|
 
- 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
- 0 1..14 fg=#E9ECF2 bg=#282C3A mod=BOLD
- 0 14..15 bg=#282C3A
- 2 0..80 fg=DarkGray
- 3 0..6 fg=DarkGray
- 3 6..8 fg=Cyan mod=BOLD
- 3 8..31 mod=BOLD
- 3 31..80 fg=DarkGray
- 4 0..6 fg=DarkGray
- 4 6..21 mod=DIM
- 4 21..80 fg=DarkGray
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..15 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 15..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..80 fg=DarkGray
  5 0..6 fg=DarkGray
- 5 6..31 mod=DIM
+ 5 6..8 fg=Cyan mod=BOLD
+ 5 8..31 mod=BOLD
  5 31..80 fg=DarkGray
  6 0..6 fg=DarkGray
- 6 6..32 mod=DIM
- 6 32..80 fg=DarkGray
+ 6 6..21 mod=DIM
+ 6 21..80 fg=DarkGray
  7 0..6 fg=DarkGray
- 7 6..33 mod=DIM
- 7 33..80 fg=DarkGray
- 8 0..80 fg=DarkGray
+ 7 6..31 mod=DIM
+ 7 31..80 fg=DarkGray
+ 8 0..6 fg=DarkGray
+ 8 6..32 mod=DIM
+ 8 32..80 fg=DarkGray
  9 0..6 fg=DarkGray
- 9 6..41 mod=DIM
- 9 41..80 fg=DarkGray
-10 0..6 fg=DarkGray
-10 6..7 fg=Green
-10 7..80 fg=DarkGray
-11 0..80 fg=DarkGray
+ 9 6..33 mod=DIM
+ 9 33..80 fg=DarkGray
+10 0..80 fg=DarkGray
+11 0..6 fg=DarkGray
+11 6..41 mod=DIM
+11 41..80 fg=DarkGray
+12 0..6 fg=DarkGray
+12 6..7 fg=Green
+12 7..80 fg=DarkGray
+13 0..80 fg=DarkGray

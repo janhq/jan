@@ -3,12 +3,16 @@ source: src/core/cli/tui/tests/snapshot.rs
 assertion_line: 162
 expression: render_snapshot(buf)
 ---
-| open the notes                                                                 |
+|                                                                                |
+|› open the notes                                                                |
+|                                                                                |
 |                                                                                |
 |• Read missing.md                                                               |
 
- 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
- 0 1..15 fg=#E9ECF2 bg=#282C3A mod=BOLD
- 0 15..16 bg=#282C3A
- 2 0..2 fg=Red mod=BOLD
- 2 2..6 mod=BOLD
+ 0 0..80 bg=#282C3A
+ 1 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 1 2..16 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 1 16..80 bg=#282C3A
+ 2 0..80 bg=#282C3A
+ 4 0..2 fg=Red mod=BOLD
+ 4 2..6 mod=BOLD

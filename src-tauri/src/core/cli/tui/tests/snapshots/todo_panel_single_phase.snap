@@ -1,13 +1,14 @@
 ---
 source: src/core/cli/tui/tests/snapshot.rs
+assertion_line: 162
 expression: render_snapshot(buf)
 ---
 | 👋 gpt-5-mini  effort medium  ctx 0K/128K fallback    ◉ [working]              |
 |────────────────────────────────────────────────────────────────────────────────|
 |                                                                                |
 |                                                                                |
+|› plan it                                                                       |
 |                                                                                |
-| plan it                                                                        |
 |                                                                                |
 |✓ Todos · 2/4   /todo                                                           |
 | ☑ scaffold the crate                                                           |
@@ -24,9 +25,11 @@ expression: render_snapshot(buf)
  0 14..29 fg=#E5C07B
  0 55..57 fg=#56B6C2
  0 57..66 fg=#56B6C2 mod=BOLD
- 5 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
- 5 1..8 fg=#E9ECF2 bg=#282C3A mod=BOLD
- 5 8..9 bg=#282C3A
+ 3 0..80 bg=#282C3A
+ 4 0..2 fg=#56B6C2 bg=#282C3A mod=BOLD
+ 4 2..9 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 4 9..80 bg=#282C3A
+ 5 0..80 bg=#282C3A
  7 0..2 fg=#56B6C2
  7 2..7 fg=#56B6C2 mod=BOLD
  7 7..13 mod=DIM
