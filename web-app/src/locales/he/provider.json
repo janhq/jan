@@ -1,0 +1,17 @@
+{
+  "addProvider": "הוספת ספק",
+  "addOpenAIProvider": "הוספת ספק מותאם אישית",
+  "enterNameForProvider": "שם הספק (למשל my-llm-server)",
+  "apiTypeLabel": "פורמט API",
+  "apiTypeOpenAI": "תואם OpenAI",
+  "apiTypeAnthropic": "תואם Anthropic",
+  "baseUrlLabel": "כתובת URL בסיסית",
+  "baseUrlPlaceholder": "https://your-endpoint/v1",
+  "baseUrlPlaceholderAnthropic": "https://api.anthropic.com/v1",
+  "apiKeyLabel": "מפתח API",
+  "apiKeyPlaceholder": "הדביקו כאן את מפתח ה-API שלכם",
+  "invalidBaseUrl": "כתובת ה-URL הבסיסית חייבת להיות כתובת http(s) תקינה",
+  "globalSettings": "הגדרות גלובליות",
+  "stripReasoning": "הסרת תוכן החשיבה מההקשר",
+  "stripReasoningDesc": "הסירו את תוכן החשיבה/ההיגיון של תורות קודמות לפני שליחת ההיסטוריה מחדש, אצל כל הספקים. משפר את השימוש החוזר ב-KV-cache עבור מודלים מקומיים, אך חלק מהמודלים (למשל גרסאות חדשות של Qwen) ממליצים להשאיר את זה מופעל לצורך היגיון טוב יותר בשיחה רב-שלבית."
+}
