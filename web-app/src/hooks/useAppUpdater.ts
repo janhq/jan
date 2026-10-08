@@ -160,6 +160,8 @@ export const useAppUpdater = () => {
 
     if (!updateState.updateInfo) return
 
+    let updateInstalled = false
+
     try {
       setUpdateState((prev) => ({
         ...prev,
@@ -211,30 +213,44 @@ export const useAppUpdater = () => {
             console.log('Download finished')
             setUpdateState((prev) => ({
               ...prev,
-              isDownloading: false,
               downloadProgress: 1,
             }))
-
-            // Emit app update download success event
-            events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
             break
         }
       })
+      updateInstalled = true
+
+      setUpdateState((prev) => ({
+        ...prev,
+        isDownloading: false,
+        downloadProgress: 1,
+      }))
 
       await window.core?.api?.relaunch()
 
+      events.emit(AppEvent.onAppUpdateDownloadSuccess, {})
       console.log('Update installed')
     } catch (error) {
-      console.error('Error downloading update:', error)
+      console.error(
+        updateInstalled
+          ? 'Error restarting after update:'
+          : 'Error downloading update:',
+        error
+      )
       setUpdateState((prev) => ({
         ...prev,
         isDownloading: false,
       }))
 
       // Emit app update download error event
-      events.emit(AppEvent.onAppUpdateDownloadError, {
-        message: error instanceof Error ? error.message : 'Unknown error',
-      })
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      const errorDetails = updateInstalled
+        ? {
+            message: `Update installed, but the app could not restart: ${message}`,
+            retryable: false,
+          }
+        : { message }
+      events.emit(AppEvent.onAppUpdateDownloadError, errorDetails)
     }
   }, [updateState.updateInfo])
 
