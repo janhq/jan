@@ -22,11 +22,11 @@ echo "[SUCCESS] Initialization wait completed"
 
 # Verify installation based on nightly flag
 if [ "$IS_NIGHTLY" = "true" ]; then
-    DEFAULT_JAN_PATH="/usr/bin/Jan-nightly"
-    PROCESS_NAME="Jan-nightly"
+    DEFAULT_JAN_PATH="/usr/bin/Jan-Desktop-nightly"
+    PROCESS_NAME="Jan-Desktop-nightly"
 else
-    DEFAULT_JAN_PATH="/usr/bin/Jan"
-    PROCESS_NAME="Jan"
+    DEFAULT_JAN_PATH="/usr/bin/Jan-Desktop"
+    PROCESS_NAME="Jan-Desktop"
 fi
 
 if [ -f "$DEFAULT_JAN_PATH" ]; then

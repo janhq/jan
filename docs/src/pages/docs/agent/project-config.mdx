@@ -1,0 +1,285 @@
+---
+title: Project Config
+description: AGENTS.md and agent.toml - per-project instructions, model, budget, and tool policy.
+keywords: [Jan, Jan Agent, agent.toml, AGENTS.md, JAN.md, project config, instructions, budget]
+---
+
+import { Callout } from 'nextra/components'
+
+# Project Config
+
+Each project gets a store under `~/.jan/projects/` holding how the agent should behave there. The
+project directory itself holds only `AGENTS.md`.
+
+```
+your-project/
+`-- AGENTS.md              # instructions for the agent
+
+~/.jan/projects/<name>-<hash>/
+|-- project.json           # which directory this store belongs to
+|-- agent.toml             # model, budget, tool policy
+|-- threads/               # saved sessions
+|-- skills/                # reusable procedures (project scope)
+|-- MEMORY.md              # generated index of memory/
+|-- memory/                # durable facts
+|-- plugins/               # installed plugins
+`-- subagents/             # reusable subagent definitions
+```
+
+User-wide skills live beside the projects in `~/.jan/skills/`, and a same-named project skill
+shadows them. See [Skills](/docs/agent/skills#where-they-live).
+
+The store name (the `<slug>` in these docs) is the project directory's name plus a short hash of
+its full path. A linked git
+worktree maps to its main checkout, so both share one store.
+
+It's created on first use. To scaffold it up front without starting a session:
+
+```bash
+jan cli agent status --project .
+```
+
+<Callout type="tip">
+Commit `AGENTS.md` so the whole team gets the same instructions. It is the only file Jan keeps in the
+project; everything in the store is per user and stays out of your repository.
+</Callout>
+
+## Where state lives / migration
+
+Older versions kept this state inside the project, in `<project>/.jan/agent/`. When Jan starts in a
+workspace that still has one, it moves `.jan/agent` into the project's store automatically and says
+so. It never merges: if the store already has content, the old folder is left alone with a warning,
+for you to merge or delete by hand. Any other files in `.jan/` are left in place and listed. A
+workspace that is your home directory is skipped, since its `.jan` is the user-wide `~/.jan`.
+
+## AGENTS.md
+
+Plain markdown, injected into the system prompt on every run. The highest-leverage file here.
+
+```markdown
+# Agent Instructions
+
+This is a Rust workspace. `cargo test` must pass before you call anything done.
+
+- Source lives in `src-tauri/src/`, tests alongside the code they cover.
+- Never edit generated files under `gen/`.
+- Prefer small, focused commits with Conventional Commit messages.
+- Ask before adding a dependency.
+```
+
+Write it as rules, not prose. Things that are true every time belong here; a procedure for one kind
+of task belongs in a [skill](/docs/agent/skills).
+
+Jan reads it from the project root and each of its ancestors; the nearest file wins. Write one by
+hand or with `/init`, which writes `AGENTS.md`. Other coding agents read `AGENTS.md` too, so one file
+serves them all.
+
+### JAN.md and CLAUDE.md
+
+Jan reads one file per directory on that same walk:
+
+1. `JAN.md`, if it is there and not empty. This is Jan's legacy name. It still wins, so a project
+   that already has one loads exactly what it did before, and `/init` keeps editing it. Rename it to
+   `AGENTS.md` whenever you like.
+2. Otherwise `AGENTS.md`.
+3. Otherwise `CLAUDE.md`, but only if you opt in to it.
+
+A file already loaded under another name is skipped, so a `JAN.md -> AGENTS.md` symlink loads once.
+Each file keeps its path in the prompt, so the model can see which one it got. When a legacy
+`JAN.md` or a `CLAUDE.md` is used, the startup note says so and `/context` labels it under
+**Project instructions**. In a project with only `CLAUDE.md`, `/init` uses it as the starting point
+for `AGENTS.md`.
+
+Configure it in `agent.toml`, or in `~/.jan/config.toml` for every project (the project wins):
+
+```toml
+[context]
+fallback_files = ["AGENTS.md"]               # the default
+# fallback_files = ["AGENTS.md", "CLAUDE.md"] # also read CLAUDE.md
+# fallback_files = []                         # JAN.md only; /init then writes JAN.md
+```
+
+Only `AGENTS.md` and `CLAUDE.md` are recognised. The files are re-read at the start of every run;
+`/reload system-prompt` lists what the next run will load, with fallbacks marked.
+
+<Callout type="warning">
+A file written for another agent can mention that agent's own tools or commands. If Jan follows
+something meant for another tool, edit the file, write a `JAN.md` (it shadows the other file), or
+set `fallback_files = []`.
+</Callout>
+
+## agent.toml
+
+```toml
+[agent]
+# model = "Jan-V4"
+# context_window = 128000
+# compaction_ratio = 0.8  # share of the window a prompt may fill before compacting
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
+# max_tokens = 4096
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# show_reasoning = false  # unfold thinking blocks in the transcript (Ctrl-O still toggles)
+# send_reasoning = true   # resend prior reasoning to the model; false drops it from the request
+# worktree = true         # give each session its own git checkout instead of editing this one
+
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
+# compaction_ratio = 0.6  # override the [agent] ratio for this provider's routes
+
+# The run's only cap: new token spend across all turns (replayed context is not
+# recharged each turn). There is no turn limit. Defaults to the model's context
+# window when unset (128000 if the window is unknown); 0 disables the cap.
+[budget]
+# max_tokens = 128000
+# max_usd = 5.00
+
+[tools]
+default = "read-only"
+allow = []
+deny = []
+allow_write = []
+# sandbox = true
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*"]
+# [tools.env_set]
+# RUST_LOG = "info"
+
+[skills]
+enabled = []
+```
+
+### `[agent]`
+
+The running agent reads this file at startup. After editing `context_window`, `compaction_ratio`,
+`compaction_reserve_tokens`, `max_tokens`, `send_reasoning`, or `[budget].max_tokens`, run
+`/reload config` to apply them from the next run without restarting. The model, `[tools]`,
+`[provider]`, and `[budget].max_usd` still need a restart.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `model` | inherited | Model id. Overridden by `--model` |
+| `context_window` | `128000` | Context limit in tokens |
+| `compaction_ratio` | `0.8` | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context). Values outside `0.1`-`0.99` are clamped |
+| `compaction_reserve_tokens` | unset | Absolute headroom instead of the ratio, in tokens. Wins over `compaction_ratio` when set |
+| `max_tokens` | unset | Cap on tokens generated per response. Omitted from the request when unset |
+| `max_parallel_subagents` | `10` | Subagents that may run at once (min 1); extra dispatches queue FIFO |
+| `thread_retention_days` | `90` | Saved threads untouched for this many days are deleted at session start, once `prune_threads = true` in `~/.jan/config.toml` turns pruning on (it is off by default); `0` disables. The newest few, the resumed thread, a fork's parent, worktree-owning threads and threads with no timestamp are always kept |
+| `max_threads` | `500` | Most saved threads a project keeps; with pruning on, the oldest past it are deleted at session start, with the same exemptions. `0` disables |
+| `show_reasoning` | `false` | Unfold model reasoning (`<thinking>`) blocks in the transcript instead of folding them to a summary row. <kbd>Ctrl</kbd>+<kbd>O</kbd> still toggles a folded block |
+| `send_reasoning` | `true` | Resend a prior turn's reasoning to the model with the conversation. Set `false` for an upstream that rejects the field (e.g. Groq), or to keep chains of thought out of the context budget |
+| `worktree` | `false` | Run each session in its own git worktree under `~/.jan/worktrees`, on a `jan/agent/` branch, instead of editing this checkout. Overridden by `--worktree` / `--no-worktree`. See [Sessions](/docs/agent/sessions) |
+
+Thread pruning is off by default, so no saved thread is ever deleted. To turn it on for every
+project, add this to `~/.jan/config.toml`:
+
+```toml
+prune_threads = true
+```
+
+The TUI then prunes at startup under that project's `thread_retention_days` and `max_threads`.
+
+### `[provider]`
+
+A project-local provider override, winning over `~/.jan/config.toml` and anything inherited from Jan
+Desktop. Most projects don't need it. See [Providers](/docs/agent/providers#per-project-override).
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `compaction_ratio` | inherited | Share of `context_window` a prompt may fill before [compaction](/docs/agent/context) for requests this provider serves. Overrides the `[agent]` value, so a route with a small window can be tuned without loosening it for every other route |
+
+### `[budget]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `max_tokens` | model's context window | Advisory token ceiling for one run (new spend across all turns). Set `0` to disable it. Overridden per invocation by `--max-session-tokens`. Defaults to the model's context window when unset, or `128000` when the window is unknown |
+| `max_usd` | unset | USD one run may spend before it stops -- a hard bound, unlike `max_tokens`. Priced from the provider's published rates, so a model with no published price is refused rather than run uncapped. Subagents inherit it. Overridden per invocation by `--max-budget-usd` |
+
+A marker for how far one run has gone, distinct from the per-request context window. It tracks the
+run's marginal token spend (replayed context is not recharged each turn).
+
+<Callout type="warning">
+Passing this ceiling does not stop a run. The agent compacts its history, records a note that the
+ceiling was crossed, and carries on, tool calls included. For a hard bound on an unattended run use
+`--max-turns` (see the [CLI reference](/docs/agent/cli)), or cancel it.
+</Callout>
+
+### `[tools]`
+
+See [Tool permissions](/docs/agent/permissions#project-policy). `sandbox` is how a project requires
+[shell confinement](/docs/agent/permissions#the-shell-sandbox) for every session in it; it is off
+by default on the CLI.
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `env_passthrough` | `[]` | Host environment variables the shell may inherit beyond the minimal base (exact names or a `*` wildcard). Merged with `~/.jan/config.toml`. A secret-looking name is never copied by a wildcard - see [The shell environment](/docs/agent/permissions#the-shell-environment) |
+| `env_set` | `{}` | Explicit `key = "value"` pairs for the shell env, as a `[tools.env_set]` table. Wins over `env_passthrough` and the global value; the way to inject a secret-named variable on purpose |
+
+### `[context]`
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `fallback_files` | `["AGENTS.md"]` | Instructions files read, in order, from a directory with no `JAN.md`. Only `AGENTS.md` and `CLAUDE.md` are recognised; `[]` reads `JAN.md` only. Falls back to `~/.jan/config.toml`'s `[context]`. See [AGENTS.md and CLAUDE.md](#agentsmd-and-claudemd) |
+
+### `[prompt]`
+
+Which contributor to the system prompt may sit above the **cache line**. A provider reuses a request
+prefix only while its bytes are identical to the previous request, so a contributor that changes per
+turn belongs below the conversation, not in front of it. Placement is deny-wins, like `[tools]`:
+nothing reaches the prefix without being allowed there, and the safe answer for a contributor no
+policy mentions is the tail.
+
+Tail blocks are sent as `<SYSTEM>`-marked guidance after the conversation, including when the
+allowlist leaves no stable prompt. They are not system-role messages: provider adapters would
+move those ahead of history and defeat the placement policy.
+Once sent successfully, a tail block remains in accepted history at that position rather than
+moving after each tool result. Fresh run context is appended after it; compaction bounds growth.
+
+```toml
+[prompt]
+# Only these may sit above the cache line. Unset keeps each contributor's own
+# placement; setting it moves everything else below the line.
+prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Placement for a contributor no policy mentions (default: tail).
+# default = "tail"
+```
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `prefix_allow` | unset | Contributor ids allowed above the cache line. Unset keeps the placement each contributor declares in code; setting it narrows the prefix to exactly the ids listed. An id that names nothing is an error, not a silent no-op |
+| `default` | `"tail"` | Placement for a contributor neither the list nor the code classifies. A contributor that varies within a session stays in the tail whatever this says, and listing one (`memory_recall`, `plan_addendum`, `todo_addendum`) in `prefix_allow` fails the run instead of costing a cache miss per turn |
+
+All current contributors either declare their placement or vary, so changing `default` alone has
+no effect today. Use `prefix_allow` to narrow the current prefix. The tool schemas are a request
+field rather than a prompt block and always remain above the cache line, even with an empty list.
+
+```bash
+jan cli agent status   # the resolved placement of every contributor, and why
+```
+
+Contributor ids: `assistant_instructions`, `guidelines`, `working_directory`, `runtime_environment`,
+`session_start`, `subagent_guide`, `skill_guide`, `web_tools_guide`, `project_context`, `skills`,
+`memory_catalog`, `tool_schemas`, `memory_recall`, `plan_addendum`, `todo_addendum`.
+`session_start` is the date and git branch taken once when the session starts ("Session start date",
+"Starting branch"); it stays fixed for the session so it can sit above the cache line. See
+[Context and Compaction](/docs/agent/context) for what the split buys.
+
+### `[skills]`
+
+See [Skills](/docs/agent/skills#controlling-which-are-active).
+
+## Updating
+
+```bash
+jan update           # latest build on this channel
+jan update --check   # report without installing
+jan update --force   # reinstall even if current
+```
+
+Or `/update` in the console, which takes effect on restart.
+
+<Callout type="info">
+Builds compiled from source have no update channel embedded, so `jan update` reports that rather
+than doing anything. Re-run the installer with `--source` to rebuild.
+</Callout>

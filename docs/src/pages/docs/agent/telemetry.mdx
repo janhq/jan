@@ -1,0 +1,261 @@
+---
+title: Telemetry (OpenTelemetry)
+description: Export Jan Agent usage metrics and events over OTLP to your own collector, so a team can see tokens, cost, tool activity and errors in one place.
+keywords: [Jan, Jan Agent, OpenTelemetry, OTLP, telemetry, monitoring, metrics, observability, Grafana, collector]
+---
+
+import { Callout } from 'nextra/components'
+
+# Telemetry (OpenTelemetry)
+
+Jan Agent can export usage **metrics**, **events** and (opt-in) **traces** over [OTLP](https://opentelemetry.io/docs/specs/otlp/)
+to a collector you run: an OpenTelemetry Collector, Grafana, Honeycomb, Datadog, or anything else
+that accepts OTLP/HTTP. A team can then see its token usage, cost, tool calls and errors across
+every machine and every session.
+
+It covers the TUI, `jan cli agent run` (including `--output-format stream-json`) and the
+`jan cli agent rpc` runtime the ADKs drive. Jan Desktop doesn't export it yet.
+
+<Callout type="info">
+Telemetry is **off by default**, and when it's on, data goes only to the endpoint you configure,
+never to Jan. It's separate from the anonymous update-check ping (see
+[CLI](/docs/agent/cli), `JAN_CLI_NO_UPDATE_CHECK`), which is unchanged.
+</Callout>
+
+## Quickstart
+
+Run a local collector that prints what it receives:
+
+```bash
+cat > otel-collector.yaml <<'EOF'
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  debug:
+    verbosity: detailed
+service:
+  pipelines:
+    metrics: { receivers: [otlp], exporters: [debug] }
+    logs:    { receivers: [otlp], exporters: [debug] }
+EOF
+docker run --rm -p 4318:4318 \
+  -v "$PWD/otel-collector.yaml:/etc/otelcol/config.yaml" \
+  otel/opentelemetry-collector:latest
+```
+
+Then run the agent with telemetry on:
+
+```bash
+export JAN_AGENT_ENABLE_TELEMETRY=1
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+export OTEL_METRIC_EXPORT_INTERVAL=10000   # 10 s instead of 60 s while you try it out
+jan cli agent run "say hi"
+```
+
+The collector prints a `jan_agent.token.usage` metric and a `jan_agent.api_request` event. To
+switch it on permanently, set it in `~/.jan/config.toml` instead of the environment:
+
+```toml
+[telemetry]
+enabled = true
+```
+
+## Turning it on
+
+Telemetry is enabled by the first of these that says anything, highest first:
+
+1. `OTEL_SDK_DISABLED=true` always turns it **off**.
+2. `JAN_AGENT_ENABLE_TELEMETRY` (`1`/`true` or `0`/`false`).
+3. `[telemetry] enabled` in the project's `agent.toml`.
+4. `[telemetry] enabled` in `~/.jan/config.toml`.
+
+Setting `OTEL_EXPORTER_OTLP_ENDPOINT` alone doesn't turn it on. That variable is often set for
+other programs.
+
+## Configuration
+
+Where the data goes is set with the standard OpenTelemetry environment variables, so a collector
+setup you already use for another agent works unchanged.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `JAN_AGENT_ENABLE_TELEMETRY` | off | Turn the exporter on (`1`) or off (`0`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://localhost:4318` | Base URL. `/v1/metrics` and `/v1/logs` are appended. |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | derived from the base | Full URL for one signal, used as is. |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` (and `_METRICS_` / `_LOGS_` variants) | `http/protobuf` | `http/protobuf` or `http/json`. `grpc` isn't supported yet: Jan logs a warning and uses `http/protobuf`. |
+| `OTEL_EXPORTER_OTLP_HEADERS` (and `_METRICS_` / `_LOGS_` variants) | none | `key=value,key2=value2`, e.g. `Authorization=Bearer%20<token>`. Values are never logged. |
+| `OTEL_EXPORTER_OTLP_TIMEOUT` | `10000` | Per-export timeout in ms. |
+| `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER` | `otlp` | `none` turns that signal off. `console` isn't supported, because stdout carries the RPC and stream-json protocol: Jan logs a warning and doesn't export that signal. Any other value is treated the same way. |
+| `OTEL_SERVICE_NAME` | `jan-agent` | `service.name` resource attribute. |
+| `OTEL_RESOURCE_ATTRIBUTES` | none | Extra resource attributes, e.g. `tenant.id=acme,deployment.environment=ci`. |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `60000` | How often metrics are exported, in ms. |
+| `OTEL_LOGS_EXPORT_INTERVAL` | `5000` | How often events are exported, in ms. |
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `cumulative` | `cumulative`, `delta`, or `lowmemory` (the same as `delta` here, since every metric is a counter). Use `delta` for backends that sum points, like Datadog. Any other value logs a warning and uses `cumulative`. |
+| `OTEL_METRICS_INCLUDE_SESSION_ID` | `true` | `false` keeps `session.id` off metric points, so the number of series stays small. Events keep it. |
+| `OTEL_LOG_USER_PROMPTS` | off | Include the prompt text on `user_prompt`. |
+| `OTEL_LOG_TOOL_DETAILS` | off | Include tool arguments on `tool_result` and the `tool` span. |
+| `OTEL_TRACES_EXPORTER` | off | `otlp` turns traces on. Unlike metrics and logs, traces stay off until you ask for them. |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_PROTOCOL` / `_HEADERS` | derived from the base | Same rules as the other signals; the default path is `/v1/traces`. |
+| `OTEL_TRACES_EXPORT_INTERVAL` | `5000` | How often spans are exported, in ms. |
+| `TRACEPARENT` | none | W3C trace context of a caller's span. The `interaction` span becomes its child. |
+
+Everything is also exported when a run ends and when the process exits, with a 2-second limit on
+that final export. A short `jan cli agent run` or an ADK session that ends right away still reports.
+So does a process stopped by Ctrl-C or `SIGTERM`: `jan cli agent run` and `jan cli agent rpc`
+export what is buffered, then exit as that signal would.
+
+## Metrics
+
+All metrics are monotonic sums. They are cumulative (running totals since the process started)
+unless `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` asks for delta, where each point holds
+only what changed since the last export. Every point carries `session.id` unless
+`OTEL_METRICS_INCLUDE_SESSION_ID=false`, so a backend that sums points per session can fold all of
+them. Under delta, `jan_agent.telemetry.dropped` carries the session it happened in; drops before
+any session started are held and sent with the first one. `jan cli agent status` lists
+`otlp-delta` in `capabilities` for builds that behave this way. When an RPC host archives a
+session, its series are sent one last time and then dropped, so a long-lived host doesn't keep
+exporting finished sessions.
+
+| Metric | Unit | Attributes |
+| --- | --- | --- |
+| `jan_agent.session.count` | 1 | |
+| `jan_agent.prompt.count` | 1 | Counts new user prompts. A run that continues or resumes a conversation without a new user message doesn't count. |
+| `jan_agent.turn.count` | 1 | `agent` (`main` / `subagent`), and the run's `session.id` |
+| `jan_agent.token.usage` | tokens | `type` (`input` / `output` / `cache_read` / `cache_write`), `model`, `provider` |
+| `jan_agent.cost.usage` | USD | `model`, `provider`. Only for models whose price is in the model catalog. An unpriced model reports nothing, not zero. |
+| `jan_agent.api_request.count` | 1 | `model`, `provider`, `success` |
+| `jan_agent.tool.count` | 1 | `tool_name`, `decision` (`accept` / `reject`), `success` |
+| `jan_agent.active_time.total` | s | Time the top-level run spent working |
+| `jan_agent.compaction.count` | 1 | |
+| `jan_agent.telemetry.dropped` | 1 | Records dropped because the export queue was full |
+
+`input` is prompt tokens not served from or written to the cache, so the four `type`s add up to
+what the provider billed.
+
+## Events
+
+Events are OTLP log records with `event_name` set. Every event carries `session.id` and
+`prompt.id`, which joins all the events a single prompt caused. A subagent's events also carry
+`agent.run_id` and `subagent.name`.
+
+| Event | Attributes |
+| --- | --- |
+| `jan_agent.user_prompt` | `prompt_length`. `prompt` only with `OTEL_LOG_USER_PROMPTS`. Not sent when a run continues or resumes without a new user message. |
+| `jan_agent.api_request` | `model`, `provider`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `duration_ms`, `request_bytes`, `cost_usd` (when priced), `execution_id` (when the provider reports one) |
+| `jan_agent.api_error` | `code`, `error` (message, truncated), `model` and `duration_ms` when a request was in flight |
+| `jan_agent.tool_decision` | `tool_name`, `decision` (`accept` / `reject`), `source` (`config` / `user` / `hook`) |
+| `jan_agent.tool_result` | `tool_name`, `success`, `duration_ms`, `decision`, `decision_source`, `result_size_bytes`. `tool_parameters` only with `OTEL_LOG_TOOL_DETAILS`. |
+| `jan_agent.compaction` | `message_count` |
+| `jan_agent.subagent_result` | `success` |
+
+## Traces
+
+Set `OTEL_TRACES_EXPORTER=otlp` to also export spans. Each user prompt is one trace, laid out like
+Claude Code's (`claude_code.*` becomes `jan_agent.*`):
+
+```text
+jan_agent.interaction            one per prompt; child of TRACEPARENT when set
+├── jan_agent.llm_request        one per model call (kind CLIENT)
+└── jan_agent.tool               one per tool call
+```
+
+A subagent's model and tool spans sit under the same interaction and carry `agent_id` and
+`subagent.name`.
+
+| Span | Attributes |
+| --- | --- |
+| `interaction` | `session.id`, `prompt.id`, `user_prompt_length`, `user_prompt` (`<REDACTED>` unless `OTEL_LOG_USER_PROMPTS`), `interaction.sequence`, `interaction.duration_ms` |
+| `llm_request` | `model`, `provider`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_creation_tokens`, `duration_ms`, `success`, `gen_ai.operation.name=chat`, `gen_ai.system`, `gen_ai.request.model`, `gen_ai.usage.input_tokens` / `output_tokens` / `cache_read.input_tokens` / `cache_creation.input_tokens`. Status ERROR (redacted message) on failure. |
+| `tool` | `tool_name`, `tool_use_id`, `gen_ai.tool.call.id`, `gen_ai.tool.name`, `success`, `duration_ms`, `decision`, `decision_source`, `result_size_bytes`, `tool_parameters` (only with `OTEL_LOG_TOOL_DETAILS`). Status ERROR when the tool failed. |
+
+Every span also has `span.type`. Langfuse, Jaeger, Tempo, Honeycomb and other OTLP trace backends
+can read them directly. For Langfuse, point a collector's `otlphttp` exporter at
+`<LANGFUSE_BASE_URL>/api/public/otel` with Basic auth `base64(public_key:secret_key)`.
+
+### Compared with Claude Code
+
+| Claude Code | Jan |
+| --- | --- |
+| `claude_code.session.count`, `token.usage`, `cost.usage`, `active_time.total` | `jan_agent.*` with the same name |
+| `claude_code.code_edit_tool.decision` | `jan_agent.tool.count` (all tools, `decision` label) |
+| `user_prompt`, `api_request`, `api_error`, `tool_result`, `tool_decision` events | `jan_agent.*` with the same name |
+| `claude_code.interaction`, `llm_request`, `tool` spans | `jan_agent.*` with the same name |
+| `lines_of_code.count`, `pull_request.count`, `commit.count` | not emitted |
+| `tool.execution`, `tool.blocked_on_user`, `hook` spans | not emitted; timing is on `tool` |
+| `TRACEPARENT` into Bash subprocesses | not yet |
+
+The unit test `every_claude_code_signal_has_a_jan_equivalent_or_a_reason` (in
+`src-tauri/src/core/agent/otel/tests.rs`) fails if a mapped signal or attribute goes missing.
+
+### End-to-end check
+
+`scripts/otel-e2e.sh` runs the built `jan` against a real OpenTelemetry Collector in Docker and a
+fake OpenAI-compatible model (no API key needed), then checks the collector's output for every
+metric, event and span above, and that every span sits under its interaction:
+
+```bash
+cd src-tauri/jan-cli && cargo build --no-default-features --features cli && cd ../..
+scripts/otel-e2e.sh                       # fake model
+JAN_E2E_REAL_MODEL=1 scripts/otel-e2e.sh  # your configured default model
+LANGFUSE_PUBLIC_KEY=... LANGFUSE_SECRET_KEY=... LANGFUSE_BASE_URL=https://cloud.langfuse.com \
+  scripts/otel-e2e.sh                     # also forward traces to Langfuse
+```
+
+## Privacy defaults
+
+- Off unless you turn it on, and sent only to your endpoint.
+- Prompt text and tool arguments are left out unless you set `OTEL_LOG_USER_PROMPTS` or
+  `OTEL_LOG_TOOL_DETAILS`. Both are capped at 4 KB when they are included.
+- Tool output and model responses are never exported.
+- API keys, provider credentials, `config.toml` values and the export headers are never exported
+  or logged.
+- Telemetry only reads what the agent already reports. It never changes a request, so
+  prompt caching is unaffected.
+
+## Reliability
+
+Recording a signal never waits: it goes into a bounded in-memory queue. If a collector is slow or
+down, new records are dropped and counted in `jan_agent.telemetry.dropped`, and the turn doesn't
+slow down. A collector that answers 429, 502, 503 or 504 gets one retry, after its `Retry-After`
+(up to 10 seconds; a longer wait counts as a failure) or 1 second. A log or trace batch that still
+fails is dropped. A metrics export that still fails keeps its window: the next export carries it
+again, over the combined span, so a delta backend loses nothing. If the failed export had in fact
+landed and only its answer was lost, that window is counted twice.
+Export failures are logged at debug level (`RUST_LOG=debug`) on stderr and never printed to
+stdout.
+
+## With the ADK
+
+The [TypeScript](/docs/agent/adk-ts) and [Python](/docs/agent/adk-python) ADKs start `jan` with
+their own environment plus the `env` option, so either way works:
+
+```ts
+const runtime = new JanRuntime({
+  env: {
+    JAN_AGENT_ENABLE_TELEMETRY: '1',
+    OTEL_EXPORTER_OTLP_ENDPOINT: 'https://otel.example.com',
+    OTEL_EXPORTER_OTLP_HEADERS: 'Authorization=Bearer%20' + token,
+    OTEL_RESOURCE_ATTRIBUTES: 'tenant.id=acme',
+  },
+})
+```
+
+```python
+runtime = JanRuntime(env={
+    "JAN_AGENT_ENABLE_TELEMETRY": "1",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "https://otel.example.com",
+})
+```
+
+`session.id` on every signal is the RPC `sessionId` your host holds.
+
+## Not yet
+
+- `TRACEPARENT` passed to shell commands, and `traceparent` on model requests
+- `tool.execution` / `tool.blocked_on_user` sub-spans
+- gRPC transport
+- Jan Desktop
+- Admin-enforced (managed) settings

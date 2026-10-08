@@ -7,6 +7,9 @@ type LocalApiServerState = {
   // Run local API server once app opens
   enableOnStartup: boolean
   setEnableOnStartup: (value: boolean) => void
+  // Keep the app running in the tray when the window closes while the server is on
+  runInBackground: boolean
+  setRunInBackground: (value: boolean) => void
   // Default local model to auto-load when the server starts
   defaultModelLocalApiServer: { model: string; provider: string } | null
   setDefaultModelLocalApiServer: (
@@ -50,6 +53,8 @@ export const useLocalApiServer = create<LocalApiServerState>()(
     (set) => ({
       enableOnStartup: false,
       setEnableOnStartup: (value) => set({ enableOnStartup: value }),
+      runInBackground: true,
+      setRunInBackground: (value) => set({ runInBackground: value }),
       defaultModelLocalApiServer: null,
       setDefaultModelLocalApiServer: (model) =>
         set({ defaultModelLocalApiServer: model }),
@@ -88,7 +93,7 @@ export const useLocalApiServer = create<LocalApiServerState>()(
       name: localStorageKey.settingLocalApiServer,
       storage: createJSONStorage(() => backendStorage),
       skipHydration: true,
-      version: 3,
+      version: 4,
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<LocalApiServerState>
         if (version < 1) {
@@ -102,6 +107,10 @@ export const useLocalApiServer = create<LocalApiServerState>()(
         if (version < 3) {
           // v2 -> v3: add server-side tool execution toggle
           state.enableServerToolExecution = false
+        }
+        if (version < 4) {
+          // v3 -> v4: add run-in-background toggle (matches previous behavior)
+          state.runInBackground = true
         }
         return state
       },

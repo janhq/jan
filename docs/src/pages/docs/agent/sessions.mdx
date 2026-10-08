@@ -1,0 +1,190 @@
+---
+title: Sessions
+description: Saved conversations, resuming, rewinding, and queueing messages while the agent works.
+keywords: [Jan, Jan Agent, sessions, threads, resume, fork, worktree, rewind, checkpoints, queue]
+---
+
+import { Callout } from 'nextra/components'
+
+# Sessions
+
+A session is one conversation with the agent. Sessions are saved per project, under
+`~/.jan/projects/<slug>/threads`, outside the repository.
+
+Because they're per project, resuming from a different directory finds nothing - that's expected,
+not a bug.
+
+## Resuming
+
+```bash
+jan -c                 # the most recent session
+jan --resume 3f7a91c2  # by id, or any unique prefix
+```
+
+From inside the console:
+
+```
+/threads   # list saved threads for this project
+/resume    # pick one interactively
+/resume 3f7a91c2
+```
+
+For a headless run the value form needs an equals sign, because `run` takes a positional task that a
+space-separated id would swallow:
+
+```bash
+jan cli agent run --resume=3f7a91c2 "carry on"
+```
+
+<Callout type="info">
+Sessions share Jan Desktop's thread store, so a conversation started in the terminal can appear in
+the app.
+</Callout>
+
+## Starting fresh
+
+```
+/new     # new session, conversation cleared
+/clear   # clear the conversation
+```
+
+Both drop the active goal along with the conversation.
+
+## Rewinding
+
+Press <kbd>Esc</kbd> twice while idle to pick an earlier message and roll back to it.
+
+In a git repository the agent snapshots your workspace as it works, so a rewind can restore the
+files too - not just the conversation. Outside a repository you get conversation-only rewind, which
+is the same behaviour minus the file restore.
+
+This is the escape hatch when the agent goes down a wrong path: rather than arguing it back, rewind
+to before the turn that started it and rephrase.
+
+## Forking
+
+A rewind is destructive: the turns after the point you roll back to are gone. Forking is the same
+cut without losing them - the prefix is copied into a **new** session and the original stays exactly
+as it was.
+
+```
+/fork    # pick a past message; the branch opens with that message back in the input
+/tree    # saved sessions as a tree, Enter resumes one
+```
+
+At startup, to branch instead of continuing:
+
+```bash
+jan -c --fork-session
+jan --resume 3f7a91c2 --fork-session
+jan cli agent run --resume=3f7a91c2 --fork-session "try it the other way"
+```
+
+The branch keeps the transcript, tool calls and diffs of the turns it inherited, and records the
+session it came from - which is what `/tree` draws. Sessions with no forks render as the flat list
+`/resume` shows.
+
+This is what to reach for when a long session has built up context worth keeping and you want to try
+a second approach from the middle of it without destroying the first.
+
+## Working in a git worktree
+
+By default the agent edits your checkout in place. With a worktree it gets its own, on its own
+branch, so a run you don't like costs a `git branch -D` instead of a revert:
+
+```bash
+jan --worktree            # this session only
+jan --no-worktree         # override a persistent setting
+```
+
+Persistently:
+
+```toml
+# ~/.jan/projects/<slug>/agent.toml - every session in this project
+[agent]
+worktree = true
+```
+
+```toml
+# ~/.jan/config.toml - for every project you work on
+worktree = true
+```
+
+A flag beats the project file, which beats the global setting, which beats the default - the same
+order as [`sandbox`](/docs/agent/permissions), and the reason `--no-worktree` exists.
+
+The checkout lives under `~/.jan/worktrees/`, outside your repository, on a `jan/agent/<id>` branch.
+`/worktree` in the console names the path, the branch, and what's changed there.
+
+```
+worktree:
+  path    ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2
+  branch  jan/agent/3f7a91c2
+  changes 2 file(s)
+          src/parser.rs
+          tests/parser.rs
+  review with: git -C ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2 diff
+```
+
+Getting the work back out is your own git - nothing here writes to the branch you left. A session
+remembers its worktree, so resuming returns to it; a fork gets one of its own, branched from where
+the source left off. A `/fork` taken mid-session is the exception: the checkout can't change under a
+running session, so the branch borrows it until you reopen the fork with `--worktree`, which is when
+it gets its own.
+
+Nothing prunes these. When you're done with a session's work, the checkout and its branch go the
+usual way:
+
+```bash
+git worktree remove ~/.jan/worktrees/app-a1b2c3d4/3f7a91c2
+git branch -D jan/agent/3f7a91c2
+```
+
+Delete the directory by hand instead and the next resume of that session quietly starts over from
+`HEAD`, saying so in the banner.
+
+<Callout type="info">
+Rewinding still restores files, and now restores them in the worktree - the snapshots follow the
+agent into whichever checkout it's working in.
+</Callout>
+
+## Queueing
+
+Type while the agent is working and your message is queued instead of dropped. It's sent as soon as
+the current turn ends, and the footer shows how many are waiting:
+
+```
+⏳ Queued (2)
+```
+
+```
+/cancel    # drop all queued messages
+/cancel 2  # drop the second
+```
+
+<kbd>Esc</kbd> cancels the turn that's running, which is separate from the queue.
+
+## Inspecting from the shell
+
+Threads are readable without opening the console. Output is JSON, so it pipes into `jq`:
+
+```bash
+jan cli threads list
+jan cli threads get <ID>
+jan cli threads messages <THREAD_ID>
+jan cli threads delete <ID>
+```
+
+## What's stored
+
+Under the project's store, `~/.jan/projects/<slug>/` (see
+[Project Config](/docs/agent/project-config)):
+
+| Path | Contents |
+| --- | --- |
+| `threads/` | Saved sessions and their messages, including which worktree each used |
+| `memory/` | Durable facts, see [Memory](/docs/agent/memory) |
+| `skills/` | Reusable procedures, see [Skills](/docs/agent/skills) |
+
+None of it lives in your repository, so there is nothing to gitignore. The only file Jan keeps in
+the project is `AGENTS.md` (or a legacy `JAN.md`).

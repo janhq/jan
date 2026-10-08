@@ -6,20 +6,13 @@ import { i18n } from '@/i18n/react-i18next-compat'
  * contract this file matches on.
  */
 export const ENGINE_ERROR_CODES = [
-  'BINARY_NOT_FOUND',
-  'MODEL_FILE_NOT_FOUND',
-  'LIBRARY_PATH_INVALID',
   'MODEL_LOAD_FAILED',
-  'DRAFT_MODEL_LOAD_FAILED',
-  'MULTIMODAL_PROJECTOR_LOAD_FAILED',
   'MODEL_ARCH_NOT_SUPPORTED',
   'MODEL_LOAD_TIMED_OUT',
-  'LLAMA_CPP_PROCESS_ERROR',
   'MISSING_SHARED_LIBRARY',
   'GPU_DRIVER_TOO_OLD',
   'OUT_OF_MEMORY',
   'INVALID_ARGUMENT',
-  'DEVICE_LIST_PARSE_FAILED',
   'IO_ERROR',
   'INTERNAL_ERROR',
 ] as const
@@ -63,13 +56,32 @@ function readEngineErrorObject(value: unknown): EngineError | undefined {
   }
 }
 
+/** `Error.cause` is es2022; the app's lib target predates it. */
+function causeOf(error: unknown): unknown {
+  return error instanceof Error
+    ? (error as Error & { cause?: unknown }).cause
+    : undefined
+}
+
+/** Depth of `cause` chaining to follow; two wrappers is the deepest real case. */
+const MAX_CAUSE_DEPTH = 4
+
 /**
  * Recovers a structured engine error, including one that an intermediate layer
- * already stringified into an Error message.
+ * already stringified into an Error message or carried along as a `cause`.
  */
-export function parseEngineError(error: unknown): EngineError | undefined {
+export function parseEngineError(
+  error: unknown,
+  depth = MAX_CAUSE_DEPTH
+): EngineError | undefined {
   const direct = readEngineErrorObject(error)
   if (direct) return direct
+
+  const cause = depth > 0 ? causeOf(error) : undefined
+  if (cause !== undefined) {
+    const fromCause = parseEngineError(cause, depth - 1)
+    if (fromCause) return fromCause
+  }
 
   const text =
     error instanceof Error
@@ -90,6 +102,22 @@ export function parseEngineError(error: unknown): EngineError | undefined {
   }
 }
 
+/** Enough of the engine's output to name a cause, short enough for a toast. */
+const MAX_DETAIL_LENGTH = 240
+
+/**
+ * The engine's own words on one line. Untranslatable by nature, and the only
+ * part that distinguishes one load failure from another, so it rides along
+ * with the localized advice instead of being dropped.
+ */
+function engineDetail(engineError: EngineError): string | undefined {
+  const raw = engineError.details?.replace(/\s+/g, ' ').trim()
+  if (!raw) return undefined
+  return raw.length > MAX_DETAIL_LENGTH
+    ? `${raw.slice(0, MAX_DETAIL_LENGTH).trimEnd()}...`
+    : raw
+}
+
 /**
  * A localized, user-facing description of an engine failure. Replaces the raw
  * English the Rust layer produces, and the raw JSON a serialized error used to
@@ -99,13 +127,19 @@ export function describeEngineError(error: unknown): string {
   const engineError = parseEngineError(error)
 
   if (engineError) {
-    const description = i18n.t(`model-errors:engine.${engineError.code}`)
+    const parts = [i18n.t(`model-errors:engine.${engineError.code}`)]
     if (engineError.missingLibraries?.length) {
-      return `${description} ${i18n.t('model-errors:engineMissingLibraries', {
-        libraries: engineError.missingLibraries.join(', '),
-      })}`
+      parts.push(
+        i18n.t('model-errors:engineMissingLibraries', {
+          libraries: engineError.missingLibraries.join(', '),
+        })
+      )
     }
-    return description
+    const detail = engineDetail(engineError)
+    if (detail) {
+      parts.push(i18n.t('model-errors:engineReportedDetail', { detail }))
+    }
+    return parts.join(' ')
   }
 
   const fallback =
@@ -116,4 +150,17 @@ export function describeEngineError(error: unknown): string {
         : ''
 
   return fallback.trim() || i18n.t('model-errors:engine.unknown')
+}
+
+/**
+ * A localized wrapper that keeps the structured engine error reachable through
+ * `cause`. An outer layer then describes the failure from its code once,
+ * instead of nesting one localized sentence inside another.
+ */
+export function engineFailure(messageKey: string, error: unknown): Error {
+  const wrapped = new Error(
+    i18n.t(messageKey, { reason: describeEngineError(error) })
+  ) as Error & { cause?: unknown }
+  wrapped.cause = error
+  return wrapped
 }

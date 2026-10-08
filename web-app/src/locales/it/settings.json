@@ -6,11 +6,6 @@
   "noUpdateAvailable": "Stai utilizzando l'ultima versione",
   "devVersion": "Rilevata versione di sviluppo",
   "updateError": "Impossibile verificare gli aggiornamenti",
-  "checkForBackendUpdates": "Verifica aggiornamenti Llamacpp",
-  "checkForBackendUpdatesDesc": "Controlla se è disponibile una versione più recente del backend Llamacpp.",
-  "checkingForBackendUpdates": "Verifica aggiornamenti Llamacpp in corso...",
-  "noBackendUpdateAvailable": "Stai utilizzando l'ultima versione di Llamacpp",
-  "backendUpdateError": "Impossibile verificare gli aggiornamenti di Llamacpp",
   "changeLocation": "Modifica posizione",
   "copied": "Copiato",
   "copyPath": "Copia percorso",
@@ -318,15 +313,6 @@
       "cancel": "Annulla",
       "changeLocation": "Modifica posizione"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "Nuova versione Llamacpp {{version}}",
-    "backendUpdateAvailable": "Aggiornamento Llamacpp disponibile",
-    "remindMeLater": "Ricordamelo più tardi",
-    "updating": "Aggiornamento in corso...",
-    "updateNow": "Aggiorna ora",
-    "updateSuccess": "Llamacpp aggiornato con successo",
-    "updateError": "Impossibile aggiornare Llamacpp"
   },
   "backendInstallSuccess": "Backend installato con successo!",
   "backendInstallError": "Impossibile installare il backend"

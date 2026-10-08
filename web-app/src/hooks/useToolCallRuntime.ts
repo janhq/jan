@@ -27,6 +27,13 @@ export type ToolCallRuntimeSnapshot = {
   timings: Record<string, ToolCallTiming>
   /** Latest progress update per call, cleared when the call settles. */
   progress: Record<string, ToolProgressUpdate>
+  /**
+   * Unified diff per `write`/`edit` call. Display-only: it deliberately never
+   * enters the model-facing tool output, so it cannot travel on the message part
+   * and needs a side channel. Unlike `progress` it is kept after the call
+   * settles, since the diff is the whole point of the finished card.
+   */
+  diffs: Record<string, string>
 }
 
 type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
@@ -43,6 +50,8 @@ type ToolCallRuntimeState = ToolCallRuntimeSnapshot & {
    * belong to -- well defined because tools execute one at a time.
    */
   reportProgress: (update: ToolProgressUpdate) => void
+  /** Records a display-only diff against the call that produced it. */
+  recordDiff: (toolCallId: string, diff: string) => void
   /** Ends a turn: nothing still queued will run, so stop showing it as waiting. */
   settleRemaining: () => void
   reset: () => void
@@ -73,6 +82,7 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
   queue: [],
   timings: {},
   progress: {},
+  diffs: {},
 
   enqueue: (toolCallIds) =>
     set((s) => {
@@ -128,6 +138,9 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return running ? { progress: { ...s.progress, [running]: update } } : s
     }),
 
+  recordDiff: (toolCallId, diff) =>
+    set((s) => ({ diffs: { ...s.diffs, [toolCallId]: diff } })),
+
   settleRemaining: () =>
     set((s) => {
       if (s.queue.length === 0) return s
@@ -139,5 +152,27 @@ export const useToolCallRuntime = create<ToolCallRuntimeState>()((set) => ({
       return { queue: [], timings }
     }),
 
-  reset: () => set({ queue: [], timings: {}, progress: {} }),
+  reset: () => set({ queue: [], timings: {}, progress: {}, diffs: {} }),
 }))
+
+/**
+ * Run one tool call with its timing recorded, so its card can show a live
+ * duration instead of a bare spinner.
+ *
+ * For a caller that dispatches serially and so has no queue to report -- each
+ * call is its own queue of one. The chat route enqueues a whole step up front
+ * instead, which is what lets it also show "queued, 2nd in line".
+ */
+export async function withToolTiming<T>(
+  toolCallId: string,
+  run: () => Promise<T>
+): Promise<T> {
+  const runtime = useToolCallRuntime.getState()
+  runtime.enqueue([toolCallId])
+  runtime.markRunning(toolCallId)
+  try {
+    return await run()
+  } finally {
+    useToolCallRuntime.getState().markSettled(toolCallId)
+  }
+}

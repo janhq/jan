@@ -192,6 +192,102 @@ describe('useTokensCount', () => {
     expect(result.current.percentage).toBeUndefined()
   })
 
+  // Cowork keeps its own turns, not ThreadMessages, so it reports usage
+  // directly rather than synthesising messages to carry it.
+  describe('direct usage source', () => {
+    it('counts tokens for a remote provider with no messages at all', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 900, outputTokens: 100, totalTokens: 1000 },
+        })
+      )
+      expect(result.current.tokenCount).toBe(1000)
+      expect(result.current.inputTokens).toBe(900)
+    })
+
+    it('measures a local run against the context window', async () => {
+      modelProviderState.selectedProvider = 'llamacpp'
+      const { result } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { inputTokens: 400, outputTokens: 100, totalTokens: 500 },
+        })
+      )
+      await waitFor(() => expect(result.current.modelProps).toBeDefined())
+      expect(result.current.tokenCount).toBe(500)
+      expect(result.current.maxTokens).toBe(1000)
+      expect(result.current.percentage).toBe(50)
+    })
+
+    // Otherwise a surface passing both would read a stale number off the
+    // messages while its own is fresher.
+    it('wins over usage found on the messages', () => {
+      modelProviderState.selectedProvider = 'anthropic'
+      const messages = [makeMessage({ metadata: { usage: { totalTokens: 7 } } })]
+      const { result } = renderHook(() =>
+        useTokensCount(messages, { usage: { totalTokens: 4242 } })
+      )
+      expect(result.current.tokenCount).toBe(4242)
+    })
+
+    // "Increase context" (Cowork's recovery chip, the model rail's settings
+    // form) writes the new size and reloads the router with it. The meter
+    // divides by the launched window, so it has to refetch or it keeps
+    // reporting the previous one for the rest of the session.
+    it('refetches the launched window when the configured context size grows', async () => {
+      modelProviderState.selectedModel = {
+        id: 'model-1',
+        name: 'Model One',
+        capabilities: [],
+        settings: { ctx_len: { controller_props: { value: 8192 } } },
+      }
+      mockGetModelProps.mockResolvedValue({ nCtx: 8192 })
+      const { result, rerender } = renderHook(() =>
+        useTokensCount([], {
+          threadId: 'session-1',
+          usage: { totalTokens: 500 },
+        })
+      )
+      await waitFor(() => expect(result.current.maxTokens).toBe(8192))
+
+      modelProviderState.selectedModel = {
+        id: 'model-1',
+        name: 'Model One',
+        capabilities: [],
+        settings: { ctx_len: { controller_props: { value: 16384 } } },
+      }
+      mockGetModelProps.mockResolvedValue({ nCtx: 16384 })
+      rerender()
+
+      await waitFor(() => expect(result.current.maxTokens).toBe(16384))
+      expect(result.current.percentage).toBeCloseTo((500 / 16384) * 100, 3)
+    })
+
+    // Cowork mirrors loads onto useCoworkRun under the session id, so the
+    // thread-keyed slots the hook reads itself never move for a session. The
+    // surface has to be able to report its own mirror.
+    it('refetches when the surface reports its own model load', async () => {
+      mockGetModelProps.mockResolvedValue({ nCtx: 8192 })
+      const { result, rerender } = renderHook(
+        ({ loading }: { loading: boolean }) =>
+          useTokensCount([], {
+            threadId: 'session-1',
+            usage: { totalTokens: 500 },
+            loadingModel: loading,
+          }),
+        { initialProps: { loading: true } }
+      )
+      await waitFor(() => expect(result.current.maxTokens).toBe(8192))
+
+      mockGetModelProps.mockResolvedValue({ nCtx: 16384 })
+      rerender({ loading: false })
+
+      await waitFor(() => expect(result.current.maxTokens).toBe(16384))
+    })
+  })
+
   it('context overflow still works when there are no live stats at all', async () => {
     const messages = [
       makeMessage({

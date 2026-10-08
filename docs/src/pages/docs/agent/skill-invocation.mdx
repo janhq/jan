@@ -1,0 +1,152 @@
+---
+title: Skill Invocation
+description: The two ways a skill runs - typed by you, or fired by the agent - and how to choose.
+keywords: [Jan, Jan Agent, skills, skill invocation, user-invocable, disable-model-invocation, router skills, slash commands]
+---
+
+import { Callout } from 'nextra/components'
+
+# Skill Invocation
+
+A skill can run in two ways, and they are independent. By default every skill is open to both:
+
+- **User-invoked** - you type `/release` in the console, or pick it from the slash popup.
+- **Model-invoked** - the agent sees the skill's name and purpose in its catalog and loads it on its
+  own when a task calls for it.
+
+Two frontmatter keys close either side:
+
+| Frontmatter | You can invoke it | The agent can invoke it |
+| --- | --- | --- |
+| *(neither key)* | Yes | Yes |
+| `user-invocable: false` | No | Yes |
+| `disable-model-invocation: true` | Yes | No |
+| Both keys | No | No |
+
+The two choices trade two different costs. A model-invoked skill pays for its discoverability: its
+`description` sits in the agent's catalog for the whole session. A user-invoked skill costs nothing
+to the context, but you become the index - you must remember it exists to ever use it.
+
+## User-invoked skills
+
+Typing a skill's name runs it. The full instructions are injected into the conversation in one
+step - the agent does not have to go fetch them - and the transcript shows one compact
+`[skill:release]` row instead of the body text.
+
+- `/release` - short form; arguments after the name are passed to the skill.
+- `/skill:release staging` - explicit form, never collides with a built-in command, arguments
+  included.
+- Works mid-prompt too: `fix the auth flow /skill:deploy harden` runs the skill with the
+  surrounding prose as its arguments.
+- If the skill bundles files next to its `SKILL.md`, the folder is announced in the message so
+  relative paths resolve.
+
+Both forms appear in the `/` popup (magenta rows) with <kbd>Tab</kbd> to complete.
+
+```markdown
+---
+name: release
+description: Cut and publish a release
+disable-model-invocation: true
+---
+
+# Cutting a release
+
+1. Confirm `main` is green in CI.
+2. Bump the version in `Cargo.toml` and `package.json` - they must match.
+3. Tag `v<version>` and push the tag.
+
+Never publish from a dirty working tree.
+```
+
+With `disable-model-invocation: true`, the agent's catalog, `skill_list`, and `skill_read` never
+see this skill - its `description` costs zero context. This is the right choice for personal
+procedures, or anything the agent should never start on its own. The `description` becomes
+human-facing: a one-line summary of what the skill does.
+
+## Model-invoked skills
+
+The agent fires these on its own. Its system prompt carries a catalog of every model-invoked
+skill - name plus one-line purpose, never the full text. When a task matches, the agent loads the
+full instructions with `skill_read` and follows them.
+
+Because the `description` is the trigger, write it as a model-facing pointer: name the situations
+the skill applies to and the actions it starts, not a summary of what the file contains. A
+mismatched description makes the skill unreachable - the agent cannot fire what it cannot see.
+
+```markdown
+---
+name: security-review
+description: Run a security pass before merging: scan dependencies, check for leaked secrets, review auth paths. Use after significant changes.
+user-invocable: false
+---
+
+# Security review
+
+1. Scan `Cargo.lock` for known vulnerabilities.
+2. Grep for hardcoded secrets in `src/`.
+3. Review auth and permission changes for bypasses.
+
+Report findings as a list, or "no issues found".
+```
+
+With `user-invocable: false`, the slash popup and `/skill:` never offer it - the agent's judgment
+decides when it runs. Use this for procedures that should only start as part of an agent's
+workflow, not on a human's whim.
+
+## Router skills
+
+When user-invoked skills multiply past what you can remember, one user-invoked **router skill**
+can name the others and when to reach for each - you remember one skill instead of many:
+
+```markdown
+---
+name: go
+description: What do you want to do? (personal index)
+disable-model-invocation: true
+---
+
+# Routers
+
+- `/go release` - cut and publish a release
+- `/go migrate` - add a new migration
+- `/go deploy` - ship to staging or production
+```
+
+A router can only hint, never fire: user-invoked skills have no description in the agent's reach,
+so nothing but you can start them.
+
+## Private skills
+
+Set both keys and the skill is offered to neither side. Its file still exists on disk - useful for
+a half-finished skill you are not ready to expose.
+
+## How this combines with the whitelist
+
+`[skills].enabled` in `agent.toml` is an orthogonal availability whitelist - it applies to both
+sides. A skill must be enabled *and* open on a side to be offered there:
+
+```toml
+[skills]
+enabled = ["release", "security-review"]   # empty means all skills are enabled
+```
+
+Disabled skills stay on disk and are reachable through the file tools; they are simply not offered
+to either invocation side.
+
+<Callout type="info">
+Skills the agent writes with `skill_write` default to both sides - no frontmatter keys means
+everyone can invoke them. Add a key later to close a side.
+</Callout>
+
+## Choosing
+
+| Use case | Key | Why |
+| --- | --- | --- |
+| Personal procedure you fire by hand | `disable-model-invocation: true` | Zero context load; the agent never starts it unprompted |
+| Step in a workflow the agent should own | `user-invocable: false` | The agent's judgment triggers it; you cannot misfire it |
+| Anything either side might need | *(no keys)* | Default: full discoverability |
+| Work in progress | Both keys | Private until ready |
+
+See [Skills](/docs/agent/skills) for where skills live and how to write them, and
+[Slash Commands](/docs/agent/slash-commands) for the full console surface.

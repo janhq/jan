@@ -1,0 +1,151 @@
+---
+title: Process & Failures
+description: "Keep control of an embedded Jan runtime: close it, interrupt work, answer permissions, and handle failures without repeating side effects."
+keywords: [Jan, Jan Agent, ADK, process, permissions, errors, cancellation]
+---
+
+import { Tabs } from 'nextra/components'
+
+# Process & Failures
+
+**Your app owns the Jan process. Close it when you are done, and check how each turn ended.**
+
+The quickstarts already do both. This page explains what to change when your app needs multiple
+conversations, a Stop button, tool approval, or recovery from a failure.
+
+## Keep the runtime, reuse the session
+
+- Start one runtime for your app's work, rather than one process per message.
+- Reuse a session to keep conversation history. Create another session for a separate conversation.
+- Wait for a turn to finish before starting another. One runtime runs one active turn at a time.
+- Use `ephemeral: true` / `ephemeral=True` when the conversation should not be saved. Its answers
+  are also kept out of automatic memory recall, so one session's answers never reach a later
+  session in the same `cwd`. [Memory notes](/docs/agent/memory) written with `memory_write` in
+  other sessions are still listed in its prompt.
+
+Always arrange cleanup, including on errors. In JavaScript, put `await runtime.close()` in a
+`finally` block. In Python, use `with JanRuntime.start() as runtime:`. The
+[JavaScript](/docs/agent/adk-ts) and [Python](/docs/agent/adk-python) quickstarts show both patterns.
+
+The ADK closes the channel and reaps its child process, escalating when the process does not exit.
+It does not attach to an existing process just because you know a session id.
+
+## Stop a turn, not the whole app
+
+Call `await session.interrupt()` in JavaScript or `session.interrupt()` in Python, for example
+from your application's Stop action. Keep consuming the turn and read its result:
+
+| Final status | Meaning |
+| --- | --- |
+| `completed` | The agent finished normally. |
+| `interrupted` | Work was stopped. Earlier tool side effects remain. |
+| `error` | The turn failed. Read the result's `error` message. |
+
+These are **RPC ADK** statuses: JavaScript uses `result.stopReason`; Python uses
+`result.stop_reason`. They are not the `stream-json` CLI's exit codes or `stop_reason` values.
+
+Closing the runtime ends all work owned by that process. Use forced close only when necessary:
+`await runtime.close({ force: true })` or `runtime.close(force=True)`.
+A handler that has already changed an external system cannot be rolled back by killing Jan.
+
+## Answer permission prompts
+
+If you leave `permissions` at its default, `jan`, a host actuator waits for your app's approval.
+Handle that event while consuming the turn. The example below **denies** requests until you add
+your own approval UI or policy:
+
+<Tabs items={['JavaScript', 'Python']}>
+  <Tabs.Tab>
+```js
+for await (const event of turn) {
+  if (event.type === 'permission_request') {
+    await session.respondPermission(event.request_id, 'deny')
+  } else if (event.type === 'token') {
+    process.stdout.write(event.text)
+  }
+}
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```python
+for event in turn:
+    if event["type"] == "permission_request":
+        session.respond_permission(event["request_id"], "deny")
+    elif event["type"] == "token":
+        print(event["text"], end="", flush=True)
+```
+  </Tabs.Tab>
+</Tabs>
+
+Answer with `allow_once`, `allow_always` where offered, or `deny`. Denying a tool call lets the
+model continue without that action. A `read` tool is not prompted.
+
+If your application already gates every host action, set `permissions` to `host` instead. That
+removes Jan's approval step for host tools; it does not provide a replacement safety policy.
+
+## Handle the right kind of failure
+
+| Failure | How it appears | What your app should do |
+| --- | --- | --- |
+| Runtime cannot be installed | `JanInstallError` | Check the manifest, platform and checksum error. Do not bypass verification. |
+| Runtime cannot start, crashes, or speaks another protocol | `JanRuntimeError` | Close it, fix the binary/configuration issue, and start a new runtime. |
+| An RPC operation is refused | `JanRpcError` | Read its code and message. A busy-session error is retryable after the active turn ends. |
+| Provider authentication, model or request failure | Turn result with `error` status | Show the message. Fix the provider or model configuration before trying again. |
+| Your tool handler fails | Failed tool result sent to the model | Let the agent handle that result; do not assume the whole turn failed. |
+
+A completed stream is not proof of success: inspect the terminal result, as the quickstarts do.
+Do not discard `JanRuntimeError` diagnostics; stderr can explain why startup or the process failed.
+
+### Retry only after checking side effects
+
+A retry can run your tools again. After any failure or disconnect, first reconcile writes,
+payments, device movements or other external actions that might already have happened. A missing
+answer does not prove an action never ran.
+
+## Download a runtime from code
+
+For deployments that do not put `jan` on PATH, the ADK can install the nightly runtime itself:
+
+<Tabs items={['JavaScript', 'Python']}>
+  <Tabs.Tab>
+```js
+import { installRuntime, JanRuntime } from '@janhq/adk'
+
+const installed = await installRuntime()
+const runtime = await JanRuntime.start({ bin: installed.bin })
+try {
+  console.log(runtime.serverInfo)
+} finally {
+  await runtime.close()
+}
+```
+  </Tabs.Tab>
+  <Tabs.Tab>
+```python
+from jan_adk import install_runtime, JanRuntime
+
+installed = install_runtime()
+with JanRuntime.start(bin=installed.bin) as runtime:
+    print(runtime.server_info)
+```
+  </Tabs.Tab>
+</Tabs>
+
+Installation downloads a prebuilt executable, verifies its published SHA-256, and caches it.
+It does not configure a model provider. Use the binary's `login` or `config set` command for that.
+`JAN_AGENT_HOME` selects the cache root. Previously returned binary paths remain valid across
+concurrent installs; remove old cache generations only when no runtime is using them.
+
+For reproducible deployments, pass both `version` and `sha256` from the
+[nightly manifest](https://delta.jan.ai/agent-nightly/manifest.json) to the installer. They must
+match that manifest when a download is needed; an arbitrary historical version is not a download
+service. A matching pinned cache entry can be reused without network access.
+
+## Working directly with the CLI?
+
+The ADK uses a long-lived `jan cli agent rpc` process. A direct
+`jan cli agent run --output-format stream-json` integration is different: one run ends with a
+`result` record and a process exit. Do not mix its messages or status names with RPC.
+
+Use [Protocol records](/docs/agent/protocol) and the [CLI reference](/docs/agent/cli#run)
+for that lower-level path.

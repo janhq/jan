@@ -36,6 +36,13 @@ export const WEB_SEARCH_PROVIDERS: WebSearchProviderMeta[] = [
     homepage: 'searxng.org',
     requiresEndpoint: true,
   },
+  {
+    id: 'you',
+    label: 'You.com',
+    keyless: true,
+    secretKey: 'you-api-key',
+    homepage: 'you.com',
+  },
 ]
 
 export const DEFAULT_SEARCH_PROVIDER = 'exa'

@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicU32;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,20 +11,18 @@ pub struct SessionInfo {
 }
 
 pub struct LlamacppState {
-    pub router: Mutex<Option<crate::router::RouterHandle>>,
-    /// Mirror of the router PID for emergency lookup (e.g. force-kill while
-    /// the handle is temporarily owned by the watcher loop). 0 = no router.
-    pub router_pid: AtomicU32,
-    /// Persistent `/models/sse` subscriber (router-side unload notifications),
-    /// alive for the router's lifetime. Aborted whenever the router stops.
+    /// The supervised engine worker, when one is running.
+    pub engine: Mutex<Option<crate::engine::worker::WorkerHandle>>,
+    /// Persistent `/models/sse` subscriber, alive for the worker's lifetime.
+    /// It is what turns an eviction Jan did not initiate into a frontend
+    /// event, so it is aborted whenever the worker stops.
     pub unload_watcher: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 impl Default for LlamacppState {
     fn default() -> Self {
         Self {
-            router: Mutex::new(None),
-            router_pid: AtomicU32::new(0),
+            engine: Mutex::new(None),
             unload_watcher: Mutex::new(None),
         }
     }

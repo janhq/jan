@@ -1,0 +1,1671 @@
+//! User-wide `~/.jan/config.toml` provider config. Lets Jan Agent run
+//! standalone (no Jan Desktop) with credentials scoped to the whole user, not
+//! just one project. Optional: a missing file yields an empty provider set,
+//! not an error.
+
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+use crate::core::state::ProviderConfig;
+
+const GLOBAL_CONFIG_TEMPLATE: &str = r#"# Jan Agent global provider config.
+# Applies to every project unless overridden by that project's
+# agent.toml [provider] section (~/.jan/projects/<project>/agent.toml).
+#
+# default_model = "my-model"        # used when no --model / agent.toml model is set
+# smol_model = "my-fast-model"       # fast model for the `smol` role (/goal evaluation);
+#                                     # defaults to `default_model` when unset
+# mouse = false                      # disable TUI mouse tracking (scroll wheel,
+#                                     # click-to-expand); on by default
+# sandbox = true                      # run `shell` under OS confinement (same as
+#                                     # passing --sandbox); off by default, so
+#                                     # shell commands run with your own access
+# worktree = true                     # run each session in its own git worktree
+#                                     # (same as passing --worktree); off by
+#                                     # default, so the agent edits your checkout
+# think_tags = false                  # stop treating <think> tags in model
+#                                     # content as reasoning; they render and
+#                                     # are resent as ordinary prose. On by
+#                                     # default
+# stream_reasoning = false            # stop streaming reasoning into the TUI
+#                                     # live tail while it folds; only the
+#                                     # [thinking] badge shows it. On by default
+# theme = "light"                     # force the TUI colour theme: "light",
+#                                     # "dark", or "auto" (the default), which
+#                                     # detects the terminal background
+# ask_timeout_secs = 60             # auto-answer an unanswered `ask` prompt
+#                                     # after this many seconds, choosing each
+#                                     # question's recommended option (else its
+#                                     # first). 0 or unset waits forever, the
+#                                     # default
+# terminal_hint = false               # stop the startup note that offers
+#                                     # /terminal-setup when this terminal is
+#                                     # dropping Shift+Enter or Option+Delete.
+#                                     # On by default
+# claude_code_alias = false             # allow Jan to reuse Claude Code's
+#                                     # keychain login; on by default
+# hide_secrets = true                 # replace secret-named env values, URL
+#                                     # passwords and credential-shaped tokens
+#                                     # with placeholders before a request goes
+#                                     # to a model; tool calls get the real
+#                                     # value back. Off by default;
+#                                     # JAN_HIDE_SECRETS=1|0 overrides it
+# memory_cross_project = false        # hide other projects' memory from the
+#                                     # agent (the root ~/.jan/MEMORY.md lists
+#                                     # them by default)
+# wave = "👋"                          # sweep this glyph along the working row
+#                                     # instead of the static throbber. Up to
+#                                     # 3 characters ("🍌", "~", "👁️👄👁️").
+#                                     # Defaults to 👋; set "" for the plain
+#                                     # throbber if your terminal draws tofu
+# prune_threads = true                # delete old saved threads at TUI start,
+#                                     # under each project's agent.toml
+#                                     # thread_retention_days / max_threads.
+#                                     # Off by default: nothing is deleted
+#
+# [telemetry]                         # opt-in OpenTelemetry (OTLP) export of
+# enabled = true                      # usage metrics and events to YOUR
+#                                     # collector (OTEL_EXPORTER_OTLP_* env);
+#                                     # off by default. A project's agent.toml
+#                                     # [telemetry] and JAN_AGENT_ENABLE_TELEMETRY
+#                                     # win over this
+#
+# [context]
+# fallback_files = ["AGENTS.md"]      # instructions files read where a folder
+#                                     # has no JAN.md (JAN.md always wins).
+#                                     # Default ["AGENTS.md"]; add "CLAUDE.md"
+#                                     # to opt in; [] reads JAN.md only. A
+#                                     # project's agent.toml [context] wins
+#
+# [experimental]                      # features that may change or go away
+# acp = true                          # allow `jan acp`, the Agent Client
+#                                     # Protocol server editors such as Zed
+#                                     # and JetBrains drive. Off by default;
+#                                     # JAN_EXPERIMENTAL_ACP wins over this
+#
+# [providers.my-provider]
+# api_key = "sk-..."
+# base_url = "https://api.example.com/v1"
+# models = ["my-model"]
+# headers = { "X-Team" = "infra" }  # sent with every request to this provider
+"#;
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct GlobalConfigToml {
+    /// Explicit default model for a standalone agent, used when neither a CLI
+    /// flag nor `agent.toml` names one. Takes precedence over any derived guess.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    default_model: Option<String>,
+    /// Fast, cheap model for the `smol` role: goal evaluation and other
+    /// lightweight side calls. Falls back to `default_model` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    smol_model: Option<String>,
+    /// TUI mouse tracking (wheel scrolling, click-to-expand). `None` = the
+    /// default, on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mouse: Option<bool>,
+    /// Run the CLI's `bash` tool under OS confinement. `None` = the default,
+    /// off. This is the "permanently on" answer to the per-invocation
+    /// `--sandbox` flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sandbox: Option<bool>,
+    /// Give each session its own git worktree to work in. `None` = the
+    /// default, off. The "permanently on" answer to `--worktree`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    worktree: Option<bool>,
+    /// Parse `<think>` tags in model *content* as reasoning. `None` = the
+    /// default, on. Native `reasoning_content` streaming is a separate
+    /// mechanism and is unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    think_tags: Option<bool>,
+    /// Stream reasoning into the TUI live tail while it is still folded. `None`
+    /// = the default, on. Unrelated to `[agent].show_reasoning`, which unfolds
+    /// reasoning for good.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    stream_reasoning: Option<bool>,
+    /// TUI colour theme: `"light"`, `"dark"`, or `"auto"`. `None` = the default,
+    /// auto, which detects the terminal background. Any other string also reads
+    /// as auto so a typo degrades to detection rather than an error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    theme: Option<String>,
+    /// Auto-answer an unanswered `ask` tool prompt after this many seconds,
+    /// selecting each question's recommended option (or its first option when
+    /// none is recommended). `None` = the default, and `0` is treated the same:
+    /// wait forever, blocking the run on the ask exactly as it does today.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ask_timeout_secs: Option<u64>,
+    /// Offer `/terminal-setup` at startup when a config file proves this
+    /// terminal is dropping a modified key. `None` = the default, on. For the
+    /// user who has read the note and decided to keep `Option` composing
+    /// characters: nothing lands on disk in that case, so there is no other way
+    /// for the check to know it was answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    terminal_hint: Option<bool>,
+    /// Allow Jan to reuse Claude Code's keychain login. `None` = the default,
+    /// on; set false to keep Jan from reading or refreshing that credential.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    claude_code_alias: Option<bool>,
+    /// Hide secrets from model requests (`core::agent::secrets`). `None` = the
+    /// default, off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hide_secrets: Option<bool>,
+    /// List other projects' memory in the prompt and let the agent read it as
+    /// `project:<slug>`. `None` = the default, on. Off keeps each project's
+    /// memory to itself (user-wide `user:` notes still apply everywhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    memory_cross_project: Option<bool>,
+    /// Glyph swept along the working row while a turn runs, in place of the
+    /// static Braille throbber. Absent = `WAVE_DEFAULT`; `""` = off, the
+    /// throbber. See `wave_glyph` for why those are two different things.
+    ///
+    /// Any string up to `WAVE_MAX_GRAPHEMES` clusters is accepted -- `"🍌"`,
+    /// `"~"`, `"<o>"` -- because what reads as a wave is a matter of taste,
+    /// and the renderer measures whatever it is given rather than assuming
+    /// one cell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    wave: Option<String>,
+    /// Prune old saved threads at TUI start. `None` = the default, off: a
+    /// deleted thread is not recoverable, so removing the user's history is
+    /// something they turn on, not something they find out about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prune_threads: Option<bool>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist. Empty by default, so the shell env is
+    /// unchanged. Merged with a project's `[tools].env_passthrough`; a secret-
+    /// looking name is never copied by a glob (use `env_set` to inject one).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over a project's per-key value. The one way to
+    /// inject a secret-named variable on purpose.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    env_set: BTreeMap<String, String>,
+    /// `[[hooks]]` -- lifecycle commands run around tool calls, prompts,
+    /// sessions and compactions, for every project this user opens. Merged
+    /// under a project's own `[[hooks]]`, which run after these.
+    ///
+    /// Declared before `providers` because `toml` renders an array of tables
+    /// after plain values but before sub-tables; putting it after would emit it
+    /// past the `[providers.*]` headers, where a re-read would still find it
+    /// but a human appending to the file would not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+    /// `[telemetry]` -- opt-in OTLP export (`core::agent::otel`). A table, so
+    /// declared after the plain values and before `providers`.
+    #[serde(default, skip_serializing_if = "TelemetrySection::is_empty")]
+    telemetry: TelemetrySection,
+    /// `[context]` -- the user-wide default for which instructions files are
+    /// read where a directory has no `JAN.md`. A project's own `[context]`
+    /// wins. See `project::context_fallback_files`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    context: Option<GlobalContextSection>,
+    /// `[experimental]` -- opt-ins for surfaces whose contract is not settled
+    /// yet. One table so every such switch is found in one place, and so
+    /// graduating a feature is deleting its key rather than migrating it.
+    #[serde(default, skip_serializing_if = "ExperimentalSection::is_empty")]
+    experimental: ExperimentalSection,
+    #[serde(default)]
+    providers: HashMap<String, GlobalProviderEntry>,
+}
+
+/// `[experimental]` in `~/.jan/config.toml`. Each key is `None` when unset,
+/// which means off.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+struct ExperimentalSection {
+    /// `jan acp`, the Agent Client Protocol server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    acp: Option<bool>,
+}
+
+impl ExperimentalSection {
+    fn is_empty(&self) -> bool {
+        self.acp.is_none()
+    }
+}
+
+/// `[telemetry]` in `~/.jan/config.toml` or a project's `agent.toml`. Only the
+/// switch lives here: where the data goes is the standard `OTEL_*` env, so one
+/// collector setup serves every OpenTelemetry-speaking tool unchanged.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+pub(crate) struct TelemetrySection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
+impl TelemetrySection {
+    fn is_empty(&self) -> bool {
+        self.enabled.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct GlobalContextSection {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fallback_files: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+struct GlobalProviderEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    api_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    models: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    api_type: Option<String>,
+    /// Server-assigned id of the key, so a logout can revoke the exact key the
+    /// CLI holds rather than a user's other keys.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_id: Option<String>,
+    /// Unix seconds the key expires at, when the server says. Lets the CLI warn
+    /// (and show auth status) without a 401 first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_expires_at: Option<u64>,
+    /// Who the key belongs to, as reported when it was minted. Recorded so
+    /// `auth status` can name the account without a round trip (and without
+    /// guessing an identity endpoint's response shape).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    account: Option<String>,
+    /// Extra request headers sent with every request to this provider, inference
+    /// and `/models` listing alike: `headers = { "X-Team" = "infra" }`. A
+    /// session's `JAN_CUSTOM_HEADERS` beats a header of the same name here.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    headers: BTreeMap<String, String>,
+}
+
+/// Fields to update on a provider entry via [`set_provider`]. `None` leaves the
+/// existing value untouched (merge semantics); `Some` overwrites it. An
+/// explicit `Some("")` for the API key removes it (e.g. a local endpoint that
+/// dropped auth).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ProviderUpdate {
+    pub api_key: Option<String>,
+    /// Clear any legacy plaintext key in the entry. Used by the login flow so
+    /// a stale key never shadows the secret-store credential it just wrote.
+    pub clear_api_key: bool,
+    pub base_url: Option<String>,
+    /// `Some(vec)` replaces the model list; `Some(empty)` clears it.
+    pub models: Option<Vec<String>>,
+    pub api_type: Option<String>,
+    /// Server-assigned key metadata a browser sign-in gets back. Doubly
+    /// optional on purpose: `None` leaves whatever is stored alone (the merge
+    /// semantics above), while `Some(None)` clears it -- which is what a login
+    /// that learned no metadata has to do, so a stale id from a previous key
+    /// cannot outlive it.
+    pub key_id: Option<Option<String>>,
+    pub key_expires_at: Option<Option<u64>>,
+    pub account: Option<Option<String>>,
+}
+
+/// `~/.jan`, the user-wide config directory.
+pub(crate) fn global_jan_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|home| home.join(".jan"))
+        .ok_or_else(|| "could not resolve the user's home directory".to_string())
+}
+
+/// `~/.jan/config.toml`.
+pub(crate) fn global_config_path() -> Result<PathBuf, String> {
+    Ok(global_jan_dir()?.join("config.toml"))
+}
+
+/// Load provider configs from `~/.jan/config.toml`. Missing file -> empty map
+/// (standalone-with-no-global-config is valid); malformed file -> error.
+pub(crate) fn load_global_config() -> Result<HashMap<String, ProviderConfig>, String> {
+    let path = match global_config_path() {
+        Ok(p) => p,
+        Err(_) => return Ok(HashMap::new()),
+    };
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(_) => return Ok(HashMap::new()),
+    };
+    let parsed: GlobalConfigToml =
+        toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))?;
+
+    Ok(parsed
+        .providers
+        .into_iter()
+        .map(|(name, entry)| {
+            let api_keys = entry.api_key.iter().cloned().collect();
+            (
+                name.clone(),
+                ProviderConfig {
+                    provider: name,
+                    api_key: entry.api_key,
+                    api_keys,
+                    base_url: entry.base_url,
+                    custom_headers: entry
+                        .headers
+                        .into_iter()
+                        .map(|(header, value)| crate::core::state::ProviderCustomHeader {
+                            header,
+                            value,
+                        })
+                        .collect(),
+                    models: entry.models,
+                    api_type: entry.api_type,
+                    // `~/.jan/config.toml` describes the desktop app's
+                    // providers, which size compaction from the project's
+                    // `[provider]`/`[agent]` sections instead.
+                    compaction_ratio: None,
+                },
+            )
+        })
+        .collect())
+}
+
+/// Resolve a default model from `~/.jan/config.toml` for a standalone agent:
+/// the explicit `default_model` key if set, else the first model of the first
+/// provider (providers sorted by name for determinism). `None` when nothing is
+/// configured. Errors only on a malformed file.
+pub(crate) fn default_model() -> Result<Option<String>, String> {
+    let config = load_raw()?;
+    if let Some(model) = config.default_model.filter(|m| !m.trim().is_empty()) {
+        return Ok(Some(model));
+    }
+    let mut providers: Vec<_> = config.providers.into_iter().collect();
+    providers.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(providers
+        .into_iter()
+        .find_map(|(_, entry)| entry.models.into_iter().next()))
+}
+
+/// Resolve the `smol` role model from `~/.jan/config.toml`: the explicit
+/// `smol_model` key if set. `None` when unset (callers fall back to the
+/// session's main model). Errors only on a malformed file.
+pub(crate) fn smol_model() -> Result<Option<String>, String> {
+    let config = load_raw()?;
+    Ok(config.smol_model.filter(|m| !m.trim().is_empty()))
+}
+
+/// `[telemetry].enabled` in `~/.jan/config.toml`; `None` when unset. Fails
+/// open to "unset" like every other preference here: telemetry is never a
+/// reason for a session not to start. CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn telemetry_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.telemetry.enabled)
+}
+
+/// `hide_secrets` in `~/.jan/config.toml`; `None` when unset. Fails open to
+/// "unset" (off): a preference file must never stop a session from starting.
+pub(crate) fn hide_secrets_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.hide_secrets)
+}
+
+/// `[experimental].acp` in `~/.jan/config.toml`; `None` when unset. A malformed
+/// file reads as unset, which is off: an experimental surface fails closed.
+#[cfg(feature = "cli")]
+pub(crate) fn experimental_acp_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.experimental.acp)
+}
+
+/// Whether the TUI should track the mouse (`mouse` in `~/.jan/config.toml`),
+/// defaulting to on. A display preference must never block startup, so an
+/// unreadable or malformed config yields the default rather than an error.
+pub(crate) fn mouse_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.mouse)
+        .unwrap_or(true)
+}
+
+/// Whether the TUI may offer `/terminal-setup` at startup (`terminal_hint` in
+/// `~/.jan/config.toml`), defaulting to on. Declining the offer leaves no trace
+/// on disk -- the check reads the terminal's own config -- so this key is what
+/// turns a standing note off. A display preference must never block startup, so
+/// an unreadable config yields the default.
+pub(crate) fn terminal_hint_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.terminal_hint)
+        .unwrap_or(true)
+}
+
+/// Whether Jan may reuse Claude Code's keychain login
+/// (`claude_code_alias` in `~/.jan/config.toml`), defaulting to on. This
+/// setting is deliberately opt-out to preserve existing behavior while making
+/// the cross-tool credential reuse explicit and reversible.
+pub(crate) fn claude_code_alias_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.claude_code_alias)
+        .unwrap_or(true)
+}
+
+/// Whether `bash` runs sandboxed by default (`sandbox` in `~/.jan/config.toml`).
+/// `None` when unset, so the caller can let a project's `agent.toml` or the
+/// `--sandbox` flag decide before falling back to the surface default.
+///
+/// An unreadable or malformed config yields `None` rather than an error: the
+/// resolved default is the *safe* direction to fall back to, and a config the
+/// user cannot parse must not be the thing that blocks a session from starting.
+pub(crate) fn sandbox_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.sandbox)
+}
+
+/// `[context].fallback_files` from `~/.jan/config.toml`, or `None` when unset
+/// or unreadable, so the project's `agent.toml` and then the built-in default
+/// decide. Like the other preferences, a bad file never blocks a session.
+pub(crate) fn context_fallback_files_setting() -> Option<Vec<String>> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.context)
+        .and_then(|context| context.fallback_files)
+}
+
+/// Whether a session gets its own git worktree by default (`worktree` in
+/// `~/.jan/config.toml`). `None` when unset, so a project's `agent.toml` or the
+/// `--worktree` flag decides first. Unreadable config yields `None`, like
+/// [`sandbox_setting`]: a preference must not block a session from starting.
+pub(crate) fn worktree_setting() -> Option<bool> {
+    load_raw().ok().and_then(|config| config.worktree)
+}
+
+/// Whether saved threads are pruned at TUI start (`prune_threads` in
+/// `~/.jan/config.toml`), defaulting to off. An unreadable config also reads
+/// as off: the failure direction of a setting that deletes data is to keep it.
+/// CLI-only, like its sole caller.
+#[cfg(feature = "cli")]
+pub(crate) fn prune_threads_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.prune_threads)
+        .unwrap_or(false)
+}
+
+/// Host env-var names the sandboxed `bash` may inherit beyond the base
+/// allowlist (`env_passthrough` in `~/.jan/config.toml`), merged under a
+/// project's `[tools].env_passthrough`. Empty on an unreadable or malformed
+/// config: a shell-env preference must never block a session from starting.
+pub(crate) fn env_passthrough_setting() -> Vec<String> {
+    load_raw()
+        .map(|config| config.env_passthrough)
+        .unwrap_or_default()
+}
+
+/// Explicit key=value overrides for the `bash` env (`env_set` in
+/// `~/.jan/config.toml`), sorted by key. Same fail-open rationale as
+/// [`env_passthrough_setting`].
+pub(crate) fn env_set_setting() -> Vec<(String, String)> {
+    load_raw()
+        .map(|config| config.env_set.into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// The user's global `[[hooks]]`, merged under a project's own. Empty on an
+/// unreadable or malformed config: a hook is a policy refinement, and a config
+/// the user cannot parse must not be what blocks a session from starting --
+/// the same fail-open rationale as [`sandbox_setting`].
+pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry> {
+    load_raw().map(|config| config.hooks).unwrap_or_default()
+}
+
+/// Whether inline `<think>` tags in model content are parsed as reasoning
+/// (`think_tags` in `~/.jan/config.toml`), defaulting to on. `false` makes the
+/// tags ordinary prose: rendered verbatim, kept in the answer sent back as
+/// history, and never folded into a reasoning block.
+///
+/// A display preference must never block startup, so an unreadable or malformed
+/// config yields the default rather than an error.
+pub(crate) fn think_tags_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.think_tags)
+        .unwrap_or(true)
+}
+
+/// Whether other projects' memory is listed and readable
+/// (`memory_cross_project` in `~/.jan/config.toml`), defaulting to on.
+/// Unreadable config yields the default, like the other preferences.
+// Test builds pin cross-project memory off (see `project::memory_roots`).
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn memory_cross_project_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.memory_cross_project)
+        .unwrap_or(true)
+}
+
+/// Whether the TUI streams reasoning into its live tail while folding is on
+/// (`stream_reasoning` in `~/.jan/config.toml`), defaulting to on. `false` keeps
+/// a folded block off screen entirely, leaving the header badge to stand for it.
+///
+/// A display preference must never block startup, so an unreadable or malformed
+/// config yields the default rather than an error.
+pub(crate) fn stream_reasoning_enabled() -> bool {
+    load_raw()
+        .ok()
+        .and_then(|config| config.stream_reasoning)
+        .unwrap_or(true)
+}
+
+/// The TUI colour-theme preference (`theme` in `~/.jan/config.toml`): `"light"`,
+/// `"dark"`, or `"auto"`. `None` when unset, which the TUI treats as auto-detect
+/// from the terminal background. An unreadable or malformed config yields `None`
+/// so a display preference never blocks startup.
+pub(crate) fn theme_setting() -> Option<String> {
+    load_raw().ok().and_then(|config| config.theme)
+}
+
+/// How long an unanswered `ask` prompt waits before it auto-answers with each
+/// question's recommended option (`ask_timeout_secs` in `~/.jan/config.toml`).
+/// `None` -- the default -- means wait forever, preserving today's blocking
+/// behavior until the user answers; `0` is treated the same as unset so the
+/// disabling value and the absent key agree.
+///
+/// A malformed config yields `None` (wait forever) rather than an error: an
+/// unreadable preference must never be the thing that changes how a run blocks.
+pub(crate) fn ask_timeout() -> Option<std::time::Duration> {
+    load_raw()
+        .ok()
+        .and_then(|config| config.ask_timeout_secs)
+        .filter(|secs| *secs > 0)
+        .map(std::time::Duration::from_secs)
+}
+
+/// The default glyph swept along the working row when `wave` is absent.
+pub(crate) const WAVE_DEFAULT: &str = "👋";
+
+/// The most grapheme clusters a `wave` may hold. Three is the width of the
+/// small ASCII-art faces the feature is for (`👁️👄👁️`); past that the glyph
+/// stops reading as a traveller and starts overwriting the word it sweeps.
+pub(crate) const WAVE_MAX_GRAPHEMES: usize = 3;
+
+/// Grapheme-cluster count, which is what "characters" means to the person
+/// typing: `👁️👄👁️` is 3 to them and 5 `char`s to Rust, and an emoji with a
+/// skin-tone or ZWJ sequence is worse. Counting `char`s would reject glyphs
+/// that visibly fit.
+pub(crate) fn wave_len(glyph: &str) -> usize {
+    use unicode_segmentation::UnicodeSegmentation;
+    glyph.graphemes(true).count()
+}
+
+/// Validate a candidate `wave`, returning the reason it is unusable. Empty is
+/// valid and means "no sweep" -- the deliberate off switch, distinct from the
+/// key being absent, which takes the default.
+pub(crate) fn wave_error(glyph: &str) -> Option<String> {
+    let len = wave_len(glyph);
+    (len > WAVE_MAX_GRAPHEMES)
+        .then(|| format!("at most {WAVE_MAX_GRAPHEMES} characters (got {len})"))
+}
+
+/// The glyph to sweep along the working row (`wave` in `~/.jan/config.toml`).
+///
+/// Three states, because the key has to distinguish "never touched it" from
+/// "turned it off":
+///
+/// - absent -> `WAVE_DEFAULT`, the wave is on out of the box
+/// - `""` -> `None`, the static Braille throbber, chosen deliberately
+/// - a glyph -> that glyph
+///
+/// An all-whitespace glyph is `None` too: an invisible traveller reads as
+/// letters going missing, which is the bug this feature had the first time
+/// round.
+///
+/// A value past the length cap falls back to the default rather than
+/// erroring. `/settings` rejects an over-long glyph at the point of entry, so
+/// this only fires for a hand-edited file, and a display preference must never
+/// block startup.
+pub(crate) fn wave_glyph() -> Option<String> {
+    let Ok(config) = load_raw() else {
+        return Some(WAVE_DEFAULT.to_string());
+    };
+    match config.wave {
+        None => Some(WAVE_DEFAULT.to_string()),
+        Some(glyph) if glyph.trim().is_empty() => None,
+        Some(glyph) if wave_error(&glyph).is_some() => Some(WAVE_DEFAULT.to_string()),
+        Some(glyph) => Some(glyph),
+    }
+}
+
+/// Root-level (non-`[providers.*]`) keys of `~/.jan/config.toml`, used to spot
+/// the one mistake this file invites: appending a top-level key to the end of
+/// the file, where it silently lands inside whichever `[providers.*]` table
+/// happens to be last.
+const ROOT_KEYS: &[&str] = &[
+    "default_model",
+    "smol_model",
+    "mouse",
+    "sandbox",
+    "think_tags",
+    "stream_reasoning",
+    "theme",
+    "ask_timeout_secs",
+    "terminal_hint",
+    "wave",
+    "hooks",
+];
+
+/// Render a TOML parse failure with a fix, not just a location. `toml`'s own
+/// message points at the offending line and stops there, which is useless for
+/// the common case: `echo 'key = v' >> ~/.jan/config.toml` appends *after* the
+/// last `[providers.*]` header, so the key parses as a provider field and
+/// collides on a second append. Naming the root key and the remedy turns a
+/// dead end into a one-step fix.
+fn parse_error(path: &std::path::Path, err: &impl std::fmt::Display, message: &str) -> String {
+    let base = format!("Failed to parse {}: {err}", path.display());
+    let Some(key) = ROOT_KEYS
+        .iter()
+        .find(|key| message.contains(&format!("`{key}`")))
+    else {
+        return base;
+    };
+    format!(
+        "{base}\n\
+         hint: `{key}` is a top-level key, but it landed inside a `[providers.*]` \
+         table - appending to the end of the file puts it under whichever provider \
+         is last.\n\
+         hint: move `{key}` above the first `[providers.*]` header, or set it with \
+         `/settings` in the console, which writes it to the right place."
+    )
+}
+
+/// Read `~/.jan/config.toml` into the raw TOML struct for editing. Missing file
+/// -> default (empty); malformed file -> error, so a set never silently drops an
+/// unparseable file's contents.
+fn load_raw() -> Result<GlobalConfigToml, String> {
+    let path = global_config_path()?;
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(_) => return Ok(GlobalConfigToml::default()),
+    };
+    toml::from_str(&raw).map_err(|e| parse_error(&path, &e, e.message()))
+}
+
+/// Serialize the config back to `~/.jan/config.toml`, creating `~/.jan` if
+/// needed. The directory is user-scoped; the file is world-unreadable on Unix
+/// since it holds API keys.
+fn write_raw(config: &GlobalConfigToml) -> Result<PathBuf, String> {
+    let dir = global_jan_dir()?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    let path = dir.join("config.toml");
+    let body =
+        toml::to_string_pretty(config).map_err(|e| format!("Failed to serialize config: {e}"))?;
+    std::fs::write(&path, &body).map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
+}
+
+#[cfg(unix)]
+fn restrict_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+}
+
+#[cfg(not(unix))]
+fn restrict_permissions(_path: &std::path::Path) {}
+
+/// Create or update a provider entry in `~/.jan/config.toml`, merging with any
+/// existing entry (see [`ProviderUpdate`]). Returns the config path. This is the
+/// headless write path that lets a standalone Jan Agent set credentials with no
+/// Desktop app present.
+pub(crate) fn set_provider(name: &str, update: ProviderUpdate) -> Result<PathBuf, String> {
+    if name.trim().is_empty() {
+        return Err("provider name must not be empty".to_string());
+    }
+    let mut config = load_raw()?;
+    let entry = config.providers.entry(name.to_string()).or_default();
+    if let Some(api_key) = update.api_key {
+        // An explicit empty key clears the stored one; `None` leaves it as is.
+        entry.api_key = (!api_key.is_empty()).then_some(api_key);
+    }
+    if update.clear_api_key {
+        entry.api_key = None;
+    }
+    if let Some(base_url) = update.base_url {
+        entry.base_url = Some(base_url);
+    }
+    if let Some(models) = update.models {
+        entry.models = models;
+    }
+    if let Some(api_type) = update.api_type {
+        entry.api_type = Some(api_type);
+    }
+    if let Some(key_id) = update.key_id {
+        entry.key_id = key_id.filter(|k| !k.is_empty());
+    }
+    if let Some(key_expires_at) = update.key_expires_at {
+        entry.key_expires_at = key_expires_at;
+    }
+    if let Some(account) = update.account {
+        entry.account = account.filter(|a| !a.is_empty());
+    }
+    write_raw(&config)
+}
+
+/// Point `default_model` at `model` unless the user already chose one. Returns
+/// `true` when it was written. Used by sign-in flows: the first provider a user
+/// connects should become runnable without a second config step, but an explicit
+/// choice must never be overwritten.
+pub(crate) fn set_default_model_if_unset(model: &str) -> Result<bool, String> {
+    if model.trim().is_empty() {
+        return Ok(false);
+    }
+    let mut config = load_raw()?;
+    if config
+        .default_model
+        .as_deref()
+        .is_some_and(|m| !m.trim().is_empty())
+    {
+        return Ok(false);
+    }
+    config.default_model = Some(model.to_string());
+    write_raw(&config)?;
+    Ok(true)
+}
+
+/// Why `default_model` was (re)pointed, so a caller can tell the user which of
+/// the two happened -- adopting a default is routine, replacing one the user
+/// chose needs saying out loud.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DefaultModelChange {
+    /// There was no default; `model` was adopted.
+    Adopted,
+    /// The previous default is no longer offered by any provider, so it was
+    /// replaced by `model`.
+    Repointed,
+}
+
+/// Point `default_model` at `model` when there is no default, **or** when the
+/// current default is not offered by any configured provider. Returns what
+/// changed, or `None` when the existing default was left alone.
+///
+/// The second case is the one [`set_default_model_if_unset`] cannot handle. A
+/// sign-in replaces a provider's roster wholesale, so a re-login after the
+/// upstream retires a model leaves `default_model` pointing at something no
+/// provider serves. That is not an "explicit choice" worth protecting any more:
+/// it is a fossil, and every run fails on it with a 404 (or, for a cost
+/// ceiling, is refused as unpriceable) with nothing connecting the failure to
+/// the sign-in that caused it.
+///
+/// A default some *other* provider still offers is left alone -- this provider's
+/// roster says nothing about models it never served.
+pub(crate) fn adopt_default_model(model: &str) -> Result<Option<DefaultModelChange>, String> {
+    let model = model.trim();
+    if model.is_empty() {
+        return Ok(None);
+    }
+    let mut config = load_raw()?;
+    let current = config
+        .default_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    let change = match current {
+        None => DefaultModelChange::Adopted,
+        // Already fine, and re-pointing an offered default would overwrite a
+        // deliberate choice on every sign-in.
+        Some(current) if config.providers.values().any(|p| p.models.contains(&current)) => {
+            return Ok(None)
+        }
+        Some(_) => DefaultModelChange::Repointed,
+    };
+    config.default_model = Some(model.to_string());
+    write_raw(&config)?;
+    Ok(Some(change))
+}
+
+/// Server-assigned metadata for a provider's stored key, when a v5 device-flow
+/// login recorded any. Used by `jan auth status` / the expiry warning and by
+/// `jan auth logout` to revoke the exact key.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct StoredKeyMeta {
+    pub key_id: Option<String>,
+    pub key_expires_at: Option<u64>,
+    pub account: Option<String>,
+}
+
+/// Read `key_id`/`key_expires_at` for a provider, if stored. Missing config or
+/// provider reads as `None` fields -- the legacy login records neither.
+pub(crate) fn provider_key_meta(name: &str) -> Result<StoredKeyMeta, String> {
+    let config = load_raw()?;
+    Ok(match config.providers.get(name) {
+        Some(entry) => StoredKeyMeta {
+            key_id: entry.key_id.clone(),
+            key_expires_at: entry.key_expires_at,
+            account: entry.account.clone(),
+        },
+        None => StoredKeyMeta::default(),
+    })
+}
+
+/// Remove a provider entry from `~/.jan/config.toml`. Returns `true` if the
+/// provider existed and was removed, `false` if it was already absent.
+pub(crate) fn remove_provider(name: &str) -> Result<bool, String> {
+    let mut config = load_raw()?;
+    if config.providers.remove(name).is_none() {
+        return Ok(false);
+    }
+    write_raw(&config)?;
+    Ok(true)
+}
+
+/// Read one top-level scalar from `~/.jan/config.toml` as a display string.
+/// `None` when the key is absent or the file is unreadable. Reads through
+/// `toml_edit` rather than the typed struct so the caller gets the value the
+/// user actually typed, and so a key this build does not know about still
+/// round-trips.
+#[cfg(feature = "cli")]
+pub(crate) fn global_value(key: &str) -> Option<String> {
+    let raw = std::fs::read_to_string(global_config_path().ok()?).ok()?;
+    let doc = raw.parse::<toml_edit::DocumentMut>().ok()?;
+    let item = doc.get(key)?;
+    Some(match item.as_value() {
+        Some(toml_edit::Value::String(s)) => s.value().to_string(),
+        Some(toml_edit::Value::Integer(i)) => i.value().to_string(),
+        Some(toml_edit::Value::Boolean(b)) => b.value().to_string(),
+        _ => item.to_string(),
+    })
+}
+
+/// Persist a top-level scalar into `~/.jan/config.toml`, format-preserving.
+/// `None` removes the key so its default applies again.
+///
+/// This edits the document rather than round-tripping the typed struct the way
+/// [`set_provider`] does: the scaffolded file is mostly *commented* examples,
+/// and re-serializing would throw every one of them away the first time a user
+/// toggled a display preference. Creates the file from the template when it is
+/// missing, so a first toggle lands in a documented file.
+#[cfg(feature = "cli")]
+pub(crate) fn set_global_key(key: &str, value: Option<toml_edit::Item>) -> Result<PathBuf, String> {
+    let path = ensure_global_config()?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| parse_error(&path, &e, e.message()))?;
+
+    match value {
+        // `toml_edit` renders a root table's scalars ahead of its sub-tables,
+        // so a key appended here still reads back as a document key and not as
+        // a member of the last `[providers.*]` table. The round-trip test below
+        // pins that.
+        Some(v) => doc[key] = v,
+        None => {
+            doc.remove(key);
+        }
+    }
+
+    std::fs::write(&path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    restrict_permissions(&path);
+    Ok(path)
+}
+
+/// Scaffold `~/.jan/config.toml` with a commented example, if it doesn't exist
+/// yet. Idempotent and clobber-safe: never overwrites an existing file.
+pub(crate) fn ensure_global_config() -> Result<PathBuf, String> {
+    let dir = global_jan_dir()?;
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("Failed to create {}: {e}", dir.display()))?;
+    let path = dir.join("config.toml");
+    if !path.exists() {
+        std::fs::write(&path, GLOBAL_CONFIG_TEMPLATE)
+            .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    }
+    Ok(path)
+}
+
+/// Redirect `HOME` to a scratch dir for the duration of `f`. Every test that
+/// touches `~/.jan` must go through this one helper: `HOME` is process-wide, so
+/// a second lock elsewhere would let those tests race each other.
+#[cfg(test)]
+pub(crate) fn with_temp_home<T>(f: impl FnOnce(&std::path::Path) -> T) -> T {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let home = std::env::temp_dir().join(format!("jan_global_cfg_test_{n}"));
+    std::fs::create_dir_all(&home).unwrap();
+    let prev = std::env::var_os("HOME");
+    std::env::set_var("HOME", &home);
+    let result = f(&home);
+    match prev {
+        Some(p) => std::env::set_var("HOME", p),
+        None => std::env::remove_var("HOME"),
+    }
+    let _ = std::fs::remove_dir_all(&home);
+    result
+}
+
+// The suite covers the provider records and the TUI's settings writers, which
+// only the `cli` build compiles; the module itself is shared so the desktop can
+// read the user's `[[hooks]]`.
+#[cfg(all(test, feature = "cli"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_file_yields_empty_map() {
+        with_temp_home(|_| {
+            let configs = load_global_config().expect("load");
+            assert!(configs.is_empty());
+        });
+    }
+
+    #[test]
+    fn hide_secrets_is_unset_by_default_and_reads_its_key() {
+        with_temp_home(|home| {
+            assert_eq!(hide_secrets_setting(), None, "missing file");
+            let path = home.join(".jan").join("config.toml");
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "hide_secrets = true\n").unwrap();
+            assert_eq!(hide_secrets_setting(), Some(true));
+            std::fs::write(&path, "hide_secrets = false\n").unwrap();
+            assert_eq!(hide_secrets_setting(), Some(false));
+            std::fs::write(&path, "hide_secrets = [").unwrap();
+            assert_eq!(hide_secrets_setting(), None, "fails open to unset");
+        });
+    }
+
+    #[test]
+    fn telemetry_is_unset_by_default_and_reads_its_table() {
+        with_temp_home(|_| {
+            assert_eq!(telemetry_setting(), None, "missing file");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(telemetry_setting(), None, "scaffolded file");
+            std::fs::write(&path, "[telemetry]\nenabled = true\n").unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            // A provider write keeps the table.
+            set_provider("p", ProviderUpdate::default()).unwrap();
+            assert_eq!(telemetry_setting(), Some(true));
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(telemetry_setting(), None, "fails open to unset");
+        });
+    }
+
+    #[test]
+    fn mouse_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(mouse_enabled(), "missing file -> tracking on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(mouse_enabled(), "scaffolded file -> tracking on");
+
+            std::fs::write(&path, "mouse = false\n").unwrap();
+            assert!(!mouse_enabled());
+            std::fs::write(&path, "mouse = true\n").unwrap();
+            assert!(mouse_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(mouse_enabled(), "an unreadable config keeps the default");
+        });
+    }
+
+    #[test]
+    fn prune_threads_defaults_off_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(!prune_threads_enabled(), "missing file -> nothing pruned");
+            let path = ensure_global_config().expect("ensure");
+            assert!(!prune_threads_enabled(), "scaffolded file -> nothing pruned");
+
+            std::fs::write(&path, "prune_threads = true\n").unwrap();
+            assert!(prune_threads_enabled());
+            std::fs::write(&path, "prune_threads = false\n").unwrap();
+            assert!(!prune_threads_enabled());
+
+            std::fs::write(&path, "prune_threads = true\nnot valid toml [[[").unwrap();
+            assert!(!prune_threads_enabled(), "an unreadable config deletes nothing");
+        });
+    }
+
+    #[test]
+    fn terminal_hint_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(terminal_hint_enabled(), "missing file -> hint on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(terminal_hint_enabled(), "scaffolded file -> hint on");
+
+            std::fs::write(&path, "terminal_hint = false\n").unwrap();
+            assert!(!terminal_hint_enabled());
+            std::fs::write(&path, "terminal_hint = true\n").unwrap();
+            assert!(terminal_hint_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                terminal_hint_enabled(),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn claude_code_alias_defaults_on_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(claude_code_alias_enabled(), "missing file -> alias on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(claude_code_alias_enabled(), "scaffolded file -> alias on");
+
+            std::fs::write(&path, "claude_code_alias = false\n").unwrap();
+            assert!(!claude_code_alias_enabled());
+            std::fs::write(&path, "claude_code_alias = true\n").unwrap();
+            assert!(claude_code_alias_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                claude_code_alias_enabled(),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn think_tags_default_on_and_read_from_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(think_tags_enabled(), "missing file -> parsing on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(think_tags_enabled(), "scaffolded file -> parsing on");
+
+            std::fs::write(&path, "think_tags = false\n").unwrap();
+            assert!(!think_tags_enabled());
+            std::fs::write(&path, "think_tags = true\n").unwrap();
+            assert!(think_tags_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                think_tags_enabled(),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn wave_defaults_to_the_hand_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some(WAVE_DEFAULT),
+                "missing file -> the default sweep, not off"
+            );
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some(WAVE_DEFAULT),
+                "scaffolded file only comments the key, so the default still applies"
+            );
+
+            // Any string within the cap, not a fixed set: the point of the key
+            // is the user's own glyph.
+            std::fs::write(&path, "wave = \"🍌\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("🍌"));
+            std::fs::write(&path, "wave = \"<o>\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("<o>"));
+            // Three clusters that are five `char`s: the cap counts what the
+            // eye counts, so this fits.
+            std::fs::write(&path, "wave = \"👁️👄👁️\"\n").unwrap();
+            assert_eq!(wave_glyph().as_deref(), Some("👁️👄👁️"));
+
+            // An explicit empty string is the off switch, and the one case
+            // that must not fall back to the default.
+            std::fs::write(&path, "wave = \"\"\n").unwrap();
+            assert_eq!(wave_glyph(), None, "empty is a deliberate off");
+
+            // A blank glyph would sweep an invisible traveller along the row,
+            // which reads as characters going missing.
+            std::fs::write(&path, "wave = \"   \"\n").unwrap();
+            assert_eq!(wave_glyph(), None, "whitespace is off too");
+
+            // Hand-edited past the cap: a display preference must not break
+            // the console, so it reverts rather than erroring.
+            std::fs::write(&path, "wave = \"abcd\"\n").unwrap();
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some(WAVE_DEFAULT),
+                "over the cap falls back to the default"
+            );
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some(WAVE_DEFAULT),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn wave_length_counts_grapheme_clusters() {
+        // The whole reason the cap is not `chars().count()`: each of these is
+        // one thing to the person typing it.
+        assert_eq!(wave_len(""), 0);
+        assert_eq!(wave_len("~"), 1);
+        assert_eq!(wave_len("👋"), 1);
+        assert_eq!(wave_len("👋🏽"), 1, "skin-tone modifier joins the cluster");
+        assert_eq!(wave_len("👁️"), 1, "variation selector joins the cluster");
+        assert_eq!(wave_len("👨‍👩‍👧"), 1, "ZWJ family is one cluster");
+        assert_eq!(wave_len("👁️👄👁️"), 3, "5 chars, 3 clusters");
+
+        assert!(
+            wave_error("").is_none(),
+            "empty is the off switch, not an error"
+        );
+        assert!(wave_error("👁️👄👁️").is_none(), "exactly at the cap");
+        assert!(wave_error("<o>").is_none());
+        let err = wave_error("abcd").expect("over the cap");
+        assert!(
+            err.contains('3') && err.contains('4'),
+            "names cap and actual: {err}"
+        );
+    }
+
+    /// A root key appended to the end of the file lands inside the last
+    /// `[providers.*]` table, and `toml`'s own error says only "duplicate key
+    /// ... in table `providers.opencode`" - true, but it never says the key
+    /// belongs at the root or how to get it there. The hint carries the fix,
+    /// so assert it fires for a misplaced root key and stays quiet otherwise.
+    #[test]
+    fn parse_error_explains_a_root_key_captured_by_a_provider_table() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(
+                &path,
+                "[providers.opencode]\napi_key = \"sk-x\"\nask_timeout_secs = 15\nask_timeout_secs = 15\n",
+            )
+            .unwrap();
+
+            let err = load_global_config().expect_err("duplicate key must fail");
+            assert!(
+                err.contains("`ask_timeout_secs` is a top-level key"),
+                "hint must name the misplaced key: {err}"
+            );
+            assert!(
+                err.contains("/settings"),
+                "hint must point at the writer that gets it right: {err}"
+            );
+
+            // Syntax errors that have nothing to do with key placement must not
+            // acquire a hint about it.
+            std::fs::write(&path, "not = = toml\n").unwrap();
+            let err = load_global_config().expect_err("syntax error must fail");
+            assert!(
+                !err.contains("top-level key"),
+                "unrelated parse errors must stay unadorned: {err}"
+            );
+        });
+    }
+
+    /// The `/settings` write path. Two properties matter and neither is
+    /// obvious: the commented template survives a write (the typed round-trip
+    /// `write_raw` does would throw every example line away), and a key added
+    /// to a file that already holds `[providers.*]` tables reads back as a
+    /// document key rather than as a member of the last table.
+    #[test]
+    fn set_global_key_preserves_comments_and_stays_out_of_provider_tables() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(&path, "# keep me\n[providers.openai]\napi_key = \"sk-x\"\n").unwrap();
+
+            set_global_key("wave", Some(toml_edit::value("🍌"))).expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(
+                raw.contains("# keep me"),
+                "comment survives the write: {raw}"
+            );
+            assert!(raw.contains("sk-x"), "provider survives the write: {raw}");
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some("🍌"),
+                "key must parse as a document key, not a provider field: {raw}"
+            );
+            assert_eq!(global_value("wave").as_deref(), Some("🍌"));
+
+            set_global_key("wave", None).expect("unset");
+            assert_eq!(global_value("wave"), None, "None removes the key");
+            assert_eq!(
+                wave_glyph().as_deref(),
+                Some(WAVE_DEFAULT),
+                "a removed key falls back to the default, not to off"
+            );
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("sk-x"), "unset leaves the rest alone: {raw}");
+        });
+    }
+
+    /// A first toggle on a machine with no config must land in a real file
+    /// rather than error, and that file should be the documented template.
+    #[test]
+    fn set_global_key_scaffolds_a_missing_config() {
+        with_temp_home(|home| {
+            let path = home.join(".jan").join("config.toml");
+            assert!(!path.exists(), "starting from no config");
+
+            set_global_key("wave", Some(toml_edit::value("~"))).expect("set");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("Jan Agent global provider config"), "{raw}");
+            assert_eq!(wave_glyph().as_deref(), Some("~"));
+        });
+    }
+
+    #[test]
+    fn stream_reasoning_default_on_and_read_from_the_toml_key() {
+        with_temp_home(|_| {
+            assert!(stream_reasoning_enabled(), "missing file -> streaming on");
+            let path = ensure_global_config().expect("ensure");
+            assert!(
+                stream_reasoning_enabled(),
+                "scaffolded file -> streaming on"
+            );
+
+            std::fs::write(&path, "stream_reasoning = false\n").unwrap();
+            assert!(!stream_reasoning_enabled());
+            std::fs::write(&path, "stream_reasoning = true\n").unwrap();
+            assert!(stream_reasoning_enabled());
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(
+                stream_reasoning_enabled(),
+                "an unreadable config keeps the default"
+            );
+        });
+    }
+
+    #[test]
+    fn theme_defaults_unset_and_reads_the_toml_key() {
+        with_temp_home(|_| {
+            assert_eq!(theme_setting(), None, "missing file -> auto (unset)");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(theme_setting(), None, "scaffolded file only comments it");
+
+            std::fs::write(&path, "theme = \"light\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("light"));
+            std::fs::write(&path, "theme = \"dark\"\n").unwrap();
+            assert_eq!(theme_setting().as_deref(), Some("dark"));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(theme_setting(), None, "an unreadable config reads as auto");
+        });
+    }
+
+    #[test]
+    fn ask_timeout_defaults_off_and_treats_zero_as_unset() {
+        with_temp_home(|_| {
+            assert_eq!(ask_timeout(), None, "missing file -> wait forever");
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(ask_timeout(), None, "scaffolded file -> wait forever");
+
+            std::fs::write(&path, "ask_timeout_secs = 0\n").unwrap();
+            assert_eq!(ask_timeout(), None, "0 is the disabling value, not 0s");
+            std::fs::write(&path, "ask_timeout_secs = 30\n").unwrap();
+            assert_eq!(ask_timeout(), Some(std::time::Duration::from_secs(30)));
+
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert_eq!(ask_timeout(), None, "an unreadable config waits forever");
+        });
+    }
+
+    #[test]
+    fn ensure_scaffolds_and_is_idempotent() {
+        with_temp_home(|home| {
+            let path = ensure_global_config().expect("ensure");
+            assert_eq!(path, home.join(".jan").join("config.toml"));
+            assert!(path.exists());
+
+            std::fs::write(&path, "[providers.openai]\napi_key = \"sk-x\"\n").unwrap();
+            ensure_global_config().expect("ensure again");
+            let raw = std::fs::read_to_string(&path).unwrap();
+            assert!(raw.contains("sk-x"), "must not clobber existing file");
+        });
+    }
+
+    #[test]
+    fn loads_providers_from_config() {
+        with_temp_home(|_| {
+            ensure_global_config().expect("ensure");
+            let path = global_config_path().unwrap();
+            std::fs::write(
+                &path,
+                r#"[providers.openai]
+api_key = "sk-abc"
+base_url = "https://api.openai.com/v1"
+models = ["gpt-4o"]
+"#,
+            )
+            .unwrap();
+
+            let configs = load_global_config().expect("load");
+            let openai = configs.get("openai").expect("openai present");
+            assert_eq!(openai.api_key.as_deref(), Some("sk-abc"));
+            assert_eq!(
+                openai.base_url.as_deref(),
+                Some("https://api.openai.com/v1")
+            );
+            assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
+        });
+    }
+
+    #[test]
+    fn malformed_file_errors() {
+        with_temp_home(|_| {
+            let path = ensure_global_config().expect("ensure");
+            std::fs::write(&path, "not valid toml [[[").unwrap();
+            assert!(load_global_config().is_err());
+        });
+    }
+
+    #[test]
+    fn set_provider_creates_and_roundtrips() {
+        with_temp_home(|_| {
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    clear_api_key: false,
+                    base_url: Some("https://api.openai.com/v1".into()),
+                    models: Some(vec!["gpt-4o".into()]),
+                    api_type: None,
+                    ..Default::default()
+                },
+            )
+            .expect("set");
+            let configs = load_global_config().expect("load");
+            let openai = configs.get("openai").expect("present");
+            assert_eq!(openai.api_key.as_deref(), Some("sk-1"));
+            assert_eq!(
+                openai.base_url.as_deref(),
+                Some("https://api.openai.com/v1")
+            );
+            assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
+        });
+    }
+
+    #[test]
+    fn set_provider_merges_without_clobbering_other_fields_or_providers() {
+        with_temp_home(|_| {
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    clear_api_key: false,
+                    base_url: Some("https://a".into()),
+                    models: Some(vec!["gpt-4o".into()]),
+                    api_type: None,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            set_provider(
+                "anthropic",
+                ProviderUpdate {
+                    api_key: Some("sk-ant".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            // Update only the openai key; base_url + models must survive.
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-2".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+            let configs = load_global_config().expect("load");
+            let openai = configs.get("openai").unwrap();
+            assert_eq!(openai.api_key.as_deref(), Some("sk-2"));
+            assert_eq!(openai.base_url.as_deref(), Some("https://a"));
+            assert_eq!(openai.models, vec!["gpt-4o".to_string()]);
+            assert_eq!(
+                configs.get("anthropic").unwrap().api_key.as_deref(),
+                Some("sk-ant")
+            );
+        });
+    }
+
+    /// `Some("")` for the api key clears the stored one (a local endpoint
+    /// that dropped auth), while `None` still merges (key kept).
+    #[test]
+    fn set_provider_empty_key_clears_none_keeps() {
+        with_temp_home(|_| {
+            set_provider(
+                "local",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    base_url: Some("http://127.0.0.1:1234/v1".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            set_provider("local", ProviderUpdate::default()).unwrap();
+            assert_eq!(
+                load_global_config()
+                    .unwrap()
+                    .get("local")
+                    .unwrap()
+                    .api_key
+                    .as_deref(),
+                Some("sk-1"),
+                "None merges: key kept"
+            );
+            set_provider(
+                "local",
+                ProviderUpdate {
+                    api_key: Some(String::new()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                load_global_config().unwrap().get("local").unwrap().api_key,
+                None,
+                "explicit empty key clears"
+            );
+        });
+    }
+
+    #[test]
+    fn set_provider_rejects_empty_name() {
+        with_temp_home(|_| {
+            assert!(set_provider("  ", ProviderUpdate::default()).is_err());
+        });
+    }
+
+    #[test]
+    fn default_model_none_when_empty() {
+        with_temp_home(|_| {
+            assert_eq!(default_model().expect("default"), None);
+        });
+    }
+
+    #[test]
+    fn default_model_derives_from_first_provider_model() {
+        with_temp_home(|_| {
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    models: Some(vec!["gpt-4o".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(default_model().expect("default").as_deref(), Some("gpt-4o"));
+        });
+    }
+
+    #[test]
+    fn default_model_prefers_explicit_key() {
+        with_temp_home(|_| {
+            let path = global_config_path().unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(
+                &path,
+                "default_model = \"claude-sonnet-5\"\n[providers.openai]\nmodels = [\"gpt-4o\"]\n",
+            )
+            .unwrap();
+            assert_eq!(
+                default_model().expect("default").as_deref(),
+                Some("claude-sonnet-5")
+            );
+        });
+    }
+
+    #[test]
+    fn default_model_derivation_is_deterministic_by_provider_name() {
+        with_temp_home(|_| {
+            set_provider(
+                "zeta",
+                ProviderUpdate {
+                    models: Some(vec!["z-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            set_provider(
+                "alpha",
+                ProviderUpdate {
+                    models: Some(vec!["a-model".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                default_model().expect("default").as_deref(),
+                Some("a-model")
+            );
+        });
+    }
+
+    #[test]
+    fn set_provider_preserves_default_model_key() {
+        with_temp_home(|_| {
+            let path = global_config_path().unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "default_model = \"m1\"\n").unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(default_model().expect("default").as_deref(), Some("m1"));
+        });
+    }
+
+    #[test]
+    fn default_model_is_set_once_and_never_overwritten() {
+        with_temp_home(|_| {
+            assert!(set_default_model_if_unset("m1").expect("set"));
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+            assert!(!set_default_model_if_unset("m2").expect("set again"));
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+        });
+    }
+
+    /// `adopt_default_model` is the sign-in half that `set_default_model_if_unset`
+    /// cannot do: it distinguishes "the user chose this" from "this is a fossil
+    /// no configured provider serves any more".
+    #[test]
+    fn adopting_a_default_replaces_only_one_no_provider_offers() {
+        with_temp_home(|_| {
+            let offer = |models: &[&str]| {
+                set_provider(
+                    "tokamak",
+                    ProviderUpdate {
+                        models: Some(models.iter().map(|m| (*m).to_string()).collect()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+            };
+
+            // Nothing chosen yet: adopted.
+            offer(&["m1", "m2"]);
+            assert_eq!(
+                adopt_default_model("m1").expect("adopt"),
+                Some(DefaultModelChange::Adopted)
+            );
+
+            // Still offered, so it is a live choice and must survive.
+            assert_eq!(adopt_default_model("m2").expect("leave"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m1"));
+
+            // Retired upstream: now it is a fossil, and re-pointing is reported.
+            offer(&["m2", "m3"]);
+            assert_eq!(
+                adopt_default_model("m2").expect("repoint"),
+                Some(DefaultModelChange::Repointed)
+            );
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
+
+            // A blank candidate is never written: it would read as configured.
+            assert_eq!(adopt_default_model("   ").expect("blank"), None);
+            assert_eq!(default_model().expect("read").as_deref(), Some("m2"));
+        });
+    }
+
+    #[test]
+    fn default_model_set_keeps_existing_providers_and_rejects_blank() {
+        with_temp_home(|_| {
+            set_provider(
+                "tokamak",
+                ProviderUpdate {
+                    api_key: Some("tk".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(!set_default_model_if_unset("  ").expect("blank"));
+            assert!(set_default_model_if_unset("m1").expect("set"));
+            let configs = load_global_config().expect("load");
+            assert_eq!(
+                configs.get("tokamak").unwrap().api_key.as_deref(),
+                Some("tk")
+            );
+        });
+    }
+
+    #[test]
+    fn remove_provider_reports_presence() {
+        with_temp_home(|_| {
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk-1".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(remove_provider("openai").expect("remove"));
+            assert!(!remove_provider("openai").expect("remove again"));
+            assert!(!load_global_config().unwrap().contains_key("openai"));
+        });
+    }
+
+    #[test]
+    fn set_provider_preserves_commented_scaffold_is_lost_but_data_kept() {
+        // A hand-edited file with real entries roundtrips through set (comments in
+        // the scaffold are not preserved, but no provider data is lost).
+        with_temp_home(|_| {
+            let path = global_config_path().unwrap();
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, "[providers.groq]\napi_key = \"gk\"\n").unwrap();
+            set_provider(
+                "openai",
+                ProviderUpdate {
+                    api_key: Some("sk".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let configs = load_global_config().unwrap();
+            assert_eq!(configs.get("groq").unwrap().api_key.as_deref(), Some("gk"));
+            assert_eq!(
+                configs.get("openai").unwrap().api_key.as_deref(),
+                Some("sk")
+            );
+        });
+    }
+}

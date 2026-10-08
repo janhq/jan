@@ -13,6 +13,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 import {
   parseEngineError,
   describeEngineError,
+  engineFailure,
   ENGINE_ERROR_CODES,
 } from '../engineError'
 
@@ -94,6 +95,48 @@ describe('describeEngineError', () => {
     expect(text).toContain('libnccl.so.2, libcublas.so.12')
   })
 
+  // The localized sentence is advice; the engine's own text is the evidence.
+  // Dropping it left an OOM indistinguishable from any other load failure.
+  it('appends the engine reason so the cause is visible, not just the advice', () => {
+    const text = describeEngineError({
+      code: 'OUT_OF_MEMORY',
+      message: 'Out of memory.',
+      details:
+        'could not start the llama.cpp engine: failed to load model; cudaMalloc failed: out of memory',
+    })
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engineReportedDetail', {
+      detail:
+        'could not start the llama.cpp engine: failed to load model; cudaMalloc failed: out of memory',
+    })
+    expect(text).toContain('cudaMalloc failed: out of memory')
+  })
+
+  it('collapses whitespace and clips a log-sized detail', () => {
+    const text = describeEngineError({
+      code: 'MODEL_LOAD_FAILED',
+      details: `line one\n   line two${' padding'.repeat(60)}`,
+    })
+
+    const detail = mockT.mock.calls.find(
+      ([key]) => key === 'model-errors:engineReportedDetail'
+    )?.[1]?.detail as string
+
+    expect(detail).toContain('line one line two')
+    expect(detail).not.toContain('\n')
+    expect(detail.length).toBeLessThan(250)
+    expect(detail.endsWith('...')).toBe(true)
+  })
+
+  it('omits the detail wrapper when there is no detail', () => {
+    describeEngineError({ code: 'IO_ERROR' })
+
+    expect(mockT).not.toHaveBeenCalledWith(
+      'model-errors:engineReportedDetail',
+      expect.anything()
+    )
+  })
+
   it('has a key for every code the engine can emit', () => {
     for (const code of ENGINE_ERROR_CODES) {
       mockT.mockClear()
@@ -124,5 +167,34 @@ describe('describeEngineError', () => {
     for (const input of [new Error(''), '', '   ', {}, null, undefined]) {
       expect(describeEngineError(input).trim().length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe('engineFailure', () => {
+  beforeEach(() => {
+    mockT.mockClear()
+  })
+
+  it('keeps the structured error reachable so an outer layer describes it once', () => {
+    const engine = { code: 'OUT_OF_MEMORY', details: 'cudaMalloc failed' }
+    const inner = engineFailure('model-errors:startModelFailed', engine)
+    const outer = engineFailure('model-errors:createModelFailed', inner)
+
+    expect(parseEngineError(outer)?.code).toBe('OUT_OF_MEMORY')
+    expect(describeEngineError(outer)).toContain(
+      'model-errors:engine.OUT_OF_MEMORY'
+    )
+    expect(describeEngineError(outer)).not.toContain(
+      'model-errors:startModelFailed'
+    )
+  })
+
+  it('describes a non-engine cause from its own message', () => {
+    const wrapped = engineFailure(
+      'model-errors:startModelFailed',
+      new Error('GPU fail')
+    )
+
+    expect(wrapped.message).toContain('GPU fail')
   })
 })

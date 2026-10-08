@@ -278,22 +278,25 @@ describe('useSetupChecklist', () => {
     expect(result.current.warnings).toHaveLength(1)
   })
 
-  it('distinguishes a machine with no GPU from an unreachable one', async () => {
+  // There is no longer a "wrong build for this machine" case: the engine ships
+  // with the app, so a machine with no GPU is simply a CPU machine -- ok, not a
+  // warning. The only GPU warning left is a device the engine cannot reach.
+  it('treats a machine with no GPU as settled rather than as a warning', async () => {
     armHealthy()
     mockVerifyGpuOffload.mockResolvedValue({
-      status: 'warning',
-      backend: 'linux-cuda-12-common_cpus-x64',
-      gpuExpected: true,
+      status: 'ok',
+      backend: '',
+      gpuExpected: false,
       engineDeviceCount: 0,
-      reason: 'noGpuHardware',
     })
 
     const { result } = renderHook(() => useSetupChecklist())
 
     await waitFor(() => expect(result.current.isRunning).toBe(false))
-    expect(stageById(result.current.stages, 'engine').messageKey).toBe(
-      'checkEngineNoGpuHardware'
-    )
+    const engine = stageById(result.current.stages, 'engine')
+    expect(engine.status).toBe('ok')
+    expect(engine.messageKey).toBe('checkEngineCpu')
+    expect(result.current.warnings).toHaveLength(0)
   })
 
   // The cause is established, so the message names the dependency rather than
@@ -426,11 +429,11 @@ describe('useSetupChecklist', () => {
 
   // A fresh install downloads a backend before it has one, so the engine row
   // must not accuse a not-yet-chosen backend of being CPU-only.
-  it('shows the engine as still preparing while no backend is selected', async () => {
+  it('settles instead of waiting when the backend name is unrecognised', async () => {
     armHealthy()
     mockVerifyGpuOffload.mockResolvedValue({
       status: 'ok',
-      backend: '',
+      backend: 'CUDA0-ish-unrecognised',
       gpuExpected: false,
       engineDeviceCount: 0,
     })
@@ -439,8 +442,9 @@ describe('useSetupChecklist', () => {
 
     await waitFor(() => expect(result.current.isRunning).toBe(false))
     const engine = stageById(result.current.stages, 'engine')
-    expect(engine.status).toBe('running')
-    expect(engine.messageKey).toBe('checkEnginePreparing')
+    // Never 'running': nothing is downloading any more, so a stage left running
+    // is a stage that never settles, and onboarding step 2 waits on it forever.
+    expect(engine.status).toBe('ok')
     expect(result.current.warnings).toHaveLength(0)
   })
 

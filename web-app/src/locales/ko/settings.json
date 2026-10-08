@@ -6,11 +6,6 @@
   "noUpdateAvailable": "최신 버전을 사용 중입니다",
   "devVersion": "개발 버전이 감지되었습니다",
   "updateError": "업데이트 확인 실패",
-  "checkForBackendUpdates": "Llamacpp 업데이트 확인",
-  "checkForBackendUpdatesDesc": "새 버전의 Llamacpp 백엔드가 있는지 확인합니다.",
-  "checkingForBackendUpdates": "Llamacpp 업데이트 확인 중...",
-  "noBackendUpdateAvailable": "최신 버전의 Llamacpp를 사용 중입니다",
-  "backendUpdateError": "Llamacpp 업데이트 확인 실패",
   "changeLocation": "위치 변경",
   "copied": "복사됨",
   "copyPath": "경로 복사",
@@ -312,15 +307,6 @@
       "cancel": "취소",
       "changeLocation": "위치 변경"
     }
-  },
-  "backendUpdater": {
-    "newBackendVersion": "새로운 Llamacpp 버전 {{version}}",
-    "backendUpdateAvailable": "Llamacpp 업데이트 가능",
-    "remindMeLater": "나중에 알림",
-    "updating": "업데이트 중...",
-    "updateNow": "지금 업데이트",
-    "updateSuccess": "Llamacpp 업데이트 성공",
-    "updateError": "Llamacpp 업데이트 실패"
   },
   "backendInstallSuccess": "OpenClaw가 성공적으로 설치되었습니다!",
   "backendInstallError": "백엔드 설치 실패",

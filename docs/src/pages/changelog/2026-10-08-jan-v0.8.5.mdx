@@ -1,0 +1,138 @@
+---
+title: "Jan v0.8.5: llama.cpp Stability, MCP Hardening & Platform Fixes"
+version: 0.8.5
+description: "Jan v0.8.5 is a fixes release: the llama.cpp engine (now 0.5.0) ships inside the app instead of being downloaded, the jan CLI is no longer bundled, the desktop executable is renamed to Jan-Desktop, the Local API Server enforces Trusted Hosts on 0.0.0.0, and a batch of llama.cpp, MCP, platform and agent fixes. No new features are announced in it."
+date: 2026-10-08
+---
+
+import ChangelogHeader from "@/components/Changelog/ChangelogHeader"
+
+<ChangelogHeader
+  title="Jan v0.8.5: llama.cpp Stability, MCP Hardening & Platform Fixes"
+  date="2026-10-08"
+/>
+
+# This release is fixes only
+
+No new features are announced in v0.8.5. Work in progress stays in the nightly channel: [Cowork](https://jan.ai/docs/desktop/cowork) and the current agent work ship there until they are announced, and a stable build does not show them.
+
+One thing a first launch will notice: the first-run setup is now a guided wizard - welcome, engine setup, a first model, and the consent page - instead of a single screen. It is onboarding rather than a new capability, so it is not a headline; it is written down here so a new install is not a surprise.
+
+---
+
+# Migration
+
+**The llama.cpp engine now ships with the app.**
+
+Jan no longer downloads a llama.cpp backend for your machine on first run or when one is updated. The engine (llama.cpp 0.5.0, build b11146) is bundled in the installer, runs in its own worker process, and updates together with the app, so the backend version and engine auto-update settings are gone. On Windows and Linux, NVIDIA GPUs use the bundled CUDA 13 build; other GPUs, and NVIDIA GPUs or drivers that cannot run CUDA 13 (Pascal cards such as the GTX 10 series, for example), use Vulkan. (In 0.8.4 such systems could download a CUDA 11 or 12 backend; that option is gone.) macOS uses Metal.
+
+Backends downloaded by earlier versions, in `llamacpp/backends` (and `llamacpp/lib`, if present) inside your Jan data folder, are no longer used and are safe to delete.
+
+**Local models no longer run on Intel Macs.**
+
+Intel-based Macs have not been supported since v0.8.0, and the bundled engine is built for Apple Silicon only. On an Intel Mac, Jan v0.8.5 still opens and works with remote and custom providers, but llama.cpp models will not load. If you rely on local models on an Intel Mac, stay on v0.8.4.
+
+**The desktop executable is now `Jan-Desktop`.**
+
+The app is still called Jan, and its menu entries, shortcuts and `Jan.app` bundle keep working, but the executable inside was renamed. On Linux the `.deb` installs `/usr/bin/Jan-Desktop` instead of `/usr/bin/Jan`, and on macOS it is `Jan.app/Contents/MacOS/Jan-Desktop`; scripts that launch the old path need updating. On Windows, the in-app update moves the Start-menu and desktop shortcuts to the new executable.
+
+**The `jan` CLI is no longer part of the desktop app.**
+
+The desktop app no longer bundles the `jan` command-line agent, installs it, or adds it to your `PATH`; it is now a separate install (see the [agent quickstart](https://jan.ai/docs/agent/quickstart)).
+
+- macOS and Linux: a `jan` that v0.8.4 installed (in `/usr/local/bin` or `~/.local/bin`) is left in place but stays at v0.8.4. Reinstall it from the quickstart to keep it current.
+- Windows: updating from v0.8.4 removes the `jan.exe` it put in the app's `resources\bin` folder, so `jan` stops working until you install the CLI from the quickstart. The Windows installer now puts it in `%USERPROFILE%\.local\bin`, the same place as on macOS and Linux, not in the desktop app's folder, so a later app update cannot remove it. The update leaves that folder's entry in your user `PATH`; you can [delete the entry](https://jan.ai/docs/desktop/troubleshooting#jan-is-not-recognized-after-updating-the-desktop-app).
+
+**The Local API Server checks Trusted Hosts when bound to `0.0.0.0`.**
+
+Previously, binding to `0.0.0.0` accepted any `Host` header. Now a request whose host is not `localhost`, `host.docker.internal`, a loopback or private LAN IP, or an entry in **Trusted Hosts** is rejected with `403`. If clients reach Jan by another name - a machine name such as `my-pc.local`, a domain behind a reverse proxy, or a non-private IP - add it to **Settings > Local API Server > Trusted Hosts** (or `*` to allow any host).
+
+**The agent's `bash` tool is now called `shell`.**
+
+On Windows it runs in PowerShell, so Git Bash is no longer needed; on macOS and Linux it is still bash. Agent definitions and tool allowlists that name `bash` stop matching: Jan reports the old name as an error, and renaming it to `shell` fixes it. Past conversations that used `bash` still display normally.
+
+**Settings that change on update**
+
+- llama.cpp **Parallel Sequences**: a value of `1` (the old default) becomes `0`, which lets llama.cpp pick the slot count.
+- A model whose `model.yml` carries the `n_gpu_layers: 100` an earlier version wrote has it removed, so GPU offload is decided automatically again.
+- llama.cpp **Remember Conversations Between Sessions** is on by default: each conversation's prompt cache is kept on disk in `llamacpp/thread-cache`, capped by **Conversation Cache Disk Limit** (8192 MiB). Turn it off in **Settings > Model Providers > Llama.cpp**.
+- Windows and Linux: **Settings > Local API Server** has a **Run in background** toggle, on by default (the previous behavior). Turn it off to make closing the window quit Jan and stop the server.
+
+---
+
+# Bug Fixes
+
+**llama.cpp & Local Models**
+
+- Setting `parallel` no longer halves the per-slot context window.
+- Context-shifted chat history is trimmed instead of being sent back whole.
+- llama.cpp runs in a separate worker process, so an engine crash no longer takes the app down with it.
+- llama.cpp is upgraded to 0.5.0, and per-model chat-template and grammar files can be given as paths.
+- Building Jan from source on Fedora and RHEL finds the llama.cpp libraries.
+
+**Chat, Projects & Providers**
+
+- A new chat inside a project uses that project's assistant.
+- The predefined Azure provider has a Base URL field, so it can point at your Azure endpoint.
+- A message that failed is no longer sent again inside your next one, and a local server (Jan's own engine, Ollama, LM Studio or anything on `localhost`) is not retried after an error, so a failing prompt runs once instead of three times.
+
+**MCP**
+
+- Tool results are capped before they enter conversation history, so a single large result can no longer blow the context window.
+- A failing `shell` tool now reports as an error instead of a successful result.
+
+**Desktop & Platform**
+
+- The sidebar's Jan label no longer overlaps the macOS traffic lights.
+- Windows: the maximize button turns into Restore while the window is maximized.
+- Zoom shortcuts are scoped to chat message text, so zooming a message no longer rescales the whole app.
+- Hub search ranks exact model id matches first.
+- Log rotation no longer deletes the llama.cpp and worker logs.
+- An in-app update stops the running engine, MCP servers and agent shells before the installer runs. If 0.8.4 left its engine running after an update, Jan stops it at the next start.
+- The Linux AppImage shows its icon again.
+- The Windows installer template substitutes `jan_workspace` correctly.
+- On Windows, the Start-menu and desktop shortcuts keep working after the in-app update renames the app executable.
+
+**Agent & Tooling**
+
+- A session heals from malformed or poisoned tool-call history instead of failing every turn after it.
+- Session token spend is counted honestly, including marginal spend.
+- A compacted turn resumes from where it stopped, and orphan tool rows are retired.
+- Compaction retries on llama-server context-overflow responses, and the compaction prompt is appended rather than rewriting the request prefix.
+- The `shell` tool works on Windows (in PowerShell, inside the sandbox), and TUI scrollback follows the terminal's scroll wheel.
+
+**Security**
+
+- Binding the Local API Server to `0.0.0.0` now enforces the Trusted Hosts allowlist (GHSA-x6p8-7cp8-c3p6); see Migration above. Thanks to the reporter.
+- An "allow always" grant for a shell command now covers only plain invocations of that command. Commands that redefine aliases or functions, change `PATH` or similar variables, or wrap another command in a way the scanner cannot follow ask again instead of running under the grant.
+
+---
+
+# Known issues
+
+- A failed in-app update closes the update dialog without an error; the reason is only in the log ([#9137](https://github.com/janhq/jan/issues/9137)).
+- Windows, inside the sandbox the `shell` tool runs in: `git` cannot read the workspace, and tools whose install folder denies access to app containers (Node.js installed from its MSI, for example) cannot start. PowerShell in Constrained Language Mode, which some managed machines enforce, also stops the `shell` tool.
+- Ubuntu 24.04: the default AppArmor policy blocks the sandbox the `shell` tool runs in, so Jan does not offer the tool in chat. Everything else works.
+
+---
+
+# Nightly
+
+Cowork and the in-progress agent work are available in the nightly channel:
+
+- macOS (universal): https://app.jan.ai/download/nightly/mac-universal
+- Windows (x64): https://app.jan.ai/download/nightly/win-x64
+- Linux (x64): https://app.jan.ai/download/nightly/linux-amd64-deb or https://app.jan.ai/download/nightly/linux-amd64-appimage
+
+---
+
+# Engineering
+
+- The desktop end-to-end suite now runs on all four platforms on a nightly schedule, with a mock provider covering the chat critical path.
+- Building the engine on Windows no longer fails on the 260-character `MAX_PATH` limit.
+
+---
+
+Update Jan or [download the latest](https://jan.ai/).
+
+For the complete list of changes, see the [GitHub release notes](https://github.com/janhq/jan/releases/tag/v0.8.5).

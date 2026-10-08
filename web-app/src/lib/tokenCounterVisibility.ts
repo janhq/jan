@@ -4,6 +4,12 @@ export interface TokenCounterVisibilityInput {
   isInitialMessage: boolean
   hasMessages: boolean
   hasPromptText: boolean
+  /**
+   * The caller reported usage directly (Cowork, which keeps no thread
+   * messages). The remaining conditions all ask "is there a turn worth
+   * counting yet"; reported usage answers that outright.
+   */
+  hasReportedUsage?: boolean
 }
 
 /**
@@ -18,8 +24,8 @@ export const shouldShowTokenCounter = ({
   isInitialMessage,
   hasMessages,
   hasPromptText,
+  hasReportedUsage = false,
 }: TokenCounterVisibilityInput): boolean =>
   hasSelectedModel &&
   !isAgentMode &&
-  !isInitialMessage &&
-  (hasMessages || hasPromptText)
+  (hasReportedUsage || (!isInitialMessage && (hasMessages || hasPromptText)))

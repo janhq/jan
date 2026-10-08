@@ -1,1 +1,5 @@
 Cargo.lock -diff
+
+# Lockfiles are generated; collapse them in review and keep them out of language stats.
+# `linguist-generated` rather than `-diff` so `git diff` still works for security audits.
+*yarn.lock linguist-generated=true

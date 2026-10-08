@@ -39,4 +39,26 @@ describe('version', () => {
     const mod = await import('../version')
     expect(mod.isProd).toBe(false)
   })
+
+  it('isCoworkEnabled is true on nightly and on the dev server', async () => {
+    ;(globalThis as any).VERSION = '1.0.0-nightly'
+    vi.doMock('../utils', () => ({ isDev: vi.fn(() => false) }))
+    expect((await import('../version')).isCoworkEnabled()).toBe(true)
+
+    vi.resetModules()
+    ;(globalThis as any).VERSION = '1.0.0'
+    vi.doMock('../utils', () => ({ isDev: vi.fn(() => true) }))
+    expect((await import('../version')).isCoworkEnabled()).toBe(true)
+  })
+
+  it('isCoworkEnabled is false on beta and on stable releases', async () => {
+    ;(globalThis as any).VERSION = '1.0.0-beta'
+    vi.doMock('../utils', () => ({ isDev: vi.fn(() => false) }))
+    expect((await import('../version')).isCoworkEnabled()).toBe(false)
+
+    vi.resetModules()
+    ;(globalThis as any).VERSION = '1.0.0'
+    vi.doMock('../utils', () => ({ isDev: vi.fn(() => false) }))
+    expect((await import('../version')).isCoworkEnabled()).toBe(false)
+  })
 })

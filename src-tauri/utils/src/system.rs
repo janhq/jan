@@ -149,8 +149,8 @@ pub fn library_path_env(library_path: Option<&Path>, cuda: &CudaPaths) -> Librar
         let mut all_dirs: Vec<String> = Vec::new();
         if let Some(lib_path) = library_path {
             let lib_str = lib_path.to_string_lossy();
-            let normalized = if lib_str.starts_with(r"\\?\") {
-                lib_str[4..].to_string()
+            let normalized = if let Some(stripped) = lib_str.strip_prefix(r"\\?\") {
+                stripped.to_string()
             } else {
                 lib_str.to_string()
             };
@@ -587,13 +587,13 @@ fn collect_flatpak_gl_paths(cuda_lib_paths: &mut std::collections::HashSet<Strin
 }
 
 pub fn setup_windows_process_flags(command: &mut tokio::process::Command) {
-    #[cfg(all(windows, target_arch = "x86_64"))]
+    #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
         command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
     }
-    #[cfg(not(all(windows, target_arch = "x86_64")))]
+    #[cfg(not(windows))]
     {
         let _ = command; // Silence unused parameter warning on non-Windows platforms
     }

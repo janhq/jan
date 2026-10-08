@@ -19,9 +19,18 @@
     ]
   },
   "bundle": {
-    "targets": ["deb", "appimage"],
-    "resources": ["resources/LICENSE", "resources/bin/jan-cli"],
-    "externalBin": ["resources/bin/uv"],
+    "targets": [
+      "deb",
+      "appimage"
+    ],
+    "resources": [
+      "resources/LICENSE",
+      "resources/bin/jan-llama-worker",
+      "resources/bin/lib*.so*"
+    ],
+    "externalBin": [
+      "resources/bin/uv"
+    ],
     "linux": {
       "appimage": {
         "bundleMediaFramework": false,

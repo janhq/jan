@@ -80,8 +80,11 @@ fn delete_settings(data_folder: &std::path::Path) {
 /// Clear the WebKit/WRY webview profile (localStorage, cookies, IndexedDB,
 /// updater state) stored in the bundle-id app-data dir (e.g. `jan.ai.app/`).
 /// Distinct from the product-name data folder; only removed on explicit opt-in.
-fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_folder: &std::path::Path) {
-    let webview_dir = match app_handle.path().app_data_dir() {
+fn clear_webview_profile<R: Runtime>(
+    app_handle: &tauri::AppHandle<R>,
+    data_folder: &std::path::Path,
+) {
+    let webview_dir = match crate::core::app::paths::app_data_dir_for(app_handle) {
         Ok(dir) => dir,
         Err(e) => {
             log::warn!("Cannot resolve webview profile dir: {e}");
@@ -104,7 +107,10 @@ fn clear_webview_profile<R: Runtime>(app_handle: &tauri::AppHandle<R>, data_fold
 
     log::info!("Clearing webview profile: {}", webview_dir.display());
     if let Err(e) = fs::remove_dir_all(&webview_dir) {
-        log::warn!("Failed to clear webview profile {}: {e}", webview_dir.display());
+        log::warn!(
+            "Failed to clear webview profile {}: {e}",
+            webview_dir.display()
+        );
     }
 }
 
@@ -344,30 +350,6 @@ pub fn open_app_directory<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn open_file_explorer(path: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    let (program, arg): (&str, std::ffi::OsString) = if cfg!(target_os = "windows") {
-        // Normalize extended-length paths (\\?\...) for explorer compatibility.
-        let mut path_str = path.to_string_lossy().into_owned();
-        if let Some(stripped) = path_str.strip_prefix(r"\\?\UNC\") {
-            path_str = format!(r"\\{}", stripped);
-        } else if let Some(stripped) = path_str.strip_prefix(r"\\?\") {
-            path_str = stripped.to_string();
-        }
-        ("explorer", path_str.into())
-    } else if cfg!(target_os = "macos") {
-        ("open", path.into())
-    } else {
-        ("xdg-open", path.into())
-    };
-    std::process::Command::new(program)
-        .arg(arg)
-        .status()
-        .map_err(|e| format!("Failed to open file explorer: {e}"))?;
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn read_logs<R: Runtime>(app: AppHandle<R>) -> Result<String, String> {
     let log_path = get_jan_data_folder_path(app).join("logs").join("app.log");
     if log_path.exists() {
@@ -399,19 +381,47 @@ pub fn launch_claude_code_with_config(
     small_model: Option<String>,
     custom_env_vars: Vec<serde_json::Value>,
 ) -> Result<(), String> {
-    // Clone values for logging before moving
-    let api_url_log = api_url.clone();
-    let big_model_log = big_model.clone();
-    let medium_model_log = medium_model.clone();
-    let small_model_log = small_model.clone();
+    let env_vars = build_claude_code_env_vars(
+        api_url,
+        api_key,
+        big_model,
+        medium_model,
+        small_model,
+        custom_env_vars,
+    )?;
+
+    // Claude Code talks to Jan's local API server, which authenticates inbound
+    // requests against its own key (the proxy_api_key). ANTHROPIC_AUTH_TOKEN
+    // MUST therefore be the local server key, and there is no valid placeholder:
+    // anything else reaches the proxy, passes its key check, and then gets
+    // rejected by the remote provider as a bogus credential (an opaque 403).
+    // Refuse to launch with a clear message rather than ship a fake key.
+    write_claude_code_env_vars(&env_vars)
+}
+
+/// Build the environment variable map for the Claude Code integration.
+/// Returns an error if no local API key is set, since the proxy will not
+/// authenticate the session otherwise.
+fn build_claude_code_env_vars(
+    api_url: String,
+    api_key: Option<String>,
+    big_model: Option<String>,
+    medium_model: Option<String>,
+    small_model: Option<String>,
+    custom_env_vars: Vec<serde_json::Value>,
+) -> Result<Vec<(String, String)>, String> {
+    let token = api_key
+        .filter(|k| !k.trim().is_empty())
+        .ok_or_else(|| {
+            "No local API key is set. Open Settings > Local API Server, set an API key, \
+             and try again: Claude Code needs a real key to authenticate with the local \
+             server and reach remote models."
+                .to_string()
+        })?;
 
     let mut env_vars: Vec<(String, String)> = Vec::with_capacity(8);
     env_vars.push(("ANTHROPIC_BASE_URL".to_string(), api_url));
-
-    env_vars.push((
-        "ANTHROPIC_AUTH_TOKEN".to_string(),
-        api_key.unwrap_or_else(|| "jan".to_string()),
-    ));
+    env_vars.push(("ANTHROPIC_AUTH_TOKEN".to_string(), token));
 
     if let Some(model) = big_model {
         env_vars.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), model));
@@ -435,15 +445,14 @@ pub fn launch_claude_code_with_config(
         }
     }
 
-    log::info!(
-        "Launching Claude Code with API URL: {}, models: opus={:?}, sonnet={:?}, haiku={:?}, custom_envs={}",
-        api_url_log,
-        big_model_log,
-        medium_model_log,
-        small_model_log,
-        custom_env_vars.len()
-    );
+    Ok(env_vars)
+}
 
+/// Persist the Claude Code environment variables to the user's shell config
+/// (macOS/Linux) or the Windows registry, then return the result.
+fn write_claude_code_env_vars(
+    env_vars: &[(String, String)],
+) -> Result<(), String> {
     // Build the command environment
     // Export environment variables to the user's shell config file
 
@@ -464,7 +473,7 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, env_vars)?;
                 Ok(())
             }
             Err(_) => {
@@ -528,7 +537,7 @@ pub fn launch_claude_code_with_config(
             .open(&env_file_path)
         {
             Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
+                write_env_to_shell(&env_file_path, env_vars)?;
                 Ok(())
             }
             Err(_) => {
@@ -540,7 +549,7 @@ pub fn launch_claude_code_with_config(
         }
     } else {
         // On Windows, set persistent user environment variables using setx
-        for (key, value) in &env_vars {
+        for (key, value) in env_vars {
             let output = std::process::Command::new("setx")
                 .arg(key)
                 .arg(value)
@@ -554,200 +563,6 @@ pub fn launch_claude_code_with_config(
         }
 
         log::info!("Environment variables set permanently in Windows registry.");
-        Ok(())
-    }
-}
-
-#[derive(serde::Serialize)]
-pub struct CliInstallStatus {
-    pub installed: bool,
-    pub path: Option<String>,
-}
-
-/// Check if the `jan` CLI binary is accessible on PATH, or — failing that —
-/// at one of the known install destinations.
-///
-/// `which`/`where` only sees what the Tauri process's PATH sees. Linux GUI
-/// launches typically inherit a minimal PATH (no `~/.local/bin`), and on
-/// Windows the registry PATH update from `add_to_path_windows` doesn't apply
-/// to the already-running process. Without the fallback probe, a successful
-/// install reports `installed: false` after the next remount of Settings.
-#[tauri::command]
-pub async fn check_jan_cli_installed() -> CliInstallStatus {
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    let mut cmd = std::process::Command::new(which_cmd);
-    cmd.arg("jan");
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let path_from_which = match tokio::task::spawn_blocking(move || cmd.output()).await {
-        Ok(Ok(out)) if out.status.success() => {
-            let raw = String::from_utf8_lossy(&out.stdout);
-            #[cfg(windows)]
-            let path = {
-                raw.lines()
-                    .map(str::trim)
-                    .filter(|p| !p.is_empty() && !p.to_ascii_lowercase().contains("\\target\\"))
-                    .next()
-                    .map(str::to_string)
-                    .or_else(|| {
-                        raw.lines()
-                            .map(str::trim)
-                            .find(|p| !p.is_empty())
-                            .map(str::to_string)
-                    })
-            };
-            #[cfg(not(windows))]
-            let path = {
-                let trimmed = raw.trim();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed.to_string())
-                }
-            };
-            path
-        }
-        _ => None,
-    };
-
-    if let Some(p) = path_from_which {
-        return CliInstallStatus {
-            installed: true,
-            path: Some(p),
-        };
-    }
-
-    // Fall back to probing the destinations `install_jan_cli_sync` writes to.
-    for candidate in jan_cli_install_candidates() {
-        if candidate.exists() {
-            return CliInstallStatus {
-                installed: true,
-                path: Some(candidate.to_string_lossy().into_owned()),
-            };
-        }
-    }
-
-    CliInstallStatus {
-        installed: false,
-        path: None,
-    }
-}
-
-/// Paths where `install_jan_cli_sync` may have placed the `jan` binary.
-fn jan_cli_install_candidates() -> Vec<PathBuf> {
-    let bin = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let mut out: Vec<PathBuf> = Vec::new();
-
-    #[cfg(unix)]
-    {
-        out.push(PathBuf::from("/usr/local/bin").join(bin));
-        if let Ok(home) = std::env::var("HOME") {
-            out.push(PathBuf::from(home).join(".local").join("bin").join(bin));
-        }
-    }
-    #[cfg(windows)]
-    {
-        if let Ok(dir) = jan_cli_bin_dir_windows() {
-            out.push(dir.join(bin));
-        }
-    }
-    out
-}
-
-/// Core install logic — synchronous, no Tauri command overhead.
-pub fn install_jan_cli_sync<R: Runtime>(
-    app_handle: &AppHandle<R>,
-) -> Result<CliInstallStatus, String> {
-    let bin_name = if cfg!(windows) {
-        "jan-cli.exe"
-    } else {
-        "jan-cli"
-    };
-    let dest_bin_name = if cfg!(windows) { "jan.exe" } else { "jan" };
-    let resource_bin_dir = app_handle
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
-        .join("resources/bin");
-    let bundled = resource_bin_dir.join(bin_name);
-    let dest = resource_bin_dir.join(dest_bin_name);
-
-    if !bundled.exists() && !dest.exists() {
-        return Err("Jan CLI binary not bundled with this version of Jan.".to_string());
-    }
-
-    #[cfg(windows)]
-    {
-        if bundled.exists() {
-            // rename won't reliably clobber a stale jan.exe from a previous
-            // version (replace semantics / AV locks), so drop it first to
-            // guarantee a version upgrade actually overwrites the binary.
-            if dest.exists() {
-                if let Err(e) = std::fs::remove_file(&dest) {
-                    log::warn!("Could not remove stale {}: {}", dest.display(), e);
-                }
-            }
-            if let Err(e) = std::fs::rename(&bundled, &dest) {
-                log::warn!("Could not rename jan-cli.exe to jan.exe: {}", e);
-            }
-        }
-        add_to_path_windows(&resource_bin_dir)?;
-        return Ok(CliInstallStatus {
-            installed: true,
-            path: Some(dest.to_string_lossy().into_owned()),
-        });
-    }
-
-    #[cfg(unix)]
-    {
-        let install_dir = jan_cli_install_dir()?;
-        std::fs::create_dir_all(&install_dir).map_err(|e| e.to_string())?;
-        let dest = install_dir.join(dest_bin_name);
-
-        std::fs::copy(&bundled, &dest)
-            .map_err(|e| format!("Failed to copy jan to {}: {}", dest.display(), e))?;
-
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| e.to_string())?;
-
-        Ok(CliInstallStatus {
-            installed: true,
-            path: Some(dest.to_string_lossy().into_owned()),
-        })
-    }
-}
-
-/// Copy the bundled `jan` binary to the system PATH (Tauri command wrapper).
-#[tauri::command]
-pub async fn install_jan_cli<R: Runtime>(
-    app_handle: AppHandle<R>,
-) -> Result<CliInstallStatus, String> {
-    install_jan_cli_sync(&app_handle)
-}
-
-/// Remove the installed `jan` CLI binary.
-#[tauri::command]
-pub fn uninstall_jan_cli() -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let bin_dir = jan_cli_bin_dir_windows()?;
-        remove_from_path_windows(&bin_dir)?;
-        return Ok(());
-    }
-
-    #[cfg(unix)]
-    {
-        let dest = jan_cli_install_dir()?.join("jan");
-        if dest.exists() {
-            std::fs::remove_file(&dest)
-                .map_err(|e| format!("Failed to remove Jan CLI from {}: {}", dest.display(), e))?;
-        }
         Ok(())
     }
 }
@@ -855,183 +670,6 @@ pub fn clear_claude_code_env() -> Result<(), String> {
         log::info!("CC env vars removed from Windows registry.");
         Ok(())
     }
-}
-
-/// Determine the best writable directory for the Jan CLI install (Unix only).
-#[cfg(unix)]
-fn jan_cli_install_dir() -> Result<PathBuf, String> {
-    let usr_local_bin = PathBuf::from("/usr/local/bin");
-    if usr_local_bin.exists() {
-        let probe = usr_local_bin.join(".jan_write_probe");
-        if std::fs::write(&probe, b"").is_ok() {
-            let _ = std::fs::remove_file(&probe);
-            return Ok(usr_local_bin);
-        }
-    }
-    let home =
-        std::env::var("HOME").map_err(|_| "Cannot determine home directory".to_string())?;
-    Ok(PathBuf::from(home).join(".local").join("bin"))
-}
-
-/// Return the directory containing the bundled CLI binary on Windows.
-#[cfg(windows)]
-fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
-    let local_app_data = std::env::var("LOCALAPPDATA")
-        .map_err(|_| "Cannot determine LOCALAPPDATA".to_string())?;
-    Ok(PathBuf::from(local_app_data)
-        .join("Programs")
-        .join("Jan")
-        .join("resources")
-        .join("bin"))
-}
-
-/// Add a directory to the Windows user PATH.
-#[cfg(windows)]
-fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
-
-    let install_dir_str = install_dir.to_string_lossy().to_string();
-
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-Command",
-        "[Environment]::GetEnvironmentVariable('Path', 'User')",
-    ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let read_output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
-
-    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
-        .trim()
-        .to_string();
-
-    // Remove stale old-style PATH entry (..\\Programs\\Jan without \\resources\\bin)
-    // left by previous versions that placed jan.exe next to the GUI binary.
-    let old_jan_dir = install_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .map(|p| p.to_string_lossy().to_string());
-
-    let parts: Vec<&str> = existing_user_path
-        .split(';')
-        .filter(|p| !p.is_empty())
-        .filter(|p| {
-            if let Some(ref old) = old_jan_dir {
-                !p.eq_ignore_ascii_case(old)
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    if parts.iter().any(|p| p.eq_ignore_ascii_case(&install_dir_str)) {
-        return Ok(());
-    }
-
-    let mut new_parts = vec![install_dir_str.as_str()];
-    new_parts.extend(parts);
-    let new_path = new_parts.join(";");
-
-    let mut cmd_write = Command::new("powershell");
-    cmd_write.args([
-        "-NoProfile",
-        "-Command",
-        &format!(
-            "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-            new_path.replace('\'', "''")
-        ),
-    ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let write_output = cmd_write
-        .output()
-        .map_err(|e| format!("Failed to update user PATH: {}", e))?;
-
-    if !write_output.status.success() {
-        return Err(format!(
-            "Failed to update PATH: {}",
-            String::from_utf8_lossy(&write_output.stderr)
-        ));
-    }
-
-    log::info!("Added {} to Windows user PATH", install_dir_str);
-    Ok(())
-}
-
-/// Remove a directory from the Windows user PATH.
-#[cfg(windows)]
-fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
-
-    let dir_str = dir.to_string_lossy().to_string();
-
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-Command",
-        "[Environment]::GetEnvironmentVariable('Path', 'User')",
-    ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let read_output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
-
-    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
-        .trim()
-        .to_string();
-
-    let new_path: String = existing_user_path
-        .split(';')
-        .filter(|p| !p.is_empty() && !p.eq_ignore_ascii_case(&dir_str))
-        .collect::<Vec<_>>()
-        .join(";");
-
-    if new_path.len() != existing_user_path.len() {
-        let mut cmd_write = Command::new("powershell");
-        cmd_write.args([
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-                new_path.replace('\'', "''")
-            ),
-        ]);
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
-
-        let write_output = cmd_write
-            .output()
-            .map_err(|e| format!("Failed to update user PATH: {}", e))?;
-
-        if !write_output.status.success() {
-            return Err(format!(
-                "Failed to update PATH: {}",
-                String::from_utf8_lossy(&write_output.stderr)
-            ));
-        }
-
-        log::info!("Removed {} from Windows user PATH", dir_str);
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1177,5 +815,61 @@ mod tests {
         assert!(is_safe_to_delete(std::path::Path::new(
             "/home/user/.local/share/jan"
         )));
+    }
+    #[test]
+    fn claude_code_env_uses_real_token_when_set() {
+        let env = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("sk-real-secret".to_string()),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap();
+        let token = env
+            .iter()
+            .find(|(k, _)| k == "ANTHROPIC_AUTH_TOKEN")
+            .map(|(_, v)| v.as_str())
+            .unwrap();
+        assert_eq!(token, "sk-real-secret");
+        assert!(env
+            .iter()
+            .all(|(_, v)| v != "jan"),
+            "placeholder must never be shipped as a token");
+    }
+
+    #[test]
+    fn claude_code_env_rejects_missing_key() {
+        let err = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            None,
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("API key"),
+            "should tell the user a local API key is required: {err}"
+        );
+    }
+
+    #[test]
+    fn claude_code_env_rejects_blank_key() {
+        let err = build_claude_code_env_vars(
+            "http://127.0.0.1:1337".to_string(),
+            Some("   ".to_string()),
+            None,
+            None,
+            None,
+            vec![],
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("API key"),
+            "a whitespace-only key is not a real credential: {err}"
+        );
     }
 }

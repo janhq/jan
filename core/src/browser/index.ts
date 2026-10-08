@@ -17,6 +17,12 @@ export * from './events'
 export * from './fs'
 
 /**
+ * Export app settings module.
+ * @module
+ */
+export * from './settings'
+
+/**
  * Export Extension module.
  * @module
  */

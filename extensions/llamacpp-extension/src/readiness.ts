@@ -6,16 +6,15 @@
 export type ReadinessStatus = 'ok' | 'warning'
 
 /**
- * `noGpuHardware` means a GPU build is installed on a machine with no GPU.
  * `runtimeUnreachable` means a GPU exists but the engine cannot see it, which
- * points at the driver or runtime rather than the variant choice.
- * `missingLibrary` is the same symptom with the cause established: the loader
- * named a dependency it could not resolve.
+ * points at the driver or runtime. `missingLibrary` is the same symptom with the
+ * cause established: the loader named a dependency it could not resolve.
+ *
+ * `noGpuHardware` is gone: it meant "a GPU build on a machine with no GPU",
+ * which the bundled engine cannot be in -- no GPU means no GPU expected, which
+ * is simply `ok`.
  */
-export type GpuOffloadReason =
-  | 'noGpuHardware'
-  | 'runtimeUnreachable'
-  | 'missingLibrary'
+export type GpuOffloadReason = 'runtimeUnreachable' | 'missingLibrary'
 
 export interface GpuOffloadCheck {
   status: ReadinessStatus
@@ -24,21 +23,6 @@ export interface GpuOffloadCheck {
   reason?: GpuOffloadReason
   /** Set only for `missingLibrary`, to drive install advice. */
   missingLibraries?: string[]
-}
-
-/**
- * Whether a backend has been selected. Nothing downstream of the router can be
- * probed until it has: on a fresh install this stays false through a catalog
- * fetch and a backend download, so a probe answered during that window reports
- * an absence of setup rather than a defect.
- */
-export function isBackendConfigured(
-  versionBackend: string | undefined | null
-): boolean {
-  const value = (versionBackend ?? '').trim()
-  if (value === '' || value === 'none' || !value.includes('/')) return false
-  const [version, backend] = value.split('/')
-  return Boolean(version && backend)
 }
 
 export type EmbeddingVectorProblem =
@@ -53,29 +37,34 @@ export interface EmbeddingVectorCheck {
   problem?: EmbeddingVectorProblem
 }
 
-// Substrings of a backend variant id that mean layers are meant to run on a
-// GPU. Metal is excluded: it is implicit on Apple Silicon and always present,
-// so a macOS build can never be "a GPU build that found no GPU".
-const GPU_BACKEND_MARKERS = ['cuda', 'vulkan', 'hip']
-
-export function backendImpliesGpu(backend: string): boolean {
-  const lower = (backend ?? '').toLowerCase()
-  return GPU_BACKEND_MARKERS.some((marker) => lower.includes(marker))
+/**
+ * The backend a device id came from, e.g. `Vulkan0` -> `vulkan`.
+ *
+ * Observed rather than declared: with the engine bundled at a pinned version
+ * there is no backend *setting* to read, and the device the engine actually
+ * enumerated is a stronger signal than a configured name ever was -- a
+ * configured `cuda` told us nothing about whether CUDA loaded.
+ */
+export function backendFromDeviceIds(deviceIds: string[]): string {
+  const first = deviceIds.find((id) => id.trim() !== '')
+  if (!first) return ''
+  return first.trim().replace(/\d+$/, '').toLowerCase()
 }
 
 /**
- * A GPU backend that starts cleanly but sees no devices falls back to CPU
- * silently: llama.cpp's layer fit puts everything on the host and the router
- * still reports healthy. Comparing the engine's own device list against the
- * variant is the only way to catch it.
+ * A GPU present in hardware but absent from the engine's device list means
+ * layers silently run on the host: llama.cpp's layer fit puts everything on the
+ * CPU and the engine still reports healthy. Comparing the two counts is the
+ * only signal that offload never happened.
  */
 export function evaluateGpuOffload(input: {
-  backend: string
   engineDeviceCount: number
   hardwareGpuCount: number
 }): GpuOffloadCheck {
-  const { backend, engineDeviceCount, hardwareGpuCount } = input
-  const gpuExpected = backendImpliesGpu(backend)
+  const { engineDeviceCount, hardwareGpuCount } = input
+  // "Expected" is now a property of the machine, not of a chosen build: the
+  // shipped engine offloads wherever it can.
+  const gpuExpected = hardwareGpuCount > 0
 
   if (!gpuExpected || engineDeviceCount > 0) {
     return { status: 'ok', gpuExpected, engineDeviceCount }
@@ -85,7 +74,7 @@ export function evaluateGpuOffload(input: {
     status: 'warning',
     gpuExpected,
     engineDeviceCount,
-    reason: hardwareGpuCount > 0 ? 'runtimeUnreachable' : 'noGpuHardware',
+    reason: 'runtimeUnreachable',
   }
 }
 

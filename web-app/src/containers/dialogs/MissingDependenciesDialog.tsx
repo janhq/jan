@@ -17,7 +17,6 @@ import { getBackendDisplayName } from '@/lib/backendDependencies'
 
 type VerificationFailedPayload = {
   backend: string
-  version: string
   missingLibraries: string[]
 }
 

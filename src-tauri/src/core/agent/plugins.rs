@@ -1,0 +1,2186 @@
+//! Plugin install/removal and marketplace search. A plugin is a directory
+//! `~/.jan/projects/<slug>/plugins/<name>/` cloned from a git repository, so installing
+//! from GitHub (or any git host) is just `git clone`. No lockfile or registry
+//! file: an installed plugin is a directory, removed by deleting it. Installing
+//! never executes plugin code — a plugin carries skills (instructions) plus an
+//! optional `plugin.toml` metadata manifest.
+//!
+//! A plugin's payload is discovered conventionally, so a repo needs no
+//! manifest to be installable:
+//!   - `skills/` — folder skills (`<name>/SKILL.md`) and flat `<name>.md`,
+//!     the same layout as project skills
+//!   - `SKILL.md` at the plugin root — a repo that is itself one skill
+//!   - `plugin.toml` — optional metadata: `name`, `description`, `version`,
+//!     `repo` (the canonical source URL, recorded at install for provenance),
+//!     plus optional `[[tools]]` entries the plugin contributes
+//!   - `hooks/hooks.json` — optional lifecycle hooks (see
+//!     `tauri_plugin_agent_tools::tools::hooks`)
+//!
+//! Installing still executes nothing: a declared tool or hook is a command
+//! recorded on disk, run only when the model calls it or its event fires, and
+//! then under the same confinement `bash` gets.
+//!
+//! `[plugins] marketplace` in `agent.toml` points at a JSON index of community
+//! plugins: `[{ "name", "description", "repo", "ref"? }]`. `install <name>`
+//! resolves through it; `install <git-url>` skips it entirely.
+
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use serde::Deserialize;
+
+use crate::core::agent::project::PluginsSection;
+use crate::core::agent::skills;
+
+/// Shell metacharacters rejected in install specs. A spec is a git URL or a
+/// marketplace name; anything else (including command substitution) is a
+/// typo or an injection attempt, so it errors instead of being passed to a
+/// shell. `:` `/` `#` `@` `-` `_` `.` are all fine — they appear in URLs.
+const SHELL_METACHARS: &[char] = &[
+    ';', '&', '|', '`', '$', '(', ')', '{', '}', '<', '>', '\\', '\n', '\r', '\t',
+];
+
+const USER_AGENT: &str = "jan-agent-plugin-manager";
+
+// How a bare collection URL that holds several plugins is resolved after the
+// clone. A collection has no payload at the root, so we enumerate the plugins
+// inside it and either ask the user which one to install (interactive CLI) or
+// fail with an actionable listing (TUI/desktop, where stdin is owned by the
+// render loop and cannot be read mid-install).
+#[derive(Clone, PartialEq, Eq)]
+enum CollectionChoice {
+    /// Fail on a multi-plugin collection, listing the choices in the error.
+    // (desktop-only) `install` is the non-CLI entry point, so this arm is
+    // dead under `--features cli` but still matched in the always-compiled
+    // `install_with`, so it is allowed rather than `cfg`'d out.
+    #[cfg_attr(feature = "cli", allow(dead_code))]
+    ListError,
+    /// Ask on stdin which plugins to install (the interactive CLI).
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    Prompt,
+    /// Return the choices instead of installing, so a caller that owns the
+    /// terminal (the TUI) can present its own picker.
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    List,
+    /// Install exactly these payload-root-relative paths (a picker selection).
+    // (cli-only)
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    Only(Vec<String>),
+}
+
+/// One plugin discovered inside a collection repo, for a caller to choose from.
+pub(crate) struct CollectionPlugin {
+    // (cli-only) fields are read only by the CLI list/install path but the
+    // struct is constructed by the always-compiled `install_with`, so they
+    // are dead (allowed) under the desktop/test config.
+    /// Path relative to the payload root, e.g. `plugins/code-review`.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    pub(crate) path: String,
+    /// A plugin of this name is already installed.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    pub(crate) installed: bool,
+}
+
+/// The result of a git install: either plugins landed, or the source turned out
+/// to be a collection the caller must choose from.
+pub(crate) enum GitInstall {
+    Installed(Vec<InstalledPlugin>),
+    // (cli-only) the collection listing is produced by the always-compiled
+    // `install_with` and consumed only by the CLI list/install path, so it
+    // is dead (allowed) under the desktop/test config.
+    #[cfg_attr(not(feature = "cli"), allow(dead_code))]
+    Collection(Vec<CollectionPlugin>),
+}
+/// An installed plugin, from its directory plus optional manifest.
+#[derive(Debug, serde::Serialize, Clone)]
+pub struct InstalledPlugin {
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub repo: String,
+    /// Number of skills the plugin contributes.
+    pub skills: usize,
+    /// Number of command prompt templates (`commands/**/*.md`).
+    pub commands: usize,
+    /// Number of agent definitions (`agents/**/*.md`).
+    pub agents: usize,
+    /// Number of tools the plugin declares in `[[tools]]` of its `plugin.toml`.
+    /// Unlike the three counts above these are not markdown: they are commands
+    /// the model can call, which is why the count is worth reporting separately
+    /// rather than folded into the others.
+    pub tools: usize,
+    /// Number of lifecycle hooks the plugin ships in `hooks/hooks.json`.
+    pub hooks: usize,
+}
+
+/// A plugin available on the configured marketplace: JSON index entry.
+#[derive(serde::Serialize, Deserialize, Clone)]
+pub struct MarketEntry {
+    pub name: String,
+    pub description: String,
+    pub repo: String,
+    #[serde(default)]
+    pub r#ref: Option<String>,
+}
+
+/// Optional metadata manifest at the plugin root. Every field is optional so
+/// a repo without a manifest is still installable and listable.
+#[derive(Debug, Default, Deserialize)]
+struct Manifest {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    repo: Option<String>,
+    /// Optional setup requirements: environment variables the plugin needs
+    /// (typically API keys). `plugin.toml`:
+    ///
+    /// ```toml
+    /// [setup.env]
+    /// GITHUB_TOKEN = "https://github.com/settings/tokens"
+    /// ```
+    ///
+    /// The value is the URL the user can obtain the key from (empty when the
+    /// plugin author has no link to share).
+    #[serde(default)]
+    setup: Option<SetupSection>,
+    /// Inline MCP declarations; `.mcp.json` declarations are merged on read.
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+}
+
+/// The `[setup]` manifest section.
+#[derive(Debug, Default, Deserialize)]
+struct SetupSection {
+    #[serde(default)]
+    env: Option<std::collections::BTreeMap<String, String>>,
+}
+
+impl Manifest {
+    /// Environment variables this plugin requires, as `(var, url)` pairs —
+    /// the URL the user can obtain the value from, empty when unknown.
+    /// Variables the sandbox owns (`PATH`, temp keys, loader injection
+    /// prefixes) are refused: a pasted value under one of those names could
+    /// clobber or escape the sandbox environment wholesale.
+    fn required_env(&self) -> std::collections::BTreeMap<String, String> {
+        use tauri_plugin_agent_tools::tools::proc::is_reserved_env_key;
+        let mut out = std::collections::BTreeMap::new();
+        if let Some(setup) = &self.setup {
+            for (key, url) in setup.env.iter().flatten() {
+                if is_env_name(key) && !is_reserved_env_key(key) {
+                    out.insert(key.clone(), url.trim().to_string());
+                }
+            }
+        }
+        for server in self.mcp_servers.iter().flat_map(|m| m.values()) {
+            for var in mcp_template_refs(server) {
+                if var != "CLAUDE_PLUGIN_ROOT" && is_env_name(&var) && !is_reserved_env_key(&var) {
+                    out.entry(var).or_default();
+                }
+            }
+        }
+        out
+    }
+}
+
+/// A plausible environment-variable name (used as a file stem and registry
+/// key, so it must not contain path separators or control characters).
+fn is_env_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !name.chars().next().unwrap().is_ascii_digit()
+}
+
+/// Every `${VAR}` reference in a manifest value.
+fn template_refs(value: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        if let Some(len) = rest[start + 2..].find('}') {
+            out.push(rest[start + 2..start + 2 + len].to_string());
+            rest = &rest[start + 2 + len + 1..];
+        } else {
+            break;
+        }
+    }
+    out
+}
+
+fn client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(USER_AGENT)
+        .build()
+        .map_err(|e| format!("ERROR: {e}"))
+}
+
+/// Read the project's `[plugins]` config; missing/malformed falls back to
+/// defaults (no marketplace).
+fn plugins_section(root: &Path) -> PluginsSection {
+    crate::core::agent::project::load_agent_config(root)
+        .ok()
+        .map(|c| c.plugins)
+        .unwrap_or_default()
+}
+
+/// Every installed plugin, sorted by display name. Staging directories from
+/// interrupted installs are intentionally excluded.
+pub(crate) fn installed(root: &Path) -> Vec<InstalledPlugin> {
+    installed_entries(root)
+        .into_iter()
+        .map(|(_, plugin)| plugin)
+        .collect()
+}
+
+/// Find an installed plugin by directory name, falling back to manifest name.
+/// Directory identity wins when another plugin uses it as a display name.
+#[cfg(feature = "cli")]
+pub(crate) fn find_installed(root: &Path, query: &str) -> Option<(String, InstalledPlugin)> {
+    let query = skills::safe_stem(query).ok()?;
+    let mut entries = installed_entries(root);
+    let index = entries.iter().position(|(directory, _)| directory == &query)
+        .or_else(|| entries.iter().position(|(_, plugin)| plugin.name == query))?;
+    Some(entries.swap_remove(index))
+}
+
+/// `~/.jan/agent/plugin-env/`, shared by CLI setup and desktop discovery.
+fn plugin_env_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|home| home.join(".jan").join("agent").join("plugin-env"))
+        .ok_or_else(|| "could not resolve the user's home directory".to_string())
+}
+
+/// `plugin-env/<plugin>.toml` under `dir`.
+fn plugin_env_path(dir: &Path, plugin: &str) -> Result<PathBuf, String> {
+    let stem = crate::core::agent::skills::safe_stem(plugin)?;
+    Ok(dir.join(format!("{stem}.toml")))
+}
+
+/// The stored env values for one plugin, resolved against the real plugin-env
+/// store directory. Missing or malformed file -> empty.
+fn stored_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+) -> std::collections::BTreeMap<String, String> {
+    plugin_env_path(dir, plugin)
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|raw| toml::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Persist one env value for a plugin, merging with what is already stored.
+#[cfg(feature = "cli")]
+pub(crate) fn save_plugin_env(plugin: &str, key: &str, value: &str) -> Result<(), String> {
+    save_plugin_env_in(&plugin_env_dir()?, plugin, key, value)
+}
+
+/// [`save_plugin_env`] against an explicit directory (tests).
+#[cfg(feature = "cli")]
+pub(crate) fn save_plugin_env_in(
+    dir: &Path,
+    plugin: &str,
+    key: &str,
+    value: &str,
+) -> Result<(), String> {
+    if !is_env_name(key) {
+        return Err(format!("invalid environment variable name '{key}'"));
+    }
+    if tauri_plugin_agent_tools::tools::proc::is_reserved_env_key(key) {
+        return Err(format!("'{key}' is reserved by the sandbox and cannot be set for a plugin"));
+    }
+    let path = plugin_env_path(dir, plugin)?;
+    let mut values: std::collections::BTreeMap<String, String> = match
+        std::fs::read_to_string(&path)
+    {
+        Ok(raw) => match toml::from_str(&raw) {
+            Ok(v) => v,
+            // Refuse to merge into a file we cannot parse: saving would
+            // silently destroy the other stored keys for this plugin.
+            Err(_) => {
+                return Err(format!(
+                    "stored env file {} is malformed - delete it and re-run setup",
+                    path.display()
+                ))
+            }
+        },
+        Err(_) => Default::default(),
+    };
+    values.insert(key.to_string(), value.to_string());
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("could not create {parent:?}: {e}"))?;
+    }
+    let serialized = toml::to_string(&values).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    let perms = {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+    };
+    #[cfg(not(unix))]
+    let perms = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path);
+    perms
+        .and_then(|mut f| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                f.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            }
+            f.write_all(serialized.as_bytes())
+        })
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
+}
+
+/// Every env variable one plugin declares as required, as `(var, url)` in
+/// manifest order. Unlike [`missing_plugin_env`] this includes satisfied
+/// entries: an explicit `/plugin setup <name>` re-runs the whole prompt.
+#[cfg(feature = "cli")]
+pub(crate) fn declared_plugin_env(root: &Path, plugin: &str) -> Vec<(String, String)> {
+    skills::find_plugin_dir(root, plugin)
+        .map(|dir| read_manifest(&dir).required_env().into_iter().collect())
+        .unwrap_or_default()
+}
+
+/// Setup requirements that are not yet satisfied: `(plugin, var, url)` in
+/// scan order. A var is satisfied only when the user stored a value via the
+/// setup prompt: the sandboxed shell drops every host variable except the
+/// static allowlist, so a var provided by the host environment would never
+/// reach the plugin's commands even though the prompt claimed it was
+/// satisfied.
+#[cfg(feature = "cli")]
+pub(crate) fn missing_plugin_env(root: &Path) -> Vec<(String, String, String)> {
+    match plugin_env_dir() {
+        Ok(dir) => missing_plugin_env_in(root, &dir),
+        Err(_) => Vec::new(),
+    }
+}
+
+/// [`missing_plugin_env`] against an explicit store directory (tests).
+#[cfg(feature = "cli")]
+fn missing_plugin_env_in(root: &Path, env_dir: &Path) -> Vec<(String, String, String)> {
+    let mut out = Vec::new();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for (var, url) in read_manifest(&dir).required_env() {
+            if stored.get(&var).is_none_or(|v| v.is_empty()) {
+                out.push((directory.clone(), var, url));
+            }
+        }
+    }
+    out
+}
+
+/// Hand the sandboxed shells their plugin-declared credentials: values stored
+/// via the setup prompt, intersected with the variables the installed
+/// plugins' manifests still declare (a plugin that dropped a requirement
+/// stops receiving it). Runs on every run start via `ensure_project` and
+/// after `/reload`, so install/remove/setup changes are picked up live.
+pub(crate) fn sync_env_registry(root: &Path) {
+    if let Ok(dir) = plugin_env_dir() {
+        sync_env_registry_in(root, &dir);
+    } else {
+        tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, Default::default());
+    }
+}
+
+/// [`sync_env_registry`] against an explicit store directory (tests).
+fn sync_env_registry_in(root: &Path, env_dir: &Path) {
+    let mut values: std::collections::BTreeMap<String, String> = Default::default();
+    for (directory, _) in installed_entries(root) {
+        let Some(dir) = skills::find_plugin_dir(root, &directory) else {
+            continue;
+        };
+        let stored = stored_plugin_env_in(env_dir, &directory);
+        for var in read_manifest(&dir).required_env().into_keys() {
+            if let Some(value) = stored.get(&var).filter(|v| !v.is_empty()) {
+                values.insert(var, value.clone());
+            }
+        }
+    }
+    tauri_plugin_agent_tools::tools::proc::set_plugin_env(root, values);
+}
+
+pub(crate) fn installed_entries(root: &Path) -> Vec<(String, InstalledPlugin)> {
+    // Discover once and count per plugin, rather than rescanning each one.
+    let all_skills = skills::discover_plugins(root);
+    let all_commands = crate::core::agent::plugin_commands::discover(root);
+    let mut out = Vec::new();
+    skills::for_each_plugin_dir(root, |directory, path| {
+        let manifest = read_manifest(path);
+        let plugin_skills = all_skills
+            .iter()
+            .filter(|e| e.plugin.as_deref() == Some(directory))
+            .count();
+        let plugin_commands = all_commands
+            .iter()
+            .filter(|e| e.plugin == directory)
+            .count();
+        let plugin_agents = crate::core::agent::subagent::count_plugin_agents(root, directory);
+        out.push((
+            directory.to_string(),
+            InstalledPlugin {
+                name: manifest.name.unwrap_or_else(|| directory.to_string()),
+                description: manifest.description.unwrap_or_default(),
+                version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+                repo: manifest.repo.unwrap_or_default(),
+                skills: plugin_skills,
+                commands: plugin_commands,
+                agents: plugin_agents,
+                tools: crate::core::agent::hooks_config::plugin_tool_entries(path).len(),
+                hooks: tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(path)
+                    .0
+                    .len(),
+            },
+        ));
+    });
+    out.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    out
+}
+
+fn read_manifest(root: &Path) -> Manifest {
+    let mut manifest = read_manifest_metadata(root);
+    if let Ok(servers) = read_mcp_declarations(root, manifest.mcp_servers.take()) {
+        manifest.mcp_servers = Some(servers);
+    }
+    manifest
+}
+
+fn read_manifest_metadata(root: &Path) -> Manifest {
+    std::fs::read_to_string(root.join("plugin.toml"))
+        .ok()
+        .and_then(|raw| toml::from_str::<Manifest>(&raw).ok())
+        .or_else(|| {
+            std::fs::read_to_string(root.join(".claude-plugin/plugin.json"))
+                .ok()
+                .and_then(|raw| serde_json::from_str::<Manifest>(&raw).ok())
+        })
+        .unwrap_or_default()
+}
+
+fn read_mcp_declarations(
+    root: &Path,
+    inline: Option<std::collections::BTreeMap<String, serde_json::Value>>,
+) -> Result<std::collections::BTreeMap<String, serde_json::Value>, String> {
+    let mut servers = inline.unwrap_or_default();
+    let path = root.join(".mcp.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => {
+            let mut document: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|_| format!("invalid MCP JSON in {}", path.display()))?;
+            let entries = document.get_mut("mcpServers")
+                .map(serde_json::Value::take)
+                .unwrap_or(document);
+            let entries: std::collections::BTreeMap<String, serde_json::Value> =
+                serde_json::from_value(entries)
+                    .map_err(|_| format!("{} must contain an MCP server map", path.display()))?;
+            servers.extend(entries);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("could not read {}: {e}", path.display())),
+    }
+    Ok(servers)
+}
+
+fn mcp_template_refs(value: &serde_json::Value) -> Vec<String> {
+    match value {
+        serde_json::Value::String(text) => template_refs(text),
+        serde_json::Value::Array(items) => items.iter().flat_map(mcp_template_refs).collect(),
+        serde_json::Value::Object(fields) => fields.values().flat_map(mcp_template_refs).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Installed MCP declarations, ready for the user to review before activation.
+/// Reads the plugin's own key store, never unrelated host credentials.
+#[cfg(feature = "cli")]
+pub(crate) fn plugin_mcp_servers(
+    root: &Path,
+    plugin: &str,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    let plugin = skills::safe_stem(plugin)?;
+    let dir = skills::find_plugin_dir(root, &plugin)
+        .ok_or_else(|| format!("plugin '{plugin}' is not installed"))?;
+    let stored = stored_plugin_env_in(&plugin_env_dir()?, &plugin);
+    resolved_mcp_servers(&dir, &stored)
+}
+
+#[cfg(feature = "cli")]
+fn resolved_mcp_servers(
+    dir: &Path,
+    stored: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<(String, serde_json::Value)>, String> {
+    fn expand(
+        value: &mut serde_json::Value,
+        dir: &Path,
+        stored: &std::collections::BTreeMap<String, String>,
+    ) -> Result<(), String> {
+        match value {
+            serde_json::Value::String(text) => {
+                let original = std::mem::take(text);
+                let mut rest = original.as_str();
+                while let Some(start) = rest.find("${") {
+                    text.push_str(&rest[..start]);
+                    let end = rest[start + 2..].find('}')
+                        .ok_or("unterminated variable in plugin MCP configuration")? + start + 2;
+                    let var = &rest[start + 2..end];
+                    if var == "CLAUDE_PLUGIN_ROOT" {
+                        text.push_str(&dir.to_string_lossy());
+                    } else {
+                        let value = stored.get(var).filter(|v| !v.is_empty())
+                            .ok_or_else(|| format!("missing plugin key '{var}' - complete plugin setup first"))?;
+                        text.push_str(value);
+                    }
+                    rest = &rest[end + 1..];
+                }
+                text.push_str(rest);
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    expand(item, dir, stored)?;
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for item in fields.values_mut() {
+                    expand(item, dir, stored)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    let metadata = read_manifest_metadata(dir);
+    let declarations = read_mcp_declarations(dir, metadata.mcp_servers)?;
+    let mut out = Vec::new();
+    for (name, mut config) in declarations {
+        let fields = config.as_object_mut()
+            .ok_or_else(|| format!("MCP server '{name}' must be an object"))?;
+        // Claude permits URL-only remote entries and omitted stdio args.
+        let transport = if fields.contains_key("url") { "http" } else { "stdio" };
+        fields.entry("type").or_insert_with(|| transport.into());
+        if fields.get("type").and_then(serde_json::Value::as_str) == Some("stdio") {
+            fields.entry("args").or_insert_with(|| serde_json::json!([]));
+        }
+        expand(&mut config, dir, stored)?;
+        out.push((name, config));
+    }
+    Ok(out)
+}
+
+/// Reject specs that could inject shell commands. The spec is later passed as
+/// literal argv to `git clone`, never to a shell, but a spec full of `$()`
+/// is a typo at best — error early and clearly.
+fn validate_spec(spec: &str) -> Result<(), String> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Err("ERROR: nothing to install".into());
+    }
+    if spec.chars().any(|c| SHELL_METACHARS.contains(&c)) {
+        return Err(format!(
+            "ERROR: invalid plugin spec '{spec}' (shell metacharacters are not allowed)"
+        ));
+    }
+    Ok(())
+}
+
+/// Does the spec name a git source directly (URL, scp-like, or host shorthand)
+/// rather than a marketplace name?
+fn looks_like_git(spec: &str) -> bool {
+    spec.contains("://")
+        || spec.starts_with("git@")
+        || ["github:", "gitlab:", "bitbucket:", "codeberg:"]
+            .iter()
+            .any(|p| spec.starts_with(p))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct GitSource {
+    url: String,
+    r#ref: Option<String>,
+    subdir: Option<String>,
+}
+
+/// Parse a git URL and the optional GitHub `/tree/<ref>/<subdir>` (or
+/// `/blob/<ref>/<subdir>`) payload path. Both the GitHub "browse" (`tree`) and
+/// "copy path" (`blob`) URL forms name a repo, a ref, and a subdirectory to
+/// install as a single plugin.
+fn parse_git_source(spec: &str) -> Result<GitSource, String> {
+    let (base, suffix_ref) = split_ref(spec.trim());
+    if let Some(path) = base.strip_prefix("https://github.com/") {
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        if parts.len() >= 4 && (parts[2] == "tree" || parts[2] == "blob") {
+            let repo = format!("https://github.com/{}/{}.git", parts[0], parts[1]);
+            let tree_ref = parts[3].to_string();
+            let subdir = (parts.len() > 4).then(|| parts[4..].join("/"));
+            if subdir
+                .as_deref()
+                .is_some_and(|path| path.split('/').any(|part| part == "." || part == ".."))
+            {
+                return Err("ERROR: plugin subdirectory cannot contain '.' or '..'".into());
+            }
+            return Ok(GitSource {
+                url: repo,
+                r#ref: Some(suffix_ref.unwrap_or(&tree_ref).to_string()),
+                subdir,
+            });
+        }
+    }
+    Ok(GitSource {
+        url: base.to_string(),
+        r#ref: suffix_ref.map(str::to_string),
+        subdir: None,
+    })
+}
+
+fn plugin_has_content(root: &Path) -> bool {
+    root.join("plugin.toml").is_file()
+        || root.join(".claude-plugin/plugin.json").is_file()
+        || root.join("skills").is_dir()
+        || root.join("commands").is_dir()
+        || root.join("agents").is_dir()
+        || root.join("SKILL.md").is_file()
+        || root.join(".mcp.json").is_file()
+}
+/// Walk `root` (recursively, skipping hidden dirs) and collect every directory
+/// that is itself a plugin payload. A collection repo can nest plugins at any
+/// depth (e.g. `plugins/` and `external_plugins/` are only wrapper dirs),
+/// so a bare collection URL can't rely on a one-level scan.
+fn find_plugin_dirs(root: &Path) -> Vec<PathBuf> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
+        let rd = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return,
+        };
+        for entry in rd.flatten() {
+            let path = entry.path();
+            // Skip hidden entries and symlinks. `entry.file_type()` reports the
+            // link itself (not the target, unlike `path.is_dir()` which follows
+            // it), so symlinked dirs are never descended into -- a hostile or
+            // malformed collection can't use a link back to an ancestor to
+            // recurse forever.
+            let is_dir = match entry.file_type() {
+                Ok(ft) => ft.is_dir() && !ft.is_symlink(),
+                Err(_) => false,
+            };
+            if !is_dir {
+                continue;
+            }
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with('.')
+            {
+                continue;
+            }
+            if plugin_has_content(&path) {
+                out.push(path);
+            } else {
+                walk(&path, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out
+}
+
+/// Present the plugin choices of a collection on stdout and collect the
+/// 0-based indices the user wants to install, reading from `input`. The caller
+/// has already cloned the collection, so this only asks which to install.
+///
+/// Accepts a comma/space-separated list of numbers, the keyword `all` (every
+/// plugin), or a blank line to cancel. Already-installed plugins are marked
+/// `[installed]` and skipped, never errored.
+fn prompt_multi_choice(
+    url: &str,
+    paths: &[String],
+    already: &[bool],
+    input: &mut dyn io::BufRead,
+) -> Result<Vec<usize>, String> {
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "'{url}' is a plugin collection ({n} plugins):", n = paths.len())
+        .map_err(|e| format!("ERROR: {e}"))?;
+    let width = paths.len().to_string().len();
+    for (i, (path, inst)) in paths.iter().zip(already).enumerate() {
+        let mark = if *inst { "  [installed]" } else { "" };
+        writeln!(stdout, "  {:>width$}. {path}{mark}", i + 1).map_err(|e| format!("ERROR: {e}"))?;
+    }
+    writeln!(
+        stdout,
+        "Install which? numbers (e.g. 1 3 5) or 'all' [enter to cancel]:"
+    )
+    .map_err(|e| format!("ERROR: {e}"))?;
+    let _ = stdout.flush();
+
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match input.read_line(&mut line) {
+            Ok(0) => return Err("ERROR: no plugin selected - install aborted".into()),
+            Ok(_) => {}
+            Err(e) => return Err(format!("ERROR: reading plugin choice: {e}")),
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            return Err("ERROR: no plugin selected - install aborted".into());
+        }
+        if trimmed.eq_ignore_ascii_case("all") {
+            return Ok((0..paths.len()).collect());
+        }
+        let mut picked: Vec<usize> = Vec::new();
+        let mut ok = true;
+        for tok in trimmed.split(|c: char| c == ',' || c.is_whitespace()) {
+            if tok.is_empty() {
+                continue;
+            }
+            match tok.parse::<usize>() {
+                Ok(n) if (1..=paths.len()).contains(&n) => {
+                    let idx = n - 1;
+                    if !picked.contains(&idx) {
+                        picked.push(idx);
+                    }
+                }
+                _ => {
+                    ok = false;
+                    break;
+                }
+            }
+        }
+        if ok && !picked.is_empty() {
+            return Ok(picked);
+        }
+        writeln!(
+            stdout,
+            "'{trimmed}' is not a valid choice; enter numbers like '1 3 5' or 'all' [enter to cancel]:"
+        )
+        .map_err(|e| format!("ERROR: {e}"))?;
+        let _ = stdout.flush();
+    }
+}
+/// Split a `#ref` suffix off a git URL (`https://host/repo#main`).
+fn split_ref(url: &str) -> (&str, Option<&str>) {
+    match url.split_once('#') {
+        Some((base, r#ref)) => (base, Some(r#ref)),
+        None => (url, None),
+    }
+}
+
+/// The default plugin name for a repo URL: the last path segment, `.git`
+/// stripped. `https://github.com/acme/release-tools.git` -> `release-tools`.
+fn repo_dir_name(url: &str) -> Option<&str> {
+    let (base, _) = split_ref(url);
+    let base = base.trim_end_matches('/');
+    let name = base.rsplit('/').next()?;
+    Some(name.strip_suffix(".git").unwrap_or(name))
+}
+
+fn git(args: &[&str]) -> Result<String, String> {
+    let out = Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| format!("ERROR: git: {e}"))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(format!(
+            "ERROR: git: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
+}
+
+/// Clone a plugin source into a temporary dir, discover which plugin(s) inside
+/// it to install, and move each selected payload into place under its final
+/// name. A failed clone or an empty repo leaves nothing behind (the temp dir is
+/// removed).
+///
+/// `install_git` returns one installed plugin for a normal source or a single-
+/// plugin collection, and several for a multi-plugin collection when the user
+/// asked for more than one (interactive CLI). Already-installed plugins are
+/// skipped, not reported as errors.
+fn install_git(
+    root: &Path,
+    url: &str,
+    r#ref: Option<&str>,
+    collection: CollectionChoice,
+) -> Result<GitInstall, String> {
+    let source = parse_git_source(url)?;
+    let plugins = skills::plugins_dir(root);
+    std::fs::create_dir_all(&plugins).map_err(|e| format!("ERROR: {e}"))?;
+    let tmp = plugins.join(format!(".installing-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    let r#ref = r#ref.or(source.r#ref.as_deref());
+    let mut args = vec!["clone", "--depth", "1"];
+    if let Some(r#ref) = r#ref {
+        args.extend(["--branch", r#ref]);
+    }
+    args.extend([source.url.as_str(), tmp.to_str().expect("utf-8 path")]);
+    if let Err(e) = git(&args) {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(e);
+    }
+
+    let payload_root = source
+        .subdir
+        .as_deref()
+        .map(|subdir| tmp.join(subdir))
+        .unwrap_or_else(|| tmp.clone());
+    if !payload_root.is_dir() {
+        let _ = std::fs::remove_dir_all(&tmp);
+        return Err(format!(
+            "ERROR: plugin subdirectory does not exist: '{}'",
+            source.subdir.as_deref().unwrap_or("")
+        ));
+    }
+
+    // Decide which payload directory(ies) to install, as
+    // (dir, fallback name, is a subdir of the clone) triples.
+    let mut targets: Vec<(PathBuf, Option<String>, bool)> = Vec::new();
+    if plugin_has_content(&payload_root) {
+        // A single plugin: either the repo root or an explicit `#tree` subdir.
+        let fallback = source
+            .subdir
+            .as_deref()
+            .and_then(|subdir| subdir.rsplit('/').next())
+            .map(str::to_string)
+            .or_else(|| repo_dir_name(&source.url).map(str::to_string));
+        targets.push((payload_root.clone(), fallback, source.subdir.is_some()));
+    } else {
+        // A collection repo (e.g. anthropics/claude-plugins-official) has no
+        // payload at its root; plugins can be nested any number of dirs deep
+        // (`plugins/` and `external_plugins/` are only wrapper dirs).
+        let mut candidates = find_plugin_dirs(&payload_root);
+        candidates.sort_by_key(|p| {
+            p.strip_prefix(&payload_root)
+                .map(|rel| rel.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
+        let rels: Vec<String> = candidates
+            .iter()
+            .map(|p| {
+                p.strip_prefix(&payload_root)
+                    .map(|rel| rel.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
+        let picked: Vec<usize> = match candidates.len() {
+            0 => {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(format!(
+                    "ERROR: '{url}' has no plugin manifest, skills/, commands/, agents/, or SKILL.md - nothing to install"
+                ));
+            }
+            // Exactly one plugin in the collection: no ambiguity, install it.
+            1 => vec![0],
+            n => match &collection {
+                CollectionChoice::ListError => {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    return Err(format!(
+                        "ERROR: '{url}' is a plugin collection ({n} plugins: {}) - install one directly, e.g. {url}/tree/<ref>/<relative/path>",
+                        rels.join(", ")
+                    ));
+                }
+                CollectionChoice::Prompt => {
+                    // Mark plugins already installed so the user can see why a
+                    // pick will be skipped.
+                    let already: Vec<bool> = candidates
+                        .iter()
+                        .map(|p| {
+                            p.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| plugins.join(n).exists())
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    match prompt_multi_choice(url, &rels, &already, &mut io::stdin().lock()) {
+                        Ok(picked) => picked,
+                        Err(e) => {
+                            let _ = std::fs::remove_dir_all(&tmp);
+                            return Err(e);
+                        }
+                    }
+                }
+                // The TUI owns stdin, so it cannot prompt inline: return the
+                // candidate list untouched and let the caller present its own
+                // picker, then re-invoke with `Only` for the chosen paths.
+                CollectionChoice::List => {
+                    let already: Vec<bool> = candidates
+                        .iter()
+                        .map(|p| {
+                            p.file_name()
+                                .and_then(|n| n.to_str())
+                                .map(|n| plugins.join(n).exists())
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    return Ok(GitInstall::Collection(
+                        rels.into_iter()
+                            .zip(already)
+                            .map(|(path, installed)| CollectionPlugin { path, installed })
+                            .collect(),
+                    ));
+                }
+                // A picker selection: install exactly the payload-root-relative
+                // paths the caller chose. A caller that never supplied any (or
+                // supplied paths matching no candidate) is a user error -- the
+                // collection was re-scanned since the picker's listing, so that
+                // is surfaced immediately instead of falling through to the
+                // confusing "already installed: (nothing)" message below.
+                CollectionChoice::Only(paths) => {
+                    if paths.is_empty() {
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        return Err(format!(
+                            "ERROR: no matching plugins in '{url}' to install: (none selected)"
+                        ));
+                    }
+                    let unmatched: Vec<&String> =
+                        paths.iter().filter(|p| !rels.contains(p)).collect();
+                    if !unmatched.is_empty() {
+                        let _ = std::fs::remove_dir_all(&tmp);
+                        return Err(format!(
+                            "ERROR: no matching plugins in '{url}' to install: {}",
+                            unmatched
+                                .into_iter()
+                                .map(|s| s.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ));
+                    }
+                    rels.iter()
+                        .enumerate()
+                        .filter(|(_, rel)| paths.contains(rel))
+                        .map(|(idx, _)| idx)
+                        .collect()
+                }
+            },
+        };
+        for idx in picked {
+            let dir = candidates[idx].clone();
+            let fallback = dir
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_string);
+            targets.push((dir, fallback, true));
+        }
+    }
+
+    // Installing one plugin reports an already-installed collision as an error
+    // (the caller asked for that exact plugin); a batch skips it and installs
+    // the rest.
+    let single = targets.len() == 1;
+    let mut installs: Vec<InstalledPlugin> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for (dir, fallback, narrowed) in targets {
+        let outcome = install_payload_dir(
+            root,
+            &plugins,
+            &tmp,
+            &dir,
+            narrowed,
+            fallback.as_deref(),
+            &source.url,
+        );
+        match outcome {
+            Ok(PayloadOutcome::Installed(plugin)) => installs.push(plugin),
+            Ok(PayloadOutcome::AlreadyInstalled(stem)) => {
+                if single {
+                    let _ = std::fs::remove_dir_all(&tmp);
+                    return Err(format!("ERROR: plugin '{stem}' is already installed"));
+                }
+                skipped.push(stem);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_dir_all(&tmp);
+                return Err(e);
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+    if installs.is_empty() {
+        return Err(format!(
+            "ERROR: nothing installed - already installed: {}",
+            skipped.join(", ")
+        ));
+    }
+    Ok(GitInstall::Installed(installs))
+}
+
+/// What happened to one candidate payload during an install.
+enum PayloadOutcome {
+    Installed(InstalledPlugin),
+    /// A plugin of this name is already installed. A single-plugin install
+    /// reports this as an error; a batch install skips it.
+    AlreadyInstalled(String),
+}
+
+/// Move one plugin payload directory into `plugins/<stem>` and report it.
+///
+/// `payload_narrowed` says whether `payload` is a subdirectory of the clone
+/// (rename the subdirectory) or the clone root itself (rename `tmp`).
+/// `fallback_name` names the plugin when the manifest does not.
+///
+/// The shared clone `tmp` is NOT removed here so a batch can install several
+/// payloads out of one clone; the caller removes it once at the end.
+fn install_payload_dir(
+    root: &Path,
+    plugins: &Path,
+    tmp: &Path,
+    payload: &Path,
+    payload_narrowed: bool,
+    fallback_name: Option<&str>,
+    source_url: &str,
+) -> Result<PayloadOutcome, String> {
+    let manifest = read_manifest(payload);
+    let name = match (manifest.name.as_deref(), fallback_name) {
+        (Some(name), _) if !name.is_empty() => name.to_string(),
+        (_, Some(dir)) => dir.to_string(),
+        _ => return Err(format!("ERROR: cannot determine plugin name from '{source_url}'")),
+    };
+    let stem = match skills::safe_stem(&name) {
+        Ok(stem) if stem == name => stem,
+        _ => return Err(format!("ERROR: invalid plugin name '{name}'")),
+    };
+    let target = plugins.join(&stem);
+    if target.exists() {
+        return Ok(PayloadOutcome::AlreadyInstalled(stem));
+    }
+    let move_from = if payload_narrowed { payload } else { tmp };
+    std::fs::rename(move_from, &target).map_err(|e| format!("ERROR: {e}"))?;
+
+    // Recompute counts after the move (discovery reads from `root`).
+    let skills_count = skills::discover_plugins(root)
+        .into_iter()
+        .filter(|e| e.plugin.as_deref() == Some(stem.as_str()))
+        .count();
+    let commands_count = crate::core::agent::plugin_commands::discover(root)
+        .into_iter()
+        .filter(|e| e.plugin == stem)
+        .count();
+    let agents_count = crate::core::agent::subagent::count_plugin_agents(root, &stem);
+    let tools_count = crate::core::agent::hooks_config::plugin_tool_entries(&target).len();
+    let hooks_count = tauri_plugin_agent_tools::tools::hooks::plugin_hook_entries(&target)
+        .0
+        .len();
+    Ok(PayloadOutcome::Installed(InstalledPlugin {
+        name: stem,
+        description: manifest.description.unwrap_or_default(),
+        version: manifest.version.unwrap_or_else(|| "0.0.0".to_string()),
+        repo: manifest.repo.unwrap_or_else(|| source_url.to_string()),
+        skills: skills_count,
+        commands: commands_count,
+        agents: agents_count,
+        tools: tools_count,
+        hooks: hooks_count,
+    }))
+}
+
+/// Fetch and parse the marketplace index. The marketplace URL lives in
+/// `[plugins] marketplace`; without it, name-based installs cannot resolve.
+async fn fetch_index(url: &str) -> Result<Vec<MarketEntry>, String> {
+    let resp = client()?
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| format!("ERROR: fetching marketplace index: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!(
+            "ERROR: marketplace index returned {}",
+            resp.status()
+        ));
+    }
+    resp.json::<Vec<MarketEntry>>()
+        .await
+        .map_err(|e| format!("ERROR: parsing marketplace index: {e}"))
+}
+
+/// Install a plugin. `spec` is either a git source (URL, `git@host:path`,
+/// `github:owner/repo`, with an optional `#ref`) or a marketplace name.
+///
+/// Non-interactive: a multi-plugin collection fails with a listing error, so
+/// this always resolves to exactly one plugin. (The "exactly one" invariant
+/// is enforced structurally by `CollectionChoice`: `install` passes
+/// `ListError`, whose arm always returns an `Err` and never a
+/// `GitInstall::Collection`.)
+// (desktop-only) `install` is the non-CLI entry point (`commands`), so it is
+// dead under `--features cli` (only the CLI TUI unit test uses it) and allowed
+// rather than `cfg`'d out so it stays available in both configs.
+#[cfg_attr(feature = "cli", allow(dead_code))]
+pub(crate) async fn install(root: &Path, spec: &str) -> Result<InstalledPlugin, String> {
+    match install_with(root, spec, CollectionChoice::ListError).await? {
+        GitInstall::Installed(plugins) => plugins
+            .into_iter()
+            .next()
+            .ok_or_else(|| "ERROR: no plugins installed".to_string()),
+        GitInstall::Collection(_) => unreachable!("ListError never returns a collection listing"),
+    }
+}
+
+/// Install like [`install`], but a multi-plugin collection prompts the user to
+/// pick which plugins to install (the interactive CLI path), so this can return
+/// several. Already-installed picks are skipped.
+// (cli-only)
+#[cfg(feature = "cli")]
+pub(crate) async fn install_interactive(
+    root: &Path,
+    spec: &str,
+) -> Result<Vec<InstalledPlugin>, String> {
+    match install_with(root, spec, CollectionChoice::Prompt).await? {
+        GitInstall::Installed(plugins) => Ok(plugins),
+        GitInstall::Collection(_) => unreachable!("Prompt never returns a collection listing"),
+    }
+}
+
+/// List the plugins inside a collection without installing anything, for a
+/// caller that owns its own terminal (the TUI) to present a picker.
+/// `GitInstall::Installed` means `spec` was not an ambiguous collection - a
+/// single plugin (bare source, `#tree` subdir, or a collection with exactly
+/// one nested plugin) installs directly, so it's already done.
+// (cli-only)
+#[cfg(feature = "cli")]
+pub(crate) async fn list_collection(
+    root: &Path,
+    spec: &str,
+) -> Result<GitInstall, String> {
+    install_with(root, spec, CollectionChoice::List).await
+}
+
+/// Install exactly the given payload-root-relative paths from a collection
+/// (a picker selection following [`list_collection`]). Already-installed
+/// picks are skipped rather than erroring.
+// (cli-only)
+#[cfg(feature = "cli")]
+pub(crate) async fn install_selected(
+    root: &Path,
+    spec: &str,
+    paths: Vec<String>,
+) -> Result<Vec<InstalledPlugin>, String> {
+    match install_with(root, spec, CollectionChoice::Only(paths)).await? {
+        GitInstall::Installed(plugins) => Ok(plugins),
+        GitInstall::Collection(_) => unreachable!("Only never returns a collection listing"),
+    }
+}
+
+/// Core install. Resolves git URLs on a blocking thread and marketplace names
+/// through the index, then runs the git clone/filesystem work off the async
+/// runtime (the TUI render loop must keep repainting during a large clone).
+async fn install_with(
+    root: &Path,
+    spec: &str,
+    collection: CollectionChoice,
+) -> Result<GitInstall, String> {
+    let spec = spec.trim();
+    validate_spec(spec)?;
+    if looks_like_git(spec) {
+        // `install_git` shells out to `git clone`, which is network-bound and
+        // blocks its thread for the whole clone. Run it on a blocking thread so
+        // the TUI keeps repainting (a large plugin repo otherwise freezes the
+        // render loop for seconds).
+        let root = root.to_path_buf();
+        let spec = spec.to_string();
+        return tokio::task::spawn_blocking(move || install_git(&root, &spec, None, collection))
+            .await
+            .map_err(|e| format!("ERROR: install task failed: {e}"))?;
+    }
+    let marketplace = plugins_section(root)
+        .marketplace
+        .ok_or("ERROR: no marketplace configured - set [plugins] marketplace in agent.toml, or install a git URL directly")?;
+    let index = fetch_index(&marketplace).await?;
+    let entry = index
+        .into_iter()
+        .find(|e| e.name == spec)
+        .ok_or_else(|| format!("ERROR: plugin '{spec}' not found on the marketplace"))?;
+    // Marketplace installs clone a git repo too: same blocking-work treatment.
+    let root = root.to_path_buf();
+    let repo = entry.repo.clone();
+    let r#ref = entry.r#ref.clone();
+    tokio::task::spawn_blocking(move || install_git(&root, &repo, r#ref.as_deref(), collection))
+        .await
+        .map_err(|e| format!("ERROR: install task failed: {e}"))?
+}
+
+/// Remove an installed plugin by directory name.
+pub(crate) fn remove(root: &Path, name: &str) -> Result<(), String> {
+    let stem = skills::safe_stem(name)?;
+    let target = skills::plugins_dir(root).join(&stem);
+    if !target.is_dir() {
+        return Err(format!("ERROR: plugin '{name}' is not installed"));
+    }
+    std::fs::remove_dir_all(&target).map_err(|e| format!("ERROR: {e}"))?;
+    // Drop the stored credentials too: they live outside the plugin
+    // directory (a reinstall must not silently reactivate them), so removing
+    // the plugin has to clean them up here. Then refresh the live registry so
+    // the sandboxed shells of the current session stop receiving the values.
+    if let Ok(dir) = plugin_env_dir() {
+        if let Ok(path) = plugin_env_path(&dir, name) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+    sync_env_registry(root);
+    Ok(())
+}
+
+/// List marketplace plugins matching `query` (name or description, case
+/// insensitive; empty query lists everything).
+pub(crate) async fn search(root: &Path, query: &str) -> Result<Vec<MarketEntry>, String> {
+    let url = plugins_section(root)
+        .marketplace
+        .ok_or("ERROR: no marketplace configured - set [plugins] marketplace in agent.toml")?;
+    let mut entries = fetch_index(&url).await?;
+    let query = query.trim().to_lowercase();
+    if !query.is_empty() {
+        entries.retain(|e| {
+            e.name.to_lowercase().contains(&query) || e.description.to_lowercase().contains(&query)
+        });
+    }
+    Ok(entries)
+}
+
+#[cfg(all(test, feature = "cli"))]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+
+    /// A local git repo fixture containing a plugin payload.
+    fn make_repo(tag: &str, with_manifest: bool) -> PathBuf {
+        let repo =
+            std::env::temp_dir().join(format!("jan_plugin_repo_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(repo.join("skills").join("prepare")).unwrap();
+        std::fs::write(
+            repo.join("skills").join("prepare").join("SKILL.md"),
+            "---\ndescription: Prepare the thing\n---\n\n# prepare\n\nBody.\n",
+        )
+        .unwrap();
+        if with_manifest {
+            std::fs::write(
+                repo.join("plugin.toml"),
+                "name = \"release-tools\"\ndescription = \"Release automation\"\nversion = \"1.2.0\"\n",
+            )
+            .unwrap();
+        }
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "init",
+            "--author=Jan Test <test@jan.ai>",
+        ])
+        .unwrap();
+        repo
+    }
+
+    fn unique_root(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("jan_plugin_test_{tag}_{}", std::process::id()))
+    }
+
+    #[test]
+    fn validate_spec_rejects_shell_metachars() {
+        assert!(validate_spec("https://github.com/a/b").is_ok());
+        assert!(validate_spec("github:a/b").is_ok());
+        assert!(validate_spec("release-tools").is_ok());
+        for bad in [
+            "https://x/y;rm -rf ~",
+            "https://x/y$(id)",
+            "a`b",
+            "x && y",
+            "x | y",
+            "x < y",
+        ] {
+            assert!(validate_spec(bad).is_err(), "accepted {bad:?}");
+        }
+        assert!(validate_spec("").is_err());
+        assert!(validate_spec("  ").is_err());
+    }
+
+    #[test]
+    fn split_ref_and_repo_name() {
+        assert_eq!(split_ref("https://h/r"), ("https://h/r", None));
+        assert_eq!(split_ref("https://h/r#main"), ("https://h/r", Some("main")));
+        assert_eq!(
+            repo_dir_name("https://github.com/acme/release-tools.git"),
+            Some("release-tools")
+        );
+        assert_eq!(
+            repo_dir_name("https://github.com/acme/release-tools#v2"),
+            Some("release-tools")
+        );
+        assert_eq!(
+            repo_dir_name("git@github.com:acme/tools.git"),
+            Some("tools")
+        );
+    }
+    #[test]
+    fn parses_github_tree_specs_as_repo_ref_and_subdirectory() {
+        let source = parse_git_source(
+            "https://github.com/anthropics/claude-plugins-official/tree/main/plugins/claude-code-setup",
+        )
+        .unwrap();
+        assert_eq!(
+            source.url,
+            "https://github.com/anthropics/claude-plugins-official.git"
+        );
+        assert_eq!(source.r#ref.as_deref(), Some("main"));
+        assert_eq!(source.subdir.as_deref(), Some("plugins/claude-code-setup"));
+    }
+
+    #[test]
+    fn parses_github_blob_copy_path_urls_as_repo_ref_and_subdirectory() {
+        // GitHub's "Copy path" button produces /blob/<ref>/<path>; a user
+        // pasting that should still resolve to a single installable repo dir.
+        let source = parse_git_source(
+            "https://github.com/anthropics/claude-plugins-official/blob/main/plugins/code-simplifier",
+        )
+        .unwrap();
+        assert_eq!(
+            source.url,
+            "https://github.com/anthropics/claude-plugins-official.git"
+        );
+        assert_eq!(source.r#ref.as_deref(), Some("main"));
+        assert_eq!(source.subdir.as_deref(), Some("plugins/code-simplifier"));
+    }
+
+    #[test]
+    fn installed_skips_staging_dirs_and_finds_manifest_names() {
+        let root = unique_root("installed-filter");
+        let plugins = skills::plugins_dir(&root);
+        let release = plugins.join("release-tools");
+        let staging = plugins.join(".installing-123");
+        std::fs::create_dir_all(&release).unwrap();
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(
+            release.join("plugin.toml"),
+            "name = \"release-automation\"\nversion = \"1.2.0\"\n",
+        )
+        .unwrap();
+        std::fs::write(staging.join("plugin.toml"), "name = \"incomplete\"\n").unwrap();
+
+        let listed = installed(&root);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "release-automation");
+        assert_eq!(
+            find_installed(&root, "release-tools").map(|(directory, _)| directory),
+            Some("release-tools".to_string())
+        );
+        assert_eq!(
+            find_installed(&root, "release-automation").map(|(directory, _)| directory),
+            Some("release-tools".to_string())
+        );
+        assert!(find_installed(&root, ".installing-123").is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rejects_traversal_in_github_tree_subdirectory() {
+        assert!(parse_git_source("https://github.com/acme/tools/tree/main/../../outside").is_err());
+    }
+    #[test]
+    fn reads_claude_plugin_json_manifest() {
+        let root = unique_root("json-manifest");
+        std::fs::create_dir_all(root.join(".claude-plugin")).unwrap();
+        std::fs::write(
+            root.join(".claude-plugin/plugin.json"),
+            r#"{"name":"claude-code-setup","description":"Claude Code setup","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let manifest = read_manifest(&root);
+        assert_eq!(manifest.name.as_deref(), Some("claude-code-setup"));
+        assert_eq!(manifest.description.as_deref(), Some("Claude Code setup"));
+        assert_eq!(manifest.version.as_deref(), Some("1.0.0"));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[tokio::test]
+    async fn install_clones_and_validates() {
+        let repo = make_repo("install1", true);
+        let root = unique_root("install1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert_eq!(p.name, "release-tools");
+        assert_eq!(p.skills, 1);
+        let dir = skills::plugins_dir(&root).join("release-tools");
+        assert!(dir.join("plugin.toml").is_file());
+        assert!(dir.join("skills/prepare/SKILL.md").is_file());
+        // Re-install collides.
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("already installed"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn install_names_from_repo_dir_without_manifest() {
+        let repo = make_repo("install2", false);
+        let root = unique_root("install2");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        // Repo dir name is the fallback name; skills still discovered.
+        let dir_name = repo.file_name().unwrap().to_str().unwrap();
+        assert_eq!(p.name, dir_name);
+        assert_eq!(p.skills, 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn install_rejects_empty_repo_and_cleans_up() {
+        let repo = std::env::temp_dir().join(format!("jan_plugin_empty_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "--allow-empty",
+            "-m",
+            "empty",
+        ])
+        .unwrap();
+        let root = unique_root("empty");
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("nothing to install"), "{err}");
+        // No leftover temp or installed dir.
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn remove_deletes_installed_plugin() {
+        let repo = make_repo("remove1", false);
+        let root = unique_root("remove1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert!(skills::plugins_dir(&root).join(&p.name).is_dir());
+        remove(&root, &p.name).unwrap();
+        assert!(!skills::plugins_dir(&root).join(&p.name).exists());
+        assert!(remove(&root, &p.name).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn marketplace_name_install_and_search() {
+        let repo = make_repo("mkt", true);
+        let root = unique_root("mkt");
+        let index = serde_json::json!([{
+            "name": "release-tools",
+            "description": "Release automation",
+            "repo": format!("file://{}", repo.display()),
+        }]);
+        let body = index.to_string();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(3) {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0u8; 4096];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = std::io::Write::write_all(&mut stream, resp.as_bytes());
+            }
+        });
+        std::fs::create_dir_all(&root).unwrap();
+        crate::core::agent::project::ensure_project(&root).unwrap();
+        std::fs::write(
+            crate::core::agent::project::agent_toml_path(&root),
+            format!("[plugins]\nmarketplace = \"http://{addr}/index.json\"\n"),
+        )
+        .unwrap();
+
+        let hits = search(&root, "release").await.unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].name, "release-tools");
+
+        let p = install(&root, "release-tools").await.unwrap();
+        assert_eq!(p.name, "release-tools");
+        assert!(skills::plugins_dir(&root).join("release-tools").is_dir());
+
+        // Unknown name errors.
+        let err = install(&root, "nope").await.unwrap_err();
+        assert!(err.contains("not found on the marketplace"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A plugin *collection* repo: no payload at the root, each direct child
+    /// is its own plugin. Multiple children -> an actionable error naming them.
+    #[tokio::test]
+    async fn install_collection_lists_plugin_choices() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_plugin_collection_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        for name in ["alpha", "beta"] {
+            let d = repo.join(name).join("skills").join("prepare");
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("SKILL.md"),
+                format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                repo.join(name).join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+        }
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "collection",
+        ])
+        .unwrap();
+
+        let root = unique_root("collection1");
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("alpha") && err.contains("beta"), "{err}");
+        assert!(err.contains("plugin collection"), "{err}");
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0,
+            "nothing should be installed for an ambiguous collection"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A collection with a single plugin child auto-installs that one.
+    #[tokio::test]
+    async fn install_collection_with_single_plugin_installs_it() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_plugin_singleton_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        let d = repo.join("only").join("skills").join("prepare");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("SKILL.md"), "---\ndescription: only\n---\n\n# only\n\nBody.\n")
+            .unwrap();
+        std::fs::write(
+            repo.join("only").join("plugin.toml"),
+            "name = \"only\"\ndescription = \"only\"\n",
+        )
+        .unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "singleton",
+        ])
+        .unwrap();
+
+        let root = unique_root("singleton1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert_eq!(p.name, "only");
+        assert_eq!(p.skills, 1);
+        assert!(skills::plugins_dir(&root).join("only").is_dir());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A collection with plugins nested under wrapper dirs (like claude-plugins-
+    /// official's `plugins/` + `external_plugins/`) still reports an actionable
+    /// list of relative paths and installs nothing by default.
+    #[tokio::test]
+    async fn install_nested_collection_lists_plugin_choices() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_nested_collection_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        for name in ["alpha", "beta"] {
+            let d = repo.join("plugins").join(name).join("skills").join("prepare");
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(d.join("SKILL.md"), format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"))
+                .unwrap();
+            std::fs::write(
+                repo.join("plugins").join(name).join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+        }
+        let d = repo
+            .join("external_plugins")
+            .join("gamma")
+            .join(".claude-plugin");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("plugin.json"), "{\"name\":\"gamma\"}").unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&[
+            "-C",
+            repo.to_str().unwrap(),
+            "commit",
+            "-m",
+            "nested collection",
+        ])
+        .unwrap();
+
+        let root = unique_root("nestedcollection1");
+        let err = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap_err();
+        assert!(err.contains("plugins/alpha") && err.contains("plugins/beta"), "{err}");
+        assert!(err.contains("external_plugins/gamma"), "{err}");
+        assert!(err.contains("plugin collection"), "{err}");
+        assert!(
+            err.contains("/tree/<ref>/<relative/path>"),
+            "error should show the path-form tree syntax: {err}"
+        );
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root))
+                .unwrap()
+                .count(),
+            0,
+            "nothing should be installed for an ambiguous nested collection"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// A nested collection with a single plugin auto-installs it.
+    #[tokio::test]
+    async fn install_nested_collection_with_single_plugin_installs_it() {
+        let repo = std::env::temp_dir().join(format!(
+            "jan_nested_singleton_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&repo);
+        let d = repo.join("plugins").join("only").join("skills").join("prepare");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("SKILL.md"), "---\ndescription: only\n---\n\n# only\n\nBody.\n")
+            .unwrap();
+        std::fs::write(
+            repo.join("plugins").join("only").join("plugin.toml"),
+            "name = \"only\"\ndescription = \"only\"\n",
+        )
+        .unwrap();
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "commit", "-m", "nested singleton"]).unwrap();
+
+        let root = unique_root("nestedsingleton1");
+        let p = install(&root, &format!("file://{}", repo.display()))
+            .await
+            .unwrap();
+        assert_eq!(p.name, "only");
+        assert_eq!(p.skills, 1);
+        assert!(skills::plugins_dir(&root).join("only").is_dir());
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    #[test]
+    fn prompt_multi_choice_parses_selections_and_cancels() {
+        let paths: [String; 3] = [
+            "plugins/alpha".into(),
+            "plugins/beta".into(),
+            "external_plugins/gamma".into(),
+        ];
+        let none = [false, false, false];
+        // Single pick -> one 0-based index.
+        let mut input = std::io::BufReader::new(&b"2\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![1]
+        );
+        // Surrounding whitespace is trimmed.
+        let mut input = std::io::BufReader::new(&b"  3  \n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![2]
+        );
+        // Comma and space separated lists, in the order given, deduped.
+        let mut input = std::io::BufReader::new(&b"3,1 1\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![2, 0]
+        );
+        // `all` selects everything, case insensitively.
+        let mut input = std::io::BufReader::new(&b"ALL\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![0, 1, 2]
+        );
+        // Out-of-range, then a valid answer: re-prompts rather than failing.
+        let mut input = std::io::BufReader::new(&b"9\n1\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![0]
+        );
+        // A non-numeric token invalidates the whole line, then retries.
+        let mut input = std::io::BufReader::new(&b"1,nope\n2\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap(),
+            vec![1]
+        );
+        // Already-installed entries stay selectable; the caller skips them.
+        let mut input = std::io::BufReader::new(&b"1\n"[..]);
+        assert_eq!(
+            prompt_multi_choice("http://x", &paths, &[true, false, false], &mut input).unwrap(),
+            vec![0]
+        );
+        // Blank line cancels.
+        let mut input = std::io::BufReader::new(&b"\n"[..]);
+        let err = prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap_err();
+        assert!(err.contains("aborted"), "{err}");
+        // EOF cancels.
+        let mut input = std::io::BufReader::new(&b""[..]);
+        let err = prompt_multi_choice("http://x", &paths, &none, &mut input).unwrap_err();
+        assert!(err.contains("aborted"), "{err}");
+    }
+
+    /// Installing several payloads out of one clone: each lands under its own
+    /// name, and a payload whose name is already taken reports
+    /// `AlreadyInstalled` instead of failing, so a batch can skip it.
+    #[test]
+    fn batch_install_lands_each_payload_and_reports_already_installed() {
+        let root = unique_root("batchskip");
+        let _ = std::fs::remove_dir_all(&root);
+        let plugins = skills::plugins_dir(&root);
+        std::fs::create_dir_all(&plugins).unwrap();
+        let tmp = plugins.join(".installing-batchskip");
+
+        // Stage two plugin payloads inside one shared clone dir.
+        let stage = |name: &str| {
+            let dir = tmp.join(name);
+            std::fs::create_dir_all(dir.join("skills").join("prepare")).unwrap();
+            std::fs::write(
+                dir.join("skills").join("prepare").join("SKILL.md"),
+                format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+            dir
+        };
+        let alpha = stage("alpha");
+        let beta = stage("beta");
+
+        // Both install out of the same clone: the shared tmp must survive the
+        // first move for the second to succeed.
+        for (dir, name) in [(&alpha, "alpha"), (&beta, "beta")] {
+            let outcome =
+                install_payload_dir(&root, &plugins, &tmp, dir, true, Some(name), "http://x")
+                    .unwrap();
+            match outcome {
+                PayloadOutcome::Installed(p) => {
+                    assert_eq!(p.name, name);
+                    assert_eq!(p.skills, 1, "{name} skills");
+                }
+                PayloadOutcome::AlreadyInstalled(s) => panic!("unexpected skip of {s}"),
+            }
+            assert!(plugins.join(name).join("plugin.toml").is_file());
+        }
+
+        // A second payload claiming an installed name is skipped, not an error.
+        let again = stage("alpha");
+        match install_payload_dir(&root, &plugins, &tmp, &again, true, Some("alpha"), "http://x")
+            .unwrap()
+        {
+            PayloadOutcome::AlreadyInstalled(stem) => assert_eq!(stem, "alpha"),
+            PayloadOutcome::Installed(p) => panic!("reinstalled {}", p.name),
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A local git repo fixture that is a collection of two plugins, `alpha`
+    /// and `beta`, at its root.
+    fn make_collection(tag: &str) -> PathBuf {
+        let repo = std::env::temp_dir().join(format!("jan_plugin_coll_{tag}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        for name in ["alpha", "beta"] {
+            let d = repo.join(name).join("skills").join("prepare");
+            std::fs::create_dir_all(&d).unwrap();
+            std::fs::write(
+                d.join("SKILL.md"),
+                format!("---\ndescription: {name}\n---\n\n# {name}\n\nBody.\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                repo.join(name).join("plugin.toml"),
+                format!("name = \"{name}\"\ndescription = \"{name}\"\n"),
+            )
+            .unwrap();
+        }
+        git(&["init", repo.to_str().unwrap()]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "add", "-A"]).unwrap();
+        git(&["-C", repo.to_str().unwrap(), "commit", "-m", "collection"]).unwrap();
+        repo
+    }
+
+    /// `list_collection` (the TUI path) returns the candidates without
+    /// installing anything, marking ones already installed.
+    #[tokio::test]
+    async fn list_collection_returns_candidates_without_installing() {
+        let repo = make_collection("list1");
+        let root = unique_root("list1");
+        let spec = format!("file://{}", repo.display());
+
+        // Pre-install alpha directly so the listing marks it.
+        install_selected(&root, &spec, vec!["alpha".to_string()])
+            .await
+            .unwrap();
+
+        match list_collection(&root, &spec).await.unwrap() {
+            GitInstall::Collection(mut candidates) => {
+                candidates.sort_by(|a, b| a.path.cmp(&b.path));
+                assert_eq!(candidates.len(), 2);
+                assert_eq!(candidates[0].path, "alpha");
+                assert!(candidates[0].installed);
+                assert_eq!(candidates[1].path, "beta");
+                assert!(!candidates[1].installed);
+            }
+            GitInstall::Installed(_) => panic!("expected a collection listing"),
+        }
+        // Listing must not have installed or left anything behind.
+        assert_eq!(
+            std::fs::read_dir(skills::plugins_dir(&root)).unwrap().count(),
+            1,
+            "only the pre-install should be present"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// `install_selected` installs exactly the requested paths and skips ones
+    /// already installed rather than erroring.
+    #[tokio::test]
+    async fn install_selected_installs_only_the_chosen_paths() {
+        let repo = make_collection("select1");
+        let root = unique_root("select1");
+        let spec = format!("file://{}", repo.display());
+
+        let installed = install_selected(&root, &spec, vec!["beta".to_string()])
+            .await
+            .unwrap();
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].name, "beta");
+        assert!(skills::plugins_dir(&root).join("beta").is_dir());
+        assert!(!skills::plugins_dir(&root).join("alpha").exists());
+
+        // Re-selecting beta alongside alpha skips beta, installs alpha.
+        let installed = install_selected(
+            &root,
+            &spec,
+            vec!["alpha".to_string(), "beta".to_string()],
+        )
+        .await
+        .unwrap();
+        assert_eq!(installed.len(), 1);
+        assert_eq!(installed[0].name, "alpha");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// `find_plugin_dirs` must skip symlinked entries rather than follow them.
+    /// If it naively followed symlinks, a malicious/malformed non-plugin dir
+    /// that symlinks back to an ancestor would recurse forever and overflow the
+    /// stack. Here that link points into a cycle and must terminate, returning
+    /// only the real plugin dirs.
+    #[test]
+    fn find_plugin_dirs_skips_symlinks_and_survives_a_link_cycle() {
+        let root = unique_root("symlink");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("plugins").join("a")).unwrap();
+        std::fs::create_dir_all(root.join("plugins").join("b")).unwrap();
+        // Real plugin payloads at two levels.
+        std::fs::write(root.join("plugins").join("a").join("plugin.toml"), "name=\"a\"").unwrap();
+        std::fs::create_dir_all(root.join("plugins").join("b").join("skills").join("s")).unwrap();
+        std::fs::write(
+            root.join("plugins").join("b").join("skills").join("s").join("SKILL.md"),
+            "# s\n",
+        )
+        .unwrap();
+
+        // A real plugin dir that lives OUTSIDE the scanned tree, reachable only
+        // through a symlink inside it: the symlinked entry must be skipped,
+        // never followed, so this real-but-symlinked plugin is not returned.
+        let outdir = unique_root("symlink-out");
+        let _ = std::fs::remove_dir_all(&outdir);
+        std::fs::create_dir_all(&outdir).unwrap();
+        std::fs::write(outdir.join("plugin.toml"), "name=\"out\"").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outdir, root.join("linked-out")).unwrap();
+
+        // A symlink cycle: a dir inside the tree pointing back at an ancestor.
+        std::fs::create_dir_all(root.join("plugins").join("loop")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&root, root.join("plugins").join("loop").join("up")).unwrap();
+
+        let found = find_plugin_dirs(&root);
+        // Terminate, and return only the two real plugin dirs.
+        let names: Vec<String> = found
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"a".to_string()));
+        assert!(names.contains(&"b".to_string()));
+        assert!(!names.contains(&"out".to_string()), "symlinked dir was followed: {names:?}");
+        assert_eq!(names.len(), 2, "unexpected dirs: {names:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&outdir);
+    }
+
+    /// A picker selection that names no candidate (or names nothing at all)
+    /// must fail loudly instead of falling through to the confusing
+    /// "already installed: (nothing)" message, and must not leave a temp clone
+    /// behind.
+    #[tokio::test]
+    async fn install_selected_rejects_unmatchable_or_empty_paths() {
+        let repo = make_collection("selecterr1");
+        let root = unique_root("selecterr1");
+        let spec = format!("file://{}", repo.display());
+
+        // A path that matches no candidate.
+        let err = install_selected(&root, &spec, vec!["nope".to_string()])
+            .await
+            .unwrap_err();
+        assert!(err.contains("no matching plugins"), "{err}");
+        assert!(err.contains("nope"), "{err}");
+
+        // An empty selection.
+        let err = install_selected(&root, &spec, vec![]).await.unwrap_err();
+        assert!(err.contains("no matching plugins"), "{err}");
+
+        // Nothing installed and no temp clone left behind on either error.
+        let installed = std::fs::read_dir(skills::plugins_dir(&root)).unwrap();
+        let leftovers: Vec<_> = installed
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(leftovers, Vec::<String>::new(), "{leftovers:?}");
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(repo);
+    }
+
+    /// An installed plugin (by directory convention) whose manifest declares
+    /// one required env var, plus the store dir tests use instead of `~/.jan`.
+    fn plugin_with_env_requirement(tag: &str, var: &str, url: &str) -> (PathBuf, PathBuf) {
+        let root = unique_root(tag);
+        // Create the root first: the store is keyed on the canonical path,
+        // which differs from the raw temp path on macOS (/var -> /private/var).
+        std::fs::create_dir_all(&root).unwrap();
+        let dir = crate::core::agent::skills::plugins_dir(&root).join("acme");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("plugin.toml"),
+            format!("name = \"acme\"\n\n[setup.env]\n{var} = \"{url}\"\n"),
+        )
+        .unwrap();
+        let env_dir = root.join("plugin-env-store");
+        std::fs::create_dir_all(&env_dir).unwrap();
+        (root, env_dir)
+    }
+
+    #[test]
+    fn required_env_reads_setup_section_and_claude_mcp_refs() {
+        let root = unique_root("reqenv");
+        std::fs::create_dir_all(root.join("acme")).unwrap();
+        std::fs::write(
+            root.join("acme/plugin.toml"),
+            "name = \"acme\"\n\n[setup.env]\nACME_TOKEN = \"https://example.com/keys\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("acme")).required_env();
+        assert_eq!(
+            req.get("ACME_TOKEN").map(String::as_str),
+            Some("https://example.com/keys")
+        );
+
+        // The Claude convention declares needs indirectly: ${VAR} references
+        // inside an mcpServers env block, with no URL to show.
+        std::fs::create_dir_all(root.join("claude").join(".claude-plugin")).unwrap();
+        std::fs::write(
+            root.join("claude/.claude-plugin/plugin.json"),
+            r#"{"name":"claude","mcpServers":{"gh":{"command":"x","env":{"GITHUB_TOKEN":"${GITHUB_TOKEN}"}}}}"#,
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("claude")).required_env();
+        assert_eq!(req.get("GITHUB_TOKEN").map(String::as_str), Some(""));
+
+        // Malformed names are filtered, not propagated.
+        std::fs::create_dir_all(root.join("bad")).unwrap();
+        std::fs::write(
+            root.join("bad/plugin.toml"),
+            "[setup.env]\n\"../evil\" = \"https://x\"\n\"HAS SPACE\" = \"https://y\"\n",
+        )
+        .unwrap();
+        let req = read_manifest(&root.join("bad")).required_env();
+        assert!(req.is_empty(), "{req:?}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn required_env_reads_mcp_file_headers_without_prompting_for_plugin_root() {
+        let root = unique_root("mcp-env");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join(".mcp.json"),
+            r#"{"mcpServers":{"remote":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${ACME_TOKEN}"}},"local":{"command":"node","args":["${CLAUDE_PLUGIN_ROOT}/server.js"]}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            read_manifest(&root).required_env(),
+            std::collections::BTreeMap::from([("ACME_TOKEN".to_string(), String::new())])
+        );
+        assert!(resolved_mcp_servers(&root, &Default::default()).is_err());
+        let stored = std::collections::BTreeMap::from([
+            ("ACME_TOKEN".to_string(), "secret-${NOT_A_TEMPLATE}".to_string()),
+        ]);
+        let servers: std::collections::BTreeMap<_, _> =
+            resolved_mcp_servers(&root, &stored).unwrap().into_iter().collect();
+        assert_eq!(servers["remote"]["headers"]["Authorization"], "Bearer secret-${NOT_A_TEMPLATE}");
+        assert_eq!(servers["local"]["args"][0], format!("{}/server.js", root.display()));
+        std::fs::write(root.join(".mcp.json"), "{broken").unwrap();
+        assert!(resolved_mcp_servers(&root, &stored).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_plugin_keys_restricts_existing_files_and_preserves_other_keys() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("acme.toml");
+        std::fs::write(&path, "OTHER_TOKEN = \"keep\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_plugin_env_in(dir.path(), "acme", "ACME_TOKEN", "secret").unwrap();
+
+        assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        let values = stored_plugin_env_in(dir.path(), "acme");
+        assert_eq!(values.get("OTHER_TOKEN").map(String::as_str), Some("keep"));
+        assert_eq!(values.get("ACME_TOKEN").map(String::as_str), Some("secret"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn plugin_keys_do_not_cross_project_boundaries() {
+        use tauri_plugin_agent_tools::tools::proc;
+
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first");
+        let second = temp.path().join("second");
+        let unrelated = temp.path().join("unrelated");
+        std::fs::create_dir_all(&unrelated).unwrap();
+        for (root, value) in [(&first, "first-secret"), (&second, "second-secret")] {
+            std::fs::create_dir_all(root).unwrap();
+            let plugin = crate::core::agent::skills::plugins_dir(root).join("acme");
+            std::fs::create_dir_all(&plugin).unwrap();
+            std::fs::write(
+                plugin.join("plugin.toml"),
+                "[setup.env]\nJAN_PLUGIN_ISOLATION_TOKEN = \"\"\n",
+            ).unwrap();
+            let store = root.join("key-store");
+            save_plugin_env_in(&store, "acme", "JAN_PLUGIN_ISOLATION_TOKEN", value).unwrap();
+            sync_env_registry_in(root, &store);
+        }
+        // Both projects are registered before either launches a shell.
+        for (root, expected) in [
+            (&first, "first-secret"), (&second, "second-secret"), (&unrelated, "unset"),
+        ] {
+            let child = proc::spawn(
+                proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", root, None,
+                proc::ShellEnv::default(), None,
+                ).await.unwrap();
+            let pid = child.id().unwrap();
+            let output = child.wait_with_output().await.unwrap();
+            proc::unregister(None, pid);
+            assert!(output.status.success());
+            assert_eq!(String::from_utf8(output.stdout).unwrap(), expected);
+        }
+        // Dropping a manifest requirement must revoke the next shell's key.
+        std::fs::write(crate::core::agent::skills::plugins_dir(&first).join("acme").join("plugin.toml"), "name = \"acme\"\n").unwrap();
+        sync_env_registry_in(&first, &first.join("key-store"));
+        let child = proc::spawn(
+            proc::shell(), "printf '%s' \"${JAN_PLUGIN_ISOLATION_TOKEN-unset}\"", &first, None,
+            proc::ShellEnv::default(), None,
+            ).await.unwrap();
+        let pid = child.id().unwrap();
+        let output = child.wait_with_output().await.unwrap();
+        proc::unregister(None, pid);
+        assert!(output.status.success());
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "unset");
+    }
+
+    #[test]
+    fn save_store_and_missing_report_roundtrip() {
+        let (root, env_dir) = plugin_with_env_requirement("envstore", "ACME_TOKEN", "https://x");
+
+        // Nothing stored: the requirement is reported as missing.
+        let missing = missing_plugin_env_in(&root, &env_dir);
+        assert_eq!(
+            missing,
+            vec![("acme".to_string(), "ACME_TOKEN".to_string(), "https://x".to_string())]
+        );
+
+        // Store a value: the requirement is satisfied.
+        save_plugin_env_in(&env_dir, "acme", "ACME_TOKEN", "secret").unwrap();
+        assert_eq!(
+            stored_plugin_env_in(&env_dir, "acme").get("ACME_TOKEN"),
+            Some(&"secret".to_string())
+        );
+        assert!(missing_plugin_env_in(&root, &env_dir).is_empty());
+        assert!(plugin_env_path(&env_dir, "acme").unwrap().exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

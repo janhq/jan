@@ -3,14 +3,14 @@
 //! Persists non-secret settings to `<jan_data_folder>/settings.json` as a flat
 //! JSON object (`{ "<namespace>": "<serialized-store-blob>" }`). The webview
 //! reaches this via the async `StateStorage` adapter; an out-of-process consumer
-//! (jan-cli) can read the same file without an `AppHandle`. Secrets never land
+//! (jan CLI) can read the same file without an `AppHandle`. Secrets never land
 //! here -- they go to the OS keyring via the provider-config path.
 //!
 //! The map is held in memory and mutated in place; disk writes are coalesced by
 //! a background thread on a short debounce so a burst of `settings_set` calls
 //! (each carrying the whole Zustand store blob) collapses into a single
 //! whole-file rewrite instead of one O(total-size) rewrite per call. A
-//! synchronous [`flush_settings`] drains the debounce on app exit so jan-cli
+//! synchronous [`flush_settings`] drains the debounce on app exit so jan CLI
 //! never reads a stale file.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -173,7 +173,7 @@ fn flush_loop() {
 }
 
 /// Synchronously write pending changes to disk. Call on app exit so the
-/// debounce window can't drop the last writes or strand jan-cli with a stale
+/// debounce window can't drop the last writes or strand jan CLI with a stale
 /// file. No-op when nothing is dirty.
 pub fn flush_settings() {
     let store = store();

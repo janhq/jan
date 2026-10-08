@@ -32,7 +32,11 @@ import {
   unloadMlxModel,
   MlxConfig,
 } from '@janhq/tauri-plugin-mlx-api'
-import { readGgufMetadata, ModelConfig } from '@janhq/tauri-plugin-llamacpp-api'
+import {
+  readGgufMetadata,
+  generateApiKey,
+  ModelConfig,
+} from '@janhq/tauri-plugin-llamacpp-api'
 
 // Error message constant
 const OUT_OF_CONTEXT_SIZE = 'the request exceeds the available context size.'
@@ -107,10 +111,7 @@ export default class mlx_extension extends AIEngine {
 
   private async generateApiKey(modelId: string, port: string): Promise<string> {
     // Reuse the llamacpp plugin's API key generation
-    const hash = await invoke<string>('plugin:llamacpp|generate_api_key', {
-      modelId: modelId + port,
-      apiSecret: this.apiSecret,
-    })
+    const hash = await generateApiKey(modelId + port, this.apiSecret)
     return hash
   }
 
@@ -134,6 +135,35 @@ export default class mlx_extension extends AIEngine {
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: modelConfig.embedding ?? false,
     } as modelInfo
+  }
+
+  async getModelContextLimit(modelId: string): Promise<number | undefined> {
+    const modelConfig = await invoke<ModelConfig>('read_yaml', {
+      path: await joinPath([await this.getProviderPath(), 'models', modelId, 'model.yml']),
+    })
+    const modelPath = isAbsoluteModelPath(modelConfig.model_path)
+      ? modelConfig.model_path
+      : await joinPath([await getJanDataFolderPath(), modelConfig.model_path])
+    let value: unknown
+    if (modelPath.endsWith('.gguf')) {
+      const { metadata } = await readGgufMetadata(modelPath)
+      value = metadata?.[`${metadata?.['general.architecture']}.context_length`]
+    } else {
+      const directory = (await fs.fileStat(modelPath)).isDirectory
+        ? modelPath
+        : modelPath.substring(0, modelPath.lastIndexOf('/'))
+      const config = JSON.parse(
+        await invoke<string>('read_file_sync', {
+          args: [await joinPath([directory, 'config.json'])],
+        })
+      ) as {
+        max_position_embeddings?: number
+        text_config?: { max_position_embeddings?: number }
+      }
+      value = config.text_config?.max_position_embeddings ?? config.max_position_embeddings
+    }
+    const limit = Number(value)
+    return Number.isInteger(limit) && limit > 0 ? limit : undefined
   }
 
   override async list(): Promise<modelInfo[]> {

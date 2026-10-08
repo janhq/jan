@@ -142,10 +142,10 @@ describe('ChainOfThoughtGroup view switching', () => {
     expect(screen.getByTestId('tool-header')).toBeInTheDocument()
   })
 
-  // Calls execute one at a time, so with several in a turn the last part is the
-  // one at the back of the queue. Showing it would report "queued" while the
-  // call actually doing the work is hidden.
-  it('shows the running call, not the last one queued', () => {
+  // A model emits parallel tool calls as one batch; execution is serial, but the
+  // whole batch is the current step, so every call in it shows -- not just the
+  // one the executor happens to be running.
+  it('shows every call in a parallel batch while streaming', () => {
     const parts = [
       { type: 'tool-alpha', state: 'input-available', toolCallId: 'a' },
       { type: 'tool-beta', state: 'input-available', toolCallId: 'b' },
@@ -156,13 +156,17 @@ describe('ChainOfThoughtGroup view switching', () => {
       entries: parts.map((part, index) => ({ part, index })),
       totalParts: parts.length,
     })
-    expect(screen.getByTestId('tool-header')).toHaveTextContent('alpha')
+    const headers = screen
+      .getAllByTestId('tool-header')
+      .map((h) => h.textContent)
+    expect(headers).toEqual(expect.arrayContaining(['alpha', 'beta']))
   })
 
-  // Before execution starts nothing is running, so the newest part is still
-  // the right thing to show as it streams in.
-  it('shows the newest call while the arguments are still streaming', () => {
+  // The batch is the trailing run of tool parts; reasoning ahead of it is not
+  // part of the current step, so it stays truncated in the condensed view.
+  it('shows the whole tool batch but not the reasoning before it', () => {
     const parts = [
+      { type: 'reasoning', text: LONG_TEXT },
       { type: 'tool-alpha', state: 'input-available', toolCallId: 'a' },
       { type: 'tool-beta', state: 'input-streaming', toolCallId: 'b' },
     ]
@@ -170,7 +174,10 @@ describe('ChainOfThoughtGroup view switching', () => {
       entries: parts.map((part, index) => ({ part, index })),
       totalParts: parts.length,
     })
-    expect(screen.getByTestId('tool-header')).toHaveTextContent('beta')
+    const headers = screen
+      .getAllByTestId('tool-header')
+      .map((h) => h.textContent)
+    expect(headers).toEqual(expect.arrayContaining(['alpha', 'beta']))
   })
 
   it('renders the completed rail with a Done marker and no view switch', () => {

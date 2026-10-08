@@ -25,7 +25,7 @@ pub async fn graceful_terminate_process(child: &mut tokio::process::Child) {
     }
 }
 
-#[cfg(all(windows, target_arch = "x86_64"))]
+#[cfg(windows)]
 pub async fn force_terminate_process(child: &mut tokio::process::Child) {
     // Graceful shutdown is not implemented on Windows: llama-server's console
     // handler only reacts to CTRL_C_EVENT (server.cpp), and

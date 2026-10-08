@@ -239,11 +239,7 @@
     "nglDisabledByFit": "Auto-fit is choosing GPU layers. Turn off Auto-fit to set this manually.",
     "title": "Impostazioni modello - {{modelId}}",
     "description": "Configura le impostazioni del modello per ottimizzarne le prestazioni e il comportamento.",
-    "mtp": {
-      "section": "Multi-Token Prediction (MTP)",
-      "enable": "Abilita MTP",
-      "enableDescription": "Usa le testine MTP integrate del modello per generare una bozza di più token per passaggio. Velocizza la generazione quando il modello dispone di pesi MTP (DeepSeek-V3, GLM-4.5/4.6, MiMo v2.5, …).",
-      "needsUpgrade": "Aggiorna il backend llama.cpp alla build b9193 o successiva per abilitare l'MTP.",
+    "specDraft": {
       "nMax": "Numero massimo token bozza",
       "nMaxDescription": "Numero massimo di token da abbozzare per passaggio. Predefinito: 16.",
       "nMin": "Numero minimo token bozza",

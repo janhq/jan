@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flappy Hamster</title>
+<style>
+  html,body{height:100%;margin:0;background:#3a2417;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,sans-serif;}
+  #wrap{position:relative;}
+  canvas{display:block;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.5);touch-action:none;}
+  #hint{position:absolute;left:0;right:0;bottom:-28px;text-align:center;color:#c9a083;font-size:13px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="c" width="400" height="600"></canvas>
+  <div id="hint">Click / Tap / Space to hop &nbsp;·&nbsp; R to restart</div>
+</div>
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d');
+const W = c.width, H = c.height;
+const GROUND = 80, GRAV = 0.45, FLAP = -7.6, GAP = 150, OB_W = 62, SPEED = 2.4;
+
+let hamster, obstacles, score, best = +(localStorage.getItem('flappyHamsterBest')||0), state, frame, groundX;
+
+function reset(){
+  hamster = {x:110, y:H/2-40, v:0, r:14, rot:0};
+  obstacles = []; score = 0; frame = 0; groundX = 0; state = 'ready';
+}
+reset();
+
+function spawnObstacle(){
+  const margin = 60;
+  const top = margin + Math.random()*(H-GROUND-GAP-margin*2);
+  obstacles.push({x:W, top, scored:false});
+}
+
+function flap(){
+  if(state==='ready'){ state='play'; }
+  if(state==='play'){ hamster.v = FLAP; }
+  else if(state==='over'){ reset(); }
+}
+
+function update(){
+  if(state==='ready'){ hamster.y = H/2-40 + Math.sin(frame/18)*6; groundX=(groundX-SPEED)%24; frame++; return; }
+  if(state==='over'){
+    hamster.v += GRAV; hamster.y += hamster.v;
+    if(hamster.y > H-GROUND-hamster.r){ hamster.y = H-GROUND-hamster.r; hamster.v=0; }
+    hamster.rot = Math.min(hamster.rot+0.08, 1.6);
+    return;
+  }
+  frame++; groundX = (groundX - SPEED) % 24;
+  hamster.v += GRAV; hamster.y += hamster.v;
+  hamster.rot = Math.max(-0.5, Math.min(hamster.v/12, 1.6));
+
+  if(frame % 95 === 0 || obstacles.length===0) spawnObstacle();
+  for(const o of obstacles) o.x -= SPEED;
+  obstacles = obstacles.filter(o => o.x + OB_W > -10);
+
+  for(const o of obstacles){
+    if(!o.scored && o.x + OB_W < hamster.x){ o.scored = true; score++; }
+    const inX = hamster.x + hamster.r > o.x && hamster.x - hamster.r < o.x + OB_W;
+    if(inX && (hamster.y - hamster.r < o.top || hamster.y + hamster.r > o.top + GAP)) die();
+  }
+  if(hamster.y + hamster.r >= H-GROUND){ hamster.y = H-GROUND-hamster.r; die(); }
+  if(hamster.y - hamster.r < 0){ hamster.y = hamster.r; hamster.v = 0; }
+}
+
+function die(){
+  if(state!=='play') return;
+  state='over';
+  if(score > best){ best = score; localStorage.setItem('flappyHamsterBest', best); }
+}
+
+// A "brick wall" obstacle, hamster-cage themed
+function drawObstacle(o){
+  const g = x.createLinearGradient(o.x,0,o.x+OB_W,0);
+  g.addColorStop(0,'#b06a3a'); g.addColorStop(.35,'#d9a066'); g.addColorStop(1,'#9c5a2f');
+  x.fillStyle = g; x.strokeStyle='#6f3c1d'; x.lineWidth=2;
+  const lip = 16;
+  function wall(y0,y1){
+    x.fillRect(o.x,y0,OB_W,y1-y0);
+    x.strokeRect(o.x,y0,OB_W,y1-y0);
+  }
+  wall(0, o.top - lip);
+  // lip
+  x.fillRect(o.x-5, o.top-lip, OB_W+10, lip);
+  x.strokeRect(o.x-5, o.top-lip, OB_W+10, lip);
+  const by = o.top + GAP;
+  x.fillRect(o.x-5, by, OB_W+10, lip);
+  x.strokeRect(o.x-5, by, OB_W+10, lip);
+  wall(by+lip, H-GROUND);
+}
+
+function drawHamster(){
+  x.save();
+  x.translate(hamster.x, hamster.y); x.rotate(hamster.rot);
+  // ears
+  x.fillStyle='#e8b28a'; x.strokeStyle='#a9744a'; x.lineWidth=2;
+  x.beginPath(); x.ellipse(-7,-10,5,6,0,0,7); x.fill(); x.stroke();
+  x.beginPath(); x.ellipse(7,-10,5,6,0,0,7); x.fill(); x.stroke();
+  // body
+  x.fillStyle='#e9a96b'; x.strokeStyle='#a9744a';
+  x.beginPath(); x.ellipse(0,0,16,13,0,0,7); x.fill(); x.stroke();
+  // belly
+  x.fillStyle='#f7e0c2';
+  x.beginPath(); x.ellipse(0,4,10,7,0,0,7); x.fill();
+  // paws
+  x.fillStyle='#e9a96b'; x.strokeStyle='#a9744a';
+  x.beginPath(); x.ellipse(-4,11,4,3,0,0,7); x.fill(); x.stroke();
+  x.beginPath(); x.ellipse(4,11,4,3,0,0,7); x.fill(); x.stroke();
+  // eye
+  x.fillStyle='#fff'; x.beginPath(); x.arc(7,-4,4,0,7); x.fill(); x.stroke();
+  x.fillStyle='#000'; x.beginPath(); x.arc(8,-4,2,0,7); x.fill();
+  x.fillStyle='#fff'; x.beginPath(); x.arc(8.6,-4.8,.8,0,7); x.fill();
+  // nose
+  x.fillStyle='#e88a8a';
+  x.beginPath(); x.arc(14,2,2,0,7); x.fill(); x.stroke();
+  x.restore();
+}
+
+function text(t, y, size, color){
+  x.font = `bold ${size}px system-ui, sans-serif`;
+  x.textAlign='center'; x.lineWidth=6; x.strokeStyle='rgba(0,0,0,.45)';
+  x.strokeText(t, W/2, y); x.fillStyle=color; x.fillText(t, W/2, y);
+}
+
+function draw(){
+  // cozy background
+  const sky = x.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#f5c97b'); sky.addColorStop(1,'#f7e0c2');
+  x.fillStyle=sky; x.fillRect(0,0,W,H);
+  // floating sunflower seeds
+  x.fillStyle='rgba(255,255,255,.55)';
+  for(let i=0;i<4;i++){
+    const cx = ((i*150 + frame*0.3) % (W+120)) - 60, cy = 70 + i*50;
+    x.beginPath(); x.arc(cx,cy,5,0,7); x.fill();
+  }
+  obstacles.forEach(drawObstacle);
+  drawHamster();
+  // ground (wood shavings)
+  x.fillStyle='#d8a566'; x.fillRect(0,H-GROUND,W,GROUND);
+  x.fillStyle='#8a5a2b'; x.fillRect(0,H-GROUND,W,14);
+  x.fillStyle='#6f3c1d';
+  for(let i=-1;i<W/24+2;i++) x.fillRect(i*24+groundX, H-GROUND+14, 12, 6);
+
+  text(score, 88, 46, '#fff');
+
+  if(state==='ready'){
+    text('FLAPPY HAMSTER', H/2-90, 34, '#5a3014');
+    text('click to hop!', H/2-50, 18, '#5a3014');
+  }
+  if(state==='over'){
+    x.fillStyle='rgba(0,0,0,.35)'; x.fillRect(0,0,W,H);
+    text('OINK — GAME OVER', H/2-60, 40, '#ffd93b');
+    text('Score: '+score, H/2-10, 24, '#fff');
+    text('Best: '+best, H/2+24, 24, '#fff');
+    text('click or press R to retry', H/2+70, 16, '#fff');
+  }
+}
+
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
+
+addEventListener('keydown', e => {
+  if(e.code==='Space' || e.code==='ArrowUp'){ e.preventDefault(); flap(); }
+  if(e.key==='r' || e.key==='R') reset();
+});
+c.addEventListener('mousedown', e => { e.preventDefault(); flap(); });
+c.addEventListener('touchstart', e => { e.preventDefault(); flap(); }, {passive:false});
+</script>
+</body>
+</html>

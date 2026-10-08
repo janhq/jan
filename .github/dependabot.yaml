@@ -11,6 +11,7 @@ updates:
       - '/'
       - 'core'
       - 'docs'
+      - 'e2e'
       - 'extensions'
       - 'extensions/*'
       - 'web-app'

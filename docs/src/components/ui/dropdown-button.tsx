@@ -145,6 +145,35 @@ export function DropdownButton({
     }
   }, [lastRelease, changeDefaultSystem])
 
+  // Flatpak isn't a GitHub release asset (it's on Flathub), so its size can't
+  // come from lastRelease.assets like the others. Fetch it from Flathub.
+  React.useEffect(() => {
+    let cancelled = false
+    const fetchFlatpakSize = async () => {
+      try {
+        const res = await fetch('https://flathub.org/api/v2/summary/ai.jan.Jan')
+        const data = await res.json()
+        const downloadSize =
+          data?.branches?.stable?.download_size ?? data?.download_size
+        if (!cancelled && typeof downloadSize === 'number') {
+          setDownloadOptions((prev) =>
+            prev.map((option) =>
+              option.id === 'linux-flatpak'
+                ? { ...option, size: formatFileSize(downloadSize) }
+                : option
+            )
+          )
+        }
+      } catch (error) {
+        console.error('Failed to fetch Flathub download size:', error)
+      }
+    }
+    fetchFlatpakSize()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   React.useEffect(() => {
     const handleEscapeKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isOpen) {

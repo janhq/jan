@@ -1,0 +1,1290 @@
+//! `agent.toml` project config parsing and store scaffolding
+//! (`~/.jan/projects/<slug>/`).
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
+
+use crate::core::agent::prompt::{Placement, PromptPolicy};
+use tauri_plugin_agent_tools::permissions::{PermissionDefault, ToolPermissions};
+
+/// `[tools]`/`[skills]` are always modeled. `[agent]` and `[budget]` are only
+/// compiled for the CLI (their sole consumer, via `jan cli agent run/step/status`).
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct AgentToml {
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub agent: AgentSection,
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub budget: BudgetSection,
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub provider: Option<ProviderSection>,
+    #[serde(default)]
+    pub tools: ToolsSection,
+    #[serde(default)]
+    pub prompt: PromptSection,
+    #[serde(default)]
+    pub skills: SkillsSection,
+    #[serde(default)]
+    pub plugins: PluginsSection,
+    /// `[telemetry]`: opt-in OTLP export. Wins over the global setting.
+    /// CLI-only: the desktop doesn't export telemetry yet.
+    #[cfg(feature = "cli")]
+    #[serde(default)]
+    pub telemetry: crate::core::agent::global_config::TelemetrySection,
+    #[serde(default)]
+    pub context: ContextSection,
+    /// `[[hooks]]` -- lifecycle commands this project runs around tool calls,
+    /// prompts, sessions and compactions. An array of tables rather than a
+    /// `[hooks]` map because several hooks may share one event.
+    #[serde(default)]
+    pub hooks: Vec<tauri_plugin_agent_tools::tools::hooks::HookEntry>,
+}
+
+/// `[prompt]` — where each contributor to the system prompt may sit. Deny-wins,
+/// like `[tools]`: nothing reaches the cache line without being allowed there,
+/// and the safe answer for a composer no policy mentions is the tail.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PromptSection {
+    /// Placement for a composer no policy mentions, `tail` by default. A
+    /// composer that varies within a session stays in the tail whatever this
+    /// says: the constancy rule outranks it. All current composers already
+    /// declare a placement or vary, so this fallback has no effect today.
+    #[serde(default)]
+    pub default: Placement,
+    /// Composer ids allowed above the cache line (`assistant_instructions`,
+    /// `skills`, ...). Unset keeps each composer's own placement; setting it
+    /// narrows the prefix to exactly the ids listed. An unknown id is an error,
+    /// not a silent no-op.
+    #[serde(default)]
+    pub prefix_allow: Option<Vec<String>>,
+}
+
+/// `[context]` — which instructions files Jan reads besides `JAN.md`.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct ContextSection {
+    /// Files read, in order, from a directory that has no non-empty `JAN.md`
+    /// (#9079). Only `AGENTS.md` and `CLAUDE.md` are recognised. `None` defers to
+    /// `~/.jan/config.toml`, then to [`DEFAULT_CONTEXT_FALLBACK_FILES`]; `[]`
+    /// reads `JAN.md` only, which is the behaviour before the fallback existed.
+    #[serde(default)]
+    pub fallback_files: Option<Vec<String>>,
+}
+
+/// The fallback used when neither `agent.toml` nor `~/.jan/config.toml` sets
+/// `[context].fallback_files`: the vendor-neutral `AGENTS.md`. `CLAUDE.md` is
+/// opt-in, since it is usually written for one specific agent.
+pub(crate) const DEFAULT_CONTEXT_FALLBACK_FILES: &[&str] = &["AGENTS.md"];
+
+/// The fallback names Jan will ever read. Anything else in `fallback_files` is
+/// dropped, so the list cannot be used to ingest arbitrary files.
+pub(crate) const KNOWN_CONTEXT_FALLBACK_FILES: &[&str] = &["AGENTS.md", "CLAUDE.md"];
+
+/// The resolved `[context].fallback_files` for `project_root`: the project's
+/// `agent.toml` if it sets the key, else `~/.jan/config.toml`, else the
+/// default. Unknown names and duplicates are dropped; order is kept, and it is
+/// the precedence within a directory.
+pub(crate) fn context_fallback_files(project_root: &Path) -> Vec<String> {
+    let configured = load_agent_config(project_root)
+        .ok()
+        .and_then(|cfg| cfg.context.fallback_files)
+        .or_else(crate::core::agent::global_config::context_fallback_files_setting);
+    let names: Vec<String> = match configured {
+        Some(list) => list,
+        None => DEFAULT_CONTEXT_FALLBACK_FILES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    };
+    let mut out: Vec<String> = Vec::new();
+    for name in names {
+        let name = name.trim().to_string();
+        if KNOWN_CONTEXT_FALLBACK_FILES.contains(&name.as_str()) && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
+}
+
+/// `[plugins]` — plugin installs and marketplace. Installed plugins live in
+/// `<store_root>/plugins/`; this section only carries configuration.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct PluginsSection {
+    /// URL of a JSON marketplace index (`[{ name, description, repo, ref? }]`).
+    /// Unset disables name-based installs; direct git URLs still work.
+    #[serde(default)]
+    pub marketplace: Option<String>,
+    /// Whether an installed plugin's `hooks/hooks.json` is honored. On by
+    /// default -- a plugin that ships hooks is usually installed *for* them --
+    /// but a plugin's hooks are third-party commands that fire on every tool
+    /// call, so `hooks = false` must be able to switch them off without
+    /// uninstalling the plugin and losing its skills and commands.
+    #[serde(default)]
+    pub hooks: Option<bool>,
+    /// Whether an installed plugin's `[[tools]]` are advertised to the model.
+    /// Same default and same rationale as [`Self::hooks`].
+    #[serde(default)]
+    pub tools: Option<bool>,
+}
+
+/// `[provider]` — project-local override of a single provider's config,
+/// highest priority in the resolution chain (wins over the global
+/// `~/.jan/config.toml` and the desktop-inherited config). Optional: most
+/// projects rely on the global scope instead. CLI-only, like `AgentSection`.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct ProviderSection {
+    pub name: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub api_type: Option<String>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching, for a request served by this provider. Overrides
+    /// `[agent].compaction_ratio`, so a route with a small window can be tuned
+    /// without loosening the setting for every other route.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
+}
+
+/// `[skills]` — which project skills are advertised to the model. An empty
+/// `enabled` list means "all skills" (backward-compatible with the scaffold
+/// template, which ships `enabled = []`); a non-empty list is a whitelist.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct SkillsSection {
+    #[serde(default)]
+    pub enabled: Vec<String>,
+}
+
+/// `[budget]` — the only cap on how long a run may go. The agent takes as many
+/// turns as the task needs; `max_tokens` bounds the run's *marginal* token
+/// spend (see `SessionBudget`: replayed context is not recharged each turn).
+/// Unset applies the model's context window, or `DEFAULT_MAX_SESSION_TOKENS`
+/// when that is unknown; an explicit `0` disables the
+/// ceiling, leaving cancellation as the only guard.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct BudgetSection {
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+    /// USD a run may spend before it stops. Unlike `max_tokens` this is a hard
+    /// bound. It is priced from the provider's published rates, so a model with
+    /// no published price cannot be capped at all and a run that asks for one is
+    /// refused rather than run uncapped -- including a subagent whose definition
+    /// names a model of its own (see `child_cost_ceiling`).
+    #[serde(default)]
+    pub max_usd: Option<f64>,
+}
+
+/// `[agent]` — resolves the model and per-run knobs for CLI agent runs.
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(crate) struct AgentSection {
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Context window limit in tokens for the model (defaults to 128K if unset).
+    /// Set this to match your model's actual context length so compaction
+    /// triggers at the right threshold.
+    #[serde(default)]
+    pub context_window: Option<u64>,
+    /// Tokens to hold back from the context window when deciding whether to
+    /// compact. Compaction triggers at `context_window - compaction_reserve_tokens`,
+    /// and setting this wins over `compaction_ratio`, so an explicit absolute
+    /// headroom is never silently relaxed. This is a compaction heuristic only
+    /// - it is NOT sent to the API as `max_tokens`.
+    #[serde(default)]
+    pub compaction_reserve_tokens: Option<u64>,
+    /// Share of `context_window` a prompt may fill before a run compacts ahead
+    /// of dispatching (defaults to 0.8 if unset). Expressed as a ratio rather
+    /// than a fixed reserve so the headroom scales with the window: 16K is 12%
+    /// of a 128K window and 1.6% of a 1M one, which is far too late on the
+    /// large window. Setting `compaction_reserve_tokens` instead pins absolute
+    /// headroom and wins over this.
+    #[serde(default)]
+    pub compaction_ratio: Option<f64>,
+    /// Per-request output cap forwarded to the model as the OpenAI-compatible
+    /// `max_tokens` field. Limits how many tokens the model may generate in a
+    /// single response. Omitted from the request when unset (model default).
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
+    /// Cap on concurrently-running background subagents for a run (defaults to
+    /// 10 if unset). Dispatches beyond the cap queue FIFO and start as running
+    /// ones finish. Snapshot at run start: a mid-run change affects the next
+    /// run only.
+    #[serde(default)]
+    pub max_parallel_subagents: Option<u32>,
+    /// Saved threads untouched for this many days are pruned at session start
+    /// (default 90; 0 disables), when `prune_threads = true` in
+    /// `~/.jan/config.toml` turns pruning on. The newest few, the resumed thread, forks'
+    /// parents and worktree-owning threads are always kept.
+    #[serde(default)]
+    pub thread_retention_days: Option<u32>,
+    /// Most saved threads a project keeps (default 500; 0 disables); the oldest
+    /// past it are pruned at session start, subject to the same exemptions.
+    #[serde(default)]
+    pub max_threads: Option<u32>,
+    /// Expand `<think>` reasoning blocks in the TUI transcript instead of
+    /// folding them to a `[thinking]`/`[thought for Ns]` status and a summary
+    /// row. Default false (hidden); Ctrl-O still reveals a folded block, and
+    /// this flips the default for every block in the session.
+    #[serde(default)]
+    pub show_reasoning: Option<bool>,
+    /// Resend a prior assistant turn's `reasoning_content` to the model with the
+    /// rest of the conversation. Default true: providers that expose reasoning
+    /// natively generally expect it back, and local llama.cpp templates with
+    /// `preserve_thinking` re-emit prior reasoning from this field (dropping it
+    /// shrinks earlier turns and forces the KV-cache prefix to be reprocessed).
+    /// Set false for a strict upstream that rejects the key on assistant turns
+    /// (Groq's validator is the known case), or to keep long chains of thought
+    /// out of the context budget.
+    #[serde(default)]
+    pub send_reasoning: Option<bool>,
+    /// Give each session in this project its own git worktree, so the agent's
+    /// edits land in a separate checkout instead of the user's. `None` = defer
+    /// to the global `worktree` setting, then the default, off.
+    #[serde(default)]
+    pub worktree: Option<bool>,
+}
+
+// `default`/`allow`/`deny`/`allow_write` are consumed by `permissions_from`,
+// which only the CLI calls: the desktop's tool gate lives in the plugin. They
+// stay parsed regardless so the desktop round-trips an `agent.toml` written by
+// the CLI instead of silently dropping the user's policy on save.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) struct ToolsSection {
+    #[serde(default)]
+    pub default: Option<String>,
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+    #[serde(default)]
+    pub allow_write: Vec<String>,
+    /// Whether the sandboxed shell keeps its network namespace. `None` (unset)
+    /// leaves the choice to the surface running the loop, which differ: the CLI
+    /// prompts before every exec and allows it, the desktop's ephemeral chat
+    /// sandbox does not and denies it.
+    #[serde(default)]
+    pub allow_network: Option<bool>,
+    /// Whether the sandboxed shell may read the user's home directory (the
+    /// CLI, for `git`/`ssh` credential helpers). `None` (unset) leaves the
+    /// choice to the surface: the CLI defaults to true, the desktop masks
+    /// `$HOME` entirely. Writes are confined to the workspace either way.
+    #[serde(default)]
+    pub allow_home_read: Option<bool>,
+    /// Whether the shell runs under OS confinement. `None` (unset) leaves the
+    /// choice to the surface: the desktop always confines, the CLI defaults to
+    /// off and opts in with `--sandbox` or the global `sandbox` setting.
+    /// Setting it here is how a repo requires confinement for everyone who
+    /// checks it out.
+    #[serde(default)]
+    pub sandbox: Option<bool>,
+    /// Host env-var names (exact or `*`-glob) the sandboxed `bash` may inherit
+    /// beyond the fixed base allowlist, merged over `~/.jan/config.toml`. Empty
+    /// by default; a secret-looking name is never copied by a glob.
+    #[serde(default)]
+    pub env_passthrough: Vec<String>,
+    /// Explicit key=value pairs injected into the `bash` env, winning over
+    /// `env_passthrough` and over the global value for the same key.
+    #[serde(default)]
+    pub env_set: BTreeMap<String, String>,
+}
+
+const AGENT_TOML_TEMPLATE: &str = r#"[agent]
+# model = "Jan-V4"
+# context_window = 128000  # tokens; defaults to 128K if unset
+# compaction_ratio = 0.8  # share of context_window a prompt may fill before the run
+#                         # compacts ahead of the request; defaults to 0.8
+# compaction_reserve_tokens = 16384  # absolute headroom instead, in tokens; wins over compaction_ratio
+# max_tokens = 4096  # cap on tokens the model generates per response (OpenAI max_tokens); omitted if unset
+# max_parallel_subagents = 10  # max concurrently-running subagents per run; extra dispatches queue FIFO
+# thread_retention_days = 90  # prune saved threads older than this at startup; 0 disables
+# max_threads = 500  # keep at most this many saved threads; 0 disables
+#                    # (both apply only with prune_threads = true in ~/.jan/config.toml)
+# show_reasoning = false  # expand  reasoning in the transcript (Ctrl-O still toggles)
+# send_reasoning = true  # resend prior reasoning to the model; false drops it from the request
+#                        # (a provider that rejects the field is detected and stripped automatically)
+
+# Project-local provider override. Wins over ~/.jan/config.toml and any
+# provider inherited from Jan Desktop's settings.json. Most projects don't
+# need this and should rely on the global scope instead.
+# [provider]
+# name = "openai"
+# api_key = "sk-..."
+# base_url = "https://api.openai.com/v1"
+# models = ["gpt-4o"]
+
+# New token spend across all turns (replayed context is not recharged each
+# turn). Advisory: crossing it compacts and files a note, it does not stop the
+# run. Defaults to the model's context window when unset (128000 if the window
+# is unknown); 0 disables the cap.
+[budget]
+# max_tokens = 128000
+# USD this run may spend before it stops -- unlike max_tokens, a hard bound.
+# Priced from the provider's published rates, so a model with no published
+# price is refused rather than run uncapped. Overridden by --max-budget-usd.
+# max_usd = 5.00
+
+[tools]
+# read-only | deny | allow. read-only (default) exposes MCP tools and built-in
+# reads; built-in writes/exec go through the permission gate. deny locks down
+# all MCP tools.
+default = "read-only"
+# Exposed even under deny; deny-list wins over everything:
+allow = []
+deny = []
+# Write tools are opt-in only:
+# allow_write = ["fs.write"]
+allow_write = []
+# Whether the sandboxed shell can reach the network. Unset follows the surface
+# running the agent: the CLI allows it, the desktop's throwaway chat sandbox
+# does not.
+# allow_network = true
+# Whether the sandboxed shell can read your home directory (for git/ssh
+# credential helpers and ~/.ssh/config). Unset follows the surface: the CLI
+# allows it (true), the desktop masks $HOME. Writes stay in the workspace.
+# allow_home_read = true
+# Whether `shell` runs under OS confinement at all. Unset follows the surface:
+# the CLI runs unconfined unless you pass --sandbox or set sandbox = true in
+# ~/.jan/config.toml; the desktop always confines. Set it here to require
+# confinement for anyone working in this project.
+# sandbox = true
+# Host environment variables the shell may inherit beyond the minimal base
+# (PATH, HOME, TMPDIR, ...). Names are exact or use a "*" wildcard; merged with
+# ~/.jan/config.toml. A secret-looking name (*KEY*, *TOKEN*, ...) is never
+# copied by a wildcard -- inject one deliberately with env_set below.
+# env_passthrough = ["SSH_AUTH_SOCK", "GIT_*", "http_proxy", "https_proxy"]
+# Explicit values for the shell env; win over env_passthrough and the global
+# value for the same key.
+# [tools.env_set]
+# RUST_LOG = "info"
+
+[skills]
+enabled = []
+
+# Where each contributor to the system prompt may sit, deny-wins like [tools].
+# Above the cache line ("prefix") a contributor must be constant for the whole
+# session: a provider only reuses a prefix whose bytes are identical to the
+# previous request, so per-turn content belongs in the tail. `jan cli agent
+# status` prints the resolved placement of every contributor.
+[prompt]
+# Unset keeps each composer's own placement. Setting it narrows the prefix to
+# exactly the ids listed -- everything else moves below the cache line whatever
+# it asks for. Ids: assistant_instructions, guidelines, working_directory,
+# runtime_environment, subagent_guide, skill_guide, web_tools_guide,
+# project_context, skills, memory_catalog, tool_schemas (the tool array is a
+# request field and is always above the cache line).
+# prefix_allow = ["assistant_instructions", "guidelines", "skills", "tool_schemas"]
+# Fallback for a future unclassified composer: tail (the default) or prefix.
+# No effect on current composers. Use prefix_allow to narrow today's prefix.
+# default = "tail"
+
+# Instructions files read from a directory that has no JAN.md, in order. JAN.md
+# always wins. Unset uses ~/.jan/config.toml, else ["AGENTS.md"]. Add
+# "CLAUDE.md" to opt in to it; [] reads JAN.md only.
+# [context]
+# fallback_files = ["AGENTS.md"]
+"#;
+
+/// `~/.jan`, where every project's store lives. Test builds use a per-process
+/// temp directory so no test reads or writes the developer's real `~/.jan`;
+/// the plugin's own `cfg(test)` override is not active when this crate
+/// compiles it as a dependency.
+pub(crate) fn jan_home() -> Option<PathBuf> {
+    #[cfg(test)]
+    {
+        Some(std::env::temp_dir().join(format!("jan-app-test-home-{}", std::process::id())))
+    }
+    #[cfg(not(test))]
+    {
+        tauri_plugin_agent_tools::workspace::jan_home()
+    }
+}
+
+/// The Jan home the general tools and the sandboxed shell may not reach while
+/// `sandbox` is on (see `workspace::hidden_root`). Resolved through [`jan_home`]
+/// so tests hide their temp home, not the developer's.
+pub(crate) fn hidden_root(sandbox: bool) -> Option<PathBuf> {
+    if sandbox {
+        jan_home()
+    } else {
+        None
+    }
+}
+
+/// A project's store root, `~/.jan/projects/<slug>`: `agent.toml`, `memory/`,
+/// `skills/`, `subagents/`, `plugins/` and the TUI's threads. The one place the
+/// app resolves it; the project directory itself holds only `JAN.md`.
+pub(crate) fn store_root(project_root: &Path) -> PathBuf {
+    tauri_plugin_agent_tools::workspace::project_store_at(jan_home().as_deref(), project_root)
+}
+
+/// Move a legacy `<project>/.jan/agent` into [`store_root`] when the workspace
+/// still has a `.jan` directory. Called once per launch, before anything reads
+/// the store; returns a line for the surface to show, if any.
+///
+/// Once per project per process: later calls are free and return `None`, so
+/// every entry point can call it without re-reporting.
+pub(crate) fn migrate_legacy_store(project_root: &Path) -> Option<String> {
+    use std::collections::HashSet;
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    {
+        let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+        if !seen.get_or_insert_with(HashSet::new).insert(project_root.to_path_buf()) {
+            return None;
+        }
+    }
+    let home = jan_home()?;
+    let store = store_root(project_root);
+    let outcome =
+        crate::core::agent::store_migration::migrate_on_launch(project_root, &store, Some(&home));
+    if matches!(outcome, crate::core::agent::store_migration::Outcome::Moved { .. }) {
+        // A migrated store has notes but no indexes yet, and the root index
+        // should point at it straight away.
+        let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&store, project_root);
+        tauri_plugin_agent_tools::memory::write_index(&store);
+        let (_, _, cross_project) = memory_roots(project_root);
+        tauri_plugin_agent_tools::memory::write_root_index(&home, cross_project);
+    }
+    outcome.message()
+}
+
+/// The memory a run in `project_root` reaches, as owned paths: the project's
+/// store, and `~/.jan` for the user scope and other projects. Tests get no
+/// cross-project listing, so one test's notes never reach another's prompt.
+pub(crate) fn memory_roots(project_root: &Path) -> (PathBuf, Option<PathBuf>, bool) {
+    #[cfg(test)]
+    let cross = false;
+    #[cfg(not(test))]
+    let cross = crate::core::agent::global_config::memory_cross_project_enabled();
+    (store_root(project_root), jan_home(), cross)
+}
+
+/// Path to `<store_root>/agent.toml`.
+pub(crate) fn agent_toml_path(project_root: &Path) -> PathBuf {
+    store_root(project_root).join("agent.toml")
+}
+
+/// Load + parse agent.toml. Err if missing or malformed (path included in message).
+pub(crate) fn load_agent_config(project_root: &Path) -> Result<AgentToml, String> {
+    let path = agent_toml_path(project_root);
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    toml::from_str(&raw).map_err(|e| format!("Failed to parse {}: {e}", path.display()))
+}
+
+/// The per-run knobs a `ToolContext` needs from agent.toml.
+///
+/// The toolset owns no config format, so this is the one place that maps
+/// agent.toml onto a `ToolContext`. Resolved once per run rather than per tool
+/// call, and in a single parse rather than one per field.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RunSettings {
+    /// `[skills].enabled` (empty = every skill).
+    pub enabled_skills: Vec<String>,
+    /// `[tools].allow_network`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_network: Option<bool>,
+    /// `[tools].allow_home_read`; `None` when unset, so the caller applies the
+    /// default appropriate to its surface.
+    pub allow_home_read: Option<bool>,
+    /// `[tools].sandbox`; `None` when unset, so the caller applies the default
+    /// appropriate to its surface.
+    pub sandbox: Option<bool>,
+    /// `[tools].env_passthrough`: host env-var names/globs the shell may inherit
+    /// beyond the base allowlist. Merged with the global setting by the caller.
+    pub env_passthrough: Vec<String>,
+    /// `[tools].env_set`: explicit shell-env overrides, sorted by key.
+    pub env_set: Vec<(String, String)>,
+    /// `[prompt]`: where each system-prompt composer may sit. Resolved here so
+    /// composition and `agent status` answer the same question from one parse.
+    pub prompt: PromptPolicy,
+    /// `[agent].worktree`: give each session its own git checkout. Merged with
+    /// the global setting and the `--worktree` flag by the caller. CLI-only,
+    /// like the `[agent]` section it comes from.
+    #[cfg(feature = "cli")]
+    pub worktree: Option<bool>,
+    /// One line per `[tools]` `allow`/`deny`/`allow_write` entry that names the
+    /// shell tool's old name `bash`, which now matches nothing. Reported at run
+    /// start with the hook-load notices, so a deny rule that stopped applying
+    /// does not do so silently.
+    pub tool_notices: Vec<String>,
+}
+
+/// A missing or malformed config yields defaults rather than an error: a project
+/// without an agent.toml should still run, advertising all of its skills.
+pub(crate) fn run_settings(project_root: &Path) -> RunSettings {
+    let Ok(cfg) = load_agent_config(project_root) else {
+        return RunSettings::default();
+    };
+    let tool_notices = renamed_tool_notices(&cfg.tools);
+    RunSettings {
+        enabled_skills: cfg.skills.enabled,
+        allow_network: cfg.tools.allow_network,
+        allow_home_read: cfg.tools.allow_home_read,
+        sandbox: cfg.tools.sandbox,
+        env_passthrough: cfg.tools.env_passthrough,
+        env_set: cfg.tools.env_set.into_iter().collect(),
+        tool_notices,
+        prompt: PromptPolicy::new(cfg.prompt.default, cfg.prompt.prefix_allow),
+        #[cfg(feature = "cli")]
+        worktree: cfg.agent.worktree,
+    }
+}
+
+/// See [`RunSettings::tool_notices`].
+fn renamed_tool_notices(tools: &ToolsSection) -> Vec<String> {
+    [
+        ("[tools] allow", &tools.allow),
+        ("[tools] deny", &tools.deny),
+        ("[tools] allow_write", &tools.allow_write),
+    ]
+    .into_iter()
+    .flat_map(|(where_, list)| {
+        list.iter().filter_map(move |name| {
+            tauri_plugin_agent_tools::tools::renamed_shell_notice(name, where_)
+        })
+    })
+    .collect()
+}
+
+pub(crate) fn enabled_skills(project_root: &Path) -> Vec<String> {
+    run_settings(project_root).enabled_skills
+}
+
+/// The `[prompt]` placement policy for `project_root`, or the defaults when the
+/// project has no agent.toml. A thin read of [`run_settings`] for the callers
+/// that need only this: the status report and the `/context` sizing. Both are
+/// CLI surfaces, hence the desktop-build allowance.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) fn prompt_policy(project_root: &Path) -> PromptPolicy {
+    run_settings(project_root).prompt
+}
+
+/// Build a `ToolPermissions` from the parsed `[tools]` section.
+///
+/// CLI-only: the desktop no longer runs the agent loop in Rust, so its tool
+/// gating is the plugin's, not this one.
+#[cfg_attr(not(feature = "cli"), allow(dead_code))]
+pub(crate) fn permissions_from(cfg: &AgentToml) -> ToolPermissions {
+    let default = cfg
+        .tools
+        .default
+        .as_deref()
+        .map(PermissionDefault::from_str_lenient)
+        .unwrap_or_default();
+    ToolPermissions::new(
+        default,
+        &cfg.tools.allow,
+        &cfg.tools.deny,
+        &cfg.tools.allow_write,
+    )
+}
+
+/// Ensure a usable `{agent.toml, skills/, memory/}` exists in the project's
+/// store (see [`store_root`]), creating only the pieces that don't already exist.
+/// Idempotent and clobber-safe: preserves user edits on re-runs. Auto-managed
+/// on both the CLI and desktop agent-run paths (there is no explicit init step).
+///
+/// The project instructions file (`<project_root>/JAN.md`) is deliberately not
+/// scaffolded: an empty placeholder costs prompt space and teaches nothing, so
+/// it is written by `/init` or by hand.
+pub(crate) fn ensure_project(project_root: &Path) -> Result<PathBuf, String> {
+    // Refresh the plugin env registry first: this is the one choke point
+    // every run path calls, so a stored API key reaches the sandboxed shells
+    // of the run about to start.
+    super::plugins::sync_env_registry(project_root);
+    if !project_root.is_dir() {
+        return Err(format!(
+            "project directory does not exist: {}. Pass --project with a path to an existing directory (paths are case-sensitive).",
+            project_root.display()
+        ));
+    }
+    // Before scaffolding, or an empty new store would turn the move into a
+    // conflict. A no-op after the first call for this project; the CLI already
+    // ran it (and reported it) when it resolved the project.
+    if let Some(note) = migrate_legacy_store(project_root) {
+        log::info!("Agent: {note}");
+    }
+    let agent_dir = store_root(project_root);
+    std::fs::create_dir_all(agent_dir.join("skills"))
+        .map_err(|e| format!("Failed to create skills dir: {e}"))?;
+    std::fs::create_dir_all(agent_dir.join("memory"))
+        .map_err(|e| format!("Failed to create memory dir: {e}"))?;
+
+    let toml_path = agent_dir.join("agent.toml");
+    if !toml_path.exists() {
+        std::fs::write(&toml_path, AGENT_TOML_TEMPLATE)
+            .map_err(|e| format!("Failed to write {}: {e}", toml_path.display()))?;
+    } else if drop_retired_keys(&toml_path) {
+        log::info!("agent.toml: removed the retired [skills].inject key");
+    }
+    // Best-effort: only the memory index's project pointers read it.
+    let _ = tauri_plugin_agent_tools::workspace::write_project_meta(&agent_dir, project_root);
+
+    Ok(agent_dir)
+}
+
+/// Delete keys an older scaffold wrote that nothing reads any more, in place and
+/// format-preserving. Only `[skills].inject` today (janhq/jan-internal#394): the
+/// agent.toml is Jan's own scaffold in Jan's store, so tidying it here beats a
+/// warning on every launch asking the user to do the same edit by hand.
+///
+/// Best-effort: a file that cannot be read, parsed or written is left alone,
+/// since the key is ignored when parsing anyway. True when a key was removed.
+fn drop_retired_keys(path: &Path) -> bool {
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(mut doc) = raw.parse::<toml_edit::DocumentMut>() else {
+        return false;
+    };
+    let removed = doc
+        .get_mut("skills")
+        .and_then(|skills| skills.as_table_like_mut())
+        .and_then(|skills| skills.remove("inject"))
+        .is_some();
+    removed && std::fs::write(path, doc.to_string()).is_ok()
+}
+
+/// Persist `[agent].model` into the agent.toml at `path`, format-preserving
+/// (comments kept). Remembers a TUI `/model` selection across sessions.
+#[cfg(feature = "cli")]
+pub(crate) fn set_model_in_agent_toml(path: &Path, model: &str) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let agent = doc["agent"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    agent["model"] = toml_edit::value(model);
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist a scalar key into the agent.toml at `path`, format-preserving
+/// (comments kept). Keys are `section.key` with `agent` the default section,
+/// so the `/settings` menu can reach `[agent]`, `[budget]`, `[tools]` and
+/// `[skills]` scalars alike. `None` removes the key (default applies).
+#[cfg(feature = "cli")]
+pub(crate) fn set_agent_key(
+    path: &Path,
+    key: &str,
+    value: Option<toml_edit::Item>,
+) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let (section, key) = match key.split_once('.') {
+        Some((section, key)) => (section, key),
+        None => ("agent", key),
+    };
+
+    match value {
+        Some(v) => {
+            let table = doc[section].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            table[key] = v;
+        }
+        None => {
+            if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut()) {
+                table.remove(key);
+            }
+        }
+    }
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+/// Persist `[skills].enabled` into the agent.toml at `path`, format-preserving
+/// (comments kept). An empty list clears the whitelist (= all skills enabled).
+#[cfg(not(feature = "cli"))]
+pub(crate) fn set_skills_enabled_in_agent_toml(
+    path: &Path,
+    enabled: &[String],
+) -> Result<(), String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let mut doc = raw
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| format!("Failed to parse {}: {e}", path.display()))?;
+
+    let skills = doc["skills"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+    let mut arr = toml_edit::Array::new();
+    for name in enabled {
+        arr.push(name.as_str());
+    }
+    skills["enabled"] = toml_edit::value(arr);
+
+    std::fs::write(path, doc.to_string())
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::agent::prompt::Composer;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+    /// The pid keeps the path unique across concurrently-running test binaries
+    /// (the `cli` and `tauri` feature configs both compile this module), which a
+    /// per-process counter alone does not: a leftover root from one run makes
+    /// `ensure_project` skip scaffolding in the next.
+    fn unique_root(tag: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let pid = std::process::id();
+        let root = std::env::temp_dir().join(format!("jan_agent_test_{tag}_{pid}_{n}"));
+        std::fs::create_dir_all(&root).expect("create test project root");
+        root
+    }
+
+    /// `ensure_project` scaffolds `{skills,memory}` in the store, while the
+    /// toolset reads those same directories through the store root it is
+    /// handed. If the two ever drift a user's skills and memories stop being
+    /// found. The store must also never land inside the project.
+    #[test]
+    fn scaffolded_dirs_match_the_toolset_store_layout() {
+        use tauri_plugin_agent_tools::workspace;
+
+        let root = unique_root("store_layout");
+        let store = ensure_project(&root).expect("scaffold project");
+
+        assert_eq!(store, store_root(&root));
+        assert!(!store.starts_with(&root), "the store must live outside the project");
+        assert!(!root.join(".jan").exists(), "nothing is written into the project");
+        assert!(
+            tauri_plugin_agent_tools::skills::skills_dir(&store).is_dir(),
+            "skills dir the toolset reads is not the one ensure_project created"
+        );
+        assert!(
+            workspace::store_dir(&store, "memory").is_dir(),
+            "memory dir the toolset reads is not the one ensure_project created"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    fn write_agent_toml(root: &Path, body: &str) {
+        let dir = crate::core::agent::project::store_root(root);
+        std::fs::create_dir_all(&dir).expect("create agent dir");
+        std::fs::write(dir.join("agent.toml"), body).expect("write agent.toml");
+    }
+
+    #[test]
+    fn a_tools_list_naming_bash_is_reported() {
+        let root = unique_root("renamed_bash");
+        write_agent_toml(&root, "[tools]\ndeny = [\"bash\", \"web_*\"]\nallow = [\"shell\"]\n");
+        let notices = run_settings(&root).tool_notices;
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].starts_with("[tools] deny names `bash`"), "{}", notices[0]);
+    }
+
+    #[test]
+    fn run_settings_reads_allow_network_both_ways() {
+        let root = unique_root("allow_net");
+        write_agent_toml(&root, "[tools]\nallow_network = true\n");
+        assert_eq!(run_settings(&root).allow_network, Some(true));
+
+        write_agent_toml(&root, "[tools]\nallow_network = false\n");
+        assert_eq!(run_settings(&root).allow_network, Some(false));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Unset must stay `None` rather than collapsing to `false`, or the caller
+    /// cannot tell "explicitly denied" from "not configured" and every CLI
+    /// project silently loses the network.
+    #[test]
+    fn run_settings_leaves_unset_allow_network_undecided() {
+        let root = unique_root("allow_net_unset");
+
+        write_agent_toml(&root, "[tools]\ndefault = \"read-only\"\n");
+        assert_eq!(run_settings(&root).allow_network, None);
+
+        // A project with no agent.toml at all resolves the same way.
+        let bare = unique_root("allow_net_bare");
+        assert_eq!(run_settings(&bare).allow_network, None);
+
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&bare);
+    }
+
+    /// `[skills].inject` was scaffolded but never read (janhq/jan-internal#394);
+    /// it is gone from the template, and an agent.toml that still has it keeps
+    /// parsing with the whitelist intact.
+    #[test]
+    fn retired_skills_inject_is_dropped_from_the_template_but_still_parses() {
+        assert!(!AGENT_TOML_TEMPLATE.contains("inject ="));
+        for value in ["\"always\"", "\"relevance\"", "true"] {
+            let cfg: AgentToml =
+                toml::from_str(&format!("[skills]\nenabled = [\"a\"]\ninject = {value}\n"))
+                    .expect("a legacy inject key still parses");
+            assert_eq!(cfg.skills.enabled, vec!["a".to_string()]);
+        }
+    }
+
+    /// Starting a run removes the retired key from an existing agent.toml,
+    /// keeping the rest of the file (comments included) byte for byte, and
+    /// leaves a file without it untouched.
+    #[test]
+    fn ensure_project_removes_the_retired_skills_inject_key() {
+        let root = unique_root("retired_inject");
+        let store = ensure_project(&root).expect("scaffold");
+        let path = store.join("agent.toml");
+        let kept = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n\n[tools]\ndefault = \"allow\"\n";
+        let legacy = "# my notes\n[skills]\n# only these\nenabled = [\"a\"]\n# how skills reach the prompt\ninject = \"relevance\"\n\n[tools]\ndefault = \"allow\"\n";
+        std::fs::write(&path, legacy).unwrap();
+
+        ensure_project(&root).expect("ensure again");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        assert!(!drop_retired_keys(&path), "nothing left to remove");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), kept);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffold documents the key, so it has to stay parseable as written.
+    #[test]
+    fn scaffold_template_parses_with_allow_network_documented() {
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.tools.allow_network, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("allow_network"));
+    }
+
+    #[test]
+    fn ensure_errors_when_project_dir_missing() {
+        // A mistyped --project (e.g. wrong case) must fail fast, not scaffold a
+        // phantom project dir from nothing.
+        let root = std::env::temp_dir().join(format!(
+            "jan_agent_missing_{}",
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        assert!(!root.exists());
+        let err = ensure_project(&root).expect_err("must reject missing dir");
+        assert!(err.contains("does not exist"), "err: {err}");
+        assert!(!root.exists(), "must not create the missing project dir");
+    }
+
+    /// The instructions file lives at the project root as `JAN.md` and is the
+    /// user's (or `/init`'s) to create -- the scaffold must not plant an empty
+    /// one in the store, which nothing reads.
+    #[test]
+    fn ensure_does_not_scaffold_an_instructions_file() {
+        let root = unique_root("no_instructions");
+        let dir = ensure_project(&root).expect("ensure");
+        assert!(!dir.join("AGENT.md").exists());
+        assert!(!root.join("JAN.md").exists());
+        assert!(!AGENT_TOML_TEMPLATE.contains("instructions_file"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn ensure_creates_artifacts_and_is_idempotent() {
+        let root = unique_root("ensure");
+        let dir = ensure_project(&root).expect("ensure");
+        assert!(dir.join("agent.toml").exists());
+        assert!(dir.join("skills").is_dir());
+        assert!(dir.join("memory").is_dir());
+
+        // Second call must not error and must preserve user edits.
+        std::fs::write(dir.join("agent.toml"), "[tools]\ndefault = \"deny\"\n").unwrap();
+        ensure_project(&root).expect("ensure again");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.tools.default.as_deref(), Some("deny"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn telemetry_section_is_optional_and_parsed() {
+        let root = unique_root("telemetry");
+        ensure_project(&root).expect("scaffold");
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, None);
+        std::fs::write(agent_toml_path(&root), "[telemetry]\nenabled = false\n").unwrap();
+        assert_eq!(load_agent_config(&root).unwrap().telemetry.enabled, Some(false));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_roundtrips_template() {
+        let root = unique_root("roundtrip");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
+        // The scaffolded `[prompt]` section is all comments: the defaults it
+        // documents are what a fresh project gets.
+        assert_eq!(cfg.prompt.default, Placement::Tail);
+        assert_eq!(cfg.prompt.prefix_allow, None);
+        assert!(AGENT_TOML_TEMPLATE.contains("[prompt]"));
+        assert!(AGENT_TOML_TEMPLATE.contains("prefix_allow"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_defaults_to_the_declared_placements() {
+        let root = unique_root("prompt_default");
+        write_agent_toml(&root, "[skills]\nenabled = []\n");
+        let policy = prompt_policy(&root);
+        assert_eq!(policy.default_placement(), Placement::Tail);
+        assert_eq!(
+            policy.prefix_allow(),
+            None,
+            "an absent allowlist keeps each composer's own placement"
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::MemoryRecall).unwrap(),
+            Placement::Tail
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prompt_policy_reads_the_allowlist_and_the_default() {
+        let root = unique_root("prompt_allow");
+        write_agent_toml(
+            &root,
+            "[prompt]\ndefault = \"tail\"\nprefix_allow = [\"assistant_instructions\"]\n",
+        );
+        let policy = prompt_policy(&root);
+        assert_eq!(
+            policy.prefix_allow(),
+            Some(&["assistant_instructions".to_string()][..])
+        );
+        assert_eq!(
+            policy
+                .placement_of(Composer::AssistantInstructions)
+                .unwrap(),
+            Placement::Prefix
+        );
+        assert_eq!(
+            policy.placement_of(Composer::Skills).unwrap(),
+            Placement::Tail,
+            "the allowlist denies a declared-prefix composer it does not name"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_missing_errors() {
+        let root = unique_root("missing");
+        assert!(load_agent_config(&root).is_err());
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn template_provider_section_absent_by_default() {
+        let root = unique_root("provider_absent");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert!(cfg.provider.is_none());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn provider_section_parses_when_present() {
+        let root = unique_root("provider_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str(
+            "\n[provider]\nname = \"openai\"\napi_key = \"sk-test\"\nmodels = [\"gpt-4o\"]\n",
+        );
+        std::fs::write(&path, raw).unwrap();
+
+        let cfg = load_agent_config(&root).expect("load");
+        let provider = cfg.provider.expect("provider section present");
+        assert_eq!(provider.name, "openai");
+        assert_eq!(provider.api_key.as_deref(), Some("sk-test"));
+        assert_eq!(provider.models, vec!["gpt-4o".to_string()]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn max_parallel_subagents_parses_and_defaults_to_none() {
+        let root = unique_root("max_parallel");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(
+            cfg.agent.max_parallel_subagents, None,
+            "template leaves it unset"
+        );
+
+        // Explicit value round-trips through the /settings writer; unset removes.
+        let path = agent_toml_path(&root);
+        set_agent_key(
+            &path,
+            "max_parallel_subagents",
+            Some(toml_edit::value(4i64)),
+        )
+        .expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, Some(4));
+        set_agent_key(&path, "max_parallel_subagents", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_parallel_subagents, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn thread_retention_keys_parse_and_default_to_none() {
+        let root = unique_root("thread_retention");
+        // The store sits in the shared per-pid test home, not under `root`, so a
+        // leftover from an earlier run with the same pid must not leak in.
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None, "template leaves it unset");
+        assert_eq!(cfg.agent.max_threads, None);
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "thread_retention_days", Some(toml_edit::value(30))).expect("write");
+        set_agent_key(&path, "max_threads", Some(toml_edit::value(0))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, Some(30));
+        assert_eq!(cfg.agent.max_threads, Some(0), "0 is a real value: it disables the cap");
+        set_agent_key(&path, "thread_retention_days", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.thread_retention_days, None);
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffolded agent.toml documents both knobs, so a user finds them
+    /// without reading source.
+    #[test]
+    fn the_scaffolded_agent_toml_documents_the_housekeeping_keys() {
+        let root = unique_root("template_keys");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        ensure_project(&root).expect("scaffold");
+        let written = std::fs::read_to_string(agent_toml_path(&root)).unwrap();
+        assert!(written.contains("# thread_retention_days = 90"), "{written}");
+        assert!(written.contains("# max_threads = 500"), "{written}");
+        let _ = std::fs::remove_dir_all(store_root(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn show_reasoning_parses_and_defaults_to_false() {
+        let root = unique_root("show_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None, "template leaves it unset");
+
+        // Explicit value round-trips through the /settings writer; unset removes.
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "show_reasoning", Some(toml_edit::value(true))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, Some(true));
+        set_agent_key(&path, "show_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.show_reasoning, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `send_reasoning` is unset in the template, which the callers read as the
+    /// resend-by-default policy; an explicit false round-trips so a strict
+    /// upstream can be opted out of it.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn send_reasoning_parses_and_round_trips() {
+        let root = unique_root("send_reasoning");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None, "template leaves it unset");
+
+        let path = agent_toml_path(&root);
+        set_agent_key(&path, "send_reasoning", Some(toml_edit::value(false))).expect("write");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, Some(false));
+        set_agent_key(&path, "send_reasoning", None).expect("unset");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.send_reasoning, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn dotted_keys_write_and_remove_under_their_section() {
+        let root = unique_root("dotted");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_agent_key(&path, "budget.max_tokens", Some(toml_edit::value(60i64))).expect("write");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            raw.contains("max_tokens = 60"),
+            "written under [budget]: {raw}"
+        );
+
+        set_agent_key(&path, "budget.max_tokens", None).expect("unset");
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(!raw.contains("max_tokens = 60"), "removed: {raw}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn full_template_parses() {
+        let root = unique_root("full");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.tools.default.as_deref(), Some("read-only"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The scaffold leaves the key commented out, so a fresh project picks up
+    /// `DEFAULT_MAX_SESSION_TOKENS` rather than a hardcoded template value.
+    #[cfg(feature = "cli")]
+    #[test]
+    fn scaffold_template_leaves_session_budget_unset() {
+        let cfg: AgentToml = toml::from_str(AGENT_TOML_TEMPLATE).expect("scaffold template parses");
+        assert_eq!(cfg.budget.max_tokens, None);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn budget_max_tokens_parses_when_set() {
+        let cfg: AgentToml = toml::from_str("[budget]\nmax_tokens = 200000\n").expect("parses");
+        assert_eq!(cfg.budget.max_tokens, Some(200_000));
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn context_window_defaults_to_none_when_unset() {
+        // The scaffolded template leaves context_window commented out, so the
+        // parsed value is None and callers fall back to their default (128K).
+        let root = unique_root("ctx_unset");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.context_window, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn context_window_parses_when_present() {
+        let root = unique_root("ctx_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        // Prepend an explicit context_window under [agent].
+        let raw = raw.replace("[agent]", "[agent]\ncontext_window = 32000");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.context_window, Some(32000));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn compaction_reserve_tokens_defaults_to_none_when_unset() {
+        let root = unique_root("reserve_unset");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.compaction_reserve_tokens, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn compaction_reserve_tokens_parses_when_present() {
+        let root = unique_root("reserve_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let raw = raw.replace("[agent]", "[agent]\ncompaction_reserve_tokens = 8192");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.compaction_reserve_tokens, Some(8192));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn max_tokens_defaults_to_none_when_unset() {
+        let root = unique_root("maxtok_unset");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_tokens, None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn max_tokens_parses_when_present() {
+        let root = unique_root("maxtok_present");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+        let raw = std::fs::read_to_string(&path).unwrap();
+        let raw = raw.replace("[agent]", "[agent]\nmax_tokens = 4096");
+        std::fs::write(&path, raw).unwrap();
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.max_tokens, Some(4096));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn permissions_from_default_template_advertises_mcp() {
+        // The scaffolded read-only default must still advertise MCP tools.
+        let root = unique_root("perms");
+        ensure_project(&root).expect("scaffold");
+        let cfg = load_agent_config(&root).expect("load");
+        let perms = permissions_from(&cfg);
+        assert!(perms.advertises_mcp("mcp.search"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn permissions_from_deny_default_blocks_mcp() {
+        let mut cfg = AgentToml::default();
+        cfg.tools.default = Some("deny".to_string());
+        let perms = permissions_from(&cfg);
+        assert!(!perms.advertises_mcp("mcp.search"));
+
+        cfg.tools.allow = vec!["mcp.search".to_string()];
+        let perms = permissions_from(&cfg);
+        assert!(perms.advertises_mcp("mcp.search"));
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn set_model_persists_and_reloads_and_keeps_comments() {
+        let root = unique_root("setmodel");
+        ensure_project(&root).expect("scaffold");
+        let path = agent_toml_path(&root);
+
+        set_model_in_agent_toml(&path, "claude-sonnet-5").expect("set");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.model.as_deref(), Some("claude-sonnet-5"));
+
+        // Overwrites on a second set; template comment survives.
+        set_model_in_agent_toml(&path, "gpt-4o").expect("set again");
+        let cfg = load_agent_config(&root).expect("load");
+        assert_eq!(cfg.agent.model.as_deref(), Some("gpt-4o"));
+        let raw = std::fs::read_to_string(&path).expect("read");
+        assert!(raw.contains("read-only | deny | allow"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

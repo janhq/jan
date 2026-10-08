@@ -756,9 +756,48 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        if (version <= 17 && state?.providers) {
+          // Grammar became a per-model setting; add the control to persisted
+          // llamacpp models so the sidebar renders it.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (!model.settings) model.settings = {}
+              if (!model.settings.grammar) {
+                model.settings.grammar = {
+                  ...modelSettings.grammar,
+                  controller_props: {
+                    ...modelSettings.grammar.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
+        if (version <= 18 && state?.providers) {
+          // llama.cpp 0.4.0 added --n-cpu-ffn, the dense counterpart of
+          // --n-cpu-moe; add the control to persisted llamacpp models so the
+          // sidebar renders it.
+          state.providers.forEach((provider) => {
+            if (provider.provider !== 'llamacpp' || !provider.models) return
+            provider.models.forEach((model) => {
+              if (!model.settings) model.settings = {}
+              if (!model.settings.n_cpu_ffn) {
+                model.settings.n_cpu_ffn = {
+                  ...modelSettings.n_cpu_ffn,
+                  controller_props: {
+                    ...modelSettings.n_cpu_ffn.controller_props,
+                  },
+                }
+              }
+            })
+          })
+        }
+
         return state
       },
-      version: 17,
+      version: 19,
     }
   )
 )

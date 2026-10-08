@@ -101,4 +101,33 @@ describe('ChainOfThought duration', () => {
     render(<Trace streaming />)
     expect(screen.getByTestId('shimmer')).toBeInTheDocument()
   })
+
+  // A reloaded trace never streams in this mount, so it reports the persisted
+  // duration instead of "a while".
+  it('seeds the header from a persisted duration on reload', () => {
+    start()
+    render(
+      <ChainOfThought isStreaming={false} durationMs={7000}>
+        <ChainOfThoughtHeader completedVariant="worked" />
+      </ChainOfThought>
+    )
+    expect(label()).toBe('chat:reasoning.workedFor(7)')
+  })
+
+  it('reports the settled duration so the caller can persist it', () => {
+    start()
+    const onDurationSettled = vi.fn()
+    const { rerender } = render(
+      <ChainOfThought isStreaming onDurationSettled={onDurationSettled}>
+        <ChainOfThoughtHeader completedVariant="worked" />
+      </ChainOfThought>
+    )
+    advanceTo(1_008_000)
+    rerender(
+      <ChainOfThought isStreaming={false} onDurationSettled={onDurationSettled}>
+        <ChainOfThoughtHeader completedVariant="worked" />
+      </ChainOfThought>
+    )
+    expect(onDurationSettled).toHaveBeenCalledWith(8000)
+  })
 })
