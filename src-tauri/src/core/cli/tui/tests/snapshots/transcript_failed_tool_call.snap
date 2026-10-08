@@ -1,0 +1,14 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| open the notes                                                                 |
+|                                                                                |
+|│ ✗ Read missing.md                                                             |
+
+ 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 0 1..15 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 0 15..16 bg=#282C3A
+ 2 0..2 fg=DarkGray
+ 2 2..4 fg=Red
+ 2 4..19 mod=DIM

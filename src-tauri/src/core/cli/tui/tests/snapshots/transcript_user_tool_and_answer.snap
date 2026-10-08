@@ -1,0 +1,28 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| what does main do?                                                             |
+|                                                                                |
+|│ ✓ Read main.rs                                                                |
+|                                                                                |
+|It hands off to app_lib::run, which starts the app.                             |
+|                                                                                |
+|2026-01-02 03:04  ↑ 3.1K  ↓ 18  ⏱ 2.0s  ⚡ 60.0/s                               |
+
+ 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 0 1..19 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 0 19..20 bg=#282C3A
+ 2 0..2 fg=DarkGray
+ 2 2..4 fg=Green
+ 2 4..16 mod=DIM
+ 4 16..28 fg=Cyan
+ 6 0..20 fg=#808080
+ 6 20..24 mod=DIM
+ 6 24..28 fg=#808080
+ 6 28..30 mod=DIM
+ 6 30..34 fg=#808080
+ 6 34..38 mod=DIM
+ 6 38..41 fg=#808080
+ 6 42..43 fg=#808080
+ 6 43..49 mod=DIM

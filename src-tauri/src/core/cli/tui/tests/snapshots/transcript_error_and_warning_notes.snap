@@ -1,0 +1,18 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+|• model switched to gpt-5-mini                                                  |
+|• press Ctrl-C or Ctrl-D again to quit                                          |
+|                                                                                |
+| summarize the log                                                              |
+|                                                                                |
+|• error: 502 Bad Gateway from the provider                                      |
+
+ 0 0..2 fg=LightBlue
+ 0 2..30 mod=DIM
+ 1 0..38 fg=Yellow
+ 3 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 3 1..18 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 3 18..19 bg=#282C3A
+ 5 0..42 fg=Red mod=BOLD

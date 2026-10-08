@@ -1,0 +1,26 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| is 91 prime?                                                                   |
+|                                                                                |
+|┊ Thought for 3s                                                                |
+|                                                                                |
+|No: 91 = 7 x 13.                                                                |
+|                                                                                |
+|2026-01-02 03:04  ↑ 900  ↓ 40  ⏱ 2.0s  ⚡ 60.0/s                                |
+
+ 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 0 1..13 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 0 13..14 bg=#282C3A
+ 2 0..2 fg=DarkGray
+ 2 2..16 mod=DIM | ITALIC
+ 6 0..20 fg=#808080
+ 6 20..23 mod=DIM
+ 6 23..27 fg=#808080
+ 6 27..29 mod=DIM
+ 6 29..33 fg=#808080
+ 6 33..37 mod=DIM
+ 6 37..40 fg=#808080
+ 6 41..42 fg=#808080
+ 6 42..48 mod=DIM

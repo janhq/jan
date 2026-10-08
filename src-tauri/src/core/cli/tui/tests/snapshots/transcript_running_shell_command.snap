@@ -1,0 +1,35 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| build it                                                                       |
+|                                                                                |
+|│   ┌──────────────────────────────────────────────────────────────────────────┐|
+|│   │ $ make build                                                             │|
+|│   │ compiling core                                                           │|
+|│   │ compiling cli                                                            │|
+|│   │ linking jan                                                              │|
+|│   │ • 0s                                                                     │|
+|│   └──────────────────────────────────────────────────────────────────────────┘|
+
+ 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 0 1..9 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 0 9..10 bg=#282C3A
+ 2 0..80 fg=DarkGray
+ 3 0..6 fg=DarkGray
+ 3 6..8 fg=Cyan mod=BOLD
+ 3 8..18 mod=BOLD
+ 3 18..80 fg=DarkGray
+ 4 0..6 fg=DarkGray
+ 4 6..20 mod=DIM
+ 4 20..80 fg=DarkGray
+ 5 0..6 fg=DarkGray
+ 5 6..19 mod=DIM
+ 5 19..80 fg=DarkGray
+ 6 0..6 fg=DarkGray
+ 6 6..17 mod=DIM
+ 6 17..80 fg=DarkGray
+ 7 0..6 fg=DarkGray
+ 7 6..8 fg=Cyan
+ 7 8..80 fg=DarkGray
+ 8 0..80 fg=DarkGray

@@ -1,6 +1,6 @@
 //! Snapshot tests for the TUI's most layout- and style-sensitive surfaces: the
 //! permission prompt, the diff preview, the header status badges, the todo and
-//! subagent panels, `/agents`, and the model picker.
+//! subagent panels, `/agents`, the model picker, and the transcript body.
 //!
 //! Snapshot or substring? The two catch different regressions, so pick by what
 //! would break:
@@ -29,6 +29,7 @@
 use super::*;
 use crate::core::agent::todo::TodoStatus::{Abandoned, Completed, InProgress, Pending as Open};
 use crate::core::cli::tui::motion::{with_mode, MotionMode};
+use crate::core::cli::tui::{input_box_height, Level, TRANSCRIPT_BOTTOM_PAD};
 use crate::core::cli::tui::theme::{with_theme, ColorDepth, Theme};
 use ratatui::backend::TestBackend;
 use ratatui::widgets::Paragraph;
@@ -555,4 +556,244 @@ fn model_picker_wide_with_a_query() {
         picker.refresh_items();
     }
     assert_buffer("model_picker_w120_query", &frame(&mut app, DARK, 120, 14));
+}
+
+// ---- Transcript body --------------------------------------------------------
+//
+// The conversation as `draw` lays it out, cropped to the body: the header,
+// the separator, the input box and the dock are covered above or by their own
+// tests, and leaving them out keeps a transcript change from reading as a
+// chrome change. Leading blank rows (the top padding that bottom-anchors a
+// short transcript) are dropped too, so the frame height is not part of the
+// baseline.
+
+const BODY_WIDTH: u16 = 80;
+const BODY_HEIGHT: u16 = 40;
+
+/// Draw the full frame, then keep only the body rows that carry content.
+fn body(app: &mut App) -> Buffer {
+    let full = frame(app, DARK, BODY_WIDTH, BODY_HEIGHT);
+    let input_h = pinned(DARK, || input_box_height(app, BODY_WIDTH));
+    // Header and the body's top border above; the air row, the rule, the
+    // input and the dock line below. No fixture docks a status panel.
+    let last = BODY_HEIGHT - TRANSCRIPT_BOTTOM_PAD - 1 - input_h - 1;
+    let blank = |y: u16| {
+        (0..BODY_WIDTH).all(|x| {
+            let cell = &full[(x, y)];
+            cell.symbol() == " " && style_key(cell).is_empty()
+        })
+    };
+    let first = (2..last).find(|&y| !blank(y)).unwrap_or(last);
+    let area = Rect::new(0, 0, BODY_WIDTH, (last - first).max(1));
+    let mut buf = Buffer::empty(area);
+    for y in first..last {
+        for x in 0..BODY_WIDTH {
+            buf[(x, y - first)] = full[(x, y)].clone();
+        }
+    }
+    buf
+}
+
+/// End the turn with a receipt, as the stream's `Done` does, then pin the
+/// receipt's clock-derived fields (the local timestamp, the elapsed time and
+/// the rate it implies) so the row is a pure function of the token counts.
+fn finish_turn(app: &mut App, prompt: u64, output: u64) {
+    app.apply(StreamEvent::TurnUsage {
+        usage: Usage {
+            prompt_tokens: Some(prompt),
+            completion_tokens: Some(output),
+            total_tokens: Some(prompt + output),
+            ..Usage::default()
+        },
+        execution_id: None,
+    });
+    app.run_started = Some(Instant::now());
+    app.on_done("stop".into(), None);
+    let receipt = app
+        .transcript
+        .iter()
+        .rposition(|r| {
+            matches!(&r.kind, RowKind::Line(l) if line_text(l).contains('\u{23f1}'))
+        })
+        .expect("the turn left a receipt");
+    let RowKind::Line(line) = &app.transcript[receipt].kind else {
+        unreachable!("matched a line row above");
+    };
+    let mut spans = line.spans.clone();
+    for (i, pinned) in [(0, "2026-01-02 03:04"), (6, "2.0s"), (8, "60.0/s")] {
+        spans[i].content = pinned.into();
+    }
+    app.transcript[receipt] = Row::line(Line::from(spans));
+}
+
+fn tool_call(app: &mut App, id: &str, name: &str, args: serde_json::Value) {
+    app.apply(StreamEvent::ToolCall {
+        id: id.into(),
+        name: name.into(),
+        args,
+    });
+}
+
+fn tool_result(app: &mut App, id: &str, content: &str, is_error: bool, diff: Option<&str>) {
+    app.apply(StreamEvent::ToolResult {
+        id: id.into(),
+        content: content.into(),
+        is_error,
+        diff: diff.map(String::from),
+    });
+}
+
+fn token(app: &mut App, text: &str) {
+    app.apply(StreamEvent::Token { text: text.into() });
+}
+
+#[test]
+fn transcript_markdown_answer_with_receipt() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "how do I build the cli?");
+    token(
+        &mut app,
+        concat!(
+            "## Building\n\n",
+            "Run these from `src-tauri`:\n\n",
+            "- stub the resources with `node ../scripts/stub-tauri-resources.mjs`\n",
+            "- then `cargo build --features cli`\n\n",
+            "The binary lands in **target/debug**.",
+        ),
+    );
+    finish_turn(&mut app, 12_400, 120);
+    assert_buffer("transcript_markdown_answer_with_receipt", &body(&mut app));
+}
+
+#[test]
+fn transcript_closed_tool_group() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "where is the parser?");
+    tool_call(&mut app, "c1", "grep", json!({ "pattern": "fn parse_command" }));
+    tool_call(&mut app, "c2", "glob", json!({ "pattern": "src/**/*.rs" }));
+    tool_call(&mut app, "c3", "read", json!({ "path": "src/core/cli/tui.rs" }));
+    tool_call(&mut app, "c4", "read", json!({ "path": "src/core/cli/mod.rs" }));
+    tool_result(&mut app, "c1", "src/core/cli/tui.rs:812: fn parse_command(", false, None);
+    tool_result(&mut app, "c2", "src/main.rs\nsrc/lib.rs\nsrc/core/cli/tui.rs", false, None);
+    tool_result(&mut app, "c3", "fn main() {}", false, None);
+    tool_result(&mut app, "c4", "pub mod tui;", false, None);
+    app.finalize_tool_group();
+    assert_buffer("transcript_closed_tool_group", &body(&mut app));
+}
+
+#[test]
+fn transcript_finished_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "run the tests");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "cargo test --lib parser" }));
+    tool_result(
+        &mut app,
+        "b1",
+        concat!(
+            "running 3 tests\n",
+            "test parser::empty ... ok\n",
+            "test parser::nested ... ok\n",
+            "test parser::unicode ... ok\n",
+            "\n",
+            "test result: ok. 3 passed; 0 failed",
+        ),
+        false,
+        None,
+    );
+    // While the group is still the current step the box lingers with its
+    // output; once it closes the call folds to its summary row.
+    let open = body(&mut app);
+    app.finalize_tool_group();
+    assert_buffer("transcript_finished_shell_command_open", &open);
+    assert_buffer("transcript_finished_shell_command", &body(&mut app));
+}
+
+#[test]
+fn transcript_running_shell_command() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "build it");
+    tool_call(&mut app, "b1", "bash", json!({ "command": "make build" }));
+    for chunk in ["compiling core\n", "compiling cli\n", "linking jan"] {
+        app.apply(StreamEvent::ToolOutputDelta {
+            id: "b1".into(),
+            delta: chunk.into(),
+        });
+    }
+    // The box reports whole elapsed seconds; a fresh start reads `0s`.
+    if let Some(group) = app.tool_group.as_mut() {
+        group.started = Instant::now();
+    }
+    assert_buffer("transcript_running_shell_command", &body(&mut app));
+}
+
+#[test]
+fn transcript_failed_tool_call() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "open the notes");
+    tool_call(&mut app, "c1", "read", json!({ "path": "docs/missing.md" }));
+    tool_result(
+        &mut app,
+        "c1",
+        "ERROR: No such file or directory: docs/missing.md",
+        true,
+        None,
+    );
+    app.finalize_tool_group();
+    assert_buffer("transcript_failed_tool_call", &body(&mut app));
+}
+
+#[test]
+fn transcript_edit_with_diff() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "use u64 for the area");
+    tool_call(&mut app, "e1", "edit", json!({ "path": "src/geometry.rs" }));
+    tool_result(
+        &mut app,
+        "e1",
+        "Applied 1 edit(s) to src/geometry.rs",
+        false,
+        Some(concat!(
+            "@@ edit 1/1 @@\n",
+            " use std::fmt;\n",
+            "-fn area(w: u32, h: u32) -> u32 {\n",
+            "+fn area(w: u64, h: u64) -> u64 {\n",
+            "     w * h",
+        )),
+    );
+    assert_buffer("transcript_edit_with_diff", &body(&mut app));
+}
+
+#[test]
+fn transcript_folded_reasoning_and_answer() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "is 91 prime?");
+    app.apply(StreamEvent::Reasoning {
+        text: "91 is odd. Try 7: 7 * 13 = 91, so it has a factor.".into(),
+    });
+    // Backdated so the fold names a whole number of seconds.
+    app.thinking_since = Some(Instant::now() - Duration::from_secs(3));
+    token(&mut app, "No: 91 = 7 x 13.");
+    finish_turn(&mut app, 900, 40);
+    assert_buffer("transcript_folded_reasoning_and_answer", &body(&mut app));
+}
+
+#[test]
+fn transcript_error_and_warning_notes() {
+    let mut app = snapshot_app();
+    app.note("model switched to gpt-5-mini");
+    app.system(Level::Warn, "press Ctrl-C or Ctrl-D again to quit");
+    start_turn(&mut app, "summarize the log");
+    app.on_error("upstream".into(), "502 Bad Gateway from the provider".into());
+    assert_buffer("transcript_error_and_warning_notes", &body(&mut app));
+}
+
+#[test]
+fn transcript_user_tool_and_answer() {
+    let mut app = snapshot_app();
+    start_turn(&mut app, "what does main do?");
+    tool_call(&mut app, "c1", "read", json!({ "path": "src/main.rs" }));
+    tool_result(&mut app, "c1", "fn main() { app_lib::run() }", false, None);
+    token(&mut app, "It hands off to `app_lib::run`, which starts the app.");
+    finish_turn(&mut app, 3_100, 18);
+    assert_buffer("transcript_user_tool_and_answer", &body(&mut app));
 }

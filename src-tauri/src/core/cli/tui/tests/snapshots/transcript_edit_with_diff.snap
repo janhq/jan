@@ -1,0 +1,73 @@
+---
+source: src/core/cli/tui/tests/snapshot.rs
+expression: render_snapshot(buf)
+---
+| use u64 for the area                                                           |
+|                                                                                |
+|│ ✓ Edited geometry.rs                                                          |
+|│     ┌───────────────────────────────────┐                                     |
+|│     │ @@ edit 1/1 @@                    │                                     |
+|│     │  use std::fmt;                    │                                     |
+|│     │ -fn area(w: u32, h: u32) -> u32 { │                                     |
+|│     │ +fn area(w: u64, h: u64) -> u64 { │                                     |
+|│     │      w * h                        │                                     |
+|│     └───────────────────────────────────┘                                     |
+
+ 0 0..1 fg=LightMagenta bg=#282C3A mod=BOLD
+ 0 1..21 fg=#E9ECF2 bg=#282C3A mod=BOLD
+ 0 21..22 bg=#282C3A
+ 2 0..2 fg=DarkGray
+ 2 2..4 fg=Green
+ 2 4..22 mod=DIM
+ 3 0..43 fg=DarkGray
+ 4 0..8 fg=DarkGray
+ 4 8..22 fg=Cyan mod=DIM
+ 4 22..43 fg=DarkGray
+ 5 0..8 fg=DarkGray
+ 5 8..9 mod=DIM
+ 5 9..12 fg=#B48EAD
+ 5 12..22 fg=#C0C5CE
+ 5 22..43 fg=DarkGray
+ 6 0..7 fg=DarkGray
+ 6 7..8 fg=DarkGray bg=#421A1E
+ 6 8..9 fg=Red bg=#421A1E mod=BOLD
+ 6 9..11 fg=#B48EAD bg=#421A1E
+ 6 11..12 fg=#C0C5CE bg=#421A1E
+ 6 12..16 fg=#8FA1B3 bg=#421A1E
+ 6 16..17 fg=#C0C5CE bg=#421A1E
+ 6 17..18 fg=#BF616A bg=#421A1E
+ 6 18..20 fg=#C0C5CE bg=#421A1E
+ 6 20..23 fg=#B48EAD bg=#421A1E
+ 6 23..25 fg=#C0C5CE bg=#421A1E
+ 6 25..26 fg=#BF616A bg=#421A1E
+ 6 26..28 fg=#C0C5CE bg=#421A1E
+ 6 28..31 fg=#B48EAD bg=#421A1E
+ 6 31..36 fg=#C0C5CE bg=#421A1E
+ 6 36..39 fg=#B48EAD bg=#421A1E
+ 6 39..41 fg=#C0C5CE bg=#421A1E
+ 6 41..42 fg=DarkGray bg=#421A1E
+ 6 42..43 fg=DarkGray
+ 7 0..7 fg=DarkGray
+ 7 7..8 fg=DarkGray bg=#163420
+ 7 8..9 fg=Green bg=#163420 mod=BOLD
+ 7 9..11 fg=#B48EAD bg=#163420
+ 7 11..12 fg=#C0C5CE bg=#163420
+ 7 12..16 fg=#8FA1B3 bg=#163420
+ 7 16..17 fg=#C0C5CE bg=#163420
+ 7 17..18 fg=#BF616A bg=#163420
+ 7 18..20 fg=#C0C5CE bg=#163420
+ 7 20..23 fg=#B48EAD bg=#163420
+ 7 23..25 fg=#C0C5CE bg=#163420
+ 7 25..26 fg=#BF616A bg=#163420
+ 7 26..28 fg=#C0C5CE bg=#163420
+ 7 28..31 fg=#B48EAD bg=#163420
+ 7 31..36 fg=#C0C5CE bg=#163420
+ 7 36..39 fg=#B48EAD bg=#163420
+ 7 39..41 fg=#C0C5CE bg=#163420
+ 7 41..42 fg=DarkGray bg=#163420
+ 7 42..43 fg=DarkGray
+ 8 0..8 fg=DarkGray
+ 8 8..9 mod=DIM
+ 8 9..18 fg=#C0C5CE
+ 8 18..43 fg=DarkGray
+ 9 0..43 fg=DarkGray
