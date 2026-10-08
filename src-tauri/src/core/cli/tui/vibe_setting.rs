@@ -18,8 +18,8 @@ use ratatui::widgets::Paragraph;
 use serde_json::{json, Value};
 
 use super::{
-    current_setting_value, parse_setting_input, setting_path, wrap_spans_hard, write_setting, AgentSettingDef, AgentSettingKind, App, KeyCode,
-    KeyEvent, SettingScope, AGENT_SETTINGS,
+    current_setting_value, parse_setting_input, setting_path, wrap_spans_hard, write_setting,
+    AgentSettingDef, AgentSettingKind, App, KeyCode, KeyEvent, SettingScope, AGENT_SETTINGS,
 };
 
 /// `/settings` keys `/vibe-setting` may not propose. `claude_code_alias` decides

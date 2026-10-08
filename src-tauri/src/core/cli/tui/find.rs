@@ -45,9 +45,11 @@ impl Find {
 }
 
 /// Lowercased `term`, or `None` when it is blank (nothing to search for).
+/// Folded one char at a time like the text in `match_ranges`: `str::to_lowercase`
+/// turns a word-final sigma into the final form, which the text side never does.
 pub(super) fn needle(term: &str) -> Option<String> {
     let trimmed = term.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_lowercase())
+    (!trimmed.is_empty()).then(|| trimmed.chars().flat_map(char::to_lowercase).collect())
 }
 
 /// Byte ranges in `text` where the already-lowercased `needle` occurs,
@@ -202,6 +204,14 @@ mod tests {
     fn needle_trims_and_rejects_blank_terms() {
         assert_eq!(needle("  Foo "), Some("foo".to_string()));
         assert_eq!(needle("   "), None);
+    }
+
+    #[test]
+    fn needle_folds_a_final_sigma_like_the_text() {
+        // Capital omicron, delta, omicron, sigma: the sigma ends the word.
+        let word = "\u{39f}\u{394}\u{39f}\u{3a3}";
+        let n = needle(word).unwrap();
+        assert_eq!(match_ranges(word, &n).len(), 1);
     }
 
     #[test]
