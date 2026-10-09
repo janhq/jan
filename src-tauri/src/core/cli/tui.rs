@@ -917,6 +917,10 @@ enum ModelTarget {
 /// model picker; also their `provider`, so search matches the word "role".
 const ROLE_SCOPE: &str = "role";
 
+/// Scope label of a settings picker's current value when no provider lists
+/// it, so the picker can still open on (and re-select) it.
+const CURRENT_SCOPE: &str = "current";
+
 struct ModelPicker {
     scopes: Vec<ModelScope>,
     active_scope: usize,
@@ -18631,6 +18635,16 @@ fn open_settings_model_picker(app: &mut App, target: ModelTarget, current: Optio
         ],
         _ => &[],
     };
+    // A current value no provider lists (a definition's own `model = "big"`,
+    // or a hand-edited `smol_model`) gets a row of its own, under the
+    // `current` scope, so the picker can open on it. Without one the cursor
+    // falls to index 0, and Enter would write a value the user never chose.
+    let mut pairs = pairs;
+    let listed =
+        roles.contains(&current) || pairs.iter().any(|(_, model)| model.as_str() == current);
+    if !current.is_empty() && !listed {
+        pairs.push((CURRENT_SCOPE.to_string(), current.to_string()));
+    }
     let picker = ModelPicker::with_roles(pairs, roles, current);
     match picker {
         Some(picker) => {
@@ -31408,6 +31422,21 @@ mod tests {
         let mp = app.model_picker.as_ref().expect("model picker opened");
         assert_eq!(mp.items[mp.selected].value, "inherit");
         assert_eq!(mp.current, "inherit");
+    }
+
+    /// A subagent on a model no provider lists (a definition's `model = "big"`)
+    /// opens on a row for that model, marked current, rather than on index 0:
+    /// that is `smol`, and Enter-Enter would write an override never chosen.
+    #[tokio::test]
+    async fn the_picker_keeps_an_unlisted_current_model_selectable() {
+        let mut app = test_app();
+        app_with_subagents(&mut app);
+        super::open_subagent_settings(&mut app, Some("explorer"));
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        let mp = app.model_picker.as_ref().expect("model picker opened");
+        assert_eq!(mp.items[mp.selected].value, "big");
+        assert_eq!(mp.current, "big");
+        assert!(mp.items.iter().any(|i| i.value == "smol"), "roles still offered");
     }
 
     /// Enter on the `smol_model` row picks from the configured models rather

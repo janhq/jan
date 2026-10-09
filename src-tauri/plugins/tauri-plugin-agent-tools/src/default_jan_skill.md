@@ -42,9 +42,10 @@ Everything else is per-user state under `~/.jan/`, created on first use.
 `agent.toml` has `[agent]`, `[provider]`, `[budget]`, `[tools]`, and `[skills]` sections, plus
 `[subagents.<name>] model = ...` to choose the model a subagent runs on.
 
-Built-in subagents `explore` and `research` run on the cheap `smol` role (`smol_model` in
-`config.toml`, else the session's model); `review` and `debug` run on the session's model. A
-subagent's `model` is a model id, `smol` or `inherit`. Change it in `/settings > subagents`; set
+Built-in subagents `explore` (read-only: `read`/`ls`/`find`/`grep`, no shell) and `research` run on
+the cheap `smol` role (`smol_model` in `config.toml`, else the session's model); `review` and
+`debug` run on the session's model. A dispatch picks one with `agent: "<name>"`. A subagent's
+`model` is a model id, `smol` or `inherit`. Change it in `/settings > subagents`; set
 the cheap model with `/settings > smol_model`.
 A simple skill can be `skills/<name>.md`. Skill precedence is project > user (`~/.jan/skills`) >
 built-in `jan`. Plugin skills are always named `<plugin>:<name>`. `/skills` lists each skill's scope

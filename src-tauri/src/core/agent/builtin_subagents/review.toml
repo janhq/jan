@@ -1,5 +1,5 @@
 name = "review"
-description = "Read-only code reviewer on the session's model: reviews a change or a set of files for correctness, risk and missing tests, and never edits."
+description = "Code reviewer on the session's model: reviews a change or a set of files for correctness, risk and missing tests, and reports instead of editing. Has the shell (for git and the project's checks) but no write tools."
 model = "inherit"
 allowed_tools = ["read", "shell"]
 system_prompt = """

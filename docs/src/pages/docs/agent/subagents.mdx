@@ -166,13 +166,24 @@ Jan ships four subagents, ready to dispatch with no setup:
 
 | Name | Model | Tools | What it does |
 | --- | --- | --- | --- |
-| `explore` | `smol` | `read`, `shell` | Read-only codebase exploration: finds where things are and reports `path:line` evidence |
+| `explore` | `smol` | `read`, `ls`, `find`, `grep` | Codebase exploration: finds where things are and reports `path:line` evidence. Read-only by construction: it has no shell and no write tools |
 | `research` | `smol` | `web_search`, `web_fetch`, `read` | Answers a question from current web sources, with citations |
-| `review` | `inherit` | `read`, `shell` | Read-only review of a change for correctness, risk and missing tests |
+| `review` | `inherit` | `read`, `shell` | Reviews a change for correctness, risk and missing tests, and reports instead of editing. It keeps the shell for `git` and the project's checks |
 | `debug` | `inherit` | all | Reproduces a failure, finds the root cause, makes the smallest fix and verifies it |
 
-The main agent sees each name with its model in the `dispatch_subagent` description, so it can send
-lookups to `explore` and keep your main model for the work that needs it.
+The main agent picks one by setting `agent` on a dispatch entry; `name` stays the worker's own
+unique label, so one dispatch can run several workers on the same agent:
+
+```json
+{ "subagents": [
+  { "name": "explore-api", "agent": "explore", "task": "Where is request auth checked?" },
+  { "name": "explore-db",  "agent": "explore", "task": "Which tables does the migration touch?" }
+] }
+```
+
+It sees each agent with its model in the `dispatch_subagent` description, so it can send lookups to
+`explore` and keep your main model for the work that needs it. A worker without `agent` is a one-off,
+whatever it is named: a worker called `research` does not pick up the built-in.
 
 A saved subagent with the same name replaces a built-in one (see below), and the model of any of them
 can be changed per project.
@@ -206,8 +217,9 @@ The model is read each time a subagent is dispatched, so a change applies to the
 restart. A cost ceiling is enforced at the subagent's own model's prices; a model with no published
 price is refused under a ceiling rather than metered at the wrong rate.
 
-The agent cannot pick a model itself: `create_subagent` saves a definition without one, so it runs
-on the session's model until you choose otherwise.
+The agent cannot pick a model itself: `create_subagent` saves a new definition without one, so it
+runs on the session's model until you choose otherwise. When the agent overwrites an existing
+definition (to change its prompt, say), the model you set on it is kept.
 
 ## Reusable subagents
 
@@ -248,7 +260,8 @@ and never edits files.
 That writes to the project scope by default, so it applies only in this project. Ask for the user
 scope to use it everywhere.
 
-Once saved, refer to it by name and it picks up its stored prompt and permissions.
+Once saved, it is dispatched with `agent` set to its name (or, as before, by a worker `name` equal to
+it) and picks up its stored prompt, permissions and model.
 
 ## One-off subagents
 
