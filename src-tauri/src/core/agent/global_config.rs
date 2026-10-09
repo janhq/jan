@@ -538,14 +538,39 @@ pub(crate) fn hook_entries() -> Vec<tauri_plugin_agent_tools::tools::hooks::Hook
     load_raw().map(|config| config.hooks).unwrap_or_default()
 }
 
-/// Providers known to send reasoning in its own `reasoning_content` field, so
-/// tag parsing is off for them unless the user opts in. Anything else on the
-/// OpenAI wire (a custom endpoint, a local server) may inline its reasoning.
-const SEPARATE_REASONING_PROVIDERS: &[&str] = &["openai", "anthropic", "tokamak"];
+/// Providers known to send reasoning in its own `reasoning_content` field, with
+/// the host that is really theirs, so tag parsing is off for them unless the
+/// user opts in. Anything else on the OpenAI wire (a custom endpoint, a local
+/// server) may inline its reasoning. The host matters as much as the name: an
+/// `openai` entry pointed at vLLM or OpenRouter is a compatible server, not
+/// OpenAI.
+const SEPARATE_REASONING_PROVIDERS: &[(&str, &str)] = &[
+    ("openai", "api.openai.com"),
+    ("anthropic", "api.anthropic.com"),
+    ("tokamak", "api.tokamak.sh"),
+];
+
+/// Whether `provider` is one of the known providers talking to its own
+/// endpoint. No `base_url` means the built-in one.
+fn sends_reasoning_separately(provider: &str, base_url: Option<&str>) -> bool {
+    let Some((_, host)) = SEPARATE_REASONING_PROVIDERS
+        .iter()
+        .find(|(name, _)| *name == provider)
+    else {
+        return false;
+    };
+    match base_url.map(str::trim).filter(|u| !u.is_empty()) {
+        None => true,
+        Some(url) => url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(|h| h.eq_ignore_ascii_case(host)))
+            .unwrap_or(false),
+    }
+}
 
 /// Whether inline `<think>` tags in the content `provider` serves are parsed as
-/// reasoning. `provider` is the one serving the active model and `api_type` its
-/// wire API; `None` when nothing serves it.
+/// reasoning. `provider` is the one serving the active model, `api_type` its
+/// wire API and `base_url` its endpoint; `None` when nothing serves it.
 ///
 /// Answered in this order: the provider's own `parse_think_tags`, the root
 /// `think_tags` (every provider), then the default. The default is on only for
@@ -556,7 +581,11 @@ const SEPARATE_REASONING_PROVIDERS: &[&str] = &["openai", "anthropic", "tokamak"
 ///
 /// A display preference must never block startup, so an unreadable or malformed
 /// config yields the default rather than an error.
-pub(crate) fn think_tags_enabled_for(provider: Option<&str>, api_type: Option<&str>) -> bool {
+pub(crate) fn think_tags_enabled_for(
+    provider: Option<&str>,
+    api_type: Option<&str>,
+    base_url: Option<&str>,
+) -> bool {
     let Some(provider) = provider else {
         return false;
     };
@@ -567,7 +596,7 @@ pub(crate) fn think_tags_enabled_for(provider: Option<&str>, api_type: Option<&s
         .and_then(|entry| entry.parse_think_tags)
         .or_else(|| config.as_ref().and_then(|c| c.think_tags))
         .unwrap_or_else(|| {
-            !SEPARATE_REASONING_PROVIDERS.contains(&provider)
+            !sends_reasoning_separately(provider, base_url)
                 && matches!(api_type, None | Some("openai"))
         })
 }
@@ -1086,16 +1115,47 @@ mod tests {
             // Providers known to send reasoning in its own field, and any
             // non-chat-completions wire API, never need tag parsing.
             for known in ["openai", "anthropic", "tokamak"] {
-                assert!(!think_tags_enabled_for(Some(known), None), "{known}");
+                assert!(!think_tags_enabled_for(Some(known), None, None), "{known}");
             }
-            assert!(!think_tags_enabled_for(Some("mine"), Some("anthropic")));
-            assert!(!think_tags_enabled_for(Some("mine"), Some("google")));
-            assert!(!think_tags_enabled_for(Some("mine"), Some("openai-responses")));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("anthropic"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("google"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), Some("openai-responses"), None));
             // A custom OpenAI-compatible endpoint may inline its reasoning.
-            assert!(think_tags_enabled_for(Some("mine"), None));
-            assert!(think_tags_enabled_for(Some("mine"), Some("openai")));
+            assert!(think_tags_enabled_for(Some("mine"), None, None));
+            assert!(think_tags_enabled_for(Some("mine"), Some("openai"), None));
             // Nothing serves the model: nothing to parse for.
-            assert!(!think_tags_enabled_for(None, None));
+            assert!(!think_tags_enabled_for(None, None, None));
+        });
+    }
+
+    #[test]
+    fn a_known_provider_name_on_a_foreign_endpoint_keeps_tag_parsing_on() {
+        with_temp_home(|_| {
+            let own = [
+                ("openai", "https://api.openai.com/v1"),
+                ("anthropic", "https://API.Anthropic.com/v1/"),
+                ("tokamak", "https://api.tokamak.sh/v1"),
+            ];
+            for (name, url) in own {
+                assert!(!think_tags_enabled_for(Some(name), None, Some(url)), "{name}");
+            }
+            // No base_url (or an empty one) is the built-in endpoint.
+            assert!(!think_tags_enabled_for(Some("openai"), None, Some("  ")));
+            // The same name pointed at a compatible server may inline reasoning.
+            for url in [
+                "http://localhost:8000/v1",
+                "https://openrouter.ai/api/v1",
+                "https://api.openai.com.evil.example/v1",
+                "not a url",
+            ] {
+                assert!(think_tags_enabled_for(Some("openai"), None, Some(url)), "{url}");
+            }
+            // The wire API still wins over the endpoint.
+            assert!(!think_tags_enabled_for(
+                Some("openai"),
+                Some("anthropic"),
+                Some("http://localhost:8000/v1"),
+            ));
         });
     }
 
@@ -1103,13 +1163,13 @@ mod tests {
     fn think_tags_overrides_beat_the_default_provider_first() {
         with_temp_home(|_| {
             let path = ensure_global_config().expect("ensure");
-            assert!(think_tags_enabled_for(Some("mine"), None), "scaffold is neutral");
+            assert!(think_tags_enabled_for(Some("mine"), None, None), "scaffold is neutral");
 
             // The root key is the user-wide answer for every provider.
             std::fs::write(&path, "think_tags = false\n").unwrap();
-            assert!(!think_tags_enabled_for(Some("mine"), None));
+            assert!(!think_tags_enabled_for(Some("mine"), None, None));
             std::fs::write(&path, "think_tags = true\n").unwrap();
-            assert!(think_tags_enabled_for(Some("openai"), None));
+            assert!(think_tags_enabled_for(Some("openai"), None, None));
 
             // A provider's own key beats the root key, both ways.
             std::fs::write(
@@ -1118,15 +1178,15 @@ mod tests {
                  [providers.mine]\nparse_think_tags = false\n",
             )
             .unwrap();
-            assert!(!think_tags_enabled_for(Some("openai"), None));
-            assert!(!think_tags_enabled_for(Some("mine"), None));
+            assert!(!think_tags_enabled_for(Some("openai"), None, None));
+            assert!(!think_tags_enabled_for(Some("mine"), None, None));
             std::fs::write(&path, "[providers.openai]\nparse_think_tags = true\n").unwrap();
-            assert!(think_tags_enabled_for(Some("openai"), None));
-            assert!(!think_tags_enabled_for(Some("anthropic"), None));
+            assert!(think_tags_enabled_for(Some("openai"), None, None));
+            assert!(!think_tags_enabled_for(Some("anthropic"), None, None));
 
             std::fs::write(&path, "not valid toml [[[").unwrap();
             assert!(
-                think_tags_enabled_for(Some("mine"), None),
+                think_tags_enabled_for(Some("mine"), None, None),
                 "an unreadable config keeps the default"
             );
         });

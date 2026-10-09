@@ -1,4 +1,4 @@
-//! In-transcript search (`/find`, Ctrl-F, `n`/`N`).
+//! In-transcript search (`/find`, Ctrl-F, Enter / Shift-Enter).
 //!
 //! The transcript is a single scrollable pane, so search is narrow on purpose:
 //! it never rebuilds or filters rows, it only records where matches are and
@@ -14,7 +14,7 @@ use ratatui::text::{Line, Span};
 /// One matching line: its transcript row, whether it sits in that row's folded
 /// detail (what Ctrl-O or a click reveals) rather than the row itself, and the
 /// line within that part. The field order makes the derived ordering top to
-/// bottom as drawn, which is the order `n` walks.
+/// bottom as drawn, which is the order Enter walks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) struct Hit {
     pub(super) row: usize,
@@ -27,7 +27,7 @@ pub(super) struct Hit {
 pub(super) struct Find {
     /// The term as typed; matching folds case on both sides.
     pub(super) term: String,
-    /// Matches from the latest scan. Rescanned on every `n`/`N`, so rows that
+    /// Matches from the latest scan. Rescanned on every step, so rows that
     /// landed after the search started are reachable without searching again.
     pub(super) hits: Vec<Hit>,
     /// Index into `hits` of the current match, `None` when nothing matched.
@@ -108,7 +108,7 @@ fn current_style() -> Style {
 /// are split at match edges, so a match that straddles two styled spans is
 /// still covered whole. A line without a match comes back unchanged. When
 /// `current` is set the line is the jumped-to hit, and only its first match
-/// gets the current style: hits are whole lines, so that is the one `n` landed
+/// gets the current style: hits are whole lines, so that is the one a step landed
 /// on, and the rest stay reversed.
 pub(super) fn highlight_line(line: Line<'static>, needle: &str, current: bool) -> Line<'static> {
     let ranges = match_ranges(&line_text(&line), needle);

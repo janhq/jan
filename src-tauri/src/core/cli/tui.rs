@@ -216,11 +216,36 @@ fn is_suspend_key(key: &KeyEvent) -> bool {
 fn suspend_to_shell(mouse: bool) -> io::Result<()> {
     use nix::sys::signal::{kill, Signal};
     use nix::unistd::Pid;
+    if group_is_orphaned() {
+        return Err(io::Error::other(
+            "no job-control shell above jan (ssh -t, docker exec); nothing could resume it",
+        ));
+    }
     restore_terminal_modes();
     let stopped = kill(Pid::from_raw(0), Signal::SIGSTOP).map_err(io::Error::from);
     enable_raw_mode()?;
     enter_terminal_modes(&mut io::stdout(), mouse)?;
     stopped
+}
+
+/// POSIX: a process group is orphaned when no member has a parent in another
+/// group of the same session, so no job-control shell is there to `fg` it. The
+/// kernel discards SIGTSTP for such a group (which is why vim's Ctrl-Z does
+/// nothing there), but SIGSTOP always stops, and nobody would send SIGCONT.
+/// Only our own parent is inspected: the other members of the group are not
+/// enumerable without `/proc`, and a false "orphaned" only refuses a suspend,
+/// where a false "not orphaned" hangs the terminal.
+#[cfg(unix)]
+fn group_is_orphaned() -> bool {
+    use nix::unistd::{getpgid, getpgrp, getppid, getsid};
+    let parent = getppid();
+    let (Ok(parent_group), Ok(parent_session), Ok(session)) =
+        (getpgid(Some(parent)), getsid(Some(parent)), getsid(None))
+    else {
+        // The parent is gone: reparented to init, which is in another session.
+        return true;
+    };
+    parent_session != session || parent_group == getpgrp()
 }
 
 /// Suspend from the render loop, noting a failure in the transcript rather
@@ -5531,7 +5556,7 @@ impl App {
         let index = self.transcript.region_index();
         for (i, row) in self.transcript.rows.iter().enumerate() {
             // Read in place: copying every row of the session out of its cache
-            // on each `/find` and `n` was most of the scan's cost.
+            // on each `/find` and step was most of the scan's cost.
             row.fill(width);
             if let Some(cached) = row.cache.borrow().as_ref() {
                 scan(i, false, &cached.lines);
@@ -5568,7 +5593,7 @@ impl App {
     /// can report it without snapping the view back to the bottom.
     fn start_find(&mut self, term: &str) {
         let Some(needle) = find::needle(term) else {
-            self.note("usage: /find <term>   (n/N next/previous, Esc clears)");
+            self.note("usage: /find <term>   (Enter next, Shift-Enter previous, Esc clears)");
             return;
         };
         let hits = self.find_hits(&needle);
@@ -5593,7 +5618,7 @@ impl App {
         }
     }
 
-    /// `n` (`forward`) / `N`: move to the next/previous match, wrapping at the
+    /// Enter (`forward`) / Shift-Enter: move to the next/previous match, wrapping at the
     /// ends. Rescans first, so rows that landed since the search began count.
     fn find_step(&mut self, forward: bool) {
         let Some(find) = self.find.as_ref() else {
@@ -6982,14 +7007,19 @@ impl App {
     /// Whether the current model's provider has its inline tags parsed.
     fn think_tags_gate(&mut self) -> bool {
         let provider = self.serving_provider();
-        let api_type = provider.as_deref().and_then(|name| {
-            let args = self.args.as_ref()?;
-            let pc = args.provider_configs.try_lock().ok()?;
-            pc.get(name)?.api_type.clone()
-        });
+        let (api_type, base_url) = provider
+            .as_deref()
+            .and_then(|name| {
+                let args = self.args.as_ref()?;
+                let pc = args.provider_configs.try_lock().ok()?;
+                let config = pc.get(name)?;
+                Some((config.api_type.clone(), config.base_url.clone()))
+            })
+            .unwrap_or_default();
         crate::core::agent::global_config::think_tags_enabled_for(
             provider.as_deref(),
             api_type.as_deref(),
+            base_url.as_deref(),
         )
     }
 
@@ -14686,9 +14716,10 @@ async fn handle_key(
     app.exit_armed = false;
 
     // An active search owns Esc (ahead of cancel and rewind, so the first Esc
-    // only ends the search) and, while the input is empty, `n`/`N`. Once
-    // anything is typed those letters are text again, so a search can never
-    // swallow a message being written.
+    // only ends the search) and, while the input is empty, Enter / Shift-Enter
+    // to step. A letter key would eat the first character of the next message
+    // (the input is empty right after `/find x`), so stepping uses keys that
+    // type nothing; with text in the composer Enter submits as usual.
     if app.find.is_some() {
         match key.code {
             KeyCode::Esc => {
@@ -14696,8 +14727,8 @@ async fn handle_key(
                 app.last_esc = None;
                 return;
             }
-            KeyCode::Char(c @ ('n' | 'N')) if !ctrl && !alt && app.input.is_empty() => {
-                app.find_step(c == 'n');
+            KeyCode::Enter if !ctrl && !sup && app.input.is_empty() => {
+                app.find_step(!newline);
                 return;
             }
             _ => {}
@@ -15161,7 +15192,7 @@ const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/find",
         hint: "<term>",
-        description: "Search the transcript; n/N step through matches, Esc clears",
+        description: "Search the transcript; Enter / Shift-Enter step through matches, Esc clears",
         alias_of: None,
     },
     SlashCommand {
@@ -21106,7 +21137,7 @@ fn draw(f: &mut Frame, app: &mut App) {
     if let (Some(start), Some(hit)) = (layout.find_at, find_hit) {
         // Down to the matching line inside its segment, measured with the same
         // wrap the body uses. Only on the jump frame, so the lines above it are
-        // cloned once per `n`/`N`, not every frame.
+        // cloned once per step, not every frame.
         let above = layout
             .segs
             .get(layout.find_seg.unwrap_or(usize::MAX))
@@ -23788,7 +23819,7 @@ fn footer_spans(app: &App) -> Vec<Span<'static>> {
             )],
         };
         let keys: &[(&str, &str)] = if find.current.is_some() {
-            &[("n/N", "next/prev"), ("Esc", "clear")]
+            &[("Enter/Shift-Enter", "next/prev"), ("Esc", "clear")]
         } else {
             &[("Esc", "clear")]
         };
@@ -30143,12 +30174,17 @@ mod tests {
     #[test]
     fn think_tag_gate_follows_the_serving_provider_across_a_model_switch() {
         crate::core::agent::global_config::with_temp_home(|_| {
+            // `tokamak` is only "separate reasoning" on its own host.
             let provider = |name: &str, model: &str| {
+                let base_url = match name {
+                    "tokamak" => "https://api.tokamak.sh/v1",
+                    _ => "http://127.0.0.1:1/v1",
+                };
                 (
                     name.to_string(),
                     crate::core::state::ProviderConfig {
                         provider: name.into(),
-                        base_url: Some("http://127.0.0.1:1/v1".into()),
+                        base_url: Some(base_url.into()),
                         models: vec![model.into()],
                         ..Default::default()
                     },
@@ -30180,10 +30216,14 @@ mod tests {
     fn preparing_a_session_seeds_the_think_tag_gate_for_headless_runs() {
         crate::core::agent::global_config::with_temp_home(|_| {
             let set = |name: &str, model: &str| {
+                let base_url = match name {
+                    "tokamak" => "https://api.tokamak.sh/v1",
+                    _ => "http://127.0.0.1:1/v1",
+                };
                 crate::core::agent::global_config::set_provider(
                     name,
                     crate::core::agent::global_config::ProviderUpdate {
-                        base_url: Some("http://127.0.0.1:1/v1".into()),
+                        base_url: Some(base_url.into()),
                         models: Some(vec![model.into()]),
                         ..Default::default()
                     },
@@ -46403,7 +46443,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn n_and_shift_n_step_through_matches_and_wrap() {
+    async fn enter_and_shift_enter_step_through_matches_and_wrap() {
         let mut app = test_app();
         for word in ["alpha one", "beta", "alpha two", "alpha three"] {
             app.note(word);
@@ -46416,21 +46456,26 @@ mod tests {
         // Never drawn, so the whole transcript counts as above the view: the
         // search lands on the newest match.
         assert_eq!(at(&app), (2, 3));
-        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         assert_eq!(at(&app), (0, 3), "next wraps past the last match");
-        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
         assert_eq!(at(&app), (1, 3));
-        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
         assert_eq!(at(&app), (0, 3));
-        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
         assert_eq!(at(&app), (2, 3), "previous wraps past the first match");
-        assert!(app.input.is_empty(), "n/N never reach the composer");
+        assert!(app.input.is_empty(), "stepping never reaches the composer");
+    }
 
-        // With text in the composer, n is typing again.
-        type_key_chars(&mut app, "x").await;
-        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
-        assert_eq!(app.input, "xn");
-        assert_eq!(at(&app), (2, 3), "typing does not move the search");
+    #[tokio::test]
+    async fn letters_typed_after_a_search_are_not_swallowed() {
+        let mut app = test_app();
+        app.note("needle here");
+        run_command(&mut app, "find needle", &no_mcp()).await;
+        assert!(app.find.is_some());
+        // The next message starts with n and N: both must be text.
+        type_key_chars(&mut app, "nNow").await;
+        assert_eq!(app.input, "nNow");
     }
 
     #[tokio::test]
@@ -46440,8 +46485,8 @@ mod tests {
         let rows = app.transcript.rows.len();
         app.scrollback = 3;
         run_command(&mut app, "find answer line", &no_mcp()).await;
-        press(&mut app, KeyCode::Char('n'), KeyModifiers::NONE).await;
-        press(&mut app, KeyCode::Char('N'), KeyModifiers::SHIFT).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::NONE).await;
+        press(&mut app, KeyCode::Enter, KeyModifiers::SHIFT).await;
         assert_eq!(app.scrollback, 3, "only the draw moves the viewport");
         press_esc(&mut app).await;
         assert!(app.find.is_none());

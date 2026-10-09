@@ -114,6 +114,13 @@ impl Drop for Session {
 }
 
 fn spawn() -> Session {
+    spawn_with(false)
+}
+
+/// `new_session` runs `jan` through `setsid --ctty`, so it leads a session of
+/// its own and its parent (this runner) is in another one: an orphaned process
+/// group, like `ssh -t host jan` or `docker exec -it`.
+fn spawn_with(new_session: bool) -> Session {
     let size = Winsize {
         ws_row: 24,
         ws_col: 80,
@@ -126,15 +133,24 @@ fn spawn() -> Session {
     let slave = File::from(pty.slave);
     let home = std::env::temp_dir().join(format!("jan-tui-suspend-{}", std::process::id()));
     std::fs::create_dir_all(&home).unwrap();
-    let child = Command::new(env!("CARGO_BIN_EXE_jan"))
+    let mut command = if new_session {
+        let mut c = Command::new("setsid");
+        c.arg("--ctty").arg(env!("CARGO_BIN_EXE_jan"));
+        c
+    } else {
+        Command::new(env!("CARGO_BIN_EXE_jan"))
+    };
+    if !new_session {
+        // The suspend stops jan's whole process group; without a group of its
+        // own that would be this test runner's.
+        command.process_group(0);
+    }
+    let child = command
         .env("HOME", &home)
         .env("JAN_CLI_NO_UPDATE_CHECK", "1")
         .stdin(Stdio::from(slave.try_clone().expect("clone PTY slave")))
         .stdout(Stdio::from(slave.try_clone().expect("clone PTY slave")))
         .stderr(Stdio::from(slave))
-        // The suspend stops jan's whole process group; without a group of its
-        // own that would be this test runner's.
-        .process_group(0)
         .spawn()
         .expect("spawn jan under the test PTY");
     let pid = Pid::from_raw(child.id() as i32);
@@ -178,4 +194,22 @@ fn ctrl_z_and_sigtstp_suspend_and_resume_cleanly() {
         "external SIGTSTP",
     );
     assert!(session.alive(), "jan exited after resuming: {:?}", session.text());
+}
+
+/// With no job-control shell above it nothing would ever send SIGCONT, so
+/// Ctrl-Z must refuse (and say so) rather than stop and hang the terminal.
+#[test]
+fn ctrl_z_in_an_orphaned_group_refuses_instead_of_stopping() {
+    let session = spawn_with(true);
+    session.wait_for(0, &ENTER, "the TUI to start");
+    let mut master = session.master.try_clone().expect("clone PTY master");
+    let before = session.text().len();
+    master.write_all(b"\x1a").expect("type Ctrl-Z");
+    let deadline = Instant::now() + DEADLINE;
+    while !session.text()[before..].contains("could not suspend") {
+        assert!(Instant::now() < deadline, "no refusal: {:?}", session.text());
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(session.alive(), "jan stopped or exited: {:?}", session.text());
+    assert!(session.raw(), "the TUI kept the terminal");
 }

@@ -59,7 +59,7 @@ See [Sessions](/docs/agent/sessions).
 | `/shells` (alias `/jobs`) | Inspect background shell commands the agent left running: one `• command` row each, with how long it has run; `x` stops the selected one |
 | `/stop` | Stop every background shell command at once |
 | `/monitors` | Inspect the monitors watching for a condition: id, name, polls so far and script; `x` stops the selected one |
-| `/find <term>` | Search the whole transcript (case-insensitive) and jump to the nearest match, unfolding it if needed. <kbd>n</kbd> / <kbd>N</kbd> step to the next / previous match, wrapping at the ends, while the input is empty; <kbd>Esc</kbd> or the next message clears it. A miss is reported in the footer |
+| `/find <term>` | Search the whole transcript (case-insensitive) and jump to the nearest match, unfolding it if needed. <kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd> step to the next / previous match, wrapping at the ends, while the input is empty (they type nothing, so the start of your next message is never eaten); a term that word-wraps across two lines is not matched; <kbd>Esc</kbd> or the next message clears it. A miss is reported in the footer |
 
 See [Run modes](/docs/agent/run-modes), [Goals and todos](/docs/agent/goals-and-todos), and
 [Context and compaction](/docs/agent/context).
