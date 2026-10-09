@@ -128,6 +128,36 @@ describe('describeEngineError', () => {
     expect(detail.endsWith('...')).toBe(true)
   })
 
+  // `find_session_by_model` and `get_loaded_models` return String errors, so
+  // the plugin sends the structured error as JSON inside the string, and the
+  // extension rethrows it as `new Error(String(e))`. It has to come out as the
+  // localized sentence plus the evidence, not as the raw JSON.
+  it('describes an engine-stopped error that arrived inside an Error message', () => {
+    const fromRust = JSON.stringify({
+      code: 'ENGINE_STOPPED',
+      message: 'The llama.cpp engine stopped unexpectedly (exit code 0xC0000005).',
+      details: 'exit code 0xC0000005. Last output: CUDA error: unspecified launch failure',
+    })
+
+    const text = describeEngineError(new Error(fromRust))
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_STOPPED')
+    expect(text).toContain('0xC0000005')
+    expect(text).not.toContain('"code"')
+  })
+
+  it('describes a live but unreachable engine from its code', () => {
+    const text = describeEngineError(
+      JSON.stringify({
+        code: 'ENGINE_UNREACHABLE',
+        details: '127.0.0.1:51825: error sending request: connection refused',
+      })
+    )
+
+    expect(mockT).toHaveBeenCalledWith('model-errors:engine.ENGINE_UNREACHABLE')
+    expect(text).toContain('127.0.0.1:51825')
+  })
+
   it('omits the detail wrapper when there is no detail', () => {
     describeEngineError({ code: 'IO_ERROR' })
 
