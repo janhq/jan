@@ -521,11 +521,39 @@ mod engine {
         // arch is 75, which cannot JIT down to 72. So an ARM/Jetson build needs
         // to say what it targets -- and trimming to a single known arch is also
         // how you cut a CUDA worker's size for a fixed fleet.
-        if let Ok(archs) = env::var("JAN_ENGINE_CUDA_ARCHS") {
-            let archs = archs.trim();
-            if !archs.is_empty() {
-                println!("cargo:rerun-if-env-changed=JAN_ENGINE_CUDA_ARCHS");
-                cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
+        //
+        // Unset, an x86_64 build passes upstream's list with Turing promoted
+        // from 75-virtual to 75-real (#9185). A PTX-only arch is compiled by
+        // the driver on first load, and CUDA's minor-version compatibility
+        // does not cover that JIT: the driver must be at least as new as the
+        // toolkit, so CUDA 13.2 PTX on an older driver fails with "the
+        // provided PTX was compiled with an unsupported toolchain". RTX 30/40/50
+        // have SASS and never JIT; Turing (GTX 16xx, RTX 20xx, T4) is a large
+        // share of users and had only the PTX. 80 and 90 stay PTX-only, as
+        // upstream ships them: datacenter parts, on datacenter drivers.
+        // Mirrored per toolkit version rather than hardcoded, because a cuda12
+        // build must keep 50/61/70 and cannot emit 121a before 12.9. arm64 has
+        // no Turing hardware and keeps upstream's default.
+        let archs = env::var("JAN_ENGINE_CUDA_ARCHS").unwrap_or_default();
+        let archs = archs.trim();
+        if !archs.is_empty() {
+            cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
+        } else if feature_enabled("engine-cuda")
+            && env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default() == "x86_64"
+        {
+            match nvcc_version() {
+                Some(v) => {
+                    let archs = default_cuda_archs(v);
+                    println!(
+                        "cargo:warning=CUDA {}.{}: CMAKE_CUDA_ARCHITECTURES={archs}",
+                        v.0, v.1
+                    );
+                    cfg.arg(format!("-DCMAKE_CUDA_ARCHITECTURES={archs}"));
+                }
+                None => println!(
+                    "cargo:warning=could not read the CUDA version from `nvcc --version`; \
+                     leaving upstream's arch list, which has no Turing SASS (#9185)"
+                ),
             }
         }
         if feature_enabled("engine-hip") {
@@ -728,6 +756,37 @@ mod engine {
             );
             let _ = fs::remove_dir_all(build_dir);
         }
+    }
+
+    /// The (major, minor) of the nvcc on PATH -- the one check-engine-toolchain.sh
+    /// matched against the variant and engine-prebuilt.sh keys the cache on.
+    fn nvcc_version() -> Option<(u32, u32)> {
+        let out = Command::new("nvcc").arg("--version").output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let rest = text.split("release ").nth(1)?;
+        let (major, rest) = rest.split_once('.')?;
+        let minor: String = rest.chars().take_while(char::is_ascii_digit).collect();
+        Some((major.trim().parse().ok()?, minor.parse().ok()?))
+    }
+
+    /// ggml/src/ggml-cuda/CMakeLists.txt's non-native default at the pinned
+    /// tag, with 75-virtual changed to 75-real (see the call site).
+    fn default_cuda_archs(v: (u32, u32)) -> String {
+        let mut a = Vec::new();
+        if v < (13, 0) {
+            a.extend(["50-virtual", "61-virtual", "70-virtual"]);
+        }
+        a.extend(["75-real", "80-virtual", "86-real"]);
+        if v >= (11, 8) {
+            a.extend(["89-real", "90-virtual"]);
+        }
+        if v >= (12, 8) {
+            a.push("120a-real");
+        }
+        if v >= (12, 9) {
+            a.push("121a-real");
+        }
+        a.join(";")
     }
 
     fn feature_enabled(feature: &str) -> bool {

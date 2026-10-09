@@ -109,6 +109,24 @@ echo "stage-engine: staged $staged ggml libraries ($modules backend modules) int
 
 [ -n "$cuda_module" ] || exit 0
 
+# #9185: build.rs gives x86_64 native Turing code, so GTX 16xx/RTX 20xx never
+# depend on the driver JIT-compiling PTX from a newer toolkit. An explicit
+# JAN_ENGINE_CUDA_ARCHS and arm64 keep their own lists and are not checked.
+host="$(rustc -vV | tr -d '\r' | sed -n 's/^host: //p')"
+if [ -z "${JAN_ENGINE_CUDA_ARCHS:-}" ] && [[ "$host" == x86_64-* ]]; then
+  objdump_cuda="$(command -v cuobjdump 2>/dev/null || true)" # beside nvcc
+  if [ -n "$objdump_cuda" ]; then
+    elfs="$("$objdump_cuda" --list-elf "$cuda_module")"
+    grep -q 'sm_75' <<<"$elfs" || {
+      echo "stage-engine: $(basename "$cuda_module") has no sm_75 SASS (#9185)" >&2
+      exit 1
+    }
+    echo "stage-engine: $(basename "$cuda_module") carries sm_75 SASS"
+  else
+    echo "stage-engine: no cuobjdump; sm_75 SASS not checked"
+  fi
+fi
+
 # The module's own import names say which runtime it needs and with which
 # major; they are plain strings in the binary (ELF .dynstr, PE import table),
 # so no objdump/dumpbin is needed. cublasLt is reached through cublas, hence
